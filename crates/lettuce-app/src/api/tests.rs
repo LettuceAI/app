@@ -47,6 +47,31 @@ impl FileAccess for StdFiles {
             .map(|file| Box::new(file) as Box<dyn std::io::Write + Send>)
             .map_err(|_| FileAccessError::Io)
     }
+    fn create_export(
+        &self,
+        uri: &str,
+        source: &std::fs::File,
+    ) -> Result<Box<dyn std::io::Write + Send>, FileAccessError> {
+        let mut target = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(uri)
+            .map_err(|_| FileAccessError::Io)?;
+        let source_handle =
+            same_file::Handle::from_file(source.try_clone().map_err(|_| FileAccessError::Io)?)
+                .map_err(|_| FileAccessError::Io)?;
+        let target_handle =
+            same_file::Handle::from_file(target.try_clone().map_err(|_| FileAccessError::Io)?)
+                .map_err(|_| FileAccessError::Io)?;
+        if source_handle == target_handle {
+            return Err(FileAccessError::SourceIsTarget);
+        }
+        target.set_len(0).map_err(|_| FileAccessError::Io)?;
+        std::io::Seek::seek(&mut target, std::io::SeekFrom::Start(0))
+            .map_err(|_| FileAccessError::Io)?;
+        Ok(Box::new(target))
+    }
 }
 
 #[derive(Default)]

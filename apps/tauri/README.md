@@ -110,3 +110,5 @@ The settings wrappers expose settings_get, settings_update, settings_sampler_def
 Startup resolves the log directory and creates it before installing local output, then installs the chained panic hook and retains the output guard as managed state. The log command module delegates list, page, search, relevant lines, delete, clear, export and append to lettuce-app; app_usage_days returns the current focused-time read. DeveloperLogLine and AppUsageChanged use the shared application event channel. Log-mirror delivery failures go directly to stderr so they cannot create another mirrored warning.
 
 The metrics command module forwards cursor listing, detail, per-message detail and receipt-backed explicit clearing to lettuce-app. Generated DTOs contain summaries and samples, with no native model file paths.
+
+Log exports open native paths and Android document targets without truncation, compare the source and target file identities, then truncate and write through the same target descriptor. Providers that cannot support this operation return a typed file error.

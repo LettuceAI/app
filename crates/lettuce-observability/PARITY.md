@@ -40,4 +40,4 @@ Symlink reads are refused in addition to single-component names. List and clear 
 
 Written lines are mirrored through a typed application event only while developer mode is enabled. Legacy emitted `chat://debug` from its tracing bridge (`old-code/src-tauri/src/infra/utils.rs:373`) and listened in `old-code/src/App.tsx:394`; the new mirror follows written lines and the committed settings feed. Failed mirror delivery writes to stderr to avoid recursively mirroring its own failure.
 
-Export refuses the source file as its own target, including native hard links on Unix, before opening the target for writing. Legacy read the whole content before its Downloads write (`old-code/src-tauri/src/infra/logger.rs:828`); streamed exports need this guard to preserve the source.
+Export refuses the source file as its own target, including hard links and platform URI aliases, by comparing open file identities before truncating the target. Legacy read the whole content before its Downloads write (`old-code/src-tauri/src/infra/logger.rs:828`); streamed exports need this guard to preserve the source.

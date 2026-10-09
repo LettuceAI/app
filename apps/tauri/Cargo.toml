@@ -38,6 +38,7 @@ lettuce-app.workspace = true
 lettuce-contracts = { workspace = true, features = ["specta"] }
 lettuce-observability.workspace = true
 lettuce-settings.workspace = true
+same-file = "1.0.6"
 serde.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true

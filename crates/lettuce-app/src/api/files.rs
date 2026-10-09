@@ -28,6 +28,8 @@ pub enum FileAccessError {
     PermissionDenied,
     #[error("the file location is not supported")]
     Unsupported,
+    #[error("export target is the source file")]
+    SourceIsTarget,
     #[error("the file could not be read or written")]
     Io,
 }
@@ -41,6 +43,14 @@ pub trait FileAccess: Send + Sync {
     fn open(&self, uri: &str) -> Result<Box<dyn FileReader>, FileAccessError>;
 
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError>;
+
+    fn create_export(
+        &self,
+        _uri: &str,
+        _source: &std::fs::File,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
 
     /// Shows the platform open dialog and returns the picked URIs, empty
     /// when the user cancelled.
@@ -125,6 +135,7 @@ impl IntoApiError for FileAccessError {
     fn into_api_error(self) -> ApiError {
         let code = match self {
             Self::NotFound => ApiErrorCode::NotFound,
+            Self::SourceIsTarget => ApiErrorCode::Conflict,
             Self::PermissionDenied | Self::Io => ApiErrorCode::Unavailable,
             Self::Unsupported => ApiErrorCode::Unsupported,
         };

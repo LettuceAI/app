@@ -1,4 +1,7 @@
-use std::{io::Write, path::Path};
+use std::{
+    io::{Seek, SeekFrom, Write},
+    path::Path,
+};
 
 use lettuce_app::api::{FileAccess, FileAccessError, FileDescription, FileReader, PickFilter};
 use tauri::{AppHandle, Runtime};
@@ -45,6 +48,39 @@ fn create_path(uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
         .map_err(|error| access_error(&error))
 }
 
+fn prepare_export(
+    mut target: std::fs::File,
+    source: &std::fs::File,
+) -> Result<Box<dyn Write + Send>, FileAccessError> {
+    let source_handle =
+        same_file::Handle::from_file(source.try_clone().map_err(|error| access_error(&error))?)
+            .map_err(|error| access_error(&error))?;
+    let target_handle =
+        same_file::Handle::from_file(target.try_clone().map_err(|error| access_error(&error))?)
+            .map_err(|error| access_error(&error))?;
+    if source_handle == target_handle {
+        return Err(FileAccessError::SourceIsTarget);
+    }
+    target.set_len(0).map_err(|error| access_error(&error))?;
+    target
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| access_error(&error))?;
+    Ok(Box::new(target))
+}
+
+fn create_export_path(
+    uri: &str,
+    source: &std::fs::File,
+) -> Result<Box<dyn Write + Send>, FileAccessError> {
+    let target = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path(uri)?)
+        .map_err(|error| access_error(&error))?;
+    prepare_export(target, source)
+}
+
 /// Files the desktop dialogs return: filesystem paths, opened with `std::fs`.
 #[cfg(desktop)]
 pub(crate) struct DesktopFileAccess<R: Runtime>(pub(crate) AppHandle<R>);
@@ -83,6 +119,14 @@ impl<R: Runtime> FileAccess for DesktopFileAccess<R> {
 
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
         create_path(uri)
+    }
+
+    fn create_export(
+        &self,
+        uri: &str,
+        source: &std::fs::File,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        create_export_path(uri, source)
     }
 
     fn pick_open(
@@ -173,6 +217,21 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
             .map_err(platform_error)
     }
 
+    fn create_export(
+        &self,
+        uri: &str,
+        source: &std::fs::File,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        let Some(uri) = platform_uri(uri) else {
+            return create_export_path(uri, source);
+        };
+        let target = self
+            .fs()
+            .open_file(&uri, tauri_plugin_android_fs::FileAccessMode::ReadWrite)
+            .map_err(platform_error)?;
+        prepare_export(target, source)
+    }
+
     fn pick_open(
         &self,
         filter: &PickFilter,
@@ -227,6 +286,14 @@ impl FileAccess for PathFileAccess {
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
         create_path(uri)
     }
+
+    fn create_export(
+        &self,
+        uri: &str,
+        source: &std::fs::File,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        create_export_path(uri, source)
+    }
 }
 
 /// The file access this platform's shell provides.
@@ -243,5 +310,47 @@ pub(crate) fn file_access<R: Runtime>(handle: &AppHandle<R>) -> std::sync::Arc<d
     {
         let _ = handle;
         std::sync::Arc::new(PathFileAccess)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_refuses_source_and_hard_link_before_truncation() {
+        let root = std::env::temp_dir().join(format!("lettuce-export-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source_path = root.join("source");
+        let alias_path = root.join("alias");
+        std::fs::write(&source_path, b"preserved log").unwrap();
+        let _ = std::fs::remove_file(&alias_path);
+        std::fs::hard_link(&source_path, &alias_path).unwrap();
+        let source = std::fs::File::open(&source_path).unwrap();
+        for target in [&source_path, &alias_path] {
+            assert!(matches!(
+                create_export_path(target.to_str().unwrap(), &source),
+                Err(FileAccessError::SourceIsTarget)
+            ));
+            assert_eq!(std::fs::read(&source_path).unwrap(), b"preserved log");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn export_truncates_a_distinct_target() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-export-distinct-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source_path = root.join("source");
+        let target_path = root.join("target");
+        std::fs::write(&source_path, b"short").unwrap();
+        std::fs::write(&target_path, b"longer old contents").unwrap();
+        let mut source = std::fs::File::open(&source_path).unwrap();
+        let mut target = create_export_path(target_path.to_str().unwrap(), &source).unwrap();
+        std::io::copy(&mut source, &mut target).unwrap();
+        target.flush().unwrap();
+        assert_eq!(std::fs::read(&target_path).unwrap(), b"short");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

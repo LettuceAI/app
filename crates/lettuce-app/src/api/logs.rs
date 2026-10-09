@@ -155,43 +155,22 @@ pub async fn log_export(
             if request.target.uri.trim().is_empty() {
                 return Err(invalid_field("target.uri", "export target is empty"));
             }
-            let target_path = std::path::Path::new(&request.target.uri);
-            let same = match std::fs::metadata(target_path) {
-                Ok(target) => {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::MetadataExt;
-                        let source = input.metadata().map_err(io_error)?;
-                        source.dev() == target.dev() && source.ino() == target.ino()
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        let _ = target;
-                        let source = logs
-                            .directory
-                            .path()
-                            .join(&request.name)
-                            .canonicalize()
-                            .map_err(io_error)?;
-                        source == target_path.canonicalize().map_err(io_error)?
-                    }
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-                Err(error) => return Err(io_error(error)),
-            };
-            if same {
-                return Err(ApiError {
-                    code: ApiErrorCode::Conflict,
-                    message: "export target is the source log".into(),
-                    details: Some(dto::ApiErrorDetails::Logs {
-                        reason: dto::LogFailureReason::SourceIsTarget,
-                    }),
-                });
-            }
             let mut output = context
                 .files()
-                .create(&request.target.uri)
-                .map_err(IntoApiError::into_api_error)?;
+                .create_export(&request.target.uri, &input)
+                .map_err(|error| {
+                    if error == super::FileAccessError::SourceIsTarget {
+                        ApiError {
+                            code: ApiErrorCode::Conflict,
+                            message: error.to_string(),
+                            details: Some(dto::ApiErrorDetails::Logs {
+                                reason: dto::LogFailureReason::SourceIsTarget,
+                            }),
+                        }
+                    } else {
+                        error.into_api_error()
+                    }
+                })?;
             std::io::copy(&mut input, &mut output).map_err(io_error)?;
             output.flush().map_err(io_error)
         })
