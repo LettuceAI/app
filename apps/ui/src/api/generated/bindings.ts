@@ -27,6 +27,7 @@ export const commands = {
 	mediaLibraryList: (request: MediaLibraryListRequest) => typedError<MediaLibraryPage, ApiError>(__TAURI_INVOKE("media_library_list", { request })),
 	mediaLibraryRemove: (request: MediaLibraryRemoveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_library_remove", { request })),
 	logsList: () => typedError<LogsList, ApiError>(__TAURI_INVOKE("logs_list")),
+	logsDiagnosticsReport: () => typedError<string, ApiError>(__TAURI_INVOKE("logs_diagnostics_report")),
 	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError>(__TAURI_INVOKE("log_read_page", { request })),
 	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_search", { request })),
 	logRelevantLines: (request: LogRelevantLinesRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_relevant_lines", { request })),

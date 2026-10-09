@@ -4,6 +4,12 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn logs_diagnostics_report(context: State<'_, ApiContext>) -> Result<String, ApiError> {
+    api::logs_diagnostics_report(&context).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn logs_list(context: State<'_, ApiContext>) -> Result<dto::LogsList, ApiError> {
     api::logs_list(&context).await
 }

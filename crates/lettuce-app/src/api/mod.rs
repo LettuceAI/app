@@ -281,7 +281,9 @@ pub use nanogpt::provider_nanogpt_usage;
 #[cfg(test)]
 mod logs_tests;
 
+mod diagnostics;
 mod logs;
+pub use diagnostics::logs_diagnostics_report;
 pub use logs::{
     log_append, log_delete, log_export, log_read_page, log_relevant_lines, log_search, logs_clear,
     logs_list,

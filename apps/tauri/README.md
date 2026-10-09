@@ -122,3 +122,5 @@ Database-file inventory carries nullable creation time and measured modification
 `media_save_to` forwards an asset identifier and FileTarget to the app. Native export writers check protected media identities, hold an exclusive operating-system target lease until close and refuse a concurrent writer with Busy before truncation. Process exit releases the lease.
 
 The storage module delegates media_library_list and media_library_remove to the application API. Library items use the shell asset URL base, while removal returns typed reference details and accepts a durable operation identity.
+
+The diagnostics command returns the app support report string. The backend redacts home paths and performs the embedding checks; the shell registers the command alongside the log tools.

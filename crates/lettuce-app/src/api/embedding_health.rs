@@ -30,10 +30,47 @@ struct Probes {
     unrelated: Vec<Pair>,
 }
 
+#[derive(Debug)]
+pub(crate) struct HealthCase {
+    pub name: String,
+    pub rank: usize,
+    pub top_score: f32,
+    pub correct_score: f32,
+}
+
+#[derive(Debug)]
+pub(crate) struct HealthReport {
+    pub identity_cosine: f32,
+    pub top1_rate: f32,
+    pub top3_rate: f32,
+    pub mrr: f32,
+    pub related_avg: f32,
+    pub unrelated_avg: f32,
+    pub cases: Vec<HealthCase>,
+}
+
+impl HealthReport {
+    pub(crate) fn passed(&self) -> bool {
+        self.identity_cosine >= 0.9990
+            && self.top1_rate >= 0.60
+            && self.related_avg - self.unrelated_avg >= 0.10
+    }
+}
+
 pub(crate) fn run(
     engine: &dyn MemoryEmbeddingEngine,
     cancel: &CancellationToken,
 ) -> Result<(), String> {
+    if !report(engine, cancel)?.passed() {
+        return Err("the installed embedding model failed the legacy health check".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn report(
+    engine: &dyn MemoryEmbeddingEngine,
+    cancel: &CancellationToken,
+) -> Result<HealthReport, String> {
     let probes: Probes =
         serde_json::from_str(include_str!("../../resources/embedding-health/v1.json"))
             .map_err(|_| "invalid embedding health probes")?;
@@ -73,7 +110,10 @@ pub(crate) fn run(
         .iter()
         .map(|entry| embed(&entry.text))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut hits = 0;
+    if probes.cases.is_empty() {
+        return Err("empty embedding health cases".into());
+    }
+    let mut cases = Vec::with_capacity(probes.cases.len());
     for case in &probes.cases {
         let query = embed(&case.query)?;
         let mut scored = docs
@@ -83,9 +123,17 @@ pub(crate) fn run(
             .collect::<Result<Vec<_>, _>>()?;
         scored.sort_by(|left, right| right.1.total_cmp(&left.1));
         let best = scored.first().ok_or("empty embedding health corpus")?;
-        if probes.corpus[best.0].id == case.expected_id {
-            hits += 1;
-        }
+        let rank = scored
+            .iter()
+            .position(|(index, _)| probes.corpus[*index].id == case.expected_id)
+            .ok_or("embedding health case has no expected document")?
+            + 1;
+        cases.push(HealthCase {
+            name: case.name.clone(),
+            rank,
+            top_score: best.1,
+            correct_score: scored[rank - 1].1,
+        });
         tracing::debug!(case = %case.name, expected = %case.expected_id, actual = %probes.corpus[best.0].id, "embedding health retrieval");
     }
     let mean = |pairs: &[Pair]| -> Result<f32, String> {
@@ -100,13 +148,22 @@ pub(crate) fn run(
         }
         Ok(total / pairs.len() as f32)
     };
-    let top1 = hits as f32 / probes.cases.len() as f32;
-    let margin = mean(&probes.related)? - mean(&probes.unrelated)?;
+    let top1 = cases.iter().filter(|case| case.rank == 1).count() as f32 / cases.len() as f32;
+    let top3 = cases.iter().filter(|case| case.rank <= 3).count() as f32 / cases.len() as f32;
+    let mrr = cases.iter().map(|case| 1.0 / case.rank as f32).sum::<f32>() / cases.len() as f32;
+    let related_avg = mean(&probes.related)?;
+    let unrelated_avg = mean(&probes.unrelated)?;
+    let margin = related_avg - unrelated_avg;
     tracing::info!(identity, top1, margin, "embedding health check");
-    if identity < 0.9990 || top1 < 0.60 || margin < 0.10 {
-        return Err("the installed embedding model failed the legacy health check".into());
-    }
-    Ok(())
+    Ok(HealthReport {
+        identity_cosine: identity,
+        top1_rate: top1,
+        top3_rate: top3,
+        mrr,
+        related_avg,
+        unrelated_avg,
+        cases,
+    })
 }
 
 #[cfg(test)]
@@ -192,6 +249,31 @@ pub(crate) mod tests {
                 .contains("cancelled")
         );
     }
+    #[test]
+    fn diagnostics_retains_measured_health_and_every_retrieval_rank() {
+        let engine = engine(false);
+        let report = report(engine.as_ref(), &CancellationToken::new()).expect("measured report");
+        assert_eq!(report.identity_cosine, 1.0);
+        assert_eq!(report.top1_rate, 1.0);
+        assert_eq!(report.top3_rate, 1.0);
+        assert_eq!(report.mrr, 1.0);
+        assert_eq!(report.related_avg, 1.0);
+        assert_eq!(report.unrelated_avg, 0.0);
+        assert_eq!(report.cases.len(), 50);
+        assert!(report.cases.iter().all(|case| {
+            !case.name.is_empty()
+                && case.rank == 1
+                && case.top_score == 1.0
+                && case.correct_score == 1.0
+        }));
+        let bad = self::engine(true);
+        let failure =
+            super::report(bad.as_ref(), &CancellationToken::new()).expect("measured failure");
+        assert!(!failure.passed());
+        assert_eq!(failure.related_avg, 1.0);
+        assert_eq!(failure.unrelated_avg, 1.0);
+    }
+
     #[test]
     fn legacy_health_dataset_is_complete() {
         let probes: Probes =
