@@ -703,6 +703,7 @@ mod integration_tests {
                 secret_owner_id: owner,
                 external_model_id: "test-model".to_owned(),
                 model_display_name: "Test model".into(),
+                provider_label: Some("Test account".into()),
                 provider_kind: kind.to_owned(),
                 provider_protocol: ProviderProtocol::OpenAiCompatible,
                 endpoint: Some(endpoint),
