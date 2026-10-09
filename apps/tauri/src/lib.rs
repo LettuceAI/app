@@ -39,7 +39,9 @@ pub fn run() {
     let invoke_handler = builder.invoke_handler();
     let app = tauri::Builder::default();
     #[cfg(desktop)]
-    let app = app.plugin(tauri_plugin_dialog::init());
+    let app = app
+        .plugin(tauri_plugin_single_window::init())
+        .plugin(tauri_plugin_dialog::init());
     #[cfg(target_os = "android")]
     let app = app.plugin(tauri_plugin_android_fs::init());
     let app = app

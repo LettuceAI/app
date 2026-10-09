@@ -95,6 +95,7 @@ tauri = "=2.12.0"
 tauri-build = { version = "=2.7.0", default-features = false }
 tauri-plugin-android-fs = { version = "=29.0.0", default-features = false }
 tauri-plugin-dialog = "=2.7.1"
+tauri-plugin-single-window = "=1.2.0"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tar = "0.4"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "half", "ndarray"] }

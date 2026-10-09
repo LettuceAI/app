@@ -1220,6 +1220,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "doctest-file"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
+
+[[package]]
 name = "dom_query"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2309,6 +2315,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "interprocess"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "069323743400cb7ab06a8fe5c1ed911d36b6919ec531661d034c89083629595b"
+dependencies = [
+ "doctest-file",
+ "libc",
+ "recvmsg",
+ "widestring",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "io-extras"
 version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3013,6 +3032,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-android-fs",
  "tauri-plugin-dialog",
+ "tauri-plugin-single-window",
  "tauri-specta",
  "tokio",
  "tracing",
@@ -4396,6 +4416,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "recvmsg"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5622,6 +5648,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-single-window"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "263e46043aa8edc1217ea36d5c8d1c47f2c1476c004a06bc380128b5898b4ca8"
+dependencies = [
+ "interprocess",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "tauri-runtime"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6638,6 +6679,12 @@ dependencies = [
  "fs_extra",
  "semver",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"

@@ -73,6 +73,8 @@ Building on Linux needs the WebKitGTK 4.1 development packages. The `vulkan` fea
 
 The shell is written generic over `R: Runtime` and `run()` carries `#[cfg_attr(mobile, tauri::mobile_entry_point)]`, so Android and iOS builds (`gen/android`, `gen/apple`) can come from this crate once they are initialized; that step also adds the `staticlib` and `cdylib` library types.
 
+Single instance: on desktop `tauri-plugin-single-window` is registered first, so a second launch hands activation to the running instance (which focuses its window) and exits before any other setup; it is not registered on Android or iOS.
+
 User files on mobile: Android uses `tauri-plugin-android-fs` (the plugin the legacy app used; 29.0.0, default features off, so no JavaScript commands are exposed), registered only on Android; desktop uses `tauri-plugin-dialog`, registered only on desktop. An upload is the picked URI handed to Rust, which opens, validates and ingests it, matching the no-bytes-over-IPC rule. iOS has no picker in this shell yet.
 
 Linux WebKitGTK: on some Wayland and NVIDIA setups the window dies with a Wayland protocol error unless compositing mode and the GPU process are off, so `main` sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` and `WEBKIT_DISABLE_GPU_PROCESS=1` before anything else runs, unless the user already set them. These are the flags the legacy app's webkit-safe scripts used; they become unnecessary once the shell moves to the CEF runtime with Tauri 3.
