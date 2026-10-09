@@ -17,7 +17,7 @@ Facts about how `lettuce-observability` relates to the legacy app (2.2.x). The c
 - Legacy had no structured fields. Event fields other than the message are appended as ` name=value` (secret names masked) so they are not lost.
 - Legacy lowercased the message before searching it, which shifted byte offsets on non-ASCII text. The sanitizer now searches case-insensitively without lowercasing.
 - Legacy sanitized twice and always reported the placeholder's length in `len=`. `len=` is now the real body length.
-- Frontend records are acknowledged synchronously, preserving the write failure returned by `old-code/src-tauri/src/infra/logger.rs:202`. Backend records use a bounded queue with backpressure; saturation no longer silently discards lines.
+- Frontend records are acknowledged synchronously, preserving the write failure returned by `old-code/src-tauri/src/infra/logger.rs:202`. Backend records keep the bounded lossy queue, so a full queue drops lines instead of blocking the code that logs.
 - Legacy accepted file names containing `..` and could escape the log directory. Names must now be a single name inside it.
 
 ## Not wired yet
@@ -38,6 +38,6 @@ The API exposes list, paged read, search, relevant lines, delete, clear, export 
 
 Symlink reads are refused in addition to single-component names. List and clear surface directory errors; legacy flattened them (`old-code/src-tauri/src/infra/logger.rs:547`). Frontend timestamps must be RFC3339, labels cannot contain whitespace, and message newlines are escaped so one append remains one record; legacy accepted raw fields (`old-code/src-tauri/src/infra/logger.rs:640`).
 
-Written lines are mirrored through a typed application event only while developer mode is enabled. Legacy emitted `chat://debug` from its tracing bridge (`old-code/src-tauri/src/infra/utils.rs:373`) and listened in `old-code/src/App.tsx:394`; the new mirror follows written lines and the committed settings feed. Failed mirror delivery writes to stderr to avoid recursively mirroring its own failure.
+Written lines are mirrored through a typed application event only while developer mode is enabled. Legacy emitted `chat://debug` from its tracing bridge (`old-code/src-tauri/src/infra/utils.rs:373`) and listened in `old-code/src/App.tsx:394`; the new mirror follows written lines and the committed settings feed. Failed mirror delivery writes to stderr to avoid recursively mirroring its own failure. The mirror receives lines on its own thread through a bounded queue and skips lines while that queue is full; legacy emitted from the tracing bridge on the logging thread (`old-code/src-tauri/src/infra/utils.rs:373`).
 
 Export refuses the source file as its own target, including hard links and platform URI aliases, by comparing open file identities before truncating the target. Legacy read the whole content before its Downloads write (`old-code/src-tauri/src/infra/logger.rs:828`); streamed exports need this guard to preserve the source.

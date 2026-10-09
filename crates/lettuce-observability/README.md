@@ -33,9 +33,9 @@ The viewer's parser depends on this layout. `LineLayer` builds each line like th
 
 `sanitize_message` escapes newlines, replaces everything after a `request body:` or `response body:` marker (and two similar markers) with `<redacted body len=N>` giving the real length, masks the token after `bearer ` and the value of every `name=` parameter in the secret list, and cuts messages over 1200 characters, except for the `api_request`, `image_generator`, `llama_cpp` and `dynamic_memory` components. For `api_request` it shortens `full_url=` to `url=`. Matching is case-insensitive on ASCII without lowercasing the message, so byte offsets stay correct for non-ASCII text.
 
-`DailyLogWriter` sits behind a bounded tracing queue that applies backpressure when full, preserving every accepted line. It reopens the file when the local date changes or when the current file was deleted.
+`DailyLogWriter` sits behind `tracing-appender`'s non-blocking writer, bounded to the configured capacity and lossy: when the queue is full, lines are dropped rather than blocking the caller. It reopens the file when the local date changes or when the current file was deleted.
 
-`LogSink` appends frontend records synchronously through the shared file writer and reports write failures to its caller. A host observer receives each line after it was written, outside the file lock; the application uses this for the developer log mirror. Backend write failures go to stderr.
+`LogSink` appends frontend records synchronously through the shared file writer and reports write failures to its caller. A host observer receives each written line on its own thread through a bounded queue of 1024 lines; while the queue is full new lines skip the observer, so a slow observer (the developer log mirror, a debug view) never blocks a write or the file log. Backend write failures go to stderr.
 
 Files are kept until the user deletes them; there is no automatic retention.
 
