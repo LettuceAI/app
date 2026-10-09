@@ -346,8 +346,8 @@ pub fn usage_csv(rows: &[UsageReportRow]) -> Result<String, UsageReportError> {
         let money = |value: Option<f64>| value.map(|value| value.to_string()).unwrap_or_default();
         let success = match row.status {
             UsageReportStatus::Pending => String::new(),
-            UsageReportStatus::Succeeded => "true".into(),
-            _ => "false".into(),
+            UsageReportStatus::Succeeded => "yes".into(),
+            _ => "no".into(),
         };
         let fields = [
             row.timestamp.to_string(),
@@ -552,9 +552,25 @@ mod tests {
         );
         assert_eq!(
             lines.next(),
-            Some("42,,\"A, \"\"B\"\"\",,,,,,,,,,,,,,,,,,,,,,,,,,true,")
+            Some("42,,\"A, \"\"B\"\"\",,,,,,,,,,,,,,,,,,,,,,,,,,yes,")
         );
         assert!(lines.next().is_none());
+        let failed = UsageReportRow {
+            id: "failed".into(),
+            timestamp: 43,
+            status: UsageReportStatus::Failed,
+            ..UsageReportRow::default()
+        };
+        let pending = UsageReportRow {
+            id: "pending".into(),
+            timestamp: 44,
+            status: UsageReportStatus::Pending,
+            ..UsageReportRow::default()
+        };
+        let csv = usage_csv(&[failed, pending]).expect("CSV");
+        let mut lines = csv.lines().skip(1);
+        assert_eq!(lines.next(), Some("43,,,,,,,,,,,,,,,,,,,,,,,,,,,,no,"));
+        assert_eq!(lines.next(), Some("44,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"));
     }
 
     #[test]
