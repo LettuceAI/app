@@ -167,6 +167,15 @@ pub enum JobFailureCode {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum JobFailureReason {
+    UsageBillingUnavailable,
+    UsageBillingMalformed,
+    UsageAccountMissing,
+    UsageCostConflict,
+    UsageCostStorage,
+    UsageBillingCredentials,
+    UsageBillingRejected,
+    UsageBillingUnsupported,
+    UsageCostInvalid,
     StorageCheckpointBusy,
     StorageUnavailable,
     DatabaseKeptReadOnly,
@@ -211,6 +220,12 @@ pub struct JobFailureDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobResultDto {
+    UsageCostsUpdated {
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        priced: u64,
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        cleared: u64,
+    },
     StorageOptimized,
     VoiceCreated {
         voice_id: String,

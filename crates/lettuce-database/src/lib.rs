@@ -13,6 +13,7 @@ pub use job_details_adapter::{JobDetailRecord, JobOperation};
 mod usage_adapter;
 mod usage_clear;
 mod usage_report;
+mod usage_capture_targets;
 mod storage_maintenance;
 pub use storage_maintenance::StorageMaintenanceError;
 mod conversation;

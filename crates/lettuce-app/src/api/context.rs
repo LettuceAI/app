@@ -83,6 +83,7 @@ pub struct ApiContext {
 }
 
 struct ApiContextInner {
+    usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
     maintenance: super::maintenance::MaintenanceGate,
     parts: ApiContextParts,
     models: ModelSlots,
@@ -116,6 +117,27 @@ impl std::fmt::Debug for ApiContext {
 }
 
 impl ApiContext {
+    pub fn with_usage_billing(self, billing: Arc<dyn crate::OpenRouterBillingPort>) -> Self {
+        *self
+            .inner
+            .usage_billing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(billing);
+        self
+    }
+
+    pub(super) fn usage_billing(&self) -> Result<Arc<dyn crate::OpenRouterBillingPort>, ApiError> {
+        if let Some(billing) = self
+            .inner
+            .usage_billing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+        {
+            return Ok(billing);
+        }
+        Ok(Arc::new(super::ollama::remote_providers(self)?))
+    }
     pub(super) fn maintenance(&self) -> &super::maintenance::MaintenanceGate {
         &self.inner.maintenance
     }
@@ -202,6 +224,7 @@ impl ApiContext {
         });
         let context = Self {
             inner: Arc::new(ApiContextInner {
+                usage_billing: Mutex::new(None),
                 maintenance: super::maintenance::MaintenanceGate::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,

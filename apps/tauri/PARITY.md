@@ -35,3 +35,5 @@ The registered diagnostics report replaces frontend assembly in `old-code/src/ui
 Usage reporting delegates the unified query, local-day statistics and picked-target CSV export to the application. Export preserves the fixed header from `old-code/src-tauri/src/usage/repository.rs:700-709` and replaces the frontend's export completion flow (`old-code/src/ui/pages/settings/UsagePage.tsx:651-668`) with a typed command result.
 
 The storage optimization wrapper returns JobAccepted in place of `db_optimize`; its completion is watched through the jobs API, replacing the immediate developer-page success message (`old-code/src/ui/pages/settings/DeveloperPage.tsx:1967-1974`).
+
+Usage recalculation returns JobAccepted and typed job completion in place of the immediate summary string (`old-code/src/ui/pages/settings/DeveloperPage.tsx:2002-2010`). It resolves credentials in the application and fills missing costs instead of the legacy overwrite (`old-code/src-tauri/src/usage/commands.rs:200-215`).

@@ -17,7 +17,7 @@ Facts about how `lettuce-usage` relates to the legacy app (2.2.x). The crate REA
 
 ## Not wired yet
 
-- Automatic pricing capture, provider price fetching, automatic inference-finalization wiring and generation enrichment, reconciliation, adjustments, budgets, summaries and non-text costing. Callers still supply verified OpenRouter pricing and cost inputs. Native-provider billing normalization is also open.
+- Adjustments, budgets, summaries and non-text costing remain open. Native-provider billing normalization is also open.
 - The crate description names budgets and summaries; neither exists.
 
 ## History
@@ -42,3 +42,5 @@ Legacy reports read only `usage_records`, including their statistics (`old-code/
 Unified reporting counts actual dispatches rather than adding their conversation aggregate a second time. Cleared dispatch proofs prevent an older aggregate from reappearing as a charge. Legacy timestamp bounds were inclusive and records were read ascending (`old-code/src-tauri/src/usage/repository.rs:275-306`); the dashboard and activity views then ordered newest first (`old-code/src/ui/pages/settings/UsagePage.tsx:457-462`; `UsageActivityPage.tsx:38-46`). The API supports both directions with stable identity ties and cursor paging instead of fetching every row into the frontend.
 
 Day grouping preserves the device-local calendar used by the dashboard (`old-code/src/ui/pages/settings/UsagePage.tsx:490-496`) with an explicit IANA timezone and DST-correct conversion. The API accepts an unbounded range; legacy's all preset actually stopped ten years back (`UsagePage.tsx:75-97`). Nullable totals and explicit unknown-request counts replace the dashboard's zero substitutions (`UsagePage.tsx:475-498`). CSV retains the exact legacy header and text escaping (`old-code/src-tauri/src/usage/repository.rs:700-709`), but unknown values are empty instead of its zero defaults (`repository.rs:711-765`). Provider-reported total fallback and signed historical completion adjustments remain available (`repository.rs:120-125,159-162`).
+
+The application now automatically captures OpenRouter costs for settled chat dispatches through durable event-driven jobs using the stored response identity. Recalculation fills only missing costs instead of overwriting legacy records (`old-code/src-tauri/src/usage/commands.rs:128-215`). Required missing evidence fails typed instead of the legacy warning-only fallback (`old-code/src-tauri/src/chat_manager/service.rs:338-395,462-491`). An exact cleared-dispatch tombstone proves that a racing capture must leave the row deleted.

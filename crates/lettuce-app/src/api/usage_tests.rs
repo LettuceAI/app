@@ -5,6 +5,81 @@ use lettuce_usage::JobUsageLedger;
 use std::sync::Arc;
 
 #[tokio::test]
+async fn openrouter_chat_admits_a_durable_automatic_cost_job_after_the_reply() {
+    use lettuce_jobs::{JobKind, JobQuery, JobState, JobStore};
+    use lettuce_types::PageRequest;
+    let h = harness(Reply::Text("Priced reply."));
+    super::usage_billing_tests::ready_openrouter(&h);
+    *h.provider.response_hook.lock().expect("response hook") = Some(Arc::new(|_, response| {
+        response.usage = Some(lettuce_conversations::InferenceUsage {
+            input_tokens: 120,
+            output_tokens: 30,
+            image_tokens: None,
+            audio_tokens: None,
+            total_tokens: Some(150),
+            cached_input_tokens: None,
+            cache_write_tokens: None,
+            reasoning_tokens: None,
+            web_search_requests: None,
+            provider_reported_cost: None,
+        });
+    }));
+    let conversation = launch(&h, "automatic-cost-launch").await;
+    let stream = Arc::new(RecordingStream::default());
+    send(
+        &h,
+        &conversation,
+        "automatic-cost-send",
+        "Hello",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    super::ConversationGenerationWorker::new(h.context.clone())
+        .run_once()
+        .await
+        .expect("reply");
+    assert!(matches!(
+        stream.events().last(),
+        Some(dto::GenerationEvent::Completed { .. })
+    ));
+    assert_eq!(h.provider.requests.lock().expect("requests").len(), 1);
+    let queued = h
+        .context
+        .backend()
+        .database()
+        .list(JobQuery {
+            state: Some(JobState::Queued),
+            kind: Some(JobKind::Maintenance),
+            subject: None,
+            page: PageRequest::default(),
+        })
+        .expect("automatic jobs");
+    assert_eq!(queued.items.len(), 1);
+    assert_eq!(queued.items[0].subject.id.as_str(), "usage-cost-capture");
+    let dispatch = h
+        .context
+        .backend()
+        .database()
+        .job_usage(
+            h.provider.requests.lock().expect("requests")[0]
+                .cancellation
+                .expect("chat job"),
+        )
+        .expect("dispatch");
+    assert_eq!(dispatch.len(), 1);
+    assert_eq!(
+        dispatch[0]
+            .snapshot
+            .as_ref()
+            .expect("snapshot")
+            .provider_kind
+            .as_deref(),
+        Some("openrouter")
+    );
+}
+
+#[tokio::test]
 async fn chat_usage_keeps_dispatch_names_after_in_flight_catalog_edits() {
     use lettuce_models::{ModelProfileRepository, ProviderAccountRepository};
     use lettuce_usage::UsageLedger;

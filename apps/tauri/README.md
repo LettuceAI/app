@@ -128,3 +128,5 @@ The diagnostics command returns the app support report string. The backend redac
 Usage query, statistics and CSV wrappers forward owned contracts to the app. Statistics carry an IANA timezone, and CSV exports write through the selected FileTarget with the native target lease and protected-file checks.
 
 The storage optimization wrapper returns the application maintenance job without running database work on the shell thread.
+
+The usage recalculation command admits a durable missing-cost job. The shell returns its job identity and forwards typed completion and failures through the existing jobs API.

@@ -31,6 +31,15 @@ pub async fn usage_export_csv(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn usage_recalculate_costs(
+    context: State<'_, ApiContext>,
+    request: dto::UsageRecalculateCostsRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    api::usage_recalculate_costs(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn usage_clear_before(
     context: State<'_, ApiContext>,
     request: dto::UsageClearBeforeRequest,
