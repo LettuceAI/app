@@ -51,3 +51,5 @@ The English dictionary always applies. `content_lexicons.rs` adds lexicons for o
 Hit recording is off by default. The host enables it for developer mode and disabling it clears its records under the same mutex as recording. The log has no entry cap. Hit revisions and a Notify signal let the host coalesce changes after an event; the engine starts no timer or worker. Log reads and clearing return a typed error if their mutex is unavailable.
 
 Hit recording follows the latest settings commit generation it has observed, preventing an older concurrent request from re-enabling logging after developer mode was disabled.
+
+The developer hit log is a volatile ring of 200 redacted entries. Hit revision and Notify allow the host to coalesce each notification burst without a timer.

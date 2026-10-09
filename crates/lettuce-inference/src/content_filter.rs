@@ -129,7 +129,7 @@ pub struct FilterLogEntry {
 struct HitLog {
     enabled: bool,
     settings_generation: Option<u64>,
-    entries: Vec<FilterLogEntry>,
+    entries: std::collections::VecDeque<FilterLogEntry>,
     revision: u64,
 }
 
@@ -196,7 +196,14 @@ impl ContentFilter {
     }
 
     pub fn hit_log(&self) -> Result<Vec<FilterLogEntry>, FilterLogError> {
-        Ok(self.log.lock().map_err(|_| FilterLogError)?.entries.clone())
+        Ok(self
+            .log
+            .lock()
+            .map_err(|_| FilterLogError)?
+            .entries
+            .iter()
+            .cloned()
+            .collect())
     }
 
     pub fn clear_hit_log(&self) -> Result<(), FilterLogError> {
@@ -244,7 +251,10 @@ impl ContentFilter {
             if !log.enabled {
                 return;
             }
-            log.entries.push(entry);
+            if log.entries.len() == 200 {
+                log.entries.pop_front();
+            }
+            log.entries.push_back(entry);
             log.revision = log.revision.wrapping_add(1);
             self.changed.notify_one();
         }
@@ -736,5 +746,19 @@ mod tests {
         assert_eq!(filter.level(), PureModeLevel::Off);
         assert!(!filter.logging_enabled().expect("state"));
         assert!(filter.hit_log().expect("log").is_empty());
+    }
+    #[test]
+    fn debug_ring_keeps_the_latest_two_hundred_hits() {
+        let filter = ContentFilter::new(PureModeLevel::Standard);
+        filter
+            .apply_settings(0, true, PureModeLevel::Standard)
+            .expect("enable");
+        for index in 0..301 {
+            filter.check_text("decapitate and disembowel", index);
+        }
+        let entries = filter.hit_log().expect("log");
+        assert_eq!(entries.len(), 200);
+        assert_eq!(entries.first().expect("first").timestamp_ms, 101);
+        assert_eq!(entries.last().expect("last").timestamp_ms, 300);
     }
 }

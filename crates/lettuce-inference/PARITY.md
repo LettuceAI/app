@@ -17,6 +17,6 @@ Facts about how `lettuce-inference` relates to the legacy app (2.2.x). The crate
 
 - The crate description names generation admission, attempts, tools, approvals and terminal outcomes. Admission and attempts live in `lettuce-conversations`, outcome assembly in `lettuce-providers`; tools and safety beyond Pure mode were listed as later horizontal slices.
 
-The hit log no longer evicts after 200 records; the 200-character redacted snippet remains. Legacy's development-build SecurityPage polled the log every five seconds (`old-code/src/ui/pages/settings/SecurityPage.tsx:68,101-110`); the host now gates it with developer mode and follows notifications. Filtering still works while hit recording is off. Turning logging off clears its volatile records atomically with disabling recording.
+The in-memory debug log retains the newest 200 records and drops the oldest, preserving the legacy ring (`old-code/src-tauri/src/content_filter/mod.rs:113,146-167`). The 200-character redacted snippet remains. Legacy's development-build SecurityPage polled the log every five seconds (`old-code/src/ui/pages/settings/SecurityPage.tsx:68,101-110`); the host now gates it with developer mode and follows notifications. Filtering still works while hit recording is off. Turning logging off clears its volatile records atomically with disabling recording.
 
 Commit generation ordering prevents a delayed request from restoring an older logging choice after a settings update; recording and disabling serialize on the same mutex.
