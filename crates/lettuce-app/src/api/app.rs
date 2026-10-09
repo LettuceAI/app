@@ -160,6 +160,7 @@ const fn entity(entity: PurgeNoticeEntity) -> dto::PurgeNoticeEntityDto {
         PurgeNoticeEntity::DatabaseFile => dto::PurgeNoticeEntityDto::DatabaseFile,
         PurgeNoticeEntity::MediaAsset => dto::PurgeNoticeEntityDto::MediaAsset,
         PurgeNoticeEntity::SyncEntity => dto::PurgeNoticeEntityDto::SyncEntity,
+        PurgeNoticeEntity::UsageRecord => dto::PurgeNoticeEntityDto::UsageRecord,
     }
 }
 
@@ -177,6 +178,9 @@ const fn reason(reason: PurgeNoticeReason) -> dto::PurgeNoticeReasonDto {
         }
         PurgeNoticeReason::NotSynced => dto::PurgeNoticeReasonDto::NotSynced,
         PurgeNoticeReason::ConflictCarried => dto::PurgeNoticeReasonDto::ConflictCarried,
+        PurgeNoticeReason::UsageRecordUnreadable => {
+            dto::PurgeNoticeReasonDto::UsageRecordUnreadable
+        }
     }
 }
 

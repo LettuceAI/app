@@ -32,21 +32,27 @@ impl UsageCostTargetReader for crate::Database {
                 },
             )
             .map_err(|_| UsageLedgerError::Storage)?;
+        let mut unreadable = Vec::new();
         for row in rows {
             let (id, owner, at, record, result, kind, state, account_kind) =
                 row.map_err(|_| UsageLedgerError::Storage)?;
-            let mut event: JobInferenceUsage =
-                crate::decode_versioned(&record, 1).map_err(|_| UsageLedgerError::Invalid)?;
-            if event.id.to_string() != id
-                || event.job_id.to_string() != owner
-                || event.admitted_at.get() != at
-                || event.result.is_some()
-            {
-                return Err(UsageLedgerError::Invalid);
-            }
-            event.result =
-                Some(crate::decode_versioned(&result, 1).map_err(|_| UsageLedgerError::Invalid)?);
-            event.validate_snapshot()?;
+            let decoded = (|| {
+                let mut event: JobInferenceUsage = crate::decode_versioned(&record, 1).ok()?;
+                if event.id.to_string() != id
+                    || event.job_id.to_string() != owner
+                    || event.admitted_at.get() != at
+                    || event.result.is_some()
+                {
+                    return None;
+                }
+                event.result = Some(crate::decode_versioned(&result, 1).ok()?);
+                event.validate_snapshot().ok()?;
+                Some(event)
+            })();
+            let Some(event) = decoded else {
+                unreadable.push(id);
+                continue;
+            };
             if !matches!(
                 &event.result,
                 Some(JobInferenceUsageResult::Response { usage: Some(_), .. })
@@ -95,6 +101,24 @@ impl UsageCostTargetReader for crate::Database {
                 job_id: event.job_id,
             });
         }
+        drop(statement);
+        if !unreadable.is_empty() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
+                .ok_or(UsageLedgerError::Storage)?;
+            for id in unreadable {
+                crate::Database::record_open_notice(
+                    &connection,
+                    crate::PurgeNoticeEntity::UsageRecord,
+                    &id,
+                    crate::PurgeNoticeReason::UsageRecordUnreadable,
+                    lettuce_types::TimestampMillis::new(now),
+                )
+                .map_err(|_| UsageLedgerError::Storage)?;
+            }
+        }
         Ok(targets)
     }
 
@@ -116,5 +140,40 @@ impl UsageCostTargetReader for crate::Database {
             }
             Some(_) => Err(UsageLedgerError::Invalid),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_usage::{UsageCostScope, UsageCostTargetReader};
+
+    #[test]
+    fn an_unreadable_dispatch_row_is_a_notice_and_never_blocks_other_targets() {
+        let database = crate::Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO job_inference_usage VALUES ('broken-dispatch', 'job', 1, '{\"format_version\":1,\"value\":{\"broken\":true}}', '{\"format_version\":1,\"value\":null}')",
+                [],
+            )
+            .expect("corrupt row");
+        for scope in [
+            UsageCostScope::Automatic { job_id: None },
+            UsageCostScope::Recalculate,
+        ] {
+            assert_eq!(
+                database.missing_cost_targets(scope).expect("other rows"),
+                Vec::new()
+            );
+        }
+        let notices = database.purge_notices().expect("notices");
+        assert_eq!(notices.len(), 1, "one open notice per unreadable row");
+        assert_eq!(notices[0].entity, crate::PurgeNoticeEntity::UsageRecord);
+        assert_eq!(notices[0].entity_id, "broken-dispatch");
+        assert_eq!(
+            notices[0].reason,
+            crate::PurgeNoticeReason::UsageRecordUnreadable
+        );
     }
 }

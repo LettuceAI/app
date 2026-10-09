@@ -262,7 +262,6 @@ impl JobRunner {
             return Ok(false);
         }
         let kinds = self.handlers.kinds();
-        crate::api::usage_billing::recover_automatic(&self.context).await?;
         let queued = self
             .context
             .blocking(move |context| queued_jobs(context, &kinds))

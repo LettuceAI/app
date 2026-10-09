@@ -364,17 +364,19 @@ CREATE TABLE purge_rejournals (
 -- delete given up after repeated failures, a group a character delete left
 -- with fewer than two members, media collection skipped because another
 -- database file could not be read, a synced entity that cannot be encoded
--- for sync, and a conflict kept aside when the sync journal started over.
+-- for sync, a conflict kept aside when the sync journal started over, and a
+-- usage record that cannot be read, which usage cost capture skips.
 CREATE TABLE purge_notices (
     id INTEGER PRIMARY KEY,
     entity_kind TEXT NOT NULL CHECK (entity_kind IN (
-        'conversation', 'character', 'group', 'database_file', 'media_asset', 'sync_entity'
+        'conversation', 'character', 'group', 'database_file', 'media_asset', 'sync_entity',
+        'usage_record'
     )),
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
     reason TEXT NOT NULL CHECK (reason IN (
         'kept_unsent_local_changes', 'rejournal_incomplete', 'dropped_after_failures',
         'rejournal_dropped', 'group_below_two_members', 'media_collection_skipped',
-        'not_synced', 'conflict_carried'
+        'not_synced', 'conflict_carried', 'usage_record_unreadable'
     )),
     recorded_at INTEGER NOT NULL,
     dismissed_at INTEGER

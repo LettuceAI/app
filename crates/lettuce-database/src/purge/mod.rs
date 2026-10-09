@@ -992,16 +992,19 @@ pub enum PurgeNoticeEntity {
     MediaAsset,
     /// A synced entity, as `<kind>/<id>`.
     SyncEntity,
+    /// A usage record, by id.
+    UsageRecord,
 }
 
 impl PurgeNoticeEntity {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Conversation,
         Self::Character,
         Self::Group,
         Self::DatabaseFile,
         Self::MediaAsset,
         Self::SyncEntity,
+        Self::UsageRecord,
     ];
 
     const fn name(self) -> &'static str {
@@ -1012,6 +1015,7 @@ impl PurgeNoticeEntity {
             Self::DatabaseFile => "database_file",
             Self::MediaAsset => "media_asset",
             Self::SyncEntity => "sync_entity",
+            Self::UsageRecord => "usage_record",
         }
     }
 }
@@ -1048,10 +1052,13 @@ pub enum PurgeNoticeReason {
     /// `sync_carried_conflicts` and the entity keeps the side that was
     /// current.
     ConflictCarried,
+    /// A stored usage record cannot be decoded; usage cost capture skips it
+    /// and every other record is still processed.
+    UsageRecordUnreadable,
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::KeptUnsentLocalChanges,
         Self::RejournalIncomplete,
         Self::RejournalDropped,
@@ -1060,6 +1067,7 @@ impl PurgeNoticeReason {
         Self::MediaCollectionSkipped,
         Self::NotSynced,
         Self::ConflictCarried,
+        Self::UsageRecordUnreadable,
     ];
 
     const fn name(self) -> &'static str {
@@ -1072,6 +1080,7 @@ impl PurgeNoticeReason {
             Self::GroupBelowTwoMembers => "group_below_two_members",
             Self::NotSynced => "not_synced",
             Self::ConflictCarried => "conflict_carried",
+            Self::UsageRecordUnreadable => "usage_record_unreadable",
         }
     }
 }
@@ -1186,6 +1195,27 @@ impl Database {
             PurgeNoticeReason::MediaCollectionSkipped,
             now,
         )
+    }
+
+    pub(crate) fn record_open_notice(
+        connection: &Connection,
+        entity: PurgeNoticeEntity,
+        id: &str,
+        reason: PurgeNoticeReason,
+        now: TimestampMillis,
+    ) -> Result<(), PurgeError> {
+        let open: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM purge_notices WHERE entity_kind = ?1
+                   AND entity_id = ?2 AND reason = ?3 AND dismissed_at IS NULL)",
+                params![entity.name(), id, reason.name()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if open {
+            return Ok(());
+        }
+        record_notice(connection, entity, id, reason, now)
     }
 
     /// Marks a notice as seen; `false` when there was no such open notice.

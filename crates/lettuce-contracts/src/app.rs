@@ -77,6 +77,7 @@ pub enum PurgeNoticeEntityDto {
     DatabaseFile,
     MediaAsset,
     SyncEntity,
+    UsageRecord,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +92,7 @@ pub enum PurgeNoticeReasonDto {
     MediaCollectionSkipped,
     NotSynced,
     ConflictCarried,
+    UsageRecordUnreadable,
 }
 
 /// A delete that needs the user's attention; `entity_id` names the entity
