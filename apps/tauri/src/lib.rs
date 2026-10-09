@@ -37,7 +37,12 @@ pub fn run() {
         tracing::warn!(%error, "TypeScript bindings could not be exported");
     }
     let invoke_handler = builder.invoke_handler();
-    let app = tauri::Builder::default()
+    let app = tauri::Builder::default();
+    #[cfg(desktop)]
+    let app = app.plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "android")]
+    let app = app.plugin(tauri_plugin_android_fs::init());
+    let app = app
         .invoke_handler(invoke_handler)
         .register_asynchronous_uri_scheme_protocol(
             asset_protocol::ASSET_SCHEME,
@@ -95,7 +100,7 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
         app.path().resource_dir().ok(),
         Arc::new(lettuce_settings::NativeSecretStore::new()),
         Arc::new(events::TauriEventSink(app.handle().clone())),
-        Arc::new(files::DesktopFileAccess),
+        files::file_access(app.handle()),
         asset_protocol::ASSET_URL_BASE.to_owned(),
         microphone::capture(),
     )

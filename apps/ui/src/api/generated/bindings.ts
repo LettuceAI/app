@@ -115,6 +115,8 @@ export const commands = {
 	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
 	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
 	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef, ApiError>(__TAURI_INVOKE("assets_ingest", { request })),
+	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError>(__TAURI_INVOKE("files_pick_open", { request })),
+	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError>(__TAURI_INVOKE("files_pick_save", { request })),
 	appStatus: () => typedError<AppStatus, ApiError>(__TAURI_INVOKE("app_status")),
 	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError>(__TAURI_INVOKE("app_ui_state_update", { request })),
 	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError>(__TAURI_INVOKE("purge_notices_list")),
@@ -1481,6 +1483,14 @@ export type FileInspection = {
 
 export type FileKind = "character_card" | "persona_file" | "lorebook" | "prompt_preset" | "chat_jsonl" | "backup_v1" | "backup_v2" | "legacy_database" | "image" | "audio" | "gguf_model" | "other";
 
+/**  What a file picker offers, which sets its extension and type filters. */
+export type FilePickKind = "any" | "image" | "audio" | "json" | "character_card" | "chat_log" | "backup" | "gguf_model" | "diffusion_model" | "certificate" | "document";
+
+/**  The chosen destination; none when the user cancelled. */
+export type FileSavePicked = {
+	target: FileTarget | null,
+};
+
 /**
  *  A file the user picked: a filesystem path, or a platform URI the host
  *  resolves (such as an Android `content://` URI).
@@ -1496,6 +1506,21 @@ export type FileTarget = {
 
 export type FilesInspectRequest = {
 	source: FileSource,
+};
+
+export type FilesPickOpenRequest = {
+	kinds: FilePickKind[],
+	multiple: boolean,
+};
+
+export type FilesPickSaveRequest = {
+	suggested_name: string,
+	kind: FilePickKind,
+};
+
+/**  The picked files; empty when the user cancelled. */
+export type FilesPicked = {
+	sources: FileSource[],
 };
 
 export type FlagChange = { type: "set"; value: boolean } | { type: "reset" };
