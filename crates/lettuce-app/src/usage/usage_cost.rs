@@ -86,36 +86,51 @@ where
         }
         let Some(JobInferenceUsageResult::Response {
             usage: Some(_),
-            provider_response_id: Some(response_id),
+            provider_response_id,
             ..
         }) = &event.result
         else {
             return Ok(None);
         };
-        let Some(account) =
-            ProviderAccountRepository::get(self.repository, event.provider_account_id)?
-        else {
-            return Ok(None);
-        };
-        if !account.enabled
-            || !account.provider_kind.eq_ignore_ascii_case("openrouter")
-            || account.protocol != ProviderProtocol::OpenAiCompatible
-            || account.revision != event.provider_account_revision
-        {
+        let recorded_kind = event
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.provider_kind.as_deref());
+        if recorded_kind.is_some_and(|kind| !kind.eq_ignore_ascii_case("openrouter")) {
             return Ok(None);
         }
-        let Some(generation) = self.provider.generation(&account, response_id).await? else {
+        let account = ProviderAccountRepository::get(self.repository, event.provider_account_id)?
+            .ok_or(lettuce_models::ModelRepositoryError::NotFound)?;
+        if !account.provider_kind.eq_ignore_ascii_case("openrouter") {
+            if recorded_kind.is_some() {
+                return Err(UsageLedgerError::Conflict.into());
+            }
             return Ok(None);
-        };
+        }
+        if account.revision != event.provider_account_revision {
+            return Err(UsageLedgerError::Conflict.into());
+        }
+        if !account.enabled {
+            return Err(ProviderRequestError::Unavailable.into());
+        }
+        if account.protocol != ProviderProtocol::OpenAiCompatible {
+            return Err(UsageLedgerError::Invalid.into());
+        }
+        let response_id = provider_response_id
+            .as_ref()
+            .ok_or(UsageLedgerError::Invalid)?;
+        let generation = self
+            .provider
+            .generation(&account, response_id)
+            .await?
+            .ok_or(ProviderRequestError::Unavailable)?;
         if generation.generation_id != *response_id {
             return Err(UsageLedgerError::Invalid.into());
         }
         let endpoints = self.provider.endpoints(&account, &generation.model).await?;
-        let Some(basis) =
+        let basis =
             UsageCostBasis::from_openrouter_job(&event, generation, &endpoints, captured_at)?
-        else {
-            return Ok(None);
-        };
+                .ok_or(ProviderRequestError::Malformed)?;
         match self.repository.record_job_cost(event_id, basis) {
             Ok(cost) => Ok(Some(cost)),
             Err(UsageLedgerError::Conflict) => self
@@ -284,6 +299,75 @@ mod tests {
         (event, billing)
     }
 
+    async fn required_billing_reference_is_typed(missing: &str) {
+        let db = Database::open_in_memory().expect("database");
+        let (event, mut billing) = fixture(&db);
+        match missing {
+            "generation" => *billing.generation.lock().expect("generation") = Ok(None),
+            "pricing" => billing.endpoints.clear(),
+            "account" => {
+                ProviderAccountRepository::delete(&db, event.provider_account_id)
+                    .expect("delete account");
+            }
+            "revision" => {
+                let mut account = ProviderAccountRepository::get(&db, event.provider_account_id)
+                    .expect("account")
+                    .expect("existing account");
+                let revision = account.revision;
+                account.label = "renamed".into();
+                ProviderAccountRepository::upsert(&db, account, Some(revision))
+                    .expect("new revision");
+            }
+            _ => unreachable!(),
+        }
+        let error = UsageCostCoordinator::new(&db, &billing)
+            .capture_job(event.job_id, event.id, TimestampMillis::new(2))
+            .await
+            .expect_err("required reference is typed");
+        match missing {
+            "generation" => assert!(matches!(
+                error,
+                UsageCostCaptureError::Provider(ProviderRequestError::Unavailable)
+            )),
+            "pricing" => assert!(matches!(
+                error,
+                UsageCostCaptureError::Provider(ProviderRequestError::Malformed)
+            )),
+            "account" => assert!(matches!(
+                error,
+                UsageCostCaptureError::Account(lettuce_models::ModelRepositoryError::NotFound)
+            )),
+            "revision" => assert!(matches!(
+                error,
+                UsageCostCaptureError::Ledger(UsageLedgerError::Conflict)
+            )),
+            _ => unreachable!(),
+        }
+        assert!(db.get_job_cost(event.id).expect("cost").is_none());
+        let saved = db.job_usage(event.job_id).expect("immutable evidence");
+        assert_eq!(saved, vec![event]);
+    }
+
+    #[tokio::test]
+    async fn required_billing_generation_never_becomes_an_empty_cost() {
+        required_billing_reference_is_typed("generation").await;
+    }
+
+    #[tokio::test]
+    async fn required_billing_pricing_never_becomes_an_empty_cost() {
+        required_billing_reference_is_typed("pricing").await;
+    }
+
+    #[tokio::test]
+    async fn required_billing_account_never_becomes_an_empty_cost() {
+        required_billing_reference_is_typed("account").await;
+    }
+
+    #[tokio::test]
+    async fn required_billing_revision_never_becomes_an_empty_cost() {
+        required_billing_reference_is_typed("revision").await;
+    }
+
     #[tokio::test]
     async fn routed_job_cost_retains_native_evidence_and_replays_after_reopen() {
         let path =
@@ -409,13 +493,12 @@ mod tests {
         let revision = account.revision;
         account.label = "Changed account".into();
         ProviderAccountRepository::upsert(&db, account, Some(revision)).expect("billing scenario");
-        assert!(
+        assert!(matches!(
             UsageCostCoordinator::new(&db, &billing)
                 .capture_job(event.job_id, event.id, TimestampMillis::new(2))
-                .await
-                .expect("billing scenario")
-                .is_none()
-        );
+                .await,
+            Err(UsageCostCaptureError::Ledger(UsageLedgerError::Conflict))
+        ));
         assert_eq!(billing.calls.load(Ordering::SeqCst), 0);
         assert!(
             db.get_job_cost(event.id)
@@ -425,18 +508,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_billing_inputs_fall_back_like_legacy_and_unfetched_generations_retry() {
+    async fn missing_generations_fail_typed_and_known_endpoint_fallbacks_remain_retryable() {
         let db = Database::open_in_memory().expect("billing scenario");
         let (event, billing) = fixture(&db);
         let original = billing.generation.lock().expect("generation lock").clone();
         *billing.generation.lock().expect("generation lock") = Ok(None);
-        assert!(
+        assert!(matches!(
             UsageCostCoordinator::new(&db, &billing)
                 .capture_job(event.job_id, event.id, TimestampMillis::new(2))
-                .await
-                .expect("billing scenario")
-                .is_none()
-        );
+                .await,
+            Err(UsageCostCaptureError::Provider(
+                ProviderRequestError::Unavailable
+            ))
+        ));
         *billing.generation.lock().expect("generation lock") =
             Err(ProviderRequestError::CredentialRejected);
         assert!(matches!(
