@@ -22,6 +22,79 @@ async fn developer(context: &super::ApiContext, enabled: bool) {
     .expect("developer mode");
 }
 
+async fn mirrored(events: &super::tests::RecordingEvents, expected: usize) -> usize {
+    let count = || {
+        events
+            .events()
+            .iter()
+            .filter(|event| matches!(event, ApiEvent::DeveloperLogLine { .. }))
+            .count()
+    };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while count() < expected && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    count()
+}
+
+#[tokio::test]
+async fn developer_log_mirror_follows_saved_developer_mode_after_a_restart() {
+    let backend = std::sync::Arc::new(
+        crate::AppBackend::open_in_memory(lettuce_types::TimestampMillis::new(10))
+            .expect("backend"),
+    );
+    let before = super::tests::harness_over_files(
+        backend.clone(),
+        Reply::Text("Hello."),
+        std::sync::Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        std::sync::Arc::new(super::NoModels),
+        std::sync::Arc::new(super::tests::NoImages),
+        None,
+    );
+    developer(&before.context, true).await;
+    drop(before);
+    let h = super::tests::harness_over_files(
+        backend,
+        Reply::Text("Hello."),
+        std::sync::Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        std::sync::Arc::new(super::NoModels),
+        std::sync::Arc::new(super::tests::NoImages),
+        None,
+    );
+    let path = std::env::temp_dir().join(format!(
+        "api-logs-restart-{}",
+        lettuce_types::OperationId::new()
+    ));
+    std::fs::create_dir(&path).expect("directory");
+    let output =
+        lettuce_observability::local_output(lettuce_observability::LocalOutputConfig::new(&path))
+            .expect("output");
+    h.context.attach_logs(path.clone(), output.sink.clone());
+    let workers = super::startup(&h.context).await.expect("startup");
+    output
+        .sink
+        .append(&lettuce_observability::LogEntry {
+            timestamp: "2026-10-09T12:00:00Z".into(),
+            level: "INFO".into(),
+            component: "backend".into(),
+            function: None,
+            message: "after restart".into(),
+        })
+        .expect("append");
+    let count = mirrored(&h.events, 1).await;
+    workers.stop().await;
+    assert_eq!(
+        count, 1,
+        "developer mode saved before the restart mirrors logs"
+    );
+    drop(output);
+    std::fs::remove_dir_all(path).expect("cleanup");
+}
+
 #[tokio::test]
 async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() {
     let h = harness(Reply::Text("Hello."));
@@ -51,26 +124,27 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
     super::log_append(&h.context, request.clone())
         .await
         .expect("append");
-    assert_eq!(
-        h.events
-            .events()
-            .iter()
-            .filter(|event| matches!(event, ApiEvent::DeveloperLogLine { .. }))
-            .count(),
-        1
-    );
+    assert_eq!(mirrored(&h.events, 1).await, 1);
     developer(&h.context, false).await;
-    super::log_append(&h.context, request)
+    super::log_append(&h.context, request.clone())
         .await
         .expect("append without mirror");
-    assert_eq!(
-        h.events
-            .events()
-            .iter()
-            .filter(|event| matches!(event, ApiEvent::DeveloperLogLine { .. }))
-            .count(),
-        1
-    );
+    developer(&h.context, true).await;
+    super::log_append(
+        &h.context,
+        dto::LogAppendRequest {
+            message: "after re-enabling".into(),
+            ..request
+        },
+    )
+    .await
+    .expect("append with mirror");
+    assert_eq!(mirrored(&h.events, 2).await, 2);
+    assert!(h.events.events().iter().any(|event| matches!(
+        event,
+        ApiEvent::DeveloperLogLine { line } if line.contains("after re-enabling")
+    )));
+    developer(&h.context, false).await;
     let list = super::logs_list(&h.context).await.expect("list");
     assert_eq!(list.files.len(), 1);
     let name = list.files[0].clone();
@@ -84,7 +158,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
     )
     .await
     .expect("page");
-    assert_eq!(page.total, 3);
+    assert_eq!(page.total, 4);
     assert_eq!(page.lines.len(), 1);
     let found = super::log_search(
         &h.context,
@@ -146,7 +220,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
             .expect("original")
             .lines()
             .count(),
-        3
+        4
     );
     let export = path.join("export.txt");
     super::log_export(
@@ -165,7 +239,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
             .expect("export")
             .lines()
             .count(),
-        3
+        4
     );
     super::log_delete(&h.context, dto::LogNameRequest { name })
         .await

@@ -102,10 +102,15 @@ impl LogSink {
         self.writer.clone().write_all(entry.line().as_bytes())
     }
 
-    /// Hands each written line to `observer` on its own thread through a
-    /// bounded queue; lines are dropped while the queue is full, so a slow
-    /// observer never blocks a log write.
-    pub fn set_observer(&self, observer: impl Fn(&str) + Send + Sync + 'static) {
+    /// Hands each written line that `accept` takes at write time to
+    /// `observer` on its own thread through a bounded queue; lines are
+    /// dropped while the queue is full, so a slow observer never blocks a
+    /// log write.
+    pub fn set_observer(
+        &self,
+        accept: impl Fn() -> bool + Send + Sync + 'static,
+        observer: impl Fn(&str) + Send + 'static,
+    ) {
         let (lines, queued) = std::sync::mpsc::sync_channel::<String>(MIRROR_CAPACITY);
         let spawned = std::thread::Builder::new()
             .name("lettuce-log-mirror".into())
@@ -116,7 +121,9 @@ impl LogSink {
             });
         let forward: Option<Observer> = match spawned {
             Ok(_) => Some(std::sync::Arc::new(move |line: &str| {
-                let _ = lines.try_send(line.to_owned());
+                if accept() {
+                    let _ = lines.try_send(line.to_owned());
+                }
             })),
             Err(error) => {
                 eprintln!("log mirror could not start: {error}");
@@ -188,9 +195,12 @@ mod slice12_tests {
         std::fs::create_dir(&directory).expect("directory");
         let output = local_output(LocalOutputConfig::new(&directory)).expect("output");
         let (seen, mirrored) = std::sync::mpsc::channel();
-        output.sink.set_observer(move |line| {
-            let _ = seen.send(line.to_owned());
-        });
+        output.sink.set_observer(
+            || true,
+            move |line| {
+                let _ = seen.send(line.to_owned());
+            },
+        );
         let entry = LogEntry {
             timestamp: "2026-10-09T12:00:00Z".into(),
             level: "INFO".into(),
@@ -222,9 +232,12 @@ mod slice12_tests {
         let output = local_output(LocalOutputConfig::new(&directory)).expect("output");
         let (release, stalled) = std::sync::mpsc::channel::<()>();
         let stalled = Mutex::new(stalled);
-        output.sink.set_observer(move |_| {
-            let _ = stalled.lock().expect("stall").recv();
-        });
+        output.sink.set_observer(
+            || true,
+            move |_| {
+                let _ = stalled.lock().expect("stall").recv();
+            },
+        );
         let sink = output.sink.clone();
         let (done, finished) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -263,9 +276,10 @@ mod slice12_tests {
         let output = local_output(LocalOutputConfig::new(&directory)).expect("output");
         let seen = Arc::new(Mutex::new(Vec::new()));
         let capture = seen.clone();
-        output
-            .sink
-            .set_observer(move |line| capture.lock().expect("capture").push(line.to_owned()));
+        output.sink.set_observer(
+            || true,
+            move |line| capture.lock().expect("capture").push(line.to_owned()),
+        );
         std::fs::remove_dir(&directory).expect("remove");
         assert!(
             output

@@ -655,16 +655,21 @@ impl ApiContext {
     }
 
     pub fn attach_logs(&self, directory: PathBuf, sink: lettuce_observability::LogSink) {
+        let gate = self.downgrade();
         let weak = self.downgrade();
-        sink.set_observer(move |line| {
-            if let Some(context) = weak.upgrade()
-                && context.content_filter().logging_enabled() == Ok(true)
-            {
-                context.emit(lettuce_contracts::ApiEvent::DeveloperLogLine {
-                    line: line.to_owned(),
-                });
-            }
-        });
+        sink.set_observer(
+            move || {
+                gate.upgrade()
+                    .is_some_and(|context| context.content_filter().logging_enabled() == Ok(true))
+            },
+            move |line| {
+                if let Some(context) = weak.upgrade() {
+                    context.emit(lettuce_contracts::ApiEvent::DeveloperLogLine {
+                        line: line.to_owned(),
+                    });
+                }
+            },
+        );
         *self.inner.logs.lock().expect("log host") = Some(super::logs::LogHost {
             directory: lettuce_observability::LogDirectory::new(directory),
             sink,

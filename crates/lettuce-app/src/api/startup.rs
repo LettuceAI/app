@@ -158,6 +158,9 @@ impl ApiWorkers {
 /// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
     super::provider_mutations::cleanup_secrets(context, true).await?;
+    context
+        .blocking(|context| super::content_filter::refresh_logging(context).map(|_| ()))
+        .await?;
     let steps: Steps = Arc::new(Mutex::new(Vec::new()));
     let feed = JobFeed::start(context).await?;
     let conversation_feed = ConversationFeed::start(context).await?;
