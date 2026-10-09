@@ -1,6 +1,31 @@
 use crate::Database;
 
 #[test]
+fn a_fenced_database_name_cannot_be_recreated_after_a_reset_move() {
+    let root =
+        std::env::temp_dir().join(format!("lettuce-reset-recreate-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("root");
+    let path = root.join("active.sqlite3");
+    let kept = root.join("kept.sqlite3");
+    let database = Database::open(&path).expect("database");
+    let fence = Database::lock_file_writes(&path).expect("fence");
+    fence.set_fenced(true).expect("freeze");
+    drop(fence);
+    database.close_for_reset().expect("close");
+    std::fs::rename(&path, &kept).expect("move");
+    assert!(matches!(
+        Database::open(&path),
+        Err(crate::DatabaseError::WriteFenced)
+    ));
+    assert!(
+        !path.exists(),
+        "a rejected stale open must not create a database file"
+    );
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
 fn an_open_database_cannot_be_reserved_for_deletion_until_every_handle_closes() {
     let path =
         std::env::temp_dir().join(format!("lettuce-file-use-{}.sqlite3", uuid::Uuid::new_v4()));

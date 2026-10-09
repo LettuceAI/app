@@ -132,3 +132,5 @@ The storage optimization wrapper returns the application maintenance job without
 The usage recalculation command admits a durable missing-cost job. The shell returns its job identity and forwards typed completion and failures through the existing jobs API.
 
 `storage_summary` exposes database, media, model-folder and log byte totals through the generated contracts. Storage inspection and its native filesystem watcher live in the application API; the shell supplies no native paths in the result.
+
+The reset host stops application workers, clears the main webview localStorage and sessionStorage with an acknowledged script, and starts the desktop executable before exiting. The database lifecycle lock holds the child at startup until the parent stores the terminal reset result. Worker shutdown joins other worker threads while allowing the current reset job to finish. Android and iOS reset fail typed during preflight because a verified process restart adapter is not available.

@@ -69,3 +69,5 @@ The composition root can request a database-directory capability from `Filesyste
 The database-directory capability can check whether an opened export target has the same identity as a regular database or private control file. It checks entries through confined descriptors without exposing their names or granting general private-directory listing or removal.
 
 Database sidecar validation and explicit deletion cover WAL, shared memory, the write gate and the read-only marker. Every sidecar passes the same regular-file and no-symlink preflight before any sidecar is removed.
+
+Database moves are confined to checked database names and SQLite sidecars. Publication refuses replacement, verifies the expected file identity, synchronizes the directory and supports an exact replay after interruption. The application lifecycle journal decides which direction a pending move must finish.

@@ -84,3 +84,5 @@ Each job has a gapless event sequence starting at 1, every envelope carrying the
 ## Durable storage
 
 `InMemoryJobStore` is both the test store (deterministic with `FakeClock`) and the rule engine for the durable one. `StoredJobRecord` is the persistence-neutral aggregate (spec, snapshot, events). The SQLite adapter in `lettuce-database` loads the records an operation touches, rebuilds a store with `restore_working_set`, applies the operation there, and writes back what changed, so there is one implementation of the lifecycle rules. `restore_working_set` accepts a trailing window of each job's events and links to jobs outside the set; `restore` requires full histories and a closed graph and is used for backup restore. Both check that snapshot and spec agree and that the event sequence is contiguous.
+
+A composition root can admit a command with an explicit job identity when moving that current command into a fresh database. Both the identity and idempotency key must match an exact replay; conflicting submissions fail without changing the existing job.

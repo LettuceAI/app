@@ -65,3 +65,5 @@ Bytes leave the store in three ways, all under the same lifecycle lock as ingest
 `sniff_media_kind` exposes the sniffer for callers that need to classify bytes without ingesting them, such as the legacy backup importer in `lettuce-transfer`.
 
 Library references identify the owning domain and an opaque owner identity. UUID owners keep their identity; composite or non-UUID record keys use a digest, so bookkeeping keys and native paths cannot become navigation paths. Reference reads, guarded removal, active GC and kept-set capture use one database reference rule.
+
+The local store exposes its repository owners to the composition root so a database cutover can close every native database handle. Reset retains media through the same kept-file sets used by garbage collection.

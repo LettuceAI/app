@@ -411,12 +411,43 @@ impl InMemoryJobStore {
     }
 
     pub fn create_or_get(&self, spec: NewJob) -> Result<CreateJobResult, StoreError> {
+        self.create_with_identity(spec, None)
+    }
+
+    pub fn create_or_get_with_id(
+        &self,
+        spec: NewJob,
+        id: JobId,
+    ) -> Result<CreateJobResult, StoreError> {
+        self.create_with_identity(spec, Some(id))
+    }
+
+    fn create_with_identity(
+        &self,
+        spec: NewJob,
+        identity: Option<JobId>,
+    ) -> Result<CreateJobResult, StoreError> {
         spec.validate()?;
         let mut inner = self.lock();
+        if let Some(id) = identity
+            && let Some(existing) = inner.jobs.get(&id)
+        {
+            if existing.spec.idempotency_key != spec.idempotency_key
+                || !same_submission(&existing.spec, &spec)
+            {
+                return Err(StoreError::IdempotencyConflict);
+            }
+            return Ok(CreateJobResult {
+                job: existing.snapshot.clone(),
+                created: false,
+            });
+        }
         if let Some(key) = &spec.idempotency_key {
             if let Some(existing_id) = inner.idempotency.get(key).copied() {
                 let existing = inner.jobs.get(&existing_id).ok_or(StoreError::NotFound)?;
-                if !same_submission(&existing.spec, &spec) {
+                if identity.is_some_and(|id| id != existing_id)
+                    || !same_submission(&existing.spec, &spec)
+                {
                     return Err(StoreError::IdempotencyConflict);
                 }
                 return Ok(CreateJobResult {
@@ -437,7 +468,7 @@ impl InMemoryJobStore {
             }
         }
         let now = inner.clock.now();
-        let id = JobId::new();
+        let id = identity.unwrap_or_default();
         let snapshot = JobSnapshot {
             id,
             kind: spec.kind,
@@ -1485,6 +1516,38 @@ mod tests {
 
     fn test_store() -> InMemoryJobStore {
         InMemoryJobStore::with_clock(Arc::new(FakeClock::new(Timestamp::new(0))))
+    }
+
+    #[test]
+    fn explicit_job_identity_replays_only_the_same_submission() {
+        let store = test_store();
+        let id = JobId::new();
+        let created = store
+            .create_or_get_with_id(spec("reset"), id)
+            .expect("create");
+        assert!(created.created);
+        assert_eq!(created.job.id, id);
+        let replay = store
+            .create_or_get_with_id(spec("reset"), id)
+            .expect("replay");
+        assert!(!replay.created);
+        assert_eq!(replay.job, created.job);
+        assert_eq!(
+            store.create_or_get_with_id(spec("other"), id),
+            Err(StoreError::IdempotencyConflict)
+        );
+        assert_eq!(
+            store.create_or_get_with_id(spec("reset"), JobId::new()),
+            Err(StoreError::IdempotencyConflict)
+        );
+        assert_eq!(
+            store
+                .create_or_get(spec("reset"))
+                .expect("ordinary replay")
+                .job
+                .id,
+            id
+        );
     }
 
     fn running_job(store: &InMemoryJobStore) -> Claim {

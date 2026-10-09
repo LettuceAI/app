@@ -4,6 +4,15 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn app_data_reset(
+    context: State<'_, ApiContext>,
+    request: dto::AppDataResetRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    api::app_data_reset(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn storage_optimize(
     context: State<'_, ApiContext>,
     request: dto::StorageOptimizeRequest,

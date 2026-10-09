@@ -10,6 +10,28 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 const LIFECYCLE_KEY: &str = "database-file-lifecycle.lock";
+const RESET_MOVE_KEY: &str = "database-reset-move.json";
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum ResetCutoverStage {
+    Prepared,
+    Closed,
+    Intent,
+    MainMoved,
+    SidecarsMoved,
+    Switched,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResetMoveIntent {
+    version: u32,
+    source: String,
+    target: String,
+    kept: String,
+    metadata: FileMetadata,
+    parts: Vec<String>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -212,10 +234,25 @@ impl DatabaseFileLifecycle {
         self.recover_with_creation(std::fs::Metadata::created)
     }
 
+    pub(crate) fn recover_reset_preparation(&self) -> Result<(), AppDatabaseLocationError> {
+        self.recover()
+    }
+
+    pub(crate) fn reset_committed(&self, kept: &str) -> Result<bool, AppDatabaseLocationError> {
+        Ok(self.read(kept)?.is_some_and(|metadata| {
+            metadata.kept_at.is_some()
+                && matches!(
+                    metadata.state,
+                    FileState::Kept | FileState::Deleting { .. } | FileState::Deleted
+                )
+        }))
+    }
+
     fn recover_with_creation(
         &self,
         created: impl Fn(&std::fs::Metadata) -> std::io::Result<SystemTime>,
     ) -> Result<(), AppDatabaseLocationError> {
+        self.recover_reset_move()?;
         let active = self.active_name()?;
         for name in self.names()? {
             let fence = Database::lock_file_writes(&self.location.database_path(&name)?)
@@ -289,6 +326,219 @@ impl DatabaseFileLifecycle {
             }
         }
         Ok(())
+    }
+
+    fn write_reset_move(
+        &self,
+        intent: Option<&ResetMoveIntent>,
+    ) -> Result<(), AppDatabaseLocationError> {
+        let bytes = serde_json::to_vec(&intent).map_err(|_| AppDatabaseLocationError::Corrupt)?;
+        let receipt = self.location.files.write_atomic(
+            &self.location.write,
+            ObjectKey::single(RESET_MOVE_KEY)?,
+            &bytes,
+        )?;
+        if receipt.parent_sync == ParentSyncStatus::Failed {
+            return Err(AppDatabaseLocationError::Storage);
+        }
+        Ok(())
+    }
+
+    fn fence_reset_name(&self, name: &str) -> Result<(), AppDatabaseLocationError> {
+        self.location.database_path(name)?;
+        let key = ObjectKey::from_segments([DATABASE_DIRECTORY, &format!("{name}.write-fenced")])?;
+        match self.location.files.metadata(&self.location.read, &key) {
+            Ok(metadata)
+                if metadata.kind == lettuce_platform::ObjectKind::File && metadata.len == 0 =>
+            {
+                return Ok(());
+            }
+            Ok(_) => return Err(AppDatabaseLocationError::Corrupt),
+            Err(PlatformError::NotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
+        let mut staged = self.location.files.stage_new(&self.location.write, key)?;
+        use std::io::Write;
+        staged.flush().map_err(PlatformError::from)?;
+        if staged.commit()?.parent_sync == ParentSyncStatus::Failed {
+            return Err(AppDatabaseLocationError::Storage);
+        }
+        Ok(())
+    }
+
+    fn move_reset_part(
+        &self,
+        from: &str,
+        to: &str,
+        suffix: &str,
+    ) -> Result<(), AppDatabaseLocationError> {
+        let expected = match self
+            .location
+            .directory
+            .open_database_component(from, suffix)
+        {
+            Ok(file) => file,
+            Err(PlatformError::NotFound) => self
+                .location
+                .directory
+                .open_database_component(to, suffix)?,
+            Err(error) => return Err(error.into()),
+        };
+        if self
+            .location
+            .directory
+            .move_database_component(from, to, suffix, &expected)?
+            == ParentSyncStatus::Failed
+        {
+            return Err(AppDatabaseLocationError::Storage);
+        }
+        Ok(())
+    }
+
+    fn recover_reset_move(&self) -> Result<(), AppDatabaseLocationError> {
+        let bytes = match self
+            .location
+            .files
+            .read(&self.location.read, &ObjectKey::single(RESET_MOVE_KEY)?)
+        {
+            Ok(bytes) => bytes,
+            Err(PlatformError::NotFound) => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        let Some(intent): Option<ResetMoveIntent> =
+            serde_json::from_slice(&bytes).map_err(|_| AppDatabaseLocationError::Corrupt)?
+        else {
+            return Ok(());
+        };
+        for name in [&intent.source, &intent.target, &intent.kept] {
+            self.location.database_path(name)?;
+        }
+        if intent.version != 1
+            || intent.source == intent.target
+            || intent.source == intent.kept
+            || intent.target == intent.kept
+            || intent.parts.first().map(String::as_str) != Some("")
+            || intent
+                .parts
+                .iter()
+                .any(|part| !matches!(part.as_str(), "" | "-wal" | "-shm"))
+            || intent.parts.iter().collect::<BTreeSet<_>>().len() != intent.parts.len()
+        {
+            return Err(AppDatabaseLocationError::Corrupt);
+        }
+        let active = self.active_name()?;
+        if active != intent.source && active != intent.target {
+            return Err(AppDatabaseLocationError::Corrupt);
+        }
+        let committed = active == intent.target;
+        if committed {
+            self.fence_reset_name(&intent.kept)?;
+        }
+        let (from, to) = if committed {
+            (&intent.source, &intent.kept)
+        } else {
+            (&intent.kept, &intent.source)
+        };
+        for part in &intent.parts {
+            self.move_reset_part(from, to, part)?;
+        }
+        let mut original = intent.metadata.clone();
+        let mut kept = intent.metadata;
+        if committed {
+            original.state = FileState::Deleted;
+            kept.state = FileState::Kept;
+            self.write(&intent.kept, &kept)?;
+        } else {
+            original.state = FileState::Active;
+            original.kept_at = None;
+            original.kept_hashes.clear();
+            kept.state = FileState::Deleted;
+            kept.kept_at = None;
+            kept.kept_hashes.clear();
+            self.write(&intent.kept, &kept)?;
+        }
+        self.write(&intent.source, &original)?;
+        self.write_reset_move(None)
+    }
+
+    pub(crate) fn reset_cutover(
+        &self,
+        target: &str,
+        kept: &str,
+        at: TimestampMillis,
+        close: impl FnOnce() -> Result<(), AppDatabaseLocationError>,
+    ) -> Result<(), AppDatabaseLocationError> {
+        self.reset_cutover_with_checkpoint(target, kept, at, close, |_| {})
+    }
+
+    pub(super) fn reset_cutover_with_checkpoint(
+        &self,
+        target: &str,
+        kept: &str,
+        at: TimestampMillis,
+        close: impl FnOnce() -> Result<(), AppDatabaseLocationError>,
+        checkpoint: impl Fn(ResetCutoverStage),
+    ) -> Result<(), AppDatabaseLocationError> {
+        let result = (|| {
+            let source = self.active_name()?;
+            if source == kept
+                || target == kept
+                || self.read(kept)?.is_some()
+                || self
+                    .location
+                    .database_path(kept)?
+                    .try_exists()
+                    .map_err(PlatformError::from)?
+            {
+                return Err(AppDatabaseLocationError::Exists);
+            }
+            self.prepare_cutover(target, at)?;
+            checkpoint(ResetCutoverStage::Prepared);
+            close()?;
+            checkpoint(ResetCutoverStage::Closed);
+            let permit =
+                Database::try_reserve_file_deletion(&self.location.database_path(&source)?)
+                    .map_err(|_| AppDatabaseLocationError::Storage)?
+                    .ok_or(AppDatabaseLocationError::InUse)?;
+            let mut parts = vec![String::new()];
+            for suffix in ["-wal", "-shm"] {
+                match self
+                    .location
+                    .directory
+                    .open_database_component(&source, suffix)
+                {
+                    Ok(_) => parts.push(suffix.into()),
+                    Err(PlatformError::NotFound) => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            let intent = ResetMoveIntent {
+                version: 1,
+                source: source.clone(),
+                target: target.into(),
+                kept: kept.into(),
+                metadata: self
+                    .read(&source)?
+                    .ok_or(AppDatabaseLocationError::Corrupt)?,
+                parts,
+            };
+            self.write_reset_move(Some(&intent))?;
+            self.write(kept, &intent.metadata)?;
+            self.fence_reset_name(kept)?;
+            checkpoint(ResetCutoverStage::Intent);
+            self.move_reset_part(&source, kept, "")?;
+            checkpoint(ResetCutoverStage::MainMoved);
+            for part in intent.parts.iter().skip(1) {
+                self.move_reset_part(&source, kept, part)?;
+            }
+            checkpoint(ResetCutoverStage::SidecarsMoved);
+            self.location.activate(target)?;
+            drop(permit);
+            checkpoint(ResetCutoverStage::Switched);
+            Ok(())
+        })();
+        self.recover()?;
+        result
     }
 
     pub(crate) fn begin_file(
@@ -644,7 +894,6 @@ impl DatabaseFileLifecycle {
         checkpoint(FileDeleteStage::SidecarsRemoved);
         metadata.state = FileState::Deleted;
         metadata.kept_hashes.clear();
-        metadata.kept_at = None;
         self.write(name, &metadata)?;
         checkpoint(FileDeleteStage::MetadataRemoved);
         self.write_delete_receipt(

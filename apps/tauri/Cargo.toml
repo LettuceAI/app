@@ -34,6 +34,7 @@ cuda = ["lettuce-app/llama-cuda", "lettuce-app/asr-cuda"]
 metal = ["lettuce-app/llama-metal", "lettuce-app/asr-metal"]
 
 [dependencies]
+async-trait.workspace = true
 lettuce-app.workspace = true
 lettuce-contracts = { workspace = true, features = ["specta"] }
 lettuce-observability.workspace = true
@@ -41,6 +42,8 @@ lettuce-settings.workspace = true
 same-file = "1.0.6"
 fs4 = "0.13.1"
 serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true
 tauri.workspace = true

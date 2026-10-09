@@ -473,6 +473,10 @@ impl<BR, AR> std::fmt::Debug for LocalMediaBlobStore<BR, AR> {
 }
 
 impl<BR, AR> LocalMediaBlobStore<BR, AR> {
+    pub fn repositories(&self) -> (&BR, &AR) {
+        (&self.blobs, &self.assets)
+    }
+
     #[must_use]
     pub fn new(
         files: ManagedFiles,

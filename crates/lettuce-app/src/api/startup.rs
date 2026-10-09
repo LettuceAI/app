@@ -66,6 +66,35 @@ impl std::fmt::Debug for ApiWorkers {
 }
 
 impl ApiWorkers {
+    pub async fn stop_for_reset(mut self) -> Result<(), ApiError> {
+        let current = std::thread::current().id();
+        self.stop.send_replace(true);
+        self.context.begin_shutdown();
+        self.context.backend().shutdown().await;
+        self.context.flush_app_usage_for_reset()?;
+        let startup = self.startup.take();
+        let threads = Arc::clone(&self.threads);
+        tokio::task::spawn_blocking(move || {
+            let failed = || {
+                super::app_reset::reset_error(lettuce_contracts::AppDataResetStage::Workers, None)
+            };
+            if let Some(startup) = startup {
+                startup.join().map_err(|_| failed())?;
+            }
+            let threads = std::mem::take(&mut *threads.lock().map_err(|_| failed())?);
+            for thread in threads {
+                if thread.thread().id() != current {
+                    thread.join().map_err(|_| failed())?;
+                }
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| {
+            super::app_reset::reset_error(lettuce_contracts::AppDataResetStage::Workers, None)
+        })?
+    }
+
     /// The steps run so far, in order.
     #[must_use]
     pub fn steps(&self) -> Vec<StartupStep> {

@@ -313,7 +313,11 @@ mod usage_billing;
 pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
 pub use usage_billing::usage_recalculate_costs;
 
+mod app_reset;
 mod storage;
+pub use app_reset::{AppResetHost, app_data_reset};
+#[cfg(test)]
+mod app_reset_tests;
 mod storage_model_index;
 pub use storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
 

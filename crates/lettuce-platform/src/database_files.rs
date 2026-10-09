@@ -26,6 +26,82 @@ fn checked_name(name: &str) -> Result<(), PlatformError> {
 }
 
 impl DatabaseFiles {
+    pub fn open_database_component(&self, name: &str, suffix: &str) -> Result<File, PlatformError> {
+        checked_name(name)?;
+        if !matches!(suffix, "" | "-wal" | "-shm") {
+            return Err(PlatformError::InvalidKey);
+        }
+        let mut options = OpenOptions::new();
+        options.read(true);
+        options._cap_fs_ext_follow(FollowSymlinks::No);
+        let file = self
+            .directory
+            .open_with(format!("{name}{suffix}"), &options)
+            .map_err(crate::authority::map_symlink_error)?
+            .into_std();
+        if !file.metadata().map_err(PlatformError::from)?.is_file() {
+            return Err(PlatformError::Denied);
+        }
+        Ok(file)
+    }
+
+    pub fn move_database_component(
+        &self,
+        source: &str,
+        target: &str,
+        suffix: &str,
+        expected: &File,
+    ) -> Result<ParentSyncStatus, PlatformError> {
+        checked_name(source)?;
+        checked_name(target)?;
+        if source == target || !matches!(suffix, "" | "-wal" | "-shm") {
+            return Err(PlatformError::InvalidKey);
+        }
+        let identity =
+            same_file::Handle::from_file(expected.try_clone().map_err(PlatformError::from)?)
+                .map_err(PlatformError::from)?;
+        let source_file = match self.open_database_component(source, suffix) {
+            Ok(file) => {
+                if same_file::Handle::from_file(file.try_clone().map_err(PlatformError::from)?)
+                    .map_err(PlatformError::from)?
+                    != identity
+                {
+                    return Err(PlatformError::Conflict);
+                }
+                Some(file)
+            }
+            Err(PlatformError::NotFound) => None,
+            Err(error) => return Err(error),
+        };
+        let target_present = match self.open_database_component(target, suffix) {
+            Ok(file) => {
+                if same_file::Handle::from_file(file).map_err(PlatformError::from)? != identity {
+                    return Err(PlatformError::Conflict);
+                }
+                true
+            }
+            Err(PlatformError::NotFound) => false,
+            Err(error) => return Err(error),
+        };
+        if !target_present {
+            if source_file.is_none() {
+                return Err(PlatformError::NotFound);
+            }
+            crate::atomic::publish_new(
+                &self.directory,
+                &format!("{source}{suffix}"),
+                &self.directory,
+                std::path::Path::new(&format!("{target}{suffix}")),
+            )?;
+        }
+        match self.directory.remove_file(format!("{source}{suffix}")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        Ok(crate::managed::sync_directory(&self.directory))
+    }
+
     pub fn contains_file(&self, target: &File) -> Result<bool, PlatformError> {
         let target = same_file::Handle::from_file(target.try_clone().map_err(PlatformError::from)?)
             .map_err(PlatformError::from)?;

@@ -15,6 +15,10 @@ mod usage_clear;
 mod usage_report;
 mod usage_capture_targets;
 mod storage_maintenance;
+mod reset_database;
+pub use reset_database::{ResetDatabaseError, ResetDatabaseSeed};
+#[cfg(test)]
+mod reset_database_tests;
 pub use storage_maintenance::StorageMaintenanceError;
 mod conversation;
 mod memory;
@@ -304,12 +308,12 @@ impl std::fmt::Debug for Database {
 
 impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
-        let file_use = database_file::DatabaseFileUse::open(path.as_ref())?;
         let write_access = write_fence::FileWriteAccess::new(path.as_ref());
         let write_use = write_access.acquire()?;
         if write_access.fenced()? {
             return Err(DatabaseError::WriteFenced);
         }
+        let file_use = database_file::DatabaseFileUse::open(path.as_ref())?;
         let mut connection = Connection::open(path)?;
         refuse_newer_schema(&connection, MIGRATIONS)?;
         configure(&connection, true)?;

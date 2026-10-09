@@ -45,6 +45,24 @@ pub struct StorageOptimizeRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
+pub struct AppDataResetRequest {
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AppDataResetStage {
+    Preflight,
+    Workers,
+    Database,
+    WebviewStorage,
+    Restart,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
 pub struct StorageSize {
     pub kind: String,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]

@@ -167,6 +167,10 @@ pub enum JobFailureCode {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum JobFailureReason {
+    ResetWorkers,
+    ResetDatabase,
+    ResetWebviewStorage,
+    ResetRestart,
     UsageBillingUnavailable,
     UsageBillingMalformed,
     UsageAccountMissing,
@@ -227,6 +231,9 @@ pub enum JobResultDto {
         cleared: u64,
     },
     StorageOptimized,
+    AppDataReset {
+        kept_file: String,
+    },
     VoiceCreated {
         voice_id: String,
     },

@@ -20,3 +20,5 @@ Slice 12 adds a separate database-directory capability for explicit kept-file de
 Slice 12 media protection adds confined identity checks and uncapped internal inventories. The existing bounded listing API and private-persistent listing refusal remain intact; symlinks do not grant access to outside files.
 
 Slice 12 write-fence sidecars are removed with an explicitly deleted database. They retain the existing all-sidecars-first symlink preflight and confined deletion permission.
+
+Reset preserves and renames the source database instead of clearing its tables (`old-code/src-tauri/src/storage_manager/usage.rs:70-102`). Confined, identity-checked publication never overwrites another database; journal recovery reverses an interrupted move before pointer cutover and finishes it after cutover.

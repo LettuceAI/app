@@ -95,6 +95,7 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    AppDataReset { stage: crate::AppDataResetStage, kept_file: Option<String> },
     Logs { reason: crate::LogFailureReason },
     AppUsageStorage,
     MetricsUnavailable,

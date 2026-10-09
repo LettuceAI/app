@@ -1,6 +1,54 @@
 use crate::{DirectorySnapshot, FilesystemAuthority, PlatformError};
 
 #[test]
+fn database_reset_move_is_confined_idempotent_and_never_overwrites_a_file() {
+    let root = std::env::temp_dir().join(format!("lettuce-db-reset-move-{}", uuid::Uuid::new_v4()));
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let directory = authority.database_files().expect("directory");
+    let parent = root.join("private-persistent-v2/databases");
+    std::fs::write(parent.join("active.sqlite3"), b"user data").expect("source");
+    std::fs::write(parent.join("other.sqlite3"), b"other user data").expect("other");
+    let expected = directory
+        .open_database_component("active.sqlite3", "")
+        .expect("source handle");
+    assert_eq!(
+        directory.move_database_component("active.sqlite3", "other.sqlite3", "", &expected),
+        Err(PlatformError::Conflict)
+    );
+    assert_eq!(
+        std::fs::read(parent.join("other.sqlite3")).expect("other"),
+        b"other user data"
+    );
+    assert_eq!(
+        directory.move_database_component("active.sqlite3", "../kept.sqlite3", "", &expected),
+        Err(PlatformError::InvalidKey)
+    );
+    assert_eq!(
+        directory.move_database_component(
+            "active.sqlite3",
+            "kept.sqlite3",
+            ".meta.json",
+            &expected
+        ),
+        Err(PlatformError::InvalidKey)
+    );
+    directory
+        .move_database_component("active.sqlite3", "kept.sqlite3", "", &expected)
+        .expect("move");
+    assert!(!parent.join("active.sqlite3").exists());
+    assert_eq!(
+        std::fs::read(parent.join("kept.sqlite3")).expect("kept"),
+        b"user data"
+    );
+    directory
+        .move_database_component("active.sqlite3", "kept.sqlite3", "", &expected)
+        .expect("replay");
+    drop((directory, authority, expected));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
 fn database_deletion_requires_the_exact_open_file_and_refuses_other_names() {
     let root = std::env::temp_dir().join(format!("lettuce-db-directory-{}", uuid::Uuid::new_v4()));
     let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))

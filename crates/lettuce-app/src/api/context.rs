@@ -100,6 +100,7 @@ struct ApiContextInner {
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
     logs: Mutex<Option<super::logs::LogHost>>,
+    reset: super::app_reset::ResetState,
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     provider_writes: tokio::sync::Mutex<()>,
@@ -259,6 +260,7 @@ impl ApiContext {
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
                 logs: Mutex::new(None),
+                reset: super::app_reset::ResetState::default(),
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 provider_writes: tokio::sync::Mutex::new(()),
@@ -582,6 +584,18 @@ impl ApiContext {
 
     pub(crate) fn shutdown_token(&self) -> &CancellationToken {
         &self.inner.shutdown
+    }
+
+    pub(super) fn reset_state(&self) -> &super::app_reset::ResetState {
+        &self.inner.reset
+    }
+
+    pub(super) fn flush_app_usage_for_reset(&self) -> Result<(), ApiError> {
+        self.inner
+            .app_usage
+            .flush(self.backend().database(), self.now())
+            .map_err(super::app::app_usage_error)?;
+        Ok(())
     }
 
     pub(crate) fn asset_id_from_url(

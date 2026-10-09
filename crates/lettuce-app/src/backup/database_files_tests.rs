@@ -55,6 +55,220 @@ fn media(database: &Database, digit: char, retention: RetentionClass) -> Content
 }
 
 #[tokio::test]
+async fn reset_cutover_renames_the_closed_source_and_keeps_its_exact_media_set() {
+    let root = std::env::temp_dir().join(format!("lettuce-reset-cutover-{}", OperationId::new()));
+    let location = location(&root);
+    let old_path = location.active_path().expect("active");
+    let old = Database::open(&old_path).expect("old");
+    let kept_hash = media(&old, 'a', RetentionClass::Library);
+    let garbage_hash = media(&old, 'b', RetentionClass::Persistent);
+    let guard = location.file_lifecycle().await.expect("lifecycle");
+    let name = format!("reset-{}.sqlite3", OperationId::new());
+    let kept = format!("kept-{}.sqlite3", OperationId::new());
+    let target = guard
+        .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
+        .expect("target");
+    drop(Database::open(&target).expect("fresh"));
+    guard
+        .reset_cutover(&name, &kept, TimestampMillis::new(30), || {
+            old.close_for_reset()
+                .map_err(|_| AppDatabaseLocationError::Storage)
+        })
+        .expect("reset");
+    assert_eq!(location.active_path().expect("active"), target);
+    assert!(!old_path.exists());
+    let kept_path = location.database_path(&kept).expect("kept path");
+    assert!(kept_path.exists());
+    assert!(matches!(
+        Database::open(&kept_path),
+        Err(lettuce_database::DatabaseError::WriteFenced)
+    ));
+    assert!(matches!(
+        Database::open(&old_path),
+        Err(lettuce_database::DatabaseError::WriteFenced)
+    ));
+    assert!(!old_path.exists());
+    assert_eq!(
+        guard.kept_media_hashes().expect("hashes"),
+        std::collections::BTreeSet::from([kept_hash])
+    );
+    assert!(
+        !guard
+            .kept_media_hashes()
+            .expect("hashes")
+            .contains(&garbage_hash)
+    );
+    let inventory = guard.inventory(&target).expect("inventory");
+    assert!(
+        inventory
+            .iter()
+            .find(|file| file.file == kept)
+            .expect("kept file")
+            .deletable
+    );
+    guard
+        .delete_file(&kept, &target, lettuce_types::RequestId::new())
+        .expect("explicit kept deletion");
+    assert!(
+        guard
+            .kept_media_hashes()
+            .expect("released hashes")
+            .is_empty()
+    );
+    assert!(
+        guard
+            .reset_committed(&kept)
+            .expect("completed reset proof survives deletion")
+    );
+    drop((old, guard));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn reset_cutover_refuses_another_live_database_handle_before_moving_any_file() {
+    let root = std::env::temp_dir().join(format!("lettuce-reset-in-use-{}", OperationId::new()));
+    let location = location(&root);
+    let old_path = location.active_path().expect("active");
+    let old = Database::open(&old_path).expect("old");
+    let other_worker = Database::open(&old_path).expect("other worker");
+    let guard = location.file_lifecycle().await.expect("lifecycle");
+    let name = format!("reset-{}.sqlite3", OperationId::new());
+    let kept = format!("kept-{}.sqlite3", OperationId::new());
+    let target = guard
+        .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
+        .expect("target");
+    drop(Database::open(&target).expect("fresh"));
+    assert_eq!(
+        guard.reset_cutover(&name, &kept, TimestampMillis::new(30), || {
+            old.close_for_reset()
+                .map_err(|_| AppDatabaseLocationError::Storage)
+        }),
+        Err(AppDatabaseLocationError::InUse)
+    );
+    assert_eq!(location.active_path().expect("active"), old_path);
+    assert!(old_path.exists());
+    assert!(!location.database_path(&kept).expect("kept path").exists());
+    drop((old, other_worker, guard));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn reset_cutover_recovers_every_crash_boundary_without_losing_the_source() {
+    for phase in [
+        "created",
+        "prepared",
+        "closed",
+        "intent",
+        "main_moved",
+        "sidecars_moved",
+        "switched",
+    ] {
+        let root = std::env::temp_dir().join(format!("lettuce-reset-crash-{}", OperationId::new()));
+        let location = location(&root);
+        let old_path = location.active_path().expect("active");
+        let old = Database::open(&old_path).expect("source");
+        let hash = media(&old, 'c', RetentionClass::Library);
+        drop(old);
+        let name = format!("reset-{}.sqlite3", OperationId::new());
+        let kept = format!("kept-{}.sqlite3", OperationId::new());
+        let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "backup::backup_restore::database_files_tests::reset_cutover_crash_child",
+                "--nocapture",
+            ])
+            .env("LETTUCE_RESET_CRASH_ROOT", &root)
+            .env("LETTUCE_RESET_CRASH_NAME", &name)
+            .env("LETTUCE_RESET_CRASH_KEPT", &kept)
+            .env("LETTUCE_RESET_CRASH_PHASE", phase)
+            .status()
+            .expect("crash child");
+        assert_eq!(status.code(), Some(77), "{phase}");
+        let recovered = location.file_lifecycle().await.expect("recover");
+        let switched = phase == "switched";
+        assert_eq!(
+            location.active_path().expect("pointer"),
+            if switched {
+                location.database_path(&name).expect("target")
+            } else {
+                old_path.clone()
+            },
+            "{phase}"
+        );
+        let source = if switched {
+            location.database_path(&kept).expect("kept")
+        } else {
+            old_path.clone()
+        };
+        assert_eq!(
+            Database::media_objects_in_file(&source).expect("source media"),
+            std::collections::BTreeSet::from([hash.clone()]),
+            "{phase}"
+        );
+        assert_eq!(
+            recovered.kept_media_hashes().expect("kept hashes"),
+            if switched {
+                std::collections::BTreeSet::from([hash])
+            } else {
+                std::collections::BTreeSet::new()
+            },
+            "{phase}"
+        );
+        if !switched {
+            drop(Database::open(&old_path).expect("old source remains writable"));
+        }
+        drop(recovered);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+}
+
+#[tokio::test]
+async fn reset_cutover_crash_child() {
+    let Some(root) = std::env::var_os("LETTUCE_RESET_CRASH_ROOT") else {
+        return;
+    };
+    let location = location(&PathBuf::from(root));
+    let old = Database::open(location.active_path().expect("active")).expect("source");
+    let guard = location.file_lifecycle().await.expect("lifecycle");
+    let name = std::env::var("LETTUCE_RESET_CRASH_NAME").expect("name");
+    let kept = std::env::var("LETTUCE_RESET_CRASH_KEPT").expect("kept");
+    let phase = std::env::var("LETTUCE_RESET_CRASH_PHASE").expect("phase");
+    let target = guard
+        .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
+        .expect("target");
+    drop(Database::open(&target).expect("fresh"));
+    if phase == "created" {
+        std::process::exit(77);
+    }
+    guard
+        .reset_cutover_with_checkpoint(
+            &name,
+            &kept,
+            TimestampMillis::new(30),
+            || {
+                old.close_for_reset()
+                    .map_err(|_| AppDatabaseLocationError::Storage)
+            },
+            |stage| {
+                use super::database_files::ResetCutoverStage;
+                let label = match stage {
+                    ResetCutoverStage::Prepared => "prepared",
+                    ResetCutoverStage::Closed => "closed",
+                    ResetCutoverStage::Intent => "intent",
+                    ResetCutoverStage::MainMoved => "main_moved",
+                    ResetCutoverStage::SidecarsMoved => "sidecars_moved",
+                    ResetCutoverStage::Switched => "switched",
+                };
+                if phase == label {
+                    std::process::exit(77);
+                }
+            },
+        )
+        .expect("reset");
+    panic!("requested crash boundary was not reached");
+}
+
+#[tokio::test]
 async fn cutover_captures_retained_hashes_and_never_exposes_a_writer_for_deletion() {
     let root = std::env::temp_dir().join(format!("lettuce-cutover-{}", OperationId::new()));
     let location = location(&root);

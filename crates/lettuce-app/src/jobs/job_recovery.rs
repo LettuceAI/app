@@ -172,7 +172,10 @@ impl crate::AppBackend {
                 if kind == JobKind::Maintenance
                     && matches!(
                         job.subject.id.as_str(),
-                        "storage-optimize" | "usage-cost-capture" | "usage-recalculate-costs"
+                        "storage-optimize"
+                            | "usage-cost-capture"
+                            | "usage-recalculate-costs"
+                            | "app-data-reset"
                     )
                 {
                     continue;
