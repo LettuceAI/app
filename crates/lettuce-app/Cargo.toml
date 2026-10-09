@@ -56,6 +56,7 @@ lettuce-transfer.workspace = true
 lettuce-sync.workspace = true
 lettuce-usage.workspace = true
 regex = "1"
+url = "2.5"
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

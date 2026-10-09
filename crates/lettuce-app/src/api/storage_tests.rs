@@ -136,3 +136,86 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
     drop(h);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[tokio::test]
+async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
+    let root = std::env::temp_dir().join(format!("lettuce-export-database-{}", OperationId::new()));
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let location =
+        AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location");
+    let active = location.active_path().expect("active");
+    let backend = Arc::new(AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
+    let h = harness_over_files(
+        backend,
+        Reply::Text("ok"),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::new(NoModels),
+        Arc::new(NoImages),
+        Some(ApiDatabaseFiles {
+            location,
+            active: active.clone(),
+        }),
+    );
+    let log_directory = root.join("logs");
+    std::fs::create_dir(&log_directory).expect("logs");
+    let output = lettuce_observability::local_output(
+        lettuce_observability::LocalOutputConfig::new(&log_directory),
+    )
+    .expect("output");
+    h.context.attach_logs(log_directory, output.sink);
+    super::log_append(
+        &h.context,
+        dto::LogAppendRequest {
+            timestamp: "2026-10-09T12:00:00Z".into(),
+            level: dto::LogLevel::Info,
+            component: "frontend".into(),
+            function: None,
+            message: "export source".into(),
+        },
+    )
+    .await
+    .expect("log");
+    let name = super::logs_list(&h.context).await.expect("logs").files[0].clone();
+    let alias = root.join("database-alias");
+    std::fs::hard_link(&active, &alias).expect("hardlink");
+    let before = std::fs::read(&active).expect("database bytes");
+    for target in [&active, &alias] {
+        let error = super::log_export(
+            &h.context,
+            dto::LogExportRequest {
+                name: name.clone(),
+                target: dto::FileTarget {
+                    uri: target.to_string_lossy().into_owned(),
+                },
+            },
+        )
+        .await
+        .expect_err("protected database target");
+        assert_eq!(error.code, ApiErrorCode::Conflict);
+        assert!(error.details.is_some());
+        assert_eq!(std::fs::read(&active).expect("database survives"), before);
+    }
+    let pointer = root.join("private-persistent-v2/active-database");
+    assert!(!pointer.exists());
+    let error = super::log_export(
+        &h.context,
+        dto::LogExportRequest {
+            name,
+            target: dto::FileTarget {
+                uri: pointer.to_string_lossy().into_owned(),
+            },
+        },
+    )
+    .await
+    .expect_err("reserved pointer target");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+    assert!(!pointer.exists());
+    super::settings_get(&h.context)
+        .await
+        .expect("database remains usable");
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

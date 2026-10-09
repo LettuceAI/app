@@ -660,6 +660,8 @@ SettingsChanged uses device for embedding, certificate and models-folder commits
 
 The log API runs viewer reads, deletes and streamed FileTarget exports on the blocking pool. The shell attaches its log directory and sink; frontend append acknowledges the write and requires a debug build or developer mode. Written lines reach DeveloperLogLine only while the committed developer setting is enabled. App usage reads merge persisted days with pending and focused time under the same lock that serializes flushes, without writing on read. A successful nonempty flush emits AppUsageChanged; persistence failures emit an AppUsageWriteFailed typed error and keep unwritten time pending.
 
+Streamed log exports hold the database-file lifecycle lock and refuse database, sidecar and private control-file targets, including hardlink aliases. Reserved locations are checked before creation; existing file identities are checked before truncation through the opened descriptor. A failed protection check returns a typed error without changing the protected file.
+
 The metrics API pages retained local-generation summaries in descending creation time and id order, reads a full metric or the newest metric for a message, and explicitly clears through a durable operation receipt. Metric views omit native model paths. Replay returns the committed clear count and preserves metrics written later.
 
 `usage_clear_before` accepts a strict timestamp cutoff and an operation id. It deletes eligible terminal usage atomically with an idempotent receipt, returns the same removed count on an exact retry and returns Conflict when the cutoff changes. Running generation retains settled dispatches until terminal usage has been recorded.

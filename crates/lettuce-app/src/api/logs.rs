@@ -155,9 +155,12 @@ pub async fn log_export(
             if request.target.uri.trim().is_empty() {
                 return Err(invalid_field("target.uri", "export target is empty"));
             }
+            let protection = super::files::FileExportProtection::new(context)?;
             let mut output = context
                 .files()
-                .create_export(&request.target.uri, &input)
+                .create_export(&request.target.uri, Some(&input), &|uri, target| {
+                    protection.protects(uri, target)
+                })
                 .map_err(|error| {
                     if error == super::FileAccessError::SourceIsTarget {
                         ApiError {
@@ -168,7 +171,11 @@ pub async fn log_export(
                             }),
                         }
                     } else {
-                        error.into_api_error()
+                        let mut api = error.into_api_error();
+                        api.details = Some(dto::ApiErrorDetails::Logs {
+                            reason: dto::LogFailureReason::Storage,
+                        });
+                        api
                     }
                 })?;
             std::io::copy(&mut input, &mut output).map_err(io_error)?;

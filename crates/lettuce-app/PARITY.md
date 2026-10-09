@@ -552,3 +552,5 @@ V2 and legacy restore share one confined, cross-process database-file lifecycle 
 Media collection now returns a typed storage failure when a required kept-file set cannot be read, replacing the rewrite's warning-and-skip path. It holds the lifecycle lock through media removal, protecting the captured sets against concurrent cutovers. Database files with any live database handle cannot be reserved for deletion.
 
 Explicit database-file deletion is new under decision 15. Active and open files are protected; filenames are relative identifiers, never native paths in the API. Durable filesystem receipts support exact retries and reject a changed file under the same key. The app collects media after deleting the final kept holder. A required unreadable kept set fails typed instead of returning an empty successful sweep.
+
+Slice 12 log exports also refuse protected database and control-file targets, including hardlink aliases, before truncation. This closes a rewrite export-target data-loss path; reserved control-file names are checked before creation so a refused export cannot create an empty active pointer. The guard shares the cutover lifecycle lock.

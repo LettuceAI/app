@@ -50,21 +50,30 @@ impl FileAccess for StdFiles {
     fn create_export(
         &self,
         uri: &str,
-        source: &std::fs::File,
+        source: Option<&std::fs::File>,
+        protected: ExportProtection<'_>,
     ) -> Result<Box<dyn std::io::Write + Send>, FileAccessError> {
+        if protected(uri, None)? {
+            return Err(FileAccessError::SourceIsTarget);
+        }
         let mut target = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(false)
             .open(uri)
             .map_err(|_| FileAccessError::Io)?;
-        let source_handle =
-            same_file::Handle::from_file(source.try_clone().map_err(|_| FileAccessError::Io)?)
-                .map_err(|_| FileAccessError::Io)?;
         let target_handle =
             same_file::Handle::from_file(target.try_clone().map_err(|_| FileAccessError::Io)?)
                 .map_err(|_| FileAccessError::Io)?;
-        if source_handle == target_handle {
+        if let Some(source) = source {
+            let source_handle =
+                same_file::Handle::from_file(source.try_clone().map_err(|_| FileAccessError::Io)?)
+                    .map_err(|_| FileAccessError::Io)?;
+            if source_handle == target_handle {
+                return Err(FileAccessError::SourceIsTarget);
+            }
+        }
+        if protected(uri, Some(&target))? {
             return Err(FileAccessError::SourceIsTarget);
         }
         target.set_len(0).map_err(|_| FileAccessError::Io)?;
@@ -324,11 +333,19 @@ impl InferencePort for FakeProvider {
                 })
             }
         }?;
-        let hook = self.response_hook.lock().expect("response hook lock").clone();
+        let hook = self
+            .response_hook
+            .lock()
+            .expect("response hook lock")
+            .clone();
         if let Some(hook) = hook {
             hook(&request, &mut outcome);
         }
-        let release = self.response_release.lock().expect("response release lock").clone();
+        let release = self
+            .response_release
+            .lock()
+            .expect("response release lock")
+            .clone();
         if let Some(release) = release {
             release.notified().await;
         }

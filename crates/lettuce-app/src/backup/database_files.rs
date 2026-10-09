@@ -317,6 +317,43 @@ impl DatabaseFileLifecycle {
         self.recover()
     }
 
+    pub(crate) fn protects_export_location(
+        &self,
+        uri: &str,
+    ) -> Result<bool, AppDatabaseLocationError> {
+        let path = if uri.contains("://") {
+            let uri = url::Url::parse(uri).map_err(|_| AppDatabaseLocationError::Corrupt)?;
+            if uri.scheme() != "file" {
+                return Ok(false);
+            }
+            uri.to_file_path()
+                .map_err(|_| AppDatabaseLocationError::Corrupt)?
+        } else {
+            PathBuf::from(uri)
+        };
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let parent = parent.canonicalize().map_err(PlatformError::from)?;
+        let private = self
+            .location
+            .private_persistent
+            .canonicalize()
+            .map_err(PlatformError::from)?;
+        Ok(parent == private || parent.starts_with(private.join(DATABASE_DIRECTORY)))
+    }
+
+    pub(crate) fn protects_export_target(
+        &self,
+        target: &std::fs::File,
+    ) -> Result<bool, AppDatabaseLocationError> {
+        self.location
+            .directory
+            .contains_file(target)
+            .map_err(Into::into)
+    }
+
     pub fn inventory(&self, open: &Path) -> Result<Vec<AppDatabaseFile>, AppDatabaseLocationError> {
         let active = self.location.active_path()?;
         self.names()?

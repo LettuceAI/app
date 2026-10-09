@@ -7,6 +7,7 @@ use crate::{ParentSyncStatus, PlatformError};
 #[derive(Debug, Clone)]
 pub struct DatabaseFiles {
     pub(crate) directory: Arc<Dir>,
+    pub(crate) persistent: Arc<Dir>,
 }
 
 fn checked_name(name: &str) -> Result<(), PlatformError> {
@@ -25,6 +26,31 @@ fn checked_name(name: &str) -> Result<(), PlatformError> {
 }
 
 impl DatabaseFiles {
+    pub fn contains_file(&self, target: &File) -> Result<bool, PlatformError> {
+        let target = same_file::Handle::from_file(target.try_clone().map_err(PlatformError::from)?)
+            .map_err(PlatformError::from)?;
+        for directory in [&self.directory, &self.persistent] {
+            for entry in directory.entries().map_err(PlatformError::from)? {
+                let entry = entry.map_err(PlatformError::from)?;
+                let name = entry.file_name();
+                if !entry.file_type().map_err(PlatformError::from)?.is_file() {
+                    continue;
+                }
+                let mut options = OpenOptions::new();
+                options.read(true);
+                options._cap_fs_ext_follow(FollowSymlinks::No);
+                let file = directory
+                    .open_with(&name, &options)
+                    .map_err(crate::authority::map_symlink_error)?
+                    .into_std();
+                if same_file::Handle::from_file(file).map_err(PlatformError::from)? == target {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     pub fn remove_database_file(
         &self,
         name: &str,

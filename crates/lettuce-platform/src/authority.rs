@@ -99,6 +99,7 @@ impl FilesystemAuthority {
             .ok_or(PlatformError::InvalidRoot)?;
         Ok(crate::DatabaseFiles {
             directory: Arc::new(open_or_create_child(&root.dir, "databases")?),
+            persistent: Arc::clone(&root.dir),
         })
     }
 

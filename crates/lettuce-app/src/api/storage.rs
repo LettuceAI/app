@@ -7,7 +7,7 @@ use super::{
 };
 use crate::AppDatabaseLocationError;
 
-fn file_error(error: AppDatabaseLocationError, file: Option<String>) -> ApiError {
+pub(super) fn file_error(error: AppDatabaseLocationError, file: Option<String>) -> ApiError {
     ApiError {
         code: match error {
             AppDatabaseLocationError::Busy => ApiErrorCode::Busy,

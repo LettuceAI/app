@@ -28,7 +28,7 @@ pub enum FileAccessError {
     PermissionDenied,
     #[error("the file location is not supported")]
     Unsupported,
-    #[error("export target is the source file")]
+    #[error("export target is a protected file")]
     SourceIsTarget,
     #[error("the file could not be read or written")]
     Io,
@@ -47,7 +47,8 @@ pub trait FileAccess: Send + Sync {
     fn create_export(
         &self,
         _uri: &str,
-        _source: &std::fs::File,
+        _source: Option<&std::fs::File>,
+        _protected: ExportProtection<'_>,
     ) -> Result<Box<dyn Write + Send>, FileAccessError> {
         Err(FileAccessError::Unsupported)
     }
@@ -279,4 +280,41 @@ pub async fn assets_ingest(
             Ok(context.asset_ref(ingested.asset.id))
         })
         .await
+}
+
+pub type ExportProtection<'a> =
+    &'a dyn Fn(&str, Option<&std::fs::File>) -> Result<bool, FileAccessError>;
+
+pub(super) struct FileExportProtection {
+    lifecycle: Option<crate::DatabaseFileLifecycle>,
+}
+
+impl FileExportProtection {
+    pub(super) fn new(context: &ApiContext) -> Result<Self, ApiError> {
+        let lifecycle = context
+            .database_files()
+            .map(|files| files.location.try_file_lifecycle())
+            .transpose()
+            .map_err(|error| super::storage::file_error(error, None))?;
+        Ok(Self { lifecycle })
+    }
+
+    pub(super) fn protects(
+        &self,
+        uri: &str,
+        target: Option<&std::fs::File>,
+    ) -> Result<bool, FileAccessError> {
+        let Some(lifecycle) = &self.lifecycle else {
+            return Ok(false);
+        };
+        if let Some(target) = target {
+            lifecycle
+                .protects_export_target(target)
+                .map_err(|_| FileAccessError::Io)
+        } else {
+            lifecycle
+                .protects_export_location(uri)
+                .map_err(|_| FileAccessError::Io)
+        }
+    }
 }
