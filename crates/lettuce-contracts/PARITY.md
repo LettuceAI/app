@@ -26,7 +26,7 @@ Provider verification preserves string messages, string error types and JSON-str
 
 Model profile commands replace frontend storage calls with revisioned receipt-backed requests (`old-code/src/core/storage/repo.ts:949-987`). Duplicate names remain caller-authored and localized (`old-code/src/ui/pages/settings/ModelsPage.tsx:241-254`). NanoGPT usage retains the data consumed by `old-code/src/core/usage/nanogpt.ts:6-34`; quota warnings carry account id and typed level instead of the legacy toast's usage and English fields (`old-code/src/ui/components/NanoGptQuotaMonitor.tsx:27-62`). The UI can read current usage through the usage command.
 
-Declared scope edits are authoritative without remote metadata: removed Supported modalities become Unknown, explicit Unsupported is retained, and reported metadata overrides echoed modality statuses. Views derive scopes directly from Supported capability statuses. Deletion emits SettingsChanged for models like provider-account deletion because the shared core updates settings (`old-code/src/core/storage/repo.ts:969-980`).
+Declared scope edits are authoritative without remote metadata: removed Supported modalities become Unknown, explicit Unsupported is retained, and reported metadata overrides echoed modality statuses. Views derive scopes directly from Supported capability statuses. Deletion emits SettingsChanged for models when the shared core changes a stored selection (`old-code/src/core/storage/repo.ts:969-980`).
 
 NanoGPT usage refresh=false reuses only a successful recent account result, preventing warning toasts from making a second HTTP request. Refresh=true preserves explicit refresh, and both join a running check. Legacy fetched when the panel selection or refresh changed (`old-code/src/ui/pages/settings/NanoGptUsagePanel.tsx:411-474`); callers now distinguish cached event reads from refresh actions.
 
@@ -40,3 +40,5 @@ Settings section updates replace blind frontend read-modify-write storage with o
 Optional UI choices reject explicit null instead of silently omitting it; legacy Zod optional string choices also rejected null (`old-code/src/core/storage/schemas.ts:2992-3005`). Clearing a UI preference uses null on the typed key change itself.
 
 DeviceEmbedding updates use the device view revision rather than the global settings revision, keeping install-local changes outside the sync document. The model-folder path is read-only and changes through the existing relocation job.
+
+The second settings review narrows SettingsChanged to actual settings-table commits and gives every device record write the device label. Catalog-only writes use ModelsChanged, replacing the broad legacy broadcast after every save or removal (`old-code/src/core/storage/repo.ts:965,979`). Default changes and deletion that clears or promotes a selection retain the settings notification.

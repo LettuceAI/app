@@ -229,6 +229,16 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
             .count(),
         1
     );
+    super::content_filter::publish_pending(&h.context).await;
+    let settings_events_before = h
+        .events
+        .events()
+        .iter()
+        .filter(|event| {
+            matches!(event,
+        dto::ApiEvent::SettingsChanged { section } if section == "models")
+        })
+        .count();
     let settings = h.context.backend().database().load().expect("settings");
     let set = dto::ModelDefaultSetRequest {
         model_id: Some(saved.id.clone()),
@@ -243,6 +253,16 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
             .await
             .expect("replay"),
         result
+    );
+    super::content_filter::publish_pending(&h.context).await;
+    assert_eq!(
+        h.events
+            .events()
+            .iter()
+            .filter(|event| matches!(event,
+        dto::ApiEvent::SettingsChanged { section } if section == "models"))
+            .count(),
+        settings_events_before + 1
     );
     let mut stale = set;
     stale.client_operation_id = "stale-default".into();
@@ -500,24 +520,76 @@ async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrid
 }
 
 #[tokio::test]
-async fn model_delete_emits_models_settings_changed() {
+async fn non_default_model_writes_emit_only_models_changed() {
     let h = harness(Reply::Text("Hello."));
-    let saved = super::model_save(&h.context, draft(&h.context, "delete-settings-save"))
+    let mut feed = super::conversation_feed::ConversationFeed::start(&h.context)
+        .await
+        .expect("feed");
+    let mut request = draft(&h.context, "event-save");
+    let saved = super::model_save(&h.context, request.clone())
         .await
         .expect("save");
+    feed.publish(&h.context).await.expect("save feed");
+    request.model.id = Some(saved.id.clone());
+    request.model.display_name = "Renamed".into();
+    request.expected_revision = Some(saved.revision);
+    request.client_operation_id = "event-rename".into();
+    let renamed = super::model_save(&h.context, request)
+        .await
+        .expect("rename");
+    feed.publish(&h.context).await.expect("rename feed");
     super::model_delete(
         &h.context,
         dto::ModelDeleteRequest {
-            model_id: saved.id,
-            expected_revision: saved.revision,
-            client_operation_id: "delete-settings".into(),
+            model_id: renamed.id,
+            expected_revision: renamed.revision,
+            client_operation_id: "event-delete".into(),
         },
     )
     .await
     .expect("delete");
-    assert!(h.events.events().iter().any(
-        |event| matches!(event, dto::ApiEvent::SettingsChanged { section } if section == "models")
-    ));
+    feed.publish(&h.context).await.expect("delete feed");
+    assert_eq!(h.events.events(), vec![dto::ApiEvent::ModelsChanged; 3]);
+}
+
+#[tokio::test]
+async fn deleting_default_model_emits_models_settings_changed() {
+    let h = harness(Reply::Text("Hello."));
+    let database = h.context.backend().database();
+    let id = database
+        .load()
+        .expect("settings")
+        .default_model_profile_id
+        .expect("default");
+    let model = ModelProfileRepository::get(database, id)
+        .expect("model")
+        .expect("exists");
+    super::model_delete(
+        &h.context,
+        dto::ModelDeleteRequest {
+            model_id: id.to_string(),
+            expected_revision: model.revision.get(),
+            client_operation_id: "delete-default-event".into(),
+        },
+    )
+    .await
+    .expect("delete default");
+    assert!(
+        database
+            .load()
+            .expect("settings")
+            .default_model_profile_id
+            .is_none()
+    );
+    assert_eq!(
+        h.events
+            .events()
+            .iter()
+            .filter(|event| matches!(event,
+        dto::ApiEvent::SettingsChanged { section } if section == "models"))
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

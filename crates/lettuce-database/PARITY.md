@@ -174,3 +174,7 @@ The section command's document, selected models/prompts, sampler layer and optio
 Developer logging uses the database commit generation rather than the settings revision, since applying a sync winner may lower a document revision. Settings commits wake the filter host; no timer queries settings.
 
 Device-only settings updates leave the synced app payload, revision and timestamps untouched. Each device edit uses its record revision; rollback and stale retry tests cover atomicity. The settings commit feed includes global, device and UI-state rows, with transaction-local section labels and no rollback notifications.
+
+The second settings review narrows SettingsChanged to actual settings-table commits and gives every device record write the device label. Catalog-only writes use ModelsChanged, replacing the broad legacy broadcast after every save or removal (`old-code/src/core/storage/repo.ts:965,979`). Default changes and deletion that clears or promotes a selection retain the settings notification.
+
+The requested FK SET NULL check is inapplicable: the foundation schema uses ON DELETE RESTRICT and the supported delete transaction explicitly clears or promotes selections. The constraint remains unchanged. Backup restore opens a new database without transferring API listeners and activates only the file pointer; listener rebinding is deferred to slice 11a.

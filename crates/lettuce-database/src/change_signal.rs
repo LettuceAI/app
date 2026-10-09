@@ -37,9 +37,7 @@ impl ChangeFeed {
 
     fn of_table(table: &str) -> Option<Self> {
         match table {
-            "app_settings" | "device_settings" | "device_ui_state" | "model_profiles" => {
-                Some(Self::Settings)
-            }
+            "app_settings" | "device_settings" | "device_ui_state" => Some(Self::Settings),
             "job_changes" => Some(Self::Jobs),
             "model_changes" => Some(Self::Models),
             "conversation_changes" | "message_signals" | "memory_changes" => {
@@ -86,18 +84,17 @@ impl ChangeSignal {
                 if let Some(feed) = ChangeFeed::of_table(table) {
                     marked.pending.fetch_or(feed.bit(), Ordering::AcqRel);
                     if feed == ChangeFeed::Settings {
-                        let section = marked
-                            .settings_section
-                            .lock()
-                            .expect("settings section")
-                            .as_ref()
-                            .copied()
-                            .unwrap_or(match table {
-                                "device_ui_state" => "ui_state",
-                                "device_settings" => "device",
-                                "model_profiles" => "models",
-                                _ => "general",
-                            });
+                        let section = match table {
+                            "device_settings" => "device",
+                            "device_ui_state" => "ui_state",
+                            _ => marked
+                                .settings_section
+                                .lock()
+                                .expect("settings section")
+                                .as_ref()
+                                .copied()
+                                .unwrap_or("general"),
+                        };
                         marked
                             .settings_sections
                             .lock()

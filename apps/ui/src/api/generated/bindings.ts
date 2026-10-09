@@ -366,7 +366,9 @@ export type ApiErrorDetails = { type: "settings"; reason: SettingsFailureReason 
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } | { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+/**  Device record writes use "device"; device UI state uses "ui_state". */
+{ type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that

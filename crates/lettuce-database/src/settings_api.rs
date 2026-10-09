@@ -99,7 +99,7 @@ impl Database {
         }
         device.embedding = embedding;
         device.validate()?;
-        self.changes.settings_section("device_embedding");
+        self.changes.settings_section("device");
         crate::replace_device_settings_in(&transaction, &device)
             .map_err(|_| GlobalSettingsStoreError::Storage)?;
         let result = snapshot(&transaction)?;
@@ -325,5 +325,24 @@ mod tests {
             .execute_batch("UPDATE app_settings SET revision=revision+1;")
             .expect("commit");
         assert_eq!(*seen.lock().expect("events"), vec!["general"]);
+    }
+    #[test]
+    fn device_record_section_cannot_be_overridden_by_writer_labels() {
+        use lettuce_settings::DeviceSettingsStore;
+        let database = Database::open_in_memory().expect("database");
+        let sections = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = sections.clone();
+        database.on_settings_section_change(move |section| {
+            observed.lock().expect("sections").push(section)
+        });
+        for label in ["device_embedding", "certificates", "models"] {
+            database.changes.settings_section(label);
+            database
+                .update_device_settings(&|device| {
+                    device.llm_models_dir = Some(format!("/tmp/{label}"));
+                })
+                .expect("device commit");
+        }
+        assert_eq!(*sections.lock().expect("sections"), vec!["device"; 3]);
     }
 }

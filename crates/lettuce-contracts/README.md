@@ -76,7 +76,7 @@ Model profile contracts expose catalog/default revisions, profile configuration,
 
 ProviderQuotaLevel maps NearLimit to 75 percent, AlmostExhausted to 90 percent and Exhausted to 100 percent. Only the highest crossed threshold is delivered for one check.
 
-Model views derive input and output scopes from Supported capability statuses. Saves without remote metadata replace Supported declarations; declaring an explicit Unsupported modality fails typed before writing. Reported metadata replaces the side it supplies. Model deletion also publishes a models settings change.
+Model views derive input and output scopes from Supported capability statuses. Saves without remote metadata replace Supported declarations; declaring an explicit Unsupported modality fails typed before writing. Reported metadata replaces the side it supplies. Model deletion publishes a models settings change when it clears or promotes a stored selection.
 
 NanoGPT usage requests choose refresh explicitly: cached reads reuse a successful account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
 
@@ -92,3 +92,5 @@ ContentFilterLogView contains redacted hit records with the level, score, terms 
 Settings command inputs retain deserialization failures until the API maps them to InvalidInput with field details, so unknown keys and invalid enum choices use the same typed error channel as range validation. Their exported TypeScript shape stays the closed request DTO.
 
 SettingsDeviceView.revision is the CAS token for DeviceEmbedding patches. Global section patches and sampler defaults use SettingsView.revision; the device revision never changes the synced app-settings identity.
+
+SettingsChanged.section uses the global SettingsPatch section names and sampler_defaults for global settings, models for model-selection writes, device for every device_settings write (embedding, certificates and folder relocation), and ui_state for device UI state. Catalog-only writes publish ModelsChanged without a settings event.

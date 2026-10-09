@@ -243,6 +243,7 @@ pub enum ApiEvent {
         account_id: String,
         level: crate::ProviderQuotaLevel,
     },
+    /// Device record writes use "device"; device UI state uses "ui_state".
     SettingsChanged {
         section: String,
     },

@@ -268,7 +268,7 @@ async fn settings_sections_preserve_creation_settings_and_emit_their_section() {
             },
         ),
         (
-            "device_embedding",
+            "device",
             dto::SettingsPatch::DeviceEmbedding {
                 model_version: Some(dto::SettingsEmbeddingVersion::V5),
                 max_tokens: Some(1024),
@@ -793,4 +793,49 @@ async fn inheriting_enabled_group_memory_requires_embedding() {
     .expect_err("inherited enable needs embedding");
     assert_eq!(error.code, ApiErrorCode::ModelRequired);
     assert_eq!(settings_get(&h.context).await.expect("unchanged"), before);
+}
+
+#[tokio::test]
+async fn models_folder_relocation_worker_emits_device_settings_changed() {
+    use lettuce_models::ModelPathRelocation;
+    use lettuce_settings::DeviceSettingsStore;
+    let h = harness(Reply::Text("Hello."));
+    let worker = tokio::spawn(super::content_filter::run_events(
+        h.context.clone(),
+        std::future::pending(),
+    ));
+    let database = h.context.backend().database();
+    let mut device = database.load_device_settings().expect("device");
+    device.llm_models_dir = Some("/tmp/s7c-relocated-models".into());
+    database
+        .relocate_model_paths_and_save_device(&|_| None, device, h.context.now())
+        .expect("relocation commit");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        h.events.until(|events| {
+            events.iter().any(|event| {
+                matches!(event,
+            ApiEvent::SettingsChanged { section } if section == "device")
+            })
+        }),
+    )
+    .await
+    .expect("device event from worker");
+    assert_eq!(
+        database
+            .load_device_settings()
+            .expect("device")
+            .llm_models_dir
+            .as_deref(),
+        Some("/tmp/s7c-relocated-models")
+    );
+    assert_eq!(
+        h.events
+            .events()
+            .iter()
+            .filter(|event| matches!(event, ApiEvent::SettingsChanged { .. }))
+            .count(),
+        1
+    );
+    worker.abort();
 }

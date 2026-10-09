@@ -240,3 +240,50 @@ fn quota_warning_rows_cascade_and_missing_accounts_are_not_emitted() {
             .expect("missing is not emitted")
     );
 }
+
+#[test]
+fn default_model_foreign_key_restricts_direct_delete_without_settings_event() {
+    use lettuce_models::{ModelKind, ModelProfile, ModelProfileRepository};
+    use lettuce_settings::GlobalSettingsStore;
+    use lettuce_types::{ModelProfileId, Revision};
+    let db = Database::open_in_memory().expect("database");
+    let account = seed_account(&db);
+    let model = ModelProfile {
+        id: ModelProfileId::new(),
+        provider_account_id: account,
+        external_model_id: "model".into(),
+        display_name: "Model".into(),
+        kind: ModelKind::Chat,
+        config: lettuce_models::ModelProfileConfig {
+            chat_parameters: Default::default(),
+            feature_parameters: Default::default(),
+            capabilities: Default::default(),
+            llama_cpp: Default::default(),
+            stable_diffusion: Default::default(),
+        },
+        revision: Revision::INITIAL,
+        created_at: TimestampMillis::new(1),
+        updated_at: TimestampMillis::new(1),
+    };
+    let id = model.id;
+    ModelProfileRepository::upsert(&db, model, None).expect("model");
+    let settings = db.load().expect("settings");
+    db.save(settings.settings, Some(id), settings.revision)
+        .expect("default");
+    let sections = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = sections.clone();
+    db.on_settings_section_change(move |section| observed.lock().expect("sections").push(section));
+    let error = db
+        .connection()
+        .expect("connection")
+        .execute("DELETE FROM model_profiles WHERE id=?1", [id.to_string()])
+        .expect_err("FK restricts deletion");
+    assert!(
+        matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::ConstraintViolation)
+    );
+    assert_eq!(
+        db.load().expect("settings").default_model_profile_id,
+        Some(id)
+    );
+    assert!(sections.lock().expect("sections").is_empty());
+}
