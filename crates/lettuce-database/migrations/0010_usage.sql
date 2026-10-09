@@ -27,7 +27,25 @@ CREATE TABLE usage_events (
         provider_account_revision IS NULL OR provider_account_revision >= 1
     ),
     recorded_at INTEGER NOT NULL,
+    snapshot_present INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_present IN (0,1)),
+    character_source_id TEXT,
+    character_name TEXT,
+    model_name TEXT,
+    provider_kind TEXT,
+    provider_label TEXT,
+    operation_kind TEXT,
+    finish_reason TEXT,
+    error_message TEXT,
+    memory_tokens INTEGER CHECK (memory_tokens IS NULL OR memory_tokens >= 0),
+    summary_tokens INTEGER CHECK (summary_tokens IS NULL OR summary_tokens >= 0),
+    provider_response_id TEXT,
     UNIQUE (conversation_id, turn_id, attempt_id),
+    CHECK (snapshot_present = 1 OR (
+        character_source_id IS NULL AND character_name IS NULL AND model_name IS NULL
+        AND provider_kind IS NULL AND provider_label IS NULL AND operation_kind IS NULL
+        AND finish_reason IS NULL AND error_message IS NULL AND memory_tokens IS NULL
+        AND summary_tokens IS NULL AND provider_response_id IS NULL
+    )),
     CHECK ((counters_kind = 'known') = (input_tokens IS NOT NULL)),
     CHECK ((counters_kind = 'known') = (output_tokens IS NOT NULL)),
     CHECK ((counters_kind = 'unavailable') = (unavailable_reason IS NOT NULL)),

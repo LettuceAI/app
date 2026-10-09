@@ -2275,6 +2275,7 @@ impl SessionWriter<'_> {
             self.usage.push(UsageEvent {
                 id: usage_event_id,
                 record: UsageRecord {
+                    snapshot: None,
                     turn_id,
                     attempt_id,
                     outcome: UsageOutcome::Succeeded,

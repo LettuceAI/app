@@ -1523,6 +1523,7 @@ pub fn settle_in_flight_generation(graph: &mut ProviderBackupGraph) {
                         event: lettuce_usage::UsageEvent {
                             id,
                             record: UsageRecord {
+                                snapshot: None,
                                 turn_id: turn.id,
                                 attempt_id: attempt.id,
                                 outcome: UsageOutcome::Interrupted,

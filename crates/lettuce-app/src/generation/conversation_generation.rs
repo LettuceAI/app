@@ -277,6 +277,7 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
                     UsageLedger::record(
                         self.conversations,
                         UsageRecord {
+                            snapshot: None,
                             turn_id: turn.id,
                             attempt_id: attempt.id,
                             outcome: UsageOutcome::Cancelled,
@@ -943,6 +944,7 @@ impl<
         let usage_event_id = UsagePort::record(
             self.repository,
             UsageRecord {
+                snapshot: None,
                 turn_id: attempt.turn_id,
                 attempt_id: attempt.id,
                 outcome: UsageOutcome::Succeeded,
@@ -1706,6 +1708,7 @@ impl<
         Ok(self
             .conversations
             .record(UsageRecord {
+                snapshot: None,
                 turn_id: turn.id,
                 attempt_id: attempt.id,
                 outcome,

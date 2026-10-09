@@ -374,10 +374,34 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         image_tokens: row.get(18)?,
         audio_tokens: row.get(19)?,
         total_tokens: row.get(20)?,
+        snapshot_present: row.get(21)?,
+        character_source_id: row.get(22)?,
+        character_name: row.get(23)?,
+        model_name: row.get(24)?,
+        provider_kind: row.get(25)?,
+        provider_label: row.get(26)?,
+        operation_kind: row.get(27)?,
+        finish_reason: row.get(28)?,
+        error_message: row.get(29)?,
+        memory_tokens: row.get(30)?,
+        summary_tokens: row.get(31)?,
+        provider_response_id: row.get(32)?,
     })
 }
 
 struct RawUsageEvent {
+    snapshot_present: bool,
+    character_source_id: Option<String>,
+    character_name: Option<String>,
+    model_name: Option<String>,
+    provider_kind: Option<String>,
+    provider_label: Option<String>,
+    operation_kind: Option<String>,
+    finish_reason: Option<String>,
+    error_message: Option<String>,
+    memory_tokens: Option<i64>,
+    summary_tokens: Option<i64>,
+    provider_response_id: Option<String>,
     provider_reported_cost: Option<f64>,
     image_tokens: Option<i64>,
     audio_tokens: Option<i64>,
@@ -403,6 +427,34 @@ struct RawUsageEvent {
 
 impl RawUsageEvent {
     fn decode(self) -> Result<UsageEvent, UsageLedgerError> {
+        let snapshot = if self.snapshot_present {
+            Some(lettuce_conversations::UsageRecordSnapshot {
+                character_id: self
+                    .character_source_id
+                    .map(|value| value.parse().map_err(|_| UsageLedgerError::Storage))
+                    .transpose()?,
+                character_name: self.character_name,
+                model_name: self.model_name,
+                provider_kind: self.provider_kind,
+                provider_label: self.provider_label,
+                operation_kind: self.operation_kind,
+                finish_reason: self.finish_reason,
+                error_message: self.error_message,
+                memory_tokens: self
+                    .memory_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                summary_tokens: self
+                    .summary_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                provider_response_id: self.provider_response_id,
+            })
+        } else {
+            None
+        };
         let usage = match self.counters_kind.as_str() {
             "known" => UsageCounters::Known(InferenceUsage {
                 provider_reported_cost: self
@@ -464,6 +516,7 @@ impl RawUsageEvent {
         let event = UsageEvent {
             id: UsageEventId::from_str(&self.id).map_err(|_| UsageLedgerError::Storage)?,
             record: UsageRecord {
+                snapshot,
                 turn_id: self
                     .turn_id
                     .parse()
@@ -513,7 +566,8 @@ impl RawUsageEvent {
 
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
-    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens FROM usage_events";
+    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens,
+    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id FROM usage_events";
 
 pub(crate) fn load_all_usage_in(
     transaction: &rusqlite::Transaction<'_>,
@@ -612,13 +666,25 @@ pub(crate) fn insert_usage_event_in(
             ("unavailable", None, None, Some(unavailable_name(reason)))
         }
     };
+    let snapshot = event.record.snapshot.as_ref();
+    let memory_tokens = snapshot
+        .and_then(|value| value.memory_tokens)
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| UsageLedgerError::Invalid)?;
+    let summary_tokens = snapshot
+        .and_then(|value| value.summary_tokens)
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| UsageLedgerError::Invalid)?;
     transaction
             .execute(
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens,
+                    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
                 params![
                     event.id.to_string(),
                     conversation_id,
@@ -650,6 +716,18 @@ pub(crate) fn insert_usage_event_in(
                     image?,
                     audio?,
                     total?,
+                    snapshot.is_some(),
+                    snapshot.and_then(|value| value.character_id).map(|id| id.to_string()),
+                    snapshot.and_then(|value| value.character_name.as_deref()),
+                    snapshot.and_then(|value| value.model_name.as_deref()),
+                    snapshot.and_then(|value| value.provider_kind.as_deref()),
+                    snapshot.and_then(|value| value.provider_label.as_deref()),
+                    snapshot.and_then(|value| value.operation_kind.as_deref()),
+                    snapshot.and_then(|value| value.finish_reason.as_deref()),
+                    snapshot.and_then(|value| value.error_message.as_deref()),
+                    memory_tokens,
+                    summary_tokens,
+                    snapshot.and_then(|value| value.provider_response_id.as_deref()),
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -1051,6 +1129,10 @@ mod tests {
 
     fn fixture() -> (Database, UsageRecord) {
         let database = Database::open_in_memory().expect("database");
+        fixture_in(database)
+    }
+
+    fn fixture_in(database: Database) -> (Database, UsageRecord) {
         database
             .connection()
             .expect("connection")
@@ -1080,6 +1162,7 @@ mod tests {
         (
             database,
             UsageRecord {
+                snapshot: None,
                 turn_id,
                 attempt_id,
                 outcome: UsageOutcome::Succeeded,
@@ -1102,6 +1185,196 @@ mod tests {
                 recorded_at: TimestampMillis::new(10),
             },
         )
+    }
+
+    #[test]
+    fn usage_snapshot_crash_child() {
+        let Some(path) = std::env::var_os("LETTUCE_USAGE_SNAPSHOT_CRASH_DATABASE") else {
+            return;
+        };
+        let database = Database::open(path).expect("open crash fixture");
+        let record: UsageRecord = serde_json::from_str(
+            &std::env::var("LETTUCE_USAGE_SNAPSHOT_CRASH_RECORD").expect("crash record"),
+        )
+        .expect("snapshot record");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("transaction");
+        let conversation_id: String = transaction
+            .query_row(
+                "SELECT conversation_id FROM generation_attempts WHERE id=?1",
+                [record.attempt_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("owner");
+        super::insert_usage_event_in(
+            &transaction,
+            &conversation_id,
+            &lettuce_usage::UsageEvent {
+                id: lettuce_types::UsageEventId::new(),
+                record,
+            },
+        )
+        .expect("write snapshot before crash");
+        std::process::exit(77);
+    }
+
+    #[test]
+    fn usage_snapshot_crash_rolls_back_identity_counters_and_display_together() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-usage-snapshot-{}.sqlite3",
+            lettuce_types::RequestId::new()
+        ));
+        let (database, record) = fixture_in(Database::open(&path).expect("database"));
+        let mut document = serde_json::to_value(&record).expect("encode usage");
+        document["snapshot"] = serde_json::json!({"model_name":"Recorded model", "provider_response_id":"recorded-response"});
+        drop(database);
+        let child = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .arg("usage_adapter::tests::usage_snapshot_crash_child")
+            .arg("--exact")
+            .env("LETTUCE_USAGE_SNAPSHOT_CRASH_DATABASE", &path)
+            .env("LETTUCE_USAGE_SNAPSHOT_CRASH_RECORD", document.to_string())
+            .output()
+            .expect("run crash child");
+        assert_eq!(
+            child.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&child.stdout)
+        );
+        let database = Database::open(&path).expect("reopen after crash");
+        assert!(
+            UsageLedger::get_for_attempt(&database, record.turn_id, record.attempt_id)
+                .expect("read usage")
+                .is_none()
+        );
+        let record: UsageRecord = serde_json::from_value(document).expect("retry snapshot");
+        let event = UsageLedger::record(&database, record.clone()).expect("retry after crash");
+        assert_eq!(event.record, record);
+        assert_eq!(UsageLedger::record(&database, record), Ok(event.clone()));
+        assert!(
+            database
+                .connection()
+                .expect("connection")
+                .execute("DELETE FROM usage_events", [])
+                .is_err()
+        );
+        drop(database);
+        let database = Database::open(&path).expect("reopen committed snapshot");
+        assert_eq!(UsageLedger::get(&database, event.id), Ok(Some(event)));
+        drop(database);
+        std::fs::remove_file(path).expect("remove crash fixture");
+    }
+
+    #[test]
+    fn usage_display_snapshot_is_immutable_and_unknown_history_stays_unknown() {
+        let (database, record) = fixture();
+        let original = serde_json::to_value(&record).expect("encode usage");
+        let mut document = original.clone();
+        document["snapshot"] = serde_json::json!({
+            "character_id": lettuce_types::CharacterId::new(),
+            "character_name": "Historical character",
+            "model_name": "Historical model",
+            "provider_kind": "openrouter",
+            "provider_label": "Historical account",
+            "operation_kind": "send",
+            "finish_reason": "stop",
+            "error_message": null,
+            "memory_tokens": 0,
+            "summary_tokens": null,
+            "provider_response_id": "generation-recorded-response"
+        });
+        let record: UsageRecord =
+            serde_json::from_value(document.clone()).expect("decode snapshot");
+        let event = UsageLedger::record(&database, record.clone()).expect("record snapshot");
+        assert_eq!(
+            serde_json::to_value(&event.record).expect("saved usage"),
+            document
+        );
+        let projection = database.connection().expect("connection").query_row(
+            "SELECT character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id FROM usage_events WHERE id=?1",
+            [event.id.to_string()],
+            |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,String>(5)?,row.get::<_,Option<String>>(6)?,row.get::<_,Option<i64>>(7)?,row.get::<_,Option<i64>>(8)?,row.get::<_,String>(9)?)),
+        ).expect("snapshot columns");
+        assert_eq!(
+            projection,
+            (
+                "Historical character".into(),
+                "Historical model".into(),
+                "openrouter".into(),
+                "Historical account".into(),
+                "send".into(),
+                "stop".into(),
+                None,
+                Some(0),
+                None,
+                "generation-recorded-response".into()
+            )
+        );
+        assert_eq!(UsageLedger::record(&database, record), Ok(event.clone()));
+        document["snapshot"]["provider_label"] = serde_json::json!("Renamed account");
+        let changed: UsageRecord = serde_json::from_value(document).expect("changed snapshot");
+        assert_eq!(
+            UsageLedger::record(&database, changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        assert!(
+            database
+                .connection()
+                .expect("connection")
+                .execute("UPDATE usage_events SET model_name='changed'", [])
+                .is_err()
+        );
+        assert_eq!(UsageLedger::get(&database, event.id), Ok(Some(event)));
+        let old: UsageRecord = serde_json::from_value(original.clone()).expect("old record");
+        assert_eq!(serde_json::to_value(old).expect("old round trip"), original);
+    }
+
+    #[test]
+    fn competing_terminal_snapshots_keep_one_complete_immutable_winner() {
+        let (database, record) = fixture();
+        let database = std::sync::Arc::new(database);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let workers = [UsageOutcome::Succeeded, UsageOutcome::Cancelled].map(|outcome| {
+            let database = std::sync::Arc::clone(&database);
+            let barrier = std::sync::Arc::clone(&barrier);
+            let mut record = record.clone();
+            record.outcome = outcome;
+            record.snapshot = Some(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(format!("Snapshot {outcome:?}")),
+                provider_label: Some(format!("Account {outcome:?}")),
+                finish_reason: Some(format!("{outcome:?}")),
+                ..Default::default()
+            });
+            std::thread::spawn(move || {
+                barrier.wait();
+                let result = UsageLedger::record(database.as_ref(), record.clone());
+                (record, result)
+            })
+        });
+        let results = workers.map(|worker| worker.join().expect("writer"));
+        assert_eq!(
+            results.iter().filter(|(_, result)| result.is_ok()).count(),
+            1
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|(_, result)| *result == Err(UsageLedgerError::Conflict))
+                .count(),
+            1
+        );
+        let (winner, event) = results
+            .iter()
+            .find(|(_, result)| result.is_ok())
+            .expect("winner");
+        let event = event.as_ref().expect("winner event");
+        assert_eq!(&event.record, winner);
+        assert_eq!(
+            UsageLedger::get(database.as_ref(), event.id),
+            Ok(Some(event.clone()))
+        );
     }
 
     #[test]

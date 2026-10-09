@@ -14,6 +14,8 @@ The crate defines the ledgers as ports and the calculation as pure functions; `l
 
 `UsageLedger` records one terminal `UsageEvent` per generation attempt (the `UsageRecord` from `lettuce-conversations`: counters, outcome, provenance and time). `get_for_attempt` reads the event an attempt already owns, so a settlement path can reuse it instead of recording a conflicting one.
 
+Terminal records accept an immutable display and result snapshot alongside the counters. The database stores its optional names, operation, result fields, response id and memory counts in the same row; exact retries compare the snapshot too. A record created before snapshots were available keeps an absent snapshot through serialization and storage.
+
 Counters include input, output, image, audio and total tokens and optional cached-input and reasoning details. `total_tokens` is only a total the provider reported; readers use `InferenceUsage::effective_total_tokens` (the reported total, else input plus output). When several calls are combined, image and audio counts combine only if every call reported them, and a total if any call did.
 
 ## Job dispatch usage

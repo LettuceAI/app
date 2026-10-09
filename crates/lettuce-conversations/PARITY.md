@@ -27,6 +27,8 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 
 ## History
 
+Terminal usage contracts can carry immutable display and result snapshots, matching the values copied into successful and failed legacy records in `old-code/src-tauri/src/chat_manager/service.rs:515-538,617-646`. Older terminal records retain unknown snapshot values instead of inventing them from current catalog entries. Zero memory tokens remain distinct from an unknown count; legacy stored memory and summary counts only when positive (`service.rs:550-566`).
+
 - The previous README said the legacy imports of the `timeAwarenessEnabled` and `timeOverride` preferences were still missing. `lettuce-app/src/legacy/legacy_direct_conversation_import.rs` reads both now.
 - The previous README called runtime resolution of `model_settings` a later slice. Generation input (`lettuce-app/src/generation/conversation_generation_input.rs`) now passes it as the session layer of chat parameter resolution.
 - The previous README said conversation checkpoints did not persist `provider_response_id`. The initial inference checkpoint stores the whole `InferenceOutcome`, including that field, and the database compares it with the usage evidence when settling.

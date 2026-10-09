@@ -74,6 +74,8 @@ The schema has not shipped, so a domain's tables change inside that domain's mig
 
 ## Storage conventions
 
+Terminal usage snapshots use nullable scalar columns in the usage migration. A presence flag distinguishes an older record with no snapshot from a snapshot whose fields are all unknown. Snapshot metadata, counters and event identity are inserted together, remain immutable, and are carried by the same historical usage writer used for backup and synchronization.
+
 The same few patterns run through every adapter:
 
 - Normalized rows for anything queried or constrained; versioned JSON envelopes (`{format_version, value}`, unknown fields rejected) for values that are meant to be extensible, such as prompt conditions, settings payloads, run documents and outbox events. When a row has both, the scalar columns are projections of the document and are checked against it on every write and read.

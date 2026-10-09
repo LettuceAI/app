@@ -2462,6 +2462,8 @@ pub struct CompanionEffectProposal {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<UsageRecordSnapshot>,
     pub turn_id: GenerationTurnId,
     pub attempt_id: GenerationAttemptId,
     pub outcome: UsageOutcome,
@@ -2471,6 +2473,22 @@ pub struct UsageRecord {
     pub provider_account_id: Option<lettuce_types::ProviderAccountId>,
     pub provider_account_revision: Option<lettuce_types::Revision>,
     pub recorded_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UsageRecordSnapshot {
+    pub character_id: Option<lettuce_types::CharacterId>,
+    pub character_name: Option<String>,
+    pub model_name: Option<String>,
+    pub provider_kind: Option<String>,
+    pub provider_label: Option<String>,
+    pub operation_kind: Option<String>,
+    pub finish_reason: Option<String>,
+    pub error_message: Option<String>,
+    pub memory_tokens: Option<u64>,
+    pub summary_tokens: Option<u64>,
+    pub provider_response_id: Option<String>,
 }
 
 impl UsageRecord {

@@ -83,6 +83,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## History
 
+Usage snapshot storage commits names, provider kind and label, operation, finish and error fields, memory counts and response identity with the terminal event. Legacy copied these display fields into its usage rows (`old-code/src-tauri/src/chat_manager/service.rs:515-538,617-646`). Unknown historical snapshots stay absent; retries reject changed snapshot evidence and a process exit before commit rolls back snapshot and counters together.
+
 - Root memory bindings carry an explicit branch identity on launch, historical import and sync root creation. Legacy branches were separate sessions with their own stored memory (`old-code/src/core/storage/repo.ts:1664-1698`); branch ownership in the normalized binding permits separate spaces inside one conversation.
 
 - Restore used to give an unfinished attempt a usage id without an event, so a restored database with such work could not be backed up again.

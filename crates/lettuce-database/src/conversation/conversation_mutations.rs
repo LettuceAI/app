@@ -6970,6 +6970,7 @@ mod tests {
         lettuce_usage::UsageLedger::record(
             fixture.database.as_ref(),
             lettuce_conversations::UsageRecord {
+                snapshot: None,
                 turn_id,
                 attempt_id,
                 outcome: lettuce_conversations::UsageOutcome::Succeeded,
