@@ -116,3 +116,5 @@ Log exports check reserved database and control-file locations before creating a
 `usage_clear_before` exposes the application ledger maintenance command with a timestamp cutoff and operation id; database deletion and retry semantics remain in the application and database crates.
 
 The shell exposes `storage_database_files_list` and `storage_database_file_delete` through the app API. File identifiers are basenames and deletion is guarded by the app's lifecycle lock, active-file check, live-handle lease and durable retry receipt.
+
+Database-file inventory carries nullable creation time and measured modification time as Unix milliseconds. The shell does not substitute discovery time for an unknown creation time.

@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, time::UNIX_EPOCH};
+use std::{
+    collections::BTreeSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use lettuce_platform::{ManagedFileLock, ParentSyncStatus};
 use lettuce_types::ContentHash;
@@ -42,7 +45,7 @@ enum FileState {
 struct FileMetadata {
     version: u32,
     kind: DatabaseFileKind,
-    created_at: TimestampMillis,
+    created_at: Option<TimestampMillis>,
     kept_at: Option<TimestampMillis>,
     kept_hashes: BTreeSet<ContentHash>,
     state: FileState,
@@ -52,7 +55,8 @@ struct FileMetadata {
 pub struct AppDatabaseFile {
     pub file: String,
     pub kind: DatabaseFileKind,
-    pub created_at: TimestampMillis,
+    pub created_at: Option<TimestampMillis>,
+    pub modified_at: TimestampMillis,
     pub size: u64,
     pub active: bool,
     pub deletable: bool,
@@ -94,6 +98,26 @@ impl AppDatabaseLocation {
 }
 
 impl DatabaseFileLifecycle {
+    fn timestamp(time: SystemTime) -> Result<TimestampMillis, AppDatabaseLocationError> {
+        let millis = time
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| AppDatabaseLocationError::Corrupt)?
+            .as_millis();
+        Ok(TimestampMillis::new(
+            i64::try_from(millis).map_err(|_| AppDatabaseLocationError::Corrupt)?,
+        ))
+    }
+
+    fn creation_time(
+        created: std::io::Result<SystemTime>,
+    ) -> Result<Option<TimestampMillis>, AppDatabaseLocationError> {
+        match created {
+            Ok(created) => Self::timestamp(created).map(Some),
+            Err(error) if error.kind() == std::io::ErrorKind::Unsupported => Ok(None),
+            Err(error) => Err(PlatformError::from(error).into()),
+        }
+    }
+
     fn key(name: &str) -> Result<ObjectKey, AppDatabaseLocationError> {
         Ok(ObjectKey::from_segments([
             DATABASE_DIRECTORY,
@@ -113,6 +137,13 @@ impl DatabaseFileLifecycle {
                     .map_err(|_| AppDatabaseLocationError::Corrupt)?;
                 if metadata.version != 1
                     || metadata.kept_at.is_none() && !metadata.kept_hashes.is_empty()
+                    || metadata.created_at.is_none()
+                        && matches!(
+                            metadata.kind,
+                            DatabaseFileKind::Restore
+                                | DatabaseFileKind::LegacyRestore
+                                | DatabaseFileKind::Reset
+                        )
                 {
                     return Err(AppDatabaseLocationError::Corrupt);
                 }
@@ -178,6 +209,13 @@ impl DatabaseFileLifecycle {
     }
 
     fn recover(&self) -> Result<(), AppDatabaseLocationError> {
+        self.recover_with_creation(std::fs::Metadata::created)
+    }
+
+    fn recover_with_creation(
+        &self,
+        created: impl Fn(&std::fs::Metadata) -> std::io::Result<SystemTime>,
+    ) -> Result<(), AppDatabaseLocationError> {
         let active = self.active_name()?;
         for name in self.names()? {
             let existing = self.read(&name)?;
@@ -191,17 +229,8 @@ impl DatabaseFileLifecycle {
                 Some(metadata) => metadata,
                 None => {
                     let path = self.location.database_path(&name)?;
-                    let created = path
-                        .metadata()
-                        .and_then(|metadata| metadata.created())
-                        .map_err(PlatformError::from)?;
-                    let millis = created
-                        .duration_since(UNIX_EPOCH)
-                        .map_err(|_| AppDatabaseLocationError::Corrupt)?
-                        .as_millis();
-                    let timestamp = TimestampMillis::new(
-                        i64::try_from(millis).map_err(|_| AppDatabaseLocationError::Corrupt)?,
-                    );
+                    let attributes = path.metadata().map_err(PlatformError::from)?;
+                    let created_at = Self::creation_time(created(&attributes))?;
                     FileMetadata {
                         version: 1,
                         kind: if name == active {
@@ -209,8 +238,12 @@ impl DatabaseFileLifecycle {
                         } else {
                             DatabaseFileKind::Existing
                         },
-                        created_at: timestamp,
-                        kept_at: (name != active).then_some(timestamp),
+                        created_at,
+                        kept_at: if name != active {
+                            Some(Self::timestamp(SystemTime::now())?)
+                        } else {
+                            None
+                        },
                         kept_hashes: if name == active {
                             BTreeSet::new()
                         } else {
@@ -261,13 +294,56 @@ impl DatabaseFileLifecycle {
             &FileMetadata {
                 version: 1,
                 kind,
-                created_at,
+                created_at: Some(created_at),
                 kept_at: None,
                 kept_hashes: BTreeSet::new(),
                 state: FileState::Writing,
             },
         )?;
         Ok(path)
+    }
+
+    pub(crate) fn prepare_open(
+        &self,
+        at: TimestampMillis,
+    ) -> Result<PathBuf, AppDatabaseLocationError> {
+        let path = self.location.active_path()?;
+        if path.try_exists().map_err(PlatformError::from)? {
+            return Ok(path);
+        }
+        match self.location.files.read(
+            &self.location.read,
+            &ObjectKey::single(ACTIVE_DATABASE_KEY)?,
+        ) {
+            Err(PlatformError::NotFound) => {}
+            Ok(_) => return Err(AppDatabaseLocationError::NotFound),
+            Err(error) => return Err(error.into()),
+        }
+        match self.read(INITIAL_DATABASE_NAME)? {
+            None => self.begin_file(INITIAL_DATABASE_NAME, DatabaseFileKind::Initial, at),
+            Some(metadata)
+                if metadata.kind == DatabaseFileKind::Initial
+                    && matches!(metadata.state, FileState::Writing | FileState::Abandoned) =>
+            {
+                Ok(path)
+            }
+            Some(_) => Err(AppDatabaseLocationError::NotFound),
+        }
+    }
+
+    pub(crate) fn complete_open(&self) -> Result<(), AppDatabaseLocationError> {
+        let name = self.active_name()?;
+        let mut metadata = self.read(&name)?.ok_or(AppDatabaseLocationError::Corrupt)?;
+        if matches!(metadata.state, FileState::Active) {
+            return Ok(());
+        }
+        if metadata.kind != DatabaseFileKind::Initial
+            || !matches!(metadata.state, FileState::Writing | FileState::Abandoned)
+        {
+            return Err(AppDatabaseLocationError::Corrupt);
+        }
+        metadata.state = FileState::Active;
+        self.write(&name, &metadata)
     }
 
     pub(super) fn prepare_cutover(
@@ -368,11 +444,15 @@ impl DatabaseFileLifecycle {
                     && Database::try_reserve_file_deletion(&path)
                         .map_err(|_| AppDatabaseLocationError::Storage)?
                         .is_some();
+                let attributes = path.metadata().map_err(PlatformError::from)?;
                 Ok(AppDatabaseFile {
                     file: name,
                     kind: metadata.kind,
                     created_at: metadata.created_at,
-                    size: path.metadata().map_err(PlatformError::from)?.len(),
+                    modified_at: Self::timestamp(
+                        attributes.modified().map_err(PlatformError::from)?,
+                    )?,
+                    size: attributes.len(),
                     active,
                     deletable,
                 })
@@ -542,4 +622,188 @@ pub(super) enum FileDeleteStage {
     DatabaseRemoved,
     SidecarsRemoved,
     MetadataRemoved,
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    use super::*;
+
+    fn unopened_location(root: &Path) -> AppDatabaseLocation {
+        let authority = FilesystemAuthority::new(
+            &lettuce_platform::DirectorySnapshot::new(root).expect("snapshot"),
+        )
+        .expect("authority");
+        AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location")
+    }
+
+    fn unrecovered_guard(location: &AppDatabaseLocation) -> DatabaseFileLifecycle {
+        DatabaseFileLifecycle {
+            location: location.clone(),
+            _lock: location
+                .files
+                .lock_file(
+                    &location.write,
+                    &ObjectKey::single(LIFECYCLE_KEY).expect("key"),
+                    false,
+                )
+                .expect("lock")
+                .expect("available lock"),
+        }
+    }
+
+    #[test]
+    fn unsupported_creation_time_bootstraps_without_substituting_a_date() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-unknown-created-{}", OperationId::new()));
+        let location = unopened_location(&root);
+        let active = location.active_path().expect("active");
+        drop(Database::open(&active).expect("database"));
+        let before = std::fs::read(&active).expect("database bytes");
+        let measured = DatabaseFileLifecycle::timestamp(
+            active
+                .metadata()
+                .expect("metadata")
+                .modified()
+                .expect("modified time"),
+        )
+        .expect("timestamp");
+        let guard = unrecovered_guard(&location);
+        guard
+            .recover_with_creation(|_| Err(std::io::ErrorKind::Unsupported.into()))
+            .expect("creation time is optional for existing files");
+        let file = guard.inventory(&active).expect("inventory").remove(0);
+        assert_eq!(file.created_at, None);
+        assert_eq!(file.modified_at, measured);
+        assert_eq!(std::fs::read(&active).expect("database bytes"), before);
+        let name = format!("{}.sqlite3", OperationId::new());
+        let path = guard
+            .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
+            .expect("new file");
+        drop(Database::open(&path).expect("new database"));
+        guard
+            .activate_file(&name, TimestampMillis::new(30))
+            .expect("cutover");
+        drop(guard);
+        let guard = location.try_file_lifecycle().expect("reopen");
+        let files = guard.inventory(&path).expect("inventory");
+        assert!(
+            files
+                .iter()
+                .any(|file| file.file == "lettuce.sqlite3" && file.created_at.is_none())
+        );
+        assert!(
+            files
+                .iter()
+                .any(|file| file.file == name && file.created_at == Some(TimestampMillis::new(20)))
+        );
+        drop(guard);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn failed_creation_time_read_is_not_converted_to_unknown() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-unreadable-created-{}", OperationId::new()));
+        let location = unopened_location(&root);
+        let active = location.active_path().expect("active");
+        drop(Database::open(&active).expect("database"));
+        let guard = unrecovered_guard(&location);
+        assert!(
+            guard
+                .recover_with_creation(|_| Err(std::io::ErrorKind::PermissionDenied.into()))
+                .is_err()
+        );
+        assert!(
+            guard
+                .read("lettuce.sqlite3")
+                .expect("read metadata")
+                .is_none()
+        );
+        drop(guard);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn first_database_creation_keeps_its_recorded_time_across_interruption() {
+        for created in [false, true] {
+            let root = std::env::temp_dir()
+                .join(format!("lettuce-initial-created-{}", OperationId::new()));
+            let location = unopened_location(&root);
+            let child = std::process::Command::new(std::env::current_exe().expect("test executable"))
+                .args([
+                    "--exact",
+                    "backup::backup_restore::database_files::timestamp_tests::initial_creation_crash_child",
+                    "--nocapture",
+                ])
+                .env("LETTUCE_SLICE12_INITIAL_CRASH_ROOT", &root)
+                .env("LETTUCE_SLICE12_INITIAL_CREATED", created.to_string())
+                .status()
+                .expect("child");
+            assert_eq!(child.code(), Some(77));
+            let path = location.active_path().expect("active");
+            let guard = location.try_file_lifecycle().expect("recover");
+            assert_eq!(
+                guard
+                    .prepare_open(TimestampMillis::new(40))
+                    .expect("resume"),
+                path
+            );
+            drop(Database::open(&path).expect("database"));
+            guard.complete_open().expect("complete creation");
+            let file = guard.inventory(&path).expect("inventory").remove(0);
+            assert_eq!(file.created_at, Some(TimestampMillis::new(20)));
+            assert!(file.active && !file.deletable);
+            drop(guard);
+            std::fs::remove_dir_all(root).expect("cleanup");
+        }
+    }
+
+    #[test]
+    fn initial_creation_crash_child() {
+        let Some(root) = std::env::var_os("LETTUCE_SLICE12_INITIAL_CRASH_ROOT") else {
+            return;
+        };
+        let location = unopened_location(Path::new(&root));
+        let guard = location.try_file_lifecycle().expect("lock");
+        let path = guard
+            .prepare_open(TimestampMillis::new(20))
+            .expect("initial creation");
+        if std::env::var("LETTUCE_SLICE12_INITIAL_CREATED").expect("stage") == "true" {
+            drop(Database::open(&path).expect("database"));
+        }
+        std::process::exit(77);
+    }
+
+    #[test]
+    fn opening_a_missing_switched_database_does_not_create_an_empty_replacement() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-missing-active-{}", OperationId::new()));
+        let location = unopened_location(&root);
+        location.activate("missing.sqlite3").expect("pointer");
+        let guard = location.try_file_lifecycle().expect("lock");
+        assert!(matches!(
+            guard.prepare_open(TimestampMillis::new(20)),
+            Err(AppDatabaseLocationError::NotFound)
+        ));
+        assert!(!location.active_path().expect("active path").exists());
+        drop(guard);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn pre_existing_file_metadata_accepts_an_unknown_creation_time() {
+        let metadata: FileMetadata = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "kind": "existing",
+            "created_at": null,
+            "kept_at": 123,
+            "kept_hashes": [],
+            "state": {"state": "kept"}
+        }))
+        .expect("unknown filesystem creation time is valid");
+        assert_eq!(
+            serde_json::to_value(metadata).expect("metadata JSON")["created_at"],
+            serde_json::Value::Null
+        );
+    }
 }

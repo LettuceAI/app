@@ -55,7 +55,8 @@ pub async fn storage_database_files_list(
                     Ok(dto::DatabaseFileView {
                         file: file.file,
                         kind,
-                        created_at: file.created_at.get(),
+                        created_at: file.created_at.map(lettuce_types::TimestampMillis::get),
+                        modified_at: file.modified_at.get(),
                         size: file.size,
                         active: file.active,
                         deletable: file.deletable,

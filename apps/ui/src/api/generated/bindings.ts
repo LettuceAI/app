@@ -1443,7 +1443,8 @@ export type DatabaseFileKind = "initial" | "restore" | "legacy_restore" | "reset
 export type DatabaseFileView = {
 	file: string,
 	kind: DatabaseFileKind,
-	created_at: number,
+	created_at: number | null,
+	modified_at: number,
 	size: number,
 	active: boolean,
 	deletable: boolean,

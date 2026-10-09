@@ -10,6 +10,8 @@ The `specta` cargo feature derives `specta::Type` on the application API contrac
 
 The application API (`lettuce_app::api`) speaks only these types. Ids are UUID strings and timestamps are unix milliseconds (exported to TypeScript as `number`, which holds them exactly). No domain type appears in them.
 
+Database-file inventory uses relative file identifiers, nullable creation timestamps and always-present measured modification timestamps. Creation is unknown only for pre-existing files whose filesystem does not expose it; newly created files retain the timestamp recorded before creation.
+
 Media never crosses IPC as bytes, base64 or a data URL, in either direction: a contract names media only by `AssetRef`, and a request that brings in user media will carry a file path (a `content://` URI on Android) that the backend reads, validates and ingests. No contract type has a bytes or base64 field.
 
 - `ApiError` is what every call returns on failure: a stable `ApiErrorCode` (`not_found`, `conflict`, `invalid_input`, `unsupported`, `unavailable`, `cancelled`, `busy`, `internal`), an English diagnostic `message` that is never shown to the user, and optional `ApiErrorDetails` (the invalid field, the missing model, the Hugging Face failure (`HfFailure`), or what keeps the local models folder busy). The frontend localizes by code and details.

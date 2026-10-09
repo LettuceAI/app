@@ -17,8 +17,10 @@ pub enum DatabaseFileKind {
 pub struct DatabaseFileView {
     pub file: String,
     pub kind: DatabaseFileKind,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub created_at: Option<i64>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub created_at: i64,
+    pub modified_at: i64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub size: u64,
     pub active: bool,

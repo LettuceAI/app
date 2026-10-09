@@ -254,18 +254,21 @@ impl ApiContext {
         let location =
             AppDatabaseLocation::new(app_data_dir.join(PRIVATE_PERSISTENT_DIRECTORY), &authority)
                 .map_err(|error| storage_error("database location", error))?;
-        let _file_lifecycle = location
+        let file_lifecycle = location
             .acquire_file_lifecycle(true)
-            .map_err(|error| storage_error("database lifecycle", error))?;
-        let path = location
-            .active_path()
-            .map_err(|error| storage_error("database location", error))?;
+            .map_err(|error| super::storage::file_error(error, None))?;
+        let path = file_lifecycle
+            .prepare_open(clock.now())
+            .map_err(|error| super::storage::file_error(error, None))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| storage_error("database directory", error))?;
         }
         let backend = AppBackend::open(&path, clock.now())
             .map_err(|error| storage_error("application database", error))?;
+        file_lifecycle
+            .complete_open()
+            .map_err(|error| super::storage::file_error(error, None))?;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let backend = {
             use lettuce_settings::DeviceSettingsStore;
