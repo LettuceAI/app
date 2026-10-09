@@ -41,3 +41,26 @@ pub struct DatabaseFileDeleteRequest {
 pub struct StorageOptimizeRequest {
     pub client_operation_id: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct StorageSize {
+    pub kind: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct StorageSummary {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub active_database_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub kept_database_bytes: u64,
+    pub media: Vec<StorageSize>,
+    pub models: Vec<StorageSize>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub logs_bytes: u64,
+}

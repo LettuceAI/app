@@ -392,3 +392,7 @@ The usage report adapter reads terminal events, dispatches, their immutable cost
 Storage optimization holds the connection mutex before acquiring the exclusive database-file write lease. It refuses a kept file, checks the TRUNCATE checkpoint result and runs VACUUM while other handles wait for the write lease. Cancellation uses the SQLite progress callback and removes that callback before releasing the connection. No usage deletion permission or schema constraint changes during optimization.
 
 Cost-target reads select missing settled dispatch costs consistently with their owner state, immutable provider attribution and operation receipts. Exact ownership tombstones distinguish explicit clearing from missing or corrupt evidence; no pricing write or report query restores a cleared dispatch.
+
+Storage inspection opens an existing database in SQLite read-only mode and reads ready blob identities, kinds and recorded sizes or its device-local model folder settings. It does not run initialization or migrations and cannot create a missing database file. The application combines these snapshots under its database-file lifecycle lock.
+
+A fenced database connection can close its native SQLite handle and file-use lease while its Rust owner remains alive. Later reads and writes return a closed-connection error. Closure is idempotent, refuses an unfenced database, and restores the original connection if SQLite cannot close it. This permits a reset coordinator to rename the kept file after every owned handle releases it, without rebinding an existing backend.

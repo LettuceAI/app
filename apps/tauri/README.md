@@ -130,3 +130,5 @@ Usage query, statistics and CSV wrappers forward owned contracts to the app. Sta
 The storage optimization wrapper returns the application maintenance job without running database work on the shell thread.
 
 The usage recalculation command admits a durable missing-cost job. The shell returns its job identity and forwards typed completion and failures through the existing jobs API.
+
+`storage_summary` exposes database, media, model-folder and log byte totals through the generated contracts. Storage inspection and its native filesystem watcher live in the application API; the shell supplies no native paths in the result.

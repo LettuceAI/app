@@ -502,7 +502,7 @@ impl DatabaseFileLifecycle {
             .collect()
     }
 
-    pub(super) fn is_complete(&self, name: &str) -> Result<bool, AppDatabaseLocationError> {
+    pub(crate) fn is_complete(&self, name: &str) -> Result<bool, AppDatabaseLocationError> {
         Ok(self
             .read(name)?
             .is_some_and(|metadata| matches!(metadata.state, FileState::Active | FileState::Kept)))

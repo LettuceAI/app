@@ -265,6 +265,10 @@ pub enum DatabaseError {
     Lock,
     #[error("this database file has been kept and no longer accepts writes")]
     WriteFenced,
+    #[error("database connection is closed")]
+    Closed,
+    #[error("database must be fenced before its connections close")]
+    WriteFenceRequired,
     #[error("foreign key enforcement was lost; the database must be reopened")]
     ForeignKeysLost,
     #[error("applied migration {id} has a different checksum")]
@@ -281,6 +285,7 @@ pub use database_file::DatabaseFileDeletionPermit;
 
 pub struct Database {
     connection: Mutex<Connection>,
+    closed: std::sync::atomic::AtomicBool,
     changes: std::sync::Arc<change_signal::ChangeSignal>,
     /// Set when foreign key enforcement could not be restored after a purge;
     /// every later use of the connection then fails.
@@ -318,6 +323,7 @@ impl Database {
         drop(write_use);
         Ok(Self {
             connection: Mutex::new(connection),
+            closed: std::sync::atomic::AtomicBool::new(false),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
             usage_delete_allowed,
@@ -340,6 +346,7 @@ impl Database {
         let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            closed: std::sync::atomic::AtomicBool::new(false),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
             usage_delete_allowed,
@@ -364,10 +371,11 @@ impl Database {
         {
             return Err(DatabaseError::ForeignKeysLost);
         }
-        write_fence::DatabaseConnection::new(
-            self.connection.lock().map_err(|_| DatabaseError::Lock)?,
-            self.write_access.as_ref(),
-        )
+        let connection = self.connection.lock().map_err(|_| DatabaseError::Lock)?;
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(DatabaseError::Closed);
+        }
+        write_fence::DatabaseConnection::new(connection, self.write_access.as_ref())
     }
 }
 

@@ -100,6 +100,7 @@ pub enum ApiErrorDetails {
     MetricsUnavailable,
     UsageStorage,
     DatabaseFiles { file: Option<String> },
+    StorageSummary { section: String },
     MediaInUse {
         asset_id: String,
         references: Vec<crate::MediaReferenceView>,

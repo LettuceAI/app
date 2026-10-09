@@ -186,3 +186,76 @@ fn write_fence_blocks_a_worker_that_opened_the_database_in_another_process() {
     drop(database);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[test]
+fn reset_closes_fenced_connections_and_releases_every_file_lease_without_losing_rows() {
+    use lettuce_jobs::{
+        JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceClass, SubjectKind,
+    };
+    let root = std::env::temp_dir().join(format!("lettuce-reset-close-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).expect("root");
+    let path = root.join("active.sqlite3");
+    let first = Database::open(&path).expect("first");
+    let second = Database::open(&path).expect("second");
+    let job = first
+        .create_or_get(
+            JobSpec::new(
+                JobKind::Maintenance,
+                JobSubject::new(SubjectKind::Maintenance, "reset-close-test").expect("subject"),
+                OutcomeRef::Request(lettuce_types::RequestId::new()),
+            )
+            .with_resources(vec![ResourceClass::DiskWrite]),
+        )
+        .expect("stored row")
+        .job;
+    {
+        let fence = Database::lock_file_writes(&path).expect("write fence");
+        fence.set_fenced(true).expect("freeze");
+    }
+    first.close_for_reset().expect("close first");
+    first.close_for_reset().expect("idempotent close");
+    assert!(matches!(
+        first.connection(),
+        Err(crate::DatabaseError::Closed)
+    ));
+    assert!(
+        Database::try_reserve_file_deletion(&path)
+            .expect("reservation")
+            .is_none()
+    );
+    second.close_for_reset().expect("close second");
+    let permit = Database::try_reserve_file_deletion(&path)
+        .expect("reservation")
+        .expect("all database handles closed");
+    let kept = root.join("kept.sqlite3");
+    std::fs::rename(&path, &kept).expect("rename after native SQLite handles closed");
+    drop(permit);
+    let readonly =
+        rusqlite::Connection::open_with_flags(&kept, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("kept database");
+    let count: i64 = readonly
+        .query_row(
+            "SELECT COUNT(*) FROM jobs WHERE id = ?1",
+            [job.id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("preserved job");
+    assert_eq!(count, 1);
+    drop(readonly);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn reset_cannot_close_an_unfenced_database() {
+    let root =
+        std::env::temp_dir().join(format!("lettuce-reset-close-live-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).expect("root");
+    let database = Database::open(root.join("active.sqlite3")).expect("database");
+    assert!(matches!(
+        database.close_for_reset(),
+        Err(crate::DatabaseError::WriteFenceRequired)
+    ));
+    assert!(database.connection().is_ok());
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

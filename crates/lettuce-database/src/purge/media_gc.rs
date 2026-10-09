@@ -361,6 +361,45 @@ impl Database {
             .map_err(storage)
     }
 
+    pub fn storage_device_settings_in_file(
+        path: &Path,
+    ) -> Result<lettuce_settings::DeviceSettings, PurgeError> {
+        let connection = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(storage)?;
+        crate::read_device_settings(&connection).map_err(storage)
+    }
+
+    pub fn media_storage_objects_in_file(
+        path: &Path,
+    ) -> Result<Vec<(ContentHash, String, u64)>, PurgeError> {
+        let connection = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(storage)?;
+        let mut statement = connection.prepare("SELECT content_hash, kind, byte_size FROM media_blobs WHERE state = 'ready' ORDER BY content_hash").map_err(storage)?;
+        statement
+            .query_map([], |row| {
+                let hash: String = row.get(0)?;
+                let kind: String = row.get(1)?;
+                if !["image", "audio", "video", "document"].contains(&kind.as_str()) {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+                Ok((
+                    ContentHash::parse(hash).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    kind,
+                    u64::try_from(row.get::<_, i64>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                ))
+            })
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)
+    }
+
     pub fn media_objects_in_file(path: &Path) -> Result<BTreeSet<ContentHash>, PurgeError> {
         let mut connection = Connection::open_with_flags(
             path,

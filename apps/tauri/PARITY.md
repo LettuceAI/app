@@ -37,3 +37,5 @@ Usage reporting delegates the unified query, local-day statistics and picked-tar
 The storage optimization wrapper returns JobAccepted in place of `db_optimize`; its completion is watched through the jobs API, replacing the immediate developer-page success message (`old-code/src/ui/pages/settings/DeveloperPage.tsx:1967-1974`).
 
 Usage recalculation returns JobAccepted and typed job completion in place of the immediate summary string (`old-code/src/ui/pages/settings/DeveloperPage.tsx:2002-2010`). It resolves credentials in the application and fills missing costs instead of the legacy overwrite (`old-code/src-tauri/src/usage/commands.rs:200-215`).
+
+The storage summary is an application API command with byte categories and no native path fields. Legacy offered a file-count/session-count summary (`old-code/src-tauri/src/storage_manager/usage.rs:140-190`), exposed only through the unused reset-summary wrapper (`old-code/src/core/storage/reset.ts:40-53`).

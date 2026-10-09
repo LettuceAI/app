@@ -54,3 +54,11 @@ pub async fn storage_database_file_delete(
 ) -> Result<(), ApiError> {
     api::storage_database_file_delete(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn storage_summary(
+    context: State<'_, ApiContext>,
+) -> Result<dto::StorageSummary, ApiError> {
+    api::storage_summary(&context).await
+}

@@ -937,3 +937,27 @@ fn failed_media_proof_restore_rolls_back_and_revokes_its_private_permission() {
         graph.legacy_imports
     );
 }
+
+#[test]
+fn storage_media_snapshot_is_read_only_and_has_one_entry_per_blob() {
+    let root = std::env::temp_dir().join(format!(
+        "media-size-snapshot-{}",
+        lettuce_types::OperationId::new()
+    ));
+    std::fs::create_dir(&root).expect("root");
+    let path = root.join("kept.db");
+    let database = Database::open(&path).expect("database");
+    let (_, hash) = asset(&database, 'a', RetentionClass::Library);
+    let rows = Database::media_storage_objects_in_file(&path).expect("sizes");
+    assert_eq!(rows, vec![(hash, "image".into(), 42)]);
+    let migrations: i64 = database
+        .connection()
+        .expect("connection")
+        .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .expect("migrations");
+    assert!(migrations > 0);
+    assert!(Database::media_storage_objects_in_file(&root.join("missing.db")).is_err());
+    assert!(!root.join("missing.db").exists());
+}

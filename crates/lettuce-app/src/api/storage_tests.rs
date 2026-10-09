@@ -290,6 +290,25 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
             .expect("JSON")
             .contains(root.to_str().expect("path"))
     );
+    let logs = root.join("logs");
+    std::fs::create_dir_all(&logs).expect("logs");
+    let output =
+        lettuce_observability::local_output(lettuce_observability::LocalOutputConfig::new(&logs))
+            .expect("output");
+    h.context.attach_logs(logs, output.sink);
+    let summary = super::storage_summary(&h.context)
+        .await
+        .expect("kept summary");
+    assert!(summary.kept_database_bytes >= std::fs::metadata(&kept).expect("kept metadata").len());
+    assert_eq!(
+        summary
+            .media
+            .iter()
+            .find(|item| item.kind == "image")
+            .expect("images")
+            .bytes,
+        png.len() as u64
+    );
     let key = RequestId::new().to_string();
     let error = super::storage_database_file_delete(
         &h.context,
@@ -460,4 +479,101 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
         .expect("database remains usable");
     drop(h);
     std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn storage_summary_counts_database_sidecars_models_and_panic_reports() {
+    let root = std::env::temp_dir().join(format!("lettuce-storage-summary-{}", OperationId::new()));
+    std::fs::create_dir_all(root.join("models/gguf")).expect("models");
+    std::fs::write(root.join("models/gguf/model.gguf"), [1_u8; 29]).expect("model");
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let location =
+        AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location");
+    let active = location.active_path().expect("active");
+    let backend = Arc::new(AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
+    let h = harness_over_files(
+        backend,
+        Reply::Text("ok"),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::new(NoModels),
+        Arc::new(NoImages),
+        Some(ApiDatabaseFiles {
+            location: location.clone(),
+            active: active.clone(),
+        }),
+    );
+    let logs = root.join("logs");
+    std::fs::create_dir(&logs).expect("logs");
+    let output =
+        lettuce_observability::local_output(lettuce_observability::LocalOutputConfig::new(&logs))
+            .expect("output");
+    h.context.attach_logs(logs.clone(), output.sink);
+    std::fs::write(logs.join("panic-report.txt"), [1_u8; 17]).expect("panic report");
+    let summary = super::storage_summary(&h.context).await.expect("summary");
+    let mut expected = std::fs::metadata(&active).expect("main").len();
+    for suffix in ["-wal", "-shm"] {
+        let path = std::path::PathBuf::from(format!("{}{suffix}", active.display()));
+        if let Ok(metadata) = std::fs::metadata(path) {
+            expected += metadata.len();
+        }
+    }
+    assert_eq!(summary.active_database_bytes, expected);
+    assert_eq!(summary.kept_database_bytes, 0);
+    assert_eq!(
+        summary
+            .models
+            .iter()
+            .find(|item| item.kind == "llm")
+            .expect("llm")
+            .bytes,
+        29
+    );
+    assert_eq!(summary.logs_bytes, 17);
+    assert!(summary.media.iter().all(|item| item.bytes == 0));
+    let _lifecycle = location.try_file_lifecycle().expect("lifecycle");
+    assert_eq!(
+        super::storage_summary(&h.context)
+            .await
+            .expect_err("cutover busy")
+            .code,
+        ApiErrorCode::Busy
+    );
+    drop(_lifecycle);
+    let next_models = root.join("relocated-models");
+    std::fs::create_dir(&next_models).expect("new models");
+    std::fs::write(next_models.join("new.gguf"), [3_u8; 19]).expect("new model");
+    let lifecycle = location.try_file_lifecycle().expect("cutover");
+    let name = format!("{}.sqlite3", OperationId::new());
+    let next = lifecycle
+        .begin_file(
+            &name,
+            crate::DatabaseFileKind::Restore,
+            TimestampMillis::new(20),
+        )
+        .expect("begin new database");
+    let next_database = lettuce_database::Database::open(&next).expect("new database");
+    lettuce_settings::DeviceSettingsStore::update_device_settings(&next_database, &|device| {
+        device.llm_models_dir = Some(next_models.to_string_lossy().into_owned())
+    })
+    .expect("new folder setting");
+    lifecycle
+        .activate_file(&name, TimestampMillis::new(30))
+        .expect("activate");
+    drop(lifecycle);
+    let after = super::storage_summary(&h.context)
+        .await
+        .expect("summary after cutover");
+    assert_eq!(
+        after
+            .models
+            .iter()
+            .find(|item| item.kind == "llm")
+            .expect("active model folder")
+            .bytes,
+        19
+    );
+    assert!(after.kept_database_bytes > 0);
 }
