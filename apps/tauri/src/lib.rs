@@ -98,7 +98,7 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     let context = ApiContext::open_desktop(
         &app_data,
         app.path().resource_dir().ok(),
-        Arc::new(lettuce_settings::NativeSecretStore::new()),
+        Arc::new(lettuce_settings::NativeSecretStore::try_new()?),
         Arc::new(events::TauriEventSink(app.handle().clone())),
         files::file_access(app.handle()),
         asset_protocol::ASSET_URL_BASE.to_owned(),

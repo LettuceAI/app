@@ -23,9 +23,10 @@ use lettuce_settings::SecretStore;
 use lettuce_types::TimestampMillis;
 
 use crate::{
-    ArtifactInstallPlan, ArtifactSource, GgufHeaderSource, HfBundleRegistration,
-    HuggingFaceBrowser, PlannedArtifact, register_hf_bundle_model,
+    ArtifactInstallPlan, ArtifactSource, GgufHeaderSource, HuggingFaceBrowser, PlannedArtifact,
 };
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::{HfBundleRegistration, register_hf_bundle_model};
 
 const HINT_CONCURRENCY: usize = 6;
 
@@ -619,6 +620,20 @@ impl HuggingFaceBrowser {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn register_manifest<R>(
+    _repository: &R,
+    _paths: &DiffusionPaths,
+    _manifest: &BundleManifest,
+    _now: TimestampMillis,
+) -> Result<String, String>
+where
+    R: ModelLookup + ModelProfileRepository + ProviderAccountRepository + ?Sized,
+{
+    Err("Local image generation is not available on this platform.".to_owned())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn register_manifest<R>(
     repository: &R,
     paths: &DiffusionPaths,
