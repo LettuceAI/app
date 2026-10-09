@@ -205,6 +205,8 @@ The async ports (`ContextAssembler`, `InferencePort`, `UsagePort` and the others
 
 `UsageRecordSnapshot` carries the optional character identity and name, model name, provider kind and account label, operation, finish reason, error, memory and summary token counts, and response id supplied to the usage writer. The complete snapshot commits with the terminal counters and identity. Older records without a snapshot remain unknown and serialize unchanged; reading history never resolves names from current authored records.
 
+`ContextAttributions.usage_snapshot` carries known character and operation attribution from context assembly into dispatch admission. An absent attribution remains omitted from serialized historical requests, preserving their stored request fingerprints.
+
 ## Time
 
 `CompanionClockSettings` lets a direct conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking; negative anchors are rejected. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.

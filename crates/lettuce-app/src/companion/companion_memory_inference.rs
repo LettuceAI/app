@@ -1271,6 +1271,14 @@ mod tests {
             cancelled.provider_response_id = Some("gen-cancelled-memory".into());
             let expected = if response {
                 lettuce_usage::JobInferenceUsageResult::Response {
+                    snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                        model_name: Some(profile().chat_profile.model_display_name),
+                        provider_kind: Some(profile().chat_profile.provider_kind),
+                        provider_label: profile().chat_profile.provider_label,
+                        finish_reason: Some("stop".into()),
+                        provider_response_id: cancelled.provider_response_id.clone(),
+                        ..Default::default()
+                    })),
                     usage: cancelled.usage.clone(),
                     provider_response_id: cancelled.provider_response_id.clone(),
                 }

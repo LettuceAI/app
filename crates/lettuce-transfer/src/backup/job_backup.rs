@@ -122,6 +122,7 @@ impl JobBackup {
         let mut evidence_ids = BTreeSet::new();
         for entry in &self.inference {
             if entry.evidence.model_revision.get() == 0
+                || entry.evidence.validate_snapshot().is_err()
                 || entry.evidence.provider_account_revision.get() == 0
                 || !evidence_ids.insert(entry.evidence.id)
                 || entry
@@ -263,13 +264,13 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn inference_evidence_survives_scheduler_retention() {
-        let mut backup = JobBackup {
+    fn retained_inference_fixture() -> JobBackup {
+        JobBackup {
             version: JOB_BACKUP_VERSION,
             jobs: Vec::new(),
             inference: vec![BackupJobInference {
                 evidence: JobInferenceUsage {
+                    snapshot: None,
                     id: UsageEventId::new(),
                     job_id: JobId::new(),
                     logical_attempt_id: GenerationAttemptId::new(),
@@ -291,7 +292,62 @@ mod tests {
             local_model_jobs: Vec::new(),
             local_model_operations: Vec::new(),
             hugging_face_refusals: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn restored_dispatch_snapshots_require_matching_admission_and_response() {
+        let mut backup = retained_inference_fixture();
+        let admitted = lettuce_conversations::UsageRecordSnapshot {
+            model_name: Some("Recorded model".into()),
+            provider_label: Some("Recorded account".into()),
+            ..Default::default()
         };
+        backup.inference[0].evidence.snapshot = Some(admitted.clone());
+        let completed = lettuce_conversations::UsageRecordSnapshot {
+            finish_reason: Some("stop".into()),
+            provider_response_id: Some("response".into()),
+            ..admitted
+        };
+        let response = |snapshot| {
+            Some(JobInferenceUsageResult::Response {
+                snapshot: Some(Box::new(snapshot)),
+                provider_response_id: Some("response".into()),
+                usage: None,
+            })
+        };
+        backup.inference[0].evidence.result = response(completed.clone());
+        backup.canonicalize_and_validate().expect("valid snapshot");
+        let mut forged = completed.clone();
+        forged.provider_response_id = Some("foreign".into());
+        backup.inference[0].evidence.result = response(forged);
+        assert_eq!(
+            backup.canonicalize_and_validate(),
+            Err(JobBackupError::InvalidData)
+        );
+        let mut changed = completed.clone();
+        changed.provider_label = Some("Renamed account".into());
+        backup.inference[0].evidence.result = response(changed);
+        assert_eq!(
+            backup.canonicalize_and_validate(),
+            Err(JobBackupError::InvalidData)
+        );
+        backup.inference[0].evidence.result = response(completed);
+        backup.inference[0]
+            .evidence
+            .snapshot
+            .as_mut()
+            .expect("admission")
+            .finish_reason = Some("stop".into());
+        assert_eq!(
+            backup.canonicalize_and_validate(),
+            Err(JobBackupError::InvalidData)
+        );
+    }
+
+    #[test]
+    fn inference_evidence_survives_scheduler_retention() {
+        let mut backup = retained_inference_fixture();
         assert!(backup.canonicalize_and_validate().is_ok());
         backup
             .local_model_operations

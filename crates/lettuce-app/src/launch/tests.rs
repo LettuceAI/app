@@ -1844,7 +1844,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert_eq!(inputs, [30, 50]);
     for (input, expected_id) in [(30, "gen-primary"), (50, "gen-fallback")] {
         assert!(evidence.iter().any(|entry| matches!(&entry.result,
-            Some(JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+            Some(JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id), .. })
                 if usage.input_tokens == input && id == expected_id)));
     }
 
@@ -2058,6 +2058,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         && entry.model_profile_id == profile.chat_profile.model_profile_id));
     assert!(alternate_usage.iter().any(|entry| entry.result
         == Some(JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(alternate_profile.chat_profile.model_display_name.clone()),
+                provider_kind: Some(alternate_profile.chat_profile.provider_kind.clone()),
+                provider_label: alternate_profile.chat_profile.provider_label.clone(),
+                ..Default::default()
+            })),
             usage: None,
             provider_response_id: None
         })
@@ -2208,6 +2214,13 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     );
     assert!(retries.iter().any(|entry| entry.result
         == Some(JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(retry_request.profile.chat_profile.model_display_name.clone()),
+                provider_kind: Some(retry_request.profile.chat_profile.provider_kind.clone()),
+                provider_label: retry_request.profile.chat_profile.provider_label.clone(),
+                finish_reason: Some("error".into()),
+                ..Default::default()
+            })),
             usage: Some(failed_usage.clone()),
             provider_response_id: None
         })));
@@ -2630,7 +2643,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         ("gen-runner-summary-fallback", 24, 7),
     ] {
         assert!(summary_evidence.iter().any(|event| matches!(&event.result,
-            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(actual) })
+            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(actual), .. })
                 if actual == id && usage.input_tokens == input && usage.output_tokens == output)));
     }
 
@@ -2730,7 +2743,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     );
     for id in ["gen-runner-first", "gen-runner-second"] {
         assert!(memory_evidence.iter().any(|event| matches!(&event.result,
-            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: None, provider_response_id: Some(actual) }) if actual == id)));
+            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: None, provider_response_id: Some(actual), .. }) if actual == id)));
     }
 
     assert_eq!(
@@ -8137,7 +8150,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("staged dispatch evidence");
         assert_eq!(evidence.len(), 1);
         assert!(matches!(&evidence[0].result,
-            Some(JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+            Some(JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id), .. })
                 if id == expected_id && usage.input_tokens == input));
     };
     let database = database_with_builtins();

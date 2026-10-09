@@ -28,6 +28,8 @@ Counters include input, output, image, audio and total tokens and optional cache
 
 Retries and fallbacks get new dispatch ids and never overwrite earlier ones, so each charge stays separate. A replayed checkpoint makes no new dispatch. Dispatch evidence survives normal job retention cleanup. A conversation's terminal event may aggregate the same dispatches that the job ledger holds, so reports must not add both as independent charges.
 
+Dispatch admission can retain a frozen usage snapshot. A response adds a settlement snapshot without changing the admission: names, ownership attribution and memory counts must still match, and its response id must equal the response evidence. The same validation applies to persistence reads and backup validation. Older records and responses without snapshots serialize unchanged.
+
 ## Costs
 
 `UsageCostBasis` (`costing.rs`) is a versioned, immutable record of how a cost was computed: model and provider identities, a description of the price source, capture time, the exact prices and the cost counters. `UsageCostLedger` stores one per usage event, and `record_job_cost` / `get_job_cost` one per job dispatch that returned known usage; pending, failed, cancelled and usage-missing dispatches cannot be costed.

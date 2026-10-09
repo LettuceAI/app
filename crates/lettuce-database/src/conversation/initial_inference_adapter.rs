@@ -81,6 +81,7 @@ fn verify_usage(
             lettuce_usage::JobInferenceUsageResult::Response {
                 usage,
                 provider_response_id,
+                ..
             },
         ) => outcome.usage == usage && outcome.provider_response_id == provider_response_id,
         (

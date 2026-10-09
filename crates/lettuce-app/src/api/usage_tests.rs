@@ -5,6 +5,95 @@ use lettuce_usage::JobUsageLedger;
 use std::sync::Arc;
 
 #[tokio::test]
+async fn chat_usage_keeps_dispatch_names_after_in_flight_catalog_edits() {
+    use lettuce_models::{ModelProfileRepository, ProviderAccountRepository};
+    use lettuce_usage::UsageLedger;
+    let h = harness(Reply::Text("Hello."));
+    let conversation = launch(&h, "snapshot-launch").await;
+    let context = h.context.clone();
+    *h.provider.response_hook.lock().expect("response hook") = Some(Arc::new(move |request, _| {
+        let database = context.backend().database();
+        let mut account = ProviderAccountRepository::get(
+            database,
+            request.profile.chat_profile.provider_account_id,
+        )
+        .expect("account")
+        .expect("account exists");
+        let revision = account.revision;
+        account.label = "Changed account".into();
+        ProviderAccountRepository::upsert(database, account, Some(revision))
+            .expect("rename account while inference runs");
+        let mut model =
+            ModelProfileRepository::get(database, request.profile.chat_profile.model_profile_id)
+                .expect("model")
+                .expect("model exists");
+        let revision = model.revision;
+        model.display_name = "Changed model".into();
+        ModelProfileRepository::upsert(database, model, Some(revision))
+            .expect("rename model while inference runs");
+    }));
+    let accepted = send(
+        &h,
+        &conversation,
+        "snapshot-send",
+        "Hello",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    assert!(
+        super::ConversationGenerationWorker::new(h.context.clone())
+            .run_once()
+            .await
+            .expect("run chat")
+    );
+    let request = h.provider.requests.lock().expect("requests")[0].clone();
+    let database = h.context.backend().database();
+    let event = database
+        .get_for_attempt(accepted.turn_id.parse().expect("turn"), request.attempt_id)
+        .expect("terminal usage")
+        .expect("event");
+    let document = serde_json::to_value(event).expect("usage document");
+    assert_eq!(
+        document["record"]["snapshot"]["character_id"],
+        h.character_id.to_string()
+    );
+    assert_eq!(document["record"]["snapshot"]["character_name"], "Ada");
+    assert_eq!(
+        document["record"]["snapshot"]["model_name"],
+        request.profile.chat_profile.model_display_name
+    );
+    assert_eq!(document["record"]["snapshot"]["provider_kind"], "ollama");
+    assert_eq!(
+        document["record"]["snapshot"]["provider_label"],
+        request
+            .profile
+            .chat_profile
+            .provider_label
+            .expect("frozen label")
+    );
+    assert_eq!(document["record"]["snapshot"]["finish_reason"], "stop");
+    assert_eq!(
+        document["record"]["snapshot"]["provider_response_id"],
+        "fake-response"
+    );
+    let dispatches = database
+        .job_usage(request.cancellation.expect("owning job"))
+        .expect("dispatches");
+    assert_eq!(dispatches.len(), 1);
+    let document = serde_json::to_value(&dispatches[0]).expect("dispatch document");
+    assert_eq!(document["snapshot"]["character_name"], "Ada");
+    assert_eq!(
+        document["snapshot"]["model_name"],
+        request.profile.chat_profile.model_display_name
+    );
+    assert_eq!(
+        document["result"]["Response"]["snapshot"]["provider_response_id"],
+        "fake-response"
+    );
+}
+
+#[tokio::test]
 async fn usage_clear_preserves_a_live_chat_then_clears_once_after_completion() {
     let h = harness(Reply::Text("Hello."));
     let conversation = launch(&h, "clear-launch").await;
@@ -133,7 +222,7 @@ async fn usage_clear_keeps_a_settled_dispatch_while_its_chat_attempt_is_running(
     *h.provider
         .response_hook
         .lock()
-        .expect("test operation succeeds") = Some(Arc::new(move |_, outcome| {
+        .expect("test operation succeeds") = Some(Arc::new(move |request, outcome| {
         outcome.usage = Some(lettuce_conversations::InferenceUsage {
             input_tokens: 10,
             output_tokens: 3,
@@ -157,6 +246,15 @@ async fn usage_clear_keeps_a_settled_dispatch_while_its_chat_attempt_is_running(
             .settle_job_usage(
                 dispatch.id,
                 JobInferenceUsageResult::Response {
+                    snapshot: Some(Box::new(
+                        crate::jobs::job_inference_usage::settle_usage_snapshot(
+                            crate::jobs::job_inference_usage::inference_usage_snapshot(
+                                &request.profile,
+                                &request.context,
+                            ),
+                            outcome,
+                        ),
+                    )),
                     usage: outcome.usage.clone(),
                     provider_response_id: outcome.provider_response_id.clone(),
                 },

@@ -1372,7 +1372,7 @@ mod tests {
         assert_eq!(evidence.len(), 3);
         for (input, output) in [(10, 4), (12, 3), (5, 2)] {
             assert!(evidence.iter().any(|event| matches!(&event.result,
-                Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+                Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) , ..})
                     if id == &format!("gen-creation-{input}") && usage.input_tokens == input && usage.output_tokens == output)));
         }
 
@@ -2038,6 +2038,14 @@ mod tests {
             );
             response.finish_reason = finish;
             let expected = lettuce_usage::JobInferenceUsageResult::Response {
+                snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                    model_name: Some(profile.chat_profile.model_display_name.clone()),
+                    provider_kind: Some(profile.chat_profile.provider_kind.clone()),
+                    provider_label: profile.chat_profile.provider_label.clone(),
+                    finish_reason: Some("stop".into()),
+                    provider_response_id: response.provider_response_id.clone(),
+                    ..Default::default()
+                })),
                 usage: response.usage.clone(),
                 provider_response_id: response.provider_response_id.clone(),
             };

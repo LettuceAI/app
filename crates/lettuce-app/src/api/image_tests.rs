@@ -135,9 +135,14 @@ fn desktop(images: Arc<dyn ImageProviderPort>, engine: bool) -> Desktop {
     )
     .expect("authority");
     let location = AppDatabaseLocation::new(private, &authority).expect("location");
-    let path = location.active_path().expect("path");
+    let lifecycle = location.acquire_file_lifecycle(true).expect("lifecycle");
+    let path = lifecycle
+        .prepare_open(TimestampMillis::new(1))
+        .expect("path");
     std::fs::create_dir_all(path.parent().expect("parent")).expect("database folder");
     let mut backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    lifecycle.complete_open().expect("opened");
+    drop(lifecycle);
     if engine {
         backend = backend
             .with_local_diffusion(crate::image::local_diffusion::diffusion_paths(

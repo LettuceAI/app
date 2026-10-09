@@ -558,6 +558,14 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
     assert_eq!(
         evidence[0].result,
         Some(JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(scenario.profile.model_display_name.clone()),
+                provider_kind: Some(scenario.profile.provider_kind.clone()),
+                provider_label: scenario.profile.provider_label.clone(),
+                finish_reason: Some("stop".into()),
+                provider_response_id: Some("plain-1".into()),
+                ..Default::default()
+            })),
             usage: usage(20, 5),
             provider_response_id: Some("plain-1".into()),
         })

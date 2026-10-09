@@ -8290,6 +8290,7 @@ mod tests {
         fixture
             .database
             .admit_job_usage(JobInferenceUsage {
+                snapshot: None,
                 id: usage_event_id,
                 job_id: job.id,
                 logical_attempt_id: sent.attempt.id,

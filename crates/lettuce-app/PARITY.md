@@ -1,5 +1,7 @@
 # lettuce-app: legacy parity notes
 
+Chat usage retains the character, model and provider names used by the dispatch when those catalog entries change before completion, matching legacy's copied names in `old-code/src-tauri/src/chat_manager/service.rs:515-538`. Direct and group operation labels retain `old-code/src-tauri/src/usage/tracking.rs:45-57`. Reported finish reasons use the legacy aliases from `tracking.rs:82-95`; an omitted successful finish reason remains unknown, while an explicitly cancelled or failed outcome can record its known terminal reason. Dispatch snapshot names and response identity are validated against their admission and response, including backup validation.
+
 Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows legacy and where, where it deliberately differs, the decisions behind it, what the old README said that has changed, and the host wiring still missing. The crate README describes the current design.
 
 ## Legacy parity

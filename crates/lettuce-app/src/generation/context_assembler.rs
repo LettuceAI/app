@@ -694,6 +694,23 @@ where
             history_text_bytes,
         )?;
         let attributions = ContextAttributions {
+            usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                character_id: selected_character(&snapshot, &request).map(|body| body.character_id),
+                character_name: selected_character(&snapshot, &request)
+                    .map(|body| body.name.clone()),
+                operation_kind: Some(
+                    match (group, request.operation) {
+                        (false, GenerationOperation::Send) => "chat",
+                        (false, GenerationOperation::Continue) => "continue",
+                        (false, GenerationOperation::Regenerate) => "regenerate",
+                        (true, GenerationOperation::Send) => "group_chat_message",
+                        (true, GenerationOperation::Continue) => "group_chat_continue",
+                        (true, GenerationOperation::Regenerate) => "group_chat_regenerate",
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            }),
             prompt: prompt.map(|document| PromptAttribution {
                 document_id: document.id,
                 name: snapshot.prompt_name.clone().unwrap_or_default(),

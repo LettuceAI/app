@@ -72,6 +72,7 @@ impl lettuce_usage::JobUsageLedger for Database {
         if record.result.is_some()
             || record.model_revision.get() == 0
             || record.provider_account_revision.get() == 0
+            || record.validate_snapshot().is_err()
         {
             return Err(UsageLedgerError::Invalid);
         }
@@ -98,7 +99,37 @@ impl lettuce_usage::JobUsageLedger for Database {
         result: lettuce_usage::JobInferenceUsageResult,
     ) -> Result<(), UsageLedgerError> {
         let encoded = crate::encode_versioned(&result, 1).map_err(|_| UsageLedgerError::Invalid)?;
-        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let db = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let admission: Option<(String, Option<String>)> = db
+            .query_row(
+                "SELECT record_json,result_json FROM job_inference_usage WHERE id=?1",
+                [id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let (admission, settled) = admission.ok_or(UsageLedgerError::Conflict)?;
+        let admission: lettuce_usage::JobInferenceUsage =
+            crate::decode_versioned(&admission, 1).map_err(|_| UsageLedgerError::Storage)?;
+        admission
+            .validate_snapshot()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        if let Some(settled) = settled {
+            let settled =
+                crate::decode_versioned(&settled, 1).map_err(|_| UsageLedgerError::Storage)?;
+            admission
+                .validate_result_snapshot(&settled)
+                .map_err(|_| UsageLedgerError::Storage)?;
+            if settled != result {
+                return Err(UsageLedgerError::Conflict);
+            }
+            db.commit().map_err(|_| UsageLedgerError::Storage)?;
+            return Ok(());
+        }
+        admission.validate_result_snapshot(&result)?;
         db.execute(
             "UPDATE job_inference_usage SET result_json=?2 WHERE id=?1 AND result_json IS NULL",
             params![id.to_string(), encoded],
@@ -122,6 +153,7 @@ impl lettuce_usage::JobUsageLedger for Database {
         if saved.as_ref() != Some(&result) {
             return Err(UsageLedgerError::Conflict);
         }
+        db.commit().map_err(|_| UsageLedgerError::Storage)?;
         Ok(())
     }
     fn job_usage(
@@ -143,6 +175,9 @@ impl lettuce_usage::JobUsageLedger for Database {
                 record.result = result
                     .map(|r| crate::decode_versioned(&r, 1))
                     .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?;
+                record
+                    .validate_snapshot()
                     .map_err(|_| UsageLedgerError::Storage)?;
                 Ok(record)
             })
@@ -838,6 +873,102 @@ impl UsagePort for Database {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn dispatch_snapshots_reject_changed_names_and_response_identity() {
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+        use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
+        let database = Database::open_in_memory().expect("database");
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::CreationRun,
+                    JobSubject::new(SubjectKind::CreationProject, "snapshot").expect("subject"),
+                    OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+                )
+                .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+            )
+            .expect("job")
+            .job;
+        let snapshot = lettuce_conversations::UsageRecordSnapshot {
+            model_name: Some("Recorded model".into()),
+            provider_kind: Some("openrouter".into()),
+            provider_label: Some("Recorded account".into()),
+            operation_kind: Some("reply_helper".into()),
+            ..Default::default()
+        };
+        let record = JobInferenceUsage {
+            snapshot: Some(snapshot.clone()),
+            id: lettuce_types::UsageEventId::new(),
+            job_id: job.id,
+            logical_attempt_id: GenerationAttemptId::new(),
+            model_profile_id: ModelProfileId::new(),
+            model_revision: Revision::INITIAL,
+            provider_account_id: ProviderAccountId::new(),
+            provider_account_revision: Revision::INITIAL,
+            admitted_at: TimestampMillis::new(1),
+            result: None,
+        };
+        database
+            .admit_job_usage(record.clone())
+            .expect("admit snapshot");
+        database
+            .admit_job_usage(record.clone())
+            .expect("replay admission");
+        let mut changed = record.clone();
+        changed.snapshot.as_mut().expect("snapshot").model_name = Some("Changed model".into());
+        assert_eq!(
+            database.admit_job_usage(changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        let completed = lettuce_conversations::UsageRecordSnapshot {
+            finish_reason: Some("stop".into()),
+            provider_response_id: Some("recorded-response".into()),
+            ..snapshot.clone()
+        };
+        let result = |snapshot| JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(snapshot)),
+            usage: None,
+            provider_response_id: Some("recorded-response".into()),
+        };
+        let mut foreign = completed.clone();
+        foreign.provider_response_id = Some("foreign-response".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(foreign)),
+            Err(UsageLedgerError::Invalid)
+        );
+        let mut changed = completed.clone();
+        changed.provider_label = Some("Changed account".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(changed)),
+            Err(UsageLedgerError::Invalid)
+        );
+        assert_eq!(
+            database.job_usage(job.id).expect("unsettled snapshot"),
+            vec![record.clone()]
+        );
+        database
+            .settle_job_usage(record.id, result(completed.clone()))
+            .expect("settle snapshot");
+        database
+            .settle_job_usage(record.id, result(completed.clone()))
+            .expect("replay settlement");
+        let saved = database.job_usage(job.id).expect("settled snapshot");
+        assert_eq!(saved[0].snapshot, record.snapshot);
+        assert_eq!(saved[0].result, Some(result(completed.clone())));
+        let mut changed = completed.clone();
+        changed.finish_reason = Some("length".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(changed)),
+            Err(UsageLedgerError::Conflict)
+        );
+        let mut changed = completed;
+        changed.provider_label = Some("Different account".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(changed)),
+            Err(UsageLedgerError::Conflict)
+        );
+    }
+
+    #[test]
     fn job_dispatch_evidence_survives_reopen_and_rejects_mutation() {
         use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
         use lettuce_types::UsageEventId;
@@ -850,6 +981,7 @@ mod tests {
         assert_eq!(
             old,
             JobInferenceUsageResult::Response {
+                snapshot: None,
                 usage: None,
                 provider_response_id: None
             }
@@ -869,6 +1001,7 @@ mod tests {
             .expect("job")
             .job;
         let record = JobInferenceUsage {
+            snapshot: None,
             id: UsageEventId::new(),
             job_id: job.id,
             logical_attempt_id: GenerationAttemptId::new(),
@@ -967,6 +1100,7 @@ mod tests {
         for result in [
             JobInferenceUsageResult::Cancelled,
             JobInferenceUsageResult::Response {
+                snapshot: None,
                 usage: None,
                 provider_response_id: None,
             },
@@ -990,6 +1124,7 @@ mod tests {
             .admit_job_usage(retry.clone())
             .expect("retry dispatch");
         let result = JobInferenceUsageResult::Response {
+            snapshot: None,
             provider_response_id: Some("gen-retry".into()),
             usage: Some(InferenceUsage {
                 image_tokens: None,

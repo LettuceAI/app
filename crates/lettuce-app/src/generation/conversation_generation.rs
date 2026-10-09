@@ -873,6 +873,13 @@ impl<
                             expected_conversation_revision: aggregate.conversation.revision,
                             expected_turn_revision: turn.revision,
                             operation: token(ConversationGenerationOperation::Finalize),
+                            usage_snapshot: crate::jobs::job_inference_usage::settle_usage_snapshot(
+                                crate::jobs::job_inference_usage::inference_usage_snapshot(
+                                    &input.profile,
+                                    &input.context,
+                                ),
+                                &outcome,
+                            ),
                             model: input.model,
                             usage_recorded_at: settled_at,
                             finalized_at: now,
@@ -944,7 +951,7 @@ impl<
         let usage_event_id = UsagePort::record(
             self.repository,
             UsageRecord {
-                snapshot: None,
+                snapshot: Some(context.usage_snapshot.clone()),
                 turn_id: attempt.turn_id,
                 attempt_id: attempt.id,
                 outcome: UsageOutcome::Succeeded,
@@ -2254,6 +2261,7 @@ fn job_error(code: GenerationFailureCode) -> JobError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FinalizationContext {
+    usage_snapshot: lettuce_conversations::UsageRecordSnapshot,
     conversation_id: ConversationId,
     expected_conversation_revision: lettuce_types::Revision,
     expected_turn_revision: lettuce_types::Revision,

@@ -232,6 +232,7 @@ mod tests {
             .expect("test operation succeeds")
             .job;
         let record = JobInferenceUsage {
+            snapshot: None,
             id: UsageEventId::new(),
             job_id: job.id,
             logical_attempt_id: GenerationAttemptId::new(),

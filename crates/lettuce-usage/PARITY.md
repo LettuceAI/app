@@ -22,6 +22,8 @@ Facts about how `lettuce-usage` relates to the legacy app (2.2.x). The crate REA
 
 ## History
 
+The shared text inference writer now snapshots model and provider display metadata before dispatch and captures response identity and reported finish reason at settlement. Chat attribution also retains its character and direct or group operation, as legacy copied them into usage (`old-code/src-tauri/src/chat_manager/service.rs:515-538`, `old-code/src-tauri/src/usage/tracking.rs:45-57`). Unreported successful finish reasons remain absent; legacy normalized reported aliases in `tracking.rs:82-95`. Other workflow attribution, image dispatch snapshots and failed terminal snapshots are still to be wired.
+
 Terminal usage can persist frozen display and result snapshots alongside the counters copied by legacy (`old-code/src-tauri/src/chat_manager/service.rs:515-538,617-646`). Optional fields retain unknown values, including memory and summary counts; legacy left those counts absent unless positive (`service.rs:550-566`). This storage contract does not itself populate snapshots in inference coordinators.
 
 - OpenAI-compatible buffered and streaming normalization captures standard cached and reasoning token details, and the ledger keeps them. This was not automatic pricing capture.

@@ -1908,6 +1908,7 @@ mod tests {
         backend
             .database()
             .admit_job_usage(JobInferenceUsage {
+                snapshot: None,
                 id: usage_id,
                 job_id: backup_job.id,
                 logical_attempt_id: attempt_id,
@@ -1924,6 +1925,7 @@ mod tests {
             .settle_job_usage(
                 usage_id,
                 JobInferenceUsageResult::Response {
+                    snapshot: None,
                     usage: Some(lettuce_conversations::InferenceUsage {
                         image_tokens: None,
                         audio_tokens: None,

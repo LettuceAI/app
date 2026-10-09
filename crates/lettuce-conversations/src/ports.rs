@@ -2024,6 +2024,8 @@ impl ProviderNeutralContext {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextAttributions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_snapshot: Option<UsageRecordSnapshot>,
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
     pub memory: Option<MemoryAttribution>,

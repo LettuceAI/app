@@ -4,6 +4,8 @@ Everything that moves data in or out of the app: the encrypted full backup and i
 
 The crate reads, validates and plans; it does not own live state. SQLite reads and writes are in `lettuce-database` (backup source, restore writer, legacy preflight and import adapter), the media store in `lettuce-media`, secrets in `lettuce-settings`, and orchestration, jobs and commands in `lettuce-app`. Formats are defined here against the domain types of the other crates, and every legacy or third-party format is parsed into its own compatibility types first.
 
+Job inference evidence may carry immutable display attribution at admission and a completed snapshot at settlement. Backup validation applies the ledger's shared snapshot checks: completion cannot change admitted attribution and its response identity must match the recorded response.
+
 ## Principles
 
 - External schemas never become domain schemas. A legacy or third-party document is decoded into a compatibility plan and only then mapped onto domain types through the domains' own validation.

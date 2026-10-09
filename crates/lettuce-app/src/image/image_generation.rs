@@ -371,6 +371,7 @@ impl<
         let usage_id = UsageEventId::new();
         self.generations
             .admit_job_usage(JobInferenceUsage {
+                snapshot: None,
                 id: usage_id,
                 job_id: work.job.id,
                 logical_attempt_id: GenerationAttemptId::new(),
@@ -410,6 +411,7 @@ impl<
         };
         let settled = match &output {
             Ok(output) => JobInferenceUsageResult::Response {
+                snapshot: None,
                 usage: output.usage.clone(),
                 provider_response_id: None,
             },
@@ -1185,6 +1187,7 @@ mod tests {
         fixture
             .database
             .admit_job_usage(JobInferenceUsage {
+                snapshot: None,
                 id: usage_id,
                 job_id: work.job.id,
                 logical_attempt_id: GenerationAttemptId::new(),

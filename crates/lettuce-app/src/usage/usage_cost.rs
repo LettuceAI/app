@@ -87,6 +87,7 @@ where
         let Some(JobInferenceUsageResult::Response {
             usage: Some(_),
             provider_response_id: Some(response_id),
+            ..
         }) = &event.result
         else {
             return Ok(None);
@@ -206,6 +207,7 @@ mod tests {
             .expect("billing scenario")
             .job;
         let mut event = JobInferenceUsage {
+            snapshot: None,
             id: UsageEventId::new(),
             job_id: job.id,
             logical_attempt_id: GenerationAttemptId::new(),
@@ -220,6 +222,7 @@ mod tests {
             .admit_job_usage(event.clone())
             .expect("billing scenario");
         let result = JobInferenceUsageResult::Response {
+            snapshot: None,
             provider_response_id: Some("gen-cost".into()),
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -378,6 +381,7 @@ mod tests {
             Some(JobInferenceUsageResult::InferenceFailed),
             Some(JobInferenceUsageResult::Cancelled),
             Some(JobInferenceUsageResult::Response {
+                snapshot: None,
                 usage: None,
                 provider_response_id: Some("gen-cost".into()),
             }),

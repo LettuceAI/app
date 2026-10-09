@@ -1,5 +1,7 @@
 # lettuce-app
 
+Chat context assembly freezes the character identity, real name and direct or group operation in usage attribution. The shared text dispatch writer combines it with the resolved model name and provider kind and label before admission, then stores the provider response id and reported finish reason with settlement. Successful terminal chat usage keeps the same frozen metadata. Missing historical attribution and unreported successful finish reasons remain unknown.
+
 The composition root and the application layer. Every workflow that spans more than one domain lives here: launching and running a chat turn, the background memory, companion and lorebook jobs, image and speech work, model installs, file import and export, legacy import, backup and restore, sync sessions and hard delete. `AppBackend` is the single entry point a host (the Tauri shell, or a test) calls.
 
 The crate may depend on every other crate, and nothing depends on it. It holds no business rules of its own that a domain crate could hold: it resolves inputs, reads through repository ports, calls the pure domain functions, dispatches providers and commits through the repositories. Durable state lives in `lettuce-database`; provider I/O in `lettuce-providers`, `lettuce-local-llm`, `lettuce-image-generation` and `lettuce-speech`; job lifecycle in `lettuce-jobs`.
