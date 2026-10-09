@@ -3092,6 +3092,7 @@ dependencies = [
  "lettuce-conversations",
  "lettuce-types",
  "serde",
+ "serde_json",
  "thiserror 2.0.20",
 ]
 

@@ -1422,6 +1422,12 @@ BEFORE UPDATE OF result_json ON generation_initial_dispatches
 WHEN NOT EXISTS (
     SELECT 1 FROM job_inference_usage WHERE id = NEW.usage_event_id AND job_id = NEW.job_id
       AND result_json IS NOT NULL
+) AND NOT EXISTS (
+    SELECT 1 FROM usage_tombstones WHERE ledger = 'job' AND event_key = NEW.usage_event_id
+      AND json_extract(proof_json, '$.value.kind') = 'dispatch'
+      AND json_extract(proof_json, '$.value.event_id') = NEW.usage_event_id
+      AND json_extract(proof_json, '$.value.attempt_id') = NEW.attempt_id
+      AND json_extract(proof_json, '$.value.job_id') = NEW.job_id
 )
 BEGIN SELECT RAISE(ABORT, 'initial settlement requires retained dispatch usage'); END;
 
@@ -1468,5 +1474,11 @@ BEFORE UPDATE OF decision_json ON generation_speaker_dispatches
 WHEN NOT EXISTS (
     SELECT 1 FROM job_inference_usage WHERE id = NEW.usage_event_id AND job_id = NEW.job_id
       AND result_json IS NOT NULL
+) AND NOT EXISTS (
+    SELECT 1 FROM usage_tombstones WHERE ledger = 'job' AND event_key = NEW.usage_event_id
+      AND json_extract(proof_json, '$.value.kind') = 'dispatch'
+      AND json_extract(proof_json, '$.value.event_id') = NEW.usage_event_id
+      AND json_extract(proof_json, '$.value.attempt_id') = NEW.attempt_id
+      AND json_extract(proof_json, '$.value.job_id') = NEW.job_id
 )
 BEGIN SELECT RAISE(ABORT, 'speaker settlement requires retained dispatch usage'); END;

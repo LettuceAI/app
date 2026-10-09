@@ -112,3 +112,5 @@ Startup resolves the log directory and creates it before installing local output
 The metrics command module forwards cursor listing, detail, per-message detail and receipt-backed explicit clearing to lettuce-app. Generated DTOs contain summaries and samples, with no native model file paths.
 
 Log exports open native paths and Android document targets without truncation, compare the source and target file identities, then truncate and write through the same target descriptor. Providers that cannot support this operation return a typed file error.
+
+`usage_clear_before` exposes the application ledger maintenance command with a timestamp cutoff and operation id; database deletion and retry semantics remain in the application and database crates.

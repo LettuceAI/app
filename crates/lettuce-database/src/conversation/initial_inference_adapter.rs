@@ -173,7 +173,15 @@ fn load(
         settled_at: settled_at.map(TimestampMillis::new),
     };
     if let Some(result) = &record.result {
-        verify_usage(transaction, &record, result)?;
+        let proof = crate::usage_clear::dispatch_tombstone_in(transaction, record.usage_event_id)
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        match proof {
+            Some(lettuce_usage::UsageTombstone::Dispatch {
+                attempt_id, job_id, ..
+            }) if attempt_id == record.binding.attempt_id && job_id == record.binding.job_id => {}
+            Some(_) => return Err(ConversationRepositoryError::Conflict),
+            None => verify_usage(transaction, &record, result)?,
+        }
     }
     Ok(Some(record))
 }

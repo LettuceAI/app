@@ -411,6 +411,7 @@ pub fn plan_provider_backup_export(
     secret_set: ProviderBackupSecretSet,
 ) -> Result<ProviderBackupExportPlan, ProviderBackupGraphError> {
     canonicalize_and_validate(&mut graph)?;
+    graph.conversation_usage.version = crate::CONVERSATION_USAGE_BACKUP_VERSION;
     let expected = expected_secrets(&graph)?;
     let ProviderBackupSecretSet {
         secrets,
@@ -508,7 +509,7 @@ pub fn plan_provider_backup_export(
         BackupSection::new("data/jobs.json", "jobs.v1", jobs),
         BackupSection::new(
             "data/conversation-usage.json",
-            "conversation-usage.v1",
+            "conversation-usage.v2",
             conversation_usage,
         ),
         BackupSection::new(
@@ -1116,7 +1117,10 @@ fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupG
                 .into_iter()
                 .flatten()
                 {
-                    if inference_owners.get(&dispatch.0) != Some(&dispatch.1) {
+                    let cleared = graph.conversation_usage.tombstones.iter().any(|proof| matches!(proof,
+                        lettuce_usage::UsageTombstone::Dispatch { event_id, attempt_id, job_id }
+                        if *event_id == dispatch.0 && *attempt_id == attempt.attempt_id && *job_id == dispatch.1));
+                    if inference_owners.get(&dispatch.0) != Some(&dispatch.1) && !cleared {
                         return Err(ProviderBackupGraphError::InvalidGraph);
                     }
                 }
@@ -1809,6 +1813,7 @@ mod tests {
             conversation_usage: crate::ConversationUsageBackup {
                 version: crate::CONVERSATION_USAGE_BACKUP_VERSION,
                 events: Vec::new(),
+                tombstones: Vec::new(),
             },
             conversation_outbox: crate::ConversationOutboxBackup {
                 version: crate::CONVERSATION_OUTBOX_BACKUP_VERSION,

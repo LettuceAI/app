@@ -1,0 +1,371 @@
+use super::tests::{RecordingStream, Reply, harness, launch, send};
+use lettuce_contracts::{self as dto, ApiErrorCode};
+use lettuce_types::RequestId;
+use lettuce_usage::JobUsageLedger;
+use std::sync::Arc;
+
+#[tokio::test]
+async fn usage_clear_preserves_a_live_chat_then_clears_once_after_completion() {
+    let h = harness(Reply::Text("Hello."));
+    let conversation = launch(&h, "clear-launch").await;
+    let accepted = send(
+        &h,
+        &conversation,
+        "clear-send",
+        "Hello",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("test operation succeeds");
+    let request = dto::UsageClearBeforeRequest {
+        before: i64::MAX,
+        client_operation_id: RequestId::new().to_string(),
+    };
+    assert_eq!(
+        super::usage_clear_before(&h.context, request.clone())
+            .await
+            .expect("test operation succeeds")
+            .removed,
+        0
+    );
+    assert!(
+        super::ConversationGenerationWorker::new(h.context.clone())
+            .run_once()
+            .await
+            .expect("test operation succeeds")
+    );
+    let turn = lettuce_conversations::ConversationReader::get_turn(
+        h.context.backend().database(),
+        accepted.turn_id.parse().expect("test operation succeeds"),
+    )
+    .expect("test operation succeeds");
+    let job = turn
+        .attempts
+        .last()
+        .expect("test operation succeeds")
+        .job_id
+        .expect("test operation succeeds");
+    let dispatches = h
+        .context
+        .backend()
+        .database()
+        .job_usage(job)
+        .expect("test operation succeeds");
+    assert_eq!(dispatches.len(), 1);
+    assert!(dispatches[0].result.is_some());
+    let next = dto::UsageClearBeforeRequest {
+        client_operation_id: RequestId::new().to_string(),
+        ..request.clone()
+    };
+    assert_eq!(
+        super::usage_clear_before(&h.context, next.clone())
+            .await
+            .expect("test operation succeeds")
+            .removed,
+        2
+    );
+    assert!(
+        h.context
+            .backend()
+            .database()
+            .job_usage(job)
+            .expect("test operation succeeds")
+            .is_empty()
+    );
+    assert_eq!(
+        super::usage_clear_before(&h.context, next.clone())
+            .await
+            .expect("test operation succeeds")
+            .removed,
+        2
+    );
+    let changed = dto::UsageClearBeforeRequest {
+        before: i64::MAX - 1,
+        ..next
+    };
+    assert_eq!(
+        super::usage_clear_before(&h.context, changed)
+            .await
+            .expect_err("test operation fails")
+            .code,
+        ApiErrorCode::Conflict
+    );
+    super::conversation_open(
+        &h.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation,
+        },
+    )
+    .await
+    .expect("test operation succeeds");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn usage_clear_keeps_a_settled_dispatch_while_its_chat_attempt_is_running() {
+    use lettuce_usage::{JobInferenceUsageResult, UsageLedger};
+    let h = harness(Reply::Text("Hello."));
+    let conversation = launch(&h, "running-clear-launch").await;
+    let accepted = send(
+        &h,
+        &conversation,
+        "running-clear-send",
+        "Hello",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("test operation succeeds");
+    let turn_id = accepted.turn_id.parse().expect("test operation succeeds");
+    let turn = lettuce_conversations::ConversationReader::get_turn(
+        h.context.backend().database(),
+        turn_id,
+    )
+    .expect("test operation succeeds");
+    let attempt_id = turn.attempts[0].id;
+    let job_id = turn.attempts[0].job_id.expect("test operation succeeds");
+    let settled = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    *h.provider
+        .response_release
+        .lock()
+        .expect("test operation succeeds") = Some(release.clone());
+    let context = h.context.clone();
+    let notify = settled.clone();
+    *h.provider
+        .response_hook
+        .lock()
+        .expect("test operation succeeds") = Some(Arc::new(move |_, outcome| {
+        outcome.usage = Some(lettuce_conversations::InferenceUsage {
+            input_tokens: 10,
+            output_tokens: 3,
+            cached_input_tokens: None,
+            reasoning_tokens: None,
+            cache_write_tokens: None,
+            web_search_requests: None,
+            image_tokens: None,
+            audio_tokens: None,
+            total_tokens: Some(13),
+            provider_reported_cost: None,
+        });
+        let database = context.backend().database();
+        let dispatch = database
+            .job_usage(job_id)
+            .expect("test operation succeeds")
+            .into_iter()
+            .find(|record| record.logical_attempt_id == attempt_id)
+            .expect("test operation succeeds");
+        database
+            .settle_job_usage(
+                dispatch.id,
+                JobInferenceUsageResult::Response {
+                    usage: outcome.usage.clone(),
+                    provider_response_id: outcome.provider_response_id.clone(),
+                },
+            )
+            .expect("test operation succeeds");
+        notify.notify_one();
+    }));
+    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let running = tokio::spawn(async move { worker.run_once().await });
+    tokio::time::timeout(std::time::Duration::from_secs(10), settled.notified())
+        .await
+        .expect("test operation succeeds");
+    let turn = lettuce_conversations::ConversationReader::get_turn(
+        h.context.backend().database(),
+        turn_id,
+    )
+    .expect("test operation succeeds");
+    assert_eq!(
+        turn.attempts[0].status,
+        lettuce_conversations::GenerationAttemptStatus::Running
+    );
+    let cut = dto::UsageClearBeforeRequest {
+        before: i64::MAX,
+        client_operation_id: RequestId::new().to_string(),
+    };
+    assert_eq!(
+        super::usage_clear_before(&h.context, cut)
+            .await
+            .expect("test operation succeeds")
+            .removed,
+        0
+    );
+    assert_eq!(
+        h.context
+            .backend()
+            .database()
+            .job_usage(job_id)
+            .expect("test operation succeeds")
+            .len(),
+        1
+    );
+    release.notify_one();
+    assert!(
+        running
+            .await
+            .expect("test operation succeeds")
+            .expect("test operation succeeds")
+    );
+    let event = h
+        .context
+        .backend()
+        .database()
+        .get_for_attempt(turn_id, attempt_id)
+        .expect("test operation succeeds")
+        .expect("test operation succeeds");
+    let lettuce_conversations::UsageCounters::Known(usage) = event.record.usage else {
+        panic!("terminal usage is missing");
+    };
+    assert_eq!(usage.input_tokens, 10);
+    assert_eq!(usage.output_tokens, 3);
+    assert_eq!(usage.total_tokens, Some(13));
+}
+
+#[tokio::test]
+async fn cleared_chat_usage_exports_and_restores_with_exact_tombstone_proofs() {
+    use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
+    let h = harness(Reply::Text("Hello."));
+    let conversation = launch(&h, "proof-launch").await;
+    send(
+        &h,
+        &conversation,
+        "proof-send",
+        "Hello",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("test operation succeeds");
+    super::ConversationGenerationWorker::new(h.context.clone())
+        .run_once()
+        .await
+        .expect("test operation succeeds");
+    let original = h
+        .context
+        .backend()
+        .database()
+        .read_provider_backup_graph()
+        .expect("test operation succeeds");
+    assert_eq!(original.conversation_usage.events.len(), 1);
+    let cut = dto::UsageClearBeforeRequest {
+        before: i64::MAX,
+        client_operation_id: RequestId::new().to_string(),
+    };
+    assert_eq!(
+        super::usage_clear_before(&h.context, cut)
+            .await
+            .expect("test operation succeeds")
+            .removed,
+        2
+    );
+    let mut graph = h
+        .context
+        .backend()
+        .database()
+        .read_provider_backup_graph()
+        .expect("test operation succeeds");
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("test operation succeeds");
+    assert_eq!(graph.conversation_usage.version, 2);
+    assert_eq!(graph.conversation_usage.tombstones.len(), 2);
+    let mut missing = graph.clone();
+    missing
+        .conversation_usage
+        .tombstones
+        .retain(|proof| !matches!(proof, lettuce_usage::UsageTombstone::Conversation { .. }));
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut missing).is_err());
+    let mut forged = graph.clone();
+    for proof in &mut forged.conversation_usage.tombstones {
+        if let lettuce_usage::UsageTombstone::Conversation { event_id, .. } = proof {
+            *event_id = lettuce_types::UsageEventId::new();
+        }
+    }
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut forged).is_err());
+    let mut wrong_owner = graph.clone();
+    for proof in &mut wrong_owner.conversation_usage.tombstones {
+        if let lettuce_usage::UsageTombstone::Conversation { attempt_id, .. } = proof {
+            *attempt_id = lettuce_types::GenerationAttemptId::new();
+        }
+    }
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_owner).is_err());
+    let mut wrong_dispatch = graph.clone();
+    for proof in &mut wrong_dispatch.conversation_usage.tombstones {
+        if let lettuce_usage::UsageTombstone::Dispatch { attempt_id, .. } = proof {
+            *attempt_id = lettuce_types::GenerationAttemptId::new();
+        }
+    }
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_dispatch).is_err());
+    let mut wrong_job = graph.clone();
+    for proof in &mut wrong_job.conversation_usage.tombstones {
+        if let lettuce_usage::UsageTombstone::Dispatch { job_id, .. } = proof {
+            *job_id = lettuce_types::JobId::new();
+        }
+    }
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_job).is_err());
+    let mut duplicate = graph.clone();
+    duplicate
+        .conversation_usage
+        .tombstones
+        .push(duplicate.conversation_usage.tombstones[0].clone());
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut duplicate).is_err());
+    let mut old = original;
+    old.conversation_usage.version = 1;
+    lettuce_transfer::canonicalize_and_validate(&mut old).expect("test operation succeeds");
+    let mut mislabeled = graph.clone();
+    mislabeled.conversation_usage.version = 1;
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut mislabeled).is_err());
+    let target = lettuce_database::Database::open_in_memory().expect("test operation succeeds");
+    use lettuce_conversations::{ConversationArtifactTransferPort, TrustedArtifactDescriptor};
+    let mut artifacts = Vec::new();
+    for descriptor in lettuce_transfer::provider_backup_artifact_requirements(&graph)
+        .expect("test operation succeeds")
+    {
+        let mut sink = ArtifactBytes::default();
+        match &descriptor {
+            TrustedArtifactDescriptor::Snapshot(reference) => h
+                .context
+                .backend()
+                .database()
+                .export_snapshot(reference.artifact_id, &mut sink)
+                .expect("test operation succeeds"),
+            TrustedArtifactDescriptor::Replay(reference) => h
+                .context
+                .backend()
+                .database()
+                .export_replay(reference.artifact_id, &mut sink)
+                .expect("test operation succeeds"),
+        }
+        artifacts.push(lettuce_transfer::BackupConversationArtifact {
+            descriptor,
+            bytes: sink.0.into(),
+        });
+    }
+    target
+        .restore_provider_backup_graph(&graph, &artifacts)
+        .expect("test operation succeeds");
+    let mut restored = target
+        .read_provider_backup_graph()
+        .expect("test operation succeeds");
+    lettuce_transfer::canonicalize_and_validate(&mut restored).expect("test operation succeeds");
+    assert!(restored.conversation_usage.events.is_empty());
+    assert_eq!(
+        restored.conversation_usage.tombstones,
+        graph.conversation_usage.tombstones
+    );
+}
+
+#[derive(Default)]
+struct ArtifactBytes(Vec<u8>);
+
+impl lettuce_conversations::TrustedArtifactSink for ArtifactBytes {
+    fn begin(
+        &mut self,
+        _: &lettuce_conversations::TrustedArtifactDescriptor,
+    ) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        Ok(())
+    }
+    fn chunk(&mut self, bytes: &[u8]) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        self.0.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn finish(&mut self) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        Ok(())
+    }
+}

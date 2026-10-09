@@ -98,6 +98,7 @@ pub enum ApiErrorDetails {
     Logs { reason: crate::LogFailureReason },
     AppUsageStorage,
     MetricsUnavailable,
+    UsageStorage,
     Settings { reason: crate::SettingsFailureReason },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,

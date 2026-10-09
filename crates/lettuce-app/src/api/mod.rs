@@ -295,3 +295,9 @@ mod metrics_tests;
 
 mod metrics;
 pub use metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list};
+
+#[cfg(test)]
+mod usage_tests;
+
+mod usage;
+pub use usage::usage_clear_before;

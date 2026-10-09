@@ -174,3 +174,5 @@ Capability statuses are the only model scope source. Editor saves reject declare
 Legacy settings conversion retains developer mode and the lorebook generator structured fallback format. An absent or NULL app sampler layer seeds 2048 output tokens; a present layer is converted as authored.
 
 Legacy UI preference collections retain all entries without an aggregate preference byte cap. Device UI state keeps its separate malformed-input guard.
+
+Conversation usage section version 2 includes immutable cleared-usage proofs. Export upgrades version 1 documents after validating them, and restore accepts matching version 1 or version 2 section schemas. Every terminal usage reference and outbox usage event must resolve to a stored event or an exact ownership proof. Dispatch references likewise resolve to evidence or a proof with the same event, attempt and job ids.

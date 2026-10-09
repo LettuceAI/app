@@ -53,6 +53,14 @@ impl ConversationOutboxBackup {
             .events
             .iter()
             .map(|entry| (entry.event.id, entry.event.record.attempt_id))
+            .chain(usage.tombstones.iter().filter_map(|proof| match proof {
+                lettuce_usage::UsageTombstone::Conversation {
+                    event_id,
+                    attempt_id,
+                    ..
+                } => Some((*event_id, *attempt_id)),
+                _ => None,
+            }))
             .collect::<BTreeMap<_, _>>();
         let mut conversation_ids = BTreeSet::new();
         let mut operation_ids = BTreeSet::new();

@@ -11,6 +11,7 @@ pub(crate) mod job_details_adapter;
 pub use job_adapter::ManualSceneImageAdmission;
 pub use job_details_adapter::{JobDetailRecord, JobOperation};
 mod usage_adapter;
+mod usage_clear;
 mod conversation;
 mod memory;
 mod companion;
@@ -270,6 +271,7 @@ pub struct Database {
     /// Set when foreign key enforcement could not be restored after a purge;
     /// every later use of the connection then fails.
     foreign_keys_lost: std::sync::atomic::AtomicBool,
+    usage_delete_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl std::fmt::Debug for Database {
@@ -286,11 +288,13 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
+        let usage_delete_allowed = usage_clear::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
+            usage_delete_allowed,
         })
     }
 
@@ -301,11 +305,13 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
+        let usage_delete_allowed = usage_clear::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
+            usage_delete_allowed,
         })
     }
 
@@ -5905,6 +5911,7 @@ mod tests {
                 "turn_lorebooks",
                 "usage_costs",
                 "usage_events",
+                "usage_tombstones",
                 "user_voices",
             ]
         );

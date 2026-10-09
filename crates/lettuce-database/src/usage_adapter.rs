@@ -672,6 +672,10 @@ impl UsageLedger for Database {
             .optional()
             .map_err(|_| UsageLedgerError::Storage)?
             .ok_or(UsageLedgerError::Conflict)?;
+        let cleared: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='conversation' AND json_extract(proof_json,'$.value.attempt_id')=?1)", [record.attempt_id.to_string()], |row| row.get(0)).map_err(|_| UsageLedgerError::Storage)?;
+        if cleared {
+            return Err(UsageLedgerError::Conflict);
+        }
         let existing = transaction
             .query_row(
                 &format!(

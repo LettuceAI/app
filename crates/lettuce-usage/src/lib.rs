@@ -10,6 +10,8 @@ mod costing;
 pub use costing::*;
 mod job_usage;
 pub use job_usage::*;
+mod tombstone;
+pub use tombstone::*;
 mod app_usage;
 pub use app_usage::*;
 

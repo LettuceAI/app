@@ -177,6 +177,24 @@ pub(crate) fn row_materialize(
     bytes: &[u8],
 ) -> Result<bool, RowSyncError> {
     let object = row_decode(spec, bytes)?;
+    let ledger = match spec.table {
+        "usage_events" | "usage_costs" => Some("conversation"),
+        "job_usage_costs" | "job_inference_usage" => Some("job"),
+        "legacy_usage_records" => Some("legacy"),
+        _ => None,
+    };
+    if let Some(ledger) = ledger {
+        let cleared: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger=?1 AND event_key=?2)",
+                rusqlite::params![ledger, id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if cleared {
+            return Ok(true);
+        }
+    }
     let mut values = spec
         .columns
         .iter()

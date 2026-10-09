@@ -98,3 +98,5 @@ SettingsChanged.section uses the global SettingsPatch section names and sampler_
 Log viewer contracts carry names, paged lines and match indices; exports use FileTarget. DeveloperLogLine carries a written line, and AppUsageChanged invalidates the app-time read. AppUsageDaysView carries per-day milliseconds including the current focused stretch.
 
 LlmMetricView holds the generation id, creation time, summary and optional samples. Metrics listing uses an opaque cursor and bounded page size; clearing takes a client operation id and returns its committed count.
+
+Usage clearing carries a timestamp cutoff and client operation id and returns the removed row count. Usage storage failures use typed error details; contract values do not expose database paths.

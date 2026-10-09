@@ -61,6 +61,7 @@ WHEN OLD.id != NEW.id OR OLD.job_id != NEW.job_id OR OLD.admitted_at != NEW.admi
     OR OLD.record_json != NEW.record_json OR OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
 BEGIN SELECT RAISE(ABORT, 'usage evidence is immutable'); END;
 CREATE TRIGGER job_inference_usage_no_delete BEFORE DELETE ON job_inference_usage
+WHEN usage_delete_allowed() = 0
 BEGIN SELECT RAISE(ABORT, 'usage evidence cannot be deleted'); END;
 
 CREATE INDEX usage_events_recorded_at_idx ON usage_events(recorded_at, id);
@@ -72,6 +73,7 @@ CREATE TABLE usage_costs (
 CREATE TRIGGER usage_costs_immutable_update BEFORE UPDATE ON usage_costs
 BEGIN SELECT RAISE(ABORT, 'usage cost is immutable'); END;
 CREATE TRIGGER usage_costs_immutable_delete BEFORE DELETE ON usage_costs
+WHEN usage_delete_allowed() = 0
 BEGIN SELECT RAISE(ABORT, 'usage cost cannot be deleted'); END;
 
 CREATE TABLE job_usage_costs (
@@ -81,6 +83,7 @@ CREATE TABLE job_usage_costs (
 CREATE TRIGGER job_usage_costs_immutable_update BEFORE UPDATE ON job_usage_costs
 BEGIN SELECT RAISE(ABORT, 'usage cost is immutable'); END;
 CREATE TRIGGER job_usage_costs_immutable_delete BEFORE DELETE ON job_usage_costs
+WHEN usage_delete_allowed() = 0
 BEGIN SELECT RAISE(ABORT, 'usage cost cannot be deleted'); END;
 CREATE INDEX usage_events_model_idx ON usage_events(model_profile_id, recorded_at, id);
 CREATE INDEX usage_events_provider_idx ON usage_events(provider_account_id, recorded_at, id);
@@ -91,6 +94,7 @@ BEGIN SELECT RAISE(ABORT, 'usage event is immutable'); END;
 
 CREATE TRIGGER usage_events_immutable_delete
 BEFORE DELETE ON usage_events
+WHEN usage_delete_allowed() = 0
 BEGIN SELECT RAISE(ABORT, 'usage event cannot be deleted'); END;
 
 CREATE TABLE legacy_usage_records (
@@ -131,4 +135,25 @@ BEGIN SELECT RAISE(ABORT, 'legacy usage record is immutable'); END;
 
 CREATE TRIGGER legacy_usage_records_immutable_delete
 BEFORE DELETE ON legacy_usage_records
+WHEN usage_delete_allowed() = 0
 BEGIN SELECT RAISE(ABORT, 'legacy usage record cannot be deleted'); END;
+
+CREATE TABLE usage_tombstones (
+    ledger TEXT NOT NULL CHECK (ledger IN ('conversation','job','legacy')),
+    event_key TEXT NOT NULL,
+    proof_json TEXT NOT NULL CHECK (json_valid(proof_json) AND json_extract(proof_json, '$.format_version') = 1),
+    PRIMARY KEY (ledger,event_key)
+) STRICT;
+CREATE TRIGGER usage_tombstones_immutable_update BEFORE UPDATE ON usage_tombstones
+BEGIN SELECT RAISE(ABORT, 'usage tombstone is immutable'); END;
+CREATE TRIGGER usage_tombstones_immutable_delete BEFORE DELETE ON usage_tombstones
+BEGIN SELECT RAISE(ABORT, 'usage tombstone cannot be deleted'); END;
+CREATE TRIGGER usage_events_cleared_before_insert BEFORE INSERT ON usage_events
+WHEN EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='conversation' AND event_key=NEW.id)
+BEGIN SELECT RAISE(IGNORE); END;
+CREATE TRIGGER job_usage_cleared_before_insert BEFORE INSERT ON job_inference_usage
+WHEN EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='job' AND event_key=NEW.id)
+BEGIN SELECT RAISE(IGNORE); END;
+CREATE TRIGGER legacy_usage_cleared_before_insert BEFORE INSERT ON legacy_usage_records
+WHEN EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='legacy' AND event_key=json_array(NEW.run_id,NEW.source_id))
+BEGIN SELECT RAISE(IGNORE); END;

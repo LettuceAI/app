@@ -320,37 +320,37 @@ mod tests {
     #[test]
     fn export_refuses_source_and_hard_link_before_truncation() {
         let root = std::env::temp_dir().join(format!("lettuce-export-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&root).expect("test operation succeeds");
         let source_path = root.join("source");
         let alias_path = root.join("alias");
-        std::fs::write(&source_path, b"preserved log").unwrap();
+        std::fs::write(&source_path, b"preserved log").expect("test operation succeeds");
         let _ = std::fs::remove_file(&alias_path);
-        std::fs::hard_link(&source_path, &alias_path).unwrap();
-        let source = std::fs::File::open(&source_path).unwrap();
+        std::fs::hard_link(&source_path, &alias_path).expect("test operation succeeds");
+        let source = std::fs::File::open(&source_path).expect("test operation succeeds");
         for target in [&source_path, &alias_path] {
             assert!(matches!(
-                create_export_path(target.to_str().unwrap(), &source),
+                create_export_path(target.to_str().expect("test operation succeeds"), &source),
                 Err(FileAccessError::SourceIsTarget)
             ));
-            assert_eq!(std::fs::read(&source_path).unwrap(), b"preserved log");
+            assert_eq!(std::fs::read(&source_path).expect("test operation succeeds"), b"preserved log");
         }
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(root).expect("test operation succeeds");
     }
 
     #[test]
     fn export_truncates_a_distinct_target() {
         let root =
             std::env::temp_dir().join(format!("lettuce-export-distinct-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&root).expect("test operation succeeds");
         let source_path = root.join("source");
         let target_path = root.join("target");
-        std::fs::write(&source_path, b"short").unwrap();
-        std::fs::write(&target_path, b"longer old contents").unwrap();
-        let mut source = std::fs::File::open(&source_path).unwrap();
-        let mut target = create_export_path(target_path.to_str().unwrap(), &source).unwrap();
-        std::io::copy(&mut source, &mut target).unwrap();
-        target.flush().unwrap();
-        assert_eq!(std::fs::read(&target_path).unwrap(), b"short");
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::write(&source_path, b"short").expect("test operation succeeds");
+        std::fs::write(&target_path, b"longer old contents").expect("test operation succeeds");
+        let mut source = std::fs::File::open(&source_path).expect("test operation succeeds");
+        let mut target = create_export_path(target_path.to_str().expect("test operation succeeds"), &source).expect("test operation succeeds");
+        std::io::copy(&mut source, &mut target).expect("test operation succeeds");
+        target.flush().expect("test operation succeeds");
+        assert_eq!(std::fs::read(&target_path).expect("test operation succeeds"), b"short");
+        std::fs::remove_dir_all(root).expect("test operation succeeds");
     }
 }

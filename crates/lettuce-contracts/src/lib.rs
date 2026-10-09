@@ -201,3 +201,6 @@ pub use settings::*;
 
 mod settings_ui;
 pub use settings_ui::*;
+
+mod usage;
+pub use usage::*;

@@ -49,3 +49,5 @@ Generation-enriched bases exist for job dispatches only, since those are the rec
 ## App usage
 
 `AppUsageRepository` adds up the time the app was in use per local calendar day (`YYYY-MM-DD`) in one atomic step and lists every day oldest first. It is per install and never syncs. A version 2 backup carries the days in its device state, and a restore writes them back.
+
+Usage clearing keeps immutable identity proofs in `UsageTombstone`: terminal conversation event ownership, dispatch ownership, or imported legacy identity. These proofs let synchronization consume a cleared id and let encrypted backups preserve terminal references without retaining cleared counters.

@@ -20,6 +20,8 @@ pub enum ApiOperationError {
 #[derive(Debug)]
 pub struct ApiOperationTransaction<'a, 'connection> {
     pub(crate) transaction: &'a Transaction<'connection>,
+    pub(crate) command: &'a str,
+    pub(crate) usage_delete_allowed: &'a std::sync::atomic::AtomicBool,
     pub(crate) changes: &'a crate::change_signal::ChangeSignal,
 }
 
@@ -111,6 +113,8 @@ impl Database {
             return serde_json::from_value(receipt.result).map_err(|error| invalid(error).into());
         }
         let result = apply(&ApiOperationTransaction {
+            command,
+            usage_delete_allowed: &self.usage_delete_allowed,
             changes: &self.changes,
             transaction: &transaction,
         })?;

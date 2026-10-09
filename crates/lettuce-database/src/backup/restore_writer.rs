@@ -304,6 +304,9 @@ impl ProviderBackupRestoreWriter for Database {
             .iter()
             .map(|outbox| (outbox.conversation_id, outbox))
             .collect::<BTreeMap<_, _>>();
+        for proof in &graph.conversation_usage.tombstones {
+            crate::usage_clear::insert_tombstone_in(&transaction, proof).map_err(invalid)?;
+        }
         let mut usage = BTreeMap::<_, Vec<_>>::new();
         for entry in &graph.conversation_usage.events {
             usage
