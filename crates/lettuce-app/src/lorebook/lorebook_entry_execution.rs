@@ -548,6 +548,12 @@ fn render_context(
     Ok(ProviderNeutralContext {
         messages,
         attributions: ContextAttributions {
+            usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                character_id: Some(run.character_id),
+                character_name: Some(values.character_name.clone()),
+                operation_kind: Some("reply_helper".into()),
+                ..Default::default()
+            }),
             prompt: Some(PromptAttribution {
                 document_id: prompt.id,
                 name: prompt.name.clone(),

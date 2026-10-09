@@ -228,3 +228,5 @@ Conversation lineage is optional creation metadata: the source conversation and 
 Branch deletion uses the mutation kernel to retain a tombstoned ancestry row while removing exclusive visible messages and the branch's own memory space. The root and selected branch cannot be deleted. Nonterminal work owned by the target branch returns Busy without cancellation or waiting; the same request can be retried after that work settles.
 
 An empty prompt preview validates its branch path, capabilities, runtime values and memory without requiring a source message. Normal generation requests still require a coherent source message on their timeline.
+
+Context requests can carry stored memory and summary token counts separately from their prompt contribution. The assembler copies this metadata into the immutable usage attribution without changing message selection or prompt rendering.

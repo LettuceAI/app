@@ -494,6 +494,10 @@ fn build_summary_request(
         context: ProviderNeutralContext {
             messages,
             attributions: ContextAttributions {
+                usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                    operation_kind: Some("summary".into()),
+                    ..Default::default()
+                }),
                 prompt: Some(PromptAttribution {
                     document_id: prompt.id,
                     name: prompt.name.clone(),

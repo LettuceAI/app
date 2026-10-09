@@ -264,6 +264,7 @@ fn context_request_for(
         prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
         prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
         reference_time: lettuce_types::TimestampMillis::new(0),
+        usage_snapshot: None,
         memory: None,
         timeline: ConversationReader::timeline_page(
             database,
@@ -2053,12 +2054,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .count(),
         1
     );
-    assert!(alternate_usage.iter().any(|entry| entry.result
-        == Some(JobInferenceUsageResult::InferenceFailed)
-        && entry.model_profile_id == profile.chat_profile.model_profile_id));
+    assert!(alternate_usage.iter().any(|entry| matches!(&entry.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.character_name.as_deref() == Some("Mira") && snapshot.error_message.as_deref() == Some("conversation dependency is unavailable")) && entry.model_profile_id == profile.chat_profile.model_profile_id));
     assert!(alternate_usage.iter().any(|entry| entry.result
         == Some(JobInferenceUsageResult::Response {
             snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                operation_kind: Some("reply_helper".into()),
+                character_name: Some("Mira".into()),
                 model_name: Some(alternate_profile.chat_profile.model_display_name.clone()),
                 provider_kind: Some(alternate_profile.chat_profile.provider_kind.clone()),
                 provider_label: alternate_profile.chat_profile.provider_label.clone(),
@@ -2149,7 +2150,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert!(
         interrupted_usage
             .iter()
-            .any(|entry| entry.result == Some(JobInferenceUsageResult::InferenceFailed))
+            .any(|entry| matches!(&entry.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.character_name.as_deref() == Some("Mira") && snapshot.error_message.as_deref() == Some("conversation dependency returned no result")))
     );
     let retry_request = interrupted_inference.requests.lock().expect("requests")[1].clone();
     let failed_usage = InferenceUsage {
@@ -2215,6 +2216,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert!(retries.iter().any(|entry| entry.result
         == Some(JobInferenceUsageResult::Response {
             snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                operation_kind: Some("reply_helper".into()),
+                character_name: Some("Mira".into()),
                 model_name: Some(retry_request.profile.chat_profile.model_display_name.clone()),
                 provider_kind: Some(retry_request.profile.chat_profile.provider_kind.clone()),
                 provider_label: retry_request.profile.chat_profile.provider_label.clone(),
@@ -2227,7 +2230,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert!(
         retries
             .iter()
-            .any(|entry| entry.result == Some(JobInferenceUsageResult::Cancelled))
+            .any(|entry| matches!(&entry.result, Some(JobInferenceUsageResult::Failure { cancelled: true, snapshot }) if snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.character_name.as_deref() == Some("Mira") && snapshot.finish_reason.as_deref() == Some("aborted") && snapshot.error_message.as_deref() == Some("conversation operation was cancelled")))
     );
     assert_eq!(
         interrupted_run.rounds[0].resulting_draft["soul"]["traits"],
@@ -2735,8 +2738,11 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         memory_evidence
             .iter()
             .filter(|event| matches!(
-                event.result,
-                Some(lettuce_usage::JobInferenceUsageResult::InferenceFailed)
+                &event.result,
+                Some(lettuce_usage::JobInferenceUsageResult::Failure { cancelled: false, snapshot })
+                    if snapshot.operation_kind.as_deref() == Some("memory_manager")
+                        && snapshot.finish_reason.as_deref() == Some("error")
+                        && snapshot.error_message.as_deref() == Some("conversation dependency is unavailable")
             ))
             .count(),
         2
@@ -10235,7 +10241,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     assert_eq!(
         batch_evidence
             .iter()
-            .filter(|event| event.result == Some(JobInferenceUsageResult::InferenceFailed))
+            .filter(|event| matches!(&event.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.error_message.as_deref() == Some("conversation dependency returned no result")))
             .count(),
         1
     );
@@ -11150,7 +11156,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 Err(crate::LorebookEntryExecutionError::Cancelled)
             ));
             assert_eq!(evidence.len(), 1);
-            assert_eq!(evidence[0].result, Some(JobInferenceUsageResult::Cancelled));
+            assert!(matches!(&evidence[0].result, Some(JobInferenceUsageResult::Failure { cancelled: true, snapshot }) if snapshot.character_id == Some(character_id) && snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.finish_reason.as_deref() == Some("aborted") && snapshot.error_message.as_deref() == Some("conversation operation was cancelled")));
             assert_eq!(inference.requests.lock().expect("requests").len(), 1);
         } else {
             assert_eq!(result.expect("provider error fallback").attempts, 2);
@@ -11158,7 +11164,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
             assert!(
                 evidence
                     .iter()
-                    .any(|event| event.result == Some(JobInferenceUsageResult::InferenceFailed))
+                    .any(|event| matches!(&event.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.character_id == Some(character_id) && snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.error_message.as_deref() == Some("conversation dependency is unavailable")))
             );
             assert!(evidence.iter().any(|event| matches!(
                 event.result,

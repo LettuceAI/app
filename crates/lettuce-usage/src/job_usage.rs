@@ -31,6 +31,10 @@ pub enum JobInferenceUsageResult {
     },
     InferenceFailed,
     Cancelled,
+    Failure {
+        cancelled: bool,
+        snapshot: Box<lettuce_conversations::UsageRecordSnapshot>,
+    },
 }
 
 impl JobInferenceUsage {
@@ -60,23 +64,49 @@ impl JobInferenceUsage {
         {
             return Err(UsageLedgerError::Invalid);
         }
-        if let JobInferenceUsageResult::Response {
-            snapshot: Some(snapshot),
-            provider_response_id,
-            ..
-        } = result
-        {
-            if &snapshot.provider_response_id != provider_response_id {
-                return Err(UsageLedgerError::Invalid);
-            }
-            if let Some(admitted) = &self.snapshot {
-                let mut immutable = snapshot.as_ref().clone();
-                immutable.finish_reason = None;
-                immutable.error_message = None;
-                immutable.provider_response_id = None;
-                if &immutable != admitted {
+        let snapshot = match result {
+            JobInferenceUsageResult::Response {
+                snapshot,
+                provider_response_id,
+                ..
+            } => {
+                if snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| &snapshot.provider_response_id != provider_response_id)
+                {
                     return Err(UsageLedgerError::Invalid);
                 }
+                snapshot.as_deref()
+            }
+            JobInferenceUsageResult::Failure {
+                cancelled,
+                snapshot,
+            } => {
+                let finish = if *cancelled { "aborted" } else { "error" };
+                if self.snapshot.is_none()
+                    || snapshot.provider_response_id.is_some()
+                    || snapshot.finish_reason.as_deref() != Some(finish)
+                    || (!cancelled
+                        && snapshot
+                            .error_message
+                            .as_ref()
+                            .is_none_or(|message| message.trim().is_empty()))
+                {
+                    return Err(UsageLedgerError::Invalid);
+                }
+                Some(snapshot.as_ref())
+            }
+            JobInferenceUsageResult::InferenceFailed | JobInferenceUsageResult::Cancelled => None,
+        };
+        if let Some(snapshot) = snapshot
+            && let Some(admitted) = &self.snapshot
+        {
+            let mut immutable = snapshot.clone();
+            immutable.finish_reason = None;
+            immutable.error_message = None;
+            immutable.provider_response_id = None;
+            if &immutable != admitted {
+                return Err(UsageLedgerError::Invalid);
             }
         }
         Ok(())

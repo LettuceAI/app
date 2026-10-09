@@ -167,6 +167,10 @@ impl UsageReportEvidence {
                         row.apply_usage(usage);
                     }
                 }
+                Some(crate::JobInferenceUsageResult::Failure { cancelled, snapshot }) => {
+                    row.status = if *cancelled { UsageReportStatus::Cancelled } else { UsageReportStatus::Failed };
+                    row.apply_snapshot(Some(snapshot.as_ref()));
+                }
                 Some(crate::JobInferenceUsageResult::InferenceFailed) => {
                     row.status = UsageReportStatus::Failed;
                     row.apply_snapshot(event.snapshot.as_ref());
@@ -457,6 +461,32 @@ mod tests {
             legacy: Vec::new(),
             tombstones: Vec::new(),
         }
+    }
+
+    #[test]
+    fn failed_dispatch_retains_its_error_and_finish_snapshot_without_a_terminal_owner() {
+        let mut input = evidence();
+        input.events.clear();
+        let admitted = lettuce_conversations::UsageRecordSnapshot {
+            character_name: Some("Ada".into()),
+            operation_kind: Some("reply_helper".into()),
+            ..Default::default()
+        };
+        let mut failed = admitted.clone();
+        failed.finish_reason = Some("error".into());
+        failed.error_message = Some("provider unavailable".into());
+        input.dispatches[0].0.snapshot = Some(admitted);
+        input.dispatches[0].0.result = Some(serde_json::from_value(serde_json::json!({"Failure": {"cancelled": false, "snapshot": failed}})).expect("persistent failure snapshot"));
+        let mut corrupt = UsageReportEvidence { events: Vec::new(), dispatches: input.dispatches.clone(), legacy: Vec::new(), tombstones: Vec::new() };
+        let rows = input.charge_rows().expect("failed report");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].character_name.as_deref(), Some("Ada"));
+        assert_eq!(rows[0].finish_reason.as_deref(), Some("error"));
+        assert_eq!(rows[0].error_message.as_deref(), Some("provider unavailable"));
+        assert_eq!(rows[0].status, UsageReportStatus::Failed);
+        let snapshot = corrupt.dispatches[0].0.snapshot.as_mut().expect("admission");
+        snapshot.character_name = Some("Renamed".into());
+        assert_eq!(corrupt.charge_rows(), Err(UsageReportError::InvalidData));
     }
 
     #[test]

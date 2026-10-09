@@ -45,3 +45,5 @@ A fork stores `"{conversation title} (branch)"` without numbering, matching `old
 Branch list, fork, rename and select are exposed through the application API. Legacy tree nodes were independent sessions ordered by creation (`old-code/src-tauri/src/storage_manager/sessions.rs:2429-2493`, `old-code/src/ui/pages/chats/ChatTreePage.tsx:45-64,105-116`); the rewrite lists surviving branches in creation order and counts visible messages across all roles. Root rename changes the conversation title and fork rename changes only its stored label.
 
 Conversation roots can retain lineage for direct-to-character copies, matching legacy parent-session and branched-message metadata (`old-code/src/core/storage/repo.ts:1744-1748`). The source ids remain readable after deletion of the source; they do not retain that conversation or its messages.
+
+Usage attribution carries dynamic memory counts independently of retrieval and rendering, matching the stored-memory accounting before provider dispatch (`old-code/src-tauri/src/chat_manager/service.rs:543-566`). Missing token evidence remains unknown; known empty memory records zero instead of the legacy absent value.

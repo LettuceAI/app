@@ -119,8 +119,21 @@ pub(crate) async fn run_job_inference_with_id<
             usage: outcome.usage.clone(),
             provider_response_id: outcome.provider_response_id.clone(),
         },
-        Err(PortError::Cancelled) => JobInferenceUsageResult::Cancelled,
-        Err(_) => JobInferenceUsageResult::InferenceFailed,
+        Err(error) => JobInferenceUsageResult::Failure {
+            cancelled: *error == PortError::Cancelled,
+            snapshot: Box::new(lettuce_conversations::UsageRecordSnapshot {
+                finish_reason: Some(
+                    if *error == PortError::Cancelled {
+                        "aborted"
+                    } else {
+                        "error"
+                    }
+                    .into(),
+                ),
+                error_message: Some(error.to_string()),
+                ..snapshot
+            }),
+        },
     };
     if repository.settle_job_usage(id, result).is_err() {
         if let Ok(outcome) = &outcome {

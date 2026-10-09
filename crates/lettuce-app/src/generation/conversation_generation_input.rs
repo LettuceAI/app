@@ -935,24 +935,26 @@ where
         .map_err(|_| unavailable())?;
         let reference_now = clock.effective_now(now);
         let operation = lettuce_conversations::GenerationOperation::Continue;
-        let memory = match memory_mode {
-            MemoryModeSnapshot::Disabled => None,
-            MemoryModeSnapshot::Manual => {
-                self.manual_memory_input(conversation_id, branch_id, group)?
-            }
+        let (memory, usage_snapshot) = match memory_mode {
+            MemoryModeSnapshot::Disabled => (None, None),
+            MemoryModeSnapshot::Manual => (
+                self.manual_memory_input(conversation_id, branch_id, group)?,
+                None,
+            ),
             MemoryModeSnapshot::Dynamic => {
                 let memory =
                     MemoryRepository::get_for_branch(self.repository, conversation_id, branch_id)
                         .map_err(ConversationGenerationInputError::Memory)?
                         .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-                let summary = MemorySummaryRepository::get_summary_for_branch(
+                let summary_record = MemorySummaryRepository::get_summary_for_branch(
                     self.repository,
                     memory.id,
                     conversation_id,
                     branch_id,
                 )
-                .map_err(ConversationGenerationInputError::Memory)?
-                .map(|summary| summary.text);
+                .map_err(ConversationGenerationInputError::Memory)?;
+                let usage_snapshot = usage_memory_snapshot(&memory.items, summary_record.as_ref())?;
+                let summary = summary_record.map(|summary| summary.text);
                 let policy = live_memory
                     .as_ref()
                     .and_then(|memory| memory.dynamic_policy.as_ref())
@@ -979,13 +981,16 @@ where
                         crate::memory::memory_prompt::memory_prompt_line(item, reference_now)
                     })
                     .collect::<Vec<_>>();
-                (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
-                    attribution: MemoryAttribution {
-                        revision_id: memory_revision_id(memory.id, memory.revision),
-                    },
-                    summary,
-                    key_memories,
-                })
+                (
+                    (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                        attribution: MemoryAttribution {
+                            revision_id: memory_revision_id(memory.id, memory.revision),
+                        },
+                        summary,
+                        key_memories,
+                    }),
+                    Some(usage_snapshot),
+                )
             }
         };
         let images = &global_settings.image_generation;
@@ -1074,6 +1079,7 @@ where
                 prompt_runtime,
                 prompt_values,
                 reference_time: reference_now,
+                usage_snapshot,
                 memory,
                 timeline: context_timeline(
                     timeline.items,
@@ -1721,7 +1727,7 @@ where
         };
         let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
-        let memory_contribution = match memory_mode {
+        let (memory_contribution, usage_snapshot) = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
                 let companion = clock.companion;
                 let policy = memory_settings
@@ -1742,14 +1748,17 @@ where
                 )
                 .await?
             }
-            MemoryModeSnapshot::Manual => self.manual_memory_input(
-                work.conversation_id,
-                ConversationReader::get_turn(self.repository, work.turn_id)
-                    .map_err(ConversationGenerationInputError::Repository)?
-                    .branch_id,
-                group,
-            )?,
-            MemoryModeSnapshot::Disabled => None,
+            MemoryModeSnapshot::Manual => (
+                self.manual_memory_input(
+                    work.conversation_id,
+                    ConversationReader::get_turn(self.repository, work.turn_id)
+                        .map_err(ConversationGenerationInputError::Repository)?
+                        .branch_id,
+                    group,
+                )?,
+                None,
+            ),
+            MemoryModeSnapshot::Disabled => (None, None),
         };
         let conversation_message_count =
             conversation_message_count(&timeline.items, turn.operation, source_message_id);
@@ -1854,6 +1863,7 @@ where
                 prompt_runtime,
                 prompt_values,
                 reference_time: reference_now,
+                usage_snapshot,
                 memory: memory_contribution,
                 timeline: context_timeline(
                     timeline.items,
@@ -1998,7 +2008,13 @@ where
         settings: &DynamicMemoryPolicySnapshot,
         shape: MemoryPromptShape,
         now: TimestampMillis,
-    ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
+    ) -> Result<
+        (
+            Option<MemoryContribution>,
+            Option<lettuce_conversations::UsageRecordSnapshot>,
+        ),
+        ConversationGenerationInputError,
+    > {
         let prior_access = MemoryRetrievalRepository::get_retrieval_access(
             self.repository,
             work.conversation_id,
@@ -2018,7 +2034,7 @@ where
         }
         .map_err(ConversationGenerationInputError::Memory)?
         .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-        let summary = MemorySummaryRepository::get_summary_for_branch(
+        let summary_record = MemorySummaryRepository::get_summary_for_branch(
             self.repository,
             memory.id,
             work.conversation_id,
@@ -2026,8 +2042,9 @@ where
                 .map_err(ConversationGenerationInputError::Repository)?
                 .branch_id,
         )
-        .map_err(ConversationGenerationInputError::Memory)?
-        .map(|summary| summary.text);
+        .map_err(ConversationGenerationInputError::Memory)?;
+        let usage_snapshot = usage_memory_snapshot(&memory.items, summary_record.as_ref())?;
+        let summary = summary_record.map(|summary| summary.text);
         let (selected, revision, effective_now) = if let Some(receipt) = prior_access {
             if receipt.access.space_id != memory.id || receipt.resulting_revision != memory.revision
             {
@@ -2088,7 +2105,7 @@ where
                 summary,
                 key_memories,
             });
-        Ok(contribution)
+        Ok((contribution, Some(usage_snapshot)))
     }
 
     fn manual_memory_input(
@@ -3203,6 +3220,26 @@ fn keywords(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn usage_memory_snapshot(
+    items: &[lettuce_memory::MemoryItem],
+    summary: Option<&lettuce_memory::MemorySummary>,
+) -> Result<lettuce_conversations::UsageRecordSnapshot, ConversationGenerationInputError> {
+    let mut memory_tokens = Some(0_u64);
+    for item in items.iter().filter(|item| item.superseded_by.is_none()) {
+        memory_tokens = match (memory_tokens, item.token_count) {
+            (Some(total), Some(count)) => Some(total.checked_add(u64::from(count)).ok_or(
+                ConversationGenerationInputError::Context(ContextAssemblyError::SizeLimit),
+            )?),
+            _ => None,
+        };
+    }
+    Ok(lettuce_conversations::UsageRecordSnapshot {
+        memory_tokens,
+        summary_tokens: summary.and_then(|summary| summary.token_count.map(u64::from)),
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
@@ -3245,6 +3282,71 @@ mod tests {
             access_count: 0,
             created_at: TimestampMillis::new(index),
             last_accessed_at: TimestampMillis::new(index),
+        }
+    }
+
+    #[test]
+    fn usage_memory_counts_keep_cold_items_skip_superseded_items_and_preserve_unknowns() {
+        let mut first = retrieval_memory(1, lettuce_memory::MemoryCategory::WorldDetail);
+        let mut second = retrieval_memory(2, lettuce_memory::MemoryCategory::WorldDetail);
+        second.is_cold = true;
+        assert_eq!(
+            super::usage_memory_snapshot(&[first.clone(), second.clone()], None)
+                .expect("known counts")
+                .memory_tokens,
+            Some(6)
+        );
+        first.superseded_by = Some(second.id);
+        assert_eq!(
+            super::usage_memory_snapshot(&[first, second.clone()], None)
+                .expect("surviving count")
+                .memory_tokens,
+            Some(3)
+        );
+        second.token_count = None;
+        assert_eq!(
+            super::usage_memory_snapshot(&[second], None)
+                .expect("unknown remains absent")
+                .memory_tokens,
+            None
+        );
+        let empty = super::usage_memory_snapshot(&[], None).expect("empty memory");
+        assert_eq!(empty.memory_tokens, Some(0));
+        assert_eq!(empty.summary_tokens, None);
+        let large = lettuce_memory::MemoryCategory::WorldDetail;
+        let mut first = retrieval_memory(3, large);
+        let mut second = retrieval_memory(4, large);
+        first.token_count = Some(u32::MAX);
+        second.token_count = Some(u32::MAX);
+        assert_eq!(
+            super::usage_memory_snapshot(&[first, second], None)
+                .expect("no u32 cap")
+                .memory_tokens,
+            Some(2 * u64::from(u32::MAX))
+        );
+    }
+
+    #[test]
+    fn usage_summary_counts_preserve_known_zero_and_unknown() {
+        let mut summary = lettuce_memory::MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::Model,
+            space_id: lettuce_types::MemorySpaceId::new(),
+            branch_id: ConversationBranchId::new(),
+            text: "Summary".into(),
+            token_count: Some(17),
+            window_start: 0,
+            window_end: 1,
+            source_message_ids: Vec::new(),
+            updated_at: TimestampMillis::new(1),
+        };
+        for count in [Some(17), Some(0), None] {
+            summary.token_count = count;
+            assert_eq!(
+                super::usage_memory_snapshot(&[], Some(&summary))
+                    .expect("summary count")
+                    .summary_tokens,
+                count.map(u64::from)
+            );
         }
     }
 

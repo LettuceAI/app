@@ -75,6 +75,9 @@ fn verify_usage(
     {
         return Err(ConversationRepositoryError::Conflict);
     }
+    admission
+        .validate_result_snapshot(&evidence)
+        .map_err(|_| ConversationRepositoryError::Conflict)?;
     let matches = match (result, evidence) {
         (
             InitialInferenceResult::Response(outcome),
@@ -84,6 +87,16 @@ fn verify_usage(
                 ..
             },
         ) => outcome.usage == usage && outcome.provider_response_id == provider_response_id,
+        (
+            InitialInferenceResult::Failed(error),
+            lettuce_usage::JobInferenceUsageResult::Failure {
+                cancelled,
+                snapshot,
+            },
+        ) => {
+            cancelled == (*error == lettuce_conversations::PortError::Cancelled)
+                && snapshot.error_message.as_deref() == Some(error.to_string().as_str())
+        }
         (
             InitialInferenceResult::Failed(lettuce_conversations::PortError::Cancelled),
             lettuce_usage::JobInferenceUsageResult::Cancelled,

@@ -33,6 +33,9 @@ fn verify_usage(
         crate::decode_versioned(&admission, 1).map_err(|_| ConversationRepositoryError::Storage)?;
     let result: lettuce_usage::JobInferenceUsageResult =
         crate::decode_versioned(&result, 1).map_err(|_| ConversationRepositoryError::Storage)?;
+    admission
+        .validate_result_snapshot(&result)
+        .map_err(|_| ConversationRepositoryError::Conflict)?;
     let result_matches = match decision.fallback {
         lettuce_conversations::SpeakerFallback::None => {
             matches!(
@@ -44,6 +47,10 @@ fn verify_usage(
             result,
             lettuce_usage::JobInferenceUsageResult::Response { .. }
                 | lettuce_usage::JobInferenceUsageResult::InferenceFailed
+                | lettuce_usage::JobInferenceUsageResult::Failure {
+                    cancelled: false,
+                    ..
+                }
         ),
         _ => false,
     };

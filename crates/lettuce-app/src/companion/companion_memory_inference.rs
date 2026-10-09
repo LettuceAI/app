@@ -762,6 +762,10 @@ fn build_first_request(
         context: ProviderNeutralContext {
             messages,
             attributions: ContextAttributions {
+                usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                    operation_kind: Some("memory_manager".into()),
+                    ..Default::default()
+                }),
                 prompt: Some(PromptAttribution {
                     document_id: prompt.id,
                     name: prompt.name.clone(),
@@ -1283,7 +1287,17 @@ mod tests {
                     provider_response_id: cancelled.provider_response_id.clone(),
                 }
             } else {
-                lettuce_usage::JobInferenceUsageResult::Cancelled
+                lettuce_usage::JobInferenceUsageResult::Failure {
+                    cancelled: true,
+                    snapshot: Box::new(lettuce_conversations::UsageRecordSnapshot {
+                        model_name: Some(profile().chat_profile.model_display_name),
+                        provider_kind: Some(profile().chat_profile.provider_kind),
+                        provider_label: profile().chat_profile.provider_label,
+                        finish_reason: Some("aborted".into()),
+                        error_message: Some("conversation operation was cancelled".into()),
+                        ..Default::default()
+                    }),
+                }
             };
             let scripted = ScriptedInference {
                 outcomes: Mutex::new(VecDeque::from([if response {

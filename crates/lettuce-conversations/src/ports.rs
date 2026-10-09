@@ -1520,6 +1520,7 @@ pub struct ContextRequest {
     /// the wall clock without one. The companion state and scheduled notes
     /// are rendered at it.
     pub reference_time: TimestampMillis,
+    pub usage_snapshot: Option<UsageRecordSnapshot>,
     pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,
 }
@@ -2747,6 +2748,7 @@ mod tests {
             prompt_runtime: PromptRuntimeFacts::default(),
             prompt_values: PromptRuntimeValues::default(),
             reference_time: TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: Vec::new(),
         };

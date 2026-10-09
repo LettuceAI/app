@@ -698,6 +698,14 @@ where
                 character_id: selected_character(&snapshot, &request).map(|body| body.character_id),
                 character_name: selected_character(&snapshot, &request)
                     .map(|body| body.name.clone()),
+                memory_tokens: request
+                    .usage_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.memory_tokens),
+                summary_tokens: request
+                    .usage_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.summary_tokens),
                 operation_kind: Some(
                     match (group, request.operation) {
                         (false, GenerationOperation::Send) => "chat",
@@ -3716,6 +3724,7 @@ mod tests {
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
             reference_time: lettuce_types::TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: vec![
                 item(
@@ -3803,6 +3812,7 @@ mod tests {
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
             reference_time: lettuce_types::TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: vec![
                 item(0, MessageRole::User, 5_000),
@@ -3882,6 +3892,7 @@ mod tests {
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
             reference_time: lettuce_types::TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: vec![
                 item(root_message, root_branch, None),

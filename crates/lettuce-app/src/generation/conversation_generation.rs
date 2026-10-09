@@ -1030,16 +1030,28 @@ impl<
             matches!(
                 record.result,
                 None | Some(JobInferenceUsageResult::InferenceFailed)
+                    | Some(JobInferenceUsageResult::Failure {
+                        cancelled: false,
+                        ..
+                    })
             )
         }) {
             return Ok(UsageCounters::Unavailable(
                 UsageUnavailableReason::TransportFailed,
             ));
         }
-        if records
-            .iter()
-            .any(|record| matches!(record.result, Some(JobInferenceUsageResult::Cancelled)))
-        {
+        if records.iter().any(|record| {
+            matches!(
+                record.result,
+                Some(
+                    JobInferenceUsageResult::Cancelled
+                        | JobInferenceUsageResult::Failure {
+                            cancelled: true,
+                            ..
+                        }
+                )
+            )
+        }) {
             return Ok(UsageCounters::Unavailable(
                 UsageUnavailableReason::CancelledBeforeResponse,
             ));
@@ -1667,13 +1679,25 @@ impl<
                     matches!(
                         record.result,
                         None | Some(JobInferenceUsageResult::InferenceFailed)
+                            | Some(JobInferenceUsageResult::Failure {
+                                cancelled: false,
+                                ..
+                            })
                     )
                 }) {
                     UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
-                } else if records
-                    .iter()
-                    .any(|record| matches!(record.result, Some(JobInferenceUsageResult::Cancelled)))
-                {
+                } else if records.iter().any(|record| {
+                    matches!(
+                        record.result,
+                        Some(
+                            JobInferenceUsageResult::Cancelled
+                                | JobInferenceUsageResult::Failure {
+                                    cancelled: true,
+                                    ..
+                                }
+                        )
+                    )
+                }) {
                     UsageCounters::Unavailable(UsageUnavailableReason::CancelledBeforeResponse)
                 } else {
                     let usages = records

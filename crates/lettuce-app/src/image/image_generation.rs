@@ -17,6 +17,7 @@ use lettuce_jobs::{
     OutcomeRef, RecoveryPolicy, ResourceAvailability, ResourceClass, StageSnapshot, StoreError,
     SubjectKind, WorkerId, handle::JobHandle,
 };
+use lettuce_characters::CharacterRepository;
 use lettuce_models::{ModelProfileRepository, ModelRepositoryError, ProviderAccountRepository};
 use lettuce_types::{GenerationAttemptId, JobId, TimestampMillis, UsageEventId};
 use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
@@ -68,6 +69,10 @@ pub enum ImageGenerationError {
     Provider(#[from] ImageProviderError),
     #[error("image generation usage could not be recorded")]
     Usage,
+    #[error("the image character no longer exists")]
+    CharacterMissing,
+    #[error("the image character could not be read")]
+    CharacterStorage,
     #[error("the LoRA library could not be read")]
     LoraLibrary(#[from] LoraLibraryRepositoryError),
     #[error("image generation persistence failed: {0}")]
@@ -111,7 +116,7 @@ impl ImageGenerationError {
         match self {
             Self::Invalid(_) => ImageFailureKind::InvalidRequest,
             Self::ModelMissing | Self::Models(_) => ImageFailureKind::ModelMissing,
-            Self::Profile(_) => ImageFailureKind::InvalidRequest,
+            Self::Profile(_) | Self::CharacterMissing => ImageFailureKind::InvalidRequest,
             Self::Media(ImageMediaError::Output(_)) => ImageFailureKind::OutputRejected,
             Self::Media(_) => ImageFailureKind::InvalidRequest,
             Self::Provider(ImageProviderError::Engine(error)) => error.kind,
@@ -120,7 +125,7 @@ impl ImageGenerationError {
                 ImageFailureKind::LocalUnsupported
             }
             Self::Provider(ImageProviderError::Cancelled) => ImageFailureKind::Cancelled,
-            Self::Usage | Self::LoraLibrary(_) | Self::Repository(_) | Self::Jobs(_) => {
+            Self::Usage | Self::CharacterStorage | Self::LoraLibrary(_) | Self::Repository(_) | Self::Jobs(_) => {
                 ImageFailureKind::StorageFailed
             }
             Self::InvalidWork => ImageFailureKind::Other,
@@ -261,7 +266,7 @@ impl<
         run: ImageRun,
     ) -> Result<ImageGenerationRunResult, ImageGenerationError>
     where
-        M: ModelProfileRepository + ProviderAccountRepository + ?Sized,
+        M: ModelProfileRepository + ProviderAccountRepository + CharacterRepository + ?Sized,
         D: ImageMedia + ?Sized,
         P: ImageProviderPort + ?Sized,
     {
@@ -343,7 +348,7 @@ impl<
         now: TimestampMillis,
     ) -> Result<ImageGenerationResult, ImageGenerationError>
     where
-        M: ModelProfileRepository + ProviderAccountRepository + ?Sized,
+        M: ModelProfileRepository + ProviderAccountRepository + CharacterRepository + ?Sized,
         D: ImageMedia + ?Sized,
         P: ImageProviderPort + ?Sized,
     {
@@ -368,10 +373,25 @@ impl<
             settings.extra_prompt.as_deref(),
             &lora_keywords(&loras),
         );
+        let character_name = request.attribution.character_id.map(|id| {
+            CharacterRepository::get(models, id)
+                .map_err(|_| ImageGenerationError::CharacterStorage)?
+                .map(|details| details.character.profile.name)
+                .ok_or(ImageGenerationError::CharacterMissing)
+        }).transpose()?;
+        let snapshot = lettuce_conversations::UsageRecordSnapshot {
+            character_id: request.attribution.character_id,
+            character_name,
+            model_name: Some(profile.display_name.clone()),
+            provider_kind: Some(profile.account.provider_kind.clone()),
+            provider_label: Some(profile.account.label.clone()),
+            operation_kind: Some("image_generation".into()),
+            ..Default::default()
+        };
         let usage_id = UsageEventId::new();
         self.generations
             .admit_job_usage(JobInferenceUsage {
-                snapshot: None,
+                snapshot: Some(snapshot.clone()),
                 id: usage_id,
                 job_id: work.job.id,
                 logical_attempt_id: GenerationAttemptId::new(),
@@ -411,25 +431,22 @@ impl<
         };
         let settled = match &output {
             Ok(output) => JobInferenceUsageResult::Response {
-                snapshot: None,
+                snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot { finish_reason: Some("stop".into()), ..snapshot })),
                 usage: output.usage.clone(),
                 provider_response_id: None,
             },
-            Err(ImageGenerationError::Provider(ImageProviderError::Cancelled)) => {
-                JobInferenceUsageResult::Cancelled
+            Err(error) => {
+                let cancelled = matches!(error, ImageGenerationError::Provider(ImageProviderError::Cancelled));
+                JobInferenceUsageResult::Failure { cancelled, snapshot: Box::new(lettuce_conversations::UsageRecordSnapshot {
+                    finish_reason: Some(if cancelled { "aborted" } else { "error" }.into()),
+                    error_message: Some(error.to_string()),
+                    ..snapshot
+                }) }
             }
-            Err(_) => JobInferenceUsageResult::InferenceFailed,
         };
-        if self
-            .generations
+        self.generations
             .settle_job_usage(usage_id, settled)
-            .is_err()
-        {
-            tracing::warn!(
-                component = "image_generator",
-                "failed to record image generation usage"
-            );
-        }
+            .map_err(|_| ImageGenerationError::Usage)?;
         let output = output?;
         check_cancelled(&work.handle)?;
         let mut images = Vec::with_capacity(output.images.len());
@@ -925,6 +942,8 @@ mod tests {
             .expect("input image");
         let mut request = request(&fixture);
         request.input_images = vec![input.asset.id];
+        let character = crate::launch::tests::seed_character(&fixture.database, Vec::new(), Vec::new(), Vec::new(), |_| {});
+        request.attribution.character_id = Some(character);
         let provider = Provider {
             outcome: Some(Ok(vec![
                 image(png(2, 3), Some("done")),
@@ -965,6 +984,12 @@ mod tests {
         let usage = fixture.database.job_usage(job.id).expect("usage");
         assert_eq!(usage.len(), 1);
         assert_eq!(usage[0].model_profile_id, fixture.profile.id);
+        let snapshot = usage[0].snapshot.as_ref().expect("frozen image snapshot");
+        assert_eq!(snapshot.operation_kind.as_deref(), Some("image_generation"));
+        assert_eq!(snapshot.character_id, Some(character));
+        assert_eq!(snapshot.character_name.as_deref(), Some("Ada"));
+        assert_eq!(snapshot.model_name.as_deref(), Some(fixture.profile.display_name.as_str()));
+        assert_eq!(snapshot.provider_kind.as_deref(), Some("openai"));
         assert!(matches!(
             &usage[0].result,
             Some(JobInferenceUsageResult::Response { usage: Some(usage), .. })
@@ -1107,10 +1132,7 @@ mod tests {
             }
         );
         let usage = fixture.database.job_usage(job.id).expect("usage");
-        assert_eq!(
-            usage[0].result,
-            Some(JobInferenceUsageResult::InferenceFailed)
-        );
+        assert!(matches!(&usage[0].result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.error_message.as_deref() == Some("API error 400: bad size") && snapshot.finish_reason.as_deref() == Some("error")));
         let history =
             lettuce_image_generation::PlaygroundHistoryRepository::list_playground_history(
                 &fixture.database,
@@ -1264,6 +1286,49 @@ mod tests {
         ));
     }
 
+
+    struct FailedUsageSettlement<'a>(&'a Database);
+
+    impl ImageGenerationRepository for FailedUsageSettlement<'_> {
+        fn admit(&self, record: ImageGenerationRecord) -> Result<ImageGenerationRecord, ImageGenerationRepositoryError> { self.0.admit(record) }
+        fn get(&self, id: JobId) -> Result<ImageGenerationRecord, ImageGenerationRepositoryError> { ImageGenerationRepository::get(self.0,id) }
+        fn settle(&self, id: JobId, state: ImageGenerationState) -> Result<ImageGenerationRecord, ImageGenerationRepositoryError> { self.0.settle(id,state) }
+    }
+
+    impl JobUsageLedger for FailedUsageSettlement<'_> {
+        fn admit_job_usage(&self, record: JobInferenceUsage) -> Result<(), lettuce_usage::UsageLedgerError> { self.0.admit_job_usage(record) }
+        fn settle_job_usage(&self, _: UsageEventId, _: JobInferenceUsageResult) -> Result<(), lettuce_usage::UsageLedgerError> { Err(lettuce_usage::UsageLedgerError::Storage) }
+        fn job_usage(&self, id: JobId) -> Result<Vec<JobInferenceUsage>, lettuce_usage::UsageLedgerError> { self.0.job_usage(id) }
+    }
+
+    impl LoraLibraryRepository for FailedUsageSettlement<'_> {
+        fn lora(&self, path: &str) -> Result<Option<lettuce_image_generation::sd_runtime::lora_library::LoraRecord>, LoraLibraryRepositoryError> { self.0.lora(path) }
+        fn lora_by_hash(&self, hash: &str) -> Result<Option<lettuce_image_generation::sd_runtime::lora_library::LoraRecord>, LoraLibraryRepositoryError> { self.0.lora_by_hash(hash) }
+        fn record_lora_file(&self, path: &str, filename: &str, bytes: u64, modified: u64, at: TimestampMillis) -> Result<lettuce_image_generation::sd_runtime::lora_library::LoraRecord, LoraLibraryRepositoryError> { self.0.record_lora_file(path,filename,bytes,modified,at) }
+        fn save_lora(&self, record: &lettuce_image_generation::sd_runtime::lora_library::LoraRecord, at: TimestampMillis) -> Result<(), LoraLibraryRepositoryError> { self.0.save_lora(record,at) }
+        fn delete_lora(&self, path: &str) -> Result<(), LoraLibraryRepositoryError> { self.0.delete_lora(path) }
+        fn lora_model_references(&self, path: &str) -> Result<u64, LoraLibraryRepositoryError> { self.0.lora_model_references(path) }
+    }
+
+    #[tokio::test]
+    async fn failed_image_usage_settlement_never_returns_success_or_persists_outputs() {
+        let fixture = fixture("openai", ProviderProtocol::OpenAiCompatible, CapabilityStatus::Supported);
+        let fault = FailedUsageSettlement(&fixture.database);
+        let coordinator = ImageGenerationCoordinator::new(&fault, &fixture.database);
+        let admitted = coordinator.admit(request(&fixture), &fixture.database).expect("admit");
+        let work = coordinator.claim(admitted.job.id, WorkerId::new(), NOW, Duration::from_secs(30), &ResourceAvailability::all()).expect("claim").expect("work");
+        let provider = Provider::default();
+        let result = coordinator.run(work, &fixture.database, &fixture.media, &provider, ImageRun { progress: None, cancellation_reason: CancellationReason::User, now: TimestampMillis::new(2_000) }).await.expect("typed failure settlement");
+        let ImageGenerationRunResult::Failed { record, job } = result else { panic!("usage persistence failure must fail: {result:?}"); };
+        assert_eq!(job.state, JobState::Failed);
+        assert!(matches!(record.state, ImageGenerationState::Failed { message, .. } if message == "image generation usage could not be recorded"));
+        assert_eq!(provider.requests.lock().expect("requests").len(), 1);
+        let evidence = fixture.database.job_usage(job.id).expect("evidence");
+        assert_eq!(evidence.len(), 1);
+        assert!(evidence[0].result.is_none());
+        let history = lettuce_image_generation::PlaygroundHistoryRepository::list_playground_history(&fixture.database, 30, None).expect("history");
+        assert!(history[0].images.is_empty());
+    }
     #[test]
     fn models_without_image_output_are_refused_before_a_job_exists() {
         let fixture = fixture(
