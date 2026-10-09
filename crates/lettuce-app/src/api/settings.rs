@@ -270,7 +270,17 @@ fn apply(
             "local_runtime"
         }
         dto::SettingsPatch::UiPreferences { changes } => {
-            for change in changes {
+            for mut change in changes {
+                if let dto::UiPreferenceChange::LlamaSamplerPresets {
+                    value: Some(presets),
+                } = &mut change
+                {
+                    for preset in presets {
+                        for value in [&mut preset.id, &mut preset.name].into_iter().flatten() {
+                            *value = trim_preset_text(value).to_owned();
+                        }
+                    }
+                }
                 validate_ui_change(&change)?;
                 let change = serde_json::to_value(change).map_err(|_| {
                     invalid_field("ui_preferences", "UI choice cannot be represented")
@@ -351,7 +361,7 @@ pub async fn settings_update(
             context.emit(dto::ApiEvent::SettingsChanged {
                 section: section.to_owned(),
             });
-            super::content_filter::refresh_logging(&context)?;
+            super::content_filter::refresh_logging(context)?;
             let result = view(result)?;
             Ok(result)
         })
@@ -468,6 +478,10 @@ fn validate_sampler_finite(value: &dto::SettingsModelSettingsLayer) -> Result<()
     Ok(())
 }
 
+fn trim_preset_text(value: &str) -> &str {
+    value.trim_matches(|character| matches!(character, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'))
+}
+
 fn validate_ui_change(change: &dto::UiPreferenceChange) -> Result<(), ApiError> {
     use dto::UiPreferenceChange;
     match change {
@@ -572,11 +586,11 @@ fn validate_ui_change(change: &dto::UiPreferenceChange) -> Result<(), ApiError> 
                 if preset
                     .id
                     .as_deref()
-                    .is_none_or(|value| value.trim().is_empty() || value.len() > 128)
+                    .is_none_or(|value| value.is_empty() || value.encode_utf16().count() > 128)
                     || preset
                         .name
                         .as_deref()
-                        .is_none_or(|value| value.trim().is_empty() || value.len() > 64)
+                        .is_none_or(|value| value.is_empty() || value.encode_utf16().count() > 64)
                     || preset.stages.is_none()
                 {
                     return Err(invalid_field(

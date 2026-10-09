@@ -651,3 +651,5 @@ The content filter log and clear commands require developer mode and return type
 Settings commit notifications also refresh developer logging after sync applies a new global document. The logging generation is local to the database process and independent of revision numbers received from another device.
 
 Pure-mode writes apply to the live filter after commit. Requests and commit notifications apply the mode and logging flag together under the latest observed commit generation, including when sync lowers a settings revision.
+
+Sampler preset text is trimmed before validation and length is measured in UTF-16 units, matching the frontend string contract. Collection size remains unbounded.

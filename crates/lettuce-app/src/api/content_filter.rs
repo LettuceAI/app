@@ -98,7 +98,7 @@ pub(super) async fn run_events(context: ApiContext, stopped: impl Future<Output 
             () = &mut stopped => break,
             () = context.shutdown_token().cancelled() => break,
             () = context.settings_changed() => {
-                if let Err(error) = context.blocking(|context| refresh_logging(&context)).await {
+                if let Err(error) = context.blocking(|context| refresh_logging(context)).await {
                     tracing::error!(?error, "filter logging settings are unavailable");
                     context.emit(dto::ApiEvent::SettingsChanged { section: "general".to_owned() });
                 }

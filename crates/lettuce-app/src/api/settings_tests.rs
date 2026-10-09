@@ -514,3 +514,36 @@ async fn settings_preserve_large_preset_collection() {
         5000
     );
 }
+
+#[tokio::test]
+async fn settings_sampler_preset_names_keep_legacy_trim_and_unicode_length() {
+    let h = harness(Reply::Text("Hello."));
+    let before = settings_get(&h.context).await.expect("settings");
+    let name = "ş".repeat(64);
+    let preset = dto::SettingsUiLlamaSamplerPreset {
+        id: Some(" id ".to_owned()),
+        name: Some(format!("\u{feff} {name} \u{feff}")),
+        stages: Some(vec![dto::SettingsLlamaSamplerStage::Temp]),
+    };
+    let after = settings_update(
+        &h.context,
+        dto::SettingsUpdateRequest {
+            patch: dto::SettingsPatch::UiPreferences {
+                changes: vec![dto::UiPreferenceChange::LlamaSamplerPresets {
+                    value: Some(vec![preset]),
+                }],
+            },
+            expected_revision: before.revision,
+        },
+    )
+    .await
+    .expect("valid Unicode preset");
+    assert_eq!(
+        after.global.ui_preferences["llamaSamplerPresets"][0]["name"],
+        name
+    );
+    assert_eq!(
+        after.global.ui_preferences["llamaSamplerPresets"][0]["id"],
+        "id"
+    );
+}
