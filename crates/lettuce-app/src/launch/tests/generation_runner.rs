@@ -1172,6 +1172,26 @@ async fn restart_recovery_settles_every_turn_the_previous_process_left_live() {
             .outcome,
         UsageOutcome::Interrupted
     );
+    let interrupted_usage = attempt_usage(backend.database(), running.turn_id, 0);
+    let snapshot = interrupted_usage
+        .record
+        .snapshot
+        .as_ref()
+        .expect("interrupted usage snapshot");
+    let dispatch = backend
+        .database()
+        .job_usage(running_job.id)
+        .expect("dispatch evidence");
+    let admitted = dispatch[0]
+        .snapshot
+        .as_ref()
+        .expect("frozen admission snapshot");
+    assert_eq!(snapshot.model_name, admitted.model_name);
+    assert_eq!(snapshot.provider_kind, admitted.provider_kind);
+    assert_eq!(snapshot.provider_label, admitted.provider_label);
+    assert_eq!(snapshot.character_name, admitted.character_name);
+    assert_eq!(snapshot.operation_kind, admitted.operation_kind);
+    assert!(snapshot.error_message.is_some());
     assert_eq!(
         persisted_job(backend.database(), running_job.id).state,
         JobState::Cancelled
@@ -6904,6 +6924,7 @@ async fn provider_failure_fails_turn_and_job_and_replays_without_redispatch() {
         .run(&work, input(&scenario), TimestampMillis::new(1_020))
         .await
         .expect_err("provider failed");
+    let expected_error_message = error.to_string();
     let ConversationGenerationRunError::Provider {
         error: PortError::Unavailable,
         evidence: GenerationUsageEvidence::Dispatch(dispatch_id),
@@ -6951,6 +6972,25 @@ async fn provider_failure_fails_turn_and_job_and_replays_without_redispatch() {
     let usage_event = attempt_usage(&database, scenario.turn_id, 0);
     assert_ne!(usage_event.id, dispatch_id);
     assert_eq!(usage_event.record.outcome, UsageOutcome::Failed);
+    let snapshot = usage_event
+        .record
+        .snapshot
+        .as_ref()
+        .expect("failed usage snapshot");
+    assert_eq!(
+        snapshot.model_name.as_deref(),
+        Some(scenario.profile.model_display_name.as_str())
+    );
+    assert_eq!(
+        snapshot.provider_kind.as_deref(),
+        Some(scenario.profile.provider_kind.as_str())
+    );
+    assert_eq!(snapshot.provider_label, scenario.profile.provider_label);
+    assert_eq!(snapshot.finish_reason.as_deref(), Some("error"));
+    assert_eq!(
+        snapshot.error_message.as_deref(),
+        Some(expected_error_message.as_str())
+    );
     assert_eq!(
         usage_event.record.usage,
         UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
