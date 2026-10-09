@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 cap-primitives.workspace = true
 cap-std.workspace = true
+fs4 = { version = "0.13.1", default-features = false, features = ["sync"] }
 lettuce-types.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

@@ -136,6 +136,37 @@ fn drop_referenced(
     Ok(())
 }
 
+fn drop_retained(
+    connection: &Connection,
+    candidates: &mut BTreeSet<String>,
+) -> Result<(), PurgeError> {
+    drop_referenced(connection, candidates)?;
+    let ids = serde_json::to_string(&*candidates).map_err(storage)?;
+    let library: Vec<String> = connection.prepare("SELECT id FROM media_assets WHERE retention='library' AND id IN (SELECT value FROM json_each(?1))")
+        .and_then(|mut statement| statement.query_map([ids], |row| row.get(0))?.collect()).map_err(storage)?;
+    for id in library {
+        candidates.remove(&id);
+    }
+    Ok(())
+}
+
+fn retained_objects(connection: &Connection) -> Result<BTreeSet<ContentHash>, PurgeError> {
+    let assets: BTreeSet<String> = connection
+        .prepare("SELECT id FROM media_assets")
+        .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
+        .map_err(storage)?;
+    let mut garbage = assets.clone();
+    drop_retained(connection, &mut garbage)?;
+    let live = assets.difference(&garbage).collect::<Vec<_>>();
+    let ids = serde_json::to_string(&live).map_err(storage)?;
+    let hashes: Vec<String> = connection.prepare("SELECT DISTINCT blob.content_hash FROM media_blobs blob JOIN media_assets asset ON asset.blob_id=blob.id WHERE asset.id IN (SELECT value FROM json_each(?1))")
+        .and_then(|mut statement| statement.query_map([ids], |row| row.get(0))?.collect()).map_err(storage)?;
+    hashes
+        .into_iter()
+        .map(|hash| ContentHash::parse(hash).map_err(storage))
+        .collect()
+}
+
 fn collect(
     connection: &mut Connection,
     now: TimestampMillis,
@@ -163,14 +194,12 @@ fn collect(
     let mut blobs = BTreeMap::new();
     let mut unused = BTreeSet::new();
     for (asset, blob, retention) in queued {
-        if let (Some(blob), Some(retention)) = (blob, retention)
-            && retention != "library"
-        {
+        if let (Some(blob), Some(_)) = (blob, retention) {
             blobs.insert(asset.clone(), blob);
             unused.insert(asset);
         }
     }
-    drop_referenced(&transaction, &mut unused)?;
+    drop_retained(&transaction, &mut unused)?;
     let mut released_blobs = BTreeSet::new();
     for asset in &unused {
         let evidence: bool = transaction
@@ -295,21 +324,17 @@ impl Database {
             .map_err(storage)
     }
 
-    /// The content of every blob another database file catalogs, in any
-    /// state, read without writing to that file.
     pub fn media_objects_in_file(path: &Path) -> Result<BTreeSet<ContentHash>, PurgeError> {
-        let connection = Connection::open_with_flags(
+        let mut connection = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(storage)?;
-        let hashes: Vec<String> = connection
-            .prepare("SELECT content_hash FROM media_blobs")
-            .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
-            .map_err(storage)?;
-        hashes
-            .into_iter()
-            .map(|hash| ContentHash::parse(hash).map_err(storage))
-            .collect()
+        let transaction = connection.transaction().map_err(storage)?;
+        retained_objects(&transaction)
     }
 }
+
+#[cfg(test)]
+#[path = "media_gc_tests.rs"]
+mod tests;

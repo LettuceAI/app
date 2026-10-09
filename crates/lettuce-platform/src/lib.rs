@@ -13,6 +13,7 @@ mod authority;
 mod directories;
 mod error;
 mod espeak;
+mod file_lock;
 mod install;
 mod keys;
 mod managed;
@@ -25,6 +26,7 @@ pub use authority::FilesystemAuthority;
 pub use directories::{DirectorySnapshot, ManagedRoot, RootKind};
 pub use error::PlatformError;
 pub use espeak::{EspeakNgError, EspeakNgProcess, EspeakPhonemizer};
+pub use file_lock::ManagedFileLock;
 pub use install::{
     ConfinedDirectoryEntry, ConfinedInstallStore, InstallPreparation, InstalledFile,
     ResumableInstall,
@@ -40,3 +42,6 @@ pub use model::{
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod file_lock_tests;
