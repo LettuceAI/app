@@ -10,7 +10,7 @@ use rusqlite::Connection;
 
 use crate::{Database, DatabaseError, database_file::open_file};
 
-fn sidecar(path: &Path, suffix: &str) -> PathBuf {
+pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     let mut value = path.as_os_str().to_os_string();
     value.push(suffix);
     PathBuf::from(value)
@@ -101,7 +101,7 @@ impl Drop for FileWriteUse {
 
 impl Database {
     pub fn lock_file_writes(path: &Path) -> Result<DatabaseWriteFence, DatabaseError> {
-        let database_lease = open_file(path, false)?;
+        let database_lease = crate::database_file::use_lock(path)?;
         FileExt::lock_shared(&database_lease)?;
         let gate = open_file(&sidecar(path, ".writes.lock"), true)?;
         FileExt::lock_exclusive(&gate)?;

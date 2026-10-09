@@ -114,18 +114,50 @@ fn explicit_database_deletion_removes_write_fence_sidecars() {
         .expect("authority");
     let directory = authority.database_files().expect("database directory");
     let parent = root.join("private-persistent-v2/databases");
-    for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced"] {
+    for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced", ".use.lock"] {
         std::fs::write(parent.join(format!("old.sqlite3{suffix}")), b"").expect("sidecar");
     }
     directory
         .remove_database_sidecars("old.sqlite3")
         .expect("explicit cleanup");
-    for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced"] {
+    for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced", ".use.lock"] {
         assert!(
             !parent.join(format!("old.sqlite3{suffix}")).exists(),
             "{suffix} survives explicit deletion"
         );
     }
     drop((directory, authority));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(unix)]
+#[test]
+fn export_target_check_identifies_database_files_without_opening_them() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::env::temp_dir().join(format!(
+        "lettuce-db-contains-no-open-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let directory = authority.database_files().expect("directory");
+    let parent = root.join("private-persistent-v2/databases");
+    let live = parent.join("active.sqlite3");
+    std::fs::write(&live, b"live database").expect("database");
+    let outside = root.join("export.txt");
+    std::fs::write(&outside, b"export").expect("outside");
+    let target = std::fs::File::open(&outside).expect("target");
+    std::fs::set_permissions(&live, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+    let unreadable = std::fs::File::open(&live).is_err();
+    let absent = directory.contains_file(&target);
+    let alias = parent.join("alias.sqlite3");
+    std::fs::hard_link(&outside, &alias).expect("alias");
+    let present = directory.contains_file(&target);
+    std::fs::set_permissions(&live, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+    if unreadable {
+        assert_eq!(absent, Ok(false));
+        assert_eq!(present, Ok(true));
+    }
+    drop((target, directory, authority));
     std::fs::remove_dir_all(root).expect("cleanup");
 }

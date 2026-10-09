@@ -33,9 +33,13 @@ pub(crate) fn open_file(path: &Path, create: bool) -> std::io::Result<File> {
     Ok(file)
 }
 
+pub(crate) fn use_lock(path: &Path) -> std::io::Result<File> {
+    open_file(&crate::write_fence::sidecar(path, ".use.lock"), true)
+}
+
 impl DatabaseFileUse {
     pub(crate) fn open(path: &Path) -> Result<Self, DatabaseError> {
-        let file = open_file(path, true)?;
+        let file = use_lock(path)?;
         FileExt::lock_shared(&file)?;
         Ok(Self(Mutex::new(Some(file))))
     }
@@ -74,7 +78,13 @@ impl Database {
     pub fn try_reserve_file_deletion(
         path: &Path,
     ) -> Result<Option<DatabaseFileDeletionPermit>, DatabaseError> {
-        let file = open_file(path, false)?;
+        if path
+            .symlink_metadata()
+            .is_ok_and(|metadata| !metadata.file_type().is_file())
+        {
+            return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into());
+        }
+        let file = use_lock(path)?;
         Ok(FileExt::try_lock_exclusive(&file)?.then_some(DatabaseFileDeletionPermit(file)))
     }
 }
@@ -99,12 +109,6 @@ impl Drop for DatabaseFileUse {
         {
             let _ = FileExt::unlock(&file);
         }
-    }
-}
-
-impl DatabaseFileDeletionPermit {
-    pub fn file(&self) -> &File {
-        &self.0
     }
 }
 

@@ -284,3 +284,43 @@ fn reset_cannot_close_an_unfenced_database() {
     drop(database);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[cfg(target_os = "linux")]
+fn descriptors_opened_on(path: &std::path::Path) -> usize {
+    let path = path.canonicalize().expect("canonical path");
+    std::fs::read_dir("/proc/self/fd")
+        .expect("descriptor table")
+        .filter_map(|entry| std::fs::read_link(entry.ok()?.path()).ok())
+        .filter(|target| target == &path)
+        .count()
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn file_leases_and_fences_never_open_the_live_database_file() {
+    let root = std::env::temp_dir().join(format!("lettuce-lease-paths-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).expect("root");
+    let path = root.join("active.sqlite3");
+    let database = Database::open(&path).expect("database");
+    let sqlite_only = descriptors_opened_on(&path);
+    assert_eq!(sqlite_only, 1, "only SQLite holds the database file");
+    let fence = Database::lock_file_writes(&path).expect("fence");
+    assert_eq!(descriptors_opened_on(&path), sqlite_only);
+    drop(fence);
+    assert!(
+        Database::try_reserve_file_deletion(&path)
+            .expect("reservation")
+            .is_none(),
+        "an open database is never reserved for deletion"
+    );
+    assert_eq!(descriptors_opened_on(&path), sqlite_only);
+    let lease = root.join("active.sqlite3.use.lock");
+    assert!(lease.exists(), "the open lease lives in its own lock file");
+    drop(database);
+    let permit = Database::try_reserve_file_deletion(&path)
+        .expect("reservation")
+        .expect("closed database");
+    assert_eq!(descriptors_opened_on(&path), 0);
+    drop(permit);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

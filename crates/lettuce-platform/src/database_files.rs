@@ -103,6 +103,13 @@ impl DatabaseFiles {
     }
 
     pub fn contains_file(&self, target: &File) -> Result<bool, PlatformError> {
+        #[cfg(unix)]
+        let target = {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = target.metadata().map_err(PlatformError::from)?;
+            (metadata.dev(), metadata.ino())
+        };
+        #[cfg(not(unix))]
         let target = same_file::Handle::from_file(target.try_clone().map_err(PlatformError::from)?)
             .map_err(PlatformError::from)?;
         for directory in [&self.directory, &self.persistent] {
@@ -112,14 +119,26 @@ impl DatabaseFiles {
                 if !entry.file_type().map_err(PlatformError::from)?.is_file() {
                     continue;
                 }
-                let mut options = OpenOptions::new();
-                options.read(true);
-                options._cap_fs_ext_follow(FollowSymlinks::No);
-                let file = directory
-                    .open_with(&name, &options)
-                    .map_err(crate::authority::map_symlink_error)?
-                    .into_std();
-                if same_file::Handle::from_file(file).map_err(PlatformError::from)? == target {
+                #[cfg(unix)]
+                let identity = {
+                    use cap_std::fs::MetadataExt;
+                    let metadata = directory
+                        .symlink_metadata(&name)
+                        .map_err(PlatformError::from)?;
+                    (metadata.dev(), metadata.ino())
+                };
+                #[cfg(not(unix))]
+                let identity = {
+                    let mut options = OpenOptions::new();
+                    options.read(true);
+                    options._cap_fs_ext_follow(FollowSymlinks::No);
+                    let file = directory
+                        .open_with(&name, &options)
+                        .map_err(crate::authority::map_symlink_error)?
+                        .into_std();
+                    same_file::Handle::from_file(file).map_err(PlatformError::from)?
+                };
+                if identity == target {
                     return Ok(true);
                 }
             }
@@ -164,7 +183,7 @@ impl DatabaseFiles {
     fn sidecars(&self, name: &str) -> Result<Vec<String>, PlatformError> {
         checked_name(name)?;
         let mut existing = Vec::new();
-        for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced"] {
+        for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced", ".use.lock"] {
             let sidecar = format!("{name}{suffix}");
             match self.directory.symlink_metadata(&sidecar) {
                 Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {

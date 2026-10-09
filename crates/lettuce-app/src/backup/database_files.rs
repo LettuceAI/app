@@ -878,11 +878,12 @@ impl DatabaseFileLifecycle {
             self.write(name, &metadata)?;
         }
         checkpoint(FileDeleteStage::Intent);
-        if let Some(permit) = &permit {
+        if permit.is_some() {
+            let expected = self.location.directory.open_database_component(name, "")?;
             let synced = self
                 .location
                 .directory
-                .remove_database_file(name, permit.file())?;
+                .remove_database_file(name, &expected)?;
             if synced == ParentSyncStatus::Failed {
                 return Err(AppDatabaseLocationError::Storage);
             }
