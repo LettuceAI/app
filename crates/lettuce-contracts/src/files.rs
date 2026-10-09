@@ -71,3 +71,53 @@ pub struct AssetsIngestRequest {
     pub source: FileSource,
     pub role: AssetIngestRole,
 }
+
+/// What a file picker offers, which sets its extension and type filters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum FilePickKind {
+    Any,
+    Image,
+    Audio,
+    Json,
+    CharacterCard,
+    ChatLog,
+    Backup,
+    GgufModel,
+    DiffusionModel,
+    Certificate,
+    Document,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FilesPickOpenRequest {
+    pub kinds: Vec<FilePickKind>,
+    pub multiple: bool,
+}
+
+/// The picked files; empty when the user cancelled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FilesPicked {
+    pub sources: Vec<FileSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FilesPickSaveRequest {
+    pub suggested_name: String,
+    pub kind: FilePickKind,
+}
+
+/// The chosen destination; none when the user cancelled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FileSavePicked {
+    pub target: Option<FileTarget>,
+}

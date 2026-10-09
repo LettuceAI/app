@@ -64,6 +64,8 @@ mod conversation_settings_tests;
 #[cfg(test)]
 mod copy_scene_tests;
 #[cfg(test)]
+mod files_pick_tests;
+#[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
 mod help_me_reply_tests;
@@ -124,7 +126,8 @@ pub use conversations::{
 };
 pub use events::{ApiEventSink, GenerationEventSink, JobEventSink};
 pub use files::{
-    FileAccess, FileAccessError, FileDescription, FileReader, assets_ingest, files_inspect,
+    FileAccess, FileAccessError, FileDescription, FileReader, PickFilter, assets_ingest,
+    files_inspect, files_pick_open, files_pick_save,
 };
 pub use hugging_face::{
     hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_download,

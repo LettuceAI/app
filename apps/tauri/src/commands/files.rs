@@ -1,6 +1,7 @@
 use lettuce_app::api::{self, ApiContext};
 use lettuce_contracts::{
-    ApiError, AssetRef, AssetsIngestRequest, FileInspection, FilesInspectRequest,
+    ApiError, AssetRef, AssetsIngestRequest, FileInspection, FileSavePicked, FilesInspectRequest,
+    FilesPickOpenRequest, FilesPickSaveRequest, FilesPicked,
 };
 use tauri::State;
 
@@ -20,4 +21,22 @@ pub async fn assets_ingest(
     request: AssetsIngestRequest,
 ) -> Result<AssetRef, ApiError> {
     api::assets_ingest(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn files_pick_open(
+    context: State<'_, ApiContext>,
+    request: FilesPickOpenRequest,
+) -> Result<FilesPicked, ApiError> {
+    api::files_pick_open(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn files_pick_save(
+    context: State<'_, ApiContext>,
+    request: FilesPickSaveRequest,
+) -> Result<FileSavePicked, ApiError> {
+    api::files_pick_save(&context, request).await
 }

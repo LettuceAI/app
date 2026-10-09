@@ -115,6 +115,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::jobs::job_watch,
             commands::files::files_inspect,
             commands::files::assets_ingest,
+            commands::files::files_pick_open,
+            commands::files::files_pick_save,
             commands::app::app_status,
             commands::app::app_ui_state_update,
             commands::app::purge_notices_list,
