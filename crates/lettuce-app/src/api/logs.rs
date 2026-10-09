@@ -25,7 +25,7 @@ pub(super) fn unavailable(reason: dto::LogFailureReason, message: impl Into<Stri
 fn log_error(error: LogFileError) -> ApiError {
     let code = match error {
         LogFileError::NotFound => ApiErrorCode::NotFound,
-        LogFileError::InvalidPattern(_) => return invalid_field("query", &error.to_string()),
+        LogFileError::InvalidPattern(_) => return invalid_field("query", error.to_string()),
         _ => ApiErrorCode::Unavailable,
     };
     let reason = if matches!(&error, LogFileError::ReadLine(source) if source.kind() == std::io::ErrorKind::InvalidData)
