@@ -179,3 +179,28 @@ const fn reason(reason: PurgeNoticeReason) -> dto::PurgeNoticeReasonDto {
         PurgeNoticeReason::ConflictCarried => dto::PurgeNoticeReasonDto::ConflictCarried,
     }
 }
+
+pub async fn app_usage_days(context: &ApiContext) -> Result<dto::AppUsageDaysView, ApiError> {
+    context
+        .blocking(|context| {
+            Ok(dto::AppUsageDaysView {
+                days: context
+                    .app_usage_days()?
+                    .into_iter()
+                    .map(|day| dto::AppUsageDayView {
+                        day: day.day,
+                        active_ms: day.active_ms,
+                    })
+                    .collect(),
+            })
+        })
+        .await
+}
+
+pub(super) fn app_usage_error(error: lettuce_usage::AppUsageError) -> ApiError {
+    ApiError {
+        code: ApiErrorCode::Unavailable,
+        message: error.to_string(),
+        details: Some(dto::ApiErrorDetails::AppUsageStorage),
+    }
+}

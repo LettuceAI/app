@@ -17,6 +17,19 @@ pub const BINDINGS_PATH: &str = concat!(
 pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new()
         .commands(collect_commands![
+            commands::metrics::llm_metrics_list,
+            commands::metrics::llm_metrics_get,
+            commands::metrics::llm_metrics_for_message,
+            commands::metrics::llm_metrics_clear,
+            commands::app::app_usage_days,
+            commands::logs::logs_list,
+            commands::logs::log_read_page,
+            commands::logs::log_search,
+            commands::logs::log_relevant_lines,
+            commands::logs::log_delete,
+            commands::logs::logs_clear,
+            commands::logs::log_export,
+            commands::logs::log_append,
             commands::conversations::conversations_list,
             commands::conversations::conversations_latest_by_character,
             commands::conversations::conversations_latest_by_group,

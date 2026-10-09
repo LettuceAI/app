@@ -23,7 +23,7 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 - Suffix rewinds undo tool results like legacy `replay_memory_state_after_rewind` over the effective owner's memories.
 - ASR queries reproduce the legacy scope and language filters and runtime order; legacy ASR row transfer goes through the same validated records, keeps every counter and resolves managed audio assets, so native paths are never copied into live records.
 - `set_default_prompt_document` stores legacy `settings.prompt_template_id`.
-- Local generation metrics readers are the old `llm_metrics_*` commands; the list keeps legacy's newest 500. The old frontend's `llm_metrics_attach_message` has nothing left to do, because a local generation records its metrics under its attempt id.
+- Local generation metrics readers are the old `llm_metrics_*` commands; reads page every retained record. The old frontend's `llm_metrics_attach_message` has nothing left to do, because a local generation records its metrics under its attempt id.
 - Legacy stored each message's (and variant's) time to first token, tokens per second and MTP stats on the message, where they outlived the 500-row list and its clear; `message_stats_only` rows keep that behaviour.
 - `llama_runtime_reports` is legacy `llamaLastRuntimeReport`, now on the newest llama.cpp model profile for the file instead of inside the synced model config, and deleted with the model.
 - Hard delete follows legacy `session_delete` and `group_session_delete` (old-code `storage_manager/sessions.rs:3794`, `group_sessions.rs:1962`) and legacy `character_delete` (`characters.rs:1066`, pool at `characters.rs:1081`). Legacy left a deleted character's id in the group's list and its reads skipped it; purge removes the member instead.
@@ -178,3 +178,9 @@ Device-only settings updates leave the synced app payload, revision and timestam
 The second settings review narrows SettingsChanged to actual settings-table commits and gives every device record write the device label. Catalog-only writes use ModelsChanged, replacing the broad legacy broadcast after every save or removal (`old-code/src/core/storage/repo.ts:965,979`). Default changes and deletion that clears or promotes a selection retain the settings notification.
 
 The requested FK SET NULL check is inapplicable: the foundation schema uses ON DELETE RESTRICT and the supported delete transaction explicitly clears or promotes selections. The constraint remains unchanged. Backup restore opens a new database without transferring API listeners and activates only the file pointer; listener rebinding is deferred to slice 11a.
+
+## Slice 12 metrics
+
+Automatic pruning at 500 is removed; only page sizes are clamped. Legacy deleted older rows at `old-code/src-tauri/src/storage_manager/llm_metrics.rs:31`. Malformed JSON hydration fails instead of becoming an empty object or array (`old-code/src-tauri/src/storage_manager/llm_metrics.rs:103`). Schema checks remain unchanged; the malformed hydration probe uses a synthetic query row.
+
+Explicit clearing preserves summaries that a message uses, dropping their samples; legacy deleted every metrics row (`old-code/src-tauri/src/storage_manager/llm_metrics.rs:162`). The API clear receipt commits atomically with that operation and survives reopen. Receipt-failure, concurrent retry, changed-digest and replay-after-new-record tests cover the delete path. The metrics deletion test now asserts that all 502 records survive automatic recording and that explicit clear processes all 502, replacing its former pruning expectation.

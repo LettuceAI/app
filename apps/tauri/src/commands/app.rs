@@ -36,3 +36,11 @@ pub async fn purge_notice_dismiss(
 ) -> Result<(), ApiError> {
     api::purge_notice_dismiss(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn app_usage_days(
+    context: State<'_, ApiContext>,
+) -> Result<lettuce_contracts::AppUsageDaysView, ApiError> {
+    api::app_usage_days(&context).await
+}

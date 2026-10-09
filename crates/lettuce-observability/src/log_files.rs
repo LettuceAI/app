@@ -296,11 +296,15 @@ impl LogDirectory {
             (Some(Component::Normal(_)), None)
         );
         let path = self.directory.join(filename);
-        if single && path.is_file() {
+        if single && fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
             Ok(path)
         } else {
             Err(LogFileError::NotFound)
         }
+    }
+
+    pub fn open(&self, filename: &str) -> Result<File, LogFileError> {
+        File::open(self.file(filename)?).map_err(LogFileError::Open)
     }
 
     fn lines(&self, filename: &str) -> Result<io::Lines<BufReader<File>>, LogFileError> {
@@ -311,15 +315,20 @@ impl LogDirectory {
 
     /// The `.log` files, newest name first.
     pub fn list(&self) -> Result<Vec<String>, LogFileError> {
-        let mut names: Vec<String> = fs::read_dir(&self.directory)
-            .map_err(LogFileError::ReadDirectory)?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_file() && path.extension().and_then(|value| value.to_str()) == Some("log")
-            })
-            .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
-            .collect();
+        let mut names = Vec::new();
+        for entry in fs::read_dir(&self.directory).map_err(LogFileError::ReadDirectory)? {
+            let entry = entry.map_err(LogFileError::ReadDirectory)?;
+            if entry
+                .file_type()
+                .map_err(LogFileError::ReadDirectory)?
+                .is_file()
+                && entry.path().extension().and_then(|value| value.to_str()) == Some("log")
+            {
+                names.push(entry.file_name().into_string().map_err(|_| {
+                    LogFileError::ReadDirectory(io::Error::other("non-UTF-8 log name"))
+                })?);
+            }
+        }
         names.sort_by(|left, right| right.cmp(left));
         Ok(names)
     }
@@ -438,14 +447,8 @@ impl LogDirectory {
 
     /// Deletes every `.log` file, stopping at the first failure.
     pub fn clear(&self) -> Result<(), LogFileError> {
-        for entry in fs::read_dir(&self.directory)
-            .map_err(LogFileError::ReadDirectory)?
-            .flatten()
-        {
-            let path = entry.path();
-            if path.is_file() && path.extension() == Some("log".as_ref()) {
-                fs::remove_file(path).map_err(LogFileError::Delete)?;
-            }
+        for name in self.list()? {
+            self.delete(&name)?;
         }
         Ok(())
     }
@@ -628,5 +631,34 @@ mod tests {
         assert!(logs.list().expect("list").is_empty());
         assert!(logs.path().join("keep.txt").exists());
         fs::remove_dir_all(logs.path()).expect("cleanup");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod slice12_tests {
+    use super::*;
+
+    #[test]
+    fn log_reads_refuse_symlinks_outside_the_log_directory() {
+        let root =
+            std::env::temp_dir().join(format!("log-links-{}", lettuce_types::OperationId::new()));
+        fs::create_dir(&root).expect("root");
+        let logs = root.join("logs");
+        fs::create_dir(&logs).expect("logs");
+        let outside = root.join("private");
+        fs::write(&outside, "private content").expect("private");
+        std::os::unix::fs::symlink(&outside, logs.join("outside.log")).expect("link");
+        let directory = LogDirectory::new(logs);
+        assert!(matches!(
+            directory.read("outside.log"),
+            Err(LogFileError::NotFound)
+        ));
+        assert!(directory.list().expect("list").is_empty());
+        directory.clear().expect("clear");
+        assert_eq!(
+            fs::read_to_string(outside).expect("private"),
+            "private content"
+        );
+        fs::remove_dir_all(root).expect("cleanup");
     }
 }

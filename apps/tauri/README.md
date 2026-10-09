@@ -106,3 +106,7 @@ Provider control commands forward account save/delete, model listing/verificatio
 Model profile and NanoGPT usage commands forward the catalog, profile reads, revisioned save/delete/duplicate/default requests and usage reads to the composition root. Duplicate names are supplied by the UI; the shell builds no localized text. ModelsChanged and ProviderQuota use the shared application event channel and generated contracts.
 
 The settings wrappers expose settings_get, settings_update, settings_sampler_defaults_update, content_filter_log and content_filter_clear. Their requests and results are owned contract types; the shell performs no settings merging or filter work. SettingsChanged and ContentFilterHit travel through the shared application event channel.
+
+Startup resolves the log directory and creates it before installing local output, then installs the chained panic hook and retains the output guard as managed state. The log command module delegates list, page, search, relevant lines, delete, clear, export and append to lettuce-app; app_usage_days returns the current focused-time read. DeveloperLogLine and AppUsageChanged use the shared application event channel. Log-mirror delivery failures go directly to stderr so they cannot create another mirrored warning.
+
+The metrics command module forwards cursor listing, detail, per-message detail and receipt-backed explicit clearing to lettuce-app. Generated DTOs contain summaries and samples, with no native model file paths.

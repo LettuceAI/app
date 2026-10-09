@@ -10723,8 +10723,8 @@ mod tests {
             .database
             .llm_generation_metrics(Some(5000))
             .expect("list");
-        assert_eq!(listed.len(), 500);
-        assert!(listed.iter().all(|row| row.id != attempt_id.to_string()));
+        assert_eq!(listed.len(), 502);
+        assert!(listed.iter().any(|row| row.id == attempt_id.to_string()));
         let kept = fixture
             .database
             .llm_generation_metric_for_message(
@@ -10732,7 +10732,7 @@ mod tests {
                 &reserved.to_string(),
             )
             .expect("metric by message")
-            .expect("the message keeps its stats past the list's retention");
+            .expect("the message keeps its stats");
         assert_eq!(kept.summary, serde_json::json!({"completionTokens": 3}));
         assert_eq!(kept.samples, Some(Vec::new()));
         assert_eq!(
@@ -10740,7 +10740,7 @@ mod tests {
                 .database
                 .clear_llm_generation_metrics()
                 .expect("clear"),
-            500
+            502
         );
         assert!(
             fixture

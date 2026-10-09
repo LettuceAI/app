@@ -100,7 +100,9 @@ mod tests;
 #[cfg(test)]
 mod turns_tests;
 
-pub use app::{app_status, app_ui_state_update, purge_notice_dismiss, purge_notices_list};
+pub use app::{
+    app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
+};
 pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
 pub use branches::{
     conversation_branch_delete, conversation_branch_fork, conversation_branch_rename,
@@ -275,3 +277,21 @@ pub use model_profiles::{
 
 mod nanogpt;
 pub use nanogpt::provider_nanogpt_usage;
+
+#[cfg(test)]
+mod logs_tests;
+
+mod logs;
+pub use logs::{
+    log_append, log_delete, log_export, log_read_page, log_relevant_lines, log_search, logs_clear,
+    logs_list,
+};
+
+#[cfg(test)]
+mod app_usage_tests;
+
+#[cfg(test)]
+mod metrics_tests;
+
+mod metrics;
+pub use metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list};

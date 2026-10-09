@@ -121,7 +121,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 - The sharing device's user approves each authenticated peer, like legacy. The application does not persist the legacy one-time PIN or invent a trusted-peer registry.
 - Startup recovery reruns nothing, as legacy lost in-flight generation on a crash.
-- The host flushes app usage every 30 s and on exit, like legacy.
+- The host flushes app usage on focus loss and exit; the legacy bootstrap used a 30-second timer (`old-code/src-tauri/src/app/bootstrap.rs:191`).
 
 ## Deliberate differences from legacy
 
@@ -538,3 +538,7 @@ Sampler preset ids and names retain trim-before-validation and JavaScript UTF-16
 The second settings review narrows SettingsChanged to actual settings-table commits and gives every device record write the device label. Catalog-only writes use ModelsChanged, replacing the broad legacy broadcast after every save or removal (`old-code/src/core/storage/repo.ts:965,979`). Default changes and deletion that clears or promotes a selection retain the settings notification.
 
 The requested FK SET NULL check is inapplicable: the foundation schema uses ON DELETE RESTRICT and the supported delete transaction explicitly clears or promotes selections. The constraint remains unchanged. Backup restore opens a new database without transferring API listeners and activates only the file pointer; listener rebinding is deferred to slice 11a.
+
+Slice 12 exposes app_usage_days including focused time that has not been flushed. Legacy flushed before reading (`old-code/src-tauri/src/usage/commands.rs:62`); the new read does not write and serializes against flushes. AppUsageChanged replaces the usage page's 15-second refresh interval (`old-code/src/ui/pages/settings/UsagePage.tsx:448`). Flush failures become a typed application event rather than a warning; unwritten days remain pending. The frontend log append gate preserves development builds or the developer override (`old-code/src/core/utils/env.ts:22`, `old-code/src/core/utils/logger.ts:20`). The live mirror is restricted to the committed developer setting by slice 12 decision 12.
+
+The metrics API preserves the Performance page's list/detail/clear flow (`old-code/src/ui/pages/settings/PerformancePage.tsx:100`, `old-code/src/ui/pages/settings/PerformancePage.tsx:125`). The old storage helper silently omitted invalid summaries and replaced invalid details with null (`old-code/src/core/storage/metrics.ts:9`); the new API returns typed storage failures. Clear requires an operation id and commits its receipt atomically; a retry preserves newer metrics. Per-message summaries survive explicit clearing, where legacy removed all rows (`old-code/src-tauri/src/storage_manager/llm_metrics.rs:162`).

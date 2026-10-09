@@ -20,7 +20,7 @@ pub enum StderrFormat {
 pub struct LocalOutputConfig {
     /// Directory supplied by the composition root.
     pub directory: PathBuf,
-    /// Maximum number of queued records before the lossy writer drops them.
+    /// Maximum number of queued records before the writer applies backpressure.
     pub queue_capacity: usize,
 }
 

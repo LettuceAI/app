@@ -77,6 +77,35 @@ impl AppActiveUsageTracker {
         Ok(written)
     }
 
+    pub fn days<S: AppUsageRepository + ?Sized>(
+        &self,
+        store: &S,
+        now: TimestampMillis,
+    ) -> Result<Vec<lettuce_usage::AppUsageDay>, AppUsageError> {
+        let _flushing = self
+            .flushing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut days = store
+            .app_usage_days()?
+            .into_iter()
+            .map(|day| (day.day, day.active_ms))
+            .collect::<BTreeMap<_, _>>();
+        let state = self.lock();
+        let mut pending = state.pending.clone();
+        if let Some(since) = state.active_since {
+            accrue(&mut pending, since, now.get());
+        }
+        for (day, active_ms) in pending {
+            let total = days.entry(day).or_default();
+            *total = total.checked_add(active_ms).ok_or(AppUsageError::Storage)?;
+        }
+        Ok(days
+            .into_iter()
+            .map(|(day, active_ms)| lettuce_usage::AppUsageDay { day, active_ms })
+            .collect())
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, TrackerState> {
         self.state
             .lock()
@@ -345,6 +374,50 @@ mod tests {
                 ("2026-03-10".to_owned(), 10_000),
                 ("2026-03-11".to_owned(), 5_000)
             ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod slice12_tests {
+    use super::*;
+
+    #[test]
+    fn days_include_live_and_pending_time_without_writing_or_double_counting() {
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let tracker = AppActiveUsageTracker::new(TimestampMillis::new(1000));
+        let first = tracker
+            .days(&database, TimestampMillis::new(4000))
+            .expect("days");
+        assert_eq!(first.iter().map(|day| day.active_ms).sum::<u64>(), 3000);
+        assert!(database.app_usage_days().expect("persisted").is_empty());
+        assert_eq!(
+            tracker
+                .days(&database, TimestampMillis::new(4000))
+                .expect("replay"),
+            first
+        );
+        tracker.on_focus_changed(false, TimestampMillis::new(5000));
+        assert_eq!(
+            tracker
+                .days(&database, TimestampMillis::new(9000))
+                .expect("blurred")
+                .iter()
+                .map(|day| day.active_ms)
+                .sum::<u64>(),
+            4000
+        );
+        tracker
+            .flush(&database, TimestampMillis::new(9000))
+            .expect("flush");
+        assert_eq!(
+            tracker
+                .days(&database, TimestampMillis::new(9000))
+                .expect("after flush")
+                .iter()
+                .map(|day| day.active_ms)
+                .sum::<u64>(),
+            4000
         );
     }
 }

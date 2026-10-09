@@ -42,3 +42,7 @@ Optional UI choices reject explicit null instead of silently omitting it; legacy
 DeviceEmbedding updates use the device view revision rather than the global settings revision, keeping install-local changes outside the sync document. The model-folder path is read-only and changes through the existing relocation job.
 
 The second settings review narrows SettingsChanged to actual settings-table commits and gives every device record write the device label. Catalog-only writes use ModelsChanged, replacing the broad legacy broadcast after every save or removal (`old-code/src/core/storage/repo.ts:965,979`). Default changes and deletion that clears or promotes a selection retain the settings notification.
+
+The log API preserves viewer operations from `old-code/src-tauri/src/infra/logger.rs:660` with typed errors and FileTarget exports. Its live event carries a written line instead of legacy chat://debug JSON (`old-code/src-tauri/src/infra/utils.rs:373`). App usage reads include the current stretch, as legacy flushed before reading (`old-code/src-tauri/src/usage/commands.rs:62`), with an event replacing the frontend timer (`old-code/src/ui/pages/settings/UsagePage.tsx:448`).
+
+Metrics keep the Performance page's summaries and samples (`old-code/src/ui/pages/settings/PerformancePage.tsx:100`) with an owned envelope rather than flattening arbitrary JSON. Cursor pages replace the legacy whole-list fetch (`old-code/src/core/storage/metrics.ts:9`); explicit clear carries a durable operation identity.

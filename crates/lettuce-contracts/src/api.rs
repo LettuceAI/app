@@ -95,6 +95,9 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    Logs { reason: crate::LogFailureReason },
+    AppUsageStorage,
+    MetricsUnavailable,
     Settings { reason: crate::SettingsFailureReason },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,
@@ -239,6 +242,9 @@ pub enum ApiEvent {
     },
     ModelsChanged,
     ContentFilterHit,
+    AppUsageChanged,
+    AppUsageWriteFailed { error: ApiError },
+    DeveloperLogLine { line: String },
     ProviderQuota {
         account_id: String,
         level: crate::ProviderQuotaLevel,

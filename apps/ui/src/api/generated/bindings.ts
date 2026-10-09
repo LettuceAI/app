@@ -5,6 +5,29 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
+	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError>(__TAURI_INVOKE("llm_metrics_list", { request })),
+	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<{
+	id: string,
+	created_at: number,
+	summary: unknown,
+	samples: unknown[] | null,
+} | null, ApiError>(__TAURI_INVOKE("llm_metrics_get", { request })),
+	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<{
+	id: string,
+	created_at: number,
+	summary: unknown,
+	samples: unknown[] | null,
+} | null, ApiError>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
+	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError>(__TAURI_INVOKE("llm_metrics_clear", { request })),
+	appUsageDays: () => typedError<AppUsageDaysView, ApiError>(__TAURI_INVOKE("app_usage_days")),
+	logsList: () => typedError<LogsList, ApiError>(__TAURI_INVOKE("logs_list")),
+	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError>(__TAURI_INVOKE("log_read_page", { request })),
+	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_search", { request })),
+	logRelevantLines: (request: LogRelevantLinesRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_relevant_lines", { request })),
+	logDelete: (request: LogNameRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_delete", { request })),
+	logsClear: () => typedError<null, ApiError>(__TAURI_INVOKE("logs_clear")),
+	logExport: (request: LogExportRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_export", { request })),
+	logAppend: (request: LogAppendRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_append", { request })),
 	conversationsList: (request: ConversationsListRequest) => typedError<ConversationPage, ApiError>(__TAURI_INVOKE("conversations_list", { request })),
 	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
 	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
@@ -340,7 +363,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails = { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -366,7 +389,7 @@ export type ApiErrorDetails = { type: "settings"; reason: SettingsFailureReason 
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -413,6 +436,15 @@ export type AppUiStateUpdateRequest = {
 
 export type AppUiStateView = {
 	state: { [key in string]: unknown },
+};
+
+export type AppUsageDayView = {
+	day: string,
+	active_ms: number,
+};
+
+export type AppUsageDaysView = {
+	days: AppUsageDayView[],
 };
 
 export type AppliedCorrectionView = {
@@ -2665,6 +2697,40 @@ export type LlamaSettingsDraft = {
 	dflash_model: FileSource | null,
 };
 
+export type LlmMetricForMessageRequest = {
+	conversation_id: string,
+	message_id: string,
+};
+
+export type LlmMetricGetRequest = {
+	id: string,
+};
+
+export type LlmMetricView = {
+	id: string,
+	created_at: number,
+	summary: unknown,
+	samples: unknown[] | null,
+};
+
+export type LlmMetricsClearRequest = {
+	client_operation_id: string,
+};
+
+export type LlmMetricsCleared = {
+	removed: number,
+};
+
+export type LlmMetricsListRequest = {
+	cursor: string | null,
+	limit: number,
+};
+
+export type LlmMetricsPage = {
+	items: LlmMetricView[],
+	next_cursor: string | null,
+};
+
 /**
  *  How well a model file runs here. Without its GGUF header
  *  (`metadata_available` false) the KV cache is not counted.
@@ -2783,6 +2849,60 @@ export type LocalSidecarsDraft = {
 	mtp_model: FileSource | null,
 	dflash_enabled: boolean,
 	dflash_model: FileSource | null,
+};
+
+export type LogAppendRequest = {
+	timestamp: string,
+	level: LogLevel,
+	component: string,
+	function: string | null,
+	message: string,
+};
+
+export type LogExportRequest = {
+	name: string,
+	target: FileTarget,
+};
+
+export type LogFailureReason = "host_unavailable" | "storage" | "invalid_encoding" | "source_is_target";
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export type LogNameRequest = {
+	name: string,
+};
+
+export type LogPageView = {
+	total: number,
+	lines: string[],
+};
+
+export type LogReadPageRequest = {
+	name: string,
+	offset: number,
+	limit: number,
+};
+
+export type LogRelevantLinesRequest = {
+	name: string,
+	reference_line: string,
+};
+
+export type LogSearchRequest = {
+	name: string,
+	query: string,
+	case_sensitive: boolean,
+	whole_word: boolean,
+	regex: boolean,
+};
+
+export type LogSearchView = {
+	matches: number[],
+	total: number,
+};
+
+export type LogsList = {
+	files: string[],
 };
 
 export type LoraArchitectureSource = "none" | "metadata" | "civitai";

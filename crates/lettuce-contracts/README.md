@@ -94,3 +94,7 @@ Settings command inputs retain deserialization failures until the API maps them 
 SettingsDeviceView.revision is the CAS token for DeviceEmbedding patches. Global section patches and sampler defaults use SettingsView.revision; the device revision never changes the synced app-settings identity.
 
 SettingsChanged.section uses the global SettingsPatch section names and sampler_defaults for global settings, models for model-selection writes, device for every device_settings write (embedding, certificates and folder relocation), and ui_state for device UI state. Catalog-only writes publish ModelsChanged without a settings event.
+
+Log viewer contracts carry names, paged lines and match indices; exports use FileTarget. DeveloperLogLine carries a written line, and AppUsageChanged invalidates the app-time read. AppUsageDaysView carries per-day milliseconds including the current focused stretch.
+
+LlmMetricView holds the generation id, creation time, summary and optional samples. Metrics listing uses an opaque cursor and bounded page size; clearing takes a client operation id and returns its committed count.

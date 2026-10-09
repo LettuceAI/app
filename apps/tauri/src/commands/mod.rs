@@ -23,3 +23,7 @@ pub mod providers;
 pub mod model_profiles;
 
 pub mod settings;
+
+pub mod logs;
+
+pub mod metrics;

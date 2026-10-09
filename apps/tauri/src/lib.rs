@@ -26,11 +26,6 @@ struct Workers(Mutex<Option<ApiWorkers>>);
 /// iOS this is the mobile entry point.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    if let Err(error) =
-        lettuce_observability::install(lettuce_observability::ObservabilityConfig::default())
-    {
-        tracing::warn!(%error, "logging could not be installed");
-    }
     let builder = specta_builder::<tauri::Wry>();
     #[cfg(debug_assertions)]
     if let Err(error) = export_bindings(std::path::Path::new(BINDINGS_PATH)) {
@@ -97,6 +92,15 @@ pub fn run() {
 fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let app_data = app.path().app_data_dir()?;
     std::fs::create_dir_all(&app_data)?;
+    let log_directory = app.path().app_log_dir()?;
+    std::fs::create_dir_all(&log_directory)?;
+    let output = lettuce_observability::install(
+        lettuce_observability::ObservabilityConfig::default().with_local_output(
+            lettuce_observability::LocalOutputConfig::new(&log_directory),
+        ),
+    )?
+    .ok_or("file logging is unavailable")?;
+    lettuce_observability::install_panic_reports(log_directory.clone());
     let context = ApiContext::open_desktop(
         &app_data,
         app.path().resource_dir().ok(),
@@ -107,6 +111,8 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
         microphone::capture(),
     )
     .map_err(|error| error.message)?;
+    context.attach_logs(log_directory, output.sink.clone());
+    app.manage(output);
     let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))
         .map_err(|error| error.message)?;
     app.manage(context);

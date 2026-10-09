@@ -96,6 +96,7 @@ struct ApiContextInner {
     settings_sections: Arc<std::sync::Mutex<Vec<&'static str>>>,
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
+    logs: Mutex<Option<super::logs::LogHost>>,
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     provider_writes: tokio::sync::Mutex<()>,
@@ -201,6 +202,7 @@ impl ApiContext {
                 settings_sections,
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
+                logs: Mutex::new(None),
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 provider_writes: tokio::sync::Mutex::new(()),
@@ -576,6 +578,42 @@ impl ApiContext {
         self.emit(lettuce_contracts::ApiEvent::RequiredModelsChanged);
     }
 
+    pub fn attach_logs(&self, directory: PathBuf, sink: lettuce_observability::LogSink) {
+        let weak = self.downgrade();
+        sink.set_observer(move |line| {
+            if let Some(context) = weak.upgrade()
+                && context.content_filter().logging_enabled() == Ok(true)
+            {
+                context.emit(lettuce_contracts::ApiEvent::DeveloperLogLine {
+                    line: line.to_owned(),
+                });
+            }
+        });
+        *self.inner.logs.lock().expect("log host") = Some(super::logs::LogHost {
+            directory: lettuce_observability::LogDirectory::new(directory),
+            sink,
+        });
+    }
+
+    pub(super) fn logs(&self) -> Result<super::logs::LogHost, ApiError> {
+        self.inner
+            .logs
+            .lock()
+            .map_err(|_| {
+                super::logs::unavailable(
+                    lettuce_contracts::LogFailureReason::HostUnavailable,
+                    "log host unavailable",
+                )
+            })?
+            .clone()
+            .ok_or_else(|| {
+                super::logs::unavailable(
+                    lettuce_contracts::LogFailureReason::HostUnavailable,
+                    "log host unavailable",
+                )
+            })
+    }
+
     pub(crate) fn files(&self) -> &dyn FileAccess {
         self.inner.parts.files.as_ref()
     }
@@ -651,13 +689,27 @@ impl ApiContext {
     /// Adds the counted active time to each day's usage; the host calls it on
     /// exit.
     pub fn flush_app_usage(&self) {
-        if let Err(error) = self
+        match self
             .inner
             .app_usage
             .flush(self.backend().database(), self.now())
         {
-            tracing::warn!(%error, "app active time could not be recorded");
+            Ok(0) => {}
+            Ok(_) => self.emit(lettuce_contracts::ApiEvent::AppUsageChanged),
+            Err(error) => {
+                self.emit(lettuce_contracts::ApiEvent::AppUsageChanged);
+                self.emit(lettuce_contracts::ApiEvent::AppUsageWriteFailed {
+                    error: super::app::app_usage_error(error),
+                });
+            }
         }
+    }
+
+    pub(super) fn app_usage_days(&self) -> Result<Vec<lettuce_usage::AppUsageDay>, ApiError> {
+        self.inner
+            .app_usage
+            .days(self.backend().database(), self.now())
+            .map_err(super::app::app_usage_error)
     }
 
     pub(crate) fn media(&self) -> Option<&ApiMediaStore> {

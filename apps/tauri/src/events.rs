@@ -12,8 +12,13 @@ pub(crate) struct TauriEventSink<R: Runtime>(pub(crate) AppHandle<R>);
 
 impl<R: Runtime> ApiEventSink for TauriEventSink<R> {
     fn emit(&self, event: ApiEvent) {
+        let log_line = matches!(&event, ApiEvent::DeveloperLogLine { .. });
         if let Err(error) = AppEvent(event).emit(&self.0) {
-            tracing::warn!(%error, "application event could not be emitted");
+            if log_line {
+                eprintln!("developer log event could not be emitted: {error}");
+            } else {
+                tracing::warn!(%error, "application event could not be emitted");
+            }
         }
     }
 }
