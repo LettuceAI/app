@@ -52,6 +52,36 @@ fn redact_support_path(path: &str, homes: &[&str]) -> String {
     })
 }
 
+fn redact_support_text(value: &str, homes: &[&str]) -> String {
+    let redacted = redact_support_path(value, homes);
+    if redacted.starts_with('~') {
+        redacted
+    } else {
+        value.to_owned()
+    }
+}
+
+fn redact_support_json(value: &serde_json::Value, homes: &[&str]) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(text) => {
+            serde_json::Value::String(redact_support_text(text, homes))
+        }
+        serde_json::Value::Array(items) => serde_json::Value::Array(
+            items
+                .iter()
+                .map(|item| redact_support_json(item, homes))
+                .collect(),
+        ),
+        serde_json::Value::Object(fields) => serde_json::Value::Object(
+            fields
+                .iter()
+                .map(|(key, item)| (key.clone(), redact_support_json(item, homes)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 fn storage_error() -> ApiError {
     super::logs::unavailable(
         dto::LogFailureReason::Storage,
@@ -219,7 +249,10 @@ pub async fn logs_diagnostics_report(context: &ApiContext) -> Result<String, Api
                 let view = super::model_profiles::view(model).map_err(|_| storage_error())?;
                 lines.extend([
                     format!("- {}", view.id),
-                    format!("  name: {}", view.external_model_id),
+                    format!(
+                        "  name: {}",
+                        redact_support_text(&view.external_model_id, &homes)
+                    ),
                     format!("  display: {}", view.display_name),
                     format!(
                         "  provider: {} ({})",
@@ -227,7 +260,7 @@ pub async fn logs_diagnostics_report(context: &ApiContext) -> Result<String, Api
                     ),
                     format!("  inputScopes: {:?}", view.input_scopes),
                     format!("  outputScopes: {:?}", view.output_scopes),
-                    format!("  advanced: {}", view.config),
+                    format!("  advanced: {}", redact_support_json(&view.config, &homes)),
                 ]);
             }
             lines.extend([
@@ -482,6 +515,31 @@ mod tests {
         ] {
             assert_eq!(redact_support_path(path, &homes), expected);
         }
+    }
+
+    #[test]
+    fn model_names_and_advanced_settings_redact_local_paths() {
+        let homes = ["/home/alice", r"C:\Users\Alice"];
+        assert_eq!(
+            redact_support_text("/home/alice/models/local.gguf", &homes),
+            "~/models/local.gguf"
+        );
+        assert_eq!(redact_support_text("gpt-4o", &homes), "gpt-4o");
+        let config = serde_json::json!({
+            "companionPaths": {"mmproj": r"C:\Users\Alice\models\mmproj.gguf"},
+            "draft": ["/home/alice/models/draft.gguf"],
+            "stop": r"a\b",
+            "contextLength": 4096
+        });
+        assert_eq!(
+            redact_support_json(&config, &homes),
+            serde_json::json!({
+                "companionPaths": {"mmproj": "~/models/mmproj.gguf"},
+                "draft": ["~/models/draft.gguf"],
+                "stop": r"a\b",
+                "contextLength": 4096
+            })
+        );
     }
 
     #[tokio::test]
