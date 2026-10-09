@@ -72,6 +72,50 @@ impl LegacyImportBackup {
                     return Err(LegacyImportBackupError::InvalidData);
                 }
             }
+            let mut paths = BTreeSet::new();
+            let mut assets = BTreeSet::new();
+            let mut media_assignments = BTreeMap::new();
+            for assignment in &entry.assignments {
+                if backup_sql_text(assignment, "source_kind") != Some("media") {
+                    continue;
+                }
+                let key = backup_sql_text(assignment, "source_key")
+                    .ok_or(LegacyImportBackupError::InvalidData)?;
+                let asset = backup_sql_text(assignment, "destination_id")
+                    .ok_or(LegacyImportBackupError::InvalidData)?;
+                if media_assignments.insert((key, asset), assignment).is_some() {
+                    return Err(LegacyImportBackupError::InvalidData);
+                }
+            }
+            for proof in &entry.media_completions {
+                let text = |column| {
+                    backup_sql_text(proof, column).ok_or(LegacyImportBackupError::InvalidData)
+                };
+                let path = text("relative_path")?;
+                let asset = text("destination_asset_id")?;
+                let blob = text("blob_id")?;
+                let hash = text("content_hash")?;
+                let bytes = match proof.get("byte_len") {
+                    Some(BackupSqlValue::Integer(bytes)) if *bytes >= 0 => *bytes,
+                    _ => return Err(LegacyImportBackupError::InvalidData),
+                };
+                let assignment = media_assignments
+                    .get(&(path, asset))
+                    .ok_or(LegacyImportBackupError::InvalidData)?;
+                if proof.len() != 7
+                    || !matches!(proof.get("completed_at"), Some(BackupSqlValue::Integer(_)))
+                    || !paths.insert(path)
+                    || !assets.insert(asset)
+                    || asset.parse::<lettuce_types::AssetId>().is_err()
+                    || blob.parse::<lettuce_types::MediaBlobId>().is_err()
+                    || lettuce_types::ContentHash::parse(hash).is_err()
+                    || backup_sql_text(assignment, "source_detail") != Some("")
+                    || backup_sql_text(assignment, "expected_content_hash") != Some(hash)
+                    || assignment.get("expected_byte_len") != Some(&BackupSqlValue::Integer(bytes))
+                {
+                    return Err(LegacyImportBackupError::InvalidData);
+                }
+            }
         }
         if self.usage_records.iter().any(|row| {
             backup_sql_text(row, "run_id").is_none() || backup_sql_text(row, "source_id").is_none()
@@ -91,6 +135,44 @@ impl LegacyImportBackup {
                     backup_sql_text(right, "source_id"),
                 ))
         });
+        Ok(())
+    }
+
+    pub fn validate_media_snapshots(
+        &self,
+        assets: &[lettuce_media::MediaAsset],
+        blobs: &[lettuce_media::MediaBlob],
+    ) -> Result<(), LegacyImportBackupError> {
+        let assets = assets
+            .iter()
+            .map(|asset| (asset.id.to_string(), asset))
+            .collect::<BTreeMap<_, _>>();
+        let blobs = blobs
+            .iter()
+            .map(|blob| (blob.id.to_string(), blob))
+            .collect::<BTreeMap<_, _>>();
+        for proof in self.runs.iter().flat_map(|entry| &entry.media_completions) {
+            let asset = backup_sql_text(proof, "destination_asset_id")
+                .ok_or(LegacyImportBackupError::InvalidData)?;
+            let blob =
+                backup_sql_text(proof, "blob_id").ok_or(LegacyImportBackupError::InvalidData)?;
+            let hash = backup_sql_text(proof, "content_hash")
+                .ok_or(LegacyImportBackupError::InvalidData)?;
+            if assets
+                .get(asset)
+                .is_some_and(|asset| asset.blob_id.to_string() != blob)
+                || blobs.get(blob).is_some_and(|blob| {
+                    blob.content_hash.as_str() != hash
+                        || i64::try_from(blob.byte_size)
+                            .ok()
+                            .map(BackupSqlValue::Integer)
+                            .as_ref()
+                            != proof.get("byte_len")
+                })
+            {
+                return Err(LegacyImportBackupError::InvalidData);
+            }
+        }
         Ok(())
     }
 }

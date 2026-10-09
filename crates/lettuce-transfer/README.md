@@ -178,3 +178,5 @@ Legacy settings conversion retains developer mode and the lorebook generator str
 Legacy UI preference collections retain all entries without an aggregate preference byte cap. Device UI state keeps its separate malformed-input guard.
 
 Conversation usage section version 2 includes immutable cleared-usage proofs. Export upgrades version 1 documents after validating them, and restore accepts matching version 1 or version 2 section schemas. Every terminal usage reference and outbox usage event must resolve to a stored event or an exact ownership proof. Dispatch references likewise resolve to evidence or a proof with the same event, attempt and job ids.
+
+Legacy media completion proofs carry immutable destination asset and blob identities, content hashes, sizes and completion times. Backup validation resolves each proof to its sealed assignment and checks any surviving catalog records. Removed media stays removed when the proof is restored.

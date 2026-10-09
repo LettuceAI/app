@@ -1350,6 +1350,12 @@ pub trait LegacyImportRepository: Send + Sync {
         request: LegacyImportMediaCompletionRequest,
     ) -> Result<LegacyImportMediaCompletion, LegacyImportRepositoryError>;
 
+    fn get_media_completion(
+        &self,
+        run_id: LegacyImportRunId,
+        relative_path: &str,
+    ) -> Result<Option<LegacyImportMediaCompletion>, LegacyImportRepositoryError>;
+
     fn get_secret_completion(
         &self,
         run_id: LegacyImportRunId,

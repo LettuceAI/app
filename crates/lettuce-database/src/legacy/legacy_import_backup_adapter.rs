@@ -2,6 +2,31 @@ use lettuce_transfer::{
     BackupLegacyImportRun, BackupSqlRow, BackupSqlValue, LegacyImportBackup, backup_sql_text,
 };
 use rusqlite::{Transaction, params, types::Value};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+pub(crate) fn install_guard(
+    connection: &rusqlite::Connection,
+) -> rusqlite::Result<Arc<AtomicBool>> {
+    let flag = Arc::new(AtomicBool::new(false));
+    let query = Arc::clone(&flag);
+    connection.create_scalar_function(
+        "legacy_media_proof_restore_allowed",
+        0,
+        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+        move |_| Ok(query.load(Ordering::Acquire)),
+    )?;
+    Ok(flag)
+}
+
+struct ProofWriteGuard<'a>(&'a AtomicBool);
+impl Drop for ProofWriteGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 
 const RUN_COLUMNS: &[&str] = &[
     "id",
@@ -333,7 +358,14 @@ fn restore_run(
 pub(crate) fn insert_restored_in(
     transaction: &Transaction<'_>,
     backup: &LegacyImportBackup,
+    allowed: &AtomicBool,
 ) -> rusqlite::Result<()> {
+    let mut verified = backup.clone();
+    verified
+        .canonicalize_and_validate()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    allowed.store(true, Ordering::Release);
+    let _guard = ProofWriteGuard(allowed);
     let mut runs = backup.runs.iter().collect::<Vec<_>>();
     runs.sort_by_key(|entry| {
         (

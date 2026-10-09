@@ -277,6 +277,7 @@ pub struct Database {
     /// every later use of the connection then fails.
     foreign_keys_lost: std::sync::atomic::AtomicBool,
     usage_delete_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    legacy_media_proof_restore_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _file_use: Option<database_file::DatabaseFileUse>,
 }
 
@@ -296,12 +297,15 @@ impl Database {
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
         let usage_delete_allowed = usage_clear::install_guard(&connection)?;
+        let legacy_media_proof_restore_allowed =
+            legacy::legacy_import_backup_adapter::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
             usage_delete_allowed,
+            legacy_media_proof_restore_allowed,
             _file_use: Some(file_use),
         })
     }
@@ -314,12 +318,15 @@ impl Database {
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
         let usage_delete_allowed = usage_clear::install_guard(&connection)?;
+        let legacy_media_proof_restore_allowed =
+            legacy::legacy_import_backup_adapter::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
             usage_delete_allowed,
+            legacy_media_proof_restore_allowed,
             _file_use: None,
         })
     }

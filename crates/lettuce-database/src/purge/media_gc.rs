@@ -5,7 +5,7 @@ use std::path::Path;
 
 use lettuce_media::ReleasedMediaObject;
 use lettuce_types::{ContentHash, TimestampMillis};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 
 use super::{PurgeError, storage, text_columns};
 use crate::Database;
@@ -28,13 +28,6 @@ const UNSCANNED_TABLES: [&str; 10] = [
     "api_operation_receipts",
 ];
 const UNSCANNED_PREFIXES: [&str; 2] = ["sync_", "legacy_import_"];
-
-/// A legacy import only needs its destination assets while it can still
-/// attach them.
-const OPEN_IMPORT_COMPLETION: &str = "SELECT completion.destination_asset_id
-     FROM legacy_import_media_completions completion
-     JOIN legacy_import_runs run ON run.id = completion.run_id
-     WHERE run.status NOT IN ('completed', 'partial', 'failed')";
 
 const FINISHED_JOB: &str = "('succeeded', 'failed', 'cancelled', 'interrupted')";
 
@@ -77,7 +70,15 @@ fn drop_referenced(
         })
         .collect();
     probes.push(format!(
-        "{OPEN_IMPORT_COMPLETION} AND completion.destination_asset_id = c.value"
+        "SELECT assignment.destination_id
+         FROM legacy_import_assignments assignment
+         JOIN legacy_import_runs run ON run.id = assignment.run_id
+         WHERE assignment.source_kind = 'media' AND assignment.destination_id = c.value
+           AND (run.status IN ('admitting', 'admitted', 'importing')
+                OR (run.status = 'partial' AND
+                    (SELECT count(*) FROM legacy_import_stage_results receipt
+                     WHERE receipt.run_id = run.id) < {}))",
+        lettuce_transfer::LegacyImportStage::ALL.len()
     ));
     probes.push(
         "SELECT 1 FROM sync_incoming_changes change
@@ -202,30 +203,19 @@ fn collect(
     drop_retained(&transaction, &mut unused)?;
     let mut released_blobs = BTreeSet::new();
     for asset in &unused {
-        let evidence: bool = transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM legacy_import_media_completions WHERE destination_asset_id = ?1)",
-                [asset],
-                |row| row.get(0),
-            )
+        transaction
+            .execute("DELETE FROM media_assets WHERE id = ?1", [asset])
             .map_err(storage)?;
-        if !evidence {
-            transaction
-                .execute("DELETE FROM media_assets WHERE id = ?1", [asset])
-                .map_err(storage)?;
-        }
         if let Some(blob) = blobs.get(asset) {
             released_blobs.insert(blob.clone());
         }
     }
-    let unused_json = serde_json::to_string(&unused).map_err(storage)?;
     let mut released = Vec::new();
     for blob in released_blobs {
         let still_used: bool = transaction
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM media_assets
-                               WHERE blob_id = ?1 AND id NOT IN (SELECT value FROM json_each(?2)))",
-                params![blob, unused_json],
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE blob_id = ?1)",
+                [&blob],
                 |row| row.get(0),
             )
             .map_err(storage)?;
@@ -249,26 +239,9 @@ fn collect(
         else {
             continue;
         };
-        let held: bool = transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE blob_id = ?1)
-                     OR EXISTS(SELECT 1 FROM legacy_import_media_completions WHERE blob_id = ?1)",
-                [&blob],
-                |row| row.get(0),
-            )
+        transaction
+            .execute("DELETE FROM media_blobs WHERE id = ?1", [&blob])
             .map_err(storage)?;
-        if held {
-            transaction
-                .execute(
-                    "UPDATE media_blobs SET state = 'missing', updated_at = ?2 WHERE id = ?1",
-                    params![blob, now.get()],
-                )
-                .map_err(storage)?;
-        } else {
-            transaction
-                .execute("DELETE FROM media_blobs WHERE id = ?1", [&blob])
-                .map_err(storage)?;
-        }
         if state == "ready" {
             released.push(ReleasedMediaObject {
                 content_hash: ContentHash::parse(hash).map_err(storage)?,
@@ -285,7 +258,7 @@ impl Database {
         connection: &Connection,
     ) -> Result<BTreeSet<String>, PurgeError> {
         let mut unused = connection
-            .prepare("SELECT id FROM media_assets WHERE retention='temporary' AND NOT EXISTS (SELECT 1 FROM legacy_import_media_completions WHERE destination_asset_id=media_assets.id)")
+            .prepare("SELECT id FROM media_assets WHERE retention='temporary'")
             .and_then(|mut statement| {
                 statement
                     .query_map([], |row| row.get(0))?
@@ -299,8 +272,7 @@ impl Database {
     /// Collects the assets purges queued: an asset nothing references any
     /// more (no foreign key, and its id in no stored text outside
     /// bookkeeping tables) is deleted unless it is library media, and a
-    /// blob none of whose assets is still used leaves the catalog (kept as
-    /// `missing` while an asset or import record names it). Returns the
+    /// blob none of whose assets is still used leaves the catalog. Returns the
     /// released objects whose bytes the caller deletes after this commit.
     pub fn collect_media_garbage(
         &self,

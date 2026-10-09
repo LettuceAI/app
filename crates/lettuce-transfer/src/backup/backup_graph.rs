@@ -853,6 +853,10 @@ pub fn canonicalize_and_validate(
             crate::LegacyImportBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
         })?;
     graph
+        .legacy_imports
+        .validate_media_snapshots(&graph.authored.media_assets, &graph.authored.media_blobs)
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    graph
         .playground_history
         .canonicalize_and_validate()
         .map_err(|error| match error {

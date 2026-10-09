@@ -800,6 +800,7 @@ impl ProviderBackupRestoreWriter for Database {
         crate::legacy::legacy_import_backup_adapter::insert_restored_in(
             &transaction,
             &graph.legacy_imports,
+            &self.legacy_media_proof_restore_allowed,
         )
         .map_err(invalid)?;
         crate::media::playground_history_adapter::insert_restored_in(

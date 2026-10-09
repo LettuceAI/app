@@ -308,6 +308,20 @@ impl LegacyImportRepository for Database {
         Ok(completion)
     }
 
+    fn get_media_completion(
+        &self,
+        run_id: LegacyImportRunId,
+        relative_path: &str,
+    ) -> Result<Option<LegacyImportMediaCompletion>, LegacyImportRepositoryError> {
+        if !valid_media_path(relative_path) {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
+        let connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        load_media_completion(&connection, run_id, relative_path)
+    }
+
     fn get_secret_completion(
         &self,
         run_id: LegacyImportRunId,
@@ -2840,7 +2854,7 @@ fn choose_llm_metric_ids(
     Ok(ids)
 }
 
-const fn stage_name(stage: LegacyImportStage) -> &'static str {
+pub(crate) const fn stage_name(stage: LegacyImportStage) -> &'static str {
     match stage {
         LegacyImportStage::Characters => "characters",
         LegacyImportStage::Groups => "groups",
@@ -3682,7 +3696,7 @@ fn parse_status(value: &str) -> Result<LegacyImportRunStatus, LegacyImportReposi
 }
 
 fn load_media_completion(
-    transaction: &Transaction<'_>,
+    transaction: &rusqlite::Connection,
     run_id: LegacyImportRunId,
     relative_path: &str,
 ) -> Result<Option<LegacyImportMediaCompletion>, LegacyImportRepositoryError> {
