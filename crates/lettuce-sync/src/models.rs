@@ -165,7 +165,7 @@ pub const USAGE_COST_SYNC_VERSION: u32 = 1;
 
 pub const JOB_USAGE_SYNC_KIND: &str = "job_usage";
 pub const JOB_USAGE_SYNC_SCHEMA: &str = "usage.job_inference";
-pub const JOB_USAGE_SYNC_VERSION: u32 = 1;
+pub const JOB_USAGE_SYNC_VERSION: u32 = 2;
 
 pub const JOB_USAGE_COST_SYNC_KIND: &str = "job_usage_cost";
 pub const JOB_USAGE_COST_SYNC_SCHEMA: &str = "usage.job_cost_basis";

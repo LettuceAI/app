@@ -529,13 +529,18 @@ mod tests {
         assert_eq!(crate::CONVERSATION_MESSAGE_SYNC_VERSION, 5);
         assert_eq!(crate::PROMPT_SYNC_VERSION, 2);
         assert_eq!(
+            crate::JOB_USAGE_SYNC_VERSION,
+            2,
+            "job usage carries frozen attribution and failure snapshots"
+        );
+        assert_eq!(
             crate::CHARACTER_SYNC_VERSION,
             2,
             "provider voices extend the character payload"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "1c53b69a4a2b8c639bec484cb6bad93677bb57673a645a3168fd7ac13bdc4a7b"
+            "16a3c4e407b8097a875dac56dc67af954fac4a5ea03c2268af0043d6db8e5371"
         );
     }
 
