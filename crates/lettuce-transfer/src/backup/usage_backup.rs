@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use lettuce_types::{GenerationAttemptId, UsageEventId};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_USAGE_BACKUP_VERSION: u32 = 2;
+pub const CONVERSATION_USAGE_BACKUP_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,7 +28,7 @@ impl ConversationUsageBackup {
         runtime: &crate::ConversationRuntimeBackup,
         jobs: &crate::JobBackup,
     ) -> Result<(), ConversationUsageBackupError> {
-        if !matches!(self.version, 1 | CONVERSATION_USAGE_BACKUP_VERSION)
+        if !matches!(self.version, 1 | 2 | CONVERSATION_USAGE_BACKUP_VERSION)
             || (self.version == 1 && !self.tombstones.is_empty())
         {
             return Err(ConversationUsageBackupError::InvalidData);

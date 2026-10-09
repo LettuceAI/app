@@ -6,6 +6,8 @@ The crate reads, validates and plans; it does not own live state. SQLite reads a
 
 Job inference evidence may carry immutable display attribution at admission and a completed snapshot at settlement. Backup validation applies the ledger's shared snapshot checks: completion cannot change admitted attribution and its response identity must match the recorded response.
 
+The conversation usage section exports version 3 with a required origin on every terminal event and exact cleared-usage tombstones. Decoding rejects an event without origin, including in an older rewrite section, before writing any restore state. Terminal attempts and outbox events must resolve to their exact stored usage event or its ownership tombstone.
+
 ## Principles
 
 - External schemas never become domain schemas. A legacy or third-party document is decoded into a compatibility plan and only then mapped onto domain types through the domains' own validation.

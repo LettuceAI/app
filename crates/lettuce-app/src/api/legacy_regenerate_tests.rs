@@ -202,6 +202,32 @@ async fn restored_harness() -> (super::tests::Harness, Database) {
     (harness, database)
 }
 
+#[tokio::test]
+async fn synthetic_import_usage_has_explicit_origin_and_live_regeneration_does_not_inherit_it() {
+    let (harness, database) = restored_harness().await;
+    let imported = database.read_provider_backup_graph().expect("imported graph");
+    assert!(!imported.conversation_usage.events.is_empty());
+    for entry in &imported.conversation_usage.events {
+        assert_eq!(
+            serde_json::to_value(&entry.event).expect("origin payload")["origin"],
+            serde_json::json!("legacy_import")
+        );
+    }
+    regenerate_imported(&harness, &database, 11).await;
+    let graph = database.read_provider_backup_graph().expect("regenerated graph");
+    let new_events = graph.conversation_usage.events.iter().filter(|entry| {
+        !imported.conversation_usage.events.iter().any(|old| old.event.id == entry.event.id)
+    }).collect::<Vec<_>>();
+    assert_eq!(new_events.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&new_events[0].event).expect("live payload")["origin"],
+        serde_json::json!("live")
+    );
+    for old in &imported.conversation_usage.events {
+        assert!(graph.conversation_usage.events.iter().any(|entry| entry.event == old.event));
+    }
+}
+
 async fn regenerate_imported(
     harness: &super::tests::Harness,
     database: &Database,
@@ -375,6 +401,35 @@ async fn imported_candidates_and_the_unknown_speaker_survive_a_backup_round_trip
         .filter(|candidate| candidate.model.is_none())
         .count();
     assert_eq!(imported, 2);
+    let secrets = lettuce_transfer::provider_backup_secret_requirements(&graph).expect("secrets")
+        .into_iter().map(|(reference, purpose)| lettuce_transfer::ProviderBackupSecret {
+            reference, purpose, generation: 1,
+            value: lettuce_settings::SecretValue::new("backup-origin-test").expect("secret"),
+        }).collect();
+    let sections = lettuce_transfer::provider_backup_sections(graph, secrets, Vec::new(), artifacts)
+        .expect("sections");
+    let sealed = lettuce_transfer::seal_backup("origin-test", lettuce_types::TimestampMillis::new(10),
+        "password", sections.clone()).expect("sealed");
+    let decoded = lettuce_transfer::decode_provider_backup_restore_plan(std::io::Cursor::new(sealed), "password")
+        .expect("origin-bearing backup decodes");
+    assert_eq!(decoded.graph.conversation_usage.version, 3);
+    assert!(!decoded.graph.conversation_usage.events.is_empty());
+    for version in [1, 2] {
+        let mut old_sections = sections.clone();
+        let usage = old_sections.iter_mut().find(|section| section.name == "data/conversation-usage.json")
+            .expect("usage section");
+        let mut payload: serde_json::Value = serde_json::from_slice(&usage.bytes).expect("usage JSON");
+        payload["version"] = serde_json::json!(version);
+        for event in payload["events"].as_array_mut().expect("events") {
+            event["event"].as_object_mut().expect("event").remove("origin");
+        }
+        usage.schema = format!("conversation-usage.v{version}");
+        usage.bytes = zeroize::Zeroizing::new(serde_json::to_vec(&payload).expect("old usage JSON"));
+        let sealed = lettuce_transfer::seal_backup("origin-test", lettuce_types::TimestampMillis::new(10),
+            "password", old_sections).expect("sealed old backup");
+        assert!(matches!(lettuce_transfer::decode_provider_backup_restore_plan(std::io::Cursor::new(sealed), "password"),
+            Err(lettuce_transfer::ProviderBackupRestorePlanError::InvalidInventory)));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

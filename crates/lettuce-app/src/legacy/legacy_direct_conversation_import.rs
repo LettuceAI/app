@@ -2274,6 +2274,7 @@ impl SessionWriter<'_> {
             }
             self.usage.push(UsageEvent {
                 id: usage_event_id,
+                origin: lettuce_usage::UsageEventOrigin::LegacyImport,
                 record: UsageRecord {
                     snapshot: None,
                     turn_id,

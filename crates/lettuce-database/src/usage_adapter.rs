@@ -421,10 +421,12 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         memory_tokens: row.get(30)?,
         summary_tokens: row.get(31)?,
         provider_response_id: row.get(32)?,
+        origin: row.get(33)?,
     })
 }
 
 struct RawUsageEvent {
+    origin: String,
     snapshot_present: bool,
     character_source_id: Option<String>,
     character_name: Option<String>,
@@ -550,6 +552,11 @@ impl RawUsageEvent {
         };
         let event = UsageEvent {
             id: UsageEventId::from_str(&self.id).map_err(|_| UsageLedgerError::Storage)?,
+            origin: match self.origin.as_str() {
+                "live" => lettuce_usage::UsageEventOrigin::Live,
+                "legacy_import" => lettuce_usage::UsageEventOrigin::LegacyImport,
+                _ => return Err(UsageLedgerError::Storage),
+            },
             record: UsageRecord {
                 snapshot,
                 turn_id: self
@@ -602,7 +609,7 @@ impl RawUsageEvent {
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
     provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens,
-    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id FROM usage_events";
+    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id,origin FROM usage_events";
 
 pub(crate) fn load_all_usage_in(
     transaction: &rusqlite::Transaction<'_>,
@@ -718,8 +725,8 @@ pub(crate) fn insert_usage_event_in(
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
                     provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens,
-                    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
+                    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id,origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)",
                 params![
                     event.id.to_string(),
                     conversation_id,
@@ -763,6 +770,7 @@ pub(crate) fn insert_usage_event_in(
                     memory_tokens,
                     summary_tokens,
                     snapshot.and_then(|value| value.provider_response_id.as_deref()),
+                    event.origin.as_str(),
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -806,7 +814,8 @@ impl UsageLedger for Database {
             .map(RawUsageEvent::decode)
             .transpose()?;
         if let Some(existing) = existing {
-            if existing.record != record {
+            if existing.record != record || existing.origin != lettuce_usage::UsageEventOrigin::Live
+            {
                 return Err(UsageLedgerError::Conflict);
             }
             transaction
@@ -816,6 +825,7 @@ impl UsageLedger for Database {
         }
         let event = UsageEvent {
             id: UsageEventId::new(),
+            origin: lettuce_usage::UsageEventOrigin::Live,
             record,
         };
         insert_usage_event_in(&transaction, &conversation_id, &event)?;
@@ -1267,6 +1277,43 @@ mod tests {
         fixture_in(database)
     }
 
+    #[test]
+    fn usage_origin_is_required_and_unknown_origins_are_rejected() {
+        let (database, record) = fixture();
+        let event = database.record(record).expect("live event");
+        let mut json = serde_json::to_value(event).expect("payload");
+        json.as_object_mut().expect("event object").remove("origin");
+        assert!(serde_json::from_value::<lettuce_usage::UsageEvent>(json.clone()).is_err());
+        json["origin"] = serde_json::json!("unknown");
+        assert!(serde_json::from_value::<lettuce_usage::UsageEvent>(json).is_err());
+    }
+
+    #[test]
+    fn usage_origin_is_explicit_immutable_and_bound_to_replay() {
+        let (database, record) = fixture();
+        let event = database.record(record.clone()).expect("live event");
+        let mut json = serde_json::to_value(&event).expect("payload");
+        assert_eq!(json.get("origin"), Some(&serde_json::json!("live")));
+        assert_eq!(database.record(record).expect("same replay"), event);
+        json["origin"] = serde_json::json!("legacy_import");
+        let changed: lettuce_usage::UsageEvent =
+            serde_json::from_value(json).expect("origin payload");
+        let mut connection = database.connection().expect("connection");
+        assert!(
+            connection
+                .execute("UPDATE usage_events SET origin='legacy_import'", [])
+                .is_err()
+        );
+        let tx = connection.transaction().expect("transaction");
+        assert_eq!(
+            super::insert_usage_event_in(&tx, &ConversationId::new().to_string(), &changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        drop(tx);
+        drop(connection);
+        assert_eq!(database.get(event.id).expect("retained event"), Some(event));
+    }
+
     fn fixture_in(database: Database) -> (Database, UsageRecord) {
         database
             .connection()
@@ -1347,6 +1394,7 @@ mod tests {
             &transaction,
             &conversation_id,
             &lettuce_usage::UsageEvent {
+                origin: lettuce_usage::UsageEventOrigin::Live,
                 id: lettuce_types::UsageEventId::new(),
                 record,
             },

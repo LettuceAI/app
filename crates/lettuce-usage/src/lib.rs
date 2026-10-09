@@ -18,10 +18,27 @@ pub use app_usage::*;
 use lettuce_conversations::UsageRecord;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, UsageEventId};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageEventOrigin {
+    Live,
+    LegacyImport,
+}
+
+impl UsageEventOrigin {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::LegacyImport => "legacy_import",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageEvent {
     pub id: UsageEventId,
+    pub origin: UsageEventOrigin,
     pub record: UsageRecord,
 }
 

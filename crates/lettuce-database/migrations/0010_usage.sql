@@ -27,6 +27,7 @@ CREATE TABLE usage_events (
         provider_account_revision IS NULL OR provider_account_revision >= 1
     ),
     recorded_at INTEGER NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'live' CHECK (origin IN ('live', 'legacy_import')),
     snapshot_present INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_present IN (0,1)),
     character_source_id TEXT,
     character_name TEXT,
