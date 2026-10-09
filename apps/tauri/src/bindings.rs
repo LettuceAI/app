@@ -23,6 +23,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::metrics::llm_metrics_clear,
             commands::app::app_usage_days,
             commands::usage::usage_clear_before,
+            commands::storage::storage_database_files_list,
+            commands::storage::storage_database_file_delete,
             commands::logs::logs_list,
             commands::logs::log_read_page,
             commands::logs::log_search,

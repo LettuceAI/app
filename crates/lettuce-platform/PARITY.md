@@ -14,3 +14,5 @@ Facts about `lettuce-platform` that are not architecture: what the previous READ
 - The previous README described the private persistent root as serving a settings-owned secret adapter. Its only caller today is `AppDatabaseLocation` in `lettuce-app`, which keeps the active database pointer there; `lettuce-settings` does not use this crate.
 
 Database-file lifecycle coordination now has a confined cross-process file lock. The existing per-authority mutation lock remains separate; no private-persistent removal permission or filesystem constraint was relaxed.
+
+Slice 12 adds a separate database-directory capability for explicit kept-file deletion. It refuses traversal, unexpected file identity and symlink sidecars without relaxing the generic private-persistent deletion restriction. The app owns active-file checks, live-handle reservations and durable operation receipts.

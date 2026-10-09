@@ -100,3 +100,5 @@ Log viewer contracts carry names, paged lines and match indices; exports use Fil
 LlmMetricView holds the generation id, creation time, summary and optional samples. Metrics listing uses an opaque cursor and bounded page size; clearing takes a client operation id and returns its committed count.
 
 Usage clearing carries a timestamp cutoff and client operation id and returns the removed row count. Usage storage failures use typed error details; contract values do not expose database paths.
+
+Storage file contracts expose basenames, creation kind and time, size, active status and deletion availability. Explicit deletion carries a client operation id; database-file error details name only the requested basename, with no native path.

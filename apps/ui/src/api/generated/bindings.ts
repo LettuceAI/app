@@ -21,6 +21,8 @@ export const commands = {
 	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError>(__TAURI_INVOKE("llm_metrics_clear", { request })),
 	appUsageDays: () => typedError<AppUsageDaysView, ApiError>(__TAURI_INVOKE("app_usage_days")),
 	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError>(__TAURI_INVOKE("usage_clear_before", { request })),
+	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
+	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("storage_database_file_delete", { request })),
 	logsList: () => typedError<LogsList, ApiError>(__TAURI_INVOKE("logs_list")),
 	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError>(__TAURI_INVOKE("log_read_page", { request })),
 	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_search", { request })),
@@ -364,7 +366,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails = { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -1429,6 +1431,22 @@ export type ConversationsListRequest = {
 	lifecycle: LifecycleFilter | null,
 	cursor: string | null,
 	limit: number | null,
+};
+
+export type DatabaseFileDeleteRequest = {
+	file: string,
+	client_operation_id: string,
+};
+
+export type DatabaseFileKind = "initial" | "restore" | "legacy_restore" | "reset" | "existing";
+
+export type DatabaseFileView = {
+	file: string,
+	kind: DatabaseFileKind,
+	created_at: number,
+	size: number,
+	active: boolean,
+	deletable: boolean,
 };
 
 export type DefaultCharacterRules = {

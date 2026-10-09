@@ -10,6 +10,7 @@
 
 mod atomic;
 mod authority;
+mod database_files;
 mod directories;
 mod error;
 mod espeak;
@@ -23,6 +24,7 @@ mod trash;
 
 pub use atomic::StagedWrite;
 pub use authority::FilesystemAuthority;
+pub use database_files::DatabaseFiles;
 pub use directories::{DirectorySnapshot, ManagedRoot, RootKind};
 pub use error::PlatformError;
 pub use espeak::{EspeakNgError, EspeakNgProcess, EspeakPhonemizer};
@@ -45,3 +47,6 @@ mod tests;
 
 #[cfg(test)]
 mod file_lock_tests;
+
+#[cfg(test)]
+mod database_files_tests;

@@ -23,3 +23,5 @@ Slice 12 installs daily file logging and the panic hook, following `old-code/src
 Metric wrappers preserve the Performance page's read-after-clear flow (`old-code/src/ui/pages/settings/PerformancePage.tsx:133`) through an idempotent clear request. Automatic retention is removed under slice 12's no-count-cap rule; legacy pruned at 500 (`old-code/src-tauri/src/storage_manager/llm_metrics.rs:31`).
 
 Usage clear-before preserves the strict cutoff from `old-code/src-tauri/src/usage/repository.rs:503-518`. It deliberately skips unsettled dispatches and nonterminal owners, commits costs and exact ownership tombstones with the deletion receipt, and consumes synchronized re-sends by id. Legacy counted with a zero fallback and deleted in a separate statement (`old-code/src-tauri/src/usage/repository.rs:506-518`); the rewrite fails typed and commits atomically. Backups retain proofs for terminal references instead of losing their audit integrity.
+
+Slice 12 exposes kept-database inventory and explicit deletion as new storage commands under decision 15. No native database paths cross their contracts.

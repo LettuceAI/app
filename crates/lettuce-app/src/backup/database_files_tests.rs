@@ -204,3 +204,176 @@ fn cutover_crash_child() {
     }
     std::process::exit(77);
 }
+
+#[tokio::test]
+async fn explicit_deletion_refuses_active_and_open_files_and_replays_the_exact_request() {
+    let root = std::env::temp_dir().join(format!("lettuce-delete-file-{}", OperationId::new()));
+    let location = location(&root);
+    let active = location.active_path().expect("active");
+    std::fs::create_dir_all(active.parent().expect("parent")).expect("directory");
+    let database = Database::open(&active).expect("database");
+    let guard = location.file_lifecycle().await.expect("guard");
+    let name = format!("{}.sqlite3", OperationId::new());
+    let path = guard
+        .begin_file(&name, DatabaseFileKind::Restore, TimestampMillis::new(20))
+        .expect("begin");
+    drop(Database::open(&path).expect("new database"));
+    let key = lettuce_types::RequestId::new();
+    assert!(matches!(
+        guard.delete_file(&name, &active, key),
+        Err(AppDatabaseLocationError::InUse)
+    ));
+    guard
+        .activate_file(&name, TimestampMillis::new(30))
+        .expect("cutover");
+    assert!(matches!(
+        guard.delete_file(&name, &active, key),
+        Err(AppDatabaseLocationError::InUse)
+    ));
+    let old = active
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("old name");
+    assert!(matches!(
+        guard.delete_file(old, &path, key),
+        Err(AppDatabaseLocationError::InUse)
+    ));
+    drop(database);
+    guard
+        .delete_file(old, &path, key)
+        .expect("explicit deletion");
+    assert!(!active.exists());
+    guard.delete_file(old, &path, key).expect("exact replay");
+    assert!(matches!(
+        guard.delete_file(&name, &path, key),
+        Err(AppDatabaseLocationError::Conflict)
+    ));
+    assert!(path.exists());
+    drop(guard);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn interrupted_explicit_file_deletion_replays_without_touching_the_active_file() {
+    for checkpoint in [
+        "Intent",
+        "DatabaseRemoved",
+        "SidecarsRemoved",
+        "MetadataRemoved",
+    ] {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-file-delete-crash-{}", OperationId::new()));
+        let location = location(&root);
+        let old = location.active_path().expect("old");
+        drop(Database::open(&old).expect("old database"));
+        let guard = location.file_lifecycle().await.expect("guard");
+        let name = format!("{}.sqlite3", OperationId::new());
+        let active = guard
+            .begin_file(&name, DatabaseFileKind::Restore, TimestampMillis::new(10))
+            .expect("begin");
+        drop(Database::open(&active).expect("new database"));
+        guard
+            .activate_file(&name, TimestampMillis::new(20))
+            .expect("activate");
+        drop(guard);
+        let key = lettuce_types::RequestId::new();
+        let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "backup::backup_restore::database_files_tests::file_deletion_crash_child",
+                "--nocapture",
+            ])
+            .env("LETTUCE_FILE_DELETE_CRASH_ROOT", &root)
+            .env("LETTUCE_FILE_DELETE_CRASH_KEY", key.to_string())
+            .env("LETTUCE_FILE_DELETE_CRASH_STAGE", checkpoint)
+            .status()
+            .expect("crash child");
+        assert_eq!(status.code(), Some(77));
+        let guard = location.file_lifecycle().await.expect("recover");
+        guard
+            .delete_file("lettuce.sqlite3", &active, key)
+            .expect("resume deletion");
+        guard
+            .delete_file("lettuce.sqlite3", &active, key)
+            .expect("stable replay");
+        assert!(!old.exists());
+        assert!(active.exists());
+        assert!(guard.kept_media_hashes().expect("sets").is_empty());
+        assert!(matches!(
+            guard.delete_file(&name, &active, key),
+            Err(AppDatabaseLocationError::Conflict)
+        ));
+        drop(guard);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+}
+
+#[test]
+fn file_deletion_crash_child() {
+    let Some(root) = std::env::var_os("LETTUCE_FILE_DELETE_CRASH_ROOT") else {
+        return;
+    };
+    let key = std::env::var("LETTUCE_FILE_DELETE_CRASH_KEY")
+        .expect("key")
+        .parse()
+        .expect("request id");
+    let stage = std::env::var("LETTUCE_FILE_DELETE_CRASH_STAGE").expect("checkpoint");
+    let location = location(Path::new(&root));
+    let guard = location.acquire_file_lifecycle(true).expect("guard");
+    guard
+        .delete_file_with_checkpoint(
+            "lettuce.sqlite3",
+            &location.active_path().expect("active"),
+            key,
+            |checkpoint| {
+                if format!("{checkpoint:?}") == stage {
+                    std::process::exit(77);
+                }
+            },
+        )
+        .expect("delete");
+    panic!("checkpoint was not reached");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn bad_sidecar_refuses_deletion_before_touching_the_kept_database() {
+    let root =
+        std::env::temp_dir().join(format!("lettuce-delete-bad-sidecar-{}", OperationId::new()));
+    let location = location(&root);
+    let old = location.active_path().expect("old path");
+    let database = Database::open(&old).expect("database");
+    let hash = media(&database, 'a', RetentionClass::Library);
+    drop(database);
+    let guard = location.file_lifecycle().await.expect("guard");
+    let name = format!("{}.sqlite3", OperationId::new());
+    let active = guard
+        .begin_file(&name, DatabaseFileKind::Restore, TimestampMillis::new(10))
+        .expect("begin");
+    drop(Database::open(&active).expect("fresh database"));
+    guard
+        .activate_file(&name, TimestampMillis::new(20))
+        .expect("cutover");
+    let before = std::fs::read(&old).expect("old bytes");
+    let sentinel = root.join("sentinel");
+    std::fs::write(&sentinel, b"preserve").expect("sentinel");
+    let sidecar = old.with_file_name("lettuce.sqlite3-shm");
+    if sidecar.exists() {
+        std::fs::remove_file(&sidecar).expect("replace closed test sidecar");
+    }
+    std::os::unix::fs::symlink(&sentinel, &sidecar).expect("sidecar symlink");
+    assert!(matches!(
+        guard.delete_file("lettuce.sqlite3", &active, lettuce_types::RequestId::new()),
+        Err(AppDatabaseLocationError::Platform(
+            PlatformError::SymlinkEscape
+        ))
+    ));
+    assert_eq!(
+        std::fs::read(&old).expect("kept file remains intact"),
+        before
+    );
+    assert!(guard.kept_media_hashes().expect("kept set").contains(&hash));
+    assert_eq!(std::fs::read(&sentinel).expect("sentinel"), b"preserve");
+    drop(guard);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

@@ -55,6 +55,12 @@ impl Drop for DatabaseFileUse {
     }
 }
 
+impl DatabaseFileDeletionPermit {
+    pub fn file(&self) -> &File {
+        &self.0
+    }
+}
+
 impl Drop for DatabaseFileDeletionPermit {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.0);

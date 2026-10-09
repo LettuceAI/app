@@ -91,6 +91,17 @@ impl FilesystemAuthority {
         })
     }
 
+    pub fn database_files(&self) -> Result<crate::DatabaseFiles, PlatformError> {
+        let root = self
+            .inner
+            .roots
+            .get(&ManagedRoot::PrivatePersistent)
+            .ok_or(PlatformError::InvalidRoot)?;
+        Ok(crate::DatabaseFiles {
+            directory: Arc::new(open_or_create_child(&root.dir, "databases")?),
+        })
+    }
+
     pub fn managed_files(&self) -> ManagedFiles {
         ManagedFiles::from_authority(Arc::clone(&self.inner))
     }

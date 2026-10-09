@@ -99,6 +99,7 @@ pub enum ApiErrorDetails {
     AppUsageStorage,
     MetricsUnavailable,
     UsageStorage,
+    DatabaseFiles { file: Option<String> },
     Settings { reason: crate::SettingsFailureReason },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,

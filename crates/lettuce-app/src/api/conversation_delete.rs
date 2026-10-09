@@ -90,13 +90,29 @@ fn delete_step(
     }
     cancel_work(context, conversation_id, before_settle)?;
     match purge(context, conversation_id) {
-        Ok(()) | Err(PurgeError::NotFound) => Ok(true),
-        Err(PurgeError::Busy) => Ok(false),
-        Err(error) => Err(api_error(ApiErrorCode::Internal, error.to_string())),
+        Ok(()) | Err(HardDeleteError::Purge(PurgeError::NotFound)) => Ok(true),
+        Err(HardDeleteError::Purge(PurgeError::Busy)) => Ok(false),
+        Err(HardDeleteError::DatabaseFiles(error)) => Err(ApiError {
+            code: if error == crate::AppDatabaseLocationError::Busy {
+                ApiErrorCode::Busy
+            } else {
+                ApiErrorCode::Unavailable
+            },
+            message: error.to_string(),
+            details: Some(dto::ApiErrorDetails::DatabaseFiles { file: None }),
+        }),
+        Err(HardDeleteError::Media(error)) => Err(ApiError {
+            code: ApiErrorCode::Unavailable,
+            message: error.to_string(),
+            details: Some(dto::ApiErrorDetails::DatabaseFiles { file: None }),
+        }),
+        Err(HardDeleteError::Purge(error)) => {
+            Err(api_error(ApiErrorCode::Internal, error.to_string()))
+        }
     }
 }
 
-fn purge(context: &ApiContext, conversation_id: ConversationId) -> Result<(), PurgeError> {
+fn purge(context: &ApiContext, conversation_id: ConversationId) -> Result<(), HardDeleteError> {
     let database = context.backend().database();
     match (context.media(), context.database_files()) {
         (Some(store), Some(files)) => crate::delete_conversation(
@@ -109,14 +125,11 @@ fn purge(context: &ApiContext, conversation_id: ConversationId) -> Result<(), Pu
             conversation_id,
             context.now(),
         )
-        .map(|_| ())
-        .map_err(|error| match error {
-            HardDeleteError::Purge(error) => error,
-            HardDeleteError::Media(_) | HardDeleteError::DatabaseFiles(_) => PurgeError::Storage,
-        }),
+        .map(|_| ()),
         _ => database
             .purge_conversation(conversation_id, context.now())
-            .map(|_| ()),
+            .map(|_| ())
+            .map_err(HardDeleteError::Purge),
     }
 }
 

@@ -29,3 +29,5 @@ pub mod logs;
 pub mod metrics;
 
 pub(crate) mod usage;
+
+pub(crate) mod storage;

@@ -9165,11 +9165,18 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     std::fs::remove_file(&broken).expect("remove broken file");
 
     drop(kept_media);
-    for suffix in ["", "-wal", "-shm"] {
-        let file = std::path::PathBuf::from(format!("{}{suffix}", kept_path.display()));
-        if file.exists() {
-            std::fs::remove_file(file).expect("remove kept database");
-        }
+    {
+        let lifecycle = location.file_lifecycle().await.expect("file lifecycle");
+        lifecycle
+            .delete_file(
+                kept_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("kept name"),
+                &path,
+                lettuce_types::RequestId::new(),
+            )
+            .expect("explicit deletion of the only holder");
     }
     assert_eq!(
         crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_300))

@@ -114,3 +114,5 @@ The metrics command module forwards cursor listing, detail, per-message detail a
 Log exports open native paths and Android document targets without truncation, compare the source and target file identities, then truncate and write through the same target descriptor. Providers that cannot support this operation return a typed file error.
 
 `usage_clear_before` exposes the application ledger maintenance command with a timestamp cutoff and operation id; database deletion and retry semantics remain in the application and database crates.
+
+The shell exposes `storage_database_files_list` and `storage_database_file_delete` through the app API. File identifiers are basenames and deletion is guarded by the app's lifecycle lock, active-file check, live-handle lease and durable retry receipt.

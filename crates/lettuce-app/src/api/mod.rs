@@ -301,3 +301,9 @@ mod usage_tests;
 
 mod usage;
 pub use usage::usage_clear_before;
+
+mod storage;
+pub use storage::{storage_database_file_delete, storage_database_files_list};
+
+#[cfg(test)]
+mod storage_tests;

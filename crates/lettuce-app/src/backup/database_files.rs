@@ -23,10 +23,18 @@ pub enum DatabaseFileKind {
 enum FileState {
     Writing,
     Abandoned,
+    Deleting {
+        request_id: lettuce_types::RequestId,
+    },
+    Deleted,
     Active,
     Kept,
-    Activating { previous: String },
-    Keeping { next: String },
+    Activating {
+        previous: String,
+    },
+    Keeping {
+        next: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -345,10 +353,156 @@ impl DatabaseFileLifecycle {
         let mut hashes = BTreeSet::new();
         for name in self.names()? {
             let metadata = self.read(&name)?.ok_or(AppDatabaseLocationError::Corrupt)?;
-            if matches!(metadata.state, FileState::Kept) {
+            if matches!(metadata.state, FileState::Kept | FileState::Deleting { .. }) {
                 hashes.extend(metadata.kept_hashes);
             }
         }
         Ok(hashes)
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeleteReceipt {
+    version: u32,
+    file: String,
+    complete: bool,
+}
+
+impl DatabaseFileLifecycle {
+    fn delete_receipt_key(
+        key: lettuce_types::RequestId,
+    ) -> Result<ObjectKey, AppDatabaseLocationError> {
+        Ok(ObjectKey::single(format!(
+            "database-file-delete-{key}.json"
+        ))?)
+    }
+
+    fn write_delete_receipt(
+        &self,
+        key: lettuce_types::RequestId,
+        receipt: &DeleteReceipt,
+    ) -> Result<(), AppDatabaseLocationError> {
+        let bytes = serde_json::to_vec(receipt).map_err(|_| AppDatabaseLocationError::Corrupt)?;
+        let committed = self.location.files.write_atomic(
+            &self.location.write,
+            Self::delete_receipt_key(key)?,
+            &bytes,
+        )?;
+        if committed.parent_sync == ParentSyncStatus::Failed {
+            return Err(AppDatabaseLocationError::Storage);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn delete_file(
+        &self,
+        name: &str,
+        open: &Path,
+        key: lettuce_types::RequestId,
+    ) -> Result<(), AppDatabaseLocationError> {
+        self.delete_file_with_checkpoint(name, open, key, |_| {})
+    }
+
+    pub(super) fn delete_file_with_checkpoint(
+        &self,
+        name: &str,
+        open: &Path,
+        key: lettuce_types::RequestId,
+        checkpoint: impl Fn(FileDeleteStage),
+    ) -> Result<(), AppDatabaseLocationError> {
+        let path = self.location.database_path(name)?;
+        let receipt = match self
+            .location
+            .files
+            .read(&self.location.read, &Self::delete_receipt_key(key)?)
+        {
+            Ok(bytes) => {
+                let receipt: DeleteReceipt = serde_json::from_slice(&bytes)
+                    .map_err(|_| AppDatabaseLocationError::Corrupt)?;
+                if receipt.version != 1 {
+                    return Err(AppDatabaseLocationError::Corrupt);
+                }
+                if receipt.file != name {
+                    return Err(AppDatabaseLocationError::Conflict);
+                }
+                if receipt.complete {
+                    return Ok(());
+                }
+                Some(receipt)
+            }
+            Err(PlatformError::NotFound) => None,
+            Err(error) => return Err(error.into()),
+        };
+        if path == open || path == self.location.active_path()? {
+            return Err(AppDatabaseLocationError::InUse);
+        }
+        let mut metadata = self.read(name)?.ok_or(AppDatabaseLocationError::NotFound)?;
+        match metadata.state {
+            FileState::Kept | FileState::Abandoned => {}
+            FileState::Deleting { request_id } if request_id == key => {}
+            FileState::Deleted if receipt.is_some() => {}
+            _ => return Err(AppDatabaseLocationError::InUse),
+        }
+        let permit = if path.try_exists().map_err(PlatformError::from)? {
+            Some(
+                Database::try_reserve_file_deletion(&path)
+                    .map_err(|_| AppDatabaseLocationError::Storage)?
+                    .ok_or(AppDatabaseLocationError::InUse)?,
+            )
+        } else if receipt.is_some() {
+            None
+        } else {
+            return Err(AppDatabaseLocationError::NotFound);
+        };
+        self.location.directory.validate_database_sidecars(name)?;
+        if receipt.is_none() {
+            self.write_delete_receipt(
+                key,
+                &DeleteReceipt {
+                    version: 1,
+                    file: name.into(),
+                    complete: false,
+                },
+            )?;
+            metadata.state = FileState::Deleting { request_id: key };
+            self.write(name, &metadata)?;
+        }
+        checkpoint(FileDeleteStage::Intent);
+        if let Some(permit) = &permit {
+            let synced = self
+                .location
+                .directory
+                .remove_database_file(name, permit.file())?;
+            if synced == ParentSyncStatus::Failed {
+                return Err(AppDatabaseLocationError::Storage);
+            }
+        }
+        checkpoint(FileDeleteStage::DatabaseRemoved);
+        if self.location.directory.remove_database_sidecars(name)? == ParentSyncStatus::Failed {
+            return Err(AppDatabaseLocationError::Storage);
+        }
+        checkpoint(FileDeleteStage::SidecarsRemoved);
+        metadata.state = FileState::Deleted;
+        metadata.kept_hashes.clear();
+        metadata.kept_at = None;
+        self.write(name, &metadata)?;
+        checkpoint(FileDeleteStage::MetadataRemoved);
+        self.write_delete_receipt(
+            key,
+            &DeleteReceipt {
+                version: 1,
+                file: name.into(),
+                complete: true,
+            },
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FileDeleteStage {
+    Intent,
+    DatabaseRemoved,
+    SidecarsRemoved,
+    MetadataRemoved,
 }

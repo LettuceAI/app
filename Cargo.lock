@@ -2938,6 +2938,7 @@ dependencies = [
  "fs4",
  "lettuce-types",
  "rustix",
+ "same-file",
  "thiserror 2.0.20",
  "uuid",
 ]

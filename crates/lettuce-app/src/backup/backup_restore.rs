@@ -26,6 +26,7 @@ pub(crate) const DATABASE_EXTENSION: &str = ".sqlite3";
 pub struct AppDatabaseLocation {
     private_persistent: PathBuf,
     files: ManagedFiles,
+    directory: lettuce_platform::DatabaseFiles,
     read: ReadCapability,
     write: WriteCapability,
 }
@@ -48,6 +49,12 @@ pub enum AppDatabaseLocationError {
     Storage,
     #[error("database file already exists")]
     Exists,
+    #[error("database file is in use")]
+    InUse,
+    #[error("database file was not found")]
+    NotFound,
+    #[error("database file operation conflicts")]
+    Conflict,
     #[error("database location storage failed: {0}")]
     Platform(PlatformError),
 }
@@ -66,6 +73,7 @@ impl AppDatabaseLocation {
         Ok(Self {
             private_persistent: private_persistent.into(),
             files: authority.managed_files(),
+            directory: authority.database_files()?,
             read: authority.read_capability(ManagedRoot::PrivatePersistent)?,
             write: authority.write_capability(ManagedRoot::PrivatePersistent)?,
         })
