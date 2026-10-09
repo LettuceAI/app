@@ -177,6 +177,7 @@ impl ApiOperationTransaction<'_, '_> {
         delete_models: bool,
         at: TimestampMillis,
     ) -> Result<(Vec<String>, Vec<String>), ModelRepositoryError> {
+        self.changes.settings_section("models");
         let account = crate::sync_load_provider_account(self.transaction, &id.to_string())?
             .ok_or(ModelRepositoryError::NotFound)?;
         if account.revision != expected {
@@ -228,6 +229,7 @@ impl ApiOperationTransaction<'_, '_> {
             return Err(CertificateImportError::AlreadyImported { certificate_id: existing.id });
         }
         settings.trusted_certificates.push(certificate);
+        self.changes.settings_section("certificates");
         write_certificates_in(self.transaction, &settings, revision)?;
         Ok((
             settings.trusted_certificates,
@@ -251,6 +253,7 @@ impl ApiOperationTransaction<'_, '_> {
         if before == settings.trusted_certificates.len() {
             return Err(ModelRepositoryError::NotFound);
         }
+        self.changes.settings_section("certificates");
         write_certificates_in(self.transaction, &settings, revision)?;
         Ok((
             settings.trusted_certificates,
@@ -339,6 +342,7 @@ impl Database {
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(crate::model_error)?;
         let result = ApiOperationTransaction {
+            changes: &self.changes,
             transaction: &transaction,
         }
         .remove_certificate(id, expected)?;

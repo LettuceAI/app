@@ -91,10 +91,10 @@ pub async fn app_ui_state_update(
                 .database()
                 .patch_device_ui_state(request.patch)
                 .map_err(settings_error)?;
-            context.emit(dto::ApiEvent::SettingsChanged {
-                section: "ui_state".to_owned(),
-            });
-            Ok(dto::AppUiStateView { state })
+            Ok(super::settings::finish_committed(
+                dto::AppUiStateView { state },
+                || super::content_filter::publish_settings_changes(context),
+            ))
         })
         .await
 }

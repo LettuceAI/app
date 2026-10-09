@@ -46,6 +46,7 @@ impl ApiOperationTransaction<'_, '_> {
             self.transaction.execute("UPDATE model_profiles SET provider_account_id=?2,external_model_id=?3,display_name=?4,kind=?5,config_json=?6,revision=?7,updated_at=?8 WHERE id=?1", params![profile.id.to_string(), profile.provider_account_id.to_string(), profile.external_model_id, profile.display_name, crate::model_kind_name(profile.kind), config, crate::to_i64(profile.revision.get()).map_err(crate::model_error)?, profile.updated_at.get()]).map_err(crate::model_error)?;
         }
         if select_default {
+            self.changes.settings_section("models");
             self.transaction.execute("UPDATE app_settings SET default_model_profile_id=?1,revision=revision+1,updated_at=?2 WHERE id=1 AND default_model_profile_id IS NULL", params![profile.id.to_string(), profile.updated_at.get()]).map_err(crate::model_error)?;
         }
         self.model_profile(profile.id)?
@@ -64,6 +65,7 @@ impl ApiOperationTransaction<'_, '_> {
         if profile.revision != expected {
             return Err(ModelRepositoryError::StaleRevision);
         }
+        self.changes.settings_section("models");
         super::provider_control_adapter::delete_model_in(self.transaction, id, at)
     }
 
@@ -79,6 +81,7 @@ impl ApiOperationTransaction<'_, '_> {
             }
         }
         let next = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
+        self.changes.settings_section("models");
         let changed = self.transaction.execute("UPDATE app_settings SET default_model_profile_id=?1,revision=?2,updated_at=?3 WHERE id=1 AND revision=?4", params![id.map(|id| id.to_string()), crate::to_i64(next.get()).map_err(crate::model_error)?, at.get(), crate::to_i64(expected.get()).map_err(crate::model_error)?]).map_err(crate::model_error)?;
         if changed != 1 {
             return Err(ModelRepositoryError::StaleRevision);

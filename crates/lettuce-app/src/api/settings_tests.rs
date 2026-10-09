@@ -43,9 +43,13 @@ async fn settings_update_cas_invalid_and_single_section_event() {
         .expect("update");
     assert_eq!(after.revision, before.revision + 1);
     assert_eq!(
-        h.context.content_filter().level(),
+        h.filter_runtime.content_filter().level(),
         lettuce_inference::content_filter::PureModeLevel::Off
     );
+    assert!(std::sync::Arc::ptr_eq(
+        h.context.content_filter(),
+        &h.filter_runtime.content_filter()
+    ));
     assert_eq!(
         settings_update(&h.context, request)
             .await
@@ -97,7 +101,7 @@ async fn filter_commands_are_gated_and_hits_are_coalesced() {
         std::future::pending(),
     ));
     for index in 0..300 {
-        h.context
+        h.filter_runtime
             .content_filter()
             .check_text("decapitate and disembowel", index);
     }
@@ -107,7 +111,7 @@ async fn filter_commands_are_gated_and_hits_are_coalesced() {
             .expect("log")
             .entries
             .len(),
-        300
+        200
     );
     tokio::time::timeout(
         std::time::Duration::from_secs(2),
@@ -301,8 +305,12 @@ async fn settings_sections_preserve_creation_settings_and_emit_their_section() {
         let updated = settings_update(
             &h.context,
             dto::SettingsUpdateRequest {
+                expected_revision: if matches!(&patch, dto::SettingsPatch::DeviceEmbedding { .. }) {
+                    current.device.revision
+                } else {
+                    current.revision
+                },
                 patch,
-                expected_revision: current.revision,
             },
         )
         .await
@@ -467,9 +475,9 @@ async fn settings_missing_selection_and_blocked_enable_preserve_snapshot() {
             }
         )
         .await
-        .expect_err("undecided enable")
+        .expect_err("embedding required")
         .code,
-        ApiErrorCode::Unsupported
+        ApiErrorCode::ModelRequired
     );
     assert_eq!(settings_get(&h.context).await.expect("settings"), before);
     assert!(h.events.events().is_empty());
@@ -546,4 +554,243 @@ async fn settings_sampler_preset_names_keep_legacy_trim_and_unicode_length() {
         after.global.ui_preferences["llamaSamplerPresets"][0]["id"],
         "id"
     );
+}
+
+#[tokio::test]
+async fn group_memory_enable_requires_embedding_without_writes() {
+    let h = harness(Reply::Text("Hello."));
+    let before = settings_get(&h.context).await.expect("settings");
+    let mut value = before.global.dynamic_memory.clone();
+    value.enabled = true;
+    let error = settings_update(
+        &h.context,
+        dto::SettingsUpdateRequest {
+            expected_revision: before.revision,
+            patch: dto::SettingsPatch::GroupDynamicMemory { value: Some(value) },
+        },
+    )
+    .await
+    .expect_err("embedding required");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert_eq!(
+        error.details,
+        Some(dto::ApiErrorDetails::Model {
+            model: dto::RequiredModel::Embedding
+        })
+    );
+    assert_eq!(settings_get(&h.context).await.expect("unchanged"), before);
+}
+
+#[tokio::test]
+async fn sync_settings_commit_emits_and_refreshes_shared_filter() {
+    use lettuce_settings::GlobalSettingsStore;
+    let h = harness(Reply::Text("Hello."));
+    let worker = tokio::spawn(super::content_filter::run_events(
+        h.context.clone(),
+        std::future::pending(),
+    ));
+    use lettuce_sync::{IncomingChangeRepository, LocalChangeJournal};
+    let database = h.context.backend().database();
+    let source = lettuce_database::Database::open_in_memory().expect("peer");
+    let mut stored = source.load().expect("settings");
+    stored.settings.pure_mode = lettuce_settings::PureMode::Off;
+    source
+        .save(
+            stored.settings,
+            stored.default_model_profile_id,
+            stored.revision,
+        )
+        .expect("peer commit");
+    source
+        .journal_current_state(h.context.now())
+        .expect("source journal");
+    database
+        .journal_current_state(h.context.now())
+        .expect("target journal");
+    let batch = source
+        .outbound_changes(
+            &database.local_frontier().expect("frontier"),
+            lettuce_sync::MAX_OUTBOUND_CHANGES,
+            lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+        )
+        .expect("batch");
+    let id = lettuce_types::OperationId::new();
+    database
+        .stage_incoming_batch(
+            lettuce_sync::SyncDeviceId::new(),
+            id,
+            &lettuce_sync::canonical_batch_hash(&batch.changes),
+            &batch.changes,
+            h.context.now(),
+        )
+        .expect("stage");
+    assert_eq!(
+        database
+            .apply_incoming_batch(id, h.context.now())
+            .expect("apply")
+            .state,
+        lettuce_sync::IncomingBatchState::Committed
+    );
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        h.events.until(|events| {
+            events
+                .iter()
+                .any(|event| matches!(event, ApiEvent::SettingsChanged { .. }))
+        }),
+    )
+    .await
+    .expect("commit event");
+    assert_eq!(
+        h.filter_runtime.content_filter().level(),
+        lettuce_inference::content_filter::PureModeLevel::Off
+    );
+    assert!(std::sync::Arc::ptr_eq(
+        h.context.content_filter(),
+        &h.filter_runtime.content_filter()
+    ));
+    worker.abort();
+}
+
+#[tokio::test]
+async fn hit_burst_emits_without_a_coalescing_timer() {
+    let h = harness(Reply::Text("Hello."));
+    h.context
+        .content_filter()
+        .apply_settings(
+            0,
+            true,
+            lettuce_inference::content_filter::PureModeLevel::Standard,
+        )
+        .expect("enable");
+    for index in 0..10 {
+        h.filter_runtime
+            .content_filter()
+            .check_text("decapitate and disembowel", index);
+    }
+    let worker = tokio::spawn(super::content_filter::run_events(
+        h.context.clone(),
+        std::future::pending(),
+    ));
+    tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        h.events.until(|events| {
+            events
+                .iter()
+                .any(|event| matches!(event, ApiEvent::ContentFilterHit))
+        }),
+    )
+    .await
+    .expect("no timer");
+    worker.abort();
+}
+
+#[test]
+fn committed_result_survives_filter_refresh_failure() {
+    let result =
+        super::settings::finish_committed(42, || Err(super::content_filter::filter_error()));
+    assert_eq!(result, 42);
+}
+
+struct InstalledEmbedding;
+
+#[async_trait::async_trait]
+impl super::ModelLoader for InstalledEmbedding {
+    fn installed(&self, _: &super::ApiContext, model: dto::RequiredModel) -> bool {
+        model == dto::RequiredModel::Embedding
+    }
+    async fn prepare(&self, _: &super::ApiContext) -> bool {
+        panic!("enable must not load models")
+    }
+    fn embedding(
+        &self,
+        _: &super::ApiContext,
+    ) -> super::ModelLoad<std::sync::Arc<dyn crate::MemoryEmbeddingEngine>> {
+        panic!("enable must not load models")
+    }
+    fn emotion(
+        &self,
+        _: &super::ApiContext,
+    ) -> super::ModelLoad<std::sync::Arc<dyn crate::CompanionEmotionEngine>> {
+        panic!("enable must not load models")
+    }
+}
+
+#[tokio::test]
+async fn memory_enable_seeds_the_default_once_and_group_enable_succeeds() {
+    let h = super::tests::harness_in(
+        Reply::Text("Hello."),
+        std::sync::Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        std::sync::Arc::new(InstalledEmbedding),
+    );
+    let before = settings_get(&h.context).await.expect("settings");
+    let mut value = before.global.dynamic_memory.clone();
+    value.enabled = true;
+    let after = settings_update(
+        &h.context,
+        dto::SettingsUpdateRequest {
+            expected_revision: before.revision,
+            patch: dto::SettingsPatch::DynamicMemory {
+                value: value.clone(),
+            },
+        },
+    )
+    .await
+    .expect("enable");
+    assert_eq!(after.revision, before.revision + 1);
+    assert_eq!(
+        after.dynamic_memory_model_profile_id,
+        before.default_model_profile_id
+    );
+    let after_group = settings_update(
+        &h.context,
+        dto::SettingsUpdateRequest {
+            expected_revision: after.revision,
+            patch: dto::SettingsPatch::GroupDynamicMemory { value: Some(value) },
+        },
+    )
+    .await
+    .expect("group enable");
+    assert_eq!(
+        after_group.dynamic_memory_model_profile_id,
+        after.dynamic_memory_model_profile_id
+    );
+    assert!(
+        after_group
+            .global
+            .group_dynamic_memory
+            .expect("group")
+            .enabled
+    );
+}
+
+#[tokio::test]
+async fn inheriting_enabled_group_memory_requires_embedding() {
+    use lettuce_settings::GlobalSettingsStore;
+    let h = harness(Reply::Text("Hello."));
+    let database = h.context.backend().database();
+    let mut stored = database.load().expect("settings");
+    stored.settings.dynamic_memory.enabled = true;
+    stored.settings.group_dynamic_memory = Some(lettuce_settings::DynamicMemorySettings::default());
+    database
+        .save(
+            stored.settings,
+            stored.default_model_profile_id,
+            stored.revision,
+        )
+        .expect("existing policy");
+    let before = settings_get(&h.context).await.expect("settings");
+    let error = settings_update(
+        &h.context,
+        dto::SettingsUpdateRequest {
+            expected_revision: before.revision,
+            patch: dto::SettingsPatch::GroupDynamicMemory { value: None },
+        },
+    )
+    .await
+    .expect_err("inherited enable needs embedding");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert_eq!(settings_get(&h.context).await.expect("unchanged"), before);
 }

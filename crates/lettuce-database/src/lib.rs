@@ -3019,6 +3019,25 @@ mod tests {
         assert_eq!(GlobalSettingsStore::load(&b).expect("b"), saved);
     }
 
+
+    #[test]
+    fn device_embedding_keeps_sync_hash_and_seed_identity() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let before = crate::sync_load_app_settings(&b.connection().expect("connection")).expect("snapshot");
+        let before_bytes = serde_json::to_vec(&before).expect("bytes");
+        let (_, _, _, revision) = b.settings_snapshot().expect("settings");
+        b.save_device_embedding(lettuce_settings::DeviceEmbeddingSettings { max_tokens: Some(1024), ..Default::default() }, revision).expect("device edit");
+        let after = crate::sync_load_app_settings(&b.connection().expect("connection")).expect("snapshot");
+        assert_eq!(blake3::hash(&before_bytes), blake3::hash(&serde_json::to_vec(&after).expect("bytes")));
+        let stored = GlobalSettingsStore::load(&a).expect("settings");
+        let mut changed = stored.settings;
+        changed.manual_mode_context_window = 77;
+        let saved = GlobalSettingsStore::save(&a, changed, None, stored.revision).expect("peer edit");
+        sync_to(&a, &b, 100);
+        assert_eq!(GlobalSettingsStore::load(&b).expect("b"), saved);
+    }
+
     #[test]
     fn app_settings_converge_through_state_sync() {
         let a = Database::open_in_memory().expect("a");

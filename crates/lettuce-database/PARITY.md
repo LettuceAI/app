@@ -172,3 +172,5 @@ Fresh app sampler defaults seed 2048 output tokens, matching `old-code/src-tauri
 The section command's document, selected models/prompts, sampler layer and optional device embedding fields commit together under the settings revision. This replaces blind settings-column overwrites (`old-code/src-tauri/src/storage_manager/settings.rs:800-837`) and preserves current device fields when embedding choices change. Missing selected models and invalid prompt references are refused before writing. A trigger-aborted global write after the device update rolls back both records.
 
 Developer logging uses the database commit generation rather than the settings revision, since applying a sync winner may lower a document revision. Settings commits wake the filter host; no timer queries settings.
+
+Device-only settings updates leave the synced app payload, revision and timestamps untouched. Each device edit uses its record revision; rollback and stale retry tests cover atomicity. The settings commit feed includes global, device and UI-state rows, with transaction-local section labels and no rollback notifications.

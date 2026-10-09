@@ -2,9 +2,14 @@ use crate::Database;
 use lettuce_models::ModelSettingsLayer;
 use lettuce_settings::{DeviceSettings, GlobalSettingsStoreError, StoredGlobalSettings};
 use lettuce_types::TimestampMillis;
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
-type Snapshot = (StoredGlobalSettings, ModelSettingsLayer, DeviceSettings);
+type Snapshot = (
+    StoredGlobalSettings,
+    ModelSettingsLayer,
+    DeviceSettings,
+    lettuce_types::Revision,
+);
 
 fn snapshot(connection: &Connection) -> Result<Snapshot, GlobalSettingsStoreError> {
     let app = crate::sync_load_app_settings(connection).map_err(|error| match error {
@@ -27,22 +32,81 @@ fn snapshot(connection: &Connection) -> Result<Snapshot, GlobalSettingsStoreErro
         },
         app.model_settings,
         crate::read_device_settings(connection)?,
+        connection
+            .query_row(
+                "SELECT revision FROM device_settings WHERE id=1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map(crate::to_revision)
+            .transpose()
+            .map_err(|_| GlobalSettingsStoreError::InvalidData)?
+            .unwrap_or(lettuce_types::Revision::INITIAL),
     ))
+}
+
+fn filter_state_ordered(
+    generation: impl FnOnce() -> u64,
+    snapshot: impl FnOnce() -> Result<(bool, lettuce_settings::PureMode), GlobalSettingsStoreError>,
+) -> Result<(u64, bool, lettuce_settings::PureMode), GlobalSettingsStoreError> {
+    let generation = generation();
+    let (enabled, mode) = snapshot()?;
+    Ok((generation, enabled, mode))
 }
 
 impl Database {
     pub fn settings_filter_state(
         &self,
     ) -> Result<(u64, bool, lettuce_settings::PureMode), GlobalSettingsStoreError> {
-        let connection = self
+        let mut connection = self
             .connection()
             .map_err(|_| GlobalSettingsStoreError::Storage)?;
-        let (stored, _, _) = snapshot(&connection)?;
-        Ok((
-            self.changes.settings_generation(),
-            stored.settings.developer_mode_enabled,
-            stored.settings.pure_mode,
-        ))
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let result = filter_state_ordered(
+            || self.changes.settings_generation(),
+            || {
+                let (stored, _, _, _) = snapshot(&transaction)?;
+                Ok((
+                    stored.settings.developer_mode_enabled,
+                    stored.settings.pure_mode,
+                ))
+            },
+        )?;
+        transaction
+            .commit()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        Ok(result)
+    }
+
+    pub fn save_device_embedding(
+        &self,
+        embedding: lettuce_settings::DeviceEmbeddingSettings,
+        expected: lettuce_types::Revision,
+    ) -> Result<Snapshot, GlobalSettingsStoreError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let (_, _, mut device, revision) = snapshot(&transaction)?;
+        if revision != expected {
+            return Err(GlobalSettingsStoreError::StaleRevision);
+        }
+        device.embedding = embedding;
+        device.validate()?;
+        self.changes.settings_section("device_embedding");
+        crate::replace_device_settings_in(&transaction, &device)
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let result = snapshot(&transaction)?;
+        transaction
+            .commit()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        Ok(result)
     }
 
     pub fn settings_snapshot(&self) -> Result<Snapshot, GlobalSettingsStoreError> {
@@ -63,7 +127,7 @@ impl Database {
         &self,
         stored: StoredGlobalSettings,
         sampler: ModelSettingsLayer,
-        device_embedding: Option<lettuce_settings::DeviceEmbeddingSettings>,
+        section: &'static str,
         at: TimestampMillis,
     ) -> Result<Snapshot, GlobalSettingsStoreError> {
         if !stored.settings.within_bounds() || sampler.validate().is_err() {
@@ -123,13 +187,6 @@ impl Database {
                 return Err(GlobalSettingsStoreError::InvalidData);
             }
         }
-        if let Some(embedding) = device_embedding {
-            let mut device = crate::read_device_settings(&transaction)?;
-            device.embedding = embedding;
-            device.validate()?;
-            crate::replace_device_settings_in(&transaction, &device)
-                .map_err(|_| GlobalSettingsStoreError::Storage)?;
-        }
         let next = stored
             .revision
             .next()
@@ -138,6 +195,7 @@ impl Database {
             .map_err(|_| GlobalSettingsStoreError::InvalidData)?;
         let layer = crate::encode_global_model_settings(&sampler)
             .map_err(|_| GlobalSettingsStoreError::InvalidData)?;
+        self.changes.settings_section(section);
         transaction.execute("UPDATE app_settings SET payload_json=?1,model_settings_json=?2,default_model_profile_id=?3,default_prompt_document_id=?4,dynamic_memory_model_profile_id=?5,group_speaker_model_profile_id=?6,revision=?7,updated_at=?8 WHERE id=1 AND revision=?9", params![payload,layer,stored.default_model_profile_id.map(|id| id.to_string()),stored.default_prompt_document_id.map(|id| id.to_string()),stored.dynamic_memory_model_profile_id.map(|id| id.to_string()),stored.group_speaker_model_profile_id.map(|id| id.to_string()),crate::to_i64(next.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,at.get(),crate::to_i64(stored.revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?]).map_err(|error| match error {
             rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::ConstraintViolation => GlobalSettingsStoreError::InvalidData,
             _ => GlobalSettingsStoreError::Storage,
@@ -155,59 +213,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn settings_device_write_rolls_back_when_global_write_aborts() {
-        let database = Database::open_in_memory().expect("database");
-        let (stored, sampler, _) = database.settings_snapshot().expect("settings");
-        database.connection().expect("connection").execute_batch("CREATE TRIGGER fail_settings_update BEFORE UPDATE ON app_settings BEGIN SELECT RAISE(ABORT, 'injected crash'); END;").expect("trigger");
-        let result = database.save_settings_snapshot(
-            stored.clone(),
-            sampler.clone(),
-            Some(lettuce_settings::DeviceEmbeddingSettings {
-                max_tokens: Some(1024),
-                ..Default::default()
-            }),
-            TimestampMillis::new(2),
-        );
-        assert!(result.is_err());
-        let (after, after_sampler, device) = database.settings_snapshot().expect("settings");
-        assert_eq!(after, stored);
-        assert_eq!(after_sampler, sampler);
-        assert_eq!(device, DeviceSettings::default());
-    }
-    #[test]
-    fn settings_embedding_preserves_device_changes_after_snapshot_read() {
+    fn device_embedding_cas_rollback_and_retry_preserve_global_and_other_device_fields() {
         use lettuce_settings::DeviceSettingsStore;
         let database = Database::open_in_memory().expect("database");
-        let (stored, sampler, _) = database.settings_snapshot().expect("snapshot");
+        let before = database.settings_snapshot().expect("snapshot");
+        let embedding = lettuce_settings::DeviceEmbeddingSettings {
+            max_tokens: Some(1024),
+            ..Default::default()
+        };
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER fail_settings_update BEFORE INSERT ON device_settings BEGIN SELECT RAISE(ABORT, 'injected crash'); END;").expect("trigger");
+        assert!(database.save_device_embedding(embedding, before.3).is_err());
+        assert_eq!(database.settings_snapshot().expect("unchanged"), before);
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER fail_settings_update;")
+            .expect("remove fault");
         database
             .update_device_settings(&|device| {
-                device.llm_models_dir = Some("/tmp/settings-models".to_owned());
-                device
-                    .trusted_certificates
-                    .push(lettuce_settings::TrustedCertificate {
-                        id: uuid::Uuid::new_v4(),
-                        name: "root.pem".to_owned(),
-                        pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"
-                            .to_owned(),
-                        imported_at: 1,
-                    });
+                device.llm_models_dir = Some("/tmp/settings-models".into())
             })
-            .expect("concurrent device change");
-        let before = database.load_device_settings().expect("device");
-        let (_, _, after) = database
-            .save_settings_snapshot(
-                stored,
-                sampler,
-                Some(lettuce_settings::DeviceEmbeddingSettings {
-                    max_tokens: Some(1024),
-                    ..Default::default()
-                }),
-                TimestampMillis::new(2),
-            )
-            .expect("settings update");
-        assert_eq!(after.llm_models_dir, before.llm_models_dir);
-        assert_eq!(after.trusted_certificates, before.trusted_certificates);
-        assert_eq!(after.embedding.max_tokens, Some(1024));
+            .expect("concurrent edit");
+        assert_eq!(
+            database.save_device_embedding(embedding, before.3),
+            Err(GlobalSettingsStoreError::StaleRevision)
+        );
+        let current = database.settings_snapshot().expect("snapshot");
+        let after = database
+            .save_device_embedding(embedding, current.3)
+            .expect("retry");
+        assert_eq!(after.0, before.0);
+        assert_eq!(after.1, before.1);
+        assert_eq!(after.2.llm_models_dir, current.2.llm_models_dir);
+        assert_eq!(after.2.embedding, embedding);
+        assert_eq!(
+            database.save_device_embedding(embedding, current.3),
+            Err(GlobalSettingsStoreError::StaleRevision)
+        );
     }
     #[test]
     fn logging_generation_follows_commits_even_when_sync_lowers_revision() {
@@ -248,5 +290,40 @@ mod tests {
         assert!(!disabled.1);
         assert!(disabled.0 > enabled.0);
         assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+    #[test]
+    fn filter_generation_is_captured_before_the_snapshot_interleaving() {
+        let generation = std::cell::Cell::new(1);
+        let state = filter_state_ordered(
+            || generation.get(),
+            || {
+                generation.set(2);
+                Ok((false, lettuce_settings::PureMode::Standard))
+            },
+        )
+        .expect("snapshot");
+        assert_eq!(state.0, 1);
+    }
+
+    #[test]
+    fn settings_section_feed_has_no_rollback_event() {
+        let database = Database::open_in_memory().expect("database");
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let signal = seen.clone();
+        database.on_settings_section_change(move |section| {
+            signal.lock().expect("events").push(section)
+        });
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("BEGIN; UPDATE app_settings SET revision=revision+1; ROLLBACK;")
+            .expect("rollback");
+        assert!(seen.lock().expect("events").is_empty());
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("UPDATE app_settings SET revision=revision+1;")
+            .expect("commit");
+        assert_eq!(*seen.lock().expect("events"), vec!["general"]);
     }
 }

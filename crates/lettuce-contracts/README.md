@@ -90,3 +90,5 @@ Settings commands use closed section variants rather than JSON patches. Settings
 ContentFilterLogView contains redacted hit records with the level, score, terms and timestamp. ContentFilterHit announces a coalesced change through the application event channel. Settings error details distinguish revision conflicts, invalid stored data, missing model references, storage failure and the developer-mode gate.
 
 Settings command inputs retain deserialization failures until the API maps them to InvalidInput with field details, so unknown keys and invalid enum choices use the same typed error channel as range validation. Their exported TypeScript shape stays the closed request DTO.
+
+SettingsDeviceView.revision is the CAS token for DeviceEmbedding patches. Global section patches and sampler defaults use SettingsView.revision; the device revision never changes the synced app-settings identity.

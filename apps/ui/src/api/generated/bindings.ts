@@ -4770,6 +4770,7 @@ export type SettingsCreationHelperSettings = {
 export type SettingsCreationHelperToolFallback = "native" | "json" | "xml";
 
 export type SettingsDeviceView = {
+	revision: number,
 	embedding_model_version: SettingsEmbeddingVersion | null,
 	embedding_max_tokens: number | null,
 	embedding_keep_model_loaded: boolean,

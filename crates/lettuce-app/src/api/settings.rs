@@ -8,7 +8,32 @@ use lettuce_models::ModelSettingsLayer;
 use lettuce_settings::{DeviceSettings, StoredGlobalSettings};
 use serde::{Serialize, de::DeserializeOwned};
 
-type Snapshot = (StoredGlobalSettings, ModelSettingsLayer, DeviceSettings);
+type Snapshot = (
+    StoredGlobalSettings,
+    ModelSettingsLayer,
+    DeviceSettings,
+    lettuce_types::Revision,
+);
+
+fn require_embedding(context: &ApiContext) -> Result<(), ApiError> {
+    if !context
+        .models()
+        .installed(context, dto::RequiredModel::Embedding)
+    {
+        return Err(super::error::model_error(
+            ApiErrorCode::ModelRequired,
+            dto::RequiredModel::Embedding,
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn finish_committed<T>(result: T, refresh: impl FnOnce() -> Result<(), ApiError>) -> T {
+    if let Err(error) = refresh() {
+        tracing::error!(?error, "committed settings refresh failed");
+    }
+    result
+}
 
 fn convert<S: Serialize, T: DeserializeOwned>(value: S, field: &str) -> Result<T, ApiError> {
     serde_json::to_value(value)
@@ -19,7 +44,9 @@ fn convert<S: Serialize, T: DeserializeOwned>(value: S, field: &str) -> Result<T
         })
 }
 
-fn view((stored, sampler, device): Snapshot) -> Result<dto::SettingsView, ApiError> {
+fn view(
+    (stored, sampler, device, device_revision): Snapshot,
+) -> Result<dto::SettingsView, ApiError> {
     let mut global = serde_json::to_value(&stored.settings)
         .map_err(|_| api_error(ApiErrorCode::Internal, "settings serialization failed"))?;
     global
@@ -31,6 +58,7 @@ fn view((stored, sampler, device): Snapshot) -> Result<dto::SettingsView, ApiErr
         global: convert(global, "global")?,
         sampler_defaults: convert(sampler, "sampler_defaults")?,
         device: dto::SettingsDeviceView {
+            revision: device_revision.get(),
             embedding_model_version: device.embedding.model_version.map(|version| match version {
                 lettuce_settings::EmbeddingModelVersion::V3 => dto::SettingsEmbeddingVersion::V3,
                 lettuce_settings::EmbeddingModelVersion::V4 => dto::SettingsEmbeddingVersion::V4,
@@ -42,7 +70,7 @@ fn view((stored, sampler, device): Snapshot) -> Result<dto::SettingsView, ApiErr
             dictation_model_id: device.speech.dictation_model_id,
             trusted_certificates: super::providers::certificate_view(
                 device.trusted_certificates,
-                stored.revision,
+                device_revision,
             )
             .certificates,
         },
@@ -113,6 +141,7 @@ fn validate_memory(value: &lettuce_settings::DynamicMemorySettings) -> Result<()
 }
 
 fn apply(
+    context: &ApiContext,
     stored: &mut StoredGlobalSettings,
     patch: dto::SettingsPatch,
     device_embedding: &mut Option<lettuce_settings::DeviceEmbeddingSettings>,
@@ -167,10 +196,10 @@ fn apply(
             let value: lettuce_settings::DynamicMemorySettings = convert(value, "dynamic_memory")?;
             validate_memory(&value)?;
             if value.enabled && !settings.dynamic_memory.enabled {
-                return Err(api_error(
-                    ApiErrorCode::Unsupported,
-                    "dynamic memory enable behavior awaits slice 7 Q16 clarification",
-                ));
+                require_embedding(context)?;
+                if stored.dynamic_memory_model_profile_id.is_none() {
+                    stored.dynamic_memory_model_profile_id = stored.default_model_profile_id;
+                }
             }
             settings.dynamic_memory = value;
             "dynamic_memory"
@@ -180,6 +209,15 @@ fn apply(
                 convert(value, "group_dynamic_memory")?;
             if let Some(value) = &value {
                 validate_memory(value)?;
+            }
+            if value.as_ref().unwrap_or(&settings.dynamic_memory).enabled
+                && !settings
+                    .group_dynamic_memory
+                    .as_ref()
+                    .unwrap_or(&settings.dynamic_memory)
+                    .enabled
+            {
+                require_embedding(context)?;
             }
             settings.group_dynamic_memory = value;
             "group_dynamic_memory"
@@ -346,24 +384,32 @@ pub async fn settings_update(
     context
         .blocking(move |context| {
             let database = context.backend().database();
-            let (mut stored, sampler, _) = database.settings_snapshot().map_err(settings_error)?;
-            if stored.revision.get() != request.expected_revision {
+            let (mut stored, sampler, _, device_revision) =
+                database.settings_snapshot().map_err(settings_error)?;
+            let is_device = matches!(&request.patch, dto::SettingsPatch::DeviceEmbedding { .. });
+            let expected = if is_device {
+                device_revision
+            } else {
+                stored.revision
+            };
+            if expected.get() != request.expected_revision {
                 return Err(api_error(
                     ApiErrorCode::Conflict,
                     "settings revision is stale",
                 ));
             }
             let mut device_embedding = None;
-            let section = apply(&mut stored, request.patch, &mut device_embedding)?;
-            let result = database
-                .save_settings_snapshot(stored, sampler, device_embedding, context.now())
-                .map_err(settings_error)?;
-            context.emit(dto::ApiEvent::SettingsChanged {
-                section: section.to_owned(),
-            });
-            super::content_filter::refresh_logging(context)?;
+            let section = apply(context, &mut stored, request.patch, &mut device_embedding)?;
+            let result = if let Some(embedding) = device_embedding {
+                database.save_device_embedding(embedding, device_revision)
+            } else {
+                database.save_settings_snapshot(stored, sampler, section, context.now())
+            }
+            .map_err(settings_error)?;
             let result = view(result)?;
-            Ok(result)
+            Ok(finish_committed(result, || {
+                super::content_filter::publish_settings_changes(context)
+            }))
         })
         .await
 }
@@ -384,7 +430,7 @@ pub async fn settings_sampler_defaults_update(
     context
         .blocking(move |context| {
             let database = context.backend().database();
-            let (stored, _, _) = database.settings_snapshot().map_err(settings_error)?;
+            let (stored, _, _, _) = database.settings_snapshot().map_err(settings_error)?;
             if stored.revision.get() != request.expected_revision {
                 return Err(api_error(
                     ApiErrorCode::Conflict,
@@ -393,13 +439,12 @@ pub async fn settings_sampler_defaults_update(
             }
             let result = view(
                 database
-                    .save_settings_snapshot(stored, sampler, None, context.now())
+                    .save_settings_snapshot(stored, sampler, "sampler_defaults", context.now())
                     .map_err(settings_error)?,
             )?;
-            context.emit(dto::ApiEvent::SettingsChanged {
-                section: "sampler_defaults".to_owned(),
-            });
-            Ok(result)
+            Ok(finish_committed(result, || {
+                super::content_filter::publish_settings_changes(context)
+            }))
         })
         .await
 }

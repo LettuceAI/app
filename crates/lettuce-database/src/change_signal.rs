@@ -37,7 +37,9 @@ impl ChangeFeed {
 
     fn of_table(table: &str) -> Option<Self> {
         match table {
-            "app_settings" => Some(Self::Settings),
+            "app_settings" | "device_settings" | "device_ui_state" | "model_profiles" => {
+                Some(Self::Settings)
+            }
             "job_changes" => Some(Self::Jobs),
             "model_changes" => Some(Self::Models),
             "conversation_changes" | "message_signals" | "memory_changes" => {
@@ -49,17 +51,32 @@ impl ChangeFeed {
 }
 
 type ChangeListener = Arc<dyn Fn() + Send + Sync>;
+type SettingsChangeListener = Arc<dyn Fn(&'static str) + Send + Sync>;
 
 pub(crate) struct ChangeSignal {
     pending: AtomicU8,
+    settings_section: Mutex<Option<&'static str>>,
+    settings_sections: Mutex<std::collections::BTreeSet<&'static str>>,
+    settings_listeners: Mutex<Vec<SettingsChangeListener>>,
     settings_generation: AtomicU64,
     listeners: Mutex<Vec<(ChangeFeed, ChangeListener)>>,
+}
+
+impl std::fmt::Debug for ChangeSignal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ChangeSignal")
+            .finish_non_exhaustive()
+    }
 }
 
 impl ChangeSignal {
     pub(crate) fn install(connection: &rusqlite::Connection) -> rusqlite::Result<Arc<Self>> {
         let signal = Arc::new(Self {
             pending: AtomicU8::new(0),
+            settings_section: Mutex::new(None),
+            settings_sections: Mutex::new(Default::default()),
+            settings_listeners: Mutex::new(Vec::new()),
             settings_generation: AtomicU64::new(0),
             listeners: Mutex::new(Vec::new()),
         });
@@ -68,6 +85,25 @@ impl ChangeSignal {
             move |_: rusqlite::hooks::Action, _: &str, table: &str, _: i64| {
                 if let Some(feed) = ChangeFeed::of_table(table) {
                     marked.pending.fetch_or(feed.bit(), Ordering::AcqRel);
+                    if feed == ChangeFeed::Settings {
+                        let section = marked
+                            .settings_section
+                            .lock()
+                            .expect("settings section")
+                            .as_ref()
+                            .copied()
+                            .unwrap_or(match table {
+                                "device_ui_state" => "ui_state",
+                                "device_settings" => "device",
+                                "model_profiles" => "models",
+                                _ => "general",
+                            });
+                        marked
+                            .settings_sections
+                            .lock()
+                            .expect("settings sections")
+                            .insert(section);
+                    }
                 }
             },
         ))?;
@@ -76,17 +112,47 @@ impl ChangeSignal {
             let changed = committed.pending.swap(0, Ordering::AcqRel);
             if changed & ChangeFeed::Settings.bit() != 0 {
                 committed.settings_generation.fetch_add(1, Ordering::AcqRel);
+                let sections = std::mem::take(
+                    &mut *committed
+                        .settings_sections
+                        .lock()
+                        .expect("settings sections"),
+                );
+                let listeners = committed
+                    .settings_listeners
+                    .lock()
+                    .expect("settings listeners")
+                    .clone();
+                for section in sections {
+                    for listener in &listeners {
+                        listener(section);
+                    }
+                }
             }
             if changed != 0 {
                 committed.notify(changed);
             }
+            *committed.settings_section.lock().expect("settings section") = None;
             false
         }))?;
         let rolled_back = Arc::clone(&signal);
         connection.rollback_hook(Some(move || {
             rolled_back.pending.store(0, Ordering::Release);
+            rolled_back
+                .settings_sections
+                .lock()
+                .expect("settings sections")
+                .clear();
+            *rolled_back
+                .settings_section
+                .lock()
+                .expect("settings section") = None;
         }))?;
         Ok(signal)
+    }
+
+    pub(crate) fn settings_section(&self, section: &'static str) {
+        *self.settings_section.lock().expect("settings section") = Some(section);
     }
 
     pub(crate) fn settings_generation(&self) -> u64 {
@@ -145,5 +211,18 @@ impl Database {
     pub fn on_settings_change(&self, listener: impl Fn() + Send + Sync + 'static) {
         self.changes
             .listen(ChangeFeed::Settings, Arc::new(listener));
+    }
+}
+
+impl Database {
+    pub fn on_settings_section_change(
+        &self,
+        listener: impl Fn(&'static str) + Send + Sync + 'static,
+    ) {
+        self.changes
+            .settings_listeners
+            .lock()
+            .expect("settings listeners")
+            .push(Arc::new(listener));
     }
 }

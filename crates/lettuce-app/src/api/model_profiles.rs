@@ -397,9 +397,7 @@ pub async fn model_delete(
     for group_id in groups {
         context.emit(dto::ApiEvent::GroupChanged { group_id });
     }
-    context.emit(dto::ApiEvent::SettingsChanged {
-        section: "models".into(),
-    });
+    super::content_filter::publish_pending(context).await;
     Ok(())
 }
 

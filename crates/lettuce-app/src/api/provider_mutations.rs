@@ -376,9 +376,7 @@ pub async fn provider_account_delete(
     for group_id in groups {
         context.emit(dto::ApiEvent::GroupChanged { group_id });
     }
-    context.emit(dto::ApiEvent::SettingsChanged {
-        section: "models".into(),
-    });
+    super::content_filter::publish_pending(context).await;
     cleanup_secrets(context, false).await?;
     Ok(())
 }
@@ -498,9 +496,7 @@ pub async fn certificates_import(
             Ok(view)
         })
         .await?;
-    context.emit(dto::ApiEvent::SettingsChanged {
-        section: "certificates".into(),
-    });
+    super::content_filter::publish_pending(context).await;
     Ok(result)
 }
 pub async fn certificates_remove(
@@ -520,8 +516,6 @@ pub async fn certificates_remove(
             Ok(super::providers::certificate_view(certificates, revision))
         })
         .await?;
-    context.emit(dto::ApiEvent::SettingsChanged {
-        section: "certificates".into(),
-    });
+    super::content_filter::publish_pending(context).await;
     Ok(view)
 }

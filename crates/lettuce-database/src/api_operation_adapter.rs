@@ -20,6 +20,7 @@ pub enum ApiOperationError {
 #[derive(Debug)]
 pub struct ApiOperationTransaction<'a, 'connection> {
     pub(crate) transaction: &'a Transaction<'connection>,
+    pub(crate) changes: &'a crate::change_signal::ChangeSignal,
 }
 
 fn storage(_: impl std::fmt::Debug) -> ApiOperationError {
@@ -110,6 +111,7 @@ impl Database {
             return serde_json::from_value(receipt.result).map_err(|error| invalid(error).into());
         }
         let result = apply(&ApiOperationTransaction {
+            changes: &self.changes,
             transaction: &transaction,
         })?;
         insert_in(

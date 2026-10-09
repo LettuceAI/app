@@ -303,6 +303,8 @@ pub(super) struct Harness {
     pub(super) provider: Arc<FakeProvider>,
     pub(super) events: Arc<RecordingEvents>,
     pub(super) character_id: CharacterId,
+    pub(super) filter_runtime:
+        crate::generation::provider_runtime::ProviderRuntime<lettuce_settings::InMemorySecretStore>,
 }
 
 pub(super) fn harness(reply: Reply) -> Harness {
@@ -392,27 +394,37 @@ pub(super) fn harness_over_files(
         events_router: backend.local_runtime_events().clone(),
     });
     let events = Arc::new(RecordingEvents::default());
-    let context = ApiContext::new(ApiContextParts {
-        backend,
-        secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
-        inference: provider.clone(),
-        image_provider: images,
-        models,
-        speech: Arc::new(super::NoSpeech),
-        media,
-        events: events.clone(),
-        clock,
-        files: Arc::new(StdFiles),
-        app_folder,
-        resource_dir: None,
-        database_files,
-        asset_url_base: "test-asset://host".into(),
-    });
+    let secrets = Arc::new(lettuce_settings::InMemorySecretStore::new());
+    let runtime = backend
+        .provider_runtime(secrets.clone(), &backend.tls_policy().expect("tls"))
+        .expect("provider runtime");
+    let runtime_filter = runtime.content_filter();
+    let context = ApiContext::new_with_filter(
+        ApiContextParts {
+            backend,
+            secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
+            inference: provider.clone(),
+            image_provider: images,
+            models,
+            speech: Arc::new(super::NoSpeech),
+            media,
+            events: events.clone(),
+            clock,
+            files: Arc::new(StdFiles),
+            app_folder,
+            resource_dir: None,
+            database_files,
+            asset_url_base: "test-asset://host".into(),
+        },
+        runtime_filter.clone(),
+    );
+    assert!(Arc::ptr_eq(context.content_filter(), &runtime_filter));
     Harness {
         context,
         provider,
         events,
         character_id,
+        filter_runtime: runtime,
     }
 }
 

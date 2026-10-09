@@ -88,6 +88,23 @@ pub async fn content_filter_clear(context: &ApiContext) -> Result<(), ApiError> 
         .await
 }
 
+pub(super) fn publish_settings_changes(context: &ApiContext) -> Result<(), ApiError> {
+    let sections = context.take_settings_sections();
+    let refreshed = refresh_logging(context).map(|_| ());
+    for section in sections {
+        context.emit(dto::ApiEvent::SettingsChanged {
+            section: section.to_owned(),
+        });
+    }
+    refreshed
+}
+
+pub(super) async fn publish_pending(context: &ApiContext) {
+    if let Err(error) = context.blocking(publish_settings_changes).await {
+        tracing::error!(?error, "settings change delivery failed");
+    }
+}
+
 pub(super) async fn run_events(context: ApiContext, stopped: impl Future<Output = ()>) {
     let signal = context.content_filter().hit_signal();
     let stopped = std::pin::pin!(stopped);
@@ -98,9 +115,8 @@ pub(super) async fn run_events(context: ApiContext, stopped: impl Future<Output 
             () = &mut stopped => break,
             () = context.shutdown_token().cancelled() => break,
             () = context.settings_changed() => {
-                if let Err(error) = context.blocking(refresh_logging).await {
-                    tracing::error!(?error, "filter logging settings are unavailable");
-                    context.emit(dto::ApiEvent::SettingsChanged { section: "general".to_owned() });
+                if let Err(error) = context.blocking(publish_settings_changes).await {
+                    tracing::error!(?error, "settings change delivery failed");
                 }
                 continue;
             }
@@ -108,11 +124,6 @@ pub(super) async fn run_events(context: ApiContext, stopped: impl Future<Output 
         }
         if context.content_filter().hit_revision().ok() == Some(emitted) {
             continue;
-        }
-        tokio::select! {
-            () = &mut stopped => break,
-            () = context.shutdown_token().cancelled() => break,
-            () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
         }
         if let Ok(revision) = context.content_filter().hit_revision() {
             emitted = revision;

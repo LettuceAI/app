@@ -93,6 +93,7 @@ struct ApiContextInner {
     memory_work: super::memory_worker::MemoryWorkState,
     conversations_changed: Arc<tokio::sync::Notify>,
     settings_changed: Arc<tokio::sync::Notify>,
+    settings_sections: Arc<std::sync::Mutex<Vec<&'static str>>>,
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
@@ -123,7 +124,7 @@ impl ApiContext {
         )
     }
 
-    fn new_with_filter(
+    pub(super) fn new_with_filter(
         mut parts: ApiContextParts,
         content_filter: Arc<lettuce_inference::content_filter::ContentFilter>,
     ) -> Self {
@@ -150,10 +151,15 @@ impl ApiContext {
             .on_model_change(move || signal.notify_one());
         let settings_changed = Arc::new(tokio::sync::Notify::new());
         let signal = settings_changed.clone();
+        let settings_sections = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sections = settings_sections.clone();
         parts
             .backend
             .database()
-            .on_settings_change(move || signal.notify_one());
+            .on_settings_section_change(move |section| {
+                sections.lock().expect("settings sections").push(section);
+                signal.notify_one();
+            });
         let (committed, _) = tokio::sync::watch::channel(0_u64);
         for listen in [
             lettuce_database::Database::on_job_change,
@@ -192,6 +198,7 @@ impl ApiContext {
                 memory_work: super::memory_worker::MemoryWorkState::default(),
                 conversations_changed,
                 settings_changed,
+                settings_sections,
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
@@ -655,6 +662,16 @@ impl ApiContext {
 
     pub(crate) fn media(&self) -> Option<&ApiMediaStore> {
         self.inner.parts.media.as_deref()
+    }
+
+    pub(crate) fn take_settings_sections(&self) -> Vec<&'static str> {
+        std::mem::take(
+            &mut *self
+                .inner
+                .settings_sections
+                .lock()
+                .expect("settings sections"),
+        )
     }
 
     pub(crate) async fn settings_changed(&self) {

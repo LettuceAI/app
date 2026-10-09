@@ -692,6 +692,8 @@ pub struct SettingsSamplerDefaultsUpdateRequest {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct SettingsDeviceView {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
     pub embedding_model_version: Option<SettingsEmbeddingVersion>,
     pub embedding_max_tokens: Option<u16>,
     pub embedding_keep_model_loaded: bool,
