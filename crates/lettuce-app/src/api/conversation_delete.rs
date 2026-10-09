@@ -112,7 +112,7 @@ fn purge(context: &ApiContext, conversation_id: ConversationId) -> Result<(), Pu
         .map(|_| ())
         .map_err(|error| match error {
             HardDeleteError::Purge(error) => error,
-            HardDeleteError::Media(_) => PurgeError::Storage,
+            HardDeleteError::Media(_) | HardDeleteError::DatabaseFiles(_) => PurgeError::Storage,
         }),
         _ => database
             .purge_conversation(conversation_id, context.now())

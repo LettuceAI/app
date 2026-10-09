@@ -17,6 +17,8 @@ pub enum HardDeleteError {
     Purge(#[from] PurgeError),
     #[error("media collection failed")]
     Media(MediaStoreError),
+    #[error("database file lifecycle is unavailable")]
+    DatabaseFiles(#[from] crate::AppDatabaseLocationError),
 }
 
 /// What a deletion removed: the rows, and the media files nothing else used.
@@ -26,10 +28,6 @@ pub struct HardDeletion {
     pub media: MediaObjectRemoval,
 }
 
-/// The media store, the app's database directory and the database file this
-/// process uses. Every collection lists the other database files in the
-/// directory at that moment (a database a restore kept, or one a restore is
-/// writing), and an object any of them catalogs is never deleted.
 #[derive(Debug)]
 pub struct MediaGarbageScope<'a, BR, AR> {
     pub store: &'a LocalMediaBlobStore<BR, AR>,
@@ -38,34 +36,16 @@ pub struct MediaGarbageScope<'a, BR, AR> {
 }
 
 impl<BR, AR> MediaGarbageScope<'_, BR, AR> {
-    /// The objects the other database files catalog, or `None` when one of
-    /// them cannot be read: collection then does nothing this run and the
-    /// user gets a notice naming the file.
     fn kept_by_other_databases(
         &self,
-        database: &Database,
-        now: TimestampMillis,
-    ) -> Result<Option<BTreeSet<ContentHash>>, HardDeleteError> {
-        let files = self
-            .location
-            .other_database_files(self.open_database)
-            .map_err(|_| HardDeleteError::Purge(PurgeError::Storage))?;
-        let mut kept = BTreeSet::new();
-        for path in files {
-            match Database::media_objects_in_file(&path) {
-                Ok(objects) => kept.extend(objects),
-                Err(error) => {
-                    let name = path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    tracing::warn!(%error, file = %name, "media collection skipped: a database file cannot be read");
-                    database.record_media_collection_skipped(&name, now)?;
-                    return Ok(None);
-                }
-            }
+    ) -> Result<(crate::DatabaseFileLifecycle, BTreeSet<ContentHash>), HardDeleteError> {
+        let lifecycle = self.location.acquire_file_lifecycle(true)?;
+        let mut kept = lifecycle.kept_media_hashes()?;
+        let active = self.location.active_path()?;
+        if active != self.open_database {
+            kept.extend(Database::media_objects_in_file(&active)?);
         }
-        Ok(Some(kept))
+        Ok((lifecycle, kept))
     }
 }
 
@@ -85,7 +65,7 @@ where
     let receipt = database.purge_conversation(id, now)?;
     Ok(HardDeletion {
         receipt,
-        media: collect_after_purge(database, media, now),
+        media: collect_media_garbage(database, media, now)?,
     })
 }
 
@@ -104,26 +84,8 @@ where
     let receipt = database.purge_character(id, now)?;
     Ok(HardDeletion {
         receipt,
-        media: collect_after_purge(database, media, now),
+        media: collect_media_garbage(database, media, now)?,
     })
-}
-
-fn collect_after_purge<BR, AR>(
-    database: &Database,
-    media: &MediaGarbageScope<'_, BR, AR>,
-    now: TimestampMillis,
-) -> MediaObjectRemoval
-where
-    BR: MediaBlobRepository,
-    AR: MediaAssetRepository,
-{
-    match collect_media_garbage(database, media, now) {
-        Ok(removal) => removal,
-        Err(error) => {
-            tracing::warn!(%error, "media left unused by a deletion stays queued");
-            MediaObjectRemoval::default()
-        }
-    }
 }
 
 /// Runs the deletes received through sync, then collects the media every
@@ -140,9 +102,7 @@ where
     AR: MediaAssetRepository,
 {
     database.run_queued_purges(now)?;
-    let Some(kept) = media.kept_by_other_databases(database, now)? else {
-        return Ok(MediaObjectRemoval::default());
-    };
+    let (_lifecycle, kept) = media.kept_by_other_databases()?;
     let mut purge_error = None;
     let removal = media
         .store
@@ -180,15 +140,13 @@ where
 pub fn sweep_orphan_media_files<BR, AR>(
     database: &Database,
     media: &MediaGarbageScope<'_, BR, AR>,
-    now: TimestampMillis,
+    _now: TimestampMillis,
 ) -> Result<MediaObjectRemoval, HardDeleteError>
 where
     BR: MediaBlobRepository,
     AR: MediaAssetRepository,
 {
-    let Some(kept) = media.kept_by_other_databases(database, now)? else {
-        return Ok(MediaObjectRemoval::default());
-    };
+    let (_lifecycle, kept) = media.kept_by_other_databases()?;
     let mut purge_error = None;
     media
         .store

@@ -253,6 +253,8 @@ fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
+    #[error("database file is unavailable")]
+    File(#[from] std::io::Error),
     #[error("database operation failed")]
     Sql(#[from] rusqlite::Error),
     #[error("database lock is unavailable")]
@@ -265,6 +267,9 @@ pub enum DatabaseError {
     NewerSchema { id: u32 },
 }
 
+mod database_file;
+pub use database_file::DatabaseFileDeletionPermit;
+
 pub struct Database {
     connection: Mutex<Connection>,
     changes: std::sync::Arc<change_signal::ChangeSignal>,
@@ -272,6 +277,7 @@ pub struct Database {
     /// every later use of the connection then fails.
     foreign_keys_lost: std::sync::atomic::AtomicBool,
     usage_delete_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _file_use: Option<database_file::DatabaseFileUse>,
 }
 
 impl std::fmt::Debug for Database {
@@ -282,6 +288,7 @@ impl std::fmt::Debug for Database {
 
 impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
+        let file_use = database_file::DatabaseFileUse::open(path.as_ref())?;
         let mut connection = Connection::open(path)?;
         refuse_newer_schema(&connection, MIGRATIONS)?;
         configure(&connection, true)?;
@@ -295,6 +302,7 @@ impl Database {
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
             usage_delete_allowed,
+            _file_use: Some(file_use),
         })
     }
 
@@ -312,6 +320,7 @@ impl Database {
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
             usage_delete_allowed,
+            _file_use: None,
         })
     }
 
@@ -6032,3 +6041,6 @@ mod tests {
         assert!(starting.commit().is_err());
     }
 }
+
+#[cfg(test)]
+mod database_file_tests;

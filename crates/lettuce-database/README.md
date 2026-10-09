@@ -370,3 +370,5 @@ The API metrics clear operation runs inside commit_api_operation, recording its 
 `usage_clear_before` runs inside an API operation transaction. A connection-local delete guard permits removal only during that command, while update guards and tombstone guards remain immutable. Candidate selection excludes unsettled dispatches and live generation or job owners. Costs, usage rows, exact ownership tombstones and the operation receipt commit together; rollback and process interruption preserve the original ledger. Synchronization consumes tombstoned ids before resolving references.
 
 Media GC and kept-database media discovery share the same reference and Library-retention rule. Kept discovery runs in one read transaction and returns only content hashes retained by that rule, rather than every cataloged blob.
+
+A file-backed database holds a shared operating-system lease on its file for the lifetime of its connection. The app can reserve an unused file for deletion with a nonblocking exclusive lease; a symlink or nonregular file is refused. SQLite closes before the shared lease is released. In-memory databases have no file lease.

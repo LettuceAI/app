@@ -22,9 +22,7 @@ const DATABASE_DIRECTORY: &str = "databases";
 const INITIAL_DATABASE_NAME: &str = "lettuce.sqlite3";
 pub(crate) const DATABASE_EXTENSION: &str = ".sqlite3";
 
-/// The app's database files under private persistent storage and the pointer
-/// naming the active one. Files are never deleted here: a restore adds a new
-/// database file and then moves the pointer.
+#[derive(Clone)]
 pub struct AppDatabaseLocation {
     private_persistent: PathBuf,
     files: ManagedFiles,
@@ -44,6 +42,12 @@ impl fmt::Debug for AppDatabaseLocation {
 pub enum AppDatabaseLocationError {
     #[error("database pointer is corrupt")]
     Corrupt,
+    #[error("database files are busy")]
+    Busy,
+    #[error("database file storage is unavailable")]
+    Storage,
+    #[error("database file already exists")]
+    Exists,
     #[error("database location storage failed: {0}")]
     Platform(PlatformError),
 }
@@ -94,41 +98,31 @@ impl AppDatabaseLocation {
         Ok(self.private_persistent.join(DATABASE_DIRECTORY).join(name))
     }
 
-    /// The database files in the database directory other than `open` (the
-    /// file this process uses): databases a restore kept, and one a restore
-    /// is writing. Media collection keeps every object these name.
     pub fn other_database_files(
         &self,
         open: &Path,
     ) -> Result<Vec<PathBuf>, AppDatabaseLocationError> {
-        let directory = self.private_persistent.join(DATABASE_DIRECTORY);
-        let entries = match std::fs::read_dir(&directory) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(PlatformError::from(error).into()),
-        };
-        let mut files = Vec::new();
-        for entry in entries {
-            let path = entry.map_err(PlatformError::from)?.path();
-            let is_database = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(DATABASE_EXTENSION));
-            if is_database && path != open {
-                files.push(path);
+        let lifecycle = self.acquire_file_lifecycle(true)?;
+        let mut paths = Vec::new();
+        for file in lifecycle.inventory(open)? {
+            let path = self.database_path(&file.file)?;
+            if path != open && lifecycle.is_complete(&file.file)? {
+                paths.push(path);
             }
         }
-        files.sort();
-        Ok(files)
+        Ok(paths)
     }
 
     pub(crate) fn activate(&self, name: &str) -> Result<(), AppDatabaseLocationError> {
         self.database_path(name)?;
-        self.files.write_atomic(
+        let receipt = self.files.write_atomic(
             &self.write,
             ObjectKey::single(ACTIVE_DATABASE_KEY)?,
             name.as_bytes(),
         )?;
+        if receipt.parent_sync == lettuce_platform::ParentSyncStatus::Failed {
+            return Err(AppDatabaseLocationError::Storage);
+        }
         Ok(())
     }
 }
@@ -238,6 +232,7 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
             &staging,
             restored_at,
         )?;
+        let lifecycle = self.location.file_lifecycle().await?;
         let previous_database_path = self.location.active_path()?;
         let name = format!("{restore_id}{DATABASE_EXTENSION}");
         let database_path = self.location.database_path(&name)?;
@@ -253,6 +248,7 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 .ok_or(BackupRestoreError::TargetDirectory)?,
         )
         .map_err(|_| BackupRestoreError::TargetDirectory)?;
+        lifecycle.begin_file(&name, DatabaseFileKind::Restore, restored_at)?;
         let ((), _media_pin) = lettuce_media::pin_media_objects(|| {
             Ok::<_, std::convert::Infallible>((
                 (),
@@ -296,16 +292,22 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
             )
             .await
             .and_then(|admission| {
-                self.location
-                    .activate(&name)
+                lifecycle
+                    .activate_file(&name, restored_at)
                     .map(|()| admission)
                     .map_err(BackupRestoreError::from)
             });
         let admission = match outcome {
             Ok(admission) => admission,
             Err(error) => {
-                for (reference, purpose) in written {
-                    let _ = self.secrets.delete(&reference, &purpose, None).await;
+                if self
+                    .location
+                    .active_path()
+                    .is_ok_and(|active| active != database_path)
+                {
+                    for (reference, purpose) in written {
+                        let _ = self.secrets.delete(&reference, &purpose, None).await;
+                    }
                 }
                 return Err(error);
             }
@@ -434,3 +436,11 @@ pub(crate) fn assert_backup_round_trip(database: &Database) -> ProviderBackupGra
     assert_eq!(round_trip, graph);
     graph
 }
+
+#[cfg(test)]
+#[path = "database_files_tests.rs"]
+mod database_files_tests;
+
+#[path = "database_files.rs"]
+mod database_files;
+pub use database_files::{AppDatabaseFile, DatabaseFileKind, DatabaseFileLifecycle};

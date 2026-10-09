@@ -8560,12 +8560,24 @@ fn hard_delete_path(root: &std::path::Path, name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
-fn hard_delete_location(root: &std::path::Path) -> crate::AppDatabaseLocation {
+fn hard_delete_location(
+    root: &std::path::Path,
+    active: &std::path::Path,
+) -> crate::AppDatabaseLocation {
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority};
     let snapshot = DirectorySnapshot::new(root).expect("directory snapshot");
     let authority = FilesystemAuthority::new(&snapshot).expect("filesystem authority");
-    crate::AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
-        .expect("database location")
+    let location = crate::AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+        .expect("database location");
+    location
+        .activate(
+            active
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("database name"),
+        )
+        .expect("active pointer");
+    location
 }
 
 fn hard_delete_media(
@@ -8705,7 +8717,7 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     let a = Database::open(&path).expect("a");
     let b = database();
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -8765,7 +8777,7 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     let path = hard_delete_path(&root, "app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -8856,7 +8868,7 @@ async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
     let path = hard_delete_path(&root, "app.sqlite3");
     let database = Database::open(&path).expect("database");
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -8943,7 +8955,7 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     let path = hard_delete_path(&root, "app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -9085,8 +9097,6 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// A restore keeps the previous database file; media that file catalogs survive
-/// collection and sweeps of the new one.
 #[tokio::test]
 async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     let root = hard_delete_root("hard-delete-kept-database");
@@ -9098,7 +9108,15 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     let kept_media = hard_delete_media(&kept_path, &root);
     let (scenario, reply) = generated_direct_chat(&database, "hard-delete-kept").await;
     let image = chat_image(&media, b"shared with the kept database");
-    chat_image(&kept_media, b"shared with the kept database");
+    let kept_image = chat_image(&kept_media, b"shared with the kept database");
+    let (kept_chat, kept_reply) = generated_direct_chat(&kept, "kept-owner").await;
+    attach_image(
+        &kept,
+        kept_chat.conversation_id,
+        kept_reply,
+        kept_image.asset.id,
+        2_000,
+    );
     attach_image(
         &database,
         scenario.conversation_id,
@@ -9107,7 +9125,7 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
         2_000,
     );
     drop(kept);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -9137,18 +9155,13 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
 
     let broken = hard_delete_path(&root, "broken.sqlite3");
     std::fs::write(&broken, b"not a database").expect("broken file");
-    assert_eq!(
-        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_200))
-            .expect("skipped sweep"),
-        lettuce_media::MediaObjectRemoval::default()
-    );
-    let notices = database.purge_notices().expect("notices");
-    assert_eq!(notices.len(), 1);
-    assert_eq!(notices[0].entity_id, "broken.sqlite3");
-    assert_eq!(
-        notices[0].reason,
-        lettuce_database::PurgeNoticeReason::MediaCollectionSkipped
-    );
+    assert!(matches!(
+        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_200)),
+        Err(crate::HardDeleteError::DatabaseFiles(
+            crate::AppDatabaseLocationError::Storage
+        ))
+    ));
+    assert!(media_object(&root, &image.blob.content_hash).exists());
     std::fs::remove_file(&broken).expect("remove broken file");
 
     drop(kept_media);

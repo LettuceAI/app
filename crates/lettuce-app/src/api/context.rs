@@ -254,6 +254,9 @@ impl ApiContext {
         let location =
             AppDatabaseLocation::new(app_data_dir.join(PRIVATE_PERSISTENT_DIRECTORY), &authority)
                 .map_err(|error| storage_error("database location", error))?;
+        let _file_lifecycle = location
+            .acquire_file_lifecycle(true)
+            .map_err(|error| storage_error("database lifecycle", error))?;
         let path = location
             .active_path()
             .map_err(|error| storage_error("database location", error))?;
