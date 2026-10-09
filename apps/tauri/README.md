@@ -100,3 +100,5 @@ Provider control wrappers forward catalog, account listing, saved-or-draft verif
 Provider control commands forward account save/delete, model listing/verification and certificate import/remove to lettuce-app. The shell transports FileSource locations and metadata views; it never receives secret values in results.
 
 Model profile and NanoGPT usage commands forward the catalog, profile reads, revisioned save/delete/duplicate/default requests and usage reads to the composition root. Duplicate names are supplied by the UI; the shell builds no localized text. ModelsChanged and ProviderQuota use the shared application event channel and generated contracts.
+
+The settings wrappers expose settings_get, settings_update, settings_sampler_defaults_update, content_filter_log and content_filter_clear. Their requests and results are owned contract types; the shell performs no settings merging or filter work. SettingsChanged and ContentFilterHit travel through the shared application event channel.

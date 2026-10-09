@@ -410,9 +410,10 @@ fn start_workers(
     let changes_context = context.clone();
     let changes = worker_thread("conversation-changes", stopped, move |stopped| {
         Box::pin(async move {
-            conversation_feed
-                .run(changes_context, until_stopped(stopped))
-                .await;
+            tokio::join!(
+                conversation_feed.run(changes_context.clone(), until_stopped(stopped.clone())),
+                super::content_filter::run_events(changes_context, until_stopped(stopped)),
+            );
         })
     })?;
     Ok(vec![conversation, memory, jobs, changes])

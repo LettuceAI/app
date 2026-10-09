@@ -188,24 +188,35 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
 #[async_trait]
 impl<S: SecretStore + ?Sized> InferencePort for ProviderRuntime<S> {
     async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        let state = self.database.settings_filter_state();
+        let level = pure_mode_settings(state.clone().map(|(_, _, mode)| mode))?;
+        let (generation, enabled, _) = state.map_err(|_| PortError::Unavailable)?;
         self.pure_mode
             .filter()
-            .set_level(pure_mode_level(self.database.as_ref()));
+            .apply_settings(generation, enabled, level)
+            .map_err(|_| PortError::Unavailable)?;
         let sink = request.stream_sink;
         let result = self.remote.run(request).await;
         self.pure_mode.settle(sink, result)
     }
 }
 
-/// The saved Pure mode level; Standard when settings cannot be read.
-fn pure_mode_level(database: &Database) -> PureModeLevel {
-    match lettuce_settings::GlobalSettingsStore::load(database)
-        .map(|stored| stored.settings.pure_mode)
-    {
-        Ok(lettuce_settings::PureMode::Off) => PureModeLevel::Off,
-        Ok(lettuce_settings::PureMode::Low) => PureModeLevel::Low,
-        Ok(lettuce_settings::PureMode::Strict) => PureModeLevel::Strict,
-        Ok(lettuce_settings::PureMode::Standard) | Err(_) => PureModeLevel::Standard,
+fn pure_mode_settings(
+    stored: Result<lettuce_settings::PureMode, lettuce_settings::GlobalSettingsStoreError>,
+) -> Result<PureModeLevel, PortError> {
+    let stored = stored.map_err(|error| match error {
+        lettuce_settings::GlobalSettingsStoreError::InvalidData => PortError::Rejected,
+        _ => PortError::Unavailable,
+    })?;
+    Ok(pure_mode_level(stored))
+}
+
+pub(crate) fn pure_mode_level(mode: lettuce_settings::PureMode) -> PureModeLevel {
+    match mode {
+        lettuce_settings::PureMode::Off => PureModeLevel::Off,
+        lettuce_settings::PureMode::Low => PureModeLevel::Low,
+        lettuce_settings::PureMode::Strict => PureModeLevel::Strict,
+        lettuce_settings::PureMode::Standard => PureModeLevel::Standard,
     }
 }
 
@@ -320,6 +331,18 @@ pub enum ProviderRuntimeError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn slice_7c_unreadable_pure_mode_is_typed() {
+        assert_eq!(
+            super::pure_mode_settings(Err(lettuce_settings::GlobalSettingsStoreError::Storage)),
+            Err(lettuce_conversations::PortError::Unavailable)
+        );
+        assert_eq!(
+            super::pure_mode_settings(Err(lettuce_settings::GlobalSettingsStoreError::InvalidData)),
+            Err(lettuce_conversations::PortError::Rejected)
+        );
+    }
+
     use super::*;
     use lettuce_models::{ProviderAccount, ProviderConfig};
     use lettuce_settings::{InMemorySecretStore, SecretOwnerId};

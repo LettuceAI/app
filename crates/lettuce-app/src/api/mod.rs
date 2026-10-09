@@ -4,6 +4,10 @@
 //! runs on the blocking pool.
 
 mod app;
+mod content_filter;
+mod settings;
+pub use content_filter::{content_filter_clear, content_filter_log};
+pub use settings::{settings_get, settings_sampler_defaults_update, settings_update};
 mod assets;
 mod branches;
 mod characters;
@@ -40,6 +44,8 @@ mod models;
 mod ollama;
 mod prompts;
 mod scenes;
+#[cfg(test)]
+mod settings_tests;
 mod speech;
 mod startup;
 mod turns;

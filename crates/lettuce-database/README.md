@@ -358,3 +358,7 @@ Model changes retain one increasing commit position. Quota warning records belon
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
 
 A newly seeded app settings record stores a sampler layer with 2048 output tokens. Empty layers saved explicitly remain empty, and opening an existing database preserves its layer.
+
+The settings API reads the global document, sampler layer and device document in one read transaction. Its writer validates selected references and commits the document, all four selection columns and the sampler layer under one revision CAS. Device embedding changes merge into the current device record inside that same transaction, preserving certificate and folder edits that committed before it. A failed write rolls back both documents. The fixed settings commands accept no operation key and create no job: an old revision conflicts on retry, and cancellation does not split a committed transaction.
+
+Committed app-settings writes advance an in-process generation and notify settings listeners. Logging reads pair that generation with the stored developer flag while holding the connection lock, so a sync winner that lowers the document revision still supersedes an older logging choice. Rollbacks notify nothing.

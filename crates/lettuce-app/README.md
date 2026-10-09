@@ -643,3 +643,11 @@ NanoGPT usage requests choose refresh explicitly: cached reads reuse a successfu
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
 
 Explicit cached quota reads retry failures immediately, allowing credential repairs to take effect. Background completion checks still coalesce failures for 300 seconds; a running check is shared by both paths.
+
+The settings API returns a consistent global/device/defaults view and applies one typed section under the settings revision. UI keys are typed individually and retain unrelated preferences. Sampler defaults share the same revision. Invalid values and stale revisions fail before writing; successful writes emit SettingsChanged with their section. Existing device UI state patches emit the ui_state section. Device embedding updates preserve concurrent certificate edits; folder changes remain with the existing relocation workflow.
+
+The content filter log and clear commands require developer mode and return typed gate/storage errors. The production context and provider runtime share one filter. Its worker waits for a hit notification, gathers the resulting burst for 100 milliseconds and emits ContentFilterHit once for the observed revision, skipping already consumed notifications. Shutdown interrupts the wait. The log is volatile, uncapped, redacted and cleared when logging is disabled. A request whose Pure-mode settings cannot be read fails typed before provider dispatch.
+
+Settings commit notifications also refresh developer logging after sync applies a new global document. The logging generation is local to the database process and independent of revision numbers received from another device.
+
+Pure-mode writes apply to the live filter after commit. Requests and commit notifications apply the mode and logging flag together under the latest observed commit generation, including when sync lowers a settings revision.

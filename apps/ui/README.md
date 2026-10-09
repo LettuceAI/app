@@ -61,3 +61,5 @@ Provider control errors include `in_use` for referenced records and `malformed` 
 Generated provider contracts expose stored-certificate validity with an InvalidPem reason, CertificateAlreadyImported details with the existing id, and optional redacted verification messages with MissingApiKey or InvalidApiKey reasons.
 
 Startup reads the install's locale from device UI state. When no locale is stored, it imports a readable legacy app-locale webview key, otherwise stores the default English locale. Subsequent startup uses device state. Failure to persist the device choice fails startup through the normal typed API failure path.
+
+SettingsChanged invalidates settings queries, and ContentFilterHit invalidates the filter-log key. No filter-log polling interval is installed. Locale import accepts the legacy supported locale identifiers and defaults an invalid stored key to English.

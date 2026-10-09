@@ -84,3 +84,9 @@ NanoGPT usage requests choose refresh explicitly: cached reads reuse a successfu
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
 
 Explicit cached quota reads retry failures immediately, allowing credential repairs to take effect. Background completion checks still coalesce failures for 300 seconds; a running check is shared by both paths.
+
+Settings commands use closed section variants rather than JSON patches. SettingsView returns global preferences, device configuration metadata, model defaults and the shared settings revision. UI preference changes name a known key and its typed value; a null value removes that key. The creation-helper section is readable but has no update variant. Sampler defaults carry the complete typed model settings layer.
+
+ContentFilterLogView contains redacted hit records with the level, score, terms and timestamp. ContentFilterHit announces a coalesced change through the application event channel. Settings error details distinguish revision conflicts, invalid stored data, missing model references, storage failure and the developer-mode gate.
+
+Settings command inputs retain deserialization failures until the API maps them to InvalidInput with field details, so unknown keys and invalid enum choices use the same typed error channel as range validation. Their exported TypeScript shape stays the closed request DTO.

@@ -191,3 +191,9 @@ pub struct KeyVerificationContract {
 
 mod model_profiles;
 pub use model_profiles::*;
+
+mod settings;
+pub use settings::*;
+
+mod settings_ui;
+pub use settings_ui::*;

@@ -253,13 +253,12 @@ impl Default for ImageGenerationSettings {
     }
 }
 
-/// The largest serialized [`UiPreferences`] document.
+/// The device UI-state import guard.
 pub const MAX_UI_PREFERENCES_BYTES: usize = 256 * 1024;
 
 /// Preferences only the app shell reads (theme, colors, view modes,
 /// navigation, sounds and haptics, the base chat appearance, saved sampler
-/// orders), kept as the shell's own JSON document. The backend stores, syncs
-/// and bounds it but never interprets it.
+/// orders), kept as the shell's own JSON document.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UiPreferences(pub serde_json::Map<String, serde_json::Value>);
@@ -272,7 +271,7 @@ impl UiPreferences {
 
     #[must_use]
     pub fn within_bounds(&self) -> bool {
-        serde_json::to_vec(&self.0).is_ok_and(|bytes| bytes.len() <= MAX_UI_PREFERENCES_BYTES)
+        serde_json::to_vec(&self.0).is_ok()
     }
 }
 
@@ -866,5 +865,12 @@ mod tests {
             settings.lorebook_scan_depth = depth;
             assert!(!settings.within_bounds());
         }
+    }
+    #[test]
+    fn ui_preferences_keep_large_user_preset_collections() {
+        let mut preferences = UiPreferences::default();
+        preferences.0.insert("llamaSamplerPresets".to_owned(), serde_json::json!((0..5000).map(|index| serde_json::json!({"id":index.to_string(),"name":"Saved sampler","stages":["penalties","dry","top_k","top_p","min_p","temp"]})).collect::<Vec<_>>()));
+        assert!(preferences.within_bounds());
+        assert!(serde_json::to_vec(&preferences).expect("document").len() > 256 * 1024);
     }
 }

@@ -95,6 +95,7 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    Settings { reason: crate::SettingsFailureReason },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,
         status: Option<u16>,
@@ -237,6 +238,7 @@ pub enum ApiEvent {
         group_id: String,
     },
     ModelsChanged,
+    ContentFilterHit,
     ProviderQuota {
         account_id: String,
         level: crate::ProviderQuotaLevel,

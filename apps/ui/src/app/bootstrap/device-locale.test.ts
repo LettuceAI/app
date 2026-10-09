@@ -10,6 +10,10 @@ describe("device locale import", () => {
     expect(selectDeviceLocale({}, () => "tr")).toBe("tr");
   });
 
+  it("rejects an invalid legacy locale", () => {
+    expect(selectDeviceLocale({}, () => "not-a-locale")).toBe("en");
+  });
+
   it("defaults when legacy storage is absent or unreadable", () => {
     expect(selectDeviceLocale({}, () => null)).toBe("en");
     expect(selectDeviceLocale({}, () => { throw new Error("denied"); })).toBe("en");

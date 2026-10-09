@@ -1224,8 +1224,7 @@ fn device_ui_state(
     }
 }
 
-/// The shell-only preferences, verbatim under their legacy keys; a document
-/// past the size bound is dropped and recorded.
+/// Shell preferences under their original keys.
 fn ui_preferences(
     app: &Map<String, Value>,
     advanced: &Map<String, Value>,

@@ -4,7 +4,7 @@
 
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicU8, AtomicU64, Ordering},
 };
 
 use crate::Database;
@@ -15,21 +15,29 @@ pub(crate) enum ChangeFeed {
     Jobs,
     Conversations,
     Models,
+    Settings,
 }
 
 impl ChangeFeed {
-    const ALL: [Self; 3] = [Self::Jobs, Self::Conversations, Self::Models];
+    const ALL: [Self; 4] = [
+        Self::Jobs,
+        Self::Conversations,
+        Self::Models,
+        Self::Settings,
+    ];
 
     const fn bit(self) -> u8 {
         match self {
             Self::Jobs => 1,
             Self::Conversations => 2,
             Self::Models => 4,
+            Self::Settings => 8,
         }
     }
 
     fn of_table(table: &str) -> Option<Self> {
         match table {
+            "app_settings" => Some(Self::Settings),
             "job_changes" => Some(Self::Jobs),
             "model_changes" => Some(Self::Models),
             "conversation_changes" | "message_signals" | "memory_changes" => {
@@ -44,6 +52,7 @@ type ChangeListener = Arc<dyn Fn() + Send + Sync>;
 
 pub(crate) struct ChangeSignal {
     pending: AtomicU8,
+    settings_generation: AtomicU64,
     listeners: Mutex<Vec<(ChangeFeed, ChangeListener)>>,
 }
 
@@ -51,6 +60,7 @@ impl ChangeSignal {
     pub(crate) fn install(connection: &rusqlite::Connection) -> rusqlite::Result<Arc<Self>> {
         let signal = Arc::new(Self {
             pending: AtomicU8::new(0),
+            settings_generation: AtomicU64::new(0),
             listeners: Mutex::new(Vec::new()),
         });
         let marked = Arc::clone(&signal);
@@ -64,6 +74,9 @@ impl ChangeSignal {
         let committed = Arc::clone(&signal);
         connection.commit_hook(Some(move || {
             let changed = committed.pending.swap(0, Ordering::AcqRel);
+            if changed & ChangeFeed::Settings.bit() != 0 {
+                committed.settings_generation.fetch_add(1, Ordering::AcqRel);
+            }
             if changed != 0 {
                 committed.notify(changed);
             }
@@ -74,6 +87,10 @@ impl ChangeSignal {
             rolled_back.pending.store(0, Ordering::Release);
         }))?;
         Ok(signal)
+    }
+
+    pub(crate) fn settings_generation(&self) -> u64 {
+        self.settings_generation.load(Ordering::Acquire)
     }
 
     fn notify(&self, changed: u8) {
@@ -121,5 +138,12 @@ impl Database {
 impl Database {
     pub fn on_model_change(&self, listener: impl Fn() + Send + Sync + 'static) {
         self.changes.listen(ChangeFeed::Models, Arc::new(listener));
+    }
+}
+
+impl Database {
+    pub fn on_settings_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes
+            .listen(ChangeFeed::Settings, Arc::new(listener));
     }
 }

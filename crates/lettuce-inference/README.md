@@ -19,7 +19,7 @@ Pure mode checks model output against a content dictionary and blocks it above t
 
 ### Engine
 
-`ContentFilter` (`content_filter.rs`) normalizes the text (invisible characters dropped, leet and homoglyph folding), scores it against the bundled English dictionary (`resources/content-filter-dictionary.json`: explicit sexual, graphic violence and slurs with weights, plus a context allowlist), and keeps a redacted log of the last 200 checks that scored above zero. For streams, `StreamFilterContext` keeps the last 500 bytes and rescans that window on every delta. The level can change while the filter is shared.
+`ContentFilter` (`content_filter.rs`) normalizes the text (invisible characters dropped, leet and homoglyph folding), scores it against the bundled English dictionary (`resources/content-filter-dictionary.json`: explicit sexual, graphic violence and slurs with weights, plus a context allowlist), and records redacted checks that score above zero while developer logging is enabled. For streams, `StreamFilterContext` keeps the last 500 bytes and rescans that window on every delta. The level can change while the filter is shared.
 
 ### Around a provider
 
@@ -47,3 +47,7 @@ The English dictionary always applies. `content_lexicons.rs` adds lexicons for o
 - `split_thinking_tags` splits a complete text. `normalize_thinking_content` combines the tagged reasoning with reasoning the provider returned separately, appending the latter unless it repeats the former, both trimmed.
 
 `lettuce-providers` and `lettuce-local-llm` use it when normalizing streams and final responses.
+
+Hit recording is off by default. The host enables it for developer mode and disabling it clears its records under the same mutex as recording. The log has no entry cap. Hit revisions and a Notify signal let the host coalesce changes after an event; the engine starts no timer or worker. Log reads and clearing return a typed error if their mutex is unavailable.
+
+Hit recording follows the latest settings commit generation it has observed, preventing an older concurrent request from re-enabling logging after developer mode was disabled.

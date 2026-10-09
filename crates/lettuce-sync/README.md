@@ -265,3 +265,5 @@ The `memory_manual_edit` entity carries one immutable manual edit plus its undo 
 Memory cycle reverts and dismissed memory failures stay on the device: they annotate runs, which are not synced. The memory items and summary a revert restores travel as ordinary memory changes.
 
 Prompt payload version 2 carries derivation source names without requiring the source document. Conversation message payload version 4 carries prompt and lorebook history names. Their schema versions participate in the handshake fingerprint. Generator jobs and their checkpoints remain device-local.
+
+Application settings payload version 4 includes developer mode and the lorebook generator structured fallback preference. The schema fingerprint prevents peers with different closed settings shapes from negotiating a session.

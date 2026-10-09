@@ -94,3 +94,5 @@ Manual edit history is exchanged as canonical entities, retaining the legacy edi
 Memory cycle reverts and dismissed memory failures are not synced. They qualify the device-local dynamic-memory runs they refer to (runs, attempts and their outcomes never leave the device); the item and summary changes a revert makes sync like any other memory change.
 
 Deleted lorebooks and prompts no longer prevent first sync of their retained history. Derivation, turn and helper receipt names travel as snapshots in prompt version 2, conversation message version 4 and creation workflow version 2. Legacy hard deletes removed source rows without retained per-turn references (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`, `old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1099-1120`). Generator jobs remain device-local.
+
+Application settings payload version 4 carries developer mode and the lorebook generator JSON/XML preference, which legacy stored in advanced settings (`old-code/src/core/storage/schemas.ts:3353,3374`). Their addition changes the handshake schema fingerprint.

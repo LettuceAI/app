@@ -168,3 +168,7 @@ Model-change triggers retain a single AUTOINCREMENT position instead of accumula
 Scope views derive only Supported modalities from capability statuses. Separate stored declaration fields were removed by re-review decision. A declaration that remains Unsupported fails typed before any write; reported metadata replaces its side, including clearing echoed Supported modalities not listed. Legacy stored input/output scopes without this typed capability check (`old-code/src-tauri/src/storage_manager/models.rs:126-159`).
 
 Fresh app sampler defaults seed 2048 output tokens, matching `old-code/src-tauri/src/chat_manager/types.rs:944-948`. An explicitly saved empty layer remains empty rather than being mistaken for first-install defaults.
+
+The section command's document, selected models/prompts, sampler layer and optional device embedding fields commit together under the settings revision. This replaces blind settings-column overwrites (`old-code/src-tauri/src/storage_manager/settings.rs:800-837`) and preserves current device fields when embedding choices change. Missing selected models and invalid prompt references are refused before writing. A trigger-aborted global write after the device update rolls back both records.
+
+Developer logging uses the database commit generation rather than the settings revision, since applying a sync winner may lower a document revision. Settings commits wake the filter host; no timer queries settings.

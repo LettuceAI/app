@@ -5,14 +5,26 @@ use lettuce_settings::{DeviceUiStateStore, GlobalSettingsStoreError};
 use super::ApiContext;
 use super::error::{api_error, invalid_field};
 
-fn settings_error(error: GlobalSettingsStoreError) -> ApiError {
+pub(super) fn settings_error(error: GlobalSettingsStoreError) -> ApiError {
     let code = match error {
         GlobalSettingsStoreError::InvalidData => ApiErrorCode::InvalidInput,
         GlobalSettingsStoreError::StaleRevision => ApiErrorCode::Conflict,
         GlobalSettingsStoreError::ModelProfileMissing => ApiErrorCode::NotFound,
         GlobalSettingsStoreError::Storage => ApiErrorCode::Internal,
     };
-    api_error(code, error.to_string())
+    let reason = match error {
+        GlobalSettingsStoreError::InvalidData => dto::SettingsFailureReason::InvalidData,
+        GlobalSettingsStoreError::StaleRevision => dto::SettingsFailureReason::StaleRevision,
+        GlobalSettingsStoreError::ModelProfileMissing => {
+            dto::SettingsFailureReason::ModelProfileMissing
+        }
+        GlobalSettingsStoreError::Storage => dto::SettingsFailureReason::Storage,
+    };
+    ApiError {
+        code,
+        message: error.to_string(),
+        details: Some(dto::ApiErrorDetails::Settings { reason }),
+    }
 }
 
 fn purge_error(error: lettuce_database::PurgeError) -> ApiError {
@@ -79,6 +91,9 @@ pub async fn app_ui_state_update(
                 .database()
                 .patch_device_ui_state(request.patch)
                 .map_err(settings_error)?;
+            context.emit(dto::ApiEvent::SettingsChanged {
+                section: "ui_state".to_owned(),
+            });
             Ok(dto::AppUiStateView { state })
         })
         .await

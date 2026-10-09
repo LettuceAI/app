@@ -125,13 +125,24 @@ pub struct FilterLogEntry {
     pub level: PureModeLevel,
 }
 
-const FILTER_LOG_MAX: usize = 200;
+#[derive(Debug, Default)]
+struct HitLog {
+    enabled: bool,
+    settings_generation: Option<u64>,
+    entries: Vec<FilterLogEntry>,
+    revision: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("content filter log is unavailable")]
+pub struct FilterLogError;
 
 /// The filter engine; its level can change while it is shared.
 #[derive(Debug)]
 pub struct ContentFilter {
     level: AtomicU8,
-    log: Mutex<Vec<FilterLogEntry>>,
+    log: Mutex<HitLog>,
+    changed: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl ContentFilter {
@@ -139,7 +150,8 @@ impl ContentFilter {
     pub fn new(level: PureModeLevel) -> Self {
         Self {
             level: AtomicU8::new(level as u8),
-            log: Mutex::new(Vec::new()),
+            log: Mutex::new(HitLog::default()),
+            changed: std::sync::Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -157,16 +169,47 @@ impl ContentFilter {
         self.level() != PureModeLevel::Off
     }
 
-    /// The recorded hits, oldest first.
-    #[must_use]
-    pub fn hit_log(&self) -> Vec<FilterLogEntry> {
-        self.log.lock().map(|log| log.clone()).unwrap_or_default()
+    pub fn apply_settings(
+        &self,
+        generation: u64,
+        enabled: bool,
+        level: PureModeLevel,
+    ) -> Result<(), FilterLogError> {
+        let mut log = self.log.lock().map_err(|_| FilterLogError)?;
+        if log
+            .settings_generation
+            .is_some_and(|current| current > generation)
+        {
+            return Ok(());
+        }
+        log.settings_generation = Some(generation);
+        self.set_level(level);
+        log.enabled = enabled;
+        if !enabled {
+            log.entries.clear();
+        }
+        Ok(())
     }
 
-    pub fn clear_hit_log(&self) {
-        if let Ok(mut log) = self.log.lock() {
-            log.clear();
-        }
+    pub fn logging_enabled(&self) -> Result<bool, FilterLogError> {
+        Ok(self.log.lock().map_err(|_| FilterLogError)?.enabled)
+    }
+
+    pub fn hit_log(&self) -> Result<Vec<FilterLogEntry>, FilterLogError> {
+        Ok(self.log.lock().map_err(|_| FilterLogError)?.entries.clone())
+    }
+
+    pub fn clear_hit_log(&self) -> Result<(), FilterLogError> {
+        self.log.lock().map_err(|_| FilterLogError)?.entries.clear();
+        Ok(())
+    }
+
+    pub fn hit_signal(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        self.changed.clone()
+    }
+
+    pub fn hit_revision(&self) -> Result<u64, FilterLogError> {
+        Ok(self.log.lock().map_err(|_| FilterLogError)?.revision)
     }
 
     fn redact_snippet(text: &str, max_chars: usize) -> String {
@@ -198,10 +241,12 @@ impl ContentFilter {
             level,
         };
         if let Ok(mut log) = self.log.lock() {
-            if log.len() >= FILTER_LOG_MAX {
-                log.remove(0);
+            if !log.enabled {
+                return;
             }
-            log.push(entry);
+            log.entries.push(entry);
+            log.revision = log.revision.wrapping_add(1);
+            self.changed.notify_one();
         }
     }
 
@@ -641,8 +686,18 @@ mod tests {
     }
 
     #[test]
+    fn slice_7c_filter_log_is_off_by_default() {
+        let filter = ContentFilter::new(PureModeLevel::Standard);
+        assert!(filter.check_text("decapitate and disembowel", 1).blocked);
+        assert!(filter.hit_log().expect("log").is_empty());
+    }
+
+    #[test]
     fn streams_are_checked_in_a_sliding_window_and_hits_are_redacted() {
         let filter = ContentFilter::new(PureModeLevel::Standard);
+        filter
+            .apply_settings(0, true, PureModeLevel::Standard)
+            .expect("enable");
         let mut context = StreamFilterContext::default();
         assert!(
             !filter
@@ -654,18 +709,32 @@ mod tests {
                 .check_delta(&mut context, "itate and disembowel everyone", 2)
                 .blocked
         );
-        let log = filter.hit_log();
+        let log = filter.hit_log().expect("log");
         assert!(
             log.last()
                 .is_some_and(|entry| entry.blocked && !entry.text_snippet.contains("villain"))
         );
-        filter.clear_hit_log();
-        assert!(filter.hit_log().is_empty());
+        filter.clear_hit_log().expect("clear");
+        assert!(filter.hit_log().expect("log").is_empty());
         filter.set_level(PureModeLevel::Off);
         assert!(!filter.check_text("decapitate and disembowel", 3).blocked);
         assert_eq!(
             PureModeLevel::try_from_str(" Strict "),
             Some(PureModeLevel::Strict)
         );
+    }
+    #[test]
+    fn logging_state_ignores_old_settings_generations() {
+        let filter = ContentFilter::new(PureModeLevel::Standard);
+        filter
+            .apply_settings(2, false, PureModeLevel::Off)
+            .expect("disable");
+        filter
+            .apply_settings(1, true, PureModeLevel::Standard)
+            .expect("stale enable");
+        filter.check_text("decapitate and disembowel", 1);
+        assert_eq!(filter.level(), PureModeLevel::Off);
+        assert!(!filter.logging_enabled().expect("state"));
+        assert!(filter.hit_log().expect("log").is_empty());
     }
 }

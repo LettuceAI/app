@@ -293,6 +293,11 @@ export const commands = {
 	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError>(__TAURI_INVOKE("provider_model_verify", { request })),
 	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_import", { request })),
 	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_remove", { request })),
+	settingsGet: () => typedError<SettingsView, ApiError>(__TAURI_INVOKE("settings_get")),
+	settingsUpdate: (request: SettingsCommandInput<SettingsUpdateRequest_Deserialize>) => typedError<SettingsView, ApiError>(__TAURI_INVOKE("settings_update", { request })),
+	settingsSamplerDefaultsUpdate: (request: SettingsCommandInput<SettingsSamplerDefaultsUpdateRequest>) => typedError<SettingsView, ApiError>(__TAURI_INVOKE("settings_sampler_defaults_update", { request })),
+	contentFilterLog: () => typedError<ContentFilterLogView, ApiError>(__TAURI_INVOKE("content_filter_log")),
+	contentFilterClear: () => typedError<null, ApiError>(__TAURI_INVOKE("content_filter_clear")),
 	modelsList: () => typedError<ModelsView, ApiError>(__TAURI_INVOKE("models_list")),
 	modelGet: (request: ModelGetRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_get", { request })),
 	modelSave: (request: ModelSaveRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_save", { request })),
@@ -333,7 +338,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails = { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -359,7 +364,7 @@ export type ApiErrorDetails = { type: "provider_quota"; reason: ProviderQuotaFai
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } | { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } | { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that
@@ -1004,6 +1009,19 @@ export type CompanionSoulWriterRunRequest = {
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
 
 export type ConfiguredPromptProblem = "missing" | "archived" | "wrong_kind";
+
+export type ContentFilterLogEntry = {
+	timestamp_ms: number,
+	text_snippet: string,
+	score: number | null,
+	blocked: boolean,
+	matched_terms: string[],
+	level: SettingsPureMode,
+};
+
+export type ContentFilterLogView = {
+	entries: ContentFilterLogEntry[],
+};
 
 /**
  *  Adds a user message without a reply, for a director who then continues
@@ -4715,6 +4733,677 @@ export type SettingSpeakerSelection = {
 	source: SettingSource,
 };
 
+export type SettingsChatParameterProfile = {
+	temperature: number | null,
+	top_p: number | null,
+	top_k: number | null,
+	max_output_tokens: number | null,
+	context_length: number | null,
+	frequency_penalty: number | null,
+	presence_penalty: number | null,
+	repetition_penalty: number | null,
+	reasoning_mode: SettingsReasoningMode | null,
+	reasoning_effort: SettingsReasoningEffort | null,
+	reasoning_budget_tokens: number | null,
+	prompt_caching: SettingsPromptCaching | null,
+	send_thinking_state: boolean | null,
+	ollama: SettingsOllamaOptions,
+	openrouter: SettingsOpenRouterOptions,
+};
+
+export type SettingsCommandInput<T> = T;
+
+export type SettingsCompanionSoulWriterSettings = {
+	model_profile_id: string | null,
+	fallback_model_profile_id: string | null,
+	prompt_id: string | null,
+	structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
+};
+
+export type SettingsCreationHelperSettings = {
+	model_profile_id: string | null,
+	streaming: boolean,
+	enabled_tools: string[] | null,
+	tool_fallback: SettingsCreationHelperToolFallback,
+};
+
+export type SettingsCreationHelperToolFallback = "native" | "json" | "xml";
+
+export type SettingsDeviceView = {
+	embedding_model_version: SettingsEmbeddingVersion | null,
+	embedding_max_tokens: number | null,
+	embedding_keep_model_loaded: boolean,
+	llm_models_dir: string | null,
+	dictation_model_id: string | null,
+	trusted_certificates: TrustedCertificateView[],
+};
+
+export type SettingsDynamicMemoryPromptSelection = {
+	summarizer_prompt_id: string | null,
+	manager_prompt_id: string | null,
+};
+
+export type SettingsDynamicMemorySettings = {
+	enabled: boolean,
+	summary_message_interval: number,
+	run_mode: SettingsMemoryRunMode,
+	max_entries: number,
+	min_similarity_basis_points: number | null,
+	retrieval_limit: number,
+	retrieval_strategy: SettingsMemoryRetrievalStrategy,
+	hot_memory_token_budget: number,
+	cold_threshold_basis_points: number,
+	delete_confidence_basis_points: number,
+	max_hard_delete_ratio_basis_points: number,
+	duplicate_threshold_basis_points: number,
+	context_enrichment_enabled: boolean,
+	decay_rate_basis_points: number,
+	recursive_memory_loops: boolean,
+	recursive_memory_loop_hard_cap: number,
+	structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
+};
+
+export type SettingsEmbeddingSettings = {
+	dimensions: number | null,
+};
+
+export type SettingsEmbeddingVersion = "v3" | "v4" | "v5";
+
+export type SettingsFailureReason = "invalid_data" | "stale_revision" | "model_profile_missing" | "storage" | "developer_mode_required";
+
+export type SettingsGlobalSettings = {
+	pure_mode: SettingsPureMode,
+	analytics_enabled: boolean,
+	update_checks_enabled: boolean,
+	developer_mode_enabled: boolean,
+	lorebook_generator: SettingsLorebookGeneratorSettings,
+	dynamic_memory: SettingsDynamicMemorySettings,
+	group_dynamic_memory: SettingsDynamicMemorySettings | null,
+	dynamic_memory_prompts: SettingsDynamicMemoryPromptSelection,
+	dynamic_memory_llama_sampler_overwrite_enabled: boolean,
+	help_me_reply: SettingsHelpMeReplySettings,
+	embedding: SettingsEmbeddingSettings,
+	image_generation: SettingsImageGenerationSettings,
+	creation_helper: SettingsCreationHelperSettings,
+	lorebook_entry_generator: SettingsLorebookEntryGeneratorSettings,
+	companion_soul_writer: SettingsCompanionSoulWriterSettings,
+	ui_preferences: { [key in string]: unknown },
+	auto_download_character_card_avatars: boolean,
+	manual_mode_context_window: number,
+	lorebook_scan_depth: number,
+	llama_default_context_length: number | null,
+	llama_default_kv_cache_type: SettingsLlamaDefaultKvCacheType | null,
+};
+
+export type SettingsHelpMeReplySettings = {
+	enabled: boolean,
+	model_profile_id: string | null,
+	streaming: boolean,
+	max_output_tokens: number,
+	history_count: number,
+	style: SettingsHelpMeReplyStyle,
+	roleplay_prompt_id: string | null,
+	conversational_prompt_id: string | null,
+};
+
+export type SettingsHelpMeReplyStyle = "roleplay" | "conversational";
+
+export type SettingsImageGenerationSettings = {
+	avatar_enabled: boolean,
+	avatar_model_profile_id: string | null,
+	scene_enabled: boolean,
+	scene_mode: SettingsSceneGenerationMode,
+	scene_model_profile_id: string | null,
+	scene_writer_model_profile_id: string | null,
+	creation_helper_model_profile_id: string | null,
+	scene_default_size: string | null,
+};
+
+export type SettingsLlamaCppSettings = {
+	gpu_layers: number | null,
+	multi_gpu_enabled: boolean | null,
+	gpu_device_ids: number[] | null,
+	gpu_distribution_mode: SettingsLlamaGpuDistributionMode | null,
+	gpu_manual_layers: SettingsLlamaGpuLayerAssignment[] | null,
+	cpu_layers: number | null,
+	kv_placement: SettingsLlamaKvPlacement | null,
+	main_gpu: number | null,
+	single_gpu_device_id: number | null,
+	priority_vram_limit_bytes: number | null,
+	threads: number | null,
+	threads_batch: number | null,
+	rope_freq_base: number | null,
+	rope_freq_scale: number | null,
+	offload_kqv: boolean | null,
+	batch_size: number | null,
+	ubatch_size: number | null,
+	kv_type: SettingsLlamaKvType | null,
+	kv_type_k: SettingsLlamaKvType | null,
+	kv_type_v: SettingsLlamaKvType | null,
+	flash_attention: SettingsLlamaFlashAttention | null,
+	swa_full: boolean | null,
+	chat_template_override: string | null,
+	chat_template_preset: string | null,
+	mmproj_path: string | null,
+	raw_completion_fallback: boolean | null,
+	strict_mode: boolean | null,
+	mtp_enabled: boolean | null,
+	mtp_placement: SettingsLlamaMtpPlacement | null,
+	mtp_draft_tokens: number | null,
+	mtp_model_path: string | null,
+	dflash_enabled: boolean | null,
+	dflash_draft_tokens: number | null,
+	dflash_min_probability: number | null,
+	dflash_model_path: string | null,
+	streaming_enabled: boolean | null,
+	force_gemma4_reasoning: boolean | null,
+	sampler: SettingsLlamaSamplerSettings,
+};
+
+export type SettingsLlamaDefaultKvCacheType = "auto" | "f16" | "q8_0" | "q4_0";
+
+export type SettingsLlamaFlashAttention = "auto" | "enabled" | "disabled";
+
+export type SettingsLlamaGpuDistributionMode = "balanced" | "proportional" | "priority" | "manual";
+
+export type SettingsLlamaGpuLayerAssignment = {
+	device_id: number,
+	layers: number,
+};
+
+export type SettingsLlamaKvPlacement = "auto" | "split" | "system_ram" | "pin";
+
+export type SettingsLlamaKvType = "f32" | "f16" | "q8_1" | "q8_0" | "q6_k" | "q5_k" | "q5_1" | "q5_0" | "q4_k" | "q4_1" | "q4_0" | "q3_k" | "q2_k" | "iq4_nl" | "iq3_s" | "iq3_xxs" | "iq2_xs" | "iq2_xxs" | "iq1_s";
+
+export type SettingsLlamaMtpPlacement = "auto" | "gpu" | "cpu";
+
+export type SettingsLlamaSamplerProfile = "balanced" | "creative" | "stable" | "reasoning";
+
+export type SettingsLlamaSamplerSettings = {
+	profile: SettingsLlamaSamplerProfile | null,
+	order: SettingsLlamaSamplerStage[] | null,
+	min_p: number | null,
+	typical_p: number | null,
+	repeat_penalty: number | null,
+	n_pen_range: number | null,
+	dry_multiplier: number | null,
+	dry_base: number | null,
+	dry_allowed_length: number | null,
+	dry_penalty_last_n: number | null,
+	dry_sequence_breakers: string[] | null,
+	xtc_probability: number | null,
+	xtc_threshold: number | null,
+	seed: number | null,
+	adaptive_target: number | null,
+	adaptive_decay: number | null,
+};
+
+export type SettingsLlamaSamplerStage = "penalties" | "grammar" | "top_k" | "top_p" | "min_p" | "dry" | "typical" | "xtc" | "temp" | "adaptive_p";
+
+export type SettingsLorebookEntryGeneratorSettings = {
+	model_profile_id: string | null,
+	entry_prompt_id: string | null,
+	keyword_prompt_id: string | null,
+	structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
+};
+
+export type SettingsLorebookGeneratorSelection = {
+	model_profile_id: string | null,
+	planner_prompt_id: string | null,
+	writer_prompt_id: string | null,
+	refine_prompt_id: string | null,
+	coherence_prompt_id: string | null,
+};
+
+export type SettingsLorebookGeneratorSettings = {
+	selection: SettingsLorebookGeneratorSelection,
+	structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
+	default_target_count: number | null,
+	max_output_tokens: number | null,
+};
+
+export type SettingsMemoryRetrievalStrategy = "smart" | "cosine";
+
+export type SettingsMemoryRunMode = "auto" | "ask_first" | "manual";
+
+export type SettingsMemoryStructuredFallbackFormat = "json" | "xml";
+
+export type SettingsModelSettingsLayer = {
+	chat_parameters: SettingsChatParameterProfile,
+	llama_cpp: SettingsLlamaCppSettings,
+	stable_diffusion: SettingsStableDiffusionSettings,
+};
+
+export type SettingsOllamaOptions = {
+	num_ctx: number | null,
+	num_predict: number | null,
+	num_keep: number | null,
+	num_batch: number | null,
+	num_gpu: number | null,
+	num_thread: number | null,
+	tfs_z: number | null,
+	typical_p: number | null,
+	min_p: number | null,
+	mirostat: number | null,
+	mirostat_tau: number | null,
+	mirostat_eta: number | null,
+	seed: number | null,
+	stop: string[] | null,
+};
+
+export type SettingsOpenRouterOptions = {
+	pinned_provider: string | null,
+};
+
+export type SettingsPatch = SettingsPatch_Serialize | SettingsPatch_Deserialize;
+
+export type SettingsPatch_Deserialize = ({ section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null }) & { changes?: never; context_length?: never; default_model?: never; default_prompt?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; max_tokens?: never; model_version?: never; value?: never } | ({ section: "dynamic_memory"; value: SettingsDynamicMemorySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_sampler"; enabled: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "help_me_reply"; value: SettingsHelpMeReplySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "image_generation"; value: SettingsImageGenerationSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "embedding"; value: SettingsEmbeddingSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; developer_mode_enabled?: never; enabled?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never };
+
+export type SettingsPatch_Serialize = ({ section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null }) & { changes?: never; context_length?: never; default_model?: never; default_prompt?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; max_tokens?: never; model_version?: never; value?: never } | ({ section: "dynamic_memory"; value: SettingsDynamicMemorySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_sampler"; enabled: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "help_me_reply"; value: SettingsHelpMeReplySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "image_generation"; value: SettingsImageGenerationSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "embedding"; value: SettingsEmbeddingSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; developer_mode_enabled?: never; enabled?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never };
+
+export type SettingsPromptCacheRetention = "in_memory" | "five_minutes" | "one_hour" | "twenty_four_hours";
+
+export type SettingsPromptCaching = "disabled" | { enabled: {
+	retention: SettingsPromptCacheRetention,
+} };
+
+export type SettingsPureMode = "off" | "standard" | "strict" | "low";
+
+export type SettingsReasoningEffort = "low" | "medium" | "high";
+
+export type SettingsReasoningMode = "disabled" | "enabled";
+
+export type SettingsSamplerDefaultsUpdateRequest = {
+	value: SettingsModelSettingsLayer,
+	expected_revision: number,
+};
+
+export type SettingsSceneGenerationMode = "auto" | "ask_first" | "manual";
+
+export type SettingsStableDiffusionCacheMode = "disabled" | "easycache" | "ucache" | "dbcache" | "taylorseer" | "cache_dit" | "spectrum";
+
+export type SettingsStableDiffusionCppBinding = {
+	profile_id: string | null,
+	variant_id: string | null,
+	text_encoder_path: string | null,
+	vae_path: string | null,
+	vision_encoder_path: string | null,
+	runtime_release: string | null,
+	runtime_asset: string | null,
+	runtime_backend: string | null,
+	max_reference_images: number | null,
+	supports_lora: boolean | null,
+	supports_text_to_image: boolean | null,
+	supports_image_edit: boolean | null,
+	recommended_for_scenes: boolean | null,
+	requires_reference_image: boolean | null,
+};
+
+export type SettingsStableDiffusionLora = {
+	path: string,
+	multiplier: number | null,
+	is_high_noise: boolean,
+	keywords: string[],
+};
+
+export type SettingsStableDiffusionOffloadMode = "auto" | "gpu" | "mixed";
+
+export type SettingsStableDiffusionSettings = {
+	steps: number | null,
+	cfg_scale: number | null,
+	sampler: string | null,
+	scheduler: string | null,
+	seed: number | null,
+	negative_prompt: string | null,
+	denoising_strength: number | null,
+	image_cfg_scale: number | null,
+	distilled_guidance: number | null,
+	eta: number | null,
+	flow_shift: number | null,
+	size: string | null,
+	vae_tiling_enabled: boolean | null,
+	vae_tile_size_x: number | null,
+	vae_tile_size_y: number | null,
+	vae_tile_overlap: number | null,
+	auto_resize_reference_images: boolean | null,
+	increase_reference_index: boolean | null,
+	hires_enabled: boolean | null,
+	hires_upscaler: string | null,
+	hires_scale: number | null,
+	hires_width: number | null,
+	hires_height: number | null,
+	hires_steps: number | null,
+	hires_denoising_strength: number | null,
+	slg_scale: number | null,
+	slg_layers: string | null,
+	slg_layer_start: number | null,
+	slg_layer_end: number | null,
+	cache_mode: SettingsStableDiffusionCacheMode | null,
+	cache_option: string | null,
+	offload_mode: SettingsStableDiffusionOffloadMode | null,
+	extra_prompt: string | null,
+	prompt_writer_instructions: string | null,
+	base_loras: SettingsStableDiffusionLora[] | null,
+	cpp: SettingsStableDiffusionCppBinding,
+};
+
+export type SettingsUiAccessibilitySettings = SettingsUiAccessibilitySettings_Serialize | SettingsUiAccessibilitySettings_Deserialize;
+
+export type SettingsUiAccessibilitySettingsHapticIntensity = "light" | "medium" | "heavy" | "soft" | "rigid";
+
+export type SettingsUiAccessibilitySettings_Deserialize = {
+	send?: SettingsUiAccessibilitySound_Deserialize,
+	success?: SettingsUiAccessibilitySound_Deserialize,
+	failure?: SettingsUiAccessibilitySound_Deserialize,
+	haptics?: boolean,
+	hapticIntensity?: SettingsUiAccessibilitySettingsHapticIntensity,
+};
+
+export type SettingsUiAccessibilitySettings_Serialize = {
+	send?: SettingsUiAccessibilitySound_Serialize,
+	success?: SettingsUiAccessibilitySound_Serialize,
+	failure?: SettingsUiAccessibilitySound_Serialize,
+	haptics?: boolean,
+	hapticIntensity?: SettingsUiAccessibilitySettingsHapticIntensity,
+};
+
+export type SettingsUiAccessibilitySound = SettingsUiAccessibilitySound_Serialize | SettingsUiAccessibilitySound_Deserialize;
+
+export type SettingsUiAccessibilitySound_Deserialize = {
+	enabled?: boolean,
+	volume?: number | null,
+};
+
+export type SettingsUiAccessibilitySound_Serialize = {
+	enabled?: boolean,
+	volume?: number | null,
+};
+
+export type SettingsUiChatAppearanceSettings = SettingsUiChatAppearanceSettings_Serialize | SettingsUiChatAppearanceSettings_Deserialize;
+
+export type SettingsUiChatAppearanceSettingsAssistantBubbleColor = "neutral" | "accent" | "info" | "secondary";
+
+export type SettingsUiChatAppearanceSettingsAvatarShape = "circle" | "rounded" | "hidden";
+
+export type SettingsUiChatAppearanceSettingsAvatarSize = "small" | "medium" | "large";
+
+export type SettingsUiChatAppearanceSettingsBubbleBlur = "none" | "light" | "medium" | "heavy";
+
+export type SettingsUiChatAppearanceSettingsBubbleMaxWidth = "compact" | "normal" | "wide";
+
+export type SettingsUiChatAppearanceSettingsBubblePadding = "compact" | "normal" | "spacious";
+
+export type SettingsUiChatAppearanceSettingsBubbleRadius = "sharp" | "rounded" | "pill";
+
+export type SettingsUiChatAppearanceSettingsBubbleStyle = "bordered" | "filled" | "minimal";
+
+export type SettingsUiChatAppearanceSettingsChatColumnAlign = "left" | "center" | "right";
+
+export type SettingsUiChatAppearanceSettingsChatColumnWidth = "narrow" | "normal" | "wide" | "xl" | "full" | "custom";
+
+export type SettingsUiChatAppearanceSettingsChatWidgetCenterMode = "both" | "left" | "right";
+
+export type SettingsUiChatAppearanceSettingsChatWidgetSlots = SettingsUiChatAppearanceSettingsChatWidgetSlots_Serialize | SettingsUiChatAppearanceSettingsChatWidgetSlots_Deserialize;
+
+export type SettingsUiChatAppearanceSettingsChatWidgetSlots_Deserialize = {
+	left?: SettingsWidgetNode[],
+	right?: SettingsWidgetNode[],
+};
+
+export type SettingsUiChatAppearanceSettingsChatWidgetSlots_Serialize = {
+	left?: SettingsWidgetNode[],
+	right?: SettingsWidgetNode[],
+};
+
+export type SettingsUiChatAppearanceSettingsFontSize = "small" | "medium" | "large" | "xlarge";
+
+export type SettingsUiChatAppearanceSettingsLineSpacing = "tight" | "normal" | "relaxed";
+
+export type SettingsUiChatAppearanceSettingsMessageGap = "tight" | "normal" | "relaxed";
+
+export type SettingsUiChatAppearanceSettingsMessageHeaderPlacement = "inside" | "above";
+
+export type SettingsUiChatAppearanceSettingsMessageInfoPlacement = "belowHeader" | "belowHeaderOutside" | "insideBubble" | "belowBubble";
+
+export type SettingsUiChatAppearanceSettingsMessageInfoSize = "small" | "medium" | "large";
+
+export type SettingsUiChatAppearanceSettingsParticipantsBarAlign = "left" | "center" | "right";
+
+export type SettingsUiChatAppearanceSettingsParticipantsBarAvatarShape = "round" | "boxed" | "rounded_box";
+
+export type SettingsUiChatAppearanceSettingsParticipantsBarAvatarSize = "small" | "medium" | "large";
+
+export type SettingsUiChatAppearanceSettingsParticipantsBarBackground = "solid" | "fading" | "transparent";
+
+export type SettingsUiChatAppearanceSettingsParticipantsBarGap = "tight" | "normal" | "relaxed";
+
+export type SettingsUiChatAppearanceSettingsParticipantsBarHintPosition = "top" | "bottom" | "hidden";
+
+export type SettingsUiChatAppearanceSettingsTextMode = "auto" | "light" | "dark";
+
+export type SettingsUiChatAppearanceSettingsTimestampFormat = "relative" | "time" | "datetime";
+
+export type SettingsUiChatAppearanceSettingsUserBubbleColor = "accent" | "info" | "secondary" | "warning";
+
+export type SettingsUiChatAppearanceSettings_Deserialize = {
+	fontSize?: SettingsUiChatAppearanceSettingsFontSize,
+	lineSpacing?: SettingsUiChatAppearanceSettingsLineSpacing,
+	bubbleStyle?: SettingsUiChatAppearanceSettingsBubbleStyle,
+	bubbleRadius?: SettingsUiChatAppearanceSettingsBubbleRadius,
+	bubbleMaxWidth?: SettingsUiChatAppearanceSettingsBubbleMaxWidth,
+	bubblePadding?: SettingsUiChatAppearanceSettingsBubblePadding,
+	showMessageAuthor?: boolean,
+	showMessageTimestamp?: boolean,
+	timestampFormat?: SettingsUiChatAppearanceSettingsTimestampFormat,
+	messageHeaderPlacement?: SettingsUiChatAppearanceSettingsMessageHeaderPlacement,
+	showMessageModel?: boolean,
+	showMessageInputTokens?: boolean,
+	showMessageOutputTokens?: boolean,
+	showMessageTotalTokens?: boolean,
+	showMessageTtft?: boolean,
+	showMessageTokensPerSecond?: boolean,
+	showMessageMtp?: boolean,
+	messageInfoPlacement?: SettingsUiChatAppearanceSettingsMessageInfoPlacement,
+	messageInfoSize?: SettingsUiChatAppearanceSettingsMessageInfoSize,
+	messageGap?: SettingsUiChatAppearanceSettingsMessageGap,
+	avatarShape?: SettingsUiChatAppearanceSettingsAvatarShape,
+	avatarSize?: SettingsUiChatAppearanceSettingsAvatarSize,
+	chatColumnWidth?: SettingsUiChatAppearanceSettingsChatColumnWidth,
+	chatColumnWidthPx?: number | null,
+	chatColumnAlign?: SettingsUiChatAppearanceSettingsChatColumnAlign,
+	chatHeaderMoves?: boolean,
+	chatFooterMoves?: boolean,
+	participantsBarEnabled?: boolean,
+	participantsBarAvatarSize?: SettingsUiChatAppearanceSettingsParticipantsBarAvatarSize,
+	participantsBarAvatarShape?: SettingsUiChatAppearanceSettingsParticipantsBarAvatarShape,
+	participantsBarBackground?: SettingsUiChatAppearanceSettingsParticipantsBarBackground,
+	participantsBarGap?: SettingsUiChatAppearanceSettingsParticipantsBarGap,
+	participantsBarAlign?: SettingsUiChatAppearanceSettingsParticipantsBarAlign,
+	participantsBarHintPosition?: SettingsUiChatAppearanceSettingsParticipantsBarHintPosition,
+	chatWidgetAreaEnabled?: boolean,
+	chatWidgetCenterMode?: SettingsUiChatAppearanceSettingsChatWidgetCenterMode,
+	chatWidgetSlots?: SettingsUiChatAppearanceSettingsChatWidgetSlots_Deserialize,
+	userBubbleColor?: SettingsUiChatAppearanceSettingsUserBubbleColor,
+	assistantBubbleColor?: SettingsUiChatAppearanceSettingsAssistantBubbleColor,
+	userBubbleColorHex?: string,
+	assistantBubbleColorHex?: string,
+	footerInputColorHex?: string,
+	messageTextColorHex?: string,
+	plainTextColorHex?: string,
+	italicTextColorHex?: string,
+	quotedTextColorHex?: string,
+	inlineCodeTextColorHex?: string,
+	transparentHeader?: boolean,
+	backgroundDim?: number | null,
+	backgroundBlur?: number | null,
+	bubbleBlur?: SettingsUiChatAppearanceSettingsBubbleBlur,
+	bubbleOpacity?: number | null,
+	textMode?: SettingsUiChatAppearanceSettingsTextMode,
+};
+
+export type SettingsUiChatAppearanceSettings_Serialize = {
+	fontSize?: SettingsUiChatAppearanceSettingsFontSize,
+	lineSpacing?: SettingsUiChatAppearanceSettingsLineSpacing,
+	bubbleStyle?: SettingsUiChatAppearanceSettingsBubbleStyle,
+	bubbleRadius?: SettingsUiChatAppearanceSettingsBubbleRadius,
+	bubbleMaxWidth?: SettingsUiChatAppearanceSettingsBubbleMaxWidth,
+	bubblePadding?: SettingsUiChatAppearanceSettingsBubblePadding,
+	showMessageAuthor?: boolean,
+	showMessageTimestamp?: boolean,
+	timestampFormat?: SettingsUiChatAppearanceSettingsTimestampFormat,
+	messageHeaderPlacement?: SettingsUiChatAppearanceSettingsMessageHeaderPlacement,
+	showMessageModel?: boolean,
+	showMessageInputTokens?: boolean,
+	showMessageOutputTokens?: boolean,
+	showMessageTotalTokens?: boolean,
+	showMessageTtft?: boolean,
+	showMessageTokensPerSecond?: boolean,
+	showMessageMtp?: boolean,
+	messageInfoPlacement?: SettingsUiChatAppearanceSettingsMessageInfoPlacement,
+	messageInfoSize?: SettingsUiChatAppearanceSettingsMessageInfoSize,
+	messageGap?: SettingsUiChatAppearanceSettingsMessageGap,
+	avatarShape?: SettingsUiChatAppearanceSettingsAvatarShape,
+	avatarSize?: SettingsUiChatAppearanceSettingsAvatarSize,
+	chatColumnWidth?: SettingsUiChatAppearanceSettingsChatColumnWidth,
+	chatColumnWidthPx?: number | null,
+	chatColumnAlign?: SettingsUiChatAppearanceSettingsChatColumnAlign,
+	chatHeaderMoves?: boolean,
+	chatFooterMoves?: boolean,
+	participantsBarEnabled?: boolean,
+	participantsBarAvatarSize?: SettingsUiChatAppearanceSettingsParticipantsBarAvatarSize,
+	participantsBarAvatarShape?: SettingsUiChatAppearanceSettingsParticipantsBarAvatarShape,
+	participantsBarBackground?: SettingsUiChatAppearanceSettingsParticipantsBarBackground,
+	participantsBarGap?: SettingsUiChatAppearanceSettingsParticipantsBarGap,
+	participantsBarAlign?: SettingsUiChatAppearanceSettingsParticipantsBarAlign,
+	participantsBarHintPosition?: SettingsUiChatAppearanceSettingsParticipantsBarHintPosition,
+	chatWidgetAreaEnabled?: boolean,
+	chatWidgetCenterMode?: SettingsUiChatAppearanceSettingsChatWidgetCenterMode,
+	chatWidgetSlots?: SettingsUiChatAppearanceSettingsChatWidgetSlots_Serialize,
+	userBubbleColor?: SettingsUiChatAppearanceSettingsUserBubbleColor,
+	assistantBubbleColor?: SettingsUiChatAppearanceSettingsAssistantBubbleColor,
+	userBubbleColorHex?: string,
+	assistantBubbleColorHex?: string,
+	footerInputColorHex?: string,
+	messageTextColorHex?: string,
+	plainTextColorHex?: string,
+	italicTextColorHex?: string,
+	quotedTextColorHex?: string,
+	inlineCodeTextColorHex?: string,
+	transparentHeader?: boolean,
+	backgroundDim?: number | null,
+	backgroundBlur?: number | null,
+	bubbleBlur?: SettingsUiChatAppearanceSettingsBubbleBlur,
+	bubbleOpacity?: number | null,
+	textMode?: SettingsUiChatAppearanceSettingsTextMode,
+};
+
+export type SettingsUiChatsViewMode = "hero" | "gallery" | "list";
+
+export type SettingsUiCustomColorPreset = SettingsUiCustomColorPreset_Serialize | SettingsUiCustomColorPreset_Deserialize;
+
+export type SettingsUiCustomColorPreset_Deserialize = {
+	id?: string,
+	name?: string,
+	colors?: SettingsUiCustomColors_Deserialize,
+	settingsCardOpacity?: number | null,
+	createdAt?: number | null,
+};
+
+export type SettingsUiCustomColorPreset_Serialize = {
+	id?: string,
+	name?: string,
+	colors?: SettingsUiCustomColors_Serialize,
+	settingsCardOpacity?: number | null,
+	createdAt?: number | null,
+};
+
+export type SettingsUiCustomColors = SettingsUiCustomColors_Serialize | SettingsUiCustomColors_Deserialize;
+
+export type SettingsUiCustomColors_Deserialize = {
+	surface?: string,
+	surfaceEl?: string,
+	fg?: string,
+	appText?: string,
+	appTextMuted?: string,
+	appTextSubtle?: string,
+	accent?: string,
+	danger?: string,
+	warning?: string,
+	info?: string,
+	secondary?: string,
+	nav?: string,
+};
+
+export type SettingsUiCustomColors_Serialize = {
+	surface?: string,
+	surfaceEl?: string,
+	fg?: string,
+	appText?: string,
+	appTextMuted?: string,
+	appTextSubtle?: string,
+	accent?: string,
+	danger?: string,
+	warning?: string,
+	info?: string,
+	secondary?: string,
+	nav?: string,
+};
+
+export type SettingsUiGroupChatsViewMode = "classic" | "detailed";
+
+export type SettingsUiHeaderStyle = "auto" | "attached" | "floating" | "inline";
+
+export type SettingsUiLlamaSamplerPreset = SettingsUiLlamaSamplerPreset_Serialize | SettingsUiLlamaSamplerPreset_Deserialize;
+
+export type SettingsUiLlamaSamplerPreset_Deserialize = {
+	id?: string,
+	name?: string,
+	stages?: SettingsLlamaSamplerStage[],
+};
+
+export type SettingsUiLlamaSamplerPreset_Serialize = {
+	id?: string,
+	name?: string,
+	stages?: SettingsLlamaSamplerStage[],
+};
+
+export type SettingsUiNavAlign = "start" | "center" | "end";
+
+export type SettingsUiNavEdge = "top" | "bottom";
+
+export type SettingsUiNavItemsItem = "chats" | "groups" | "create" | "discover" | "library" | "search" | "settings";
+
+export type SettingsUiNavigationSide = "left" | "right";
+
+export type SettingsUiNavigationStyle = "bottom" | "bottomLabels" | "dock" | "sidebar" | "floatingSidebar" | "header";
+
+export type SettingsUiTheme = "light" | "dark";
+
+export type SettingsUpdateRequest = SettingsUpdateRequest_Serialize | SettingsUpdateRequest_Deserialize;
+
+export type SettingsUpdateRequest_Deserialize = {
+	patch: SettingsPatch_Deserialize,
+	expected_revision: number,
+};
+
+export type SettingsUpdateRequest_Serialize = {
+	patch: SettingsPatch_Serialize,
+	expected_revision: number,
+};
+
+export type SettingsView = {
+	device: SettingsDeviceView,
+	global: SettingsGlobalSettings,
+	sampler_defaults: SettingsModelSettingsLayer,
+	default_model_profile_id: string | null,
+	default_prompt_document_id: string | null,
+	dynamic_memory_model_profile_id: string | null,
+	group_speaker_model_profile_id: string | null,
+	revision: number,
+};
+
+export type SettingsWidgetNode = { type: "divider"; id: string; design: WidgetDesign | null; style: WidgetDividerStyle | null } | { type: "box"; id: string; design: WidgetDesign | null; variant: WidgetBoxVariant | null; title: string | null; description: string | null; children: SettingsWidgetNode[] } | { type: "character_info"; id: string; design: WidgetDesign | null; characterId: string | null } | { type: "persona_info"; id: string; design: WidgetDesign | null } | { type: "scratch_pad"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; content: string | null } | { type: "image"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; source: WidgetImageSource; shape: WidgetImageShape | null } | { type: "selector"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; kind: WidgetSelectorKind } | { type: "button"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; action: WidgetButtonAction } | { type: "stat_tracker"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; stats: WidgetStat[] } | { type: "quick_snippets"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; snippets: WidgetSnippet[] } | { type: "dice"; id: string; design: WidgetDesign | null; title: string | null; description: string | null; notation: string | null } | { type: "memory"; id: string; design: WidgetDesign | null; title: string | null; limit: number | null } | { type: "companion_state"; id: string; design: WidgetDesign | null; title: string | null } | { type: "session_info"; id: string; design: WidgetDesign | null; title: string | null } | { type: "author_note"; id: string; design: WidgetDesign | null; title: string | null; description: string | null } | { type: "time"; id: string; design: WidgetDesign | null; title: string | null; hourFormat: WidgetHourFormat | null; showSeconds: boolean | null; showDate: boolean | null };
+
 export type SoulCategory = "essence" | "traits" | "backstory" | "appearance" | "goals" | "likes" | "voice" | "relational_style" | "vulnerabilities" | "fears" | "habits" | "boundaries";
 
 export type SoulFactKind = "add" | "adjust" | "authored" | "consolidated";
@@ -4906,6 +5595,12 @@ export type TtsSynthesizeRequest = {
 	retained?: boolean,
 };
 
+export type UiPreferenceChange = UiPreferenceChange_Serialize | UiPreferenceChange_Deserialize;
+
+export type UiPreferenceChange_Deserialize = { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Deserialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Deserialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Deserialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Deserialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Deserialize[] | null };
+
+export type UiPreferenceChange_Serialize = { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Serialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Serialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Serialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Serialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Serialize[] | null };
+
 export type UserVoiceCreateRequest = {
 	client_operation_id: string,
 	provider_id: string,
@@ -5018,6 +5713,36 @@ export type WhisperRunOptions = {
 	force_cpu: boolean,
 	flash_attention: boolean,
 	gpu_device: number,
+};
+
+export type WidgetBoxVariant = "default" | "subtle" | "info" | "warning" | "success" | "danger";
+
+export type WidgetButtonAction = "regenerate" | "swap_places" | "new_session" | "continue" | "abort" | "view_history" | "open_memories" | "open_search" | "toggle_voice_autoplay";
+
+export type WidgetDesign = "default" | "minimal" | "solid" | "outline";
+
+export type WidgetDividerStyle = "line" | "space";
+
+export type WidgetHourFormat = "12h" | "24h";
+
+export type WidgetImageShape = "auto" | "square" | "wide" | "circle";
+
+export type WidgetImageSource = { kind: "character_avatar" } | { kind: "persona_avatar" } | { kind: "library"; path: string } | { kind: "upload"; path: string };
+
+export type WidgetSelectorKind = "persona" | "model" | "author_note";
+
+export type WidgetSnippet = {
+	id: string,
+	label: string,
+	text: string,
+};
+
+export type WidgetStat = {
+	id: string,
+	label: string,
+	value: number | null,
+	min: number | null,
+	max: number | null,
 };
 
 /* Tauri Specta runtime */

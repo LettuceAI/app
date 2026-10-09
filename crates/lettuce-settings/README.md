@@ -16,9 +16,9 @@ The crate persists nothing itself. Settings go through the synchronous store tra
 - `embedding.dimensions`: the embedding dimension preference; unset means the embedding default.
 - `manual_mode_context_window` (default 50): the history window for chats without dynamic memory. Dynamic chats use the summary interval instead.
 - `lorebook_scan_depth` (default 10, `LOREBOOK_SCAN_DEPTH_RANGE` 1 to 20): how many of the latest messages a recent-message-window lorebook scans for keywords, in direct and group chats. `GlobalSettings::within_bounds` rejects a value outside the range, and the store, backup restore and sync all refuse such a document.
-- `llama_default_context_length` (unset means 8192; `LLAMA_DEFAULT_CONTEXT_LENGTH_RANGE` 512 to 1,048,576, checked by `within_bounds`) and `llama_default_kv_cache_type` (`auto`, `f16`, `q8_0`, `q4_0`; unset means `auto`, counted as f16): the context and KV cache type local runnability scores and recommendations assume. The app settings sync schema is version 3 since they were added.
+- `llama_default_context_length` (unset means 8192; `LLAMA_DEFAULT_CONTEXT_LENGTH_RANGE` 512 to 1,048,576, checked by `within_bounds`) and `llama_default_kv_cache_type` (`auto`, `f16`, `q8_0`, `q4_0`; unset means `auto`, counted as f16): the context and KV cache type local runnability scores and recommendations assume. The app settings sync schema is version 4.
 - `auto_download_character_card_avatars` (default on): fetch http(s) avatars a character card links to while importing it.
-- `ui_preferences`: the app shell's own JSON document (theme, colors, view modes, navigation, the global chat appearance, saved sampler presets and so on). Only the shell reads it; the backend stores, bounds (256 KiB) and syncs it without interpreting it.
+- `ui_preferences`: the app shell's own JSON document (theme, colors, view modes, navigation, the global chat appearance, saved sampler presets and so on). The backend stores and syncs it without a collection or aggregate byte cap; the settings API validates typed choices before writing.
 
 ### Memory policy
 

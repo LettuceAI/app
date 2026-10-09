@@ -92,6 +92,7 @@ struct ApiContextInner {
     jobs: JobHostState,
     memory_work: super::memory_worker::MemoryWorkState,
     conversations_changed: Arc<tokio::sync::Notify>,
+    settings_changed: Arc<tokio::sync::Notify>,
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
@@ -99,6 +100,7 @@ struct ApiContextInner {
     provider_writes: tokio::sync::Mutex<()>,
     quota: super::nanogpt::QuotaState,
     quota_inference: Arc<dyn InferencePort>,
+    content_filter: Arc<lettuce_inference::content_filter::ContentFilter>,
     quota_images: Arc<dyn ImageProviderPort>,
     image: super::image::ImageApiState,
     speech: super::speech::SpeechApiState,
@@ -112,7 +114,19 @@ impl std::fmt::Debug for ApiContext {
 
 impl ApiContext {
     #[must_use]
-    pub fn new(mut parts: ApiContextParts) -> Self {
+    pub fn new(parts: ApiContextParts) -> Self {
+        Self::new_with_filter(
+            parts,
+            Arc::new(lettuce_inference::content_filter::ContentFilter::new(
+                lettuce_inference::content_filter::PureModeLevel::Standard,
+            )),
+        )
+    }
+
+    fn new_with_filter(
+        mut parts: ApiContextParts,
+        content_filter: Arc<lettuce_inference::content_filter::ContentFilter>,
+    ) -> Self {
         if !parts.asset_url_base.ends_with('/') {
             parts.asset_url_base.push('/');
         }
@@ -134,6 +148,12 @@ impl ApiContext {
             .backend
             .database()
             .on_model_change(move || signal.notify_one());
+        let settings_changed = Arc::new(tokio::sync::Notify::new());
+        let signal = settings_changed.clone();
+        parts
+            .backend
+            .database()
+            .on_settings_change(move || signal.notify_one());
         let (committed, _) = tokio::sync::watch::channel(0_u64);
         for listen in [
             lettuce_database::Database::on_job_change,
@@ -171,6 +191,7 @@ impl ApiContext {
                 jobs,
                 memory_work: super::memory_worker::MemoryWorkState::default(),
                 conversations_changed,
+                settings_changed,
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
@@ -178,6 +199,7 @@ impl ApiContext {
                 provider_writes: tokio::sync::Mutex::new(()),
                 quota: super::nanogpt::QuotaState::default(),
                 quota_inference,
+                content_filter,
                 quota_images,
                 image: super::image::ImageApiState::default(),
                 speech: super::speech::SpeechApiState::default(),
@@ -266,16 +288,16 @@ impl ApiContext {
         let tls = backend
             .tls_policy()
             .map_err(|error| storage_error("device settings", error))?;
-        let inference: Arc<dyn InferencePort> = Arc::new(
-            backend
-                .provider_runtime(Arc::clone(&secret_store), &tls)
-                .map_err(|error| {
-                    api_error(
-                        ApiErrorCode::Unavailable,
-                        format!("provider runtime could not start: {error}"),
-                    )
-                })?,
-        );
+        let provider = backend
+            .provider_runtime(Arc::clone(&secret_store), &tls)
+            .map_err(|error| {
+                api_error(
+                    ApiErrorCode::Unavailable,
+                    format!("provider runtime could not start: {error}"),
+                )
+            })?;
+        let content_filter = provider.content_filter();
+        let inference: Arc<dyn InferencePort> = Arc::new(provider);
         let image_provider: Arc<dyn ImageProviderPort> = Arc::new(
             backend
                 .image_providers(Arc::clone(&secret_store), &tls)
@@ -286,25 +308,28 @@ impl ApiContext {
                     )
                 })?,
         );
-        Ok(Self::new(ApiContextParts {
-            backend,
-            secret_store,
-            inference,
-            image_provider,
-            models: Arc::new(InstalledModels),
-            speech: Arc::new(super::speech::InstalledSpeech::new(microphone)),
-            media: Some(Arc::new(media)),
-            events,
-            clock,
-            files,
-            app_folder: Some(app_data_dir.to_path_buf()),
-            resource_dir,
-            database_files: Some(ApiDatabaseFiles {
-                location,
-                active: path,
-            }),
-            asset_url_base,
-        }))
+        Ok(Self::new_with_filter(
+            ApiContextParts {
+                backend,
+                secret_store,
+                inference,
+                image_provider,
+                models: Arc::new(InstalledModels),
+                speech: Arc::new(super::speech::InstalledSpeech::new(microphone)),
+                media: Some(Arc::new(media)),
+                events,
+                clock,
+                files,
+                app_folder: Some(app_data_dir.to_path_buf()),
+                resource_dir,
+                database_files: Some(ApiDatabaseFiles {
+                    location,
+                    active: path,
+                }),
+                asset_url_base,
+            },
+            content_filter,
+        ))
     }
 
     /// A new context over the same backend and host services, as a
@@ -630,6 +655,14 @@ impl ApiContext {
 
     pub(crate) fn media(&self) -> Option<&ApiMediaStore> {
         self.inner.parts.media.as_deref()
+    }
+
+    pub(crate) async fn settings_changed(&self) {
+        self.inner.settings_changed.notified().await;
+    }
+
+    pub(crate) fn content_filter(&self) -> &Arc<lettuce_inference::content_filter::ContentFilter> {
+        &self.inner.content_filter
     }
 
     pub(crate) fn clock(&self) -> &dyn Clock {

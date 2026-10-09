@@ -106,7 +106,7 @@ pub fn canonical_group_payload(
 
 pub const APP_SETTINGS_SYNC_KIND: &str = "app_settings";
 pub const APP_SETTINGS_SYNC_SCHEMA: &str = "app_settings.snapshot";
-pub const APP_SETTINGS_SYNC_VERSION: u32 = 3;
+pub const APP_SETTINGS_SYNC_VERSION: u32 = 4;
 
 pub const CONVERSATION_SNAPSHOT_SYNC_KIND: &str = "conversation_snapshot";
 pub const CONVERSATION_SNAPSHOT_SYNC_SCHEMA: &str = "conversation.snapshot_artifact";
@@ -210,3 +210,11 @@ pub const PLAYGROUND_IMAGE_SYNC_VERSION: u32 = 1;
 pub const CREATION_WORKFLOW_SYNC_KIND: &str = "creation_workflow";
 pub const CREATION_WORKFLOW_SYNC_SCHEMA: &str = "creation.workflow";
 pub const CREATION_WORKFLOW_SYNC_VERSION: u32 = 1;
+
+#[cfg(test)]
+mod settings_schema_tests {
+    #[test]
+    fn settings_flags_change_the_sync_schema_version() {
+        assert_eq!(super::APP_SETTINGS_SYNC_VERSION, 4);
+    }
+}

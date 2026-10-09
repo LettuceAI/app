@@ -4,6 +4,7 @@
 
 pub use models::provider_control_adapter::CertificateImportError;
 
+mod settings_api;
 mod change_signal;
 mod job_adapter;
 pub(crate) mod job_details_adapter;

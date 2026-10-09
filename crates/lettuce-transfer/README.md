@@ -172,3 +172,5 @@ Provider backup graph version 5 includes frozen model display names in creation 
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
 
 Legacy settings conversion retains developer mode and the lorebook generator structured fallback format. An absent or NULL app sampler layer seeds 2048 output tokens; a present layer is converted as authored.
+
+Legacy UI preference collections retain all entries without an aggregate preference byte cap. Device UI state keeps its separate malformed-input guard.

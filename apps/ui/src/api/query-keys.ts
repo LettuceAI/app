@@ -11,6 +11,7 @@ export const queryKeys = {
     detail: (conversationId: string) => [...queryKeys.conversations.all, "detail", conversationId] as const,
     messages: (conversationId: string) => [...queryKeys.conversations.detail(conversationId), "messages"] as const,
   },
+  settings: { all: ["settings"] as const, filterLog: () => ["settings", "content-filter"] as const },
   jobs: {
     all: ["jobs"] as const,
     lists: () => [...queryKeys.jobs.all, "list"] as const,
@@ -29,6 +30,10 @@ type AppEventInvalidations = {
 /** Which cached queries an application event makes stale; each key invalidates everything under it. */
 export const appEventInvalidations: AppEventInvalidations = {
   generation_settled: (event) => [queryKeys.conversations.lists(), queryKeys.conversations.detail(event.conversation_id)],
+  settings_changed: (event) => event.section === "ui_state"
+    ? [queryKeys.settings.all, queryKeys.app.status()]
+    : [queryKeys.settings.all],
+  content_filter_hit: () => [queryKeys.settings.filterLog()],
   job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id)],
 };
 
