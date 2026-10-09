@@ -12,6 +12,8 @@ The application API (`lettuce_app::api`) speaks only these types. Ids are UUID s
 
 Database-file inventory uses relative file identifiers, nullable creation timestamps and always-present measured modification timestamps. Creation is unknown only for pre-existing files whose filesystem does not expose it; newly created files retain the timestamp recorded before creation.
 
+Usage contracts carry frozen attribution, nullable counters and costs, inclusive timestamp ranges, stable cursors and explicit outcome filters. Statistics accept the device's IANA timezone and expose unknown token and cost request counts alongside observed totals. CSV exports accept a FileTarget and return completion after the backend writes the selected file.
+
 Media never crosses IPC as bytes, base64 or a data URL, in either direction: a contract names media only by `AssetRef`, and a request that brings in user media will carry a file path (a `content://` URI on Android) that the backend reads, validates and ingests. No contract type has a bytes or base64 field.
 
 Media export takes an asset identifier and FileTarget. Its typed details distinguish missing assets, missing blobs or objects, unavailable media storage, invalid stored metadata and protected export targets.

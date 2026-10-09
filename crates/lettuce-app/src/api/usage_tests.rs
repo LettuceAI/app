@@ -361,7 +361,7 @@ async fn cleared_chat_usage_exports_and_restores_with_exact_tombstone_proofs() {
         .read_provider_backup_graph()
         .expect("test operation succeeds");
     lettuce_transfer::canonicalize_and_validate(&mut graph).expect("test operation succeeds");
-    assert_eq!(graph.conversation_usage.version, 2);
+    assert_eq!(graph.conversation_usage.version, 3);
     assert_eq!(graph.conversation_usage.tombstones.len(), 2);
     let mut missing = graph.clone();
     missing

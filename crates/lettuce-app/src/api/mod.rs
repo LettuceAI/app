@@ -302,7 +302,7 @@ pub use metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, l
 mod usage_tests;
 
 mod usage;
-pub use usage::usage_clear_before;
+pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
 
 mod storage;
 pub use storage::{storage_database_file_delete, storage_database_files_list};

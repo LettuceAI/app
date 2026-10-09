@@ -14,6 +14,10 @@ mod tombstone;
 pub use tombstone::*;
 mod app_usage;
 pub use app_usage::*;
+mod reporting;
+pub use reporting::*;
+mod report_query;
+pub use report_query::*;
 
 use lettuce_conversations::UsageRecord;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, UsageEventId};

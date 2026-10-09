@@ -31,3 +31,5 @@ Slice 12 media export uses a picked FileTarget instead of a fixed Downloads copy
 The media library wrappers replace the separate filesystem inventories (`old-code/src-tauri/src/storage_manager/media.rs:559-576,875-895`) with image or audio pages. Referenced removal returns InUse instead of deleting a referenced image file (`old-code/src-tauri/src/storage_manager/media.rs:988-1023`).
 
 The registered diagnostics report replaces frontend assembly in `old-code/src/ui/pages/settings/LogsPage.tsx:1114-1267`. Clipboard and copy feedback remain UI responsibilities (`LogsPage.tsx:1270-1281`); required backend failures are typed.
+
+Usage reporting delegates the unified query, local-day statistics and picked-target CSV export to the application. Export preserves the fixed header from `old-code/src-tauri/src/usage/repository.rs:700-709` and replaces the frontend's export completion flow (`old-code/src/ui/pages/settings/UsagePage.tsx:651-668`) with a typed command result.

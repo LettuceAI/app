@@ -21,6 +21,9 @@ export const commands = {
 	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError>(__TAURI_INVOKE("llm_metrics_clear", { request })),
 	appUsageDays: () => typedError<AppUsageDaysView, ApiError>(__TAURI_INVOKE("app_usage_days")),
 	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError>(__TAURI_INVOKE("usage_clear_before", { request })),
+	usageQuery: (request: UsageQueryRequest) => typedError<UsagePage, ApiError>(__TAURI_INVOKE("usage_query", { request })),
+	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError>(__TAURI_INVOKE("usage_stats", { request })),
+	usageExportCsv: (request: UsageExportCsvRequest) => typedError<null, ApiError>(__TAURI_INVOKE("usage_export_csv", { request })),
 	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
 	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("storage_database_file_delete", { request })),
 	mediaSaveTo: (request: MediaSaveToRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_save_to", { request })),
@@ -5833,6 +5836,115 @@ export type UsageClearBeforeRequest = {
 
 export type UsageCleared = {
 	removed: number,
+};
+
+export type UsageDateRange = {
+	start: number | null,
+	end: number | null,
+};
+
+export type UsageExportCsvRequest = {
+	filters: UsageFilters,
+	target: FileTarget,
+};
+
+export type UsageFilters = {
+	range?: UsageDateRange,
+	provider_kind: string | null,
+	model_id: string | null,
+	character_id: string | null,
+	operation_kind: string | null,
+	status: UsageStatus | null,
+};
+
+export type UsageGroupBy = "day" | "model" | "provider" | "character" | "operation";
+
+export type UsageGroupTotals = {
+	key: string | null,
+	label: string | null,
+	totals: UsageTotals,
+};
+
+export type UsagePage = {
+	items: UsageRow[],
+	next_cursor: string | null,
+};
+
+export type UsageQueryRequest = {
+	filters: UsageFilters,
+	sort: UsageSort,
+	cursor: string | null,
+	limit: number,
+};
+
+export type UsageRow = {
+	id: string,
+	timestamp: number,
+	status: UsageStatus,
+	session_id: string | null,
+	character_id: string | null,
+	character_name: string | null,
+	model_id: string | null,
+	model_name: string | null,
+	provider_kind: string | null,
+	provider_label: string | null,
+	operation_type: string | null,
+	finish_reason: string | null,
+	provider_response_id: string | null,
+	prompt_tokens: number | null,
+	cached_prompt_tokens: number | null,
+	cache_write_tokens: number | null,
+	completion_tokens: number | null,
+	reasoning_tokens: number | null,
+	image_tokens: number | null,
+	audio_tokens: number | null,
+	web_search_requests: number | null,
+	total_tokens: number | null,
+	memory_tokens: number | null,
+	summary_tokens: number | null,
+	input_image_count: number | null,
+	output_image_count: number | null,
+	prompt_cost: number | null,
+	cache_read_cost: number | null,
+	cache_write_cost: number | null,
+	completion_cost: number | null,
+	reasoning_cost: number | null,
+	request_cost: number | null,
+	web_search_cost: number | null,
+	total_cost: number | null,
+	api_cost: number | null,
+	error_message: string | null,
+};
+
+export type UsageSort = "newest_first" | "oldest_first";
+
+export type UsageStats = {
+	totals: UsageTotals,
+	groups: UsageGroupTotals[],
+};
+
+export type UsageStatsRequest = {
+	range: UsageDateRange,
+	provider_kind: string | null,
+	group_by: UsageGroupBy,
+	time_zone: string,
+};
+
+export type UsageStatus = "pending" | "succeeded" | "failed" | "cancelled" | "interrupted";
+
+export type UsageTotals = {
+	requests: number,
+	successful_requests: number,
+	failed_requests: number,
+	cancelled_requests: number,
+	interrupted_requests: number,
+	pending_requests: number,
+	prompt_tokens: number | null,
+	completion_tokens: number | null,
+	total_tokens: number | null,
+	total_cost: number | null,
+	unknown_token_requests: number,
+	unknown_cost_requests: number,
 };
 
 export type UserVoiceCreateRequest = {

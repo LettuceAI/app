@@ -12,6 +12,7 @@ pub use job_adapter::ManualSceneImageAdmission;
 pub use job_details_adapter::{JobDetailRecord, JobOperation};
 mod usage_adapter;
 mod usage_clear;
+mod usage_report;
 mod conversation;
 mod memory;
 mod companion;

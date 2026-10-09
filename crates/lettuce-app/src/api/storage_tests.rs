@@ -9,6 +9,84 @@ use super::{ApiDatabaseFiles, ApiMediaStore, NoModels};
 use crate::{AppBackend, AppDatabaseLocation};
 
 #[tokio::test]
+async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncation() {
+    let root = std::env::temp_dir().join(format!("lettuce-usage-export-{}", OperationId::new()));
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let location =
+        AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location");
+    let active = location.active_path().expect("active");
+    let backend = Arc::new(AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
+    let h = harness_over_files(
+        backend,
+        Reply::Text("ok"),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::new(NoModels),
+        Arc::new(NoImages),
+        Some(ApiDatabaseFiles {
+            location,
+            active: active.clone(),
+        }),
+    );
+    let output = root.join("usage.csv");
+    let request = dto::UsageExportCsvRequest {
+        filters: dto::UsageFilters::default(),
+        target: dto::FileTarget {
+            uri: output.to_string_lossy().into_owned(),
+        },
+    };
+    super::usage_export_csv(&h.context, request.clone())
+        .await
+        .expect("export");
+    assert_eq!(
+        std::fs::read_to_string(&output).expect("CSV"),
+        format!("{}\n", lettuce_usage::USAGE_CSV_HEADER)
+    );
+    let before = std::fs::read(&active).expect("database bytes");
+    let alias = root.join("database-alias.csv");
+    std::fs::hard_link(&active, &alias).expect("hard link");
+    for target in [&active, &alias] {
+        let error = super::usage_export_csv(
+            &h.context,
+            dto::UsageExportCsvRequest {
+                target: dto::FileTarget {
+                    uri: target.to_string_lossy().into_owned(),
+                },
+                ..request.clone()
+            },
+        )
+        .await
+        .expect_err("protected database");
+        assert_eq!(error.code, ApiErrorCode::Conflict);
+        assert_eq!(std::fs::read(&active).expect("preserved database"), before);
+    }
+    let error = super::usage_export_csv(
+        &h.context,
+        dto::UsageExportCsvRequest {
+            filters: dto::UsageFilters {
+                range: dto::UsageDateRange {
+                    start: Some(2),
+                    end: Some(1),
+                },
+                ..dto::UsageFilters::default()
+            },
+            ..request.clone()
+        },
+    )
+    .await
+    .expect_err("invalid range");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    assert_eq!(
+        std::fs::read_to_string(&output).expect("preserved export"),
+        format!("{}\n", lettuce_usage::USAGE_CSV_HEADER)
+    );
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
 async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missing_sources() {
     let root = std::env::temp_dir().join(format!("lettuce-media-save-{}", OperationId::new()));
     std::fs::create_dir_all(&root).expect("root");

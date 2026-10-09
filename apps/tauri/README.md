@@ -124,3 +124,5 @@ Database-file inventory carries nullable creation time and measured modification
 The storage module delegates media_library_list and media_library_remove to the application API. Library items use the shell asset URL base, while removal returns typed reference details and accepts a durable operation identity.
 
 The diagnostics command returns the app support report string. The backend redacts home paths and performs the embedding checks; the shell registers the command alongside the log tools.
+
+Usage query, statistics and CSV wrappers forward owned contracts to the app. Statistics carry an IANA timezone, and CSV exports write through the selected FileTarget with the native target lease and protected-file checks.

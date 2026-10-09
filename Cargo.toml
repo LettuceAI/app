@@ -31,6 +31,7 @@ blake3 = "1"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["std"] }
 spake2 = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jiff = { version = "0.2.37", features = ["tzdb-bundle-always"] }
 cap-primitives = "3.4"
 cap-std = "3.4"
 flate2 = "1"

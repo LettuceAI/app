@@ -1289,6 +1289,99 @@ mod tests {
     }
 
     #[test]
+    fn usage_report_reads_charge_evidence_once_and_keeps_unknown_counters() {
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+        use lettuce_usage::{JobUsageLedger, UsageCostLedger, UsageReportRepository};
+        let (database, record) = fixture();
+        let event = database.record(record.clone()).expect("terminal aggregate");
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    JobSubject::new(SubjectKind::ArtifactInstall, "report-test").expect("subject"),
+                    OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+                )
+                .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+            )
+            .expect("job")
+            .job;
+        let dispatch = lettuce_usage::JobInferenceUsage {
+            snapshot: None,
+            id: lettuce_types::UsageEventId::new(),
+            job_id: job.id,
+            logical_attempt_id: record.attempt_id,
+            model_profile_id: record.model_profile_id.expect("model"),
+            model_revision: record.model_revision.expect("model revision"),
+            provider_account_id: record.provider_account_id.expect("account"),
+            provider_account_revision: record.provider_account_revision.expect("account revision"),
+            admitted_at: lettuce_types::TimestampMillis::new(1),
+            result: None,
+        };
+        database.admit_job_usage(dispatch.clone()).expect("admit");
+        let counters = match record.usage {
+            lettuce_conversations::UsageCounters::Known(value) => value,
+            _ => unreachable!(),
+        };
+        database
+            .settle_job_usage(
+                dispatch.id,
+                lettuce_usage::JobInferenceUsageResult::Response {
+                    snapshot: None,
+                    usage: Some(counters),
+                    provider_response_id: None,
+                },
+            )
+            .expect("settle");
+        let rows = database.read_usage_report().expect("report");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, dispatch.id.to_string());
+        assert_eq!(rows[0].prompt_tokens, Some(120));
+        assert_eq!(rows[0].memory_tokens, None);
+        assert_eq!(rows[0].total_cost, None);
+        assert_eq!(
+            UsageLedger::get(&database, event.id).expect("aggregate retained"),
+            Some(event.clone())
+        );
+        let basis = lettuce_usage::UsageCostBasis {
+            openrouter: None,
+            model_profile_id: dispatch.model_profile_id,
+            provider_account_id: dispatch.provider_account_id,
+            source: "recorded prices".into(),
+            captured_at: lettuce_types::TimestampMillis::new(11),
+            pricing: lettuce_usage::ModelPricing {
+                prompt: "0.001".into(),
+                completion: "0.002".into(),
+                request: "0".into(),
+                image: "0".into(),
+                image_output: "0".into(),
+                web_search: "0".into(),
+                internal_reasoning: "0".into(),
+                input_cache_read: "0".into(),
+                input_cache_write: "0".into(),
+            },
+            input: lettuce_usage::OpenRouterCostInput {
+                prompt_tokens: 120,
+                completion_tokens: 30,
+                ..lettuce_usage::OpenRouterCostInput::default()
+            },
+        };
+        database
+            .record_cost(event.id, basis.clone())
+            .expect("aggregate cost");
+        let rows = database
+            .read_usage_report()
+            .expect("one aggregate-priced charge");
+        assert_eq!(rows.len(), 1);
+        assert!((rows[0].total_cost.expect("known aggregate cost") - 0.18).abs() < 1e-12);
+        database
+            .record_job_cost(dispatch.id, basis)
+            .expect("dispatch cost");
+        let rows = database.read_usage_report().expect("one priced charge");
+        assert_eq!(rows.len(), 1);
+        assert!((rows[0].total_cost.expect("known cost") - 0.18).abs() < 1e-12);
+    }
+
+    #[test]
     fn usage_origin_is_explicit_immutable_and_bound_to_replay() {
         let (database, record) = fixture();
         let event = database.record(record.clone()).expect("live event");

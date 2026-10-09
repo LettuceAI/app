@@ -80,6 +80,17 @@ async fn restored_harness() -> (super::tests::Harness, Database) {
         app_version: "legacy".into(),
         source_hash: ContentHash::parse("ef".repeat(32)).expect("hash"),
         documents: vec![
+            document(LegacyBackupDocumentKind::UsageRecords, serde_json::json!([{
+                "id": id(70), "timestamp": 10, "session_id": session,
+                "character_id": ada, "character_name": "Ada", "model_id": model,
+                "model_name": "Historical model", "provider_id": "openrouter", "provider_label": "Historical Router",
+                "operation_type": "chat", "finish_reason": "stop", "prompt_tokens": 12,
+                "completion_tokens": 8, "total_tokens": 20, "memory_tokens": null, "summary_tokens": null,
+                "reasoning_tokens": null, "image_tokens": null, "audio_tokens": null,
+                "prompt_cost": 0.01, "completion_cost": -0.002, "total_cost": 0.008,
+                "success": true, "error_message": null,
+                "metadata": [{"key": "cached_prompt_tokens", "value": "5"}]
+            }])),
             document(LegacyBackupDocumentKind::AudioProviders, serde_json::json!([{
                 "id": id(8), "provider_type": "fish_speech", "label": "Local narrator",
                 "base_url": "http://127.0.0.1:8080", "created_at": 1, "updated_at": 1
@@ -450,4 +461,50 @@ async fn message_playback_resolves_the_provider_voice_from_a_legacy_restore() {
     assert_eq!(frozen.request.provider.label, "Local narrator");
     assert_eq!(frozen.request.model_id, "server-default");
     assert_eq!(frozen.request.text, "Imported reply");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn usage_commands_report_real_legacy_rows_without_reconstructing_message_charges() {
+    let (harness, database) = restored_harness().await;
+    let page = super::usage_query(&harness.context, lettuce_contracts::UsageQueryRequest {
+        filters: lettuce_contracts::UsageFilters::default(), sort: lettuce_contracts::UsageSort::NewestFirst,
+        cursor: None, limit: 50,
+    }).await.expect("usage query");
+    assert_eq!(page.items.len(), 1);
+    let row = &page.items[0];
+    assert_eq!(row.model_name.as_deref(), Some("Historical model"));
+    assert_eq!(row.provider_label.as_deref(), Some("Historical Router"));
+    assert_eq!(row.prompt_tokens, Some(12));
+    assert_eq!(row.cached_prompt_tokens, Some(5));
+    assert_eq!(row.completion_cost, Some(-0.002));
+    assert_eq!(row.memory_tokens, None);
+    let stats = super::usage_stats(&harness.context, lettuce_contracts::UsageStatsRequest {
+        range: lettuce_contracts::UsageDateRange::default(), provider_kind: Some("openrouter".into()),
+        group_by: lettuce_contracts::UsageGroupBy::Provider, time_zone: "Europe/Berlin".into(),
+    }).await.expect("usage stats");
+    assert_eq!(stats.totals.requests, 1);
+    assert_eq!(stats.totals.total_tokens, Some(20));
+    assert_eq!(stats.totals.total_cost, Some(0.008));
+    assert_eq!(stats.groups[0].key.as_deref(), Some("openrouter"));
+    let output = std::env::temp_dir().join(format!("legacy-usage-{}.csv", lettuce_types::OperationId::new()));
+    super::usage_export_csv(&harness.context, lettuce_contracts::UsageExportCsvRequest {
+        filters: lettuce_contracts::UsageFilters::default(), target: lettuce_contracts::FileTarget {
+            uri: output.to_string_lossy().into_owned()
+        }
+    }).await.expect("legacy CSV export");
+    let csv = std::fs::read_to_string(&output).expect("CSV");
+    assert_eq!(csv.lines().count(), 2);
+    assert!(csv.contains("Historical model,Historical Router,chat,12,5,,8,"));
+    assert!(csv.contains(",-0.002,"));
+    std::fs::remove_file(output).expect("export cleanup");
+    assert!(!database.read_provider_backup_graph().expect("retained graph").conversation_usage.events.is_empty());
+    regenerate_imported(&harness, &database, 11).await;
+    let page = super::usage_query(&harness.context, lettuce_contracts::UsageQueryRequest {
+        filters: lettuce_contracts::UsageFilters::default(), sort: lettuce_contracts::UsageSort::NewestFirst,
+        cursor: None, limit: 50,
+    }).await.expect("live plus historical charges");
+    assert_eq!(page.items.len(), 2);
+    let graph = database.read_provider_backup_graph().expect("live evidence");
+    assert_eq!(graph.job_backup.inference.len(), 1);
+    assert!(page.items.iter().any(|row| row.id == graph.job_backup.inference[0].evidence.id.to_string()));
 }
