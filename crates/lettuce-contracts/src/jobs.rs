@@ -167,6 +167,9 @@ pub enum JobFailureCode {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum JobFailureReason {
+    StorageCheckpointBusy,
+    StorageUnavailable,
+    DatabaseKeptReadOnly,
     HelpMeReplyDisabled,
     HelpMeReplyNoHistory,
     HelpMeReplyNoModel,
@@ -208,6 +211,7 @@ pub struct JobFailureDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobResultDto {
+    StorageOptimized,
     VoiceCreated {
         voice_id: String,
     },

@@ -83,6 +83,7 @@ pub struct ApiContext {
 }
 
 struct ApiContextInner {
+    maintenance: super::maintenance::MaintenanceGate,
     parts: ApiContextParts,
     models: ModelSlots,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
@@ -115,6 +116,10 @@ impl std::fmt::Debug for ApiContext {
 }
 
 impl ApiContext {
+    pub(super) fn maintenance(&self) -> &super::maintenance::MaintenanceGate {
+        &self.inner.maintenance
+    }
+
     pub(crate) fn accepts_database_work(&self) -> Result<bool, ApiError> {
         self.backend()
             .database()
@@ -197,6 +202,7 @@ impl ApiContext {
         });
         let context = Self {
             inner: Arc::new(ApiContextInner {
+                maintenance: super::maintenance::MaintenanceGate::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
                 streams: Mutex::new(HashMap::new()),

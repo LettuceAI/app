@@ -4,6 +4,15 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn storage_optimize(
+    context: State<'_, ApiContext>,
+    request: dto::StorageOptimizeRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    api::storage_optimize(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn media_library_list(
     context: State<'_, ApiContext>,
     request: dto::MediaLibraryListRequest,

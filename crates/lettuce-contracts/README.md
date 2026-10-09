@@ -110,3 +110,5 @@ Usage clearing carries a timestamp cutoff and client operation id and returns th
 Storage file contracts expose basenames, creation kind and time, size, active status and deletion availability. Explicit deletion carries a client operation id; database-file error details name only the requested basename, with no native path.
 
 Media library requests filter image or audio and carry an opaque cursor and page limit. Items return asset URLs, known catalog metadata, retention and reference domains with opaque identities. Removal takes a client operation id and reports InUse with the references that prevent it; no native media path or bytes enter these contracts.
+
+Storage optimization takes an operation id and returns JobAccepted. Its terminal job result is StorageOptimized; checkpoint contention, kept-file refusal and storage failure have distinct failure reasons.

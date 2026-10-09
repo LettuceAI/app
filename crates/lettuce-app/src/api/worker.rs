@@ -83,6 +83,9 @@ impl ConversationGenerationWorker {
         next: QueuedConversationGeneration,
     ) -> Result<bool, ApiError> {
         let context = &self.context;
+        let Some(_work) = context.maintenance().work(context.shutdown_token()).await else {
+            return Ok(false);
+        };
         let backend = context.backend();
         let database = backend.database();
         let reply_media = context.media().map(|store| backend.reply_media(store));

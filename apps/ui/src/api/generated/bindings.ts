@@ -25,6 +25,7 @@ export const commands = {
 	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError>(__TAURI_INVOKE("usage_stats", { request })),
 	usageExportCsv: (request: UsageExportCsvRequest) => typedError<null, ApiError>(__TAURI_INVOKE("usage_export_csv", { request })),
 	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
+	storageOptimize: (request: StorageOptimizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("storage_optimize", { request })),
 	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("storage_database_file_delete", { request })),
 	mediaSaveTo: (request: MediaSaveToRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_save_to", { request })),
 	mediaLibraryList: (request: MediaLibraryListRequest) => typedError<MediaLibraryPage, ApiError>(__TAURI_INVOKE("media_library_list", { request })),
@@ -2362,7 +2363,7 @@ export type JobFailureDto = {
 };
 
 /**  Why a chat feature job failed, where the user can act on it. */
-export type JobFailureReason = "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
+export type JobFailureReason = "storage_checkpoint_busy" | "storage_unavailable" | "database_kept_read_only" | "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
 
 export type JobGetRequest = {
 	job_id: string,
@@ -2399,7 +2400,7 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
+export type JobResultDto = { type: "storage_optimized" } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
 /**
  *  The Soul draft a Soul writer job produced, which the caller merges
  *  into its unsaved draft.
@@ -5712,6 +5713,10 @@ export type SpeechRuntimeKind = "espeak" | "onnx_runtime";
 
 /**  The final failure before the bounded speech retry budget was exhausted. */
 export type SpeechTransientFailure = { type: "unavailable" } | { type: "network_unavailable" } | { type: "provider_unavailable"; status: number };
+
+export type StorageOptimizeRequest = {
+	client_operation_id: string,
+};
 
 export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
 

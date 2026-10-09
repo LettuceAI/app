@@ -47,6 +47,12 @@ impl FileWriteAccess {
         Ok(FileWriteUse(gate))
     }
 
+    pub(crate) fn acquire_exclusive(&self) -> Result<FileWriteUse, DatabaseError> {
+        let gate = open_file(&sidecar(&self.path, ".writes.lock"), true)?;
+        FileExt::lock_exclusive(&gate)?;
+        Ok(FileWriteUse(gate))
+    }
+
     pub(crate) fn fenced(&self) -> Result<bool, DatabaseError> {
         match open_file(&sidecar(&self.path, ".write-fenced"), false) {
             Ok(file) if file.metadata()?.len() == 0 => Ok(true),

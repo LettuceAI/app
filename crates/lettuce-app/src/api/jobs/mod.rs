@@ -299,6 +299,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
                 })
             }),
         result: feature
+            .or(super::maintenance_jobs::result_view(context, job)?)
             .or(local.result)
             .or(soul_result)
             .or(lorebook_result)
@@ -403,6 +404,12 @@ fn job_result(context: &ApiContext, result: &OutcomeRef) -> Option<dto::JobResul
 
 /// What a chat feature job needs changed, from the label its error carries.
 pub(super) fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
+    match label {
+        "storage-checkpoint-busy" => return Some(dto::JobFailureReason::StorageCheckpointBusy),
+        "storage-unavailable" => return Some(dto::JobFailureReason::StorageUnavailable),
+        "database-kept-read-only" => return Some(dto::JobFailureReason::DatabaseKeptReadOnly),
+        _ => {}
+    }
     use crate::jobs::failure_labels as labels;
     Some(match label {
         labels::HELP_ME_REPLY_DISABLED => dto::JobFailureReason::HelpMeReplyDisabled,

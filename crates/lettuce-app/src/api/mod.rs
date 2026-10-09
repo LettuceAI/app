@@ -33,7 +33,12 @@ pub(crate) mod local_runtime_events;
 mod lorebook_jobs;
 mod lorebook_projects;
 mod lorebooks;
+mod maintenance;
+mod maintenance_jobs;
 mod mapping;
+pub use maintenance_jobs::storage_optimize;
+#[cfg(test)]
+mod maintenance_tests;
 mod memory;
 mod memory_control;
 mod memory_models;

@@ -38,6 +38,10 @@ pub struct JobLane(pub String);
 pub trait JobHandler: Send + Sync {
     fn kinds(&self) -> &[JobKind];
 
+    fn requires_maintenance(&self) -> bool {
+        false
+    }
+
     /// The resources a claim may use.
     fn resources(&self) -> ResourceAvailability {
         ResourceAvailability::all()
@@ -115,6 +119,7 @@ impl JobHandlers {
             Arc::new(super::speech::SpeechTranscribeHandler),
             Arc::new(super::speech::SpeechSynthesizeHandler),
             Arc::new(super::voice_creation::VoiceCreationHandler),
+            Arc::new(crate::api::maintenance_jobs::MaintenanceHandler),
         ])
     }
 
@@ -171,6 +176,20 @@ struct WatchSink {
     job_id: JobId,
 }
 
+struct WaitingTasks {
+    pending: Vec<tokio::task::JoinHandle<()>>,
+    owner: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl Drop for WaitingTasks {
+    fn drop(&mut self) {
+        self.owner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .append(&mut self.pending);
+    }
+}
+
 impl JobProgressSink for WatchSink {
     fn text_delta(&self, text: Option<String>, reasoning: Option<String>) {
         self.context.jobs().text_delta(self.job_id, text, reasoning);
@@ -216,10 +235,15 @@ impl JobRunner {
             if tasks.is_empty() {
                 return;
             }
-            for task in tasks {
+            let mut tasks = WaitingTasks {
+                pending: tasks,
+                owner: self.tasks.clone(),
+            };
+            while let Some(task) = tasks.pending.last_mut() {
                 if let Err(error) = task.await {
                     tracing::warn!(%error, "a job task stopped");
                 }
+                tasks.pending.pop();
             }
         }
     }
@@ -261,9 +285,23 @@ impl JobRunner {
             if !self.lock_lanes().insert(lane.clone()) {
                 continue;
             }
+            let work = if handler.requires_maintenance() {
+                None
+            } else {
+                let Some(work) = self
+                    .context
+                    .maintenance()
+                    .work(self.context.shutdown_token())
+                    .await
+                else {
+                    self.lock_lanes().remove(&lane);
+                    break;
+                };
+                Some(work)
+            };
             match handler.claim(&self.context, &job, self.worker_id).await {
                 Ok(Some(claimed)) => {
-                    self.spawn(job.id, lane, claimed).await;
+                    self.spawn(job.id, lane, claimed, work).await;
                     started = true;
                 }
                 Ok(None) => {
@@ -309,7 +347,13 @@ impl JobRunner {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    async fn spawn(&self, job_id: JobId, lane: JobLane, claimed: Box<dyn ClaimedJob>) {
+    async fn spawn(
+        &self,
+        job_id: JobId,
+        lane: JobLane,
+        claimed: Box<dyn ClaimedJob>,
+        work: Option<tokio::sync::OwnedRwLockReadGuard<()>>,
+    ) {
         let context = self.context.clone();
         let cancellation = claimed.cancellation();
         let link = link_to_shutdown(context.shutdown_token(), cancellation.clone());
@@ -333,6 +377,7 @@ impl JobRunner {
         let runtime_events = context.register_runtime_job_events(job_id, cancellation);
         let lanes = Arc::clone(&self.lanes);
         let task = tokio::spawn(async move {
+            let _work = work;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             let _runtime_events = runtime_events;
             let _link = link;

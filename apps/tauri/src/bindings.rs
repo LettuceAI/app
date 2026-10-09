@@ -27,6 +27,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::usage::usage_stats,
             commands::usage::usage_export_csv,
             commands::storage::storage_database_files_list,
+            commands::storage::storage_optimize,
             commands::storage::storage_database_file_delete,
             commands::storage::media_save_to,
             commands::storage::media_library_list,
