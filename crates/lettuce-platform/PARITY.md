@@ -16,3 +16,5 @@ Facts about `lettuce-platform` that are not architecture: what the previous READ
 Database-file lifecycle coordination now has a confined cross-process file lock. The existing per-authority mutation lock remains separate; no private-persistent removal permission or filesystem constraint was relaxed.
 
 Slice 12 adds a separate database-directory capability for explicit kept-file deletion. It refuses traversal, unexpected file identity and symlink sidecars without relaxing the generic private-persistent deletion restriction. The app owns active-file checks, live-handle reservations and durable operation receipts.
+
+Slice 12 media protection adds confined identity checks and uncapped internal inventories. The existing bounded listing API and private-persistent listing refusal remain intact; symlinks do not grant access to outside files.

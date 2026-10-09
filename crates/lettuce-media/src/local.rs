@@ -25,7 +25,6 @@ pub const MAX_SYNC_MEDIA_CHUNK_BYTES: usize = 1024 * 1024;
 /// This guards downstream decoders from pathological allocation requests.
 const MAX_IMAGE_PIXELS: u64 = 100_000_000;
 const BLOB_VALIDATION_VERSION: u32 = 1;
-const MAX_OBJECT_DIRECTORY_ENTRIES: usize = 1024;
 
 static BLOB_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -194,6 +193,8 @@ impl std::fmt::Debug for OpenedMediaAsset {
 /// paths, URIs, provenance labels or provider/source data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MediaStoreError {
+    #[error("some unused media objects could not be removed")]
+    ObjectRemovalFailed,
     #[error("media input could not be read")]
     InputRead,
     #[error("media input is empty")]
@@ -739,8 +740,8 @@ where
                     let size = self
                         .files
                         .metadata(&self.read_capability, &object_key(&hash)?)
-                        .map(|metadata| metadata.len)
-                        .unwrap_or(0);
+                        .map_err(MediaStoreError::File)?
+                        .len;
                     self.remove_object(&hash, size, &mut removal);
                 }
             }
@@ -770,15 +771,17 @@ where
     ) -> Result<Vec<lettuce_platform::DirectoryEntry>, MediaStoreError> {
         let key =
             ObjectKey::from_segments(segments.iter().copied()).map_err(MediaStoreError::File)?;
-        match self.files.list(
-            &self.read_capability,
-            Some(&key),
-            MAX_OBJECT_DIRECTORY_ENTRIES,
-        ) {
+        match self.files.list_all(&self.read_capability, Some(&key)) {
             Ok(entries) => Ok(entries),
             Err(PlatformError::NotFound) => Ok(Vec::new()),
             Err(error) => Err(MediaStoreError::File(error)),
         }
+    }
+
+    pub fn contains_file(&self, target: &std::fs::File) -> Result<bool, MediaStoreError> {
+        self.files
+            .contains_file(&self.read_capability, target)
+            .map_err(MediaStoreError::File)
     }
 
     fn object_directories(&self, segments: &[&str]) -> Result<Vec<String>, MediaStoreError> {
@@ -1662,6 +1665,38 @@ mod tests {
         );
         std::fs::remove_dir_all(root).expect("remove fixture");
         std::fs::remove_dir_all(restore_root).expect("remove restore fixture");
+    }
+
+    #[test]
+    fn orphan_sweep_processes_every_object_in_a_large_hash_bucket() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-media-large-bucket-{}", AssetId::new()));
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("authority");
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write"),
+            BlobMemory::default(),
+            AssetMemory::default(),
+        );
+        let bucket = root.join("platform-v2/media-blobs/objects/00/00");
+        std::fs::create_dir_all(&bucket).expect("bucket");
+        for index in 0..1025 {
+            std::fs::write(bucket.join(format!("0000{index:060x}")), b"orphan").expect("orphan");
+        }
+        let swept = store
+            .sweep_orphan_objects(|_| Ok(false))
+            .expect("uncapped sweep");
+        assert_eq!(swept.removed, 1025);
+        assert_eq!(swept.freed_bytes, 1025 * 6);
+        assert_eq!(swept.failed, 0);
+        assert_eq!(std::fs::read_dir(&bucket).expect("bucket").count(), 0);
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

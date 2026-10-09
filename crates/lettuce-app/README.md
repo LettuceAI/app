@@ -662,6 +662,8 @@ The log API runs viewer reads, deletes and streamed FileTarget exports on the bl
 
 Streamed log exports hold the database-file lifecycle lock and refuse database, sidecar and private control-file targets, including hardlink aliases. Reserved locations are checked before creation; existing file identities are checked before truncation through the opened descriptor. A failed protection check returns a typed error without changing the protected file.
 
+`media_save_to` streams a ready asset directly from its managed reader to the FileTarget the user chose. Media bytes remain inside the backend. Exports refuse managed media locations and hardlink aliases as well as database targets; missing assets, missing objects, unavailable storage and write failures return typed media details. The shell holds an exclusive target-file lease through writing and reports Busy to another export to the same file. After an interrupted export, retry rewrites the chosen target from the preserved source. Garbage collection and orphan sweeping return typed failure when an object removal fails.
+
 The metrics API pages retained local-generation summaries in descending creation time and id order, reads a full metric or the newest metric for a message, and explicitly clears through a durable operation receipt. Metric views omit native model paths. Replay returns the committed clear count and preserves metrics written later.
 
 `usage_clear_before` accepts a strict timestamp cutoff and an operation id. It deletes eligible terminal usage atomically with an idempotent receipt, returns the same removed count on an exact retry and returns Conflict when the cutoff changes. Running generation retains settled dispatches until terminal usage has been recorded.

@@ -121,3 +121,25 @@ pub struct FilesPickSaveRequest {
 pub struct FileSavePicked {
     pub target: Option<FileTarget>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MediaSaveToRequest {
+    pub asset_id: String,
+    pub target: FileTarget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MediaFailureReason {
+    HostUnavailable,
+    AssetMissing,
+    BlobMissing,
+    ObjectMissing,
+    NotReady,
+    InvalidMetadata,
+    ProtectedTarget,
+    Storage,
+}

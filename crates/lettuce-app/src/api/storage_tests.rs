@@ -9,6 +9,121 @@ use super::{ApiDatabaseFiles, ApiMediaStore, NoModels};
 use crate::{AppBackend, AppDatabaseLocation};
 
 #[tokio::test]
+async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missing_sources() {
+    let root = std::env::temp_dir().join(format!("lettuce-media-save-{}", OperationId::new()));
+    std::fs::create_dir_all(&root).expect("root");
+    let media = super::tests::media_store(&root);
+    let png = super::tests::png_bytes();
+    let object = media
+        .ingest(
+            png.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::OtherImage,
+                lettuce_media::AssetOrigin::Upload,
+                lettuce_media::RetentionClass::Persistent,
+                lettuce_media::AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("media object");
+    let h = super::tests::harness_in(
+        Reply::Text("ok"),
+        Arc::new(SystemClock),
+        Some(media),
+        Some(root.clone()),
+        Arc::new(NoModels),
+    );
+    let target = root.join("export.png");
+    std::fs::write(
+        &target,
+        b"previous much longer export contents to replace safely",
+    )
+    .expect("target");
+    let request = dto::MediaSaveToRequest {
+        asset_id: object.asset.id.to_string(),
+        target: dto::FileTarget {
+            uri: target.to_string_lossy().into_owned(),
+        },
+    };
+    super::media_save_to(&h.context, request.clone())
+        .await
+        .expect("save");
+    assert_eq!(std::fs::read(&target).expect("export"), png);
+    super::media_save_to(&h.context, request.clone())
+        .await
+        .expect("retry");
+    assert_eq!(std::fs::read(&target).expect("export"), png);
+    let hash = object.blob.content_hash;
+    let source = root
+        .join("platform-v2/media-blobs/objects")
+        .join(&hash.as_str()[..2])
+        .join(&hash.as_str()[2..4])
+        .join(hash.as_str());
+    let alias = root.join("alias");
+    std::fs::hard_link(&source, &alias).expect("hardlink");
+    for protected in [&source, &alias] {
+        let error = super::media_save_to(
+            &h.context,
+            dto::MediaSaveToRequest {
+                target: dto::FileTarget {
+                    uri: protected.to_string_lossy().into_owned(),
+                },
+                ..request.clone()
+            },
+        )
+        .await
+        .expect_err("protected source");
+        assert_eq!(error.code, ApiErrorCode::Conflict);
+        assert!(error.details.is_some());
+        assert_eq!(std::fs::read(&source).expect("preserved source"), png);
+    }
+    let error = super::media_save_to(
+        &h.context,
+        dto::MediaSaveToRequest {
+            asset_id: lettuce_types::AssetId::new().to_string(),
+            ..request.clone()
+        },
+    )
+    .await
+    .expect_err("missing asset");
+    assert_eq!(error.code, ApiErrorCode::NotFound);
+    assert!(error.details.is_some());
+    assert_eq!(std::fs::read(&target).expect("preserved target"), png);
+    let empty = super::media_save_to(
+        &h.context,
+        dto::MediaSaveToRequest {
+            asset_id: object.asset.id.to_string(),
+            target: dto::FileTarget { uri: " ".into() },
+        },
+    )
+    .await
+    .expect_err("empty target");
+    assert_eq!(empty.code, ApiErrorCode::InvalidInput);
+    let unavailable = super::tests::harness(Reply::Text("ok"));
+    let error = super::media_save_to(
+        &unavailable.context,
+        dto::MediaSaveToRequest {
+            asset_id: object.asset.id.to_string(),
+            target: dto::FileTarget {
+                uri: target.to_string_lossy().into_owned(),
+            },
+        },
+    )
+    .await
+    .expect_err("missing media host");
+    assert_eq!(error.code, ApiErrorCode::Unavailable);
+    assert!(error.details.is_some());
+    std::fs::remove_file(&source).expect("missing object");
+    let error = super::media_save_to(&h.context, request)
+        .await
+        .expect_err("missing bytes");
+    assert_eq!(error.code, ApiErrorCode::NotFound);
+    assert!(error.details.is_some());
+    assert_eq!(std::fs::read(&target).expect("preserved target"), png);
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
 async fn database_file_commands_protect_the_active_file_and_collect_the_only_kept_holder() {
     let root = std::env::temp_dir().join(format!("lettuce-file-api-{}", OperationId::new()));
     let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
@@ -114,6 +229,23 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
         file: name.clone(),
         client_operation_id: key.clone(),
     };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bucket = object_path.parent().expect("bucket");
+        let permissions = std::fs::metadata(bucket)
+            .expect("bucket metadata")
+            .permissions();
+        std::fs::set_permissions(bucket, std::fs::Permissions::from_mode(0o555))
+            .expect("deny removal");
+        let result = super::storage_database_file_delete(&h.context, request.clone()).await;
+        std::fs::set_permissions(bucket, permissions).expect("restore permissions");
+        let error = result.expect_err("failed media removal remains visible");
+        assert_eq!(error.code, ApiErrorCode::Unavailable);
+        assert!(error.details.is_some());
+        assert!(!kept.exists());
+        assert!(object_path.exists());
+    }
     super::storage_database_file_delete(&h.context, request.clone())
         .await
         .expect("delete kept file");
@@ -146,11 +278,42 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
         AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location");
     let active = location.active_path().expect("active");
     let backend = Arc::new(AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
+    let media = Arc::new(ApiMediaStore::new(
+        authority.managed_files(),
+        authority
+            .read_capability(ManagedRoot::MediaBlobs)
+            .expect("read"),
+        authority
+            .write_capability(ManagedRoot::MediaBlobs)
+            .expect("write"),
+        lettuce_database::Database::open(&active).expect("blob database"),
+        lettuce_database::Database::open(&active).expect("asset database"),
+    ));
+    let png = super::tests::png_bytes();
+    let object = media
+        .ingest(
+            png.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::OtherImage,
+                lettuce_media::AssetOrigin::Upload,
+                lettuce_media::RetentionClass::Library,
+                lettuce_media::AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("media object");
+    let hash = object.blob.content_hash;
+    let object_path = root
+        .join("platform-v2/media-blobs/objects")
+        .join(&hash.as_str()[..2])
+        .join(&hash.as_str()[2..4])
+        .join(hash.as_str());
+    let object_alias = root.join("media-alias");
+    std::fs::hard_link(&object_path, &object_alias).expect("media hardlink");
     let h = harness_over_files(
         backend,
         Reply::Text("ok"),
         Arc::new(SystemClock),
-        None,
+        Some(media),
         Some(root.clone()),
         Arc::new(NoModels),
         Arc::new(NoImages),
@@ -182,7 +345,7 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
     let alias = root.join("database-alias");
     std::fs::hard_link(&active, &alias).expect("hardlink");
     let before = std::fs::read(&active).expect("database bytes");
-    for target in [&active, &alias] {
+    for target in [&active, &alias, &object_path, &object_alias] {
         let error = super::log_export(
             &h.context,
             dto::LogExportRequest {
@@ -197,6 +360,7 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
         assert_eq!(error.code, ApiErrorCode::Conflict);
         assert!(error.details.is_some());
         assert_eq!(std::fs::read(&active).expect("database survives"), before);
+        assert_eq!(std::fs::read(&object_path).expect("media survives"), png);
     }
     let pointer = root.join("private-persistent-v2/active-database");
     assert!(!pointer.exists());

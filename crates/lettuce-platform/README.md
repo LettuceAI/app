@@ -21,6 +21,8 @@ All operations are relative to descriptors opened once at construction. The root
 - `open_read` returns a `ReadHandle` that implements `Read` but cannot be turned into a path.
 - `metadata` stats without following symlinks.
 - `list` needs an explicit limit (1 to 1024). It uses the directory entry's own file type, so a symlink is reported as `Other` and its target is never touched. Listing the private persistent root is refused: that root only supports reads and writes of keys the caller already knows.
+- `list_all` reads an uncapped inventory for internal collection; it retains the same capability checks, name validation and private-persistent refusal.
+- `contains_file` checks an opened target's identity against confined regular files, including nested directories and hardlink aliases. It skips symlinks, has no entry-count cap and refuses the private-persistent root.
 
 ## Writing
 

@@ -100,6 +100,10 @@ pub enum ApiErrorDetails {
     MetricsUnavailable,
     UsageStorage,
     DatabaseFiles { file: Option<String> },
+    Media {
+        asset_id: Option<String>,
+        reason: crate::MediaFailureReason,
+    },
     Settings { reason: crate::SettingsFailureReason },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,

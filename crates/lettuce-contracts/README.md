@@ -14,6 +14,8 @@ Database-file inventory uses relative file identifiers, nullable creation timest
 
 Media never crosses IPC as bytes, base64 or a data URL, in either direction: a contract names media only by `AssetRef`, and a request that brings in user media will carry a file path (a `content://` URI on Android) that the backend reads, validates and ingests. No contract type has a bytes or base64 field.
 
+Media export takes an asset identifier and FileTarget. Its typed details distinguish missing assets, missing blobs or objects, unavailable media storage, invalid stored metadata and protected export targets.
+
 - `ApiError` is what every call returns on failure: a stable `ApiErrorCode` (`not_found`, `conflict`, `invalid_input`, `unsupported`, `unavailable`, `cancelled`, `busy`, `internal`), an English diagnostic `message` that is never shown to the user, and optional `ApiErrorDetails` (the invalid field, the missing model, the Hugging Face failure (`HfFailure`), or what keeps the local models folder busy). The frontend localizes by code and details.
 - `ApiEvent` is the application-wide event the host broadcasts. `GenerationSettled` names a conversation and turn whose generation reached a terminal state, so list views can refresh.
 - `AssetRef` names a stored media asset by id; the host serves its bytes under the `lettuce-asset://` URI scheme.

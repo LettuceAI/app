@@ -38,6 +38,8 @@ Objects live under the media root at `objects/<first two hex>/<next two hex>/<ha
 
 `open_ready(asset_id)` opens a ready asset for reading. It checks asset and blob kinds, the blob state (`NotReady` otherwise), and that the object file exists with the recorded size, then returns the records and a `ReadHandle`.
 
+`contains_file` checks an opened export target against the confined media root, protecting stored objects and staging files without exposing a native path. Object inventories used by garbage collection have no entry-count cap; read failures remain typed.
+
 ## Releasing bytes
 
 Bytes leave the store in three ways, all under the same lifecycle lock as ingest, so no asset can pick up a blob while its bytes are being deleted:

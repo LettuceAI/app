@@ -20,6 +20,54 @@ fn files() -> (std::path::PathBuf, FilesystemAuthority, ManagedFiles) {
 }
 
 #[test]
+fn managed_file_identity_checks_do_not_cap_entries_or_follow_symlinks() {
+    let (root, authority, files) = files();
+    let read = authority.read_capability(ManagedRoot::MediaBlobs).unwrap();
+    let directory = root.join("platform-v2/media-blobs/nested");
+    fs::create_dir_all(&directory).unwrap();
+    for index in 0..1025 {
+        fs::write(directory.join(format!("{index:04}")), b"object").unwrap();
+    }
+    let alias = root.join("alias");
+    fs::hard_link(directory.join("1024"), &alias).unwrap();
+    let target = fs::File::open(&alias).unwrap();
+    assert!(files.contains_file(&read, &target).unwrap());
+    assert_eq!(
+        files
+            .list_all(&read, Some(&ObjectKey::single("nested").unwrap()))
+            .unwrap()
+            .len(),
+        1025
+    );
+    let outside = root.join("outside");
+    fs::write(&outside, b"outside").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, directory.join("symlink")).unwrap();
+    let outside = fs::File::open(outside).unwrap();
+    assert!(!files.contains_file(&read, &outside).unwrap());
+    let private = authority
+        .read_capability(ManagedRoot::PrivatePersistent)
+        .unwrap();
+    assert_eq!(
+        files.contains_file(&private, &target),
+        Err(PlatformError::Unsupported)
+    );
+    assert_eq!(
+        files.list_all(&private, None),
+        Err(PlatformError::Unsupported)
+    );
+    let (other_root, other, _) = self::files();
+    let foreign = other.read_capability(ManagedRoot::MediaBlobs).unwrap();
+    assert_eq!(
+        files.contains_file(&foreign, &target),
+        Err(PlatformError::WrongCapability)
+    );
+    drop(target);
+    fs::remove_dir_all(root).unwrap();
+    fs::remove_dir_all(other_root).unwrap();
+}
+
+#[test]
 fn object_keys_reject_path_syntax_controls_and_internal_names() {
     for value in [
         "",

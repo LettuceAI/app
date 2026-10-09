@@ -97,10 +97,28 @@ impl ManagedFiles {
         prefix: Option<&ObjectKey>,
         limit: usize,
     ) -> Result<Vec<DirectoryEntry>, PlatformError> {
-        let root = self.check_read(capability)?;
+        self.check_read(capability)?;
         if limit == 0 || limit > MAX_LIST_ENTRIES {
             return Err(PlatformError::LimitExceeded);
         }
+        self.list_entries(capability, prefix, Some(limit))
+    }
+
+    pub fn list_all(
+        &self,
+        capability: &ReadCapability,
+        prefix: Option<&ObjectKey>,
+    ) -> Result<Vec<DirectoryEntry>, PlatformError> {
+        self.list_entries(capability, prefix, None)
+    }
+
+    fn list_entries(
+        &self,
+        capability: &ReadCapability,
+        prefix: Option<&ObjectKey>,
+        limit: Option<usize>,
+    ) -> Result<Vec<DirectoryEntry>, PlatformError> {
+        let root = self.check_read(capability)?;
         if capability.root == ManagedRoot::PrivatePersistent {
             return Err(PlatformError::Unsupported);
         }
@@ -109,11 +127,13 @@ impl ManagedFiles {
             None => root.dir.try_clone().map_err(PlatformError::from)?,
         };
         let mut entries = Vec::new();
-        let mut inspected = 0usize;
-        for item in directory.read_dir(".").map_err(PlatformError::from)? {
+        for (inspected, item) in directory
+            .read_dir(".")
+            .map_err(PlatformError::from)?
+            .enumerate()
+        {
             let item = item.map_err(PlatformError::from)?;
-            inspected += 1;
-            if entries.len() >= limit || inspected > MAX_LIST_ENTRIES {
+            if limit.is_some_and(|limit| entries.len() >= limit || inspected >= MAX_LIST_ENTRIES) {
                 return Err(PlatformError::LimitExceeded);
             }
             let name = item
@@ -123,8 +143,6 @@ impl ManagedFiles {
             if name.chars().any(char::is_control) {
                 continue;
             }
-            // DirEntry::file_type is no-follow; a symlink is therefore Other
-            // and cannot disclose the target's metadata.
             entries.push(DirectoryEntry {
                 name,
                 kind: object_kind_from_file_type(&item.file_type().map_err(PlatformError::from)?),
@@ -132,6 +150,20 @@ impl ManagedFiles {
         }
         entries.sort_by(|left, right| left.name.cmp(&right.name));
         Ok(entries)
+    }
+
+    pub fn contains_file(
+        &self,
+        capability: &ReadCapability,
+        target: &std::fs::File,
+    ) -> Result<bool, PlatformError> {
+        let root = self.check_read(capability)?;
+        if capability.root == ManagedRoot::PrivatePersistent {
+            return Err(PlatformError::Unsupported);
+        }
+        let target = same_file::Handle::from_file(target.try_clone().map_err(PlatformError::from)?)
+            .map_err(PlatformError::from)?;
+        contains_file_in(&root.dir, &target, 0)
     }
 
     pub(crate) fn check_read(
@@ -197,6 +229,40 @@ impl ManagedFiles {
             .lock()
             .map_err(|_| PlatformError::RecoveryNeeded)
     }
+}
+
+fn contains_file_in(
+    directory: &Dir,
+    target: &same_file::Handle,
+    depth: usize,
+) -> Result<bool, PlatformError> {
+    if depth > crate::keys::MAX_KEY_SEGMENTS {
+        return Err(PlatformError::InvalidKey);
+    }
+    for entry in directory.entries().map_err(PlatformError::from)? {
+        let entry = entry.map_err(PlatformError::from)?;
+        let kind = entry.file_type().map_err(PlatformError::from)?;
+        let name = entry.file_name();
+        if kind.is_dir() {
+            let child =
+                open_dir_nofollow_from(directory, Path::new(&name)).map_err(map_symlink_error)?;
+            if contains_file_in(&child, target, depth + 1)? {
+                return Ok(true);
+            }
+        } else if kind.is_file() {
+            let mut options = OpenOptions::new();
+            options.read(true);
+            options._cap_fs_ext_follow(FollowSymlinks::No);
+            let file = directory
+                .open_with(&name, &options)
+                .map_err(map_symlink_error)?
+                .into_std();
+            if same_file::Handle::from_file(file).map_err(PlatformError::from)? == *target {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 impl fmt::Debug for ManagedFiles {

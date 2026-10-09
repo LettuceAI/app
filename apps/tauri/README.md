@@ -118,3 +118,5 @@ Log exports check reserved database and control-file locations before creating a
 The shell exposes `storage_database_files_list` and `storage_database_file_delete` through the app API. File identifiers are basenames and deletion is guarded by the app's lifecycle lock, active-file check, live-handle lease and durable retry receipt.
 
 Database-file inventory carries nullable creation time and measured modification time as Unix milliseconds. The shell does not substitute discovery time for an unknown creation time.
+
+`media_save_to` forwards an asset identifier and FileTarget to the app. Native export writers check protected media identities, hold an exclusive operating-system target lease until close and refuse a concurrent writer with Busy before truncation. Process exit releases the lease.

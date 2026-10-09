@@ -3035,6 +3035,7 @@ name = "lettuce-tauri"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "fs4",
  "jni",
  "lettuce-app",
  "lettuce-contracts",

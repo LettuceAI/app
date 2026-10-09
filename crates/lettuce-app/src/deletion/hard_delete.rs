@@ -124,10 +124,7 @@ where
             purge_error.map_or(HardDeleteError::Media(error), HardDeleteError::Purge)
         })?;
     if removal.failed > 0 {
-        tracing::warn!(
-            failed = removal.failed,
-            "some unused media files were not deleted"
-        );
+        return Err(HardDeleteError::Media(MediaStoreError::ObjectRemovalFailed));
     }
     Ok(removal)
 }
@@ -148,7 +145,7 @@ where
 {
     let (_lifecycle, kept) = media.kept_by_other_databases()?;
     let mut purge_error = None;
-    media
+    let removal = media
         .store
         .sweep_orphan_objects(|hash| {
             if kept.contains(hash) {
@@ -159,5 +156,11 @@ where
                 MediaStoreError::CatalogFailure
             })
         })
-        .map_err(|error| purge_error.map_or(HardDeleteError::Media(error), HardDeleteError::Purge))
+        .map_err(|error| {
+            purge_error.map_or(HardDeleteError::Media(error), HardDeleteError::Purge)
+        })?;
+    if removal.failed > 0 {
+        return Err(HardDeleteError::Media(MediaStoreError::ObjectRemovalFailed));
+    }
+    Ok(removal)
 }

@@ -4,6 +4,15 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn media_save_to(
+    context: State<'_, ApiContext>,
+    request: dto::MediaSaveToRequest,
+) -> Result<(), ApiError> {
+    api::media_save_to(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn storage_database_files_list(
     context: State<'_, ApiContext>,
 ) -> Result<Vec<dto::DatabaseFileView>, ApiError> {
