@@ -56,6 +56,9 @@ impl ConversationGenerationWorker {
     /// could not be claimed, or had already ended, counts as not run.
     pub async fn run_once(&self) -> Result<bool, ApiError> {
         let context = &self.context;
+        if !context.accepts_database_work()? {
+            return Ok(false);
+        }
         let next = {
             let backend = context.backend();
             let embedding = context.embedding();

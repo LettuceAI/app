@@ -57,6 +57,9 @@ impl WorkerStep for MemoryWorker {
     const LABEL: &'static str = "post-turn-memory";
 
     async fn step(&self) -> Result<bool, ApiError> {
+        if !self.context.accepts_database_work()? {
+            return Ok(false);
+        }
         let state = self.context.memory_work();
         let Some((conversation, branch)) = state.pop() else {
             return Ok(false);

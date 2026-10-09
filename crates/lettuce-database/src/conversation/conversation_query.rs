@@ -115,7 +115,7 @@ pub(crate) fn timestamp(value: i64) -> TimestampMillis {
 
 fn open_read<'a>(
     database: &'a Database,
-) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, ConversationRepositoryError> {
+) -> Result<crate::write_fence::DatabaseConnection<'a>, ConversationRepositoryError> {
     database
         .connection()
         .map_err(|_| ConversationRepositoryError::Storage)

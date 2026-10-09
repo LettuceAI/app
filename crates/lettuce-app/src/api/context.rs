@@ -115,6 +115,14 @@ impl std::fmt::Debug for ApiContext {
 }
 
 impl ApiContext {
+    pub(crate) fn accepts_database_work(&self) -> Result<bool, ApiError> {
+        self.backend()
+            .database()
+            .is_file_write_fenced()
+            .map(|fenced| !fenced)
+            .map_err(|_| super::storage::file_error(crate::AppDatabaseLocationError::Storage, None))
+    }
+
     #[must_use]
     pub fn new(parts: ApiContextParts) -> Self {
         Self::new_with_filter(

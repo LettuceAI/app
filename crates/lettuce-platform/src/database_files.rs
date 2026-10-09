@@ -88,7 +88,7 @@ impl DatabaseFiles {
     fn sidecars(&self, name: &str) -> Result<Vec<String>, PlatformError> {
         checked_name(name)?;
         let mut existing = Vec::new();
-        for suffix in ["-wal", "-shm"] {
+        for suffix in ["-wal", "-shm", ".writes.lock", ".write-fenced"] {
             let sidecar = format!("{name}{suffix}");
             match self.directory.symlink_metadata(&sidecar) {
                 Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {

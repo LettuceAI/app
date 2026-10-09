@@ -259,6 +259,8 @@ pub enum DatabaseError {
     Sql(#[from] rusqlite::Error),
     #[error("database lock is unavailable")]
     Lock,
+    #[error("this database file has been kept and no longer accepts writes")]
+    WriteFenced,
     #[error("foreign key enforcement was lost; the database must be reopened")]
     ForeignKeysLost,
     #[error("applied migration {id} has a different checksum")]
@@ -266,6 +268,9 @@ pub enum DatabaseError {
     #[error("the database was written by a newer build (migration {id})")]
     NewerSchema { id: u32 },
 }
+
+mod write_fence;
+pub use write_fence::DatabaseWriteFence;
 
 mod database_file;
 pub use database_file::DatabaseFileDeletionPermit;
@@ -279,6 +284,7 @@ pub struct Database {
     usage_delete_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     legacy_media_proof_restore_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     _file_use: Option<database_file::DatabaseFileUse>,
+    write_access: Option<write_fence::FileWriteAccess>,
 }
 
 impl std::fmt::Debug for Database {
@@ -290,6 +296,11 @@ impl std::fmt::Debug for Database {
 impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let file_use = database_file::DatabaseFileUse::open(path.as_ref())?;
+        let write_access = write_fence::FileWriteAccess::new(path.as_ref());
+        let write_use = write_access.acquire()?;
+        if write_access.fenced()? {
+            return Err(DatabaseError::WriteFenced);
+        }
         let mut connection = Connection::open(path)?;
         refuse_newer_schema(&connection, MIGRATIONS)?;
         configure(&connection, true)?;
@@ -300,6 +311,7 @@ impl Database {
         let legacy_media_proof_restore_allowed =
             legacy::legacy_import_backup_adapter::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
+        drop(write_use);
         Ok(Self {
             connection: Mutex::new(connection),
             changes,
@@ -307,6 +319,7 @@ impl Database {
             usage_delete_allowed,
             legacy_media_proof_restore_allowed,
             _file_use: Some(file_use),
+            write_access: Some(write_access),
         })
     }
 
@@ -328,17 +341,29 @@ impl Database {
             usage_delete_allowed,
             legacy_media_proof_restore_allowed,
             _file_use: None,
+            write_access: None,
         })
     }
 
-    fn connection(&self) -> Result<std::sync::MutexGuard<'_, Connection>, DatabaseError> {
+    pub fn is_file_write_fenced(&self) -> Result<bool, DatabaseError> {
+        self.write_access
+            .as_ref()
+            .map(write_fence::FileWriteAccess::fenced)
+            .transpose()
+            .map(|fenced| fenced.unwrap_or(false))
+    }
+
+    fn connection(&self) -> Result<write_fence::DatabaseConnection<'_>, DatabaseError> {
         if self
             .foreign_keys_lost
             .load(std::sync::atomic::Ordering::SeqCst)
         {
             return Err(DatabaseError::ForeignKeysLost);
         }
-        self.connection.lock().map_err(|_| DatabaseError::Lock)
+        write_fence::DatabaseConnection::new(
+            self.connection.lock().map_err(|_| DatabaseError::Lock)?,
+            self.write_access.as_ref(),
+        )
     }
 }
 

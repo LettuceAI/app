@@ -24,6 +24,8 @@ export const commands = {
 	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
 	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("storage_database_file_delete", { request })),
 	mediaSaveTo: (request: MediaSaveToRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_save_to", { request })),
+	mediaLibraryList: (request: MediaLibraryListRequest) => typedError<MediaLibraryPage, ApiError>(__TAURI_INVOKE("media_library_list", { request })),
+	mediaLibraryRemove: (request: MediaLibraryRemoveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_library_remove", { request })),
 	logsList: () => typedError<LogsList, ApiError>(__TAURI_INVOKE("logs_list")),
 	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError>(__TAURI_INVOKE("log_read_page", { request })),
 	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_search", { request })),
@@ -367,7 +369,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails = { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -3368,6 +3370,52 @@ export type LorebooksListRequest = {
 };
 
 export type MediaFailureReason = "host_unavailable" | "asset_missing" | "blob_missing" | "object_missing" | "not_ready" | "invalid_metadata" | "protected_target" | "storage";
+
+export type MediaLibraryAssetKind = "avatar_original" | "background_image" | "illustration" | "lorebook_icon" | "message_image" | "message_audio" | "generated_image" | "synthesized_speech" | "other_image" | "other_audio" | "source_document";
+
+export type MediaLibraryItem = {
+	asset: AssetRef,
+	role: MediaLibraryRole,
+	asset_kind: MediaLibraryAssetKind,
+	retention: MediaLibraryRetention,
+	expires_at: number | null,
+	mime_type: string,
+	byte_size: number,
+	width: number | null,
+	height: number | null,
+	duration_ms: number | null,
+	source_label: string | null,
+	created_at: number,
+	updated_at: number,
+	references: MediaReferenceView[],
+};
+
+export type MediaLibraryListRequest = {
+	kind: MediaLibraryRole | null,
+	cursor: string | null,
+	limit: number | null,
+};
+
+export type MediaLibraryPage = {
+	items: MediaLibraryItem[],
+	next_cursor: string | null,
+};
+
+export type MediaLibraryRemoveRequest = {
+	asset_id: string,
+	client_operation_id: string,
+};
+
+export type MediaLibraryRetention = "persistent" | "library" | "temporary";
+
+export type MediaLibraryRole = "image" | "audio";
+
+export type MediaReferenceKind = "character" | "persona" | "group" | "scene" | "conversation" | "creation" | "speech" | "image" | "memory" | "companion" | "model" | "settings" | "lorebook" | "prompt" | "job" | "legacy_import" | "sync" | "usage" | "transfer";
+
+export type MediaReferenceView = {
+	kind: MediaReferenceKind,
+	owner_id: string,
+};
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
 

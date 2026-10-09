@@ -11,7 +11,7 @@ pub(crate) struct DatabaseFileUse(File);
 #[derive(Debug)]
 pub struct DatabaseFileDeletionPermit(File);
 
-fn open_file(path: &Path, create: bool) -> std::io::Result<File> {
+pub(crate) fn open_file(path: &Path, create: bool) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(create);
     #[cfg(unix)]

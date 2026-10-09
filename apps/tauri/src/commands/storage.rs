@@ -4,6 +4,24 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn media_library_list(
+    context: State<'_, ApiContext>,
+    request: dto::MediaLibraryListRequest,
+) -> Result<dto::MediaLibraryPage, ApiError> {
+    api::media_library_list(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn media_library_remove(
+    context: State<'_, ApiContext>,
+    request: dto::MediaLibraryRemoveRequest,
+) -> Result<(), ApiError> {
+    api::media_library_remove(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn media_save_to(
     context: State<'_, ApiContext>,
     request: dto::MediaSaveToRequest,

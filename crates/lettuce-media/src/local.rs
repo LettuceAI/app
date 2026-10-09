@@ -132,7 +132,7 @@ pub struct IngestedMedia {
 }
 
 /// A stored object the catalog no longer keeps, identified by its content.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReleasedMediaObject {
     pub content_hash: ContentHash,
     pub byte_size: u64,

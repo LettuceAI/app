@@ -306,7 +306,10 @@ mod storage;
 pub use storage::{storage_database_file_delete, storage_database_files_list};
 
 mod media_library;
-pub use media_library::media_save_to;
+pub use media_library::{media_library_list, media_library_remove, media_save_to};
+
+#[cfg(test)]
+mod media_library_tests;
 
 #[cfg(test)]
 mod storage_tests;

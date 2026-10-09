@@ -40,11 +40,11 @@ impl<BR, AR> MediaGarbageScope<'_, BR, AR> {
         &self,
     ) -> Result<(crate::DatabaseFileLifecycle, BTreeSet<ContentHash>), HardDeleteError> {
         let lifecycle = self.location.acquire_file_lifecycle(true)?;
-        let mut kept = lifecycle.kept_media_hashes()?;
         let active = self.location.active_path()?;
         if active != self.open_database {
-            kept.extend(Database::media_objects_in_file(&active)?);
+            return Err(crate::AppDatabaseLocationError::Conflict.into());
         }
+        let kept = lifecycle.kept_media_hashes()?;
         Ok((lifecycle, kept))
     }
 }

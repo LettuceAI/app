@@ -106,3 +106,5 @@ LlmMetricView holds the generation id, creation time, summary and optional sampl
 Usage clearing carries a timestamp cutoff and client operation id and returns the removed row count. Usage storage failures use typed error details; contract values do not expose database paths.
 
 Storage file contracts expose basenames, creation kind and time, size, active status and deletion availability. Explicit deletion carries a client operation id; database-file error details name only the requested basename, with no native path.
+
+Media library requests filter image or audio and carry an opaque cursor and page limit. Items return asset URLs, known catalog metadata, retention and reference domains with opaque identities. Removal takes a client operation id and reports InUse with the references that prevent it; no native media path or bytes enter these contracts.

@@ -228,6 +228,13 @@ impl JobRunner {
     /// claimed; returns whether one started, or the error of a claim that
     /// failed transiently so the caller retries.
     pub async fn run_once(&self) -> Result<bool, ApiError> {
+        if !self.context.accepts_database_work()? {
+            *self
+                .next_due
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+            return Ok(false);
+        }
         let kinds = self.handlers.kinds();
         let queued = self
             .context

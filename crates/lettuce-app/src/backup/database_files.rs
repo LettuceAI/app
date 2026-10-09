@@ -218,6 +218,8 @@ impl DatabaseFileLifecycle {
     ) -> Result<(), AppDatabaseLocationError> {
         let active = self.active_name()?;
         for name in self.names()? {
+            let fence = Database::lock_file_writes(&self.location.database_path(&name)?)
+                .map_err(|_| AppDatabaseLocationError::Storage)?;
             let existing = self.read(&name)?;
             let needs_write = existing.as_ref().is_none_or(|metadata| {
                 matches!(
@@ -247,6 +249,9 @@ impl DatabaseFileLifecycle {
                         kept_hashes: if name == active {
                             BTreeSet::new()
                         } else {
+                            fence
+                                .set_fenced(true)
+                                .map_err(|_| AppDatabaseLocationError::Storage)?;
                             self.capture(&name)?
                         },
                         state: if name == active {
@@ -272,6 +277,13 @@ impl DatabaseFileLifecycle {
             if matches!(metadata.state, FileState::Active) && name != active {
                 return Err(AppDatabaseLocationError::Corrupt);
             }
+            let writable = matches!(metadata.state, FileState::Active)
+                || name == active
+                    && metadata.kind == DatabaseFileKind::Initial
+                    && matches!(metadata.state, FileState::Writing | FileState::Abandoned);
+            fence
+                .set_fenced(!writable)
+                .map_err(|_| AppDatabaseLocationError::Storage)?;
             if needs_write {
                 self.write(&name, &metadata)?;
             }
@@ -351,6 +363,15 @@ impl DatabaseFileLifecycle {
         name: &str,
         at: TimestampMillis,
     ) -> Result<(), AppDatabaseLocationError> {
+        self.prepare_cutover_with_checkpoint(name, at, |_| {})
+    }
+
+    pub(super) fn prepare_cutover_with_checkpoint(
+        &self,
+        name: &str,
+        at: TimestampMillis,
+        checkpoint: impl Fn(FileKeepStage),
+    ) -> Result<(), AppDatabaseLocationError> {
         let previous = self.active_name()?;
         if previous == name {
             return Err(AppDatabaseLocationError::Corrupt);
@@ -371,14 +392,24 @@ impl DatabaseFileLifecycle {
             previous: previous.clone(),
         };
         self.write(name, &target)?;
+        checkpoint(FileKeepStage::TargetIntent);
         if let Some(mut old) = self.read(&previous)? {
             if !matches!(old.state, FileState::Active) {
                 return Err(AppDatabaseLocationError::Corrupt);
             }
-            old.kept_hashes = self.capture(&previous)?;
+            let fence = Database::lock_file_writes(&self.location.database_path(&previous)?)
+                .map_err(|_| AppDatabaseLocationError::Storage)?;
             old.kept_at = Some(at);
             old.state = FileState::Keeping { next: name.into() };
             self.write(&previous, &old)?;
+            checkpoint(FileKeepStage::KeepIntent);
+            fence
+                .set_fenced(true)
+                .map_err(|_| AppDatabaseLocationError::Storage)?;
+            checkpoint(FileKeepStage::Frozen);
+            old.kept_hashes = self.capture(&previous)?;
+            self.write(&previous, &old)?;
+            checkpoint(FileKeepStage::KeptSet);
         }
         Ok(())
     }
@@ -388,8 +419,19 @@ impl DatabaseFileLifecycle {
         name: &str,
         at: TimestampMillis,
     ) -> Result<(), AppDatabaseLocationError> {
-        self.prepare_cutover(name, at)?;
-        self.location.activate(name)?;
+        self.activate_file_with_switch(name, at, || self.location.activate(name))
+    }
+
+    fn activate_file_with_switch(
+        &self,
+        name: &str,
+        at: TimestampMillis,
+        switch: impl FnOnce() -> Result<(), AppDatabaseLocationError>,
+    ) -> Result<(), AppDatabaseLocationError> {
+        if let Err(error) = self.prepare_cutover(name, at).and_then(|()| switch()) {
+            self.recover()?;
+            return Err(error);
+        }
         self.recover()
     }
 
@@ -616,6 +658,14 @@ impl DatabaseFileLifecycle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FileKeepStage {
+    TargetIntent,
+    KeepIntent,
+    Frozen,
+    KeptSet,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) enum FileDeleteStage {
     Intent,
@@ -627,6 +677,44 @@ pub(super) enum FileDeleteStage {
 #[cfg(test)]
 mod timestamp_tests {
     use super::*;
+
+    #[test]
+    fn failed_pointer_switch_restores_old_writes_before_returning() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-cutover-failed-switch-{}",
+            OperationId::new()
+        ));
+        let location = unopened_location(&root);
+        let active = location.active_path().expect("active");
+        let database = Database::open(&active).expect("old database");
+        let guard = location.try_file_lifecycle().expect("lifecycle");
+        let name = format!("{}.sqlite3", OperationId::new());
+        let new_path = guard
+            .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
+            .expect("new intent");
+        drop(Database::open(&new_path).expect("new database"));
+        assert_eq!(
+            guard.activate_file_with_switch(&name, TimestampMillis::new(30), || {
+                Err(AppDatabaseLocationError::Storage)
+            }),
+            Err(AppDatabaseLocationError::Storage)
+        );
+        assert_eq!(location.active_path().expect("pointer"), active);
+        assert!(
+            !database
+                .is_file_write_fenced()
+                .expect("old writes recovered")
+        );
+        drop(Database::open(&active).expect("old database opens writable"));
+        let files = guard.inventory(&active).expect("inventory");
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|file| file.active && !file.deletable));
+        assert!(files.iter().any(|file| file.file == name && !file.active));
+        assert!(guard.kept_media_hashes().expect("kept hashes").is_empty());
+        drop(guard);
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     fn unopened_location(root: &Path) -> AppDatabaseLocation {
         let authority = FilesystemAuthority::new(

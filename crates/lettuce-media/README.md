@@ -14,7 +14,7 @@ A `MediaAsset` (`asset.rs`) is a logical, user-facing record with its own `Asset
 
 Several assets can share one blob without merging their provenance or retention. That is why missing, quarantined or corrupt bytes are blob state and not asset state: one blob backs many assets, and one synced asset can have its bytes on one device and not on another.
 
-`RetentionClass` is `Persistent`, `Library` (listed in the media library) or `Temporary { expires_at }`, so a temporary asset without an expiry cannot be represented. `MediaAssetRepository` offers create, get, a retention change with a revision CAS, and a paged listing of library assets. It has no delete; physical removal goes through the release paths below.
+`RetentionClass` is `Persistent`, `Library` (listed in the media library) or `Temporary { expires_at }`, so a temporary asset without an expiry cannot be represented. `MediaAssetRepository` offers create, get, a retention change with a revision CAS, and a paged listing of Library-retention assets. `MediaLibraryRepository` reads images and audio across every retention class with their references and removes an unreferenced asset through a durable operation receipt. Physical removal goes through the release paths below.
 
 `AssetProvenanceV1` is versioned and bounded: an optional source label, a redacted source URI (http or https only, no credentials, query, `..`, whitespace or native path), the producing job, the model profile and an imported format token. It cannot carry bytes, prompts, paths or provider bodies.
 
@@ -63,3 +63,5 @@ Bytes leave the store in three ways, all under the same lifecycle lock as ingest
 `install_backup_media_object(root, hash, size, reader)` streams backup bytes into `restore/<hash>.partial`, verifies the hash and publishes the object. It uses its own partial so it never truncates a sync download of the same blob. An object that is already there must match size and hash. Catalog rows are not touched, because the restored database carries its own blob and asset rows.
 
 `sniff_media_kind` exposes the sniffer for callers that need to classify bytes without ingesting them, such as the legacy backup importer in `lettuce-transfer`.
+
+Library references identify the owning domain and an opaque owner identity. UUID owners keep their identity; composite or non-UUID record keys use a digest, so bookkeeping keys and native paths cannot become navigation paths. Reference reads, guarded removal, active GC and kept-set capture use one database reference rule.

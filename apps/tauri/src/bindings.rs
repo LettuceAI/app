@@ -26,6 +26,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::storage::storage_database_files_list,
             commands::storage::storage_database_file_delete,
             commands::storage::media_save_to,
+            commands::storage::media_library_list,
+            commands::storage::media_library_remove,
             commands::logs::logs_list,
             commands::logs::log_read_page,
             commands::logs::log_search,

@@ -241,6 +241,22 @@ fn partial_import_keeps_pending_media_until_all_stage_receipts_and_completion() 
         retained_objects(&database.connection().expect("connection")).expect("kept set"),
         BTreeSet::from([hash.clone()])
     );
+    let operation = lettuce_types::RequestId::new();
+    let error = database
+        .remove_media_library_asset(id, operation, "partial-remove", TimestampMillis::new(12))
+        .expect_err("partial import refuses removal");
+    let lettuce_media::MediaLibraryError::InUse(references) = error else {
+        panic!("expected InUse, got {error:?}");
+    };
+    assert!(references.iter().any(|reference| {
+        reference.kind == lettuce_media::MediaReferenceKind::LegacyImport
+            && reference.owner_id == run.to_string()
+    }));
+    assert!(
+        MediaAssetRepository::get(&database, id)
+            .expect("preserved asset")
+            .is_some()
+    );
     assert!(
         database
             .complete_legacy_import_run(run, TimestampMillis::new(13))
@@ -260,24 +276,344 @@ fn partial_import_keeps_pending_media_until_all_stage_receipts_and_completion() 
             .expect("complete run"),
         LegacyImportRunStatus::Completed
     );
-    database
-        .connection()
-        .expect("connection")
-        .execute(
-            "INSERT INTO media_gc_candidates VALUES (?1,14)",
-            [id.to_string()],
-        )
-        .expect("requeue");
     let released = database
-        .collect_media_garbage(TimestampMillis::new(14))
-        .expect("collect completed");
+        .remove_media_library_asset(id, operation, "partial-remove", TimestampMillis::new(14))
+        .expect("completed import permits removal");
     assert_eq!(released.len(), 1);
     assert_eq!(released[0].content_hash, hash);
     assert!(
         MediaAssetRepository::get(&database, id)
-            .expect("asset")
+            .expect("removed asset")
             .is_none()
     );
+    assert_eq!(
+        database
+            .remove_media_library_asset(id, operation, "partial-remove", TimestampMillis::new(15))
+            .expect("same operation replays"),
+        released
+    );
+    assert!(matches!(
+        database.remove_media_library_asset(
+            id,
+            operation,
+            "different-digest",
+            TimestampMillis::new(15)
+        ),
+        Err(lettuce_media::MediaLibraryError::Conflict)
+    ));
+}
+
+#[test]
+fn media_removal_receipt_failure_rolls_back_asset_blob_and_retention() {
+    let database = Database::open_in_memory().expect("database");
+    let (id, hash) = asset(&database, 'a', RetentionClass::Library);
+    let before = MediaAssetRepository::get(&database, id)
+        .expect("asset")
+        .expect("exists");
+    database.connection().expect("connection").execute_batch("CREATE TEMP TRIGGER fail_media_remove_receipt BEFORE INSERT ON api_operation_receipts WHEN NEW.command='media_library_remove' BEGIN SELECT RAISE(ABORT,'receipt fault'); END;").expect("fault trigger");
+    let key = lettuce_types::RequestId::new();
+    assert!(
+        database
+            .remove_media_library_asset(id, key, "remove", TimestampMillis::new(11))
+            .is_err()
+    );
+    assert_eq!(
+        MediaAssetRepository::get(&database, id).expect("rolled back asset"),
+        Some(before.clone())
+    );
+    assert!(
+        MediaBlobRepository::get(&database, before.blob_id)
+            .expect("rolled back blob")
+            .is_some()
+    );
+    assert!(
+        database
+            .lookup_api_operation("media_library_remove", &key.to_string())
+            .expect("receipt")
+            .is_none()
+    );
+    database
+        .connection()
+        .expect("connection")
+        .execute_batch("DROP TRIGGER fail_media_remove_receipt")
+        .expect("remove fault");
+    let released = database
+        .remove_media_library_asset(id, key, "remove", TimestampMillis::new(12))
+        .expect("retry");
+    assert_eq!(released.len(), 1);
+    assert_eq!(released[0].content_hash, hash);
+    assert!(
+        MediaAssetRepository::get(&database, id)
+            .expect("removed asset")
+            .is_none()
+    );
+    assert!(
+        MediaBlobRepository::get(&database, before.blob_id)
+            .expect("removed blob")
+            .is_none()
+    );
+}
+
+#[test]
+fn competing_media_removal_requests_replay_one_receipt() {
+    let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
+    let (id, _) = asset(&database, 'b', RetentionClass::Library);
+    let key = lettuce_types::RequestId::new();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let workers = (0..2)
+        .map(|_| {
+            let database = database.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                database.remove_media_library_asset(id, key, "same", TimestampMillis::new(12))
+            })
+        })
+        .collect::<Vec<_>>();
+    barrier.wait();
+    let results = workers
+        .into_iter()
+        .map(|worker| worker.join().expect("worker").expect("remove"))
+        .collect::<Vec<_>>();
+    assert_eq!(results[0], results[1]);
+    assert_eq!(results[0].len(), 1);
+    assert!(matches!(
+        database.remove_media_library_asset(id, key, "changed", TimestampMillis::new(13)),
+        Err(lettuce_media::MediaLibraryError::Conflict)
+    ));
+}
+
+#[test]
+fn reference_committing_before_media_removal_is_reported_as_in_use() {
+    let root =
+        std::env::temp_dir().join(format!("lettuce-remove-reference-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("root");
+    let path = root.join("database.sqlite3");
+    let database = Database::open(&path).expect("database");
+    let (id, hash) = asset(&database, 'b', RetentionClass::Library);
+    let contender = Database::open(&path).expect("contender");
+    let run = lettuce_types::LegacyImportRunId::new();
+    let mut connection = database.connection().expect("connection");
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("writer transaction");
+    transaction.execute("INSERT INTO legacy_import_runs (id,source_schema_version,inventory_fingerprint,plan_fingerprint,status,admitted_at,updated_at) VALUES (?1,96,?2,?2,'admitting',1,1)", params![run.to_string(), "e".repeat(64)]).expect("run");
+    transaction.execute("INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,destination_id,expected_byte_len,expected_content_hash) VALUES (?1,'media','images/concurrent.png',?2,42,?3)", params![run.to_string(),id.to_string(),hash.as_str()]).expect("new reference");
+    let (entered, receiver) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        entered.send(()).expect("entered");
+        contender.remove_media_library_asset(
+            id,
+            lettuce_types::RequestId::new(),
+            "remove",
+            TimestampMillis::new(12),
+        )
+    });
+    receiver.recv().expect("worker entered");
+    transaction.commit().expect("reference commit");
+    let error = worker
+        .join()
+        .expect("worker")
+        .expect_err("new reference wins");
+    let lettuce_media::MediaLibraryError::InUse(references) = error else {
+        panic!("expected InUse, got {error:?}");
+    };
+    assert!(references.iter().any(|reference| reference.kind
+        == lettuce_media::MediaReferenceKind::LegacyImport
+        && reference.owner_id == run.to_string()));
+    drop(connection);
+    assert!(
+        MediaAssetRepository::get(&database, id)
+            .expect("preserved asset")
+            .is_some()
+    );
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn media_removal_crash_child() {
+    let Ok(root) = std::env::var("LETTUCE_MEDIA_REMOVE_CRASH_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let id: AssetId = std::env::var("LETTUCE_MEDIA_REMOVE_CRASH_ASSET")
+        .expect("asset")
+        .parse()
+        .expect("asset id");
+    let database = Database::open(root.join("database.sqlite3")).expect("database");
+    let _: Result<(), lettuce_media::MediaLibraryError> = database.commit_api_operation(
+        "media_library_remove",
+        "crash",
+        "remove",
+        TimestampMillis::new(12),
+        |operation| {
+            let released = operation.remove_media_library_asset(id, TimestampMillis::new(12))?;
+            assert_eq!(released.len(), 1);
+            std::process::exit(77);
+        },
+    );
+    panic!("child should exit before receipt and commit");
+}
+
+#[test]
+fn media_removal_crash_before_receipt_commit_preserves_the_asset_and_retries() {
+    let root = std::env::temp_dir().join(format!("lettuce-remove-crash-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("root");
+    let path = root.join("database.sqlite3");
+    let database = Database::open(&path).expect("database");
+    let (id, _) = asset(&database, 'd', RetentionClass::Library);
+    let before = MediaAssetRepository::get(&database, id)
+        .expect("asset")
+        .expect("exists");
+    drop(database);
+    let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .args([
+            "--exact",
+            "purge::media_gc::tests::media_removal_crash_child",
+            "--nocapture",
+        ])
+        .env("LETTUCE_MEDIA_REMOVE_CRASH_ROOT", &root)
+        .env("LETTUCE_MEDIA_REMOVE_CRASH_ASSET", id.to_string())
+        .status()
+        .expect("child");
+    assert_eq!(status.code(), Some(77));
+    let database = Database::open(&path).expect("reopen");
+    assert_eq!(
+        MediaAssetRepository::get(&database, id).expect("asset after crash"),
+        Some(before.clone())
+    );
+    assert!(
+        MediaBlobRepository::get(&database, before.blob_id)
+            .expect("blob after crash")
+            .is_some()
+    );
+    assert!(
+        database
+            .lookup_api_operation("media_library_remove", "crash")
+            .expect("receipt after crash")
+            .is_none()
+    );
+    let key = lettuce_types::RequestId::new();
+    let released = database
+        .remove_media_library_asset(id, key, "remove", TimestampMillis::new(13))
+        .expect("retry");
+    assert_eq!(released.len(), 1);
+    assert!(
+        MediaAssetRepository::get(&database, id)
+            .expect("removed asset")
+            .is_none()
+    );
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn media_library_pages_include_all_retention_classes_and_references() {
+    let database = Database::open_in_memory().expect("database");
+    let (library, _) = asset(&database, 'a', RetentionClass::Library);
+    let (persistent, _) = asset(&database, 'b', RetentionClass::Persistent);
+    let (temporary, _) = asset(
+        &database,
+        'c',
+        RetentionClass::Temporary {
+            expires_at: TimestampMillis::new(100),
+        },
+    );
+    let (_, pending, _) = pending_import_assignment(&database, "partial");
+    let mut ids = BTreeSet::new();
+    let mut cursor = None;
+    loop {
+        let page = database
+            .media_library_page(
+                Some(MediaKind::Image),
+                lettuce_types::PageRequest {
+                    cursor,
+                    limit: lettuce_types::PageLimit::new(1),
+                },
+            )
+            .expect("page");
+        for entry in page.items {
+            assert!(
+                ids.insert(entry.asset.id),
+                "no duplicate asset across pages"
+            );
+            assert_eq!(entry.blob.kind, MediaKind::Image);
+            if entry.asset.id == pending {
+                assert!(
+                    entry.references.iter().any(|reference| reference.kind
+                        == lettuce_media::MediaReferenceKind::LegacyImport)
+                );
+            }
+        }
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(
+        ids,
+        BTreeSet::from([library, persistent, temporary, pending])
+    );
+}
+
+#[test]
+fn media_library_cursor_rejects_a_changed_kind_and_clamps_only_pages() {
+    let database = Database::open_in_memory().expect("database");
+    for _ in 0..203 {
+        asset(&database, 'a', RetentionClass::Library);
+    }
+    let first = database
+        .media_library_page(
+            Some(MediaKind::Image),
+            lettuce_types::PageRequest {
+                cursor: None,
+                limit: lettuce_types::PageLimit::new(u16::MAX),
+            },
+        )
+        .expect("first page");
+    assert_eq!(first.items.len(), 200);
+    let cursor = first.next_cursor.expect("more assets");
+    assert!(matches!(
+        database.media_library_page(
+            Some(MediaKind::Audio),
+            lettuce_types::PageRequest {
+                cursor: Some(cursor.clone()),
+                limit: lettuce_types::PageLimit::default()
+            }
+        ),
+        Err(lettuce_media::MediaLibraryError::InvalidCursor)
+    ));
+    let last = database
+        .media_library_page(
+            Some(MediaKind::Image),
+            lettuce_types::PageRequest {
+                cursor: Some(cursor),
+                limit: lettuce_types::PageLimit::default(),
+            },
+        )
+        .expect("remaining assets");
+    assert_eq!(last.items.len(), 3);
+    assert!(last.next_cursor.is_none());
+    assert!(matches!(
+        database.media_library_page(
+            None,
+            lettuce_types::PageRequest {
+                cursor: Some("malformed".into()),
+                limit: lettuce_types::PageLimit::default()
+            }
+        ),
+        Err(lettuce_media::MediaLibraryError::InvalidCursor)
+    ));
+}
+
+#[test]
+fn missing_media_is_not_reported_as_having_no_references() {
+    let database = Database::open_in_memory().expect("database");
+    assert!(matches!(
+        database.media_references(AssetId::new()),
+        Err(lettuce_media::MediaLibraryError::NotFound)
+    ));
 }
 
 #[test]

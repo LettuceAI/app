@@ -1,3 +1,4 @@
+use super::database_files::FileKeepStage;
 use super::*;
 use lettuce_media::{
     AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
@@ -140,7 +141,15 @@ async fn first_inventory_captures_existing_kept_files_without_changing_the_datab
 
 #[tokio::test]
 async fn interrupted_cutover_preserves_the_active_pointer_and_exact_kept_set() {
-    for switched in [false, true] {
+    for phase in [
+        "created",
+        "target_intent",
+        "keep_intent",
+        "frozen",
+        "kept_set",
+        "switched",
+    ] {
+        let switched = phase == "switched";
         let root =
             std::env::temp_dir().join(format!("lettuce-cutover-crash-{}", OperationId::new()));
         let location = location(&root);
@@ -159,17 +168,18 @@ async fn interrupted_cutover_preserves_the_active_pointer_and_exact_kept_set() {
             ])
             .env("LETTUCE_CUTOVER_CRASH_ROOT", &root)
             .env("LETTUCE_CUTOVER_CRASH_NAME", &name)
-            .env(
-                "LETTUCE_CUTOVER_CRASH_SWITCH",
-                if switched { "yes" } else { "no" },
-            )
+            .env("LETTUCE_CUTOVER_CRASH_PHASE", phase)
             .status()
             .expect("crash process");
         assert_eq!(status.code(), Some(77));
         let recovered = location.file_lifecycle().await.expect("restart recovery");
         assert_eq!(
             location.active_path().expect("pointer"),
-            if switched { new_path } else { old_path }
+            if switched {
+                new_path.clone()
+            } else {
+                old_path.clone()
+            }
         );
         assert_eq!(
             recovered.kept_media_hashes().expect("kept set"),
@@ -180,6 +190,18 @@ async fn interrupted_cutover_preserves_the_active_pointer_and_exact_kept_set() {
             }
         );
         drop(recovered);
+        if switched {
+            assert!(matches!(
+                Database::open(&old_path),
+                Err(lettuce_database::DatabaseError::WriteFenced)
+            ));
+            drop(Database::open(&new_path).expect("new active file accepts writes"));
+        } else {
+            let active = Database::open(&old_path)
+                .expect("previous active file accepts writes after recovery");
+            media(&active, 'e', RetentionClass::Library);
+            drop(active);
+        }
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }
@@ -196,10 +218,26 @@ fn cutover_crash_child() {
         .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
         .expect("begin");
     drop(Database::open(&new_path).expect("fresh database"));
+    let phase = std::env::var("LETTUCE_CUTOVER_CRASH_PHASE").expect("phase");
+    if phase == "created" {
+        std::process::exit(77);
+    }
+    let stop = match phase.as_str() {
+        "target_intent" => Some(FileKeepStage::TargetIntent),
+        "keep_intent" => Some(FileKeepStage::KeepIntent),
+        "frozen" => Some(FileKeepStage::Frozen),
+        "kept_set" => Some(FileKeepStage::KeptSet),
+        "switched" => None,
+        _ => panic!("unknown cutover phase"),
+    };
     guard
-        .prepare_cutover(&name, TimestampMillis::new(30))
+        .prepare_cutover_with_checkpoint(&name, TimestampMillis::new(30), |stage| {
+            if Some(stage) == stop {
+                std::process::exit(77);
+            }
+        })
         .expect("prepared cutover");
-    if std::env::var("LETTUCE_CUTOVER_CRASH_SWITCH").expect("switch") == "yes" {
+    if phase == "switched" {
         location.activate(&name).expect("pointer switch");
     }
     std::process::exit(77);

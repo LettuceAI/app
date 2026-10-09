@@ -7,7 +7,10 @@ use lettuce_media::ReleasedMediaObject;
 use lettuce_types::{ContentHash, TimestampMillis};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 
-use super::{PurgeError, storage, text_columns};
+use super::{PurgeError, storage};
+
+#[path = "media_reference_probes.rs"]
+mod references;
 use crate::Database;
 
 /// Tables whose text is bookkeeping about media or history, not a use of it:
@@ -45,80 +48,7 @@ fn drop_referenced(
     connection: &Connection,
     candidates: &mut BTreeSet<String>,
 ) -> Result<(), PurgeError> {
-    let mut probes: Vec<String> = connection
-        .prepare(
-            "SELECT m.name, f.\"from\" FROM sqlite_schema AS m
-             JOIN pragma_foreign_key_list(m.name) AS f
-             WHERE m.type = 'table' AND f.\"table\" = 'media_assets'
-               AND (f.\"to\" IS NULL OR f.\"to\" = 'id')
-             ORDER BY m.name, f.\"from\"",
-        )
-        .and_then(|mut statement| {
-            statement
-                .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()
-        })
-        .map_err(storage)?
-        .into_iter()
-        .filter(|(table, _)| {
-            table != "legacy_import_media_completions" && table != "media_gc_candidates"
-        })
-        .map(|(table, column)| {
-            format!("SELECT \"{column}\" FROM \"{table}\" WHERE \"{column}\" = c.value")
-        })
-        .collect();
-    probes.push(format!(
-        "SELECT assignment.destination_id
-         FROM legacy_import_assignments assignment
-         JOIN legacy_import_runs run ON run.id = assignment.run_id
-         WHERE assignment.source_kind = 'media' AND assignment.destination_id = c.value
-           AND (run.status IN ('admitting', 'admitted', 'importing')
-                OR (run.status = 'partial' AND
-                    (SELECT count(*) FROM legacy_import_stage_results receipt
-                     WHERE receipt.run_id = run.id) < {}))",
-        lettuce_transfer::LegacyImportStage::ALL.len()
-    ));
-    probes.push(
-        "SELECT 1 FROM sync_incoming_changes change
-         JOIN sync_incoming_batches batch ON batch.batch_id = change.batch_id
-         WHERE batch.state <> 'committed'
-           AND instr(CAST(change.payload_bytes AS TEXT), c.value) > 0"
-            .to_owned(),
-    );
-    for column in ["current_payload", "incoming_payload"] {
-        probes.push(format!(
-            "SELECT 1 FROM sync_conflicts WHERE instr(CAST({column} AS TEXT), c.value) > 0"
-        ));
-    }
-    probes.push(
-        "SELECT 1 FROM sync_deferred_changes deferred
-         JOIN sync_changes change ON change.change_id = deferred.change_id
-         WHERE instr(CAST(change.payload_bytes AS TEXT), c.value) > 0"
-            .to_owned(),
-    );
-    for column in text_columns(connection, "jobs")? {
-        probes.push(format!(
-            "SELECT 1 FROM jobs WHERE state NOT IN {FINISHED_JOB}
-               AND instr(CAST(\"{column}\" AS TEXT), c.value) > 0"
-        ));
-    }
-    probes.push(format!(
-        "SELECT 1 FROM job_events event JOIN jobs job ON job.id = event.job_id
-         WHERE job.state NOT IN {FINISHED_JOB} AND instr(event.event_json, c.value) > 0"
-    ));
-    let tables: Vec<String> = connection
-        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
-        .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
-        .map_err(storage)?;
-    for table in tables.into_iter().filter(|table| scanned(table)) {
-        for column in text_columns(connection, &table)? {
-            probes.push(format!(
-                "SELECT 1 FROM \"{table}\" WHERE instr(CAST(\"{column}\" AS TEXT), c.value) > 0"
-            ));
-        }
-    }
+    let probes = references::probes(connection)?;
     for probe in probes {
         if candidates.is_empty() {
             break;
@@ -126,7 +56,8 @@ fn drop_referenced(
         let ids = serde_json::to_string(&*candidates).map_err(storage)?;
         let referenced: Vec<String> = connection
             .prepare(&format!(
-                "SELECT c.value FROM json_each(?1) AS c WHERE EXISTS ({probe})"
+                "SELECT c.value FROM json_each(?1) AS c WHERE EXISTS ({})",
+                probe.sql
             ))
             .and_then(|mut statement| statement.query_map([ids], |row| row.get(0))?.collect())
             .map_err(storage)?;
@@ -175,6 +106,15 @@ fn collect(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
+    let released = collect_in(&transaction, now)?;
+    transaction.commit().map_err(storage)?;
+    Ok(released)
+}
+
+fn collect_in(
+    transaction: &Connection,
+    now: TimestampMillis,
+) -> Result<Vec<ReleasedMediaObject>, PurgeError> {
     transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT id,?1 FROM media_assets WHERE retention='temporary' AND expires_at<=?1", [now.get()]).map_err(storage)?;
     let queued: Vec<(String, Option<String>, Option<String>)> = transaction
         .prepare(
@@ -200,7 +140,7 @@ fn collect(
             unused.insert(asset);
         }
     }
-    drop_retained(&transaction, &mut unused)?;
+    drop_retained(transaction, &mut unused)?;
     let mut released_blobs = BTreeSet::new();
     for asset in &unused {
         transaction
@@ -249,11 +189,136 @@ fn collect(
             });
         }
     }
-    transaction.commit().map_err(storage)?;
     Ok(released)
 }
 
 impl Database {
+    pub fn media_library_page(
+        &self,
+        role: Option<lettuce_media::MediaKind>,
+        request: lettuce_types::PageRequest,
+    ) -> Result<
+        lettuce_types::Page<lettuce_media::MediaLibraryEntry>,
+        lettuce_media::MediaLibraryError,
+    > {
+        use lettuce_media::{MediaKind, MediaLibraryEntry, MediaLibraryError};
+        if role.is_some_and(|kind| !matches!(kind, MediaKind::Image | MediaKind::Audio)) {
+            return Err(MediaLibraryError::InvalidData);
+        }
+        let cursor = request
+            .cursor
+            .as_deref()
+            .map(|value| {
+                let bytes =
+                    crate::hex_decode(value).map_err(|_| MediaLibraryError::InvalidCursor)?;
+                let cursor: MediaLibraryCursor =
+                    serde_json::from_slice(&bytes).map_err(|_| MediaLibraryError::InvalidCursor)?;
+                if cursor.version != 1
+                    || cursor.role != role
+                    || cursor.id.parse::<lettuce_types::AssetId>().is_err()
+                {
+                    return Err(MediaLibraryError::InvalidCursor);
+                }
+                Ok(cursor)
+            })
+            .transpose()?;
+        let role_name = role.map(|role| match role {
+            MediaKind::Image => "image",
+            MediaKind::Audio => "audio",
+            _ => unreachable!(),
+        });
+        let limit = usize::from(lettuce_types::PageLimit::new(request.limit.get()).get());
+        let mut connection = self.connection().map_err(|_| MediaLibraryError::Storage)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|_| MediaLibraryError::Storage)?;
+        let ids: Vec<String> = transaction.prepare("SELECT id FROM media_assets WHERE blob_kind IN ('image','audio') AND (?1 IS NULL OR blob_kind=?1) AND (?2 IS NULL OR updated_at<?2 OR (updated_at=?2 AND id>?3)) ORDER BY updated_at DESC,id ASC LIMIT ?4")
+            .and_then(|mut statement| statement.query_map(rusqlite::params![role_name,cursor.as_ref().map(|cursor| cursor.updated_at),cursor.as_ref().map(|cursor| cursor.id.as_str()),i64::try_from(limit+1).map_err(|_| rusqlite::Error::InvalidQuery)?], |row| row.get(0))?.collect()).map_err(library_sql_error)?;
+        let has_more = ids.len() > limit;
+        let probes = references::probes(&transaction).map_err(media_library_error)?;
+        let mut items = Vec::with_capacity(limit);
+        for id in ids.into_iter().take(limit) {
+            let asset_id = id.parse().map_err(|_| MediaLibraryError::InvalidData)?;
+            let asset = crate::load_asset_with_blob(&transaction, asset_id)
+                .map_err(library_sql_error)?
+                .ok_or(MediaLibraryError::InvalidData)?;
+            let blob = transaction
+                .query_row(
+                    &format!(
+                        "SELECT {} FROM media_blobs WHERE id=?1",
+                        crate::MEDIA_BLOB_COLUMNS
+                    ),
+                    [asset.blob_id.to_string()],
+                    crate::media_from_row,
+                )
+                .map_err(library_sql_error)?;
+            let owners = references::owners_using(&transaction, &id, &probes)
+                .map_err(media_library_error)?;
+            items.push(MediaLibraryEntry {
+                asset,
+                blob,
+                references: owners,
+            });
+        }
+        let next_cursor = if has_more {
+            let last = items.last().ok_or(MediaLibraryError::InvalidData)?;
+            Some(crate::hex_encode(
+                &serde_json::to_vec(&MediaLibraryCursor {
+                    version: 1,
+                    role,
+                    updated_at: last.asset.updated_at.get(),
+                    id: last.asset.id.to_string(),
+                })
+                .map_err(|_| MediaLibraryError::InvalidData)?,
+            ))
+        } else {
+            None
+        };
+        transaction
+            .commit()
+            .map_err(|_| MediaLibraryError::Storage)?;
+        Ok(lettuce_types::Page { items, next_cursor })
+    }
+
+    pub fn media_references(
+        &self,
+        id: lettuce_types::AssetId,
+    ) -> Result<Vec<lettuce_media::MediaReference>, lettuce_media::MediaLibraryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| lettuce_media::MediaLibraryError::Storage)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|_| lettuce_media::MediaLibraryError::Storage)?;
+        let exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| lettuce_media::MediaLibraryError::Storage)?;
+        if !exists {
+            return Err(lettuce_media::MediaLibraryError::NotFound);
+        }
+        references::owners(&transaction, &id.to_string()).map_err(media_library_error)
+    }
+
+    pub fn remove_media_library_asset(
+        &self,
+        id: lettuce_types::AssetId,
+        key: lettuce_types::RequestId,
+        digest: &str,
+        now: TimestampMillis,
+    ) -> Result<Vec<ReleasedMediaObject>, lettuce_media::MediaLibraryError> {
+        self.commit_api_operation(
+            "media_library_remove",
+            &key.to_string(),
+            digest,
+            now,
+            |operation| operation.remove_media_library_asset(id, now),
+        )
+    }
+
     pub(crate) fn unreferenced_temporary_assets(
         connection: &Connection,
     ) -> Result<BTreeSet<String>, PurgeError> {
@@ -304,6 +369,103 @@ impl Database {
         .map_err(storage)?;
         let transaction = connection.transaction().map_err(storage)?;
         retained_objects(&transaction)
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MediaLibraryCursor {
+    version: u32,
+    role: Option<lettuce_media::MediaKind>,
+    updated_at: i64,
+    id: String,
+}
+
+fn library_sql_error(error: rusqlite::Error) -> lettuce_media::MediaLibraryError {
+    match error {
+        rusqlite::Error::InvalidQuery => lettuce_media::MediaLibraryError::InvalidData,
+        _ => lettuce_media::MediaLibraryError::Storage,
+    }
+}
+
+impl lettuce_media::MediaLibraryRepository for Database {
+    fn library_page(
+        &self,
+        role: Option<lettuce_media::MediaKind>,
+        request: lettuce_types::PageRequest,
+    ) -> Result<
+        lettuce_types::Page<lettuce_media::MediaLibraryEntry>,
+        lettuce_media::MediaLibraryError,
+    > {
+        self.media_library_page(role, request)
+    }
+
+    fn retaining_references(
+        &self,
+        asset: lettuce_types::AssetId,
+    ) -> Result<Vec<lettuce_media::MediaReference>, lettuce_media::MediaLibraryError> {
+        self.media_references(asset)
+    }
+
+    fn remove_library_asset(
+        &self,
+        asset: lettuce_types::AssetId,
+        key: lettuce_types::RequestId,
+        digest: &str,
+        now: TimestampMillis,
+    ) -> Result<Vec<ReleasedMediaObject>, lettuce_media::MediaLibraryError> {
+        self.remove_media_library_asset(asset, key, digest, now)
+    }
+}
+
+fn media_library_error(error: PurgeError) -> lettuce_media::MediaLibraryError {
+    match error {
+        PurgeError::Storage => lettuce_media::MediaLibraryError::Storage,
+        _ => lettuce_media::MediaLibraryError::InvalidData,
+    }
+}
+
+impl From<crate::ApiOperationError> for lettuce_media::MediaLibraryError {
+    fn from(error: crate::ApiOperationError) -> Self {
+        match error {
+            crate::ApiOperationError::Conflict => Self::Conflict,
+            crate::ApiOperationError::InvalidData => Self::InvalidData,
+            crate::ApiOperationError::Storage => Self::Storage,
+        }
+    }
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn remove_media_library_asset(
+        &self,
+        id: lettuce_types::AssetId,
+        now: TimestampMillis,
+    ) -> Result<Vec<ReleasedMediaObject>, lettuce_media::MediaLibraryError> {
+        use lettuce_media::MediaLibraryError;
+        let asset = id.to_string();
+        let exists: bool = self
+            .transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
+                [&asset],
+                |row| row.get(0),
+            )
+            .map_err(|_| MediaLibraryError::Storage)?;
+        if !exists {
+            return Err(MediaLibraryError::NotFound);
+        }
+        let owners = references::owners(self.transaction, &asset).map_err(media_library_error)?;
+        if !owners.is_empty() {
+            return Err(MediaLibraryError::InUse(owners));
+        }
+        self.transaction.execute("UPDATE media_assets SET retention='persistent',expires_at=NULL,revision=revision+1,updated_at=?2 WHERE id=?1", rusqlite::params![asset,now.get()]).map_err(|_| MediaLibraryError::Storage)?;
+        self.transaction
+            .execute(
+                "INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) VALUES (?1,?2)",
+                rusqlite::params![asset, now.get()],
+            )
+            .map_err(|_| MediaLibraryError::Storage)?;
+        collect_in(self.transaction, now).map_err(media_library_error)
     }
 }
 

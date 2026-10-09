@@ -67,3 +67,5 @@ Desktop Kokoro phonemization needs eSpeak NG. `EspeakNgProcess` implements the `
 The composition root can request a database-directory capability from `FilesystemAuthority`. It opens only the private database subdirectory and can unlink an exact regular database file only when its descriptor matches the caller's reserved file. WAL and shared-memory removal validates both sidecars before changing either. Operations remain descriptor-relative and report directory-sync status; the generic private-persistent removal prohibition remains in force.
 
 The database-directory capability can check whether an opened export target has the same identity as a regular database or private control file. It checks entries through confined descriptors without exposing their names or granting general private-directory listing or removal.
+
+Database sidecar validation and explicit deletion cover WAL, shared memory, the write gate and the read-only marker. Every sidecar passes the same regular-file and no-symlink preflight before any sidecar is removed.
