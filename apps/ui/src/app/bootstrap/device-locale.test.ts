@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { selectDeviceLocale } from "./device-locale";
 
 describe("device locale import", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("detects the first supported browser language after missing storage", () => {
+    vi.stubGlobal("navigator", { language: "xx", languages: ["xx", "zh-TW", "tr-TR"] });
+    expect(selectDeviceLocale({}, () => null)).toBe("zh-Hant");
+    expect(selectDeviceLocale({}, () => { throw new Error("denied"); })).toBe("zh-Hant");
+  });
   it("keeps the device choice ahead of readable legacy storage", () => {
     expect(selectDeviceLocale({ locale: "tr" }, () => "de")).toBe("tr");
   });

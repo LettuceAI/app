@@ -29,7 +29,7 @@ export async function createAppRuntime(options: AppRuntimeOptions = {}): Promise
     const state = status.ui_state;
     const locale = selectDeviceLocale(state, () => window.localStorage.getItem("app-locale"));
     if (state.locale !== locale) {
-      await api.call("appUiStateUpdate", { patch: { locale } });
+      await api.call("appUiStateUpdate", { patch: { locale } }).catch(() => undefined);
     }
     localization = await createI18n(locale);
   }

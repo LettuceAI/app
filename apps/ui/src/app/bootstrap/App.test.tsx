@@ -67,3 +67,14 @@ describe("status placeholder", () => {
     expect(screen.queryByText("LettuceAI")).toBeNull();
   });
 });
+
+it("boots when persisting the detected device locale fails", async () => {
+  const runtime = await createAppRuntime({
+    transport: createMockTransport({ calls: {
+      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: {} } }),
+      appUiStateUpdate: () => ({ status: "error", error: { code: "unavailable", message: "storage unavailable", details: null } }),
+    } }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  expect(runtime.i18n).toBeTruthy();
+});

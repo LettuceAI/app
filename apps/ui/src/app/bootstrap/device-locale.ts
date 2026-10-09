@@ -10,8 +10,16 @@ export function selectDeviceLocale(
   try {
     const legacy = readLegacy();
     if (legacy && retainedLocales.has(legacy)) return legacy;
-  } catch {
-    return fallbackLanguage;
+  } catch {}
+  const requested = typeof navigator === "undefined" ? [] : [navigator.language, ...(navigator.languages ?? [])];
+  for (const locale of requested) {
+    if (retainedLocales.has(locale)) return locale;
+    const normalized = locale.toLowerCase();
+    if (["zh", "zh-cn"].includes(normalized)) return "zh-Hans";
+    if (["zh-tw", "zh-hk", "zh-mo"].includes(normalized)) return "zh-Hant";
+    const base = normalized.split("-")[0];
+    const match = [...retainedLocales].find((candidate) => candidate.toLowerCase() === base);
+    if (match) return match;
   }
   return fallbackLanguage;
 }
