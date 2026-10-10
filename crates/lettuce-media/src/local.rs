@@ -516,139 +516,62 @@ where
         input: R,
         request: IngestRequest,
     ) -> Result<IngestedMedia, MediaStoreError> {
-        let (bytes, sniffed) = read_ingest(input, &request)?;
-
-        let _lifecycle = blob_lifecycle();
-        let now = TimestampMillis::now().map_err(|_| MediaStoreError::Clock)?;
-        let hash = blake3::hash(&bytes);
-        let content_hash = content_hash(hash);
-        let object_key = object_key(&content_hash)?;
-        let expected_size = bytes.len() as u64;
-        if let Some(existing_asset) = self
-            .assets
-            .get(asset_id)
-            .map_err(|_| MediaStoreError::CatalogFailure)?
-        {
-            let existing_blob = self
-                .blobs
-                .get(existing_asset.blob_id)
-                .map_err(|_| MediaStoreError::CatalogFailure)?
-                .ok_or(MediaStoreError::CatalogFailure)?;
-            if existing_asset.kind != request.asset_kind
-                || existing_asset.origin != request.origin
-                || existing_asset.retention != request.retention
-                || existing_asset.provenance != request.provenance
-                || existing_asset.revision != Revision::INITIAL
-                || existing_blob.content_hash != content_hash
-                || existing_blob.kind != sniffed.kind
-                || existing_blob.mime_type != sniffed.mime_type
-                || existing_blob.byte_size != expected_size
-                || existing_blob.width != sniffed.width
-                || existing_blob.height != sniffed.height
-                || existing_blob.state != BlobState::Ready
-            {
-                return Err(MediaStoreError::CatalogFailure);
-            }
-            self.commit_object(
-                &object_key,
-                expected_size,
-                &existing_blob.content_hash,
-                &bytes,
-            )?;
-            return Ok(IngestedMedia {
-                asset: existing_asset,
-                blob: existing_blob,
-            });
-        }
-        let blob_id = MediaBlobId::new();
-        let staged_blob = MediaBlob {
-            id: blob_id,
-            content_hash,
-            kind: sniffed.kind,
-            mime_type: sniffed.mime_type.to_owned(),
-            byte_size: expected_size,
-            width: sniffed.width,
-            height: sniffed.height,
-            duration_ms: None,
-            validation_version: BLOB_VALIDATION_VERSION,
-            state: BlobState::Staged,
-            created_at: now,
-            updated_at: now,
-        };
-        staged_blob
-            .validate()
-            .map_err(|_| MediaStoreError::InvalidMetadata)?;
-
-        self.commit_object(
-            &object_key,
-            expected_size,
-            &staged_blob.content_hash,
-            &bytes,
-        )?;
-
-        let registered = self
-            .blobs
-            .register(staged_blob)
-            .map_err(|_| MediaStoreError::CatalogFailure)?;
-        if registered.kind != sniffed.kind
-            || registered.mime_type != sniffed.mime_type
-            || registered.byte_size != expected_size
-            || registered.width != sniffed.width
-            || registered.height != sniffed.height
-        {
-            return Err(MediaStoreError::CatalogFailure);
-        }
-
-        let blob = match registered.state {
-            BlobState::Ready => registered,
-            BlobState::Staged => self
-                .blobs
-                .finalize_staged_to_ready(registered.id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)?,
-            BlobState::Missing => self
-                .blobs
-                .restore_missing_to_ready(registered.id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)?,
-            BlobState::Quarantined => {
-                return Err(MediaStoreError::CatalogFailure);
-            }
-        };
-
-        let asset = MediaAsset::new(
-            asset_id,
-            blob.id,
-            request.asset_kind,
-            request.origin,
-            request.retention,
-            request.provenance,
-            Revision::INITIAL,
-            now,
-            now,
-        )
-        .map_err(|_| MediaStoreError::CatalogFailure)?;
-        let asset = match self.assets.create(asset.clone()) {
-            Ok(asset) => asset,
-            Err(MediaAssetRepositoryError::AlreadyExists) => {
-                let existing = self
-                    .assets
-                    .get(asset_id)
-                    .map_err(|_| MediaStoreError::CatalogFailure)?
-                    .ok_or(MediaStoreError::CatalogFailure)?;
-                if existing.id != asset.id
-                    || existing.blob_id != asset.blob_id
-                    || existing.kind != asset.kind
-                    || existing.origin != asset.origin
-                    || existing.retention != asset.retention
-                    || existing.provenance != asset.provenance
-                    || existing.revision != Revision::INITIAL
+        self.ingest_with_commit(input, request, |mut upload| {
+            upload.asset.id = asset_id;
+            if let Some(existing_asset) = self.assets.get(asset_id).map_err(|_| MediaStoreError::CatalogFailure)? {
+                let existing_blob = self.blobs.get(existing_asset.blob_id).map_err(|_| MediaStoreError::CatalogFailure)?.ok_or(MediaStoreError::CatalogFailure)?;
+                if existing_asset.kind != upload.asset.kind
+                    || existing_asset.origin != upload.asset.origin
+                    || existing_asset.retention != upload.asset.retention
+                    || existing_asset.provenance != upload.asset.provenance
+                    || existing_asset.revision != Revision::INITIAL
+                    || existing_blob.content_hash != upload.blob.content_hash
+                    || existing_blob.kind != upload.blob.kind
+                    || existing_blob.mime_type != upload.blob.mime_type
+                    || existing_blob.byte_size != upload.blob.byte_size
+                    || existing_blob.width != upload.blob.width
+                    || existing_blob.height != upload.blob.height
+                    || existing_blob.state != BlobState::Ready
                 {
                     return Err(MediaStoreError::CatalogFailure);
                 }
-                existing
+                return Ok(IngestedMedia { asset: existing_asset, blob: existing_blob });
             }
-            Err(_) => return Err(MediaStoreError::CatalogFailure),
-        };
-        Ok(IngestedMedia { asset, blob })
+            upload.blob.state = BlobState::Staged;
+            let registered = self.blobs.register(upload.blob.clone()).map_err(|_| MediaStoreError::CatalogFailure)?;
+            if registered.kind != upload.blob.kind
+                || registered.mime_type != upload.blob.mime_type
+                || registered.byte_size != upload.blob.byte_size
+                || registered.width != upload.blob.width
+                || registered.height != upload.blob.height
+            {
+                return Err(MediaStoreError::CatalogFailure);
+            }
+            let now = upload.asset.created_at;
+            let blob = match registered.state {
+                BlobState::Ready => registered,
+                BlobState::Staged => self.blobs.finalize_staged_to_ready(registered.id, now).map_err(|_| MediaStoreError::CatalogFailure)?,
+                BlobState::Missing => self.blobs.restore_missing_to_ready(registered.id, now).map_err(|_| MediaStoreError::CatalogFailure)?,
+                BlobState::Quarantined => return Err(MediaStoreError::CatalogFailure),
+            };
+            upload.asset.blob_id = blob.id;
+            let asset = match self.assets.create(upload.asset.clone()) {
+                Ok(asset) => asset,
+                Err(MediaAssetRepositoryError::AlreadyExists) => {
+                    let existing = self.assets.get(asset_id).map_err(|_| MediaStoreError::CatalogFailure)?.ok_or(MediaStoreError::CatalogFailure)?;
+                    if existing.id != upload.asset.id || existing.blob_id != upload.asset.blob_id
+                        || existing.kind != upload.asset.kind || existing.origin != upload.asset.origin
+                        || existing.retention != upload.asset.retention || existing.provenance != upload.asset.provenance
+                        || existing.revision != Revision::INITIAL
+                    {
+                        return Err(MediaStoreError::CatalogFailure);
+                    }
+                    existing
+                }
+                Err(_) => return Err(MediaStoreError::CatalogFailure),
+            };
+            Ok(IngestedMedia { asset, blob })
+        })?
     }
 
     pub fn ingest_with_commit<R: Read, T>(
