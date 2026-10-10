@@ -3,15 +3,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use lettuce_characters::{
-    Character, CharacterDefaults, CharacterDependencyReader, CharacterMedia, CharacterMediaLink,
-    CharacterMediaSlot, CharacterPresentationV1, CharacterProfile, CharacterProvenance,
-    CharacterRepository, CharacterSearch, ConversationStarter, ConversationStarterDraftUpdate,
-    CreateCharacterPlan, DependencyReference, DependencyReport, IdRemap, ImageRecommendation,
-    LifecycleStatus, ProfileDuplicateRepository, ProfileDuplicateRequest, ProfileDuplicateResult,
-    RepositoryError, RetainedExternalReferences, Scene, SceneAssetLink, SceneAssetSlot,
-    SceneDocumentV1, SceneDraftUpdate, SceneOwner, ScenePart, SceneRepository, SceneVariant,
-    SceneVariantDraftUpdate, Selection, StarterMessage, StarterRepository, StarterRole,
-    UnresolvedLegacyReference, WidgetImageSource, WidgetNode,
+    Character, CharacterDefaults, CharacterDependencyReader, CharacterDetails, CharacterMedia,
+    CharacterMediaLink, CharacterMediaSlot, CharacterPresentationV1, CharacterProfile,
+    CharacterProvenance, CharacterRepository, CharacterSearch, ConversationStarter,
+    ConversationStarterDraftUpdate, CreateCharacterPlan, DependencyReference, DependencyReport,
+    IdRemap, ImageRecommendation, LifecycleStatus, ProfileDuplicateRepository,
+    ProfileDuplicateRequest, ProfileDuplicateResult, RepositoryError, RetainedExternalReferences,
+    Scene, SceneAssetLink, SceneAssetSlot, SceneDocumentV1, SceneDraftUpdate, SceneOwner,
+    ScenePart, SceneRepository, SceneVariant, SceneVariantDraftUpdate, Selection, StarterMessage,
+    StarterRepository, StarterRole, UnresolvedLegacyReference, WidgetImageSource, WidgetNode,
 };
 use lettuce_companions::{SoulOwner, initial_soul_state};
 use lettuce_types::{
@@ -1974,17 +1974,29 @@ impl Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        ensure_root(&tx, id, expected_revision, true)?;
-        tx.execute(
-            "UPDATE characters SET status=?2 WHERE id=?1",
-            params![id.to_string(), status_name(status)],
-        )
-        .map_err(db_error)?;
-        bump_root(&tx, id, expected_revision, now)?;
-        let character = load_character(&tx, id)?;
+        let details = set_character_status_in(&tx, id, expected_revision, status, now)?;
         tx.commit().map_err(db_error)?;
-        Ok(character)
+        Ok(details.character)
     }
+}
+
+fn set_character_status_in(
+    tx: &Transaction<'_>,
+    id: CharacterId,
+    expected_revision: Revision,
+    status: LifecycleStatus,
+    now: TimestampMillis,
+) -> Result<CharacterDetails, RepositoryError> {
+    ensure_root(tx, id, expected_revision, true)?;
+    tx.execute(
+        "UPDATE characters SET status=?2 WHERE id=?1",
+        params![id.to_string(), status_name(status)],
+    )
+    .map_err(db_error)?;
+    bump_root(tx, id, expected_revision, now)?;
+    load_details(tx, id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::NotFound)
 }
 
 impl CharacterDependencyReader for Database {
@@ -2337,6 +2349,16 @@ fn duplicate_character_in(
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn set_library_character_status(
+        &self,
+        id: CharacterId,
+        expected_revision: Revision,
+        status: LifecycleStatus,
+        now: TimestampMillis,
+    ) -> Result<CharacterDetails, RepositoryError> {
+        set_character_status_in(self.transaction, id, expected_revision, status, now)
+    }
+
     pub fn library_character(&self, id: CharacterId) -> Result<Character, RepositoryError> {
         load_character(self.transaction, id)
     }
@@ -6127,5 +6149,40 @@ mod smoke_tests {
             )
             .expect("save");
         assert_eq!(after.scenes, before.scenes);
+    }
+    #[test]
+    fn character_lifecycle_and_receipt_roll_back_together() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        let apply = || {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+            "character_archive", "archive", "digest", TimestampMillis::new(2), |scope| {
+                scope.set_library_character_status(before.character.id, Revision::INITIAL, LifecycleStatus::Archived, TimestampMillis::new(2))
+                    .map_err(|_| crate::ApiOperationError::Storage)
+            })
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_archive_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(apply(), Err(crate::ApiOperationError::Storage));
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_archive", "archive")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_archive_receipt;")
+            .expect("clear");
+        let archived = apply().expect("archive");
+        assert_eq!(archived.character.status, LifecycleStatus::Archived);
+        assert_eq!(archived.scenes, before.scenes);
+        assert_eq!(archived.starters, before.starters);
+        assert_eq!(apply().expect("replay"), archived);
     }
 }

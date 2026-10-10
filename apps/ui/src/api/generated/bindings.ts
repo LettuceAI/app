@@ -111,6 +111,8 @@ export const commands = {
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
 	characterGet: (request: CharacterGetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_get", { request })),
 	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_save", { request })),
+	characterArchive: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_archive", { request })),
+	characterRestore: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_restore", { request })),
 	personaGet: (request: PersonaGetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_get", { request })),
 	personasList: (request: PersonasListRequest) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
 	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_save", { request })),
@@ -823,6 +825,12 @@ export type CharacterDuplicateRequest = {
 
 export type CharacterGetRequest = {
 	character_id: string,
+};
+
+export type CharacterLifecycleRequest = {
+	character_id: string,
+	expected_revision: number,
+	client_operation_id: string,
 };
 
 export type CharacterLorebookBindRequest = {

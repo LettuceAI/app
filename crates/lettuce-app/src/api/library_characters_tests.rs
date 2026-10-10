@@ -360,3 +360,69 @@ async fn character_editor_round_trips_scenes_starters_and_recursive_widgets() {
         saved
     );
 }
+
+#[tokio::test]
+async fn character_lifecycle_replays_original_view_and_enforces_revision() {
+    let harness = harness(Reply::Text("reply"));
+    let request = dto::CharacterLifecycleRequest {
+        character_id: harness.character_id.to_string(),
+        expected_revision: 1,
+        client_operation_id: "archive-character".into(),
+    };
+    let archived = character_archive(&harness.context, request.clone())
+        .await
+        .expect("archive");
+    assert!(archived.archived);
+    assert_eq!(archived.revision, 2);
+    let restored = character_restore(
+        &harness.context,
+        dto::CharacterLifecycleRequest {
+            expected_revision: archived.revision,
+            client_operation_id: "restore-character".into(),
+            ..request.clone()
+        },
+    )
+    .await
+    .expect("restore");
+    assert!(!restored.archived);
+    assert_eq!(restored.revision, 3);
+    assert_eq!(
+        character_archive(&harness.context, request.clone())
+            .await
+            .expect("replay"),
+        archived
+    );
+    let mut changed = request.clone();
+    changed.expected_revision = 3;
+    assert_eq!(
+        character_archive(&harness.context, changed)
+            .await
+            .expect_err("digest")
+            .code,
+        ApiErrorCode::Conflict
+    );
+    let mut stale = request;
+    stale.client_operation_id = "stale-archive".into();
+    assert_eq!(
+        character_archive(&harness.context, stale)
+            .await
+            .expect_err("revision")
+            .code,
+        ApiErrorCode::Conflict
+    );
+    harness.context.shutdown_token().cancel();
+    assert_eq!(
+        character_restore(
+            &harness.context,
+            dto::CharacterLifecycleRequest {
+                character_id: harness.character_id.to_string(),
+                expected_revision: restored.revision,
+                client_operation_id: "shutdown-restore".into(),
+            }
+        )
+        .await
+        .expect_err("shutdown")
+        .code,
+        ApiErrorCode::Cancelled
+    );
+}

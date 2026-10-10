@@ -244,3 +244,21 @@ pub async fn group_save(
 ) -> Result<lettuce_contracts::GroupView, ApiError> {
     api::group_save(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_archive(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterLifecycleRequest,
+) -> Result<lettuce_contracts::CharacterView, ApiError> {
+    api::character_archive(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_restore(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterLifecycleRequest,
+) -> Result<lettuce_contracts::CharacterView, ApiError> {
+    api::character_restore(&context, request).await
+}

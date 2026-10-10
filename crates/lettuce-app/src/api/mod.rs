@@ -364,7 +364,7 @@ mod library_lists_tests;
 mod library_characters_tests;
 
 mod library_characters;
-pub use library_characters::{character_get, character_save};
+pub use library_characters::{character_archive, character_get, character_restore, character_save};
 
 #[cfg(test)]
 mod library_groups_tests;

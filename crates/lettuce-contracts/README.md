@@ -120,3 +120,5 @@ Full persona drafts require nullable fields to be present explicitly. A null cle
 The character editor draft describes the authored profile, provenance, defaults, presentation and recursive widgets, media links, scenes, variants and starters with concrete transport types. Nullable draft fields require an explicit null to clear them; omission is invalid input. The view carries server revision metadata and asset URLs, while save requests carry asset identities and one operation key.
 
 Group editor drafts reuse the character editor's typed scene, variant and chat appearance vocabulary. Ordered member choices and tri-state persona selection remain explicit, nullable replacements require null, and responses supply server metadata and asset URLs.
+
+Character archive and restore take one root revision and operation key and return the committed CharacterView.

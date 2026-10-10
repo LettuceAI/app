@@ -261,3 +261,67 @@ pub async fn character_save(
         })
         .await
 }
+
+pub async fn character_archive(
+    context: &ApiContext,
+    request: dto::CharacterLifecycleRequest,
+) -> Result<dto::CharacterView, ApiError> {
+    character_status(
+        context,
+        request,
+        lettuce_characters::LifecycleStatus::Archived,
+    )
+    .await
+}
+
+pub async fn character_restore(
+    context: &ApiContext,
+    request: dto::CharacterLifecycleRequest,
+) -> Result<dto::CharacterView, ApiError> {
+    character_status(
+        context,
+        request,
+        lettuce_characters::LifecycleStatus::Active,
+    )
+    .await
+}
+
+async fn character_status(
+    context: &ApiContext,
+    request: dto::CharacterLifecycleRequest,
+    status: lettuce_characters::LifecycleStatus,
+) -> Result<dto::CharacterView, ApiError> {
+    let id: CharacterId = parse_id(&request.character_id, "character_id")?;
+    let expected = super::lorebooks::revision(request.expected_revision, "expected_revision")?;
+    let digest = super::jobs::local::digest(&request)?;
+    let operation = match status {
+        lettuce_characters::LifecycleStatus::Archived => "character_archive",
+        lettuce_characters::LifecycleStatus::Active => "character_restore",
+    };
+    context
+        .blocking(move |context| {
+            if context.shutdown_token().is_cancelled() {
+                return Err(api_error(
+                    ApiErrorCode::Cancelled,
+                    "shutdown interrupted character lifecycle change",
+                ));
+            }
+            context
+                .backend()
+                .database()
+                .commit_api_operation(
+                    operation,
+                    &request.client_operation_id,
+                    &digest,
+                    context.now(),
+                    |scope| {
+                        let details = scope
+                            .set_library_character_status(id, expected, status, context.now())
+                            .map_err(|error| Failure(error.into_api_error()))?;
+                        view(context, details).map_err(Failure)
+                    },
+                )
+                .map_err(|failure: Failure| failure.0)
+        })
+        .await
+}
