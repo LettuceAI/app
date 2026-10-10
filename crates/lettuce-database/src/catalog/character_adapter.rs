@@ -19,7 +19,7 @@ use lettuce_types::{
     Revision, SceneAssetLinkId, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::Database;
 
@@ -30,14 +30,8 @@ const PRESENTATION_VERSION: u32 = 1;
 const RECOMMENDATION_VERSION: u32 = 1;
 const DOCUMENT_VERSION: u32 = 1;
 const LOREBOOK_VERSION: u32 = 1;
-const CHARACTER_CURSOR_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope<T> {
-    format_version: u32,
-    value: T,
-}
+use super::{Envelope, cursor_decode, cursor_encode};
 
 fn encode<T: Serialize>(value: &T, version: u32) -> Result<String, RepositoryError> {
     serde_json::to_string(&Envelope {
@@ -332,40 +326,6 @@ fn next_revision(value: Revision) -> Result<Revision, RepositoryError> {
 
 fn id_text<T: ToString>(value: Option<T>) -> Option<String> {
     value.map(|value| value.to_string())
-}
-
-fn cursor_encode(
-    key: serde_json::Value,
-    id: String,
-    request: &lettuce_characters::CharacterSearch,
-) -> Result<String, RepositoryError> {
-    let envelope = Envelope {
-        format_version: CHARACTER_CURSOR_VERSION,
-        value: (key, id, request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"),
-    };
-    serde_json::to_vec(&envelope)
-        .map(|bytes| crate::hex_encode(&bytes))
-        .map_err(|_| RepositoryError::Storage)
-}
-
-fn cursor_decode(
-    value: Option<&str>,
-    request: &lettuce_characters::CharacterSearch,
-) -> Result<Option<(rusqlite::types::Value, String)>, RepositoryError> {
-    let invalid = || RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue { field: "character.cursor" });
-    let Some(value) = value else { return Ok(None) };
-    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
-    let envelope: Envelope<(serde_json::Value, String, lettuce_characters::LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
-    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
-    if envelope.format_version != CHARACTER_CURSOR_VERSION || sort != request.sort || query != canonical_name(request.text.trim()) || search_nickname != request.search_nickname || include_archived != request.include_archived || entity != "character" {
-        return Err(invalid());
-    }
-    id.parse::<CharacterId>().map_err(|_| invalid())?;
-    let key = match sort {
-        lettuce_characters::LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
-        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
-    };
-    Ok(Some((key, id)))
 }
 
 fn image_assets(
@@ -1463,7 +1423,7 @@ impl CharacterRepository for Database {
         use lettuce_characters::LibrarySort;
 
         let query = canonical_name(request.text.trim());
-        let cursor = cursor_decode(page.cursor.as_deref(), &request)?;
+        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"))?;
         let limit = usize::from(page.limit.get()).max(1);
         let pattern = format!(
             "%{}%",
@@ -1514,7 +1474,7 @@ impl CharacterRepository for Database {
                         LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
                         LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
                         LibrarySort::Name => serde_json::json!(canonical_name(&item.profile.name)),
-                    }, item.id.to_string(), &request)
+                    }, item.id.to_string(), (request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"))
                 })
                 .transpose()?
         } else {

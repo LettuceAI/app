@@ -23,7 +23,7 @@ use lettuce_sync::{
 use lettuce_transfer::{PersonaFileImport, PersonaFileRepository};
 use lettuce_types::{AssetId, Page, PageRequest, PersonaId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::Database;
@@ -32,14 +32,8 @@ use crate::sync::sync_adapter::{
 };
 const CROP_VERSION: u32 = 1;
 const RECOMMENDATION_VERSION: u32 = 1;
-const CURSOR_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope<T> {
-    format_version: u32,
-    value: T,
-}
+use super::{Envelope, cursor_decode, cursor_encode};
 
 fn invalid(field: &'static str) -> rusqlite::Error {
     let _ = field;
@@ -276,40 +270,6 @@ fn canonical_title(value: &str) -> String {
         .to_lowercase()
         .nfkc()
         .collect()
-}
-
-fn cursor_encode(
-    key: serde_json::Value,
-    id: String,
-    request: &lettuce_characters::PersonaSearch,
-) -> Result<String, RepositoryError> {
-    let envelope = Envelope {
-        format_version: CURSOR_VERSION,
-        value: (key, id, request.sort, canonical_title(request.text.trim()), request.search_nickname, request.include_archived, "persona"),
-    };
-    serde_json::to_vec(&envelope)
-        .map(|bytes| crate::hex_encode(&bytes))
-        .map_err(|_| RepositoryError::Storage)
-}
-
-fn cursor_decode(
-    value: Option<&str>,
-    request: &lettuce_characters::PersonaSearch,
-) -> Result<Option<(rusqlite::types::Value, String)>, RepositoryError> {
-    let invalid = || RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue { field: "persona.cursor" });
-    let Some(value) = value else { return Ok(None) };
-    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
-    let envelope: Envelope<(serde_json::Value, String, lettuce_characters::LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
-    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
-    if envelope.format_version != CURSOR_VERSION || sort != request.sort || query != canonical_title(request.text.trim()) || search_nickname != request.search_nickname || include_archived != request.include_archived || entity != "persona" {
-        return Err(invalid());
-    }
-    id.parse::<PersonaId>().map_err(|_| invalid())?;
-    let key = match sort {
-        lettuce_characters::LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
-        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
-    };
-    Ok(Some((key, id)))
 }
 
 fn image_assets(
@@ -1082,7 +1042,7 @@ impl PersonaRepository for Database {
         use lettuce_characters::LibrarySort;
 
         let query = canonical_title(request.text.trim());
-        let cursor = cursor_decode(page.cursor.as_deref(), &request)?;
+        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, canonical_title(request.text.trim()), request.search_nickname, request.include_archived, "persona"))?;
         let limit = usize::from(page.limit.get()).max(1);
         let pattern = format!(
             "%{}%",
@@ -1137,7 +1097,7 @@ impl PersonaRepository for Database {
                         LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
                         LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
                         LibrarySort::Name => serde_json::json!(canonical_title(&item.title)),
-                    }, item.id.to_string(), &request)
+                    }, item.id.to_string(), (request.sort, canonical_title(request.text.trim()), request.search_nickname, request.include_archived, "persona"))
                 })
                 .transpose()?
         } else {

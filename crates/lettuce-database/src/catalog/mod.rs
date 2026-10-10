@@ -38,3 +38,61 @@ fn replace_media_links(
     }
     Ok(())
 }
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Envelope<T> {
+    format_version: u32,
+    value: T,
+}
+
+fn cursor_encode(
+    key: serde_json::Value,
+    id: String,
+    scope: (lettuce_characters::LibrarySort, String, bool, bool, &str),
+) -> Result<String, lettuce_characters::RepositoryError> {
+    let (sort, query, search_nickname, include_archived, entity) = scope;
+    serde_json::to_vec(&Envelope {
+        format_version: 1,
+        value: (key, id, sort, query, search_nickname, include_archived, entity),
+    })
+    .map(|bytes| crate::hex_encode(&bytes))
+    .map_err(|_| lettuce_characters::RepositoryError::Storage)
+}
+
+fn cursor_decode(
+    value: Option<&str>,
+    scope: (lettuce_characters::LibrarySort, String, bool, bool, &str),
+) -> Result<Option<(rusqlite::types::Value, String)>, lettuce_characters::RepositoryError> {
+    use lettuce_characters::{LibrarySort, RepositoryError, ValidationError};
+    use lettuce_types::{CharacterId, GroupId, PersonaId};
+
+    let field = match scope.4 {
+        "character" => "character.cursor",
+        "persona" => "persona.cursor",
+        "group" => "group.cursor",
+        _ => return Err(RepositoryError::Storage),
+    };
+    let invalid = || RepositoryError::Invalid(ValidationError::InvalidValue { field });
+    let Some(value) = value else { return Ok(None) };
+    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
+    let envelope: Envelope<(serde_json::Value, String, LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
+    if envelope.format_version != 1 || (sort, query, search_nickname, include_archived, entity.as_str()) != scope {
+        return Err(invalid());
+    }
+    let valid_id = match entity.as_str() {
+        "character" => id.parse::<CharacterId>().is_ok(),
+        "persona" => id.parse::<PersonaId>().is_ok(),
+        "group" => id.parse::<GroupId>().is_ok(),
+        _ => false,
+    };
+    if !valid_id {
+        return Err(invalid());
+    }
+    let key = match sort {
+        LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
+        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
+    };
+    Ok(Some((key, id)))
+}

@@ -17,21 +17,15 @@ use lettuce_types::{
     Revision, SceneId, TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::Database;
 
 const PRESENTATION_VERSION: u32 = 1;
 const DOCUMENT_VERSION: u32 = 1;
-const CURSOR_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope<T> {
-    format_version: u32,
-    value: T,
-}
+use super::{Envelope, cursor_decode, cursor_encode};
 
 fn invalid() -> rusqlite::Error {
     rusqlite::Error::InvalidQuery
@@ -203,40 +197,6 @@ fn scene_slot(value: &str) -> Result<SceneAssetSlot, rusqlite::Error> {
         "inline" => Ok(SceneAssetSlot::Inline),
         _ => Err(invalid()),
     }
-}
-
-fn cursor_encode(
-    key: serde_json::Value,
-    id: String,
-    request: &lettuce_characters::GroupSearch,
-) -> Result<String, RepositoryError> {
-    let envelope = Envelope {
-        format_version: CURSOR_VERSION,
-        value: (key, id, request.sort, canonical_name(request.text.trim()), false, request.include_archived, "group"),
-    };
-    serde_json::to_vec(&envelope)
-        .map(|bytes| crate::hex_encode(&bytes))
-        .map_err(|_| RepositoryError::Storage)
-}
-
-fn cursor_decode(
-    value: Option<&str>,
-    request: &lettuce_characters::GroupSearch,
-) -> Result<Option<(rusqlite::types::Value, String)>, RepositoryError> {
-    let invalid = || RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue { field: "group.cursor" });
-    let Some(value) = value else { return Ok(None) };
-    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
-    let envelope: Envelope<(serde_json::Value, String, lettuce_characters::LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
-    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
-    if envelope.format_version != CURSOR_VERSION || sort != request.sort || query != canonical_name(request.text.trim()) || search_nickname || include_archived != request.include_archived || entity != "group" {
-        return Err(invalid());
-    }
-    id.parse::<GroupId>().map_err(|_| invalid())?;
-    let key = match sort {
-        lettuce_characters::LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
-        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
-    };
-    Ok(Some((key, id)))
 }
 
 fn group_row(
@@ -1000,7 +960,7 @@ impl GroupRepository for Database {
     ) -> Result<Page<lettuce_characters::GroupLibraryItem>, RepositoryError> {
         use lettuce_characters::{GroupLibraryItem, LibrarySort};
         let query = canonical_name(request.text.trim());
-        let cursor = cursor_decode(page.cursor.as_deref(), &request)?;
+        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, canonical_name(request.text.trim()), false, request.include_archived, "group"))?;
         let (column, comparison, direction) = match request.sort {
             LibrarySort::CreatedAsc => ("created_at", ">", "ASC"),
             LibrarySort::UpdatedDesc => ("activity_at", "<", "DESC"),
@@ -1061,7 +1021,7 @@ impl GroupRepository for Database {
         }
         let next_cursor = if has_more {
             last.map(|(id, key)| {
-                cursor_encode(key, id, &request)
+                cursor_encode(key, id, (request.sort, canonical_name(request.text.trim()), false, request.include_archived, "group"))
             })
             .transpose()?
         } else {
