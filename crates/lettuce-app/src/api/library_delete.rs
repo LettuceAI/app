@@ -26,7 +26,7 @@ pub async fn group_delete(
     let id: lettuce_types::GroupId = parse_id(&request.group_id, "group_id")?;
     let expected = super::lorebooks::revision(request.expected_revision, "expected_revision")?;
     let bytes = serde_json::to_vec(&request).map_err(|_| api_error(ApiErrorCode::Internal, "request encoding failed"))?;
-    delete_and_settle(context, lettuce_database::LibraryKind::Group, id.to_string(), expected, request.client_operation_id, bytes).await
+    delete_and_settle(context, true, id.to_string(), expected, request.client_operation_id, bytes).await
 }
 
 pub async fn character_delete(
@@ -36,21 +36,21 @@ pub async fn character_delete(
     let id: lettuce_types::CharacterId = parse_id(&request.character_id, "character_id")?;
     let expected = super::lorebooks::revision(request.expected_revision, "expected_revision")?;
     let bytes = serde_json::to_vec(&request).map_err(|_| api_error(ApiErrorCode::Internal, "request encoding failed"))?;
-    delete_and_settle(context, lettuce_database::LibraryKind::Character, id.to_string(), expected, request.client_operation_id, bytes).await
+    delete_and_settle(context, false, id.to_string(), expected, request.client_operation_id, bytes).await
 }
 
 async fn delete_and_settle(
     context: &ApiContext,
-    kind: lettuce_database::LibraryKind,
+    is_group: bool,
     id: String,
     expected: lettuce_types::Revision,
     key: String,
     bytes: Vec<u8>,
 ) -> Result<(), ApiError> {
-    let digest = match kind {
-        lettuce_database::LibraryKind::Character => blake3::hash(&bytes).to_hex().to_string(),
-        lettuce_database::LibraryKind::Group => super::messages::operation(key.clone(), &[b"group_delete", &bytes])?.request_digest.to_string(),
-        lettuce_database::LibraryKind::Persona => unreachable!(),
+    let (kind, digest) = if is_group {
+        (lettuce_database::LibraryKind::Group, super::messages::operation(key.clone(), &[b"group_delete", &bytes])?.request_digest.to_string())
+    } else {
+        (lettuce_database::LibraryKind::Character, blake3::hash(&bytes).to_hex().to_string())
     };
     let mut changes = context.committed_changes();
     let deadline = tokio::time::Instant::now() + DELETE_SETTLE_LIMIT;
@@ -69,27 +69,23 @@ async fn delete_and_settle(
             .blocking(move |context| {
                 let database = context.backend().database();
                 let hook = Arc::new(|_: &ApiContext| {}) as BeforeSettle;
-                match kind {
-                    lettuce_database::LibraryKind::Group => {
-                        let group = parse_id(&id, "group_id")?;
-                        if let Some(conversations) = database.group_delete_conversations(group, expected, &key, &digest).map_err(failure)? {
-                            for conversation in conversations {
-                                cancel_work(context, conversation, &hook)?;
-                            }
+                if is_group {
+                    let group = parse_id(&id, "group_id")?;
+                    if let Some(conversations) = database.group_delete_conversations(group, expected, &key, &digest).map_err(failure)? {
+                        for conversation in conversations {
+                            cancel_work(context, conversation, &hook)?;
                         }
                     }
-                    lettuce_database::LibraryKind::Character => {
-                        let character = parse_id(&id, "character_id")?;
-                        if let Some(work) = database.character_delete_conversations(character, expected, &key, &digest).map_err(failure)? {
-                            for conversation in work.direct_conversations {
-                                cancel_work(context, conversation, &hook)?;
-                            }
-                            for conversation in work.group_conversations {
-                                cancel_character_group_turn(context, conversation, character, &hook)?;
-                            }
+                } else {
+                    let character = parse_id(&id, "character_id")?;
+                    if let Some(work) = database.character_delete_conversations(character, expected, &key, &digest).map_err(failure)? {
+                        for conversation in work.direct_conversations {
+                            cancel_work(context, conversation, &hook)?;
+                        }
+                        for conversation in work.group_conversations {
+                            cancel_character_group_turn(context, conversation, character, &hook)?;
                         }
                     }
-                    lettuce_database::LibraryKind::Persona => unreachable!(),
                 }
                 match database.purge_library_operation(kind, &id,
                     expected,
