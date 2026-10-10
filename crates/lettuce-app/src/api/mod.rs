@@ -365,3 +365,9 @@ mod library_characters_tests;
 
 mod library_characters;
 pub use library_characters::{character_get, character_save};
+
+#[cfg(test)]
+mod library_groups_tests;
+
+mod library_groups;
+pub use library_groups::{group_get, group_save};

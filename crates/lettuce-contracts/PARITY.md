@@ -58,3 +58,5 @@ Storage optimization exposes a job and typed completion or failure instead of th
 Full persona draft validation distinguishes an explicit null from an omitted nullable field. Legacy persona save omitted LoRA fields in its repository payload and then wrote NULL (old-code/src/core/storage/repo.ts:2257-2270; old-code/src-tauri/src/storage_manager/personas.rs:342-346); an incomplete typed draft now fails before any write.
 
 Character editor drafts make the complete authored graph explicit, including provider voice choices and image recommendations. Legacy used a partial save payload and replaced source, scenario and default rules in the repository (old-code/src/core/storage/repo.ts:1087-1090,1106-1130); the full typed draft keeps those fields under the caller's control on edits.
+
+Group editor contracts preserve the legacy authored name, chat type, member order, persona, speaker selection, background and starting scene (old-code/src-tauri/src/storage_manager/group_characters.rs:499-575,638-709). Persona inheritance and explicit disabling use the rewrite's existing tri-state domain selection instead of overloading a nullable id.

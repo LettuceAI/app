@@ -116,6 +116,8 @@ export const commands = {
 	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_save", { request })),
 	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
 	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
+	groupGet: (request: GroupGetRequest) => typedError<GroupView_Serialize, ApiError>(__TAURI_INVOKE("group_get", { request })),
+	groupSave: (request: GroupSaveRequest_Deserialize) => typedError<GroupView_Serialize, ApiError>(__TAURI_INVOKE("group_save", { request })),
 	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
 	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("persona_delete", { request })),
 	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("character_lorebooks_list", { request })),
@@ -1806,6 +1808,42 @@ export type GroupDeleteRequest = {
 	client_operation_id: string,
 };
 
+export type GroupDraft = GroupDraft_Serialize | GroupDraft_Deserialize;
+
+export type GroupDraft_Deserialize = {
+	name: string,
+	chat_mode: GroupChatMode,
+	persona: LibraryPersonaSelection,
+	speaker_selection: SpeakerSelectionMethod,
+	memory_policy: LibraryMemoryPolicy,
+	disable_character_lorebooks: boolean,
+	group_conversation_prompt_id: string | null,
+	group_roleplay_prompt_id: string | null,
+	presentation: LibraryChatAppearanceV1_Deserialize,
+	members: LibraryGroupMember_Deserialize[],
+	background_asset_id: string | null,
+	starting_scene: LibraryGroupStartingSceneDraft_Deserialize | null,
+};
+
+export type GroupDraft_Serialize = {
+	name: string,
+	chat_mode: GroupChatMode,
+	persona: LibraryPersonaSelection,
+	speaker_selection: SpeakerSelectionMethod,
+	memory_policy: LibraryMemoryPolicy,
+	disable_character_lorebooks: boolean,
+	group_conversation_prompt_id: string | null,
+	group_roleplay_prompt_id: string | null,
+	presentation: LibraryChatAppearanceV1_Serialize,
+	members: LibraryGroupMember_Serialize[],
+	background_asset_id: string | null,
+	starting_scene: LibraryGroupStartingSceneDraft_Serialize | null,
+};
+
+export type GroupGetRequest = {
+	group_id: string,
+};
+
 export type GroupLorebookBindRequest = {
 	group_id: string,
 	lorebook_id: string,
@@ -1850,6 +1888,44 @@ export type GroupMembersSettings = {
 	muted_source: SettingSource,
 	models_source: SettingSource,
 	participants: ParticipantSettings[],
+};
+
+export type GroupSaveRequest = GroupSaveRequest_Serialize | GroupSaveRequest_Deserialize;
+
+export type GroupSaveRequest_Deserialize = {
+	group_id: string | null,
+	draft: GroupDraft_Deserialize,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type GroupSaveRequest_Serialize = {
+	group_id: string | null,
+	draft: GroupDraft_Serialize,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type GroupView = GroupView_Serialize | GroupView_Deserialize;
+
+export type GroupView_Deserialize = {
+	id: string,
+	archived: boolean,
+	draft: GroupDraft_Deserialize,
+	assets: AssetRef[],
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type GroupView_Serialize = {
+	id: string,
+	archived: boolean,
+	draft: GroupDraft_Serialize,
+	assets: AssetRef[],
+	revision: number,
+	created_at: number,
+	updated_at: number,
 };
 
 export type HelpMeReplyMode = "new" | "enrich";
@@ -3090,6 +3166,34 @@ export type LibraryFontSize = "small" | "medium" | "large" | "xlarge";
 
 export type LibraryGradientSource = "base" | "round";
 
+export type LibraryGroupMember = LibraryGroupMember_Serialize | LibraryGroupMember_Deserialize;
+
+export type LibraryGroupMember_Deserialize = {
+	character_id: string,
+	ordinal: number,
+	muted: boolean,
+	model_profile_override: string | null,
+};
+
+export type LibraryGroupMember_Serialize = {
+	character_id: string,
+	ordinal: number,
+	muted: boolean,
+	model_profile_override: string | null,
+};
+
+export type LibraryGroupStartingSceneDraft = LibraryGroupStartingSceneDraft_Serialize | LibraryGroupStartingSceneDraft_Deserialize;
+
+export type LibraryGroupStartingSceneDraft_Deserialize = {
+	scene: LibrarySceneDraft_Deserialize,
+	variants: LibrarySceneVariantDraft_Deserialize[],
+};
+
+export type LibraryGroupStartingSceneDraft_Serialize = {
+	scene: LibrarySceneDraft_Serialize,
+	variants: LibrarySceneVariantDraft_Serialize[],
+};
+
 export type LibraryHourFormat = "h12" | "h24";
 
 export type LibraryImageRecommendation = {
@@ -3137,6 +3241,8 @@ export type LibraryParticipantBarAvatarShape = "round" | "boxed" | "rounded_box"
 export type LibraryParticipantBarBackground = "solid" | "fading" | "transparent";
 
 export type LibraryParticipantBarHintPosition = "top" | "bottom" | "hidden";
+
+export type LibraryPersonaSelection = { kind: "inherit" } | { kind: "explicit"; value: string } | { kind: "disabled" };
 
 export type LibrarySceneAssetLink = {
 	id: string,

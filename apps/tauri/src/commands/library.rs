@@ -226,3 +226,21 @@ pub async fn character_save(
 ) -> Result<lettuce_contracts::CharacterView, ApiError> {
     api::character_save(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn group_get(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::GroupGetRequest,
+) -> Result<lettuce_contracts::GroupView, ApiError> {
+    api::group_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn group_save(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::GroupSaveRequest,
+) -> Result<lettuce_contracts::GroupView, ApiError> {
+    api::group_save(&context, request).await
+}

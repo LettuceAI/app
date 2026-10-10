@@ -106,6 +106,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::library::persona_save,
             commands::library::persona_default_set,
             commands::library::persona_default_clear,
+            commands::library::group_get,
+            commands::library::group_save,
             commands::library::group_delete,
             commands::library::persona_delete,
             commands::library::character_lorebooks_list,
