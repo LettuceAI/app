@@ -408,3 +408,5 @@ Library changes use the SQLite pre-update hook to read the entity identity from 
 Group hard deletion purges every conversation launched from that group in the same immediate transaction as its catalog graph and API replay receipt. Busy conversations prevent the whole purge. Persona hard deletion clears the default selection, makes explicitly selected groups inherit, clears explicit conversation overrides, nulls nullable helper run references and removes media and bindings; immutable helper receipts retain historical persona identities without a live foreign key. Both entities participate in the existing queued sync-delete and unseen-change protection.
 
 The signal tracks the database adapters' uncached savepoint statements through SQLite's authorizer hook. Nested rollback restores the library identity buffer to the savepoint snapshot, so deferred sync changes emit only identities whose writes survive the outer transaction.
+
+Character, persona and group lorebook binding commands compose the existing typed binding mutation in the API receipt transaction. The relationship list and owner revision change together; an aborted receipt insertion rolls both back.

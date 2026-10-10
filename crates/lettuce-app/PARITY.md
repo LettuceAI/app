@@ -599,3 +599,5 @@ Group persona resolution now falls back to the current default for missing or ar
 Library refreshes are driven by committed database writes rather than individual command completion, preserving the legacy database-reloaded refresh intent across all write paths.
 
 Persona deletion refreshes library views through the committed signal; legacy library deletion awaited persona_delete and then reloaded personas (old-code/src/ui/pages/library/LibraryPage.tsx:223–235). Group deletion settles running work before deleting its conversations together, extending the legacy transaction with the shared conversation deletion rule.
+
+Persona binding commands retain the editor's authored lorebook selection and order (old-code/src/ui/pages/personas/hooks/usePersonaFormController.ts:140–159,305–333; old-code/src/core/storage/repo.ts:2266). Binding edits now commit with CAS and replay evidence.

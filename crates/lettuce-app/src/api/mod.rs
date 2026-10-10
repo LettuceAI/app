@@ -332,3 +332,9 @@ mod media_library_tests;
 
 #[cfg(test)]
 mod storage_tests;
+
+mod library_bindings;
+pub use library_bindings::{character_lorebooks_list, character_lorebooks_bind, character_lorebooks_unbind, character_lorebooks_enable, character_lorebooks_reorder, persona_lorebooks_list, persona_lorebooks_bind, persona_lorebooks_unbind, persona_lorebooks_enable, persona_lorebooks_reorder, group_lorebooks_list, group_lorebooks_bind, group_lorebooks_unbind, group_lorebooks_enable, group_lorebooks_reorder};
+
+#[cfg(test)]
+mod library_bindings_tests;

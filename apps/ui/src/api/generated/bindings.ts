@@ -108,6 +108,23 @@ export const commands = {
 	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_add", { request })),
 	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
+	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
+	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("persona_delete", { request })),
+	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("character_lorebooks_list", { request })),
+	characterLorebooksBind: (request: CharacterLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_bind", { request })),
+	characterLorebooksUnbind: (request: CharacterLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_unbind", { request })),
+	characterLorebooksEnable: (request: CharacterLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_enable", { request })),
+	characterLorebooksReorder: (request: CharacterLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_reorder", { request })),
+	personaLorebooksList: (request: PersonaLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("persona_lorebooks_list", { request })),
+	personaLorebooksBind: (request: PersonaLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_bind", { request })),
+	personaLorebooksUnbind: (request: PersonaLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_unbind", { request })),
+	personaLorebooksEnable: (request: PersonaLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_enable", { request })),
+	personaLorebooksReorder: (request: PersonaLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_reorder", { request })),
+	groupLorebooksList: (request: GroupLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("group_lorebooks_list", { request })),
+	groupLorebooksBind: (request: GroupLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_bind", { request })),
+	groupLorebooksUnbind: (request: GroupLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_unbind", { request })),
+	groupLorebooksEnable: (request: GroupLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_enable", { request })),
+	groupLorebooksReorder: (request: GroupLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_reorder", { request })),
 	promptsList: (request: PromptsListRequest) => typedError<PromptPage, ApiError>(__TAURI_INVOKE("prompts_list", { request })),
 	promptPlaceholders: (request: PromptPlaceholdersRequest) => typedError<PromptPlaceholders, ApiError>(__TAURI_INVOKE("prompt_placeholders", { request })),
 	promptValidate: (request: PromptValidateRequest) => typedError<PromptValidation, ApiError>(__TAURI_INVOKE("prompt_validate", { request })),
@@ -761,6 +778,41 @@ export type CertificatesRemoveRequest = {
 export type CertificatesView = {
 	certificates: TrustedCertificateView[],
 	revision: number,
+};
+
+export type CharacterLorebookBindRequest = {
+	character_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	target_ordinal: number | null,
+};
+
+export type CharacterLorebookEnableRequest = {
+	character_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	enabled: boolean,
+};
+
+export type CharacterLorebookReorderRequest = {
+	character_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	target_ordinal: number,
+};
+
+export type CharacterLorebookUnbindRequest = {
+	character_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type CharacterLorebooksListRequest = {
+	character_id: string,
 };
 
 export type CharacterPage = {
@@ -1663,6 +1715,47 @@ export type GradientColor = {
 };
 
 export type GroupChatMode = "conversation" | "roleplay";
+
+export type GroupDeleteRequest = {
+	group_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type GroupLorebookBindRequest = {
+	group_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	target_ordinal: number | null,
+};
+
+export type GroupLorebookEnableRequest = {
+	group_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	enabled: boolean,
+};
+
+export type GroupLorebookReorderRequest = {
+	group_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	target_ordinal: number,
+};
+
+export type GroupLorebookUnbindRequest = {
+	group_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type GroupLorebooksListRequest = {
+	group_id: string,
+};
 
 /**
  *  A group chat's members: where the member list, the muted flags and the
@@ -2637,6 +2730,20 @@ export type LaunchGroupRequest = {
 
 export type LaunchGroupResponse = {
 	conversation_id: string,
+};
+
+export type LibraryLorebookBinding = {
+	lorebook_id: string,
+	enabled: boolean,
+	ordinal: number,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type LibraryLorebookMutationResult = {
+	bindings: LibraryLorebookBinding[],
+	owner_revision: number,
 };
 
 /**
@@ -4044,6 +4151,47 @@ export type ParticipationStat = {
 export type ParticipationStats = {
 	items: ParticipationStat[],
 	total_messages: number,
+};
+
+export type PersonaDeleteRequest = {
+	persona_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type PersonaLorebookBindRequest = {
+	persona_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	target_ordinal: number | null,
+};
+
+export type PersonaLorebookEnableRequest = {
+	persona_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	enabled: boolean,
+};
+
+export type PersonaLorebookReorderRequest = {
+	persona_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	target_ordinal: number,
+};
+
+export type PersonaLorebookUnbindRequest = {
+	persona_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type PersonaLorebooksListRequest = {
+	persona_id: string,
 };
 
 export type PlaygroundEntry = {

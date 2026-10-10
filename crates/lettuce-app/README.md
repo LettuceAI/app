@@ -701,3 +701,5 @@ Application data reset is a durable maintenance job. It drains other work, stops
 The API subscribes to committed library changes and publishes CharacterChanged, PersonaChanged and GroupChanged directly from that signal, including sync, restore and import writes. Source-deletion commands rely on the same subscription for library refreshes.
 
 Group deletion cancels work in every source conversation and waits on committed changes before retrying the atomic purge. Persona deletion clears live selections while retaining historical evidence. Both commands compare expected revisions and replay the same operation key and digest; a changed request conflicts. Media collection uses the existing database-file lifecycle and kept-media protections after a committed purge.
+
+Each library entity exposes lorebook list, bind, unbind, enable and reorder commands. Writes return the new binding list and owner revision, use the shared operation receipt transaction and refresh views from the committed library signal.

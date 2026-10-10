@@ -224,3 +224,5 @@ Library refresh events carry parent identities through the pre-update hook, incl
 Group deletion retains the legacy transaction over the group and all of its sessions (old-code/src-tauri/src/storage_manager/group_characters.rs:1028–1055). Persona deletion retains the legacy hard delete (old-code/src-tauri/src/storage_manager/personas.rs:404–410) and nullable reference behavior (old-code/src-tauri/src/storage_manager/db.rs:736,1014,1051). The rewrite clears group selection to Inherit and conversation overrides to inherited selection, preserves immutable helper receipt identities and atomically records replay evidence.
 
 A deferred sync change that rolls back to a savepoint no longer publishes a library refresh for its reverted writes; surviving changes in the surrounding transaction still publish once.
+
+Persona lorebook bindings preserve the authored ordered list previously stored as active_lorebook_ids (old-code/src-tauri/src/storage_manager/personas.rs:282–287,309–335). Binding commands add explicit owner CAS and replay receipts over the existing typed ports rather than separate relationship writers.
