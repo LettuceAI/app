@@ -288,3 +288,37 @@ fn persona_purge_crash_child() {
         .expect("purge");
     panic!("crash hook was not reached");
 }
+
+#[test]
+fn persona_purge_preserves_replica_timestamps() {
+    let id = PersonaId::new();
+    let apply = |now| {
+        let database = Database::open_in_memory().expect("database");
+        {
+            let connection = database.connection().expect("lock");
+            connection.execute("INSERT INTO personas(id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [id.to_string()]).expect("persona");
+            connection.execute("UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=1", [id.to_string()]).expect("default");
+        }
+        database.purge_persona_operation(id, Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
+        database.connection().expect("lock").query_row("SELECT default_persona_id,revision,updated_at FROM persona_defaults", [], |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))).expect("row")
+    };
+    assert_eq!(apply(20), apply(30));
+}
+
+#[test]
+fn persona_purge_failure_notice_is_a_sync_entity() {
+    let database = Database::open_in_memory().expect("database");
+    let id = PersonaId::new().to_string();
+    {
+        let connection = database.connection().expect("lock");
+        connection.execute("INSERT INTO purge_queue(entity_kind,entity_id,change_id,queued_at) VALUES ('persona',?1,?2,1)", params![id, uuid::Uuid::new_v4().to_string()]).expect("queue");
+        for _ in 0..MAX_QUEUED_PURGE_FAILURES {
+            give_up_after_failures(&connection, "persona", &id, TimestampMillis::new(20)).expect("failure");
+        }
+    }
+    let notices = database.purge_notices().expect("notices");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].entity, PurgeNoticeEntity::SyncEntity);
+    assert_eq!(notices[0].entity_id, id);
+    assert_eq!(notices[0].reason, PurgeNoticeReason::DroppedAfterFailures);
+}

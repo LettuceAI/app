@@ -436,10 +436,10 @@ impl<'c> Purge<'c> {
         if !self.exists("SELECT EXISTS(SELECT 1 FROM personas WHERE id=?1)", &values)? {
             return Err(PurgeError::NotFound);
         }
-        self.connection.execute("UPDATE persona_defaults SET default_persona_id=NULL,revision=revision+1,updated_at=max(updated_at,?2) WHERE default_persona_id=?1", params![id, self.now.get()]).map_err(storage)?;
-        self.connection.execute("UPDATE groups SET persona_selection_kind='inherit',persona_id=NULL,revision=revision+1,updated_at=max(updated_at,?2) WHERE persona_id=?1", params![id, self.now.get()]).map_err(storage)?;
-        self.connection.execute("UPDATE conversations SET revision=revision+1,updated_at=max(updated_at,?2) WHERE id IN (SELECT conversation_id FROM conversation_settings WHERE json_extract(persona_json,'$.value.source_id')=?1)", params![id, self.now.get()]).map_err(storage)?;
-        self.connection.execute("UPDATE conversation_settings SET persona_json=NULL,persona_provenance='launch_inherited',revision=revision+1,updated_at=max(updated_at,?2) WHERE json_extract(persona_json,'$.value.source_id')=?1", params![id, self.now.get()]).map_err(storage)?;
+        self.connection.execute("UPDATE persona_defaults SET default_persona_id=NULL,revision=revision+1 WHERE default_persona_id=?1", [id]).map_err(storage)?;
+        self.connection.execute("UPDATE groups SET persona_selection_kind='inherit',persona_id=NULL,revision=revision+1 WHERE persona_id=?1", [id]).map_err(storage)?;
+        self.connection.execute("UPDATE conversations SET revision=revision+1 WHERE id IN (SELECT conversation_id FROM conversation_settings WHERE json_extract(persona_json,'$.value.source_id')=?1)", [id]).map_err(storage)?;
+        self.connection.execute("UPDATE conversation_settings SET persona_json=NULL,persona_provenance='launch_inherited',revision=revision+1 WHERE json_extract(persona_json,'$.value.source_id')=?1", [id]).map_err(storage)?;
         self.connection
             .execute(
                 "UPDATE creation_lorebook_entry_runs SET persona_id=NULL WHERE persona_id=?1",
@@ -848,8 +848,8 @@ fn character_group_turns(
          LEFT JOIN conversation_participants speaker ON speaker.conversation_id=turn.conversation_id AND speaker.id=turn.selected_speaker_participant_id
          WHERE conversation.kind='group' AND turn.status NOT IN {TERMINAL_TURN}
            AND (speaker.source_id=?1 OR (turn.selected_speaker_participant_id IS NULL AND EXISTS (
-             SELECT 1 FROM group_members member WHERE member.character_id=?1
-               AND member.group_id=json_extract(conversation.kind_json, '$.value.details.group.source_id'))))
+             SELECT 1 FROM conversation_participants participant WHERE participant.source_kind='character'
+               AND participant.source_id=?1 AND participant.enabled=1 AND participant.conversation_id=conversation.id)))
          ORDER BY turn.conversation_id"
     )).and_then(|mut statement| statement.query_map([character], |row| row.get(0))?.collect()).map_err(storage)
 }
@@ -1086,6 +1086,7 @@ fn give_up_after_failures(
     let entity = match kind {
         "character" => PurgeNoticeEntity::Character,
         "group" => PurgeNoticeEntity::Group,
+        "persona" => PurgeNoticeEntity::SyncEntity,
         _ => PurgeNoticeEntity::Conversation,
     };
     record_notice(

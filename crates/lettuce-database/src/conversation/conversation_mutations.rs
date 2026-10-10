@@ -6565,6 +6565,68 @@ mod tests {
     }
 
     #[test]
+    fn character_delete_uses_disabled_conversation_participants() {
+        character_delete_participant_override(false, true);
+    }
+
+    #[test]
+    fn character_delete_uses_retained_conversation_participants() {
+        character_delete_participant_override(true, false);
+    }
+
+    fn character_delete_participant_override(enabled: bool, in_group: bool) {
+        let group = GroupId::new();
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        let fixture = group_fixture_for(database.clone(), group);
+        group_selecting_turn(&fixture, "participant-override");
+        let character: CharacterId;
+        {
+            let connection = database.connection().expect("connection");
+            character = connection.query_row("SELECT source_id FROM conversation_participants WHERE conversation_id=?1 AND id=?2", params![fixture.conversation_id.to_string(), fixture.characters[0].to_string()], |row| row.get::<_, String>(0)).expect("source").parse().expect("id");
+            connection.execute("INSERT INTO characters(id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','First','first','{}','{}','{}','roleplay','manual',0,'{}',1,1,1)", [character.to_string()]).expect("character");
+            connection.execute("INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit','round_robin','manual',0,'{}',1,1,1)", [group.to_string()]).expect("group");
+            if in_group {
+                connection.execute("INSERT INTO group_members(group_id,character_id,ordinal,muted) VALUES (?1,?2,0,0)", params![group.to_string(), character.to_string()]).expect("member");
+            }
+            connection.execute("UPDATE conversation_participants SET enabled=?3 WHERE conversation_id=?1 AND id=?2", params![fixture.conversation_id.to_string(), fixture.characters[0].to_string(), enabled]).expect("override");
+        }
+        let work = database.character_delete_conversations(character, Revision::INITIAL, "delete", "digest").expect("work").expect("not replay");
+        assert_eq!(work.group_conversations, if enabled { vec![fixture.conversation_id] } else { Vec::new() });
+    }
+
+    #[test]
+    fn persona_purge_keeps_all_dependent_rows_identical_across_devices() {
+        let root = std::env::temp_dir().join(format!("slice5-persona-replicas-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let first = root.join("first.sqlite3");
+        let second = root.join("second.sqlite3");
+        let persona = lettuce_types::PersonaId::new();
+        {
+            let database = std::rc::Rc::new(Database::open(&first).expect("database"));
+            let fixture = group_fixture_on(database.clone());
+            let connection = database.connection().expect("lock");
+            connection.execute("INSERT INTO personas(id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [persona.to_string()]).expect("persona");
+            connection.execute("UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=1", [persona.to_string()]).expect("default");
+            connection.execute("INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','explicit',?2,'round_robin','manual',0,'{}',1,1,1)", params![GroupId::new().to_string(), persona.to_string()]).expect("group");
+            let snapshot = serde_json::json!({"format_version":1,"value":{"source_id":persona.to_string()}}).to_string();
+            connection.execute("INSERT INTO conversation_settings(conversation_id,revision,author_note_provenance,memory_provenance,model_provenance,voice_provenance,prompt_provenance,lorebooks_provenance,persona_json,persona_provenance,scene_provenance,created_at,updated_at) VALUES (?1,1,'launch_inherited','launch_inherited','launch_inherited','launch_inherited','launch_inherited','launch_inherited',?2,'current_override','launch_inherited',10,10)", params![fixture.conversation_id.to_string(), snapshot]).expect("override");
+        }
+        std::fs::copy(&first, &second).expect("replicate");
+        let apply = |path: &std::path::Path, now| {
+            let database = Database::open(path).expect("database");
+            database.purge_persona_operation(persona, Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
+            let connection = database.connection().expect("lock");
+            ["persona_defaults", "groups", "conversations", "conversation_settings"].map(|table| {
+                let mut statement = connection.prepare(&format!("SELECT * FROM {table}")).expect("query");
+                let columns = statement.column_count();
+                statement.query_map([], |row| (0..columns).map(|index| row.get::<_, rusqlite::types::Value>(index)).collect::<rusqlite::Result<Vec<_>>>()).expect("rows").collect::<rusqlite::Result<Vec<_>>>().expect("values")
+            })
+        };
+        assert_eq!(apply(&first, 40), apply(&second, 50));
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
     fn group_purge_and_receipt_roll_back_together_then_replay_after_reopen() {
         let root = std::env::temp_dir().join(format!("slice5-group-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).expect("directory");
