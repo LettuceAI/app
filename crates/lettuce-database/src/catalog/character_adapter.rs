@@ -266,6 +266,7 @@ fn memory_from_name(value: &str) -> Result<lettuce_characters::MemoryPolicy, rus
 fn media_slot_name(value: CharacterMediaSlot) -> &'static str {
     match value {
         CharacterMediaSlot::AvatarOriginal => "avatar_original",
+        CharacterMediaSlot::Banner => "banner",
         CharacterMediaSlot::Background => "background",
         CharacterMediaSlot::DesignReference => "design_reference",
     }
@@ -274,6 +275,7 @@ fn media_slot_name(value: CharacterMediaSlot) -> &'static str {
 fn media_slot_from_name(value: &str) -> Result<CharacterMediaSlot, rusqlite::Error> {
     match value {
         "avatar_original" => Ok(CharacterMediaSlot::AvatarOriginal),
+        "banner" => Ok(CharacterMediaSlot::Banner),
         "background" => Ok(CharacterMediaSlot::Background),
         "design_reference" => Ok(CharacterMediaSlot::DesignReference),
         _ => Err(invalid()),
@@ -2210,11 +2212,11 @@ impl ProfileDuplicateRepository for Database {
         if plan.character.defaults.interaction_mode
             == lettuce_characters::InteractionMode::Companion
         {
-            crate::companion::soul_adapter::copy_character_soul_in(
+            crate::companion::soul_adapter::ensure_character_soul_in(
                 &tx,
-                request.source_character_id,
                 plan.character.id,
                 plan.character.defaults.companion_soul.as_ref(),
+                true,
                 request.now,
             )
             .map_err(|_| RepositoryError::Storage)?;
@@ -2230,6 +2232,36 @@ impl ProfileDuplicateRepository for Database {
         for starter in &plan.starters {
             insert_starter(&tx, plan.character.id, starter)?;
         }
+        let mut bindings = crate::lorebook::lorebook_adapter::read_bindings(
+            &tx, crate::lorebook::lorebook_adapter::OwnerKind::Character,
+            &request.source_character_id.to_string(),
+        ).map_err(|_| RepositoryError::Storage)?;
+        for binding in &mut bindings {
+            binding.revision = Revision::INITIAL;
+            binding.created_at = request.now;
+            binding.updated_at = request.now;
+        }
+        crate::lorebook::lorebook_adapter::insert_bindings_in(
+            &tx, crate::lorebook::lorebook_adapter::OwnerKind::Character,
+            &request.destination_character_id.to_string(), &bindings,
+        ).map_err(db_error)?;
+        let note_ids = tx.prepare("SELECT id FROM companion_scheduled_notes WHERE character_id=?1 ORDER BY id")
+            .map_err(db_error)?.query_map([request.source_character_id.to_string()], |row| row.get::<_, String>(0))
+            .map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
+        for id in note_ids {
+            let mut note = crate::memory::scheduled_note_adapter::load_in(&tx, id.parse().map_err(|_| RepositoryError::Storage)?)
+                .map_err(|_| RepositoryError::Storage)?.ok_or(RepositoryError::Storage)?;
+            note.id = uuid::Uuid::new_v4();
+            note.character_id = request.destination_character_id;
+            note.created_at = request.now;
+            note.updated_at = request.now;
+            crate::memory::scheduled_note_adapter::insert_restored_note_in(&tx, &note)
+                .map_err(|_| RepositoryError::Storage)?;
+        }
+        let mut retained = duplicate_external_references(&source);
+        retained.lorebook_ids.extend(bindings.iter().map(|binding| binding.lorebook_id));
+        retained.lorebook_ids.sort_unstable();
+        retained.lorebook_ids.dedup();
         let result = ProfileDuplicateResult {
             character_id: request.destination_character_id,
             remapped_scene_ids: scene_remaps,
@@ -2237,7 +2269,7 @@ impl ProfileDuplicateRepository for Database {
             remapped_scene_asset_link_ids: link_remaps,
             remapped_starter_ids: starter_remaps,
             remapped_starter_message_ids: message_remaps,
-            retained_external_references: duplicate_external_references(&source),
+            retained_external_references: retained,
         };
         result.validate_for(&request)?;
         tx.commit().map_err(db_error)?;
@@ -3879,13 +3911,10 @@ mod smoke_tests {
             },
         )
         .expect("duplicate");
-        assert_eq!(
-            SoulRepository::get(&database, SoulOwner::Character(copy.character_id))
-                .expect("get copied soul")
-                .expect("copied soul")
-                .facts,
-            soul.facts
-        );
+        let copied = SoulRepository::get(&database, SoulOwner::Character(copy.character_id))
+            .expect("get copied soul").expect("copied soul");
+        assert_eq!(copied.facts.len(), soul.facts.len());
+        assert!(copied.facts.iter().all(|fact| fact.created_at == TimestampMillis::new(30)));
 
         let synced_id = CharacterId::new();
         let mut synced = companion_plan(synced_id);
@@ -4106,6 +4135,77 @@ mod smoke_tests {
             scene_id,
             starter_id,
         )
+    }
+
+    #[test]
+    fn detached_media_is_queued_atomically_and_stale_writes_leave_it_attached() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, asset, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        assert!(CharacterRepository::update_media(
+            &database, before.character.id, Revision::new(99), CharacterMedia::default(), TimestampMillis::new(2),
+        ).is_err());
+        let count = |database: &Database| -> i64 {
+            database.connection().expect("connection").query_row(
+                "SELECT count(*) FROM media_gc_candidates WHERE asset_id=?1",
+                [asset.to_string()], |row| row.get(0),
+            ).expect("candidates")
+        };
+        assert_eq!(count(&database), 0);
+        database.connection().expect("connection").execute_batch(
+            "CREATE TEMP TRIGGER fail_media_bump BEFORE UPDATE OF revision ON characters BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        ).expect("fault");
+        assert!(CharacterRepository::update_media(
+            &database, before.character.id, before.character.revision, CharacterMedia::default(), TimestampMillis::new(2),
+        ).is_err());
+        assert_eq!(count(&database), 0);
+        assert_eq!(CharacterRepository::get(&database, before.character.id).expect("get").expect("exists"), before);
+        database.connection().expect("connection").execute_batch("DROP TRIGGER fail_media_bump").expect("clear fault");
+        CharacterRepository::update_media(
+            &database, before.character.id, before.character.revision, CharacterMedia::default(), TimestampMillis::new(2),
+        ).expect("detach");
+        assert_eq!(count(&database), 1);
+    }
+
+    #[test]
+    fn duplicate_preserves_archived_bindings_and_scheduled_notes_atomically() {
+        use lettuce_context::{CharacterLorebookBindingRepository, LorebookRepository};
+        use lettuce_companions::CompanionScheduledNoteRepository;
+        let database = Database::open_in_memory().expect("database");
+        let source = CharacterId::new();
+        CharacterRepository::create(&database, companion_plan(source)).expect("companion");
+        let book = LorebookRepository::create(&database, lettuce_context::LorebookMetadataDraft {
+            name: "Archived world".into(), detection_policy: lettuce_context::DetectionPolicy::RecentMessageWindow,
+            icon_asset_id: None, behavior_version: lettuce_context::LorebookBehaviorVersion::LegacyV1,
+        }, vec![], TimestampMillis::new(8)).expect("book");
+        CharacterLorebookBindingRepository::bind_character_lorebook(&database, source, Revision::INITIAL,
+            lettuce_context::LorebookBindingCreate { lorebook_id: book.book.id, target: lettuce_context::BindingInsertionTarget::Append },
+            TimestampMillis::new(9)).expect("bind");
+        LorebookRepository::archive(&database, book.book.id, book.book.revision, TimestampMillis::new(10)).expect("archive");
+        let id = uuid::Uuid::new_v4();
+        database.connection().expect("connection").execute(
+            "INSERT INTO companion_scheduled_notes(id,character_id,label,content,available_at,expires_at,recurrence,recurrence_window_ms,enabled,created_at,updated_at) VALUES (?1,?2,'Birthday','Remember this',100,NULL,'yearly',NULL,1,8,8)",
+            params![id.to_string(),source.to_string()],
+        ).expect("note");
+        let destination = CharacterId::new();
+        let request = ProfileDuplicateRequest { source_character_id: source, destination_character_id: destination,
+            destination_name: Some("Ada (Copy)".into()), now: TimestampMillis::new(11) };
+        ProfileDuplicateRepository::duplicate_character(&database, request.clone()).expect("duplicate");
+        let bindings = CharacterLorebookBindingRepository::list_character_bindings(&database, destination).expect("bindings");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].lorebook_id, book.book.id);
+        let notes = database.list_scheduled_notes(destination).expect("notes");
+        assert_eq!(notes.len(), 1);
+        assert_ne!(notes[0].id, id);
+        assert_eq!(notes[0].available_at, TimestampMillis::new(100));
+        let failed_destination = CharacterId::new();
+        database.connection().expect("connection").execute_batch(
+            "CREATE TEMP TRIGGER fail_duplicate_note BEFORE INSERT ON companion_scheduled_notes BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        ).expect("fault");
+        assert!(ProfileDuplicateRepository::duplicate_character(&database, ProfileDuplicateRequest {
+            destination_character_id: failed_destination, ..request
+        }).is_err());
+        assert!(CharacterRepository::get(&database, failed_destination).expect("get").is_none());
     }
 
     fn sync_characters(from: &Database, to: &Database, at: i64) {

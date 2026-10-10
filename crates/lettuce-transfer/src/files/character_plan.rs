@@ -65,6 +65,13 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
     };
     let lorebook = |legacy_id: &LorebookId| resolver.lorebook(*legacy_id);
     let mut links = Vec::new();
+    if candidate.media.banner.is_some() {
+        links.push(CharacterMediaLink {
+            asset_id: asset(LegacyMediaUse::CharacterBanner { character_id })?,
+            slot: CharacterMediaSlot::Banner,
+            ordinal: 0,
+        });
+    }
     if candidate.media.avatar.is_some() {
         links.push(CharacterMediaLink {
             asset_id: asset(LegacyMediaUse::CharacterAvatar { character_id })?,

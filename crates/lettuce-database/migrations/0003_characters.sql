@@ -43,12 +43,13 @@ CREATE INDEX characters_nickname_search_idx ON characters(normalized_nickname, i
 CREATE TABLE character_media (
     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,
-    slot TEXT NOT NULL CHECK (slot IN ('avatar_original', 'background', 'design_reference')),
+    slot TEXT NOT NULL CHECK (slot IN ('avatar_original', 'banner', 'background', 'design_reference')),
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     PRIMARY KEY (character_id, asset_id),
     UNIQUE (character_id, slot, ordinal)
 ) STRICT;
 CREATE UNIQUE INDEX character_media_avatar_uq ON character_media(character_id) WHERE slot = 'avatar_original';
+CREATE UNIQUE INDEX character_media_banner_uq ON character_media(character_id) WHERE slot = 'banner';
 CREATE UNIQUE INDEX character_media_background_uq ON character_media(character_id) WHERE slot = 'background';
 
 CREATE TABLE character_presentation_asset_refs (
@@ -143,3 +144,42 @@ CREATE UNIQUE INDEX character_default_starter_fk ON characters(id, default_start
 CREATE INDEX scene_assets_scene_idx ON scene_assets(character_id, scene_id, slot, ordinal);
 CREATE INDEX scene_variants_scene_idx ON scene_variants(character_id, scene_id, ordinal);
 CREATE INDEX starter_messages_starter_idx ON starter_messages(character_id, starter_id, ordinal);
+
+CREATE TRIGGER character_media_gc_delete AFTER DELETE ON character_media
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER character_media_gc_replace AFTER UPDATE OF asset_id ON character_media
+WHEN OLD.asset_id <> NEW.asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER character_presentation_asset_refs_gc_delete AFTER DELETE ON character_presentation_asset_refs
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER character_presentation_asset_refs_gc_replace AFTER UPDATE OF asset_id ON character_presentation_asset_refs
+WHEN OLD.asset_id <> NEW.asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER scene_assets_gc_delete AFTER DELETE ON scene_assets
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER scene_assets_gc_replace AFTER UPDATE OF asset_id ON scene_assets
+WHEN OLD.asset_id <> NEW.asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;

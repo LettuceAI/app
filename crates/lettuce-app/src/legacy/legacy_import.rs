@@ -946,6 +946,10 @@ pub(crate) fn plan_fingerprint(plan: &LegacyImportPlan) -> ContentHash {
                     hash.u32(3);
                     hash.text(&lorebook_id.to_string());
                 }
+                LegacyMediaUse::CharacterBanner { character_id } => {
+                    hash.u32(15);
+                    hash.text(&character_id.to_string());
+                }
                 LegacyMediaUse::CharacterAvatar { character_id } => {
                     hash.u32(5);
                     hash.text(&character_id.to_string());

@@ -472,21 +472,6 @@ pub(crate) fn ensure_character_soul_in(
     overwrite_in(tx, owner, &facts, now)
 }
 
-/// Gives a duplicated companion its own copy of the source character's shared
-/// Soul, or a fresh one from its settings when the source has none.
-pub(crate) fn copy_character_soul_in(
-    tx: &Transaction<'_>,
-    source: CharacterId,
-    destination: CharacterId,
-    config: Option<&lettuce_companions::CompanionSoulConfig>,
-    now: TimestampMillis,
-) -> Result<(), SoulRepositoryError> {
-    match get_in(tx, SoulOwner::Character(source))? {
-        Some(state) => replace_facts_in(tx, SoulOwner::Character(destination), &state.facts, now),
-        None => ensure_character_soul_in(tx, destination, config, false, now),
-    }
-}
-
 /// Gives a duplicated conversation its own Soul, a copy of the source
 /// conversation's with new fact ids and the fact references remapped to them.
 /// Source memory ids copied into the duplicate follow `memory_ids`; the rest

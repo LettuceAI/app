@@ -47,3 +47,5 @@ Branch list, fork, rename and select are exposed through the application API. Le
 Conversation roots can retain lineage for direct-to-character copies, matching legacy parent-session and branched-message metadata (`old-code/src/core/storage/repo.ts:1744-1748`). The source ids remain readable after deletion of the source; they do not retain that conversation or its messages.
 
 Usage attribution carries dynamic memory counts independently of retrieval and rendering, matching the stored-memory accounting before provider dispatch (`old-code/src-tauri/src/chat_manager/service.rs:543-566`). Missing token evidence remains unknown; known empty memory records zero instead of the legacy absent value.
+
+Character launch documents retain the independent Banner media reference, matching the legacy banner file saved at `old-code/src-tauri/src/storage_manager/media.rs:1032-1038`. Single-slot and cross-slot asset uniqueness checks apply to banners too.

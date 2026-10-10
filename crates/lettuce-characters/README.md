@@ -2,7 +2,7 @@
 
 The authored library records: characters, personas, reusable groups, scenes and their variants, conversation starters, and the presentation (crops, gradients, cards, chat appearance, widgets) attached to them.
 
-These are mutable library records guarded by optimistic `Revision` checks. "Versioned" here means closed, format-versioned payloads and compare-and-swap mutations, not an immutable history of authored edits. A conversation keeps its own launch snapshot of what it was started from (`lettuce-conversations`), so editing a library record does not rewrite existing history.
+These are mutable library records guarded by optimistic `Revision` checks. "Versioned" here means closed, format-versioned payloads and compare-and-swap mutations, not an immutable history of authored edits. A conversation keeps its launch snapshot and recorded history (`lettuce-conversations`), while new turns resolve the current character, persona and group settings unless the conversation overrides them.
 
 The crate is pure. Persistence and migrations (`lettuce-database`), media ingestion and cleanup (`lettuce-media`), transfer envelopes (`lettuce-transfer`), prompt rendering and lorebook matching (`lettuce-context`), conversations and Tauri commands are elsewhere. Companion Soul math and live state live in `lettuce-companions`.
 
@@ -52,3 +52,5 @@ The complete `CharacterDetails` and `GroupDetails` aggregates are serializable a
 `LifecycleStatus` controls library visibility. Archived scenes remain authored records and may stay selectable according to the owning aggregate's policy; persistence does not invent exclusion rules.
 
 `CharacterDependencyReader`, `PersonaDependencyReader` and `GroupDependencyReader` report what references a record, for impact analysis before archive or delete. `ProfileDuplicateRepository` duplicates a profile transactionally: the request names source and destination roots, the source graph supplies all child data, and the result reports typed id remaps plus every retained media, scene, widget, prompt, lorebook, model, voice and artifact reference. Duplication and dependency reports exclude conversations, memories, companion runtime state and other live data.
+
+A character can hold an independent Banner media slot alongside its original avatar, background and ordered design references. Each single slot permits only one asset.

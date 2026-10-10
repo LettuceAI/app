@@ -40,7 +40,7 @@ pub fn model_profile_sync_entity(id: ModelProfileId) -> Result<SyncEntity, SyncC
 
 pub const CHARACTER_SYNC_KIND: &str = "character";
 pub const CHARACTER_SYNC_SCHEMA: &str = "character.snapshot";
-pub const CHARACTER_SYNC_VERSION: u32 = 2;
+pub const CHARACTER_SYNC_VERSION: u32 = 3;
 
 /// The complete character aggregate: root, scenes, variants and starters.
 pub fn canonical_character_payload(
@@ -110,7 +110,7 @@ pub const APP_SETTINGS_SYNC_VERSION: u32 = 4;
 
 pub const CONVERSATION_SNAPSHOT_SYNC_KIND: &str = "conversation_snapshot";
 pub const CONVERSATION_SNAPSHOT_SYNC_SCHEMA: &str = "conversation.snapshot_artifact";
-pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 1;
+pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 2;
 
 pub const CONVERSATION_SYNC_KIND: &str = "conversation";
 pub const CONVERSATION_SYNC_SCHEMA: &str = "conversation.root";

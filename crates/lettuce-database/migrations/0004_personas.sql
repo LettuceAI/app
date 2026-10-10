@@ -48,3 +48,16 @@ CREATE TABLE persona_defaults (
 
 INSERT INTO persona_defaults (id, default_persona_id, revision, created_at, updated_at)
 VALUES (1, NULL, 1, 0, 0);
+
+CREATE TRIGGER persona_media_gc_delete AFTER DELETE ON persona_media
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER persona_media_gc_replace AFTER UPDATE OF asset_id ON persona_media
+WHEN OLD.asset_id <> NEW.asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;

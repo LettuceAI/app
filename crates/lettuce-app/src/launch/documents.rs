@@ -95,6 +95,7 @@ pub(crate) fn character_body(character: &Character) -> CharacterSnapshotBodyV1 {
                 asset_id: link.asset_id,
                 slot: match link.slot {
                     CharacterMediaSlot::AvatarOriginal => CharacterMediaSlotV1::AvatarOriginal,
+                    CharacterMediaSlot::Banner => CharacterMediaSlotV1::Banner,
                     CharacterMediaSlot::Background => CharacterMediaSlotV1::Background,
                     CharacterMediaSlot::DesignReference => CharacterMediaSlotV1::DesignReference,
                 },

@@ -116,3 +116,36 @@ CREATE UNIQUE INDEX group_scene_background_uq
     ON group_scene_assets(group_id, scene_id) WHERE slot = 'background';
 CREATE INDEX group_scene_assets_scene_idx
     ON group_scene_assets(group_id, scene_id, slot, ordinal, id);
+
+CREATE TRIGGER group_presentation_asset_refs_gc_delete AFTER DELETE ON group_presentation_asset_refs
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER group_presentation_asset_refs_gc_replace AFTER UPDATE OF asset_id ON group_presentation_asset_refs
+WHEN OLD.asset_id <> NEW.asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER group_scene_assets_gc_delete AFTER DELETE ON group_scene_assets
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER group_scene_assets_gc_replace AFTER UPDATE OF asset_id ON group_scene_assets
+WHEN OLD.asset_id <> NEW.asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;
+
+CREATE TRIGGER groups_background_gc_replace AFTER UPDATE OF background_asset_id ON groups
+WHEN OLD.background_asset_id IS NOT NULL AND OLD.background_asset_id IS NOT NEW.background_asset_id
+BEGIN
+    INSERT OR IGNORE INTO media_gc_candidates(asset_id, queued_at)
+    VALUES (OLD.background_asset_id, CAST(unixepoch('subsec') * 1000 AS INTEGER));
+END;

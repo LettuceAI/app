@@ -586,15 +586,18 @@ impl<'c> Purge<'c> {
             }
         }
         let uuids = serde_json::to_string(&self.uuids).map_err(storage)?;
-        self.receipt.media_candidates = self
-            .connection
-            .execute(
+        self.connection.execute(
                 "INSERT OR IGNORE INTO media_gc_candidates (asset_id, queued_at)
                  SELECT id, ?2 FROM media_assets
                  WHERE id IN (SELECT value FROM json_each(?1)) AND retention <> 'library'",
                 params![uuids, now.get()],
             )
             .map_err(storage)?;
+        self.receipt.media_candidates = self.connection.query_row(
+            "SELECT count(*) FROM media_gc_candidates candidate JOIN media_assets asset ON asset.id = candidate.asset_id
+             WHERE candidate.asset_id IN (SELECT value FROM json_each(?1)) AND asset.retention <> 'library'",
+            [uuids], |row| row.get::<_, i64>(0),
+        ).map_err(storage)?.try_into().map_err(storage)?;
         for conversation in &self.receipt.conversations {
             self.connection
                 .execute(
