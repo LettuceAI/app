@@ -296,7 +296,7 @@ async fn reset_is_a_durable_job_keeps_the_source_and_replays_in_the_fresh_databa
 }
 
 #[tokio::test]
-async fn reset_webview_failure_keeps_the_cutover_and_reports_a_terminal_failure_without_restart() {
+async fn reset_webview_failure_keeps_the_cutover_reports_a_terminal_failure_and_restarts() {
     let (root, location, h) = harness();
     let old = location.active_path().expect("old active");
     let host = Arc::new(Host {
@@ -329,7 +329,8 @@ async fn reset_webview_failure_keeps_the_cutover_and_reports_a_terminal_failure_
     assert_ne!(location.active_path().expect("new active"), old);
     assert_eq!(
         host.calls.lock().expect("calls").as_slice(),
-        &["stop", "clear"]
+        &["stop", "clear", "restart", "exit"],
+        "the process never keeps running on the closed database"
     );
     drop(h);
     std::fs::remove_dir_all(root).expect("cleanup");
@@ -481,8 +482,162 @@ async fn reset_rejects_cancel_after_cutover_and_reports_restart_failure() {
     assert!(location.active_path().expect("active").exists());
     assert_eq!(
         host.calls.lock().expect("calls").as_slice(),
-        &["stop", "clear", "restart"]
+        &["stop", "clear", "restart", "exit"],
+        "a failed relaunch still ends the process, which the user reopens"
     );
     drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn reset_failing_after_workers_stopped_restarts_on_the_preserved_database() {
+    let (root, location, h) = harness();
+    let old = location.active_path().expect("active");
+    let leaked = lettuce_database::Database::open(&old).expect("a handle reset cannot close");
+    let host = Arc::new(Host::default());
+    h.context.attach_reset_host(host.clone()).expect("host");
+    let accepted = super::app_data_reset(
+        &h.context,
+        dto::AppDataResetRequest {
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect("admit");
+    run(&h.context).await;
+    let view = super::job_get(
+        &h.context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("terminal");
+    assert_eq!(view.state, dto::JobStateDto::Failed);
+    assert_eq!(
+        view.failure.expect("typed failure").reason,
+        Some(dto::JobFailureReason::ResetDatabase)
+    );
+    assert_eq!(
+        host.calls.lock().expect("calls").as_slice(),
+        &["stop", "restart", "exit"],
+        "stopped workers never leave the process running"
+    );
+    assert_eq!(location.active_path().expect("unchanged"), old);
+    drop(leaked);
+    drop(h);
+    drop(lettuce_database::Database::open(&old).expect("source stays writable"));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn reset_retried_after_a_crash_that_left_its_target_file_starts_a_new_file() {
+    let (root, location, h) = harness();
+    let old = location.active_path().expect("active");
+    let request = RequestId::new();
+    {
+        let lifecycle = location.file_lifecycle().await.expect("lifecycle");
+        let abandoned = lifecycle
+            .begin_file(
+                &format!("reset-{request}.sqlite3"),
+                crate::DatabaseFileKind::Reset,
+                TimestampMillis::new(15),
+            )
+            .expect("crashed attempt's target");
+        drop(lettuce_database::Database::open(&abandoned).expect("partly written"));
+    }
+    let host = Arc::new(Host::default());
+    h.context.attach_reset_host(host.clone()).expect("host");
+    let accepted = super::app_data_reset(
+        &h.context,
+        dto::AppDataResetRequest {
+            client_operation_id: request.to_string(),
+        },
+    )
+    .await
+    .expect("admit");
+    run(&h.context).await;
+    let view = super::job_get(
+        &h.context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("terminal");
+    assert_eq!(view.state, dto::JobStateDto::Succeeded);
+    assert_ne!(location.active_path().expect("fresh"), old);
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn a_reset_job_restored_into_another_database_file_never_runs() {
+    let (root, location, h) = harness();
+    let host = Arc::new(Host::default());
+    h.context.attach_reset_host(host.clone()).expect("host");
+    let accepted = super::app_data_reset(
+        &h.context,
+        dto::AppDataResetRequest {
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect("admit");
+    let source = location.active_path().expect("source");
+    let copy = format!("{}.sqlite3", OperationId::new());
+    drop(h);
+    let lifecycle = location.file_lifecycle().await.expect("lifecycle");
+    let target = lifecycle
+        .begin_file(
+            &copy,
+            crate::DatabaseFileKind::Restore,
+            TimestampMillis::new(20),
+        )
+        .expect("restore target");
+    std::fs::copy(&source, &target).expect("restored copy holding the queued reset");
+    lifecycle
+        .activate_file(&copy, TimestampMillis::new(30))
+        .expect("restore cutover");
+    drop(lifecycle);
+    let backend =
+        Arc::new(AppBackend::open(&target, TimestampMillis::new(40)).expect("restored backend"));
+    let restored = harness_over_files(
+        backend,
+        Reply::Text("ok"),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::new(NoModels),
+        Arc::new(NoImages),
+        Some(ApiDatabaseFiles {
+            location: location.clone(),
+            active: target.clone(),
+        }),
+    );
+    restored
+        .context
+        .attach_reset_host(host.clone())
+        .expect("host");
+    run(&restored.context).await;
+    let view = super::job_get(
+        &restored.context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("terminal");
+    assert_eq!(view.state, dto::JobStateDto::Failed);
+    assert_eq!(
+        view.failure.expect("typed failure").reason,
+        Some(dto::JobFailureReason::ResetDatabase)
+    );
+    assert!(
+        host.calls.lock().expect("calls").is_empty(),
+        "nothing stops for a reset bound to another file"
+    );
+    assert_eq!(location.active_path().expect("unchanged"), target);
+    drop(restored);
     std::fs::remove_dir_all(root).expect("cleanup");
 }

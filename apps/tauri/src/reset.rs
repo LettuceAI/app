@@ -37,22 +37,18 @@ impl<R: Runtime> Drop for ResetListener<R> {
 #[async_trait]
 impl<R: Runtime> AppResetHost for ResetHost<R> {
     async fn preflight(&self) -> Result<(), ApiError> {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        {
+        if self.0.get_webview_window("main").is_none() {
             return Err(failure(AppDataResetStage::Preflight));
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            if self.0.get_webview_window("main").is_none() {
-                return Err(failure(AppDataResetStage::Preflight));
-            }
             let binary = tauri::process::current_binary(&self.0.env())
                 .map_err(|_| failure(AppDataResetStage::Preflight))?;
             if !binary.is_file() {
                 return Err(failure(AppDataResetStage::Preflight));
             }
-            Ok(())
         }
+        Ok(())
     }
 
     async fn stop_workers(&self) -> Result<(), ApiError> {
@@ -113,7 +109,7 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
     async fn prepare_restart(&self) -> Result<(), ApiError> {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
-            Err(failure(AppDataResetStage::Restart))
+            Ok(())
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {

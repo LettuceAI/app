@@ -87,6 +87,7 @@ pub(super) fn database_for_job(
 #[serde(deny_unknown_fields)]
 struct Detail {
     request_id: RequestId,
+    source: String,
     target: String,
     kept: String,
 }
@@ -179,6 +180,12 @@ pub async fn app_data_reset(
     }
     let detail = Detail {
         request_id: id,
+        source: files
+            .active
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| reset_error(dto::AppDataResetStage::Database, None))?
+            .to_owned(),
         target: format!("reset-{id}.sqlite3"),
         kept: format!("kept-{id}.sqlite3"),
     };
@@ -292,6 +299,7 @@ impl JobHandler for AppResetHandler {
                 Ok(Some(Box::new(Work {
                     claim: claim.claim,
                     cancellation: CancellationToken::new(),
+                    stopped: std::sync::atomic::AtomicBool::new(false),
                 }) as Box<dyn ClaimedJob>))
             })
             .await
@@ -301,6 +309,7 @@ impl JobHandler for AppResetHandler {
 struct Work {
     claim: ClaimRef,
     cancellation: CancellationToken,
+    stopped: std::sync::atomic::AtomicBool,
 }
 
 fn settle(
@@ -374,7 +383,7 @@ impl Work {
         context: &ApiContext,
         lifecycle: &DatabaseFileLifecycle,
     ) -> Result<(Arc<Database>, ClaimRef, Detail, bool), ApiError> {
-        let detail: Detail = context
+        let mut detail: Detail = context
             .blocking({
                 let id = self.claim.job_id;
                 move |context| {
@@ -401,6 +410,8 @@ impl Work {
             let restart = files.active.file_name().and_then(|name| name.to_str())
                 == Some(detail.target.as_str());
             if restart {
+                self.stopped
+                    .store(true, std::sync::atomic::Ordering::Release);
                 host(context)?
                     .stop_workers()
                     .await
@@ -418,8 +429,16 @@ impl Work {
                 restart,
             ));
         }
+        if files.active.file_name().and_then(|name| name.to_str()) != Some(detail.source.as_str()) {
+            return Err(reset_error(dto::AppDataResetStage::Database, None));
+        }
+        let attempt = lettuce_types::OperationId::new();
+        detail.target = format!("reset-{attempt}.sqlite3");
+        detail.kept = format!("kept-{attempt}.sqlite3");
         let shell = host(context)?;
         shell.preflight().await?;
+        self.stopped
+            .store(true, std::sync::atomic::Ordering::Release);
         shell
             .stop_workers()
             .await
@@ -594,6 +613,18 @@ impl ClaimedJob for Work {
                         Some(dto::ApiErrorDetails::AppDataReset { stage, .. }) => stage,
                         _ => dto::AppDataResetStage::Database,
                     };
+                    if !self.stopped.load(std::sync::atomic::Ordering::Acquire) {
+                        let job = settle(
+                            context.backend().database(),
+                            &self.claim,
+                            &context,
+                            Err(stage),
+                        )?;
+                        let view = super::jobs::job_view(&context, &job)?;
+                        let (event, terminal) = super::jobs::job_event(&job, view);
+                        context.jobs().deliver(job.id, event, terminal);
+                        return Ok(());
+                    }
                     let database = Arc::new(
                         Database::open(&files.active)
                             .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?,
@@ -608,6 +639,10 @@ impl ClaimedJob for Work {
                     let view = super::jobs::job_view(&context, &job)?;
                     let (event, terminal) = super::jobs::job_event(&job, view);
                     context.jobs().deliver(job.id, event, terminal);
+                    drop(lifecycle);
+                    let shell = host(&context)?;
+                    let _ = shell.prepare_restart().await;
+                    shell.exit_for_restart();
                     return Ok(());
                 }
             };
@@ -615,22 +650,20 @@ impl ClaimedJob for Work {
         let result = if !needs_restart {
             Ok(detail.request_id)
         } else {
-            match shell.clear_webview_storage().await {
-                Err(_) => Err(dto::AppDataResetStage::WebviewStorage),
-                Ok(()) => shell
-                    .prepare_restart()
-                    .await
-                    .map(|()| detail.request_id)
-                    .map_err(|_| dto::AppDataResetStage::Restart),
+            let cleared = shell.clear_webview_storage().await;
+            let relaunch = shell.prepare_restart().await;
+            match (cleared, relaunch) {
+                (Err(_), _) => Err(dto::AppDataResetStage::WebviewStorage),
+                (Ok(()), Err(_)) => Err(dto::AppDataResetStage::Restart),
+                (Ok(()), Ok(())) => Ok(detail.request_id),
             }
         };
-        let restart = result.is_ok() && needs_restart;
         let job = settle(&database, &claim, &context, result)?;
         let view = super::jobs::job_view(&context, &job)?;
         let (event, terminal) = super::jobs::job_event(&job, view);
         context.jobs().deliver(job.id, event, terminal);
         drop(lifecycle);
-        if restart {
+        if needs_restart {
             shell.exit_for_restart();
         }
         Ok(())
