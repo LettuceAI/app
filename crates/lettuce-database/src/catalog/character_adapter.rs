@@ -1066,23 +1066,8 @@ fn insert_scene_assets(
 ) -> Result<(), RepositoryError> {
     let owner = character_id.to_string();
     let scene = scene_id.to_string();
-    let ids = serde_json::to_string(&assets.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
-    tx.execute("DELETE FROM scene_assets WHERE character_id=?1 AND scene_id=?2 AND asset_id NOT IN (SELECT value FROM json_each(?3))", params![owner, scene, ids]).map_err(db_error)?;
-    let mut statement = tx.prepare("SELECT id,asset_id,slot,ordinal FROM scene_assets WHERE character_id=?1 AND scene_id=?2").map_err(db_error)?;
-    let existing = statement.query_map(params![owner, scene], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, u32>(3)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
-    drop(statement);
-    let offset = existing.iter().map(|row| i64::from(row.3)).chain(assets.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
-    for (index, row) in existing.iter().enumerate() {
-        let link = assets.iter().find(|link| link.asset_id.to_string() == row.1).ok_or(RepositoryError::Storage)?;
-        if row.2 != scene_slot_name(link.slot) || row.3 != link.ordinal {
-            tx.execute("UPDATE scene_assets SET slot='inline',ordinal=?4 WHERE character_id=?1 AND scene_id=?2 AND asset_id=?3", params![owner, scene, row.1, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
-        }
-    }
     for asset in assets {
-        if existing.iter().any(|row| row.0 == asset.id.to_string() && row.1 == asset.asset_id.to_string() && row.2 == scene_slot_name(asset.slot) && row.3 == asset.ordinal) {
-            continue;
-        }
-        tx.execute("INSERT INTO scene_assets(character_id,scene_id,id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(character_id,scene_id,asset_id) DO UPDATE SET id=excluded.id,slot=excluded.slot,ordinal=excluded.ordinal", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
+        tx.execute("INSERT INTO scene_assets(character_id,scene_id,id,asset_id,slot,ordinal) SELECT ?1,?2,?3,?4,?5,?6 WHERE NOT EXISTS (SELECT 1 FROM scene_assets WHERE character_id=?1 AND id=?3)", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -1262,6 +1247,9 @@ fn replace_character_graph(
         )
         .map_err(db_error)?;
     }
+    let assets = details.scenes.iter().flat_map(|scene| scene.assets.iter().map(move |link| (link.id.to_string(), scene.id.to_string(), link.asset_id.to_string(), scene_slot_name(link.slot), link.ordinal))).collect::<Vec<_>>();
+    let assets = serde_json::to_string(&assets).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM scene_assets WHERE character_id=?1 AND NOT EXISTS (SELECT 1 FROM json_each(?2) WHERE (scene_assets.id,scene_assets.scene_id,scene_assets.asset_id,scene_assets.slot,scene_assets.ordinal) = (json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),json_extract(value,'$[4]')))", params![id.to_string(), assets]).map_err(db_error)?;
     let scene_ids = serde_json::to_string(&details.scenes.iter().map(|scene| scene.id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
     tx.execute("DELETE FROM scenes WHERE character_id=?1 AND id NOT IN (SELECT value FROM json_each(?2))", params![id.to_string(), scene_ids]).map_err(db_error)?;
     let offset = current.scenes.iter().map(|scene| i64::from(scene.ordinal)).chain(details.scenes.iter().map(|scene| i64::from(scene.ordinal))).max().unwrap_or(0) + 1;
@@ -5844,6 +5832,43 @@ mod smoke_tests {
         assert_eq!(apply("digest").expect("replay"), destination.to_string());
         assert_eq!(apply("different"), Err(crate::ApiOperationError::Conflict));
     }
+    #[test]
+    fn character_save_moves_scene_asset_link_to_an_earlier_scene() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        plan.variants.clear();
+        plan.scenes[0].selected_variant_id = None;
+        let moved = plan.scenes[0].assets.pop().expect("second link");
+        let mut second = plan.scenes[0].clone();
+        second.id = SceneId::new();
+        second.ordinal = 1;
+        second.content = SceneDocumentV1::new(vec![ScenePart::InlineAsset { link_id: moved.id }]).expect("content");
+        second.assets = vec![SceneAssetLink { ordinal: 0, ..moved.clone() }];
+        plan.scenes.push(second);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.scenes[1].assets.clear();
+        plan.scenes[1].content = SceneDocumentV1::new(vec![ScenePart::Text { text: "Second scene".into() }]).expect("content");
+        plan.scenes[0].content = SceneDocumentV1::new(vec![ScenePart::InlineAsset { link_id: plan.scenes[0].assets[0].id }, ScenePart::InlineAsset { link_id: moved.id }]).expect("content");
+        plan.scenes[0].assets.push(moved);
+        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "move-link", "move-link", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("move link");
+        assert_eq!(saved.scenes[0].assets, plan.scenes[0].assets);
+        assert!(saved.scenes[1].assets.is_empty());
+        assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(saved));
+    }
+
+    #[test]
+    fn character_save_swaps_scene_asset_ordinals() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.scenes[0].assets[0].ordinal = 1;
+        plan.scenes[0].assets[1].ordinal = 0;
+        plan.scenes[0].assets.sort_by_key(|link| link.ordinal);
+        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "swap-links", "swap-links", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("swap ordinals");
+        assert_eq!(saved.scenes[0].assets, plan.scenes[0].assets);
+        assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(saved));
+    }
+
     #[test]
     fn character_save_queues_only_detached_assets() {
         let database = Database::open_in_memory().expect("database");
