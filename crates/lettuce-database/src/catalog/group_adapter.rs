@@ -1031,19 +1031,6 @@ impl GroupRepository for Database {
         Ok(Page { items, next_cursor })
     }
 
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<GroupProfile>, RepositoryError> {
-        let page = self.search(lettuce_characters::GroupSearch {
-            text: String::new(),
-            sort: lettuce_characters::LibrarySort::UpdatedDesc,
-            include_archived,
-        }, request)?;
-        Ok(Page { items: page.items.into_iter().map(|item| item.details.group).collect(), next_cursor: page.next_cursor })
-    }
-
     fn rename(
         &self,
         id: GroupId,
@@ -2162,8 +2149,8 @@ mod tests {
             ),
             Err(RepositoryError::AlreadyActive)
         ));
-        let page = GroupRepository::list(&database, PageRequest::default(), false).expect("list");
-        assert_eq!(page.items, vec![restored.clone()]);
+        let page = GroupRepository::search(&database, lettuce_characters::GroupSearch { text: String::new(), sort: lettuce_characters::LibrarySort::UpdatedDesc, include_archived: false }, PageRequest::default()).expect("list");
+        assert_eq!(page.items.into_iter().map(|item| item.details.group).collect::<Vec<_>>(), vec![restored.clone()]);
         let dependencies =
             GroupDependencyReader::dependencies(&database, group_id).expect("dependencies");
         assert!(
@@ -2933,7 +2920,7 @@ mod tests {
     }
 
     #[test]
-    fn group_list_cursor_and_two_handle_cas_are_deterministic() {
+    fn group_search_cursor_and_two_handle_cas_are_deterministic() {
         let path = std::env::temp_dir().join(format!("lettuce-groups-{}.db", GroupId::new()));
         let first_database = Database::open(&path).expect("first database");
         let a = CharacterId::new();
@@ -2972,37 +2959,29 @@ mod tests {
             )
             .expect("create");
         }
-        let page = GroupRepository::list(
-            &first_database,
-            PageRequest {
+        let page = GroupRepository::search(&first_database, lettuce_characters::GroupSearch { text: String::new(), sort: lettuce_characters::LibrarySort::UpdatedDesc, include_archived: false }, PageRequest {
                 cursor: None,
                 limit: lettuce_types::PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("first page");
         assert_eq!(page.items.len(), 2);
         let cursor = page.next_cursor.clone().expect("next cursor");
-        let next = GroupRepository::list(
-            &first_database,
-            PageRequest {
+        let next = GroupRepository::search(&first_database, lettuce_characters::GroupSearch { text: String::new(), sort: lettuce_characters::LibrarySort::UpdatedDesc, include_archived: false }, PageRequest {
                 cursor: Some(cursor),
                 limit: lettuce_types::PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("second page");
         assert_eq!(next.items.len(), 1);
         assert!(next.next_cursor.is_none());
-        assert_eq!(page.items[0].updated_at, TimestampMillis::new(30));
-        assert!(ids.contains(&page.items[0].id));
+        assert_eq!(page.items[0].details.group.updated_at, TimestampMillis::new(30));
+        assert!(ids.contains(&page.items[0].details.group.id));
 
         let second_database = Database::open(&path).expect("second database");
-        let id = page.items[0].id;
+        let id = page.items[0].details.group.id;
         let renamed = GroupRepository::rename(
             &first_database,
             id,
-            page.items[0].revision,
+            page.items[0].details.group.revision,
             "Winner".into(),
             TimestampMillis::new(40),
         )
@@ -3011,7 +2990,7 @@ mod tests {
             GroupRepository::set_chat_mode(
                 &second_database,
                 id,
-                page.items[0].revision,
+                page.items[0].details.group.revision,
                 ChatMode::Roleplay,
                 TimestampMillis::new(41)
             ),

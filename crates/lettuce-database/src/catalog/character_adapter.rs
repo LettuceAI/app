@@ -1401,20 +1401,6 @@ impl CharacterRepository for Database {
         Ok(details)
     }
 
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Character>, RepositoryError> {
-        let page = self.search(lettuce_characters::CharacterSearch {
-            text: String::new(),
-            sort: lettuce_characters::LibrarySort::UpdatedDesc,
-            search_nickname: false,
-            include_archived,
-        }, request)?;
-        Ok(page)
-    }
-
     fn search(
         &self,
         request: CharacterSearch,
@@ -5105,24 +5091,16 @@ mod smoke_tests {
                     .id,
             );
         }
-        let first = CharacterRepository::list(
-            &database,
-            PageRequest {
+        let first = CharacterRepository::search(&database, lettuce_characters::CharacterSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                 cursor: None,
                 limit: PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("first page");
         assert_eq!(first.items.len(), 2);
-        let second = CharacterRepository::list(
-            &database,
-            PageRequest {
+        let second = CharacterRepository::search(&database, lettuce_characters::CharacterSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                 cursor: first.next_cursor,
                 limit: PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("second page");
         assert_eq!(second.items.len(), 1);
         let search = CharacterRepository::search(

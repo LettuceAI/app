@@ -1020,20 +1020,6 @@ impl PersonaRepository for Database {
         Ok(snapshot)
     }
 
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Persona>, RepositoryError> {
-        let page = self.search(lettuce_characters::PersonaSearch {
-            text: String::new(),
-            sort: lettuce_characters::LibrarySort::UpdatedDesc,
-            search_nickname: false,
-            include_archived,
-        }, request)?;
-        Ok(page)
-    }
-
     fn search(
         &self,
         request: PersonaSearch,
@@ -2042,14 +2028,10 @@ mod tests {
         )
         .expect("lorebook");
         let count = |database: &Database| {
-            PersonaRepository::list(
-                database,
-                PageRequest {
+            PersonaRepository::search(database, lettuce_characters::PersonaSearch { include_archived: true, search_nickname: false, ..Default::default() }, PageRequest {
                     cursor: None,
                     limit: PageLimit::new(10),
-                },
-                true,
-            )
+                })
             .expect("personas")
             .items
             .len()
@@ -3048,24 +3030,16 @@ mod tests {
                     .id,
             );
         }
-        let first = PersonaRepository::list(
-            &database,
-            PageRequest {
+        let first = PersonaRepository::search(&database, lettuce_characters::PersonaSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                 cursor: None,
                 limit: PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("first page");
         assert_eq!(first.items.len(), 2);
-        let second = PersonaRepository::list(
-            &database,
-            PageRequest {
+        let second = PersonaRepository::search(&database, lettuce_characters::PersonaSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                 cursor: first.next_cursor,
                 limit: PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("second page");
         assert_eq!(second.items.len(), 1);
         let escaped = PersonaRepository::search(
@@ -3081,14 +3055,10 @@ mod tests {
         assert_eq!(escaped.items.len(), 1);
         assert_eq!(escaped.items[0].title, "100% Writer");
         assert!(matches!(
-            PersonaRepository::list(
-                &database,
-                PageRequest {
+            PersonaRepository::search(&database, lettuce_characters::PersonaSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                     cursor: Some("not-a-cursor".into()),
                     limit: PageLimit::new(2),
-                },
-                false,
-            ),
+                }),
             Err(RepositoryError::Invalid(_))
         ));
         let value = PersonaRepository::get(&database, ids[0])

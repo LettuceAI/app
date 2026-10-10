@@ -496,11 +496,6 @@ impl ProfileDuplicateResult {
 pub trait CharacterRepository: Send + Sync {
     fn create(&self, plan: CreateCharacterPlan) -> Result<CharacterDetails, RepositoryError>;
     fn get(&self, id: CharacterId) -> Result<Option<CharacterDetails>, RepositoryError>;
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Character>, RepositoryError>;
     fn search(
         &self,
         request: CharacterSearch,
@@ -789,11 +784,6 @@ pub trait PersonaRepository: Send + Sync {
     fn get(&self, id: PersonaId) -> Result<Option<Persona>, RepositoryError>;
     /// Resolves the singleton and selected persona in one read snapshot.
     fn get_default_snapshot(&self) -> Result<PersonaDefaultSnapshot, RepositoryError>;
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Persona>, RepositoryError>;
     fn search(
         &self,
         request: PersonaSearch,
@@ -892,11 +882,6 @@ pub trait GroupRepository: Send + Sync {
         request: GroupSearch,
         page: PageRequest,
     ) -> Result<Page<GroupLibraryItem>, RepositoryError>;
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<GroupProfile>, RepositoryError>;
     fn rename(
         &self,
         id: GroupId,
