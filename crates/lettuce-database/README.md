@@ -410,3 +410,5 @@ Group hard deletion purges every conversation launched from that group in the sa
 The signal tracks the database adapters' uncached savepoint statements through SQLite's authorizer hook. Nested rollback restores the library identity buffer to the savepoint snapshot, so deferred sync changes emit only identities whose writes survive the outer transaction.
 
 Character, persona and group lorebook binding commands compose the existing typed binding mutation in the API receipt transaction. The relationship list and owner revision change together; an aborted receipt insertion rolls both back.
+
+The authored character duplicate can run on an existing API operation transaction, sharing its atomic commit with replay evidence. The ordinary typed repository operation uses the same copy function and owns its transaction.

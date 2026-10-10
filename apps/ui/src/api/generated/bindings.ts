@@ -108,6 +108,7 @@ export const commands = {
 	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_add", { request })),
 	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
+	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
 	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
 	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("persona_delete", { request })),
 	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("character_lorebooks_list", { request })),
@@ -399,7 +400,7 @@ export type ApiErrorDetails =
  *  The database this process opened was kept by a cutover (restore or
  *  reset) and accepts no writes; the app must restart on the active one.
  */
-{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "missing_models"; missing_models: RequiredModel[] } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -778,6 +779,11 @@ export type CertificatesRemoveRequest = {
 export type CertificatesView = {
 	certificates: TrustedCertificateView[],
 	revision: number,
+};
+
+export type CharacterDuplicateRequest = {
+	character_id: string,
+	client_operation_id: string,
 };
 
 export type CharacterLorebookBindRequest = {

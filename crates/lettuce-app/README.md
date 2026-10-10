@@ -703,3 +703,5 @@ The API subscribes to committed library changes and publishes CharacterChanged, 
 Group deletion cancels work in every source conversation and waits on committed changes before retrying the atomic purge. Persona deletion clears live selections while retaining historical evidence. Both commands compare expected revisions and replay the same operation key and digest; a changed request conflicts. Media collection uses the existing database-file lifecycle and kept-media protections after a committed purge.
 
 Each library entity exposes lorebook list, bind, unbind, enable and reorder commands. Writes return the new binding list and owner revision, use the shared operation receipt transaction and refresh views from the committed library signal.
+
+Character duplication runs the existing authored graph copy in the API receipt transaction and returns the new library summary. It allocates a fresh identity and uses the source name followed by (Copy). Companion copies require installed embedding and emotion models; an existing operation receipt replays before that gate is applied.

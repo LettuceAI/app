@@ -154,3 +154,12 @@ pub async fn group_lorebooks_reorder(
 ) -> Result<lettuce_contracts::LibraryLorebookMutationResult, ApiError> {
     api::group_lorebooks_reorder(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_duplicate(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterDuplicateRequest,
+) -> Result<lettuce_contracts::CharacterSummary, ApiError> {
+    api::character_duplicate(&context, request).await
+}

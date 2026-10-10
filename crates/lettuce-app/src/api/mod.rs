@@ -338,3 +338,9 @@ pub use library_bindings::{character_lorebooks_list, character_lorebooks_bind, c
 
 #[cfg(test)]
 mod library_bindings_tests;
+
+#[cfg(test)]
+mod library_duplicate_tests;
+
+mod library_duplicate;
+pub use library_duplicate::character_duplicate;

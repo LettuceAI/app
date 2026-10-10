@@ -601,3 +601,5 @@ Library refreshes are driven by committed database writes rather than individual
 Persona deletion refreshes library views through the committed signal; legacy library deletion awaited persona_delete and then reloaded personas (old-code/src/ui/pages/library/LibraryPage.tsx:223–235). Group deletion settles running work before deleting its conversations together, extending the legacy transaction with the shared conversation deletion rule.
 
 Persona binding commands retain the editor's authored lorebook selection and order (old-code/src/ui/pages/personas/hooks/usePersonaFormController.ts:140–159,305–333; old-code/src/core/storage/repo.ts:2266). Binding edits now commit with CAS and replay evidence.
+
+Library character duplication copies authored data without chats or learned companion memory and names the new character (Copy). Legacy's developer clone used (Clone) and copied direct chats and live state (old-code/src-tauri/src/storage_manager/characters.rs:1186–1480,1203). The library operation adds atomic replay evidence and the companion creation model gate.

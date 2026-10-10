@@ -226,3 +226,5 @@ Group deletion retains the legacy transaction over the group and all of its sess
 A deferred sync change that rolls back to a savepoint no longer publishes a library refresh for its reverted writes; surviving changes in the surrounding transaction still publish once.
 
 Persona lorebook bindings preserve the authored ordered list previously stored as active_lorebook_ids (old-code/src-tauri/src/storage_manager/personas.rs:282–287,309–335). Binding commands add explicit owner CAS and replay receipts over the existing typed ports rather than separate relationship writers.
+
+Character duplicate identity and authored graph now commit with the API replay receipt. A receipt failure removes the entire attempted copy while leaving the source intact. The copy retains shared media and external bindings, including archived books, but creates no conversations.
