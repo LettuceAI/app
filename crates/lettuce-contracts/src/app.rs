@@ -93,6 +93,7 @@ pub enum PurgeNoticeReasonDto {
     NotSynced,
     ConflictCarried,
     UsageRecordUnreadable,
+    UsageCostCaptureSkipped,
 }
 
 /// A delete that needs the user's attention; `entity_id` names the entity

@@ -546,3 +546,32 @@ async fn recalculation_rejects_an_operation_key_with_a_different_digest() {
     .expect_err("conflict");
     assert_eq!(error.code, dto::ApiErrorCode::Conflict);
 }
+
+#[tokio::test]
+async fn a_failed_startup_reconciliation_leaves_one_notice_and_startup_continues() {
+    let h = harness(Reply::Text("Hello."));
+    let failure = dto::ApiError {
+        code: dto::ApiErrorCode::Unavailable,
+        message: "usage storage failed".into(),
+        details: Some(dto::ApiErrorDetails::UsageStorage),
+    };
+    for _ in 0..2 {
+        super::usage_billing::skipped_at_startup(&h.context, &failure);
+    }
+    let notices = super::purge_notices_list(&h.context)
+        .await
+        .expect("notices");
+    assert_eq!(
+        notices
+            .items
+            .iter()
+            .filter(
+                |notice| notice.reason == dto::PurgeNoticeReasonDto::UsageCostCaptureSkipped
+                    && notice.entity == dto::PurgeNoticeEntityDto::UsageRecord
+            )
+            .count(),
+        1
+    );
+    let workers = super::startup(&h.context).await.expect("startup");
+    workers.stop().await;
+}

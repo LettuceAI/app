@@ -181,6 +181,9 @@ const fn reason(reason: PurgeNoticeReason) -> dto::PurgeNoticeReasonDto {
         PurgeNoticeReason::UsageRecordUnreadable => {
             dto::PurgeNoticeReasonDto::UsageRecordUnreadable
         }
+        PurgeNoticeReason::UsageCostCaptureSkipped => {
+            dto::PurgeNoticeReasonDto::UsageCostCaptureSkipped
+        }
     }
 }
 

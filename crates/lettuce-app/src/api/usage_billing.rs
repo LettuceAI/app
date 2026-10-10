@@ -97,6 +97,25 @@ pub(super) async fn recover_automatic(context: &ApiContext) -> Result<(), ApiErr
     recover(context, None).await
 }
 
+/// Startup reconciliation is optional: a failure leaves a notice and
+/// startup continues.
+pub(super) async fn recover_at_startup(context: &ApiContext) {
+    if let Err(error) = recover_automatic(context).await {
+        skipped_at_startup(context, &error);
+    }
+}
+
+pub(super) fn skipped_at_startup(context: &ApiContext, error: &ApiError) {
+    tracing::warn!(code = ?error.code, message = %error.message, "usage cost capture recovery skipped at startup");
+    if let Err(notice) = context
+        .backend()
+        .database()
+        .record_usage_cost_capture_skipped(context.now())
+    {
+        tracing::error!(%notice, "the skipped cost capture notice could not be recorded");
+    }
+}
+
 async fn recover(context: &ApiContext, job_id: Option<JobId>) -> Result<(), ApiError> {
     let created = context
         .blocking(move |context| {

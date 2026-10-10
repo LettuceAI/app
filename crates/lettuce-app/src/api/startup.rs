@@ -168,7 +168,7 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
         .blocking(|context| context.recover_after_restart())
         .await?;
     record(&steps, StartupStep::RecoverAfterRestart);
-    super::usage_billing::recover_automatic(context).await?;
+    super::usage_billing::recover_at_startup(context).await;
     complete_pending_rewinds(context).await?;
     record(&steps, StartupStep::CompletePendingRewinds);
     let detected = context

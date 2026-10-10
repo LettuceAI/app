@@ -1055,10 +1055,13 @@ pub enum PurgeNoticeReason {
     /// A stored usage record cannot be decoded; usage cost capture skips it
     /// and every other record is still processed.
     UsageRecordUnreadable,
+    /// Usage cost capture could not be reconciled at startup; costs of
+    /// earlier replies may be missing until a recalculation.
+    UsageCostCaptureSkipped,
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::KeptUnsentLocalChanges,
         Self::RejournalIncomplete,
         Self::RejournalDropped,
@@ -1068,6 +1071,7 @@ impl PurgeNoticeReason {
         Self::NotSynced,
         Self::ConflictCarried,
         Self::UsageRecordUnreadable,
+        Self::UsageCostCaptureSkipped,
     ];
 
     const fn name(self) -> &'static str {
@@ -1081,6 +1085,7 @@ impl PurgeNoticeReason {
             Self::NotSynced => "not_synced",
             Self::ConflictCarried => "conflict_carried",
             Self::UsageRecordUnreadable => "usage_record_unreadable",
+            Self::UsageCostCaptureSkipped => "usage_cost_capture_skipped",
         }
     }
 }
@@ -1216,6 +1221,22 @@ impl Database {
             return Ok(());
         }
         record_notice(connection, entity, id, reason, now)
+    }
+
+    /// Records that usage cost capture recovery could not run, unless such
+    /// a notice is still open.
+    pub fn record_usage_cost_capture_skipped(
+        &self,
+        now: TimestampMillis,
+    ) -> Result<(), PurgeError> {
+        let connection = self.connection().map_err(storage)?;
+        Self::record_open_notice(
+            &connection,
+            PurgeNoticeEntity::UsageRecord,
+            "cost-capture",
+            PurgeNoticeReason::UsageCostCaptureSkipped,
+            now,
+        )
     }
 
     /// Marks a notice as seen; `false` when there was no such open notice.
