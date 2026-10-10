@@ -402,3 +402,5 @@ Reset reads its seed only from a write-fenced source. Fresh-file creation refuse
 Library media association deletion and replacement queue the prior asset for collection inside the owning transaction. This covers character and persona media, scene assets, presentation references and group backgrounds, including writes made by synchronization. Collection rechecks retained references and Library retention before removing anything.
 
 Character duplication writes the copied authored graph, lorebook bindings and scheduled notes together. Notes receive fresh identities and retain their schedule; the companion Soul starts from the copied authored configuration. The resulting reference report includes bound lorebooks even when archived.
+
+Library changes use the SQLite pre-update hook to read the entity identity from the new row on insert or update and from the old row on delete. Character, persona and group child tables refresh their parent. The signal deduplicates identities in memory until commit and discards them on rollback; default persona changes refresh both the old and new selections. Listeners run on the committing thread and must not access the database.

@@ -563,21 +563,6 @@ pub async fn lorebook_trigger_preview(
 }
 
 pub(super) fn emit_deletion(context: &ApiContext, result: &dto::SourceDeleteResult) {
-    for character_id in &result.character_ids {
-        context.emit(dto::ApiEvent::CharacterChanged {
-            character_id: character_id.clone(),
-        });
-    }
-    for persona_id in &result.persona_ids {
-        context.emit(dto::ApiEvent::PersonaChanged {
-            persona_id: persona_id.clone(),
-        });
-    }
-    for group_id in &result.group_ids {
-        context.emit(dto::ApiEvent::GroupChanged {
-            group_id: group_id.clone(),
-        });
-    }
     for conversation_id in &result.conversation_ids {
         context.emit(dto::ApiEvent::ConversationChanged {
             conversation_id: conversation_id.clone(),

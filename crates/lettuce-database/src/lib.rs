@@ -6,6 +6,7 @@ pub use models::provider_control_adapter::CertificateImportError;
 
 mod settings_api;
 mod change_signal;
+pub use change_signal::LibraryKind;
 mod job_adapter;
 pub(crate) mod job_details_adapter;
 pub use job_adapter::ManualSceneImageAdmission;
