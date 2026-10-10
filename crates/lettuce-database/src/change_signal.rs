@@ -60,9 +60,15 @@ type LibraryChangeListener = Arc<dyn Fn(LibraryKind, &str) + Send + Sync>;
 type ChangeListener = Arc<dyn Fn() + Send + Sync>;
 type SettingsChangeListener = Arc<dyn Fn(&'static str) + Send + Sync>;
 
+#[derive(Default)]
+struct LibraryChanges {
+    ids: std::collections::BTreeSet<(LibraryKind, String)>,
+    savepoints: Vec<(String, std::collections::BTreeSet<(LibraryKind, String)>)>,
+}
+
 pub(crate) struct ChangeSignal {
     pending: AtomicU8,
-    library_changes: Mutex<std::collections::BTreeSet<(LibraryKind, String)>>,
+    library_changes: Mutex<LibraryChanges>,
     library_listeners: Mutex<Vec<LibraryChangeListener>>,
     settings_section: Mutex<Option<&'static str>>,
     settings_sections: Mutex<std::collections::BTreeSet<&'static str>>,
@@ -91,6 +97,43 @@ impl ChangeSignal {
             settings_generation: AtomicU64::new(0),
             listeners: Mutex::new(Vec::new()),
         });
+        let savepoints = Arc::clone(&signal);
+        connection.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+            if let rusqlite::hooks::AuthAction::Savepoint {
+                operation,
+                savepoint_name,
+            } = context.action
+            {
+                let mut pending = savepoints.library_changes.lock().expect("library changes");
+                match operation {
+                    rusqlite::hooks::TransactionOperation::Begin => {
+                        let ids = pending.ids.clone();
+                        pending.savepoints.push((savepoint_name.to_owned(), ids));
+                    }
+                    rusqlite::hooks::TransactionOperation::Rollback => {
+                        if let Some(index) = pending
+                            .savepoints
+                            .iter()
+                            .rposition(|(name, _)| name.eq_ignore_ascii_case(savepoint_name))
+                        {
+                            pending.ids = pending.savepoints[index].1.clone();
+                            pending.savepoints.truncate(index + 1);
+                        }
+                    }
+                    rusqlite::hooks::TransactionOperation::Release => {
+                        if let Some(index) = pending
+                            .savepoints
+                            .iter()
+                            .rposition(|(name, _)| name.eq_ignore_ascii_case(savepoint_name))
+                        {
+                            pending.savepoints.truncate(index);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            rusqlite::hooks::Authorization::Allow
+        }))?;
         let library = Arc::clone(&signal);
         connection.preupdate_hook(Some(
             move |_: rusqlite::hooks::Action,
@@ -105,7 +148,7 @@ impl ChangeSignal {
                     let mut record = |value: rusqlite::Result<rusqlite::types::ValueRef<'_>>| {
                         let value = value.expect("default persona column");
                         if let rusqlite::types::ValueRef::Text(id) = value {
-                            changes.insert((
+                            changes.ids.insert((
                                 LibraryKind::Persona,
                                 std::str::from_utf8(id)
                                     .expect("persona identity text")
@@ -174,6 +217,7 @@ impl ChangeSignal {
                     .library_changes
                     .lock()
                     .expect("library changes")
+                    .ids
                     .insert((kind, id));
             },
         ))?;
@@ -206,8 +250,11 @@ impl ChangeSignal {
         let committed = Arc::clone(&signal);
         connection.commit_hook(Some(move || {
             let changed = committed.pending.swap(0, Ordering::AcqRel);
-            let changes =
-                std::mem::take(&mut *committed.library_changes.lock().expect("library changes"));
+            let changes = {
+                let mut pending = committed.library_changes.lock().expect("library changes");
+                pending.savepoints.clear();
+                std::mem::take(&mut pending.ids)
+            };
             let listeners = committed
                 .library_listeners
                 .lock()
@@ -246,11 +293,11 @@ impl ChangeSignal {
         let rolled_back = Arc::clone(&signal);
         connection.rollback_hook(Some(move || {
             rolled_back.pending.store(0, Ordering::Release);
-            rolled_back
-                .library_changes
-                .lock()
-                .expect("library changes")
-                .clear();
+            {
+                let mut pending = rolled_back.library_changes.lock().expect("library changes");
+                pending.ids.clear();
+                pending.savepoints.clear();
+            }
             rolled_back
                 .settings_sections
                 .lock()
@@ -347,9 +394,32 @@ impl Database {
     }
 }
 
+impl Database {
+    pub fn on_library_change(&self, listener: impl Fn(LibraryKind, &str) + Send + Sync + 'static) {
+        self.changes.listen_library(Arc::new(listener));
+    }
+}
+
 #[cfg(test)]
 mod library_tests {
     use super::*;
+
+    #[test]
+    fn a_rolled_back_nested_savepoint_emits_only_surviving_library_ids() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection.execute_batch("CREATE TABLE characters(id TEXT PRIMARY KEY); CREATE TABLE personas(id TEXT PRIMARY KEY);").expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        signal.listen_library(Arc::new(move |kind, id| {
+            captured.lock().expect("events").push((kind, id.to_owned()))
+        }));
+        connection.execute_batch("BEGIN; INSERT INTO characters VALUES ('survives'); SAVEPOINT outer_change; INSERT INTO personas VALUES ('rolled-back'); SAVEPOINT inner_change; INSERT INTO characters VALUES ('also-rolled-back'); RELEASE inner_change; ROLLBACK TO outer_change; RELEASE outer_change; COMMIT;").expect("transaction");
+        assert_eq!(
+            *events.lock().expect("events"),
+            vec![(LibraryKind::Character, "survives".to_owned())]
+        );
+    }
 
     #[test]
     fn changing_the_default_refreshes_both_personas() {
@@ -400,11 +470,5 @@ mod library_tests {
             *events.lock().expect("events"),
             vec![(LibraryKind::Character, "character".to_owned())]
         );
-    }
-}
-
-impl Database {
-    pub fn on_library_change(&self, listener: impl Fn(LibraryKind, &str) + Send + Sync + 'static) {
-        self.changes.listen_library(Arc::new(listener));
     }
 }
