@@ -110,6 +110,7 @@ export const commands = {
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
 	personaGet: (request: PersonaGetRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_get", { request })),
+	personasList: (request: PersonasListRequest) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
 	personaSave: (request: PersonaSaveRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_save", { request })),
 	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
 	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
@@ -844,6 +845,9 @@ export type CharacterSummary = {
 export type CharactersListRequest = {
 	cursor: string | null,
 	limit: number | null,
+	query?: string | null,
+	sort?: LibrarySort | null,
+	search_nickname?: boolean,
 };
 
 export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "reset" };
@@ -2768,6 +2772,8 @@ export type LibraryLorebookMutationResult = {
 	owner_revision: number,
 };
 
+export type LibrarySort = "created_asc" | "updated_desc" | "name";
+
 /**
  *  Which conversations a list shows; archived ones are only hidden from the
  *  default list.
@@ -4256,11 +4262,24 @@ export type PersonaMediaLink = {
 
 export type PersonaMediaSlot = "avatar" | "design_reference";
 
+export type PersonaPage = {
+	items: PersonaSummary[],
+	next_cursor: string | null,
+	default_persona: PersonaDefaultView,
+};
+
 export type PersonaSaveRequest = {
 	persona_id: string | null,
 	draft: PersonaDraft,
 	expected_revision: number | null,
 	client_operation_id: string,
+};
+
+export type PersonaSummary = {
+	id: string,
+	title: string,
+	nickname: string | null,
+	avatar: AssetRef | null,
 };
 
 export type PersonaView = {
@@ -4271,6 +4290,14 @@ export type PersonaView = {
 	revision: number,
 	created_at: number,
 	updated_at: number,
+};
+
+export type PersonasListRequest = {
+	cursor: string | null,
+	limit: number | null,
+	query: string | null,
+	sort: LibrarySort | null,
+	search_nickname?: boolean,
 };
 
 export type PlaygroundEntry = {

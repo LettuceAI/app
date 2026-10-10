@@ -169,3 +169,55 @@ pub async fn persona_save(
         })
         .await
 }
+
+pub async fn personas_list(
+    context: &ApiContext,
+    request: dto::PersonasListRequest,
+) -> Result<dto::PersonaPage, ApiError> {
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let page = PersonaRepository::search(
+                database,
+                lettuce_characters::PersonaSearch {
+                    text: request.query.unwrap_or_default(),
+                    include_archived: false,
+                    sort: super::mapping::library_sort(request.sort),
+                    search_nickname: request.search_nickname,
+                },
+                lettuce_types::PageRequest {
+                    cursor: request.cursor,
+                    limit: super::mapping::page_limit(request.limit),
+                },
+            )
+            .map_err(IntoApiError::into_api_error)?;
+            let state = PersonaRepository::get_default_snapshot(database)
+                .map_err(IntoApiError::into_api_error)?
+                .state;
+            Ok(dto::PersonaPage {
+                items: page
+                    .items
+                    .into_iter()
+                    .map(|persona| dto::PersonaSummary {
+                        id: persona.id.to_string(),
+                        title: persona.title,
+                        nickname: persona.nickname,
+                        avatar: persona
+                            .media
+                            .links
+                            .iter()
+                            .find(|link| link.slot == lettuce_characters::PersonaMediaSlot::Avatar)
+                            .map(|link| context.asset_ref(link.asset_id)),
+                    })
+                    .collect(),
+                next_cursor: page.next_cursor,
+                default_persona: dto::PersonaDefaultView {
+                    persona_id: state.persona_id.map(|id| id.to_string()),
+                    revision: state.revision.get(),
+                    created_at: state.created_at.get(),
+                    updated_at: state.updated_at.get(),
+                },
+            })
+        })
+        .await
+}

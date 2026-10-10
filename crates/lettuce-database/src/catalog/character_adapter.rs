@@ -1511,61 +1511,92 @@ impl CharacterRepository for Database {
         request: CharacterSearch,
         page: PageRequest,
     ) -> Result<Page<Character>, RepositoryError> {
-        if request.text.trim().is_empty() {
-            return self.list(page, request.include_archived);
+        use super::library_cursor::{LibraryCursor, LibraryCursorKey};
+        use lettuce_characters::LibrarySort;
+
+        let query = canonical_name(request.text.trim());
+        let cursor = LibraryCursor::decode(
+            page.cursor.as_deref(),
+            "character",
+            request.sort,
+            &query,
+            request.search_nickname,
+            request.include_archived,
+        )?;
+        if let Some(cursor) = &cursor {
+            cursor.id.parse::<CharacterId>().map_err(|_| {
+                RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
+                    field: "library.cursor",
+                })
+            })?;
         }
-        let cursor = cursor_decode(page.cursor.as_deref())?;
         let limit = usize::from(page.limit.get()).max(1);
-        let text = request
-            .text
-            .to_lowercase()
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        let pattern = format!("%{text}%");
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let (column, comparison, direction) = match request.sort {
+            LibrarySort::CreatedAsc => ("created_at", ">", "ASC"),
+            LibrarySort::UpdatedDesc => ("updated_at", "<", "DESC"),
+            LibrarySort::Name => ("normalized_name", ">", "ASC"),
+        };
+        let sql = format!(
+            "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
+        );
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
-        let mut sql = String::from(
-            "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR normalized_nickname LIKE ?2 ESCAPE '\\')",
-        );
-        if cursor.is_some() {
-            sql.push_str(" AND (updated_at < ?3 OR (updated_at = ?3 AND id > ?4))");
-        }
-        sql.push_str(" ORDER BY updated_at DESC,id ASC LIMIT ?5");
-        let (cursor_time, cursor_id) = cursor
-            .map(|(time, id)| (Some(time), Some(id.to_string())))
-            .unwrap_or((None, None));
         let mut statement = tx.prepare(&sql).map_err(db_error)?;
         let ids = statement
             .query_map(
                 params![
                     request.include_archived,
                     pattern,
-                    cursor_time,
-                    cursor_id,
-                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
+                    cursor.as_ref().map(|value| value.key.sql_value()),
+                    cursor.as_ref().map(|value| &value.id),
+                    i64::try_from(limit + 1).unwrap_or(i64::MAX),
+                    request.search_nickname
                 ],
-                |row| id(row.get(0)?),
+                |row| parse_id(row.get(0)?),
             )
             .map_err(db_error)?
             .collect::<rusqlite::Result<Vec<CharacterId>>>()
             .map_err(db_error)?;
         drop(statement);
-        let mut ids = ids;
         let has_more = ids.len() > limit;
-        if has_more {
-            ids.truncate(limit);
-        }
-        let mut items = Vec::with_capacity(ids.len());
-        for id in ids {
+        let mut items = Vec::with_capacity(limit.min(ids.len()));
+        for id in ids.into_iter().take(limit) {
             items.push(load_character(&tx, id)?);
         }
         let next_cursor = if has_more {
             items
                 .last()
-                .map(|item| cursor_encode(item.updated_at, item.id))
+                .map(|item| {
+                    LibraryCursor {
+                        entity: "character".into(),
+                        sort: request.sort,
+                        query,
+                        search_nickname: request.search_nickname,
+                        include_archived: request.include_archived,
+                        key: match request.sort {
+                            LibrarySort::CreatedAsc => {
+                                LibraryCursorKey::Time(item.created_at.get())
+                            }
+                            LibrarySort::UpdatedDesc => {
+                                LibraryCursorKey::Time(item.updated_at.get())
+                            }
+                            LibrarySort::Name => {
+                                LibraryCursorKey::Name(canonical_name(&item.profile.name))
+                            }
+                        },
+                        id: item.id.to_string(),
+                    }
+                    .encode()
+                })
                 .transpose()?
         } else {
             None
@@ -4704,6 +4735,7 @@ mod smoke_tests {
             CharacterSearch {
                 text: "äDA".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest::default(),
         )
@@ -4714,6 +4746,7 @@ mod smoke_tests {
             CharacterSearch {
                 text: "ЖЕН".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest::default(),
         )
@@ -5046,6 +5079,7 @@ mod smoke_tests {
             CharacterSearch {
                 text: "alp".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest {
                 cursor: None,
@@ -5070,7 +5104,8 @@ mod smoke_tests {
                 &database,
                 CharacterSearch {
                     text: "alp".into(),
-                    include_archived: false
+                    include_archived: false,
+                    ..Default::default()
                 },
                 PageRequest::default()
             )

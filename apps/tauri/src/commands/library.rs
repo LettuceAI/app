@@ -199,3 +199,12 @@ pub async fn persona_default_clear(
 ) -> Result<lettuce_contracts::PersonaDefaultView, ApiError> {
     api::persona_default_clear(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn personas_list(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::PersonasListRequest,
+) -> Result<lettuce_contracts::PersonaPage, ApiError> {
+    api::personas_list(&context, request).await
+}

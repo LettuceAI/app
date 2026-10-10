@@ -709,3 +709,5 @@ Character duplication runs the existing authored graph copy in the API receipt t
 Persona editor saves carry the authored fields and complete media links with one expected revision and client operation id. The API returns an editable draft, revision metadata and asset URLs after committing the save and replay result together. Default selection and lorebook bindings use their own typed commands.
 
 Default persona selection and clearing use the singleton revision and a client operation id. Their committed result includes the selected id and singleton metadata without changing any persona authored revision.
+
+Character and persona library commands default to creation order and name substring search. Callers can select update or name order and include nickname matches. Each cursor retains its entity, search and sort options; page sizes are clamped. Persona pages include the separate default singleton selection and revision.

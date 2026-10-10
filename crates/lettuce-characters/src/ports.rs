@@ -206,16 +206,51 @@ impl GroupDetails {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySort {
+    CreatedAsc,
+    #[default]
+    UpdatedDesc,
+    Name,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CharacterSearch {
     pub text: String,
     pub include_archived: bool,
+    pub sort: LibrarySort,
+    pub search_nickname: bool,
+}
+
+impl Default for CharacterSearch {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            include_archived: false,
+            sort: LibrarySort::UpdatedDesc,
+            search_nickname: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersonaSearch {
     pub text: String,
     pub include_archived: bool,
+    pub sort: LibrarySort,
+    pub search_nickname: bool,
+}
+
+impl Default for PersonaSearch {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            include_archived: false,
+            sort: LibrarySort::UpdatedDesc,
+            search_nickname: true,
+        }
+    }
 }
 
 /// CAS arguments for archiving a persona. If the persona is the current
@@ -1248,6 +1283,7 @@ mod tests {
         let request = PersonaSearch {
             text: "writer".into(),
             include_archived: true,
+            ..Default::default()
         };
         assert_eq!(request.text, "writer");
         assert!(request.include_archived);

@@ -327,3 +327,43 @@ pub struct PersonaDefaultView {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub updated_at: i64,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySort {
+    CreatedAsc,
+    UpdatedDesc,
+    Name,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonasListRequest {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+    pub query: Option<String>,
+    pub sort: Option<LibrarySort>,
+    #[serde(default)]
+    pub search_nickname: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaSummary {
+    pub id: String,
+    pub title: String,
+    pub nickname: Option<String>,
+    pub avatar: Option<crate::AssetRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaPage {
+    pub items: Vec<PersonaSummary>,
+    pub next_cursor: Option<String>,
+    pub default_persona: PersonaDefaultView,
+}

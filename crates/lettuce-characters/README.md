@@ -54,3 +54,5 @@ The complete `CharacterDetails` and `GroupDetails` aggregates are serializable a
 `CharacterDependencyReader`, `PersonaDependencyReader` and `GroupDependencyReader` report what references a record, for impact analysis before archive or delete. `ProfileDuplicateRepository` duplicates a profile transactionally: the request names source and destination roots, the source graph supplies all child data, and the result reports typed id remaps plus every retained media, scene, widget, prompt, lorebook, model, voice and artifact reference. Duplication and dependency reports exclude conversations, memories, companion runtime state and other live data.
 
 A character can hold an independent Banner media slot alongside its original avatar, background and ordered design references. Each single slot permits only one asset.
+
+Character and persona search requests select creation, update or normalized-name order and whether nicknames participate. Repository search defaults retain update order and nickname matching; the application library commands choose creation order and name-only matching.

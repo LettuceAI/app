@@ -349,10 +349,13 @@ pub use library_duplicate::character_duplicate;
 mod library_personas_tests;
 
 mod library_personas;
-pub use library_personas::{persona_get, persona_save};
+pub use library_personas::{persona_get, persona_save, personas_list};
 
 #[cfg(test)]
 mod library_persona_default_tests;
 
 mod library_persona_default;
 pub use library_persona_default::{persona_default_set, persona_default_clear};
+
+#[cfg(test)]
+mod library_lists_tests;

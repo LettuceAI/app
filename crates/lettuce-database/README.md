@@ -85,7 +85,7 @@ The same few patterns run through every adapter:
 - Operations that may be retried carry an operation id or request hash. An exact retry returns the stored result; the same id with different input conflicts.
 - Evidence is immutable. Usage events, dispatch checkpoints, run documents, apply receipts, import evidence and journal rows are insert-only, and triggers reject `UPDATE` and `DELETE` on them. The only way such rows go is a purge (below).
 - Triggers restate the invariants the domain already checks: legal state transitions, topology, ownership, settle-once. A trigger abort that names a known invariant maps to `Conflict`; anything else is a storage fault.
-- Library pages use an opaque `(updated_at, id)` keyset cursor. This is not snapshot pagination: rows changed between requests may move relative to an earlier page.
+Repository list ports use an opaque `(updated_at, id)` keyset cursor. Character and persona search pages also accept creation and normalized-name order; their cursors bind the entity, search options and sort to the last key and id. Pagination does not retain a snapshot, so later writes can move rows between pages.
 - Secrets are never stored. Provider rows hold opaque `SecretRef` values and secret owner ids; the values live in the native secret store behind `lettuce_settings::SecretStore`.
 
 ## Settings, providers and models

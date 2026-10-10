@@ -1157,39 +1157,55 @@ impl PersonaRepository for Database {
         request: PersonaSearch,
         page: PageRequest,
     ) -> Result<Page<Persona>, RepositoryError> {
-        if request.text.trim().is_empty() {
-            return self.list(page, request.include_archived);
+        use super::library_cursor::{LibraryCursor, LibraryCursorKey};
+        use lettuce_characters::LibrarySort;
+
+        let query = canonical_title(request.text.trim());
+        let cursor = LibraryCursor::decode(
+            page.cursor.as_deref(),
+            "persona",
+            request.sort,
+            &query,
+            request.search_nickname,
+            request.include_archived,
+        )?;
+        if let Some(cursor) = &cursor {
+            cursor.id.parse::<PersonaId>().map_err(|_| {
+                RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
+                    field: "library.cursor",
+                })
+            })?;
         }
-        let cursor = cursor_decode(page.cursor.as_deref())?;
         let limit = usize::from(page.limit.get()).max(1);
-        let text = canonical_title(&request.text)
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        let pattern = format!("%{text}%");
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let (column, comparison, direction) = match request.sort {
+            LibrarySort::CreatedAsc => ("created_at", ">", "ASC"),
+            LibrarySort::UpdatedDesc => ("updated_at", "<", "DESC"),
+            LibrarySort::Name => ("normalized_title", ">", "ASC"),
+        };
+        let sql = format!(
+            "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
+        );
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
-        let mut sql = String::from(
-            "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR normalized_nickname LIKE ?2 ESCAPE '\\')",
-        );
-        if cursor.is_some() {
-            sql.push_str(" AND (updated_at < ?3 OR (updated_at = ?3 AND id > ?4))");
-        }
-        sql.push_str(" ORDER BY updated_at DESC,id ASC LIMIT ?5");
-        let (cursor_time, cursor_id) = cursor
-            .map(|(time, id)| (Some(time), Some(id.to_string())))
-            .unwrap_or((None, None));
         let mut statement = tx.prepare(&sql).map_err(db_error)?;
         let ids = statement
             .query_map(
                 params![
                     request.include_archived,
                     pattern,
-                    cursor_time,
-                    cursor_id,
-                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
+                    cursor.as_ref().map(|value| value.key.sql_value()),
+                    cursor.as_ref().map(|value| &value.id),
+                    i64::try_from(limit + 1).unwrap_or(i64::MAX),
+                    request.search_nickname
                 ],
                 |row| parse_id(row.get(0)?),
             )
@@ -1197,9 +1213,46 @@ impl PersonaRepository for Database {
             .collect::<rusqlite::Result<Vec<PersonaId>>>()
             .map_err(db_error)?;
         drop(statement);
-        let result = load_page(&tx, ids, limit)?;
+        let has_more = ids.len() > limit;
+        let mut items = Vec::with_capacity(limit.min(ids.len()));
+        for id in ids.into_iter().take(limit) {
+            items.push(
+                load_persona(&tx, id)
+                    .map_err(db_error)?
+                    .ok_or(RepositoryError::Storage)?,
+            );
+        }
+        let next_cursor = if has_more {
+            items
+                .last()
+                .map(|item| {
+                    LibraryCursor {
+                        entity: "persona".into(),
+                        sort: request.sort,
+                        query,
+                        search_nickname: request.search_nickname,
+                        include_archived: request.include_archived,
+                        key: match request.sort {
+                            LibrarySort::CreatedAsc => {
+                                LibraryCursorKey::Time(item.created_at.get())
+                            }
+                            LibrarySort::UpdatedDesc => {
+                                LibraryCursorKey::Time(item.updated_at.get())
+                            }
+                            LibrarySort::Name => {
+                                LibraryCursorKey::Name(canonical_title(&item.title))
+                            }
+                        },
+                        id: item.id.to_string(),
+                    }
+                    .encode()
+                })
+                .transpose()?
+        } else {
+            None
+        };
         tx.commit().map_err(db_error)?;
-        Ok(result)
+        Ok(Page { items, next_cursor })
     }
 
     fn revise(
@@ -2965,6 +3018,7 @@ mod tests {
             PersonaSearch {
                 text: "CAFÉ".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest::default(),
         )
@@ -3109,6 +3163,7 @@ mod tests {
             PersonaSearch {
                 text: "100%".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest::default(),
         )
@@ -3145,6 +3200,7 @@ mod tests {
                 PersonaSearch {
                     text: "100%".into(),
                     include_archived: false,
+                    ..Default::default()
                 },
                 PageRequest::default(),
             )
@@ -3159,6 +3215,7 @@ mod tests {
                 PersonaSearch {
                     text: "100%".into(),
                     include_archived: true,
+                    ..Default::default()
                 },
                 PageRequest::default(),
             )
