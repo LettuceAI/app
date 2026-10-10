@@ -278,47 +278,38 @@ fn canonical_title(value: &str) -> String {
         .collect()
 }
 
-fn cursor_encode(updated_at: TimestampMillis, id: PersonaId) -> Result<String, RepositoryError> {
+fn cursor_encode(
+    key: serde_json::Value,
+    id: String,
+    request: &lettuce_characters::PersonaSearch,
+) -> Result<String, RepositoryError> {
     let envelope = Envelope {
         format_version: CURSOR_VERSION,
-        value: (updated_at.get(), id.to_string()),
+        value: (key, id, request.sort, canonical_title(request.text.trim()), request.search_nickname, request.include_archived, "persona"),
     };
     serde_json::to_vec(&envelope)
         .map(|bytes| crate::hex_encode(&bytes))
-        .map_err(|_| {
-            RepositoryError::Invalid(lettuce_characters::ValidationError::Invariant {
-                field: "persona.cursor",
-            })
-        })
+        .map_err(|_| RepositoryError::Storage)
 }
 
-fn cursor_decode(value: Option<&str>) -> Result<Option<(i64, PersonaId)>, RepositoryError> {
+fn cursor_decode(
+    value: Option<&str>,
+    request: &lettuce_characters::PersonaSearch,
+) -> Result<Option<(rusqlite::types::Value, String)>, RepositoryError> {
+    let invalid = || RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue { field: "persona.cursor" });
     let Some(value) = value else { return Ok(None) };
-    let bytes = crate::hex_decode(value).map_err(|_| {
-        RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-            field: "persona.cursor",
-        })
-    })?;
-    let envelope: Envelope<(i64, String)> = serde_json::from_slice(&bytes).map_err(|_| {
-        RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-            field: "persona.cursor",
-        })
-    })?;
-    if envelope.format_version != CURSOR_VERSION {
-        return Err(RepositoryError::Invalid(
-            lettuce_characters::ValidationError::InvalidValue {
-                field: "persona.cursor",
-            },
-        ));
+    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
+    let envelope: Envelope<(serde_json::Value, String, lettuce_characters::LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
+    if envelope.format_version != CURSOR_VERSION || sort != request.sort || query != canonical_title(request.text.trim()) || search_nickname != request.search_nickname || include_archived != request.include_archived || entity != "persona" {
+        return Err(invalid());
     }
-    Ok(Some((
-        envelope.value.0,
-        envelope.value.1.parse().map_err(|_| {
-            RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-                field: "persona.cursor",
-            })
-        })?,
-    )))
+    id.parse::<PersonaId>().map_err(|_| invalid())?;
+    let key = match sort {
+        lettuce_characters::LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
+        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
+    };
+    Ok(Some((key, id)))
 }
 
 fn image_assets(
@@ -550,22 +541,24 @@ fn replace_media(
     persona_id: PersonaId,
     media: &PersonaMedia,
 ) -> Result<(), RepositoryError> {
-    tx.execute(
-        "DELETE FROM persona_media WHERE persona_id=?1",
-        [persona_id.to_string()],
-    )
-    .map_err(db_error)?;
+    let owner = persona_id.to_string();
+    let ids = serde_json::to_string(&media.links.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM persona_media WHERE persona_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![owner, ids]).map_err(db_error)?;
+    let mut statement = tx.prepare("SELECT asset_id,slot,ordinal FROM persona_media WHERE persona_id=?1").map_err(db_error)?;
+    let existing = statement.query_map([&owner], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u32>(2)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
+    drop(statement);
+    let offset = existing.iter().map(|row| i64::from(row.2)).chain(media.links.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
+    for (index, (asset, slot, ordinal)) in existing.iter().enumerate() {
+        let link = media.links.iter().find(|link| link.asset_id.to_string() == *asset).ok_or(RepositoryError::Storage)?;
+        if *slot != media_slot_name(link.slot) || *ordinal != link.ordinal {
+            tx.execute("UPDATE persona_media SET slot='design_reference',ordinal=?3 WHERE persona_id=?1 AND asset_id=?2", params![owner, asset, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+        }
+    }
     for link in &media.links {
-        tx.execute(
-            "INSERT INTO persona_media(persona_id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,'image',?3,?4)",
-            params![
-                persona_id.to_string(),
-                link.asset_id.to_string(),
-                media_slot_name(link.slot),
-                i64::from(link.ordinal)
-            ],
-        )
-        .map_err(db_error)?;
+        if existing.iter().any(|row| row.0 == link.asset_id.to_string() && row.1 == media_slot_name(link.slot) && row.2 == link.ordinal) {
+            continue;
+        }
+        tx.execute("INSERT INTO persona_media(persona_id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,'image',?3,?4) ON CONFLICT(persona_id,asset_id) DO UPDATE SET slot=excluded.slot,ordinal=excluded.ordinal", params![owner, link.asset_id.to_string(), media_slot_name(link.slot), link.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -788,34 +781,6 @@ fn update_root(
     Ok(next)
 }
 
-fn load_page(
-    tx: &rusqlite::Transaction<'_>,
-    ids: Vec<PersonaId>,
-    limit: usize,
-) -> Result<Page<Persona>, RepositoryError> {
-    let mut ids = ids;
-    let has_more = ids.len() > limit;
-    if has_more {
-        ids.truncate(limit);
-    }
-    let mut items = Vec::with_capacity(ids.len());
-    for id in ids {
-        items.push(
-            load_persona(tx, id)
-                .map_err(db_error)?
-                .ok_or(RepositoryError::NotFound)?,
-        );
-    }
-    let next_cursor = if has_more {
-        items
-            .last()
-            .map(|persona| cursor_encode(persona.updated_at, persona.id))
-            .transpose()?
-    } else {
-        None
-    };
-    Ok(Page { items, next_cursor })
-}
 
 fn create_persona_in(tx: &Transaction<'_>, persona: Persona) -> Result<Persona, RepositoryError> {
     let mut canonical = persona.clone();
@@ -1118,37 +1083,12 @@ impl PersonaRepository for Database {
         request: PageRequest,
         include_archived: bool,
     ) -> Result<Page<Persona>, RepositoryError> {
-        let cursor = cursor_decode(request.cursor.as_deref())?;
-        let limit = usize::from(request.limit.get()).max(1);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(db_error)?;
-        let mut sql = String::from("SELECT id FROM personas WHERE (?1 OR status='active')");
-        if cursor.is_some() {
-            sql.push_str(" AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3))");
-        }
-        sql.push_str(" ORDER BY updated_at DESC,id ASC LIMIT ?4");
-        let (cursor_time, cursor_id) = cursor
-            .map(|(time, id)| (Some(time), Some(id.to_string())))
-            .unwrap_or((None, None));
-        let mut statement = tx.prepare(&sql).map_err(db_error)?;
-        let ids = statement
-            .query_map(
-                params![
-                    include_archived,
-                    cursor_time,
-                    cursor_id,
-                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
-                ],
-                |row| parse_id(row.get(0)?),
-            )
-            .map_err(db_error)?
-            .collect::<rusqlite::Result<Vec<PersonaId>>>()
-            .map_err(db_error)?;
-        drop(statement);
-        let page = load_page(&tx, ids, limit)?;
-        tx.commit().map_err(db_error)?;
+        let page = self.search(lettuce_characters::PersonaSearch {
+            text: String::new(),
+            sort: lettuce_characters::LibrarySort::UpdatedDesc,
+            search_nickname: false,
+            include_archived,
+        }, request)?;
         Ok(page)
     }
 
@@ -1157,25 +1097,10 @@ impl PersonaRepository for Database {
         request: PersonaSearch,
         page: PageRequest,
     ) -> Result<Page<Persona>, RepositoryError> {
-        use super::library_cursor::{LibraryCursor, LibraryCursorKey};
         use lettuce_characters::LibrarySort;
 
         let query = canonical_title(request.text.trim());
-        let cursor = LibraryCursor::decode(
-            page.cursor.as_deref(),
-            "persona",
-            request.sort,
-            &query,
-            request.search_nickname,
-            request.include_archived,
-        )?;
-        if let Some(cursor) = &cursor {
-            cursor.id.parse::<PersonaId>().map_err(|_| {
-                RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-                    field: "library.cursor",
-                })
-            })?;
-        }
+        let cursor = cursor_decode(page.cursor.as_deref(), &request)?;
         let limit = usize::from(page.limit.get()).max(1);
         let pattern = format!(
             "%{}%",
@@ -1202,8 +1127,8 @@ impl PersonaRepository for Database {
                 params![
                     request.include_archived,
                     pattern,
-                    cursor.as_ref().map(|value| value.key.sql_value()),
-                    cursor.as_ref().map(|value| &value.id),
+                    cursor.as_ref().map(|value| &value.0),
+                    cursor.as_ref().map(|value| &value.1),
                     i64::try_from(limit + 1).unwrap_or(i64::MAX),
                     request.search_nickname
                 ],
@@ -1226,26 +1151,11 @@ impl PersonaRepository for Database {
             items
                 .last()
                 .map(|item| {
-                    LibraryCursor {
-                        entity: "persona".into(),
-                        sort: request.sort,
-                        query,
-                        search_nickname: request.search_nickname,
-                        include_archived: request.include_archived,
-                        key: match request.sort {
-                            LibrarySort::CreatedAsc => {
-                                LibraryCursorKey::Time(item.created_at.get())
-                            }
-                            LibrarySort::UpdatedDesc => {
-                                LibraryCursorKey::Time(item.updated_at.get())
-                            }
-                            LibrarySort::Name => {
-                                LibraryCursorKey::Name(canonical_title(&item.title))
-                            }
-                        },
-                        id: item.id.to_string(),
-                    }
-                    .encode()
+                    cursor_encode(match request.sort {
+                        LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
+                        LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
+                        LibrarySort::Name => serde_json::json!(canonical_title(&item.title)),
+                    }, item.id.to_string(), &request)
                 })
                 .transpose()?
         } else {
@@ -4233,6 +4143,18 @@ mod tests {
         }
         let _ = std::fs::remove_file(path);
     }
+    #[test]
+    fn persona_save_keeps_unchanged_avatar_out_of_gc() {
+        let database = Database::open_in_memory().expect("database");
+        let asset = image_asset(&database, 'e');
+        let mut persona = Persona::new(PersonaId::new(), "Persona".into(), "Description".into(), TimestampMillis::new(1)).expect("persona");
+        persona.media.links.push(PersonaMediaLink { asset_id: asset, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
+        let persona = PersonaRepository::create(&database, persona).expect("create");
+        database.commit_api_operation::<Persona, crate::ApiOperationError>("persona_save", "unchanged", "digest", TimestampMillis::new(10), |scope| scope.save_persona(Some(persona.id), Some(Revision::INITIAL), PersonaDraftUpdate { title: persona.title.clone(), description: persona.description.clone(), nickname: None, design_description: None, avatar_crop: None, image_recommendation: None }, persona.media.clone(), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+        let queued: i64 = database.connection().expect("lock").query_row("SELECT count(*) FROM media_gc_candidates", [], |row| row.get(0)).expect("queue");
+        assert_eq!(queued, 0);
+    }
+
     #[test]
     fn persona_save_and_receipt_are_atomic_with_replay_and_cas() {
         let database = Database::open_in_memory().expect("database");

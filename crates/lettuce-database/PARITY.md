@@ -223,7 +223,7 @@ Library refresh events carry parent identities through the pre-update hook, incl
 
 Group deletion retains the legacy transaction over the group and all of its sessions (old-code/src-tauri/src/storage_manager/group_characters.rs:1028–1055). Persona deletion retains the legacy hard delete (old-code/src-tauri/src/storage_manager/personas.rs:404–410) and nullable reference behavior (old-code/src-tauri/src/storage_manager/db.rs:736,1014,1051). The rewrite clears group selection to Inherit and conversation overrides to inherited selection, preserves immutable helper receipt identities and atomically records replay evidence.
 
-A deferred sync change that rolls back to a savepoint no longer publishes a library refresh for its reverted writes; surviving changes in the surrounding transaction still publish once.
+Library identity notifications use the same commit hook as the existing feeds. Full rollbacks discard pending identities and each commit deduplicates them. A savepoint rollback inside a committed transaction, or a disk commit failure, may cause an extra refresh.
 
 Persona lorebook bindings preserve the authored ordered list previously stored as active_lorebook_ids (old-code/src-tauri/src/storage_manager/personas.rs:282–287,309–335). Binding commands add explicit owner CAS and replay receipts over the existing typed ports rather than separate relationship writers.
 
@@ -245,4 +245,6 @@ Character archive and restore preserve the authored graph while changing its roo
 
 Character deletion now checks its revision and replay receipt inside the existing purge transaction, and protects affected active group speakers while retaining group history. Legacy deleted the character inside tracked_write_string (old-code/src-tauri/src/storage_manager/characters.rs:1072-1099). Library media uploads install the blob and asset with the owner change and receipt; process exit before the receipt leaves the original catalog and graph intact. This replaces legacy media preparation before save and reference deletion afterward (old-code/src/ui/pages/characters/hooks/useEditCharacterForm.ts:489-556,705-712). Group library search keeps legacy latest-session activity ordering (old-code/src-tauri/src/storage_manager/group_characters.rs:413,433).
 
-Savepoint identity snapshots follow successful execution rather than SQL preparation. All database savepoint owners use the shared execution method; preparing control statements and failed savepoint commands cannot alter the pending library identities.
+Savepoint owners use SQLite directly; library notifications keep no savepoint snapshots or statement callbacks.
+
+Character deletion checks enabled conversation participants for unresolved group turns, including local participant overrides. Persona purge increments dependent revisions without changing authored timestamps, so replicated purges retain identical dependent rows. Failed persona purges use sync-entity notices. Catalog saves retain unchanged media and scene asset links; only detached references enter the GC queue.

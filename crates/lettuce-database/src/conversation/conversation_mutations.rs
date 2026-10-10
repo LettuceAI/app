@@ -6614,7 +6614,7 @@ mod tests {
         std::fs::copy(&first, &second).expect("replicate");
         let apply = |path: &std::path::Path, now| {
             let database = Database::open(path).expect("database");
-            database.purge_persona_operation(persona, Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
+            database.purge_library_operation(crate::LibraryKind::Persona, &persona.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
             let connection = database.connection().expect("lock");
             ["persona_defaults", "groups", "conversations", "conversation_settings"].map(|table| {
                 let mut statement = connection.prepare(&format!("SELECT * FROM {table}")).expect("query");
@@ -6642,19 +6642,19 @@ mod tests {
         database.connection().expect("connection").execute_batch(
             "CREATE TEMP TRIGGER fail_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'fault'); END;",
         ).expect("fault");
-        assert_eq!(database.purge_group_operation(group, Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Storage));
+        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Storage));
         assert!(ConversationReader::get(database.as_ref(), fixture.conversation_id).is_ok());
         assert!(lettuce_characters::GroupRepository::get(database.as_ref(), group).expect("group").is_some());
         assert!(database.lookup_api_operation("group_delete", "delete").expect("receipt").is_none());
         database.connection().expect("connection").execute_batch("DROP TRIGGER fail_group_receipt").expect("clear fault");
-        assert_eq!(database.purge_group_operation(group, Revision::new(2), "stale", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Conflict));
-        database.purge_group_operation(group, Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)).expect("delete");
+        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::new(2), "stale", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Conflict));
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)).expect("delete");
         assert!(matches!(ConversationReader::get(database.as_ref(), fixture.conversation_id), Err(ConversationRepositoryError::NotFound)));
         drop(fixture);
         drop(database);
         let database = Database::open(&path).expect("reopen");
-        database.purge_group_operation(group, Revision::INITIAL, "delete", "digest", TimestampMillis::new(21)).expect("replay");
-        assert_eq!(database.purge_group_operation(group, Revision::INITIAL, "delete", "changed", TimestampMillis::new(21)), Err(crate::PurgeError::Conflict));
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(21)).expect("replay");
+        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "changed", TimestampMillis::new(21)), Err(crate::PurgeError::Conflict));
         drop(database);
         std::fs::remove_dir_all(root).expect("cleanup");
     }
@@ -6682,7 +6682,7 @@ mod tests {
         assert!(lettuce_characters::GroupRepository::get(&database, group).expect("group").is_some());
         assert!(ConversationReader::get(&database, chat).is_ok());
         assert!(database.lookup_api_operation("group_delete", "crash").expect("receipt").is_none());
-        database.purge_group_operation(group, Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("retry");
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("retry");
         drop(database);
         std::fs::remove_dir_all(root).expect("cleanup");
     }
@@ -6697,7 +6697,7 @@ mod tests {
             connection.create_scalar_function("crash_group_purge", 0, rusqlite::functions::FunctionFlags::SQLITE_UTF8, |_| -> rusqlite::Result<i64> { std::process::exit(77); }).expect("crash function");
             connection.execute_batch("CREATE TEMP TRIGGER crash_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_group_purge(); END;").expect("crash trigger");
         }
-        database.purge_group_operation(group, Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("purge");
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("purge");
         panic!("crash hook was not reached");
     }
 

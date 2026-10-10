@@ -1,4 +1,5 @@
 use super::*;
+use lettuce_types::PersonaId;
 
 /// The tables that still hold rows whose `column` is `id`, with their counts.
 pub(crate) fn remaining_rows(database: &Database, column: &str, id: &str) -> Vec<(String, i64)> {
@@ -122,8 +123,7 @@ fn persona_purge_retains_helper_receipts_and_rolls_back_late_failure() {
         connection.execute_batch("CREATE TEMP TRIGGER fail_persona_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
     }
     let delete = || {
-        database.purge_persona_operation(
-            id,
+        database.purge_library_operation(crate::LibraryKind::Persona, &id.to_string(),
             Revision::new(1),
             "delete-persona",
             "digest",
@@ -157,8 +157,7 @@ fn persona_purge_retains_helper_receipts_and_rolls_back_late_failure() {
     delete().expect("purge");
     delete().expect("replay");
     assert_eq!(
-        database.purge_persona_operation(
-            id,
+        database.purge_library_operation(crate::LibraryKind::Persona, &id.to_string(),
             Revision::new(1),
             "delete-persona",
             "changed",
@@ -241,8 +240,7 @@ fn persona_purge_process_exit_preserves_the_default_and_replay_state() {
         id.to_string()
     );
     database
-        .purge_persona_operation(
-            id,
+        .purge_library_operation(crate::LibraryKind::Persona, &id.to_string(),
             Revision::INITIAL,
             "crash",
             "digest",
@@ -258,7 +256,7 @@ fn persona_purge_crash_child() {
     let Some(path) = std::env::var_os("LETTUCE_PERSONA_PURGE_CRASH_DATABASE") else {
         return;
     };
-    let id = std::env::var("LETTUCE_PERSONA_PURGE_CRASH_ID")
+    let id: PersonaId = std::env::var("LETTUCE_PERSONA_PURGE_CRASH_ID")
         .expect("id")
         .parse()
         .expect("persona id");
@@ -278,8 +276,7 @@ fn persona_purge_crash_child() {
         connection.execute_batch("CREATE TEMP TRIGGER crash_persona_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_persona_purge(); END;").expect("crash trigger");
     }
     database
-        .purge_persona_operation(
-            id,
+        .purge_library_operation(crate::LibraryKind::Persona, &id.to_string(),
             Revision::INITIAL,
             "crash",
             "digest",
@@ -299,7 +296,7 @@ fn persona_purge_preserves_replica_timestamps() {
             connection.execute("INSERT INTO personas(id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [id.to_string()]).expect("persona");
             connection.execute("UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=1", [id.to_string()]).expect("default");
         }
-        database.purge_persona_operation(id, Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
+        database.purge_library_operation(crate::LibraryKind::Persona, &id.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
         database.connection().expect("lock").query_row("SELECT default_persona_id,revision,updated_at FROM persona_defaults", [], |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))).expect("row")
     };
     assert_eq!(apply(20), apply(30));

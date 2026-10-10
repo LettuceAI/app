@@ -7,7 +7,7 @@ mod media_gc;
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use lettuce_types::{CharacterId, ConversationId, GroupId, PersonaId, Revision, TimestampMillis};
+use lettuce_types::{CharacterId, ConversationId, GroupId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, types::Value};
 
 use crate::Database;
@@ -469,7 +469,6 @@ impl<'c> Purge<'c> {
                 return Err(PurgeError::Busy);
             }
         }
-        self.authorize(id)?;
         for conversation in conversations {
             self.conversation(&conversation)?;
         }
@@ -1409,7 +1408,7 @@ impl Database {
                 Err(PurgeError::Conflict)
             };
         }
-        check_character_delete_revision(&connection, id, expected)?;
+        check_delete_revision(&connection, crate::LibraryKind::Character, &id.to_string(), expected)?;
         let parse = |ids: Vec<String>| {
             ids.into_iter()
                 .map(|id| id.parse().map_err(storage))
@@ -1421,21 +1420,27 @@ impl Database {
         }))
     }
 
-    pub fn purge_character_operation(
+    pub fn purge_library_operation(
         &self,
-        id: CharacterId,
+        kind: crate::LibraryKind,
+        id: &str,
         expected: Revision,
         key: &str,
         digest: &str,
         now: TimestampMillis,
     ) -> Result<(), PurgeError> {
+        let (name, command) = match kind {
+            crate::LibraryKind::Character => ("character", "character_delete"),
+            crate::LibraryKind::Group => ("group", "group_delete"),
+            crate::LibraryKind::Persona => ("persona", "persona_delete"),
+        };
         if key.trim().is_empty() || digest.trim().is_empty() {
             return Err(PurgeError::Conflict);
         }
         let mut connection = self.connection().map_err(storage)?;
         purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
             if let Some(receipt) =
-                crate::api_operation_adapter::lookup_in(purge.connection, "character_delete", key)
+                crate::api_operation_adapter::lookup_in(purge.connection, command, key)
                     .map_err(storage)?
             {
                 return if receipt.request_digest == digest {
@@ -1444,14 +1449,18 @@ impl Database {
                     Err(PurgeError::Conflict)
                 };
             }
-            check_character_delete_revision(purge.connection, id, expected)?;
-            record_deleted_at(purge.connection, "character", &id.to_string(), now)?;
-            purge.character_entry(&id.to_string())?;
+            check_delete_revision(purge.connection, kind, id, expected)?;
+            record_deleted_at(purge.connection, name, id, now)?;
+            match kind {
+                crate::LibraryKind::Character => purge.character_entry(id),
+                crate::LibraryKind::Group => purge.group_entry(id),
+                crate::LibraryKind::Persona => purge.persona_entry(id),
+            }?;
             crate::api_operation_adapter::insert_in(
                 purge.connection,
                 &lettuce_transfer::BackupApiOperationReceipt {
                     result_format_version: 2,
-                    command: "character_delete".into(),
+                    command: command.into(),
                     client_operation_id: key.into(),
                     request_digest: digest.into(),
                     result: serde_json::json!(true),
@@ -1481,96 +1490,12 @@ impl Database {
                 Err(PurgeError::Conflict)
             };
         }
-        check_group_delete_revision(&connection, id, expected)?;
+        check_delete_revision(&connection, crate::LibraryKind::Group, &id.to_string(), expected)?;
         group_conversations(&connection, &id.to_string())?
             .into_iter()
             .map(|id| id.parse().map_err(storage))
             .collect::<Result<Vec<_>, _>>()
             .map(Some)
-    }
-
-    pub fn purge_group_operation(
-        &self,
-        id: GroupId,
-        expected: Revision,
-        key: &str,
-        digest: &str,
-        now: TimestampMillis,
-    ) -> Result<(), PurgeError> {
-        if key.trim().is_empty() || digest.trim().is_empty() {
-            return Err(PurgeError::Conflict);
-        }
-        let mut connection = self.connection().map_err(storage)?;
-        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
-            if let Some(receipt) =
-                crate::api_operation_adapter::lookup_in(purge.connection, "group_delete", key)
-                    .map_err(storage)?
-            {
-                return if receipt.request_digest == digest {
-                    Ok(())
-                } else {
-                    Err(PurgeError::Conflict)
-                };
-            }
-            check_group_delete_revision(purge.connection, id, expected)?;
-            record_deleted_at(purge.connection, "group", &id.to_string(), now)?;
-            purge.group_entry(&id.to_string())?;
-            crate::api_operation_adapter::insert_in(
-                purge.connection,
-                &lettuce_transfer::BackupApiOperationReceipt {
-                    result_format_version: 2,
-                    command: "group_delete".into(),
-                    client_operation_id: key.into(),
-                    request_digest: digest.into(),
-                    result: serde_json::json!(true),
-                    committed_at: now,
-                },
-            )
-            .map_err(storage)
-        })
-        .map(|_| ())
-    }
-
-    pub fn purge_persona_operation(
-        &self,
-        id: PersonaId,
-        expected: Revision,
-        key: &str,
-        digest: &str,
-        now: TimestampMillis,
-    ) -> Result<(), PurgeError> {
-        if key.trim().is_empty() || digest.trim().is_empty() {
-            return Err(PurgeError::Conflict);
-        }
-        let mut connection = self.connection().map_err(storage)?;
-        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
-            if let Some(receipt) =
-                crate::api_operation_adapter::lookup_in(purge.connection, "persona_delete", key)
-                    .map_err(storage)?
-            {
-                return if receipt.request_digest == digest {
-                    Ok(())
-                } else {
-                    Err(PurgeError::Conflict)
-                };
-            }
-            check_persona_delete_revision(purge.connection, id, expected)?;
-            record_deleted_at(purge.connection, "persona", &id.to_string(), now)?;
-            purge.persona_entry(&id.to_string())?;
-            crate::api_operation_adapter::insert_in(
-                purge.connection,
-                &lettuce_transfer::BackupApiOperationReceipt {
-                    result_format_version: 2,
-                    command: "persona_delete".into(),
-                    client_operation_id: key.into(),
-                    request_digest: digest.into(),
-                    result: serde_json::json!(true),
-                    committed_at: now,
-                },
-            )
-            .map_err(storage)
-        })
-        .map(|_| ())
     }
 
     /// Deletes a conversation (direct or group) and every row it owns.
@@ -1609,59 +1534,19 @@ impl Database {
     }
 }
 
-fn check_character_delete_revision(
+fn check_delete_revision(
     connection: &Connection,
-    id: CharacterId,
+    kind: crate::LibraryKind,
+    id: &str,
     expected: Revision,
 ) -> Result<(), PurgeError> {
-    let revision: Option<i64> = connection
-        .query_row(
-            "SELECT revision FROM characters WHERE id=?1",
-            [id.to_string()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(storage)?;
-    match revision {
-        None => Err(PurgeError::NotFound),
-        Some(value) if u64::try_from(value).map_err(storage)? != expected.get() => {
-            Err(PurgeError::Conflict)
-        }
-        Some(_) => Ok(()),
-    }
-}
-
-fn check_group_delete_revision(
-    connection: &Connection,
-    id: GroupId,
-    expected: Revision,
-) -> Result<(), PurgeError> {
+    let table = match kind {
+        crate::LibraryKind::Character => "characters",
+        crate::LibraryKind::Group => "groups",
+        crate::LibraryKind::Persona => "personas",
+    };
     let actual: Option<i64> = connection
-        .query_row(
-            "SELECT revision FROM groups WHERE id=?1",
-            [id.to_string()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(storage)?;
-    match actual {
-        None => Err(PurgeError::NotFound),
-        Some(actual) if u64::try_from(actual).map_err(storage)? == expected.get() => Ok(()),
-        Some(_) => Err(PurgeError::Conflict),
-    }
-}
-
-fn check_persona_delete_revision(
-    connection: &Connection,
-    id: PersonaId,
-    expected: Revision,
-) -> Result<(), PurgeError> {
-    let actual: Option<i64> = connection
-        .query_row(
-            "SELECT revision FROM personas WHERE id=?1",
-            [id.to_string()],
-            |row| row.get(0),
-        )
+        .query_row(&format!("SELECT revision FROM {table} WHERE id=?1"), [id], |row| row.get(0))
         .optional()
         .map_err(storage)?;
     match actual {

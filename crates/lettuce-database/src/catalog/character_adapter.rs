@@ -334,47 +334,38 @@ fn id_text<T: ToString>(value: Option<T>) -> Option<String> {
     value.map(|value| value.to_string())
 }
 
-fn cursor_encode(updated_at: TimestampMillis, id: CharacterId) -> Result<String, RepositoryError> {
+fn cursor_encode(
+    key: serde_json::Value,
+    id: String,
+    request: &lettuce_characters::CharacterSearch,
+) -> Result<String, RepositoryError> {
     let envelope = Envelope {
         format_version: CHARACTER_CURSOR_VERSION,
-        value: (updated_at.get(), id.to_string()),
+        value: (key, id, request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"),
     };
     serde_json::to_vec(&envelope)
         .map(|bytes| crate::hex_encode(&bytes))
-        .map_err(|_| {
-            RepositoryError::Invalid(lettuce_characters::ValidationError::Invariant {
-                field: "character.cursor",
-            })
-        })
+        .map_err(|_| RepositoryError::Storage)
 }
 
-fn cursor_decode(value: Option<&str>) -> Result<Option<(i64, CharacterId)>, RepositoryError> {
+fn cursor_decode(
+    value: Option<&str>,
+    request: &lettuce_characters::CharacterSearch,
+) -> Result<Option<(rusqlite::types::Value, String)>, RepositoryError> {
+    let invalid = || RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue { field: "character.cursor" });
     let Some(value) = value else { return Ok(None) };
-    let bytes = crate::hex_decode(value).map_err(|_| {
-        RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-            field: "character.cursor",
-        })
-    })?;
-    let envelope: Envelope<(i64, String)> = serde_json::from_slice(&bytes).map_err(|_| {
-        RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-            field: "character.cursor",
-        })
-    })?;
-    if envelope.format_version != CHARACTER_CURSOR_VERSION {
-        return Err(RepositoryError::Invalid(
-            lettuce_characters::ValidationError::InvalidValue {
-                field: "character.cursor",
-            },
-        ));
+    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
+    let envelope: Envelope<(serde_json::Value, String, lettuce_characters::LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
+    if envelope.format_version != CHARACTER_CURSOR_VERSION || sort != request.sort || query != canonical_name(request.text.trim()) || search_nickname != request.search_nickname || include_archived != request.include_archived || entity != "character" {
+        return Err(invalid());
     }
-    Ok(Some((
-        envelope.value.0,
-        envelope.value.1.parse().map_err(|_| {
-            RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-                field: "character.cursor",
-            })
-        })?,
-    )))
+    id.parse::<CharacterId>().map_err(|_| invalid())?;
+    let key = match sort {
+        lettuce_characters::LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
+        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
+    };
+    Ok(Some((key, id)))
 }
 
 fn image_assets(
@@ -1015,22 +1006,24 @@ fn replace_character_media(
     character_id: CharacterId,
     media: &CharacterMedia,
 ) -> Result<(), RepositoryError> {
-    tx.execute(
-        "DELETE FROM character_media WHERE character_id=?1",
-        [character_id.to_string()],
-    )
-    .map_err(db_error)?;
+    let owner = character_id.to_string();
+    let ids = serde_json::to_string(&media.links.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM character_media WHERE character_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![owner, ids]).map_err(db_error)?;
+    let mut statement = tx.prepare("SELECT asset_id,slot,ordinal FROM character_media WHERE character_id=?1").map_err(db_error)?;
+    let existing = statement.query_map([&owner], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u32>(2)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
+    drop(statement);
+    let offset = existing.iter().map(|row| i64::from(row.2)).chain(media.links.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
+    for (index, (asset, slot, ordinal)) in existing.iter().enumerate() {
+        let link = media.links.iter().find(|link| link.asset_id.to_string() == *asset).ok_or(RepositoryError::Storage)?;
+        if *slot != media_slot_name(link.slot) || *ordinal != link.ordinal {
+            tx.execute("UPDATE character_media SET slot='design_reference',ordinal=?3 WHERE character_id=?1 AND asset_id=?2", params![owner, asset, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+        }
+    }
     for link in &media.links {
-        tx.execute(
-            "INSERT INTO character_media(character_id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4)",
-            params![
-                character_id.to_string(),
-                link.asset_id.to_string(),
-                media_slot_name(link.slot),
-                link.ordinal
-            ],
-        )
-        .map_err(db_error)?;
+        if existing.iter().any(|row| row.0 == link.asset_id.to_string() && row.1 == media_slot_name(link.slot) && row.2 == link.ordinal) {
+            continue;
+        }
+        tx.execute("INSERT INTO character_media(character_id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4) ON CONFLICT(character_id,asset_id) DO UPDATE SET slot=excluded.slot,ordinal=excluded.ordinal", params![owner, link.asset_id.to_string(), media_slot_name(link.slot), link.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -1040,9 +1033,11 @@ fn insert_character_presentation_refs(
     character_id: CharacterId,
     presentation: &CharacterPresentationV1,
 ) -> Result<(), RepositoryError> {
+    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM character_presentation_asset_refs WHERE character_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![character_id.to_string(), ids]).map_err(db_error)?;
     for asset_id in presentation.referenced_asset_ids() {
         tx.execute(
-            "INSERT INTO character_presentation_asset_refs(character_id,asset_id) VALUES (?1,?2)",
+            "INSERT OR IGNORE INTO character_presentation_asset_refs(character_id,asset_id) VALUES (?1,?2)",
             params![character_id.to_string(), asset_id.to_string()],
         )
         .map_err(db_error)?;
@@ -1056,7 +1051,7 @@ fn insert_scene(
     scene: &Scene,
 ) -> Result<(), RepositoryError> {
     tx.execute(
-        "INSERT INTO scenes (character_id,id,status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+        "INSERT INTO scenes (character_id,id,status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(character_id,id) DO UPDATE SET status=excluded.status,ordinal=excluded.ordinal,content_json=excluded.content_json,direction=excluded.direction,selected_variant_id=excluded.selected_variant_id,revision=excluded.revision,created_at=excluded.created_at,updated_at=excluded.updated_at WHERE (status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) IS NOT (excluded.status,excluded.ordinal,excluded.content_json,excluded.direction,excluded.selected_variant_id,excluded.revision,excluded.created_at,excluded.updated_at)",
         params![character_id.to_string(), scene.id.to_string(), status_name(scene.status), scene.ordinal,
             encode(&scene.content, DOCUMENT_VERSION)?, scene.direction, id_text(scene.selected_variant_id), sql_u64(scene.revision.get())?, scene.created_at.get(), scene.updated_at.get()],
     ).map_err(db_error)?;
@@ -1069,11 +1064,25 @@ fn insert_scene_assets(
     scene_id: SceneId,
     assets: &[SceneAssetLink],
 ) -> Result<(), RepositoryError> {
+    let owner = character_id.to_string();
+    let scene = scene_id.to_string();
+    let ids = serde_json::to_string(&assets.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM scene_assets WHERE character_id=?1 AND scene_id=?2 AND asset_id NOT IN (SELECT value FROM json_each(?3))", params![owner, scene, ids]).map_err(db_error)?;
+    let mut statement = tx.prepare("SELECT id,asset_id,slot,ordinal FROM scene_assets WHERE character_id=?1 AND scene_id=?2").map_err(db_error)?;
+    let existing = statement.query_map(params![owner, scene], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, u32>(3)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
+    drop(statement);
+    let offset = existing.iter().map(|row| i64::from(row.3)).chain(assets.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
+    for (index, row) in existing.iter().enumerate() {
+        let link = assets.iter().find(|link| link.asset_id.to_string() == row.1).ok_or(RepositoryError::Storage)?;
+        if row.2 != scene_slot_name(link.slot) || row.3 != link.ordinal {
+            tx.execute("UPDATE scene_assets SET slot='inline',ordinal=?4 WHERE character_id=?1 AND scene_id=?2 AND asset_id=?3", params![owner, scene, row.1, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+        }
+    }
     for asset in assets {
-        tx.execute(
-            "INSERT INTO scene_assets (character_id,scene_id,id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![character_id.to_string(), scene_id.to_string(), asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal],
-        ).map_err(db_error)?;
+        if existing.iter().any(|row| row.0 == asset.id.to_string() && row.1 == asset.asset_id.to_string() && row.2 == scene_slot_name(asset.slot) && row.3 == asset.ordinal) {
+            continue;
+        }
+        tx.execute("INSERT INTO scene_assets(character_id,scene_id,id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(character_id,scene_id,asset_id) DO UPDATE SET id=excluded.id,slot=excluded.slot,ordinal=excluded.ordinal", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -1241,19 +1250,25 @@ fn replace_character_graph(
         return Ok(());
     }
     validate_plan_assets(tx, &plan)?;
+    let current = load_details(tx, id).map_err(db_error)?.ok_or(RepositoryError::NotFound)?;
     for table in [
         "starter_messages",
         "conversation_starters",
-        "scene_assets",
         "scene_variants",
-        "scenes",
-        "character_presentation_asset_refs",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE character_id=?1"),
             [id.to_string()],
         )
         .map_err(db_error)?;
+    }
+    let scene_ids = serde_json::to_string(&details.scenes.iter().map(|scene| scene.id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM scenes WHERE character_id=?1 AND id NOT IN (SELECT value FROM json_each(?2))", params![id.to_string(), scene_ids]).map_err(db_error)?;
+    let offset = current.scenes.iter().map(|scene| i64::from(scene.ordinal)).chain(details.scenes.iter().map(|scene| i64::from(scene.ordinal))).max().unwrap_or(0) + 1;
+    for (index, old) in current.scenes.iter().enumerate() {
+        if details.scenes.iter().any(|scene| scene.id == old.id && scene.ordinal != old.ordinal) {
+            tx.execute("UPDATE scenes SET ordinal=?3 WHERE character_id=?1 AND id=?2", params![id.to_string(), old.id.to_string(), offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+        }
     }
     update_character_root(tx, &details.character, synced)?;
     replace_character_media(tx, id, &details.character.media)?;
@@ -1461,54 +1476,13 @@ impl CharacterRepository for Database {
         request: PageRequest,
         include_archived: bool,
     ) -> Result<Page<Character>, RepositoryError> {
-        let cursor = cursor_decode(request.cursor.as_deref())?;
-        let limit = usize::from(request.limit.get()).max(1);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(db_error)?;
-        let mut sql = String::from("SELECT id FROM characters WHERE (?1 OR status='active')");
-        if cursor.is_some() {
-            sql.push_str(" AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3))");
-        }
-        sql.push_str(" ORDER BY updated_at DESC,id ASC LIMIT ?4");
-        let (cursor_time, cursor_id) = cursor
-            .map(|(time, id)| (Some(time), Some(id.to_string())))
-            .unwrap_or((None, None));
-        let mut statement = tx.prepare(&sql).map_err(db_error)?;
-        let ids = statement
-            .query_map(
-                params![
-                    include_archived,
-                    cursor_time,
-                    cursor_id,
-                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
-                ],
-                |row| id(row.get(0)?),
-            )
-            .map_err(db_error)?
-            .collect::<rusqlite::Result<Vec<CharacterId>>>()
-            .map_err(db_error)?;
-        drop(statement);
-        let mut ids = ids;
-        let has_more = ids.len() > limit;
-        if has_more {
-            ids.truncate(limit);
-        }
-        let mut items = Vec::with_capacity(ids.len());
-        for id in ids {
-            items.push(load_character(&tx, id)?);
-        }
-        let next_cursor = if has_more {
-            items
-                .last()
-                .map(|item| cursor_encode(item.updated_at, item.id))
-                .transpose()?
-        } else {
-            None
-        };
-        tx.commit().map_err(db_error)?;
-        Ok(Page { items, next_cursor })
+        let page = self.search(lettuce_characters::CharacterSearch {
+            text: String::new(),
+            sort: lettuce_characters::LibrarySort::UpdatedDesc,
+            search_nickname: false,
+            include_archived,
+        }, request)?;
+        Ok(page)
     }
 
     fn search(
@@ -1516,25 +1490,10 @@ impl CharacterRepository for Database {
         request: CharacterSearch,
         page: PageRequest,
     ) -> Result<Page<Character>, RepositoryError> {
-        use super::library_cursor::{LibraryCursor, LibraryCursorKey};
         use lettuce_characters::LibrarySort;
 
         let query = canonical_name(request.text.trim());
-        let cursor = LibraryCursor::decode(
-            page.cursor.as_deref(),
-            "character",
-            request.sort,
-            &query,
-            request.search_nickname,
-            request.include_archived,
-        )?;
-        if let Some(cursor) = &cursor {
-            cursor.id.parse::<CharacterId>().map_err(|_| {
-                RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-                    field: "library.cursor",
-                })
-            })?;
-        }
+        let cursor = cursor_decode(page.cursor.as_deref(), &request)?;
         let limit = usize::from(page.limit.get()).max(1);
         let pattern = format!(
             "%{}%",
@@ -1561,8 +1520,8 @@ impl CharacterRepository for Database {
                 params![
                     request.include_archived,
                     pattern,
-                    cursor.as_ref().map(|value| value.key.sql_value()),
-                    cursor.as_ref().map(|value| &value.id),
+                    cursor.as_ref().map(|value| &value.0),
+                    cursor.as_ref().map(|value| &value.1),
                     i64::try_from(limit + 1).unwrap_or(i64::MAX),
                     request.search_nickname
                 ],
@@ -1581,26 +1540,11 @@ impl CharacterRepository for Database {
             items
                 .last()
                 .map(|item| {
-                    LibraryCursor {
-                        entity: "character".into(),
-                        sort: request.sort,
-                        query,
-                        search_nickname: request.search_nickname,
-                        include_archived: request.include_archived,
-                        key: match request.sort {
-                            LibrarySort::CreatedAsc => {
-                                LibraryCursorKey::Time(item.created_at.get())
-                            }
-                            LibrarySort::UpdatedDesc => {
-                                LibraryCursorKey::Time(item.updated_at.get())
-                            }
-                            LibrarySort::Name => {
-                                LibraryCursorKey::Name(canonical_name(&item.profile.name))
-                            }
-                        },
-                        id: item.id.to_string(),
-                    }
-                    .encode()
+                    cursor_encode(match request.sort {
+                        LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
+                        LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
+                        LibrarySort::Name => serde_json::json!(canonical_name(&item.profile.name)),
+                    }, item.id.to_string(), &request)
                 })
                 .transpose()?
         } else {
@@ -5816,8 +5760,7 @@ mod smoke_tests {
             1
         );
         sync_characters(&b, &a, 110);
-        a.purge_persona_operation(
-            persona,
+        a.purge_library_operation(crate::LibraryKind::Persona, &persona.to_string(),
             Revision::INITIAL,
             "persona",
             "persona-digest",
@@ -5838,8 +5781,7 @@ mod smoke_tests {
                 .persona,
             lettuce_characters::Selection::Inherit
         );
-        a.purge_group_operation(
-            id,
+        a.purge_library_operation(crate::LibraryKind::Group, &id.to_string(),
             Revision::new(2),
             "group",
             "group-digest",
@@ -5902,6 +5844,28 @@ mod smoke_tests {
         assert_eq!(apply("digest").expect("replay"), destination.to_string());
         assert_eq!(apply("different"), Err(crate::ApiOperationError::Conflict));
     }
+    #[test]
+    fn character_save_queues_only_detached_assets() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, avatar, _, _) = graph_fixture(&database);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        let save = |plan: CreateCharacterPlan, revision, key: &str| {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", key, key, TimestampMillis::new(10), |scope| scope.save_character(plan, Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+        };
+        let queued = || {
+            let connection = database.connection().expect("lock");
+            connection.prepare("SELECT asset_id FROM media_gc_candidates ORDER BY asset_id").expect("query").query_map([], |row| row.get::<_, String>(0)).expect("rows").collect::<rusqlite::Result<Vec<_>>>().expect("ids")
+        };
+        save(plan.clone(), 1, "unchanged");
+        assert!(queued().is_empty(), "unchanged avatar and scene assets must stay out of GC");
+        plan.scenes[0].direction = Some("Edited scene".into());
+        save(plan.clone(), 2, "scene-edit");
+        assert!(queued().is_empty(), "editing scene text must retain its assets");
+        plan.character.media.links.retain(|link| link.asset_id != avatar);
+        save(plan, 3, "detach");
+        assert_eq!(queued(), vec![avatar.to_string()]);
+    }
+
     #[test]
     fn character_save_and_receipt_are_atomic_and_preserve_authored_fields() {
         let database = Database::open_in_memory().expect("database");
@@ -6244,8 +6208,7 @@ mod smoke_tests {
         let (plan, _, _, _) = graph_fixture(&database);
         let before = CharacterRepository::create(&database, plan).expect("create");
         let apply = |digest| {
-            database.purge_character_operation(
-                before.character.id,
+            database.purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
                 Revision::INITIAL,
                 "delete",
                 digest,
@@ -6270,8 +6233,7 @@ mod smoke_tests {
             .execute_batch("DROP TRIGGER fail_character_delete_receipt;")
             .expect("clear");
         assert_eq!(
-            database.purge_character_operation(
-                before.character.id,
+            database.purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
                 Revision::new(2),
                 "stale",
                 "digest",
@@ -6482,7 +6444,7 @@ mod smoke_tests {
     fn character_delete_process_exit_before_receipt_preserves_the_complete_graph() {
         if let Some(path) = std::env::var_os("LETTUCE_CHARACTER_DELETE_CRASH_DATABASE") {
             let database = Database::open(path).expect("child database");
-            let id = std::env::var("LETTUCE_CHARACTER_DELETE_CRASH_ID")
+            let id: CharacterId = std::env::var("LETTUCE_CHARACTER_DELETE_CRASH_ID")
                 .expect("id")
                 .parse()
                 .expect("character id");
@@ -6501,8 +6463,7 @@ mod smoke_tests {
                 connection.execute_batch("CREATE TEMP TRIGGER crash_character_delete_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_character_delete(); END;").expect("trigger");
             }
             database
-                .purge_character_operation(
-                    id,
+                .purge_library_operation(crate::LibraryKind::Character, &id.to_string(),
                     Revision::INITIAL,
                     "crash-delete",
                     "digest",
@@ -6543,8 +6504,7 @@ mod smoke_tests {
                 .is_none()
         );
         database
-            .purge_character_operation(
-                before.character.id,
+            .purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
                 Revision::INITIAL,
                 "crash-delete",
                 "digest",
@@ -6552,8 +6512,7 @@ mod smoke_tests {
             )
             .expect("retry");
         database
-            .purge_character_operation(
-                before.character.id,
+            .purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
                 Revision::INITIAL,
                 "crash-delete",
                 "digest",

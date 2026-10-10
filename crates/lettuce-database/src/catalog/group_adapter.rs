@@ -205,42 +205,38 @@ fn scene_slot(value: &str) -> Result<SceneAssetSlot, rusqlite::Error> {
     }
 }
 
-fn cursor_encode(updated_at: TimestampMillis, id: GroupId) -> Result<String, RepositoryError> {
-    let bytes = serde_json::to_vec(&Envelope {
+fn cursor_encode(
+    key: serde_json::Value,
+    id: String,
+    request: &lettuce_characters::GroupSearch,
+) -> Result<String, RepositoryError> {
+    let envelope = Envelope {
         format_version: CURSOR_VERSION,
-        value: (updated_at.get(), id.to_string()),
-    })
-    .map_err(|_| RepositoryError::Storage)?;
-    Ok(crate::hex_encode(&bytes))
+        value: (key, id, request.sort, canonical_name(request.text.trim()), false, request.include_archived, "group"),
+    };
+    serde_json::to_vec(&envelope)
+        .map(|bytes| crate::hex_encode(&bytes))
+        .map_err(|_| RepositoryError::Storage)
 }
 
-fn cursor_decode(cursor: Option<&str>) -> Result<Option<(i64, GroupId)>, RepositoryError> {
-    let Some(cursor) = cursor else {
-        return Ok(None);
-    };
-    let bytes = crate::hex_decode(cursor).map_err(|_| {
-        RepositoryError::Invalid(ValidationError::InvalidValue {
-            field: "group.cursor",
-        })
-    })?;
-    let envelope: Envelope<(i64, String)> = serde_json::from_slice(&bytes).map_err(|_| {
-        RepositoryError::Invalid(ValidationError::InvalidValue {
-            field: "group.cursor",
-        })
-    })?;
-    if envelope.format_version != CURSOR_VERSION {
-        return Err(RepositoryError::Invalid(ValidationError::InvalidValue {
-            field: "group.cursor",
-        }));
+fn cursor_decode(
+    value: Option<&str>,
+    request: &lettuce_characters::GroupSearch,
+) -> Result<Option<(rusqlite::types::Value, String)>, RepositoryError> {
+    let invalid = || RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue { field: "group.cursor" });
+    let Some(value) = value else { return Ok(None) };
+    let bytes = crate::hex_decode(value).map_err(|_| invalid())?;
+    let envelope: Envelope<(serde_json::Value, String, lettuce_characters::LibrarySort, String, bool, bool, String)> = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+    let (key, id, sort, query, search_nickname, include_archived, entity) = envelope.value;
+    if envelope.format_version != CURSOR_VERSION || sort != request.sort || query != canonical_name(request.text.trim()) || search_nickname || include_archived != request.include_archived || entity != "group" {
+        return Err(invalid());
     }
-    Ok(Some((
-        envelope.value.0,
-        envelope.value.1.parse().map_err(|_| {
-            RepositoryError::Invalid(ValidationError::InvalidValue {
-                field: "group.cursor",
-            })
-        })?,
-    )))
+    id.parse::<GroupId>().map_err(|_| invalid())?;
+    let key = match sort {
+        lettuce_characters::LibrarySort::Name => rusqlite::types::Value::Text(key.as_str().ok_or_else(invalid)?.to_owned()),
+        _ => rusqlite::types::Value::Integer(key.as_i64().ok_or_else(invalid)?),
+    };
+    Ok(Some((key, id)))
 }
 
 fn group_row(
@@ -611,13 +607,32 @@ fn insert_scene(
     starting: &GroupStartingScene,
 ) -> Result<(), RepositoryError> {
     starting.validate(group_id)?;
-    tx.execute("INSERT INTO group_starting_scenes (group_id,id,status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) VALUES (?1,?2,?3,0,?4,?5,?6,?7,?8,?9)", params![group_id.to_string(), starting.scene.id.to_string(), status_name(starting.scene.status), encode(&starting.scene.content, DOCUMENT_VERSION)?, starting.scene.direction, starting.scene.selected_variant_id.map(|id| id.to_string()), sql_revision(starting.scene.revision)?, starting.scene.created_at.get(), starting.scene.updated_at.get()]).map_err(db_error)?;
+    tx.execute("INSERT INTO group_starting_scenes (group_id,id,status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) VALUES (?1,?2,?3,0,?4,?5,?6,?7,?8,?9) ON CONFLICT(group_id,id) DO UPDATE SET status=excluded.status,content_json=excluded.content_json,direction=excluded.direction,selected_variant_id=excluded.selected_variant_id,revision=excluded.revision,created_at=excluded.created_at,updated_at=excluded.updated_at WHERE (status,content_json,direction,selected_variant_id,revision,created_at,updated_at) IS NOT (excluded.status,excluded.content_json,excluded.direction,excluded.selected_variant_id,excluded.revision,excluded.created_at,excluded.updated_at)", params![group_id.to_string(), starting.scene.id.to_string(), status_name(starting.scene.status), encode(&starting.scene.content, DOCUMENT_VERSION)?, starting.scene.direction, starting.scene.selected_variant_id.map(|id| id.to_string()), sql_revision(starting.scene.revision)?, starting.scene.created_at.get(), starting.scene.updated_at.get()]).map_err(db_error)?;
+    tx.execute("DELETE FROM group_scene_variants WHERE group_id=?1 AND scene_id=?2", params![group_id.to_string(), starting.scene.id.to_string()]).map_err(db_error)?;
     for variant in &starting.variants {
         tx.execute("INSERT INTO group_scene_variants (group_id,id,scene_id,ordinal,content_json,direction,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![group_id.to_string(), variant.id.to_string(), variant.scene_id.to_string(), variant.ordinal, encode(&variant.content, DOCUMENT_VERSION)?, variant.direction, sql_revision(variant.revision)?, variant.created_at.get(), variant.updated_at.get()]).map_err(db_error)?;
     }
-    for link in &starting.scene.assets {
-        ensure_image_asset(tx, link.asset_id)?;
-        tx.execute("INSERT INTO group_scene_assets (group_id,scene_id,id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,?3,?4,'image',?5,?6)", params![group_id.to_string(), starting.scene.id.to_string(), link.id.to_string(), link.asset_id.to_string(), scene_slot_name(link.slot), link.ordinal]).map_err(db_error)?;
+    let owner = group_id.to_string();
+    let scene = starting.scene.id.to_string();
+    let assets = &starting.scene.assets;
+    let ids = serde_json::to_string(&assets.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM group_scene_assets WHERE group_id=?1 AND scene_id=?2 AND asset_id NOT IN (SELECT value FROM json_each(?3))", params![owner, scene, ids]).map_err(db_error)?;
+    let mut statement = tx.prepare("SELECT id,asset_id,slot,ordinal FROM group_scene_assets WHERE group_id=?1 AND scene_id=?2").map_err(db_error)?;
+    let existing = statement.query_map(params![owner, scene], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, u32>(3)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
+    drop(statement);
+    let offset = existing.iter().map(|row| i64::from(row.3)).chain(assets.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
+    for (index, row) in existing.iter().enumerate() {
+        let link = assets.iter().find(|link| link.asset_id.to_string() == row.1).ok_or(RepositoryError::Storage)?;
+        if row.2 != scene_slot_name(link.slot) || row.3 != link.ordinal {
+            tx.execute("UPDATE group_scene_assets SET slot='inline',ordinal=?4 WHERE group_id=?1 AND scene_id=?2 AND asset_id=?3", params![owner, scene, row.1, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+        }
+    }
+    for asset in assets {
+        ensure_image_asset(tx, asset.asset_id)?;
+        if existing.iter().any(|row| row.0 == asset.id.to_string() && row.1 == asset.asset_id.to_string() && row.2 == scene_slot_name(asset.slot) && row.3 == asset.ordinal) {
+            continue;
+        }
+        tx.execute("INSERT INTO group_scene_assets(group_id,scene_id,id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,?3,?4,'image',?5,?6) ON CONFLICT(group_id,scene_id,asset_id) DO UPDATE SET id=excluded.id,slot=excluded.slot,ordinal=excluded.ordinal", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -715,14 +730,11 @@ fn write_presentation(
     presentation: &ChatAppearanceV1,
 ) -> Result<(), RepositoryError> {
     presentation.validate()?;
-    tx.execute(
-        "DELETE FROM group_presentation_asset_refs WHERE group_id=?1",
-        [group_id.to_string()],
-    )
-    .map_err(db_error)?;
+    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM group_presentation_asset_refs WHERE group_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![group_id.to_string(), ids]).map_err(db_error)?;
     for asset_id in presentation.referenced_asset_ids() {
         ensure_image_asset(tx, asset_id)?;
-        tx.execute("INSERT INTO group_presentation_asset_refs (group_id,asset_id,blob_kind) VALUES (?1,?2,'image')", params![group_id.to_string(), asset_id.to_string()]).map_err(db_error)?;
+        tx.execute("INSERT OR IGNORE INTO group_presentation_asset_refs (group_id,asset_id,blob_kind) VALUES (?1,?2,'image')", params![group_id.to_string(), asset_id.to_string()]).map_err(db_error)?;
     }
     tx.execute(
         "UPDATE groups SET presentation_json=?2 WHERE id=?1",
@@ -870,8 +882,8 @@ fn replace_group_graph(
     }
     let group = &details.group;
     tx.execute(
-        "DELETE FROM group_starting_scenes WHERE group_id=?1",
-        [group.id.to_string()],
+        "DELETE FROM group_starting_scenes WHERE group_id=?1 AND (?2 IS NULL OR id<>?2)",
+        params![group.id.to_string(), details.starting_scene.as_ref().map(|scene| scene.scene.id.to_string())],
     )
     .map_err(db_error)?;
     tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode=?5,persona_selection_kind=?6,persona_id=?7,speaker_selection=?8,memory_policy=?9,disable_character_lorebooks=?10,group_conversation_prompt_id=?11,group_roleplay_prompt_id=?12,presentation_json=?13,background_asset_id=?14,starting_scene_id=?15,revision=?16,created_at=?17,updated_at=?18 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), chat_mode_name(group.chat_mode), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, group.group_conversation_prompt_id.map(|id| id.to_string()), group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get()]).map_err(db_error)?;
@@ -986,24 +998,9 @@ impl GroupRepository for Database {
         request: lettuce_characters::GroupSearch,
         page: PageRequest,
     ) -> Result<Page<lettuce_characters::GroupLibraryItem>, RepositoryError> {
-        use super::library_cursor::{LibraryCursor, LibraryCursorKey};
         use lettuce_characters::{GroupLibraryItem, LibrarySort};
         let query = canonical_name(request.text.trim());
-        let cursor = LibraryCursor::decode(
-            page.cursor.as_deref(),
-            "group",
-            request.sort,
-            &query,
-            false,
-            request.include_archived,
-        )?;
-        if let Some(cursor) = &cursor {
-            cursor.id.parse::<GroupId>().map_err(|_| {
-                RepositoryError::Invalid(ValidationError::InvalidValue {
-                    field: "library.cursor",
-                })
-            })?;
-        }
+        let cursor = cursor_decode(page.cursor.as_deref(), &request)?;
         let (column, comparison, direction) = match request.sort {
             LibrarySort::CreatedAsc => ("created_at", ">", "ASC"),
             LibrarySort::UpdatedDesc => ("activity_at", "<", "DESC"),
@@ -1032,14 +1029,14 @@ impl GroupRepository for Database {
                 params![
                     request.include_archived,
                     pattern,
-                    cursor.as_ref().map(|value| value.key.sql_value()),
-                    cursor.as_ref().map(|value| &value.id),
+                    cursor.as_ref().map(|value| &value.0),
+                    cursor.as_ref().map(|value| &value.1),
                     i64::try_from(limit + 1).map_err(|_| RepositoryError::Storage)?
                 ],
                 |row| {
                     let key = match request.sort {
-                        LibrarySort::Name => LibraryCursorKey::Name(row.get(2)?),
-                        _ => LibraryCursorKey::Time(row.get(2)?),
+                        LibrarySort::Name => serde_json::json!(row.get::<_, String>(2)?),
+                        _ => serde_json::json!(row.get::<_, i64>(2)?),
                     };
                     Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, key))
                 },
@@ -1064,16 +1061,7 @@ impl GroupRepository for Database {
         }
         let next_cursor = if has_more {
             last.map(|(id, key)| {
-                LibraryCursor {
-                    entity: "group".into(),
-                    sort: request.sort,
-                    query,
-                    search_nickname: false,
-                    include_archived: request.include_archived,
-                    key,
-                    id,
-                }
-                .encode()
+                cursor_encode(key, id, &request)
             })
             .transpose()?
         } else {
@@ -1088,59 +1076,12 @@ impl GroupRepository for Database {
         request: PageRequest,
         include_archived: bool,
     ) -> Result<Page<GroupProfile>, RepositoryError> {
-        let cursor = cursor_decode(request.cursor.as_deref())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(db_error)?;
-        let limit = i64::from(request.limit.get());
-        let mut sql = String::from("SELECT id,updated_at FROM groups WHERE ");
-        if !include_archived {
-            sql.push_str("status='active' AND ");
-        }
-        if cursor.is_some() {
-            sql.push_str("(updated_at < ?1 OR (updated_at = ?1 AND id > ?2)) AND ");
-        }
-        if cursor.is_some() {
-            sql.push_str("1=1 ORDER BY updated_at DESC,id ASC LIMIT ?3");
-        } else {
-            sql.push_str("1=1 ORDER BY updated_at DESC,id ASC LIMIT ?1");
-        }
-        let mut statement = tx.prepare(&sql).map_err(db_error)?;
-        let mut rows = if let Some((updated, id)) = cursor {
-            statement
-                .query(params![updated, id.to_string(), limit + 1])
-                .map_err(db_error)?
-        } else {
-            statement.query(params![limit + 1]).map_err(db_error)?
-        };
-        let mut keys = Vec::new();
-        while let Some(row) = rows.next().map_err(db_error)? {
-            let key_id: GroupId =
-                id(row.get::<_, String>(0).map_err(db_error)?).map_err(db_error)?;
-            let updated_at = TimestampMillis::new(row.get(1).map_err(db_error)?);
-            keys.push((key_id, updated_at));
-        }
-        drop(rows);
-        drop(statement);
-        let has_next = keys.len() > usize::try_from(limit).map_err(|_| RepositoryError::Storage)?;
-        keys.truncate(usize::try_from(limit).map_err(|_| RepositoryError::Storage)?);
-        let mut items = Vec::with_capacity(keys.len());
-        for (group_id, _) in &keys {
-            let details = load_details(&tx, *group_id)
-                .map_err(db_error)?
-                .ok_or(RepositoryError::Storage)?;
-            items.push(details.group);
-        }
-        let next_cursor = if has_next {
-            keys.last()
-                .map(|(id, updated)| cursor_encode(*updated, *id))
-                .transpose()?
-        } else {
-            None
-        };
-        tx.commit().map_err(db_error)?;
-        Ok(Page { items, next_cursor })
+        let page = self.search(lettuce_characters::GroupSearch {
+            text: String::new(),
+            sort: lettuce_characters::LibrarySort::UpdatedDesc,
+            include_archived,
+        }, request)?;
+        Ok(Page { items: page.items.into_iter().map(|item| item.details.group).collect(), next_cursor: page.next_cursor })
     }
 
     fn rename(
@@ -3227,6 +3168,26 @@ mod tests {
             )
             .expect("group"),
             starting_scene: None,
+        }
+    }
+
+    #[test]
+    fn group_save_keeps_unchanged_scene_assets_out_of_gc() {
+        let database = Database::open_in_memory().expect("database");
+        let mut plan = library_plan(&database);
+        let asset = image_asset(&database, 'e');
+        let mut scene = Scene::new(SceneId::new(), SceneOwner::Group(plan.group.id), 0, SceneDocumentV1::new(vec![ScenePart::Text { text: "Opening".into() }]).expect("document"), TimestampMillis::new(1)).expect("scene");
+        scene.assets.push(SceneAssetLink { id: SceneAssetLinkId::new(), asset_id: asset, slot: SceneAssetSlot::Background, ordinal: 0 });
+        plan.group.starting_scene_id = Some(scene.id);
+        plan.starting_scene = Some(GroupStartingScene { scene, variants: Vec::new() });
+        GroupRepository::create(&database, plan.clone()).expect("create");
+        for revision in 1..=2 {
+            if revision == 2 {
+                plan.starting_scene.as_mut().expect("scene").scene.direction = Some("Edited text".into());
+            }
+            database.commit_api_operation::<GroupDetails, crate::ApiOperationError>("group_save", &revision.to_string(), "digest", TimestampMillis::new(10), |scope| scope.save_group(plan.clone(), Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+            let queued: i64 = database.connection().expect("lock").query_row("SELECT count(*) FROM media_gc_candidates", [], |row| row.get(0)).expect("queue");
+            assert_eq!(queued, 0);
         }
     }
 
