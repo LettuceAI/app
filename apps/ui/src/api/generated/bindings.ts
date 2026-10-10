@@ -377,7 +377,12 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails =
+/**
+ *  The database this process opened was kept by a cutover (restore or
+ *  reset) and accepts no writes; the app must restart on the active one.
+ */
+{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -1455,6 +1460,12 @@ export type DatabaseFileDeleteRequest = {
 	client_operation_id: string,
 };
 
+/**
+ *  Why a listed database file needs attention: an unreadable file blocks
+ *  media collection until it is deleted.
+ */
+export type DatabaseFileError = "unreadable";
+
 export type DatabaseFileKind = "initial" | "restore" | "legacy_restore" | "reset" | "existing";
 
 export type DatabaseFileView = {
@@ -1465,6 +1476,7 @@ export type DatabaseFileView = {
 	size: number,
 	active: boolean,
 	deletable: boolean,
+	error: DatabaseFileError | null,
 };
 
 export type DefaultCharacterRules = {
@@ -1638,7 +1650,7 @@ export type GenerationCancelRequest = {
  */
 export type GenerationEvent = { type: "started"; turn_id: string } | { type: "model_loading"; turn_id: string; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; turn_id: string; code: RuntimeNoticeCode } | { type: "speaker_selecting"; turn_id: string } | { type: "speaker_selected"; turn_id: string; character_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
-export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
+export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal" | "database_write_fenced";
 
 /**  Where a model and its KV cache would live. */
 export type GpuModeDto = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu";
@@ -4500,13 +4512,13 @@ export type PurgeNoticeDismissRequest = {
 	id: string,
 };
 
-export type PurgeNoticeEntityDto = "conversation" | "character" | "group" | "database_file" | "media_asset" | "sync_entity";
+export type PurgeNoticeEntityDto = "conversation" | "character" | "group" | "database_file" | "media_asset" | "sync_entity" | "usage_record";
 
 export type PurgeNoticeList = {
 	items: PurgeNoticeView[],
 };
 
-export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried";
+export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried" | "usage_record_unreadable";
 
 /**
  *  A delete that needs the user's attention; `entity_id` names the entity
