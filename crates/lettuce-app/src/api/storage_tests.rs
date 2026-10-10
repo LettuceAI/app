@@ -482,10 +482,8 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
 }
 
 #[tokio::test]
-async fn storage_summary_counts_database_sidecars_models_and_panic_reports() {
+async fn storage_summary_counts_database_sidecars_and_panic_reports() {
     let root = std::env::temp_dir().join(format!("lettuce-storage-summary-{}", OperationId::new()));
-    std::fs::create_dir_all(root.join("models/gguf")).expect("models");
-    std::fs::write(root.join("models/gguf/model.gguf"), [1_u8; 29]).expect("model");
     let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
         .expect("authority");
     let location =
@@ -522,15 +520,8 @@ async fn storage_summary_counts_database_sidecars_models_and_panic_reports() {
     }
     assert_eq!(summary.active_database_bytes, expected);
     assert_eq!(summary.kept_database_bytes, 0);
-    assert_eq!(
-        summary
-            .models
-            .iter()
-            .find(|item| item.kind == "llm")
-            .expect("llm")
-            .bytes,
-        29
-    );
+    assert!(summary.models.iter().all(|item| item.bytes == 0));
+    assert_eq!(summary.missing_model_files, 0);
     assert_eq!(summary.logs_bytes, 17);
     assert!(summary.media.iter().all(|item| item.bytes == 0));
     let _lifecycle = location.try_file_lifecycle().expect("lifecycle");
@@ -542,9 +533,6 @@ async fn storage_summary_counts_database_sidecars_models_and_panic_reports() {
         ApiErrorCode::Busy
     );
     drop(_lifecycle);
-    let next_models = root.join("relocated-models");
-    std::fs::create_dir(&next_models).expect("new models");
-    std::fs::write(next_models.join("new.gguf"), [3_u8; 19]).expect("new model");
     let lifecycle = location.try_file_lifecycle().expect("cutover");
     let name = format!("{}.sqlite3", OperationId::new());
     let next = lifecycle
@@ -554,11 +542,7 @@ async fn storage_summary_counts_database_sidecars_models_and_panic_reports() {
             TimestampMillis::new(20),
         )
         .expect("begin new database");
-    let next_database = lettuce_database::Database::open(&next).expect("new database");
-    lettuce_settings::DeviceSettingsStore::update_device_settings(&next_database, &|device| {
-        device.llm_models_dir = Some(next_models.to_string_lossy().into_owned())
-    })
-    .expect("new folder setting");
+    drop(lettuce_database::Database::open(&next).expect("new database"));
     lifecycle
         .activate_file(&name, TimestampMillis::new(30))
         .expect("activate");
@@ -566,14 +550,82 @@ async fn storage_summary_counts_database_sidecars_models_and_panic_reports() {
     let after = super::storage_summary(&h.context)
         .await
         .expect("summary after cutover");
+    assert!(after.kept_database_bytes > 0);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn storage_summary_sums_catalog_model_files_without_walking_model_folders() {
+    use lettuce_models::{ModelProfileRepository, ProviderProtocol};
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::env::temp_dir().join(format!("lettuce-catalog-sizes-{}", OperationId::new()));
+    let tree = root.join("huge-tree");
+    let sealed = tree.join("sealed");
+    std::fs::create_dir_all(&sealed).expect("model folder");
+    std::fs::write(tree.join("model.gguf"), [1_u8; 29]).expect("model");
+    std::fs::write(tree.join("mmproj.gguf"), [2_u8; 7]).expect("projector");
+    std::fs::write(tree.join("unlisted.gguf"), [3_u8; 1000]).expect("unlisted file");
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let location =
+        AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location");
+    let active = location.active_path().expect("active");
+    let backend = Arc::new(AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
+    let h = harness_over_files(
+        backend,
+        Reply::Text("ok"),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::new(NoModels),
+        Arc::new(NoImages),
+        Some(ApiDatabaseFiles {
+            location: location.clone(),
+            active: active.clone(),
+        }),
+    );
+    let database = h.context.backend().database();
+    lettuce_settings::DeviceSettingsStore::update_device_settings(database, &|device| {
+        device.llm_models_dir = Some(tree.to_string_lossy().into_owned());
+    })
+    .expect("models folder");
+    let id = crate::launch::tests::seed_model(database, ProviderProtocol::LlamaCpp, "llamacpp");
+    let mut model = ModelProfileRepository::get(database, id)
+        .expect("model")
+        .expect("exists");
+    let revision = model.revision;
+    model.external_model_id = tree.join("model.gguf").to_string_lossy().into_owned();
+    model.config.llama_cpp.mmproj_path =
+        Some(tree.join("mmproj.gguf").to_string_lossy().into_owned());
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("local model");
+    let gone = crate::launch::tests::seed_model(database, ProviderProtocol::LlamaCpp, "llamacpp");
+    let mut model = ModelProfileRepository::get(database, gone)
+        .expect("model")
+        .expect("exists");
+    let revision = model.revision;
+    model.external_model_id = tree.join("deleted.gguf").to_string_lossy().into_owned();
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("missing model");
+    let logs = root.join("logs");
+    std::fs::create_dir(&logs).expect("logs");
+    let output =
+        lettuce_observability::local_output(lettuce_observability::LocalOutputConfig::new(&logs))
+            .expect("output");
+    h.context.attach_logs(logs, output.sink);
+    std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o000)).expect("seal");
+    let summary = super::storage_summary(&h.context).await;
+    std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o700)).expect("unseal");
+    let summary = summary.expect("a model folder tree never fails the summary");
     assert_eq!(
-        after
+        summary
             .models
             .iter()
             .find(|item| item.kind == "llm")
-            .expect("active model folder")
+            .expect("llm")
             .bytes,
-        19
+        36,
+        "only the files the catalog references count"
     );
-    assert!(after.kept_database_bytes > 0);
+    assert_eq!(summary.missing_model_files, 1);
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
 }

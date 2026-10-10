@@ -89,6 +89,9 @@ pub struct StorageSummary {
     pub kept_database_bytes: u64,
     pub media: Vec<StorageSize>,
     pub models: Vec<StorageSize>,
+    /// Model files the catalog names that are not on disk.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub missing_model_files: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub logs_bytes: u64,
 }

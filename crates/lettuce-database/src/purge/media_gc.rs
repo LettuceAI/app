@@ -361,17 +361,6 @@ impl Database {
             .map_err(storage)
     }
 
-    pub fn storage_device_settings_in_file(
-        path: &Path,
-    ) -> Result<lettuce_settings::DeviceSettings, PurgeError> {
-        let connection = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(storage)?;
-        crate::read_device_settings(&connection).map_err(storage)
-    }
-
     pub fn media_storage_objects_in_file(
         path: &Path,
     ) -> Result<Vec<(ContentHash, String, u64)>, PurgeError> {

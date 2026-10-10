@@ -318,7 +318,6 @@ mod storage;
 pub use app_reset::{AppResetHost, app_data_reset};
 #[cfg(test)]
 mod app_reset_tests;
-mod storage_model_index;
 pub use storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
 
 mod media_library;

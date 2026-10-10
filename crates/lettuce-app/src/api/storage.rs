@@ -207,45 +207,7 @@ pub async fn storage_summary(context: &ApiContext) -> Result<dto::StorageSummary
                     .checked_add(size)
                     .ok_or_else(|| summary_error("media"))?;
             }
-            let folder = context
-                .app_folder()
-                .ok_or_else(|| summary_error("models"))?;
-            let active = files
-                .location
-                .active_path()
-                .map_err(|error| file_error(error, None))?;
-            let device = lettuce_database::Database::storage_device_settings_in_file(&active)
-                .map_err(|_| summary_error("models"))?;
-            let retained = crate::speech::speech_roots::retained_model_roots(&device, folder);
-            let mut roots = vec![("llm".into(), crate::llm_models_root(&device, folder))];
-            roots.extend(
-                crate::image_model_roots(&device, folder)
-                    .into_iter()
-                    .map(|root| ("image".into(), root)),
-            );
-            for (kind, root) in [
-                ("whisper", retained.whisper),
-                ("kokoro", retained.kokoro),
-                ("embedding", retained.embedding),
-                ("thymos", retained.thymos),
-            ] {
-                roots.push((
-                    kind.into(),
-                    root.map(std::path::PathBuf::from)
-                        .ok_or_else(|| summary_error("models"))?,
-                ));
-            }
-            let diffusion =
-                lettuce_image_generation::sd_runtime::layout::DiffusionPaths::legacy_layout(
-                    folder,
-                    crate::image_model_roots(&device, folder)
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| summary_error("models"))?,
-                );
-            roots.push(("lora".into(), diffusion.loras));
-            roots.push(("upscaler".into(), diffusion.upscalers));
-            let models = context.model_storage_sizes(roots)?;
+            let (models, missing_model_files) = model_sizes(context)?;
             let logs = context.logs()?;
             let mut logs_bytes = 0_u64;
             for entry in
@@ -270,8 +232,64 @@ pub async fn storage_summary(context: &ApiContext) -> Result<dto::StorageSummary
                     .map(|(kind, bytes)| dto::StorageSize { kind, bytes })
                     .collect(),
                 models,
+                missing_model_files,
                 logs_bytes,
             })
         })
         .await
+}
+
+fn model_sizes(context: &ApiContext) -> Result<(Vec<dto::StorageSize>, u64), ApiError> {
+    use lettuce_models::{ModelCatalog, ProviderProtocol};
+    let database = context.backend().database();
+    let accounts = database
+        .provider_accounts()
+        .map_err(|_| summary_error("models"))?;
+    let (models, _, _) = database
+        .model_catalog_snapshot()
+        .map_err(|_| summary_error("models"))?;
+    let mut files = std::collections::BTreeMap::new();
+    for model in models {
+        let protocol = accounts
+            .iter()
+            .find(|account| account.id == model.provider_account_id)
+            .ok_or_else(|| summary_error("models"))?
+            .protocol;
+        let kind = match protocol {
+            ProviderProtocol::LlamaCpp => "llm",
+            ProviderProtocol::StableDiffusion => "image",
+            _ => continue,
+        };
+        let referenced = std::cell::RefCell::new(Vec::new());
+        lettuce_models::relocate_profile_paths(&mut model.clone(), protocol, &|path| {
+            referenced.borrow_mut().push(path.to_owned());
+            None
+        });
+        for path in referenced.into_inner() {
+            files.entry(path).or_insert(kind);
+        }
+    }
+    let mut sizes = std::collections::BTreeMap::from([("image", 0_u64), ("llm", 0)]);
+    let mut missing = 0_u64;
+    for (path, kind) in files {
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_file() => {
+                let total = sizes.entry(kind).or_default();
+                *total = total
+                    .checked_add(metadata.len())
+                    .ok_or_else(|| summary_error("models"))?;
+            }
+            _ => missing += 1,
+        }
+    }
+    Ok((
+        sizes
+            .into_iter()
+            .map(|(kind, bytes)| dto::StorageSize {
+                kind: kind.to_owned(),
+                bytes,
+            })
+            .collect(),
+        missing,
+    ))
 }

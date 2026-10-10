@@ -83,7 +83,6 @@ pub struct ApiContext {
 }
 
 struct ApiContextInner {
-    model_sizes: Mutex<Option<super::storage_model_index::ModelSizeIndex>>,
     usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
     maintenance: super::maintenance::MaintenanceGate,
     parts: ApiContextParts,
@@ -119,23 +118,6 @@ impl std::fmt::Debug for ApiContext {
 }
 
 impl ApiContext {
-    pub(super) fn model_storage_sizes(
-        &self,
-        roots: Vec<(String, PathBuf)>,
-    ) -> Result<Vec<lettuce_contracts::StorageSize>, ApiError> {
-        let error = || super::storage::summary_error("models");
-        let mut saved = self.inner.model_sizes.lock().map_err(|_| error())?;
-        if saved.as_ref().is_none_or(|index| index.roots != roots) {
-            *saved =
-                Some(super::storage_model_index::ModelSizeIndex::new(roots).map_err(|_| error())?);
-        }
-        saved
-            .as_mut()
-            .ok_or_else(error)?
-            .sizes()
-            .map_err(|_| error())
-    }
-
     pub fn with_usage_billing(self, billing: Arc<dyn crate::OpenRouterBillingPort>) -> Self {
         *self
             .inner
@@ -243,7 +225,6 @@ impl ApiContext {
         });
         let context = Self {
             inner: Arc::new(ApiContextInner {
-                model_sizes: Mutex::new(None),
                 usage_billing: Mutex::new(None),
                 maintenance: super::maintenance::MaintenanceGate::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
