@@ -1,3 +1,4 @@
+use rusqlite::hooks::TransactionOperation;
 use std::collections::BTreeMap;
 
 use lettuce_characters::{Persona, PersonaDefaultState, RepositoryError};
@@ -19,10 +20,10 @@ use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehav
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::Database;
 use crate::catalog::persona_adapter::{
     apply_synced_persona, apply_synced_persona_default, load_persona, read_default,
 };
+use crate::{Database, change_signal::ChangeSignal};
 
 fn storage(_: impl std::fmt::Debug) -> LocalChangeJournalError {
     LocalChangeJournalError::Storage
@@ -4411,11 +4412,11 @@ fn settle_or_defer(
         defer_change(tx, change, now)?;
         return Ok(None);
     }
-    tx.execute_batch("SAVEPOINT sync_settle")
+    ChangeSignal::execute_savepoint(tx, TransactionOperation::Begin, "sync_settle")
         .map_err(|_| ApplyOneError::Storage)?;
     match settle_change(tx, change, now) {
         Ok(conflict) => {
-            tx.execute_batch("RELEASE sync_settle")
+            ChangeSignal::execute_savepoint(tx, TransactionOperation::Release, "sync_settle")
                 .map_err(|_| ApplyOneError::Storage)?;
             tx.execute(
                 "DELETE FROM sync_deferred_changes WHERE change_id = ?1",
@@ -4425,7 +4426,14 @@ fn settle_or_defer(
             Ok(Some(conflict))
         }
         Err(error @ (ApplyOneError::Pending | ApplyOneError::Unencodable)) => {
-            tx.execute_batch("ROLLBACK TO sync_settle; RELEASE sync_settle")
+            ChangeSignal::execute_savepoint(tx, TransactionOperation::Rollback, "sync_settle")
+                .and_then(|()| {
+                    ChangeSignal::execute_savepoint(
+                        tx,
+                        TransactionOperation::Release,
+                        "sync_settle",
+                    )
+                })
                 .map_err(|_| ApplyOneError::Storage)?;
             defer_change(tx, change, now)?;
             if matches!(error, ApplyOneError::Unencodable) {
@@ -4434,7 +4442,15 @@ fn settle_or_defer(
             Ok(None)
         }
         Err(error) => {
-            let _ = tx.execute_batch("ROLLBACK TO sync_settle; RELEASE sync_settle");
+            let _ =
+                ChangeSignal::execute_savepoint(tx, TransactionOperation::Rollback, "sync_settle")
+                    .and_then(|()| {
+                        ChangeSignal::execute_savepoint(
+                            tx,
+                            TransactionOperation::Release,
+                            "sync_settle",
+                        )
+                    });
             Err(error)
         }
     }

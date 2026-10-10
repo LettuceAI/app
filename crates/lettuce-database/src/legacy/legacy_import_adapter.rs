@@ -35,9 +35,10 @@ use lettuce_types::{
     PromptDocumentId, PromptEntryId, ProviderAccountId, Revision, SceneAssetLinkId,
     TimestampMillis,
 };
+use rusqlite::hooks::TransactionOperation;
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::Database;
+use crate::{Database, change_signal::ChangeSignal};
 
 const MAX_MEDIA_PATH_BYTES: usize = 1_024;
 
@@ -97,8 +98,7 @@ impl Database {
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         let mut forks = LegacyMessageForks::default();
         for conflict in conflicts {
-            transaction
-                .execute_batch("SAVEPOINT legacy_message_fork")
+            ChangeSignal::execute_savepoint(&transaction, TransactionOperation::Begin, "legacy_message_fork")
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
             match crate::sync::conversation_sync_adapter::fork_losing_message_version(
                 &transaction,
@@ -109,16 +109,13 @@ impl Database {
             ) {
                 Ok(written) => {
                     forks.written += usize::from(written);
-                    transaction
-                        .execute_batch("RELEASE legacy_message_fork")
+                    ChangeSignal::execute_savepoint(&transaction, TransactionOperation::Release, "legacy_message_fork")
                         .map_err(|_| LegacyImportRepositoryError::Storage)?;
                 }
                 Err(_) => {
                     forks.failed += 1;
-                    transaction
-                        .execute_batch(
-                            "ROLLBACK TO legacy_message_fork; RELEASE legacy_message_fork",
-                        )
+                    ChangeSignal::execute_savepoint(&transaction, TransactionOperation::Rollback, "legacy_message_fork")
+                        .and_then(|()| ChangeSignal::execute_savepoint(&transaction, TransactionOperation::Release, "legacy_message_fork"))
                         .map_err(|_| LegacyImportRepositoryError::Storage)?;
                 }
             }

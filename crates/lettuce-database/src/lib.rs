@@ -61,6 +61,7 @@ use lettuce_types::{
     AssetId, ContentHash, MediaBlobId, ModelProfileId, Page, PageRequest, ProviderAccountId,
     Revision, TimestampMillis,
 };
+use rusqlite::hooks::TransactionOperation;
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
 
 const MIGRATION_1: Migration = Migration {
@@ -1564,8 +1565,7 @@ fn sync_delete_unless_referenced(
     connection: &Connection,
     statements: &[(&str, &[&dyn rusqlite::ToSql])],
 ) -> Result<bool, ModelRepositoryError> {
-    connection
-        .execute_batch("SAVEPOINT sync_delete")
+    change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Begin, "sync_delete")
         .map_err(model_error)?;
     for (sql, params) in statements {
         match connection.execute(sql, *params) {
@@ -1575,19 +1575,17 @@ fn sync_delete_unless_referenced(
                     || (code.extended_code == 1811
                         && message.as_deref() == Some("FOREIGN KEY constraint failed")) =>
             {
-                connection
-                    .execute_batch("ROLLBACK TO sync_delete; RELEASE sync_delete")
+                change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Rollback, "sync_delete").and_then(|()| change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Release, "sync_delete"))
                     .map_err(model_error)?;
                 return Ok(false);
             }
             Err(error) => {
-                let _ = connection.execute_batch("ROLLBACK TO sync_delete; RELEASE sync_delete");
+                let _ = change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Rollback, "sync_delete").and_then(|()| change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Release, "sync_delete"));
                 return Err(model_error(error));
             }
         }
     }
-    connection
-        .execute_batch("RELEASE sync_delete")
+    change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Release, "sync_delete")
         .map_err(model_error)?;
     Ok(true)
 }
@@ -1720,14 +1718,14 @@ pub(crate) fn sync_delete_model_profile(
     now: TimestampMillis,
 ) -> Result<bool, ModelRepositoryError> {
     let id = id.parse().map_err(|_| ModelRepositoryError::InvalidData)?;
-    connection.execute_batch("SAVEPOINT sync_model_delete").map_err(model_error)?;
+    change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Begin, "sync_model_delete").map_err(model_error)?;
     match models::provider_control_adapter::delete_model_in(connection, id, now) {
         Ok(_) => {
-            connection.execute_batch("RELEASE sync_model_delete").map_err(model_error)?;
+            change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Release, "sync_model_delete").map_err(model_error)?;
             Ok(true)
         }
         Err(error) => {
-            connection.execute_batch("ROLLBACK TO sync_model_delete; RELEASE sync_model_delete").map_err(model_error)?;
+            change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Rollback, "sync_model_delete").and_then(|()| change_signal::ChangeSignal::execute_savepoint(connection, TransactionOperation::Release, "sync_model_delete")).map_err(model_error)?;
             match error {
                 ModelRepositoryError::NotFound => Ok(true),
                 ModelRepositoryError::InUse(_) => Ok(false),

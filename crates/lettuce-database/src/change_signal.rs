@@ -109,6 +109,60 @@ unsafe extern "C" fn library_statement_completed(
 }
 
 impl ChangeSignal {
+    pub(crate) fn execute_savepoint(
+        connection: &rusqlite::Connection,
+        operation: rusqlite::hooks::TransactionOperation,
+        name: &str,
+    ) -> rusqlite::Result<()> {
+        use rusqlite::hooks::TransactionOperation;
+        let command = match operation {
+            TransactionOperation::Begin => "SAVEPOINT",
+            TransactionOperation::Rollback => "ROLLBACK TO",
+            TransactionOperation::Release => "RELEASE",
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        };
+        let quoted_name = name.replace('"', "\"\"");
+        connection.execute_batch(&format!("{command} \"{quoted_name}\""))?;
+        let context = unsafe {
+            rusqlite::ffi::sqlite3_get_clientdata(
+                connection.handle(),
+                c"lettuce.library.change_signal".as_ptr(),
+            )
+        };
+        if context.is_null() {
+            return Ok(());
+        }
+        let signal = unsafe { &*context.cast::<Self>() };
+        let mut pending = signal.library_changes.lock().expect("library changes");
+        match operation {
+            TransactionOperation::Begin => {
+                let ids = pending.ids.clone();
+                pending.savepoints.push((name.to_owned(), ids));
+            }
+            TransactionOperation::Rollback => {
+                if let Some(index) = pending
+                    .savepoints
+                    .iter()
+                    .rposition(|(stored, _)| stored.eq_ignore_ascii_case(name))
+                {
+                    pending.ids = pending.savepoints[index].1.clone();
+                    pending.savepoints.truncate(index + 1);
+                }
+            }
+            TransactionOperation::Release => {
+                if let Some(index) = pending
+                    .savepoints
+                    .iter()
+                    .rposition(|(stored, _)| stored.eq_ignore_ascii_case(name))
+                {
+                    pending.savepoints.truncate(index);
+                }
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
     pub(crate) fn install(connection: &rusqlite::Connection) -> rusqlite::Result<Arc<Self>> {
         let signal = Arc::new(Self {
             pending: AtomicU8::new(0),
@@ -120,43 +174,6 @@ impl ChangeSignal {
             settings_generation: AtomicU64::new(0),
             listeners: Mutex::new(Vec::new()),
         });
-        let savepoints = Arc::clone(&signal);
-        connection.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
-            if let rusqlite::hooks::AuthAction::Savepoint {
-                operation,
-                savepoint_name,
-            } = context.action
-            {
-                let mut pending = savepoints.library_changes.lock().expect("library changes");
-                match operation {
-                    rusqlite::hooks::TransactionOperation::Begin => {
-                        let ids = pending.ids.clone();
-                        pending.savepoints.push((savepoint_name.to_owned(), ids));
-                    }
-                    rusqlite::hooks::TransactionOperation::Rollback => {
-                        if let Some(index) = pending
-                            .savepoints
-                            .iter()
-                            .rposition(|(name, _)| name.eq_ignore_ascii_case(savepoint_name))
-                        {
-                            pending.ids = pending.savepoints[index].1.clone();
-                            pending.savepoints.truncate(index + 1);
-                        }
-                    }
-                    rusqlite::hooks::TransactionOperation::Release => {
-                        if let Some(index) = pending
-                            .savepoints
-                            .iter()
-                            .rposition(|(name, _)| name.eq_ignore_ascii_case(savepoint_name))
-                        {
-                            pending.savepoints.truncate(index);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            rusqlite::hooks::Authorization::Allow
-        }))?;
         let library = Arc::clone(&signal);
         connection.preupdate_hook(Some(
             move |_: rusqlite::hooks::Action,
@@ -480,6 +497,107 @@ mod library_tests {
     use super::*;
 
     #[test]
+    fn failed_savepoint_commands_preserve_the_pending_snapshot() {
+        use rusqlite::hooks::TransactionOperation;
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE characters(id TEXT PRIMARY KEY); BEGIN;")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        ChangeSignal::execute_savepoint(&connection, TransactionOperation::Begin, "changes")
+            .expect("savepoint");
+        let mut insert = connection
+            .prepare("INSERT INTO characters VALUES ('discarded') RETURNING id")
+            .expect("insert");
+        let mut rows = insert.query([]).expect("query");
+        assert!(rows.next().expect("row").is_some());
+        assert!(
+            ChangeSignal::execute_savepoint(&connection, TransactionOperation::Begin, "blocked")
+                .is_err()
+        );
+        assert!(
+            ChangeSignal::execute_savepoint(&connection, TransactionOperation::Release, "changes")
+                .is_err()
+        );
+        assert_eq!(
+            signal
+                .library_changes
+                .lock()
+                .expect("changes")
+                .savepoints
+                .len(),
+            1
+        );
+        drop(rows);
+        drop(insert);
+        ChangeSignal::execute_savepoint(&connection, TransactionOperation::Rollback, "changes")
+            .expect("rollback");
+        assert!(
+            signal
+                .library_changes
+                .lock()
+                .expect("changes")
+                .ids
+                .is_empty()
+        );
+        ChangeSignal::execute_savepoint(&connection, TransactionOperation::Release, "changes")
+            .expect("release");
+        connection.execute_batch("COMMIT;").expect("commit");
+    }
+
+    #[test]
+    fn prepared_savepoints_do_not_change_snapshots_before_execution() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE characters(id TEXT PRIMARY KEY);")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        signal.listen_library(Arc::new(move |kind, id| {
+            captured.lock().expect("events").push((kind, id.to_owned()))
+        }));
+        let _begin = connection
+            .prepare("SAVEPOINT prepared_change")
+            .expect("prepare begin");
+        let _rollback = connection
+            .prepare("ROLLBACK TO prepared_change")
+            .expect("prepare rollback");
+        let _release = connection
+            .prepare("RELEASE prepared_change")
+            .expect("prepare release");
+        connection
+            .execute_batch("BEGIN; INSERT INTO characters VALUES ('survives');")
+            .expect("transaction");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Begin,
+            "prepared_change",
+        )
+        .expect("savepoint");
+        connection
+            .execute_batch("INSERT INTO characters VALUES ('rolled-back');")
+            .expect("write");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Rollback,
+            "prepared_change",
+        )
+        .expect("rollback");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Release,
+            "prepared_change",
+        )
+        .expect("release");
+        connection.execute_batch("COMMIT;").expect("commit");
+        assert_eq!(
+            *events.lock().expect("events"),
+            vec![(LibraryKind::Character, "survives".to_owned())]
+        );
+    }
+
+    #[test]
     fn a_rolled_back_nested_savepoint_emits_only_surviving_library_ids() {
         let connection = rusqlite::Connection::open_in_memory().expect("connection");
         connection.execute_batch("CREATE TABLE characters(id TEXT PRIMARY KEY); CREATE TABLE personas(id TEXT PRIMARY KEY);").expect("schema");
@@ -489,7 +607,46 @@ mod library_tests {
         signal.listen_library(Arc::new(move |kind, id| {
             captured.lock().expect("events").push((kind, id.to_owned()))
         }));
-        connection.execute_batch("BEGIN; INSERT INTO characters VALUES ('survives'); SAVEPOINT outer_change; INSERT INTO personas VALUES ('rolled-back'); SAVEPOINT inner_change; INSERT INTO characters VALUES ('also-rolled-back'); RELEASE inner_change; ROLLBACK TO outer_change; RELEASE outer_change; COMMIT;").expect("transaction");
+        connection
+            .execute_batch("BEGIN; INSERT INTO characters VALUES ('survives');")
+            .expect("transaction");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Begin,
+            "outer_change",
+        )
+        .expect("outer");
+        connection
+            .execute_batch("INSERT INTO personas VALUES ('rolled-back');")
+            .expect("persona");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Begin,
+            "inner_change",
+        )
+        .expect("inner");
+        connection
+            .execute_batch("INSERT INTO characters VALUES ('also-rolled-back');")
+            .expect("character");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Release,
+            "inner_change",
+        )
+        .expect("release inner");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Rollback,
+            "outer_change",
+        )
+        .expect("rollback outer");
+        ChangeSignal::execute_savepoint(
+            &connection,
+            rusqlite::hooks::TransactionOperation::Release,
+            "outer_change",
+        )
+        .expect("release outer");
+        connection.execute_batch("COMMIT;").expect("commit");
         assert_eq!(
             *events.lock().expect("events"),
             vec![(LibraryKind::Character, "survives".to_owned())]
