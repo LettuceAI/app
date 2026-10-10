@@ -15019,3 +15019,25 @@ async fn starter_scene_image(edit_after_admission: bool) {
     assert_eq!(refused.prompts.lock().expect("prompts").len(), 1);
     std::fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn missing_and_archived_group_personas_follow_the_default() {
+    let backend = backend();
+    let database = backend.database();
+    let authored = seed_persona(database, "Authored");
+    let fallback = seed_persona(database, "Default");
+    let revision = PersonaRepository::get_default_snapshot(database).expect("default").state.revision;
+    PersonaRepository::set_default(database, fallback, revision, NOW).expect("default");
+    let first = seed_named_character(database, "First");
+    let second = seed_named_character(database, "Second");
+    let id = seed_group(database, vec![member(first, 0), member(second, 1)], None, |group| group.persona = Selection::Explicit(authored));
+    let conversation = ConversationLaunchPlanner::new(database).launch_group(&group_request(id, "fallback-group"), NOW).expect("launch").value.conversation;
+    let mut group = GroupRepository::get(database, id).expect("group").expect("exists").group;
+    let persona = PersonaRepository::get(database, authored).expect("persona").expect("exists");
+    PersonaRepository::archive(database, lettuce_characters::PersonaArchiveRequest { persona_id: authored, expected_persona_revision: persona.revision, expected_default_revision: None, now: NOW }).expect("archive");
+    let selected = crate::generation::live_sources::live_persona(database, &conversation, Some(&group)).expect("resolve").expect("default");
+    assert_eq!(selected.id, fallback);
+    group.persona = Selection::Explicit(lettuce_types::PersonaId::new());
+    let selected = crate::generation::live_sources::live_persona(database, &conversation, Some(&group)).expect("resolve missing").expect("default");
+    assert_eq!(selected.id, fallback);
+}

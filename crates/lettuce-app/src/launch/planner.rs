@@ -1482,9 +1482,10 @@ where
             }
             lettuce_characters::Selection::Explicit(persona_id) => {
                 let persona_id = *persona_id;
-                let persona = PersonaRepository::get(self.sources, persona_id)
-                    .map_err(LaunchSourceError::Persona)?
-                    .ok_or(ConversationLaunchError::PersonaNotFound { persona_id })?;
+                let Some(persona) = PersonaRepository::get(self.sources, persona_id)
+                    .map_err(LaunchSourceError::Persona)? else {
+                    return self.resolve_persona(LaunchSelection::Inherit);
+                };
                 if persona.status == lettuce_characters::LifecycleStatus::Archived {
                     return self.resolve_persona(LaunchSelection::Inherit);
                 }
