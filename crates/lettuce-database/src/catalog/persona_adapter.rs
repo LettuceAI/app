@@ -541,26 +541,8 @@ fn replace_media(
     persona_id: PersonaId,
     media: &PersonaMedia,
 ) -> Result<(), RepositoryError> {
-    let owner = persona_id.to_string();
-    let ids = serde_json::to_string(&media.links.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
-    tx.execute("DELETE FROM persona_media WHERE persona_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![owner, ids]).map_err(db_error)?;
-    let mut statement = tx.prepare("SELECT asset_id,slot,ordinal FROM persona_media WHERE persona_id=?1").map_err(db_error)?;
-    let existing = statement.query_map([&owner], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u32>(2)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
-    drop(statement);
-    let offset = existing.iter().map(|row| i64::from(row.2)).chain(media.links.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
-    for (index, (asset, slot, ordinal)) in existing.iter().enumerate() {
-        let link = media.links.iter().find(|link| link.asset_id.to_string() == *asset).ok_or(RepositoryError::Storage)?;
-        if *slot != media_slot_name(link.slot) || *ordinal != link.ordinal {
-            tx.execute("UPDATE persona_media SET slot='design_reference',ordinal=?3 WHERE persona_id=?1 AND asset_id=?2", params![owner, asset, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
-        }
-    }
-    for link in &media.links {
-        if existing.iter().any(|row| row.0 == link.asset_id.to_string() && row.1 == media_slot_name(link.slot) && row.2 == link.ordinal) {
-            continue;
-        }
-        tx.execute("INSERT INTO persona_media(persona_id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,'image',?3,?4) ON CONFLICT(persona_id,asset_id) DO UPDATE SET slot=excluded.slot,ordinal=excluded.ordinal", params![owner, link.asset_id.to_string(), media_slot_name(link.slot), link.ordinal]).map_err(db_error)?;
-    }
-    Ok(())
+    let links = media.links.iter().map(|link| (link.asset_id.to_string(), media_slot_name(link.slot), link.ordinal)).collect::<Vec<_>>();
+    super::replace_media_links(tx, &persona_id.to_string(), &links, ("persona_media", "persona_id", true), db_error)
 }
 
 pub(crate) fn insert_persona(
