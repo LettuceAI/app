@@ -603,3 +603,5 @@ Persona deletion refreshes library views through the committed signal; legacy li
 Persona binding commands retain the editor's authored lorebook selection and order (old-code/src/ui/pages/personas/hooks/usePersonaFormController.ts:140–159,305–333; old-code/src/core/storage/repo.ts:2266). Binding edits now commit with CAS and replay evidence.
 
 Library character duplication copies authored data without chats or learned companion memory and names the new character (Copy). Legacy's developer clone used (Clone) and copied direct chats and live state (old-code/src-tauri/src/storage_manager/characters.rs:1186–1480,1203). The library operation adds atomic replay evidence and the companion creation model gate.
+
+Persona get and save preserve the editor fields shown by old-code/src/ui/pages/personas/hooks/usePersonaFormController.ts:292-310, including the image recommendation. The request uses catalog asset ids and the response supplies asset URLs; legacy submitted media filenames and deleted removed references after saving (usePersonaFormController.ts:335-339). Saves now commit media, authored fields and replay evidence atomically and reject stale revisions.

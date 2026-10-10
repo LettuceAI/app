@@ -163,3 +163,21 @@ pub async fn character_duplicate(
 ) -> Result<lettuce_contracts::CharacterSummary, ApiError> {
     api::character_duplicate(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_get(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::PersonaGetRequest,
+) -> Result<lettuce_contracts::PersonaView, ApiError> {
+    api::persona_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_save(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::PersonaSaveRequest,
+) -> Result<lettuce_contracts::PersonaView, ApiError> {
+    api::persona_save(&context, request).await
+}

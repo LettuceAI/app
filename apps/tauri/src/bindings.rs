@@ -99,6 +99,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::conversations::conversation_participant_update,
             commands::characters::characters_list,
             commands::library::character_duplicate,
+            commands::library::persona_get,
+            commands::library::persona_save,
             commands::library::group_delete,
             commands::library::persona_delete,
             commands::library::character_lorebooks_list,

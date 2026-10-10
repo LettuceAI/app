@@ -213,3 +213,85 @@ pub struct CharacterDuplicateRequest {
     pub character_id: String,
     pub client_operation_id: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LibraryCrop {
+    pub x: f32,
+    pub y: f32,
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LibraryImageRecommendation {
+    pub artifact_id: Option<String>,
+    pub unresolved_legacy_name: Option<String>,
+    pub strength: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum PersonaMediaSlot {
+    Avatar,
+    DesignReference,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaMediaLink {
+    pub asset_id: String,
+    pub slot: PersonaMediaSlot,
+    pub ordinal: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDraft {
+    pub title: String,
+    pub description: String,
+    pub nickname: Option<String>,
+    pub design_description: Option<String>,
+    pub avatar_crop: Option<LibraryCrop>,
+    pub image_recommendation: Option<LibraryImageRecommendation>,
+    pub media: Vec<PersonaMediaLink>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaSaveRequest {
+    pub persona_id: Option<String>,
+    pub draft: PersonaDraft,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub expected_revision: Option<u64>,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaGetRequest {
+    pub persona_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaView {
+    pub id: String,
+    pub archived: bool,
+    pub draft: PersonaDraft,
+    pub assets: Vec<crate::AssetRef>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub created_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub updated_at: i64,
+}

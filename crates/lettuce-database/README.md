@@ -412,3 +412,5 @@ The signal tracks the database adapters' uncached savepoint statements through S
 Character, persona and group lorebook binding commands compose the existing typed binding mutation in the API receipt transaction. The relationship list and owner revision change together; an aborted receipt insertion rolls both back.
 
 The authored character duplicate can run on an existing API operation transaction, sharing its atomic commit with replay evidence. The ordinary typed repository operation uses the same copy function and owns its transaction.
+
+Persona editor saves reuse the persona revision, media replacement and canonical change journal operations inside the API receipt transaction. Creation assigns repository identity and revision metadata; edits compare the root revision before replacing authored fields and media.

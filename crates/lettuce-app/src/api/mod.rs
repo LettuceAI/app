@@ -344,3 +344,9 @@ mod library_duplicate_tests;
 
 mod library_duplicate;
 pub use library_duplicate::character_duplicate;
+
+#[cfg(test)]
+mod library_personas_tests;
+
+mod library_personas;
+pub use library_personas::{persona_get, persona_save};

@@ -1874,6 +1874,76 @@ impl PersonaDependencyReader for Database {
     }
 }
 
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn save_persona(
+        &self,
+        id: Option<PersonaId>,
+        expected_revision: Option<Revision>,
+        draft: PersonaDraftUpdate,
+        media: PersonaMedia,
+        now: TimestampMillis,
+    ) -> Result<Persona, RepositoryError> {
+        draft.validate()?;
+        let media = normalize_media(media)?;
+        image_assets(
+            self.transaction,
+            media.links.iter().map(|link| link.asset_id),
+        )?;
+        match (id, expected_revision) {
+            (None, None) => {
+                let persona = Persona {
+                    id: PersonaId::new(),
+                    status: LifecycleStatus::Active,
+                    title: draft.title,
+                    description: draft.description,
+                    nickname: draft.nickname,
+                    design_description: draft.design_description,
+                    avatar_crop: draft.avatar_crop,
+                    image_recommendation: draft.image_recommendation,
+                    media,
+                    revision: Revision::INITIAL,
+                    created_at: now,
+                    updated_at: now,
+                };
+                create_persona_in(self.transaction, persona)
+            }
+            (Some(id), Some(expected)) => {
+                let before = ensure_active(self.transaction, id, expected)?;
+                revise_persona(self.transaction, id, expected, draft, now)?;
+                replace_media(self.transaction, id, &media)?;
+                let after = load_persona(self.transaction, id)
+                    .map_err(db_error)?
+                    .ok_or(RepositoryError::Storage)?;
+                after.validate()?;
+                record_persona_media_assets(
+                    self.transaction,
+                    after.media.links.iter().map(|link| link.asset_id),
+                    now,
+                )?;
+                let operation = entity_scoped_operation(
+                    self.transaction,
+                    &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+                    persona_revise_operation(id, expected),
+                )
+                .map_err(sync_error)?;
+                let change = persona_update_change(&before, &after)?;
+                if !record_local_change_in(self.transaction, operation, &change, now)
+                    .map_err(sync_error)?
+                    .created
+                {
+                    return Err(RepositoryError::Storage);
+                }
+                Ok(after)
+            }
+            _ => Err(RepositoryError::Invalid(
+                lettuce_characters::ValidationError::Invariant {
+                    field: "persona.expected_revision",
+                },
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4021,5 +4091,286 @@ mod tests {
             ),
         }
         let _ = std::fs::remove_file(path);
+    }
+    #[test]
+    fn persona_save_and_receipt_are_atomic_with_replay_and_cas() {
+        let database = Database::open_in_memory().expect("database");
+        let id = PersonaId::new();
+        let persona = Persona::new(
+            id,
+            "Before".into(),
+            "Original".into(),
+            TimestampMillis::new(1),
+        )
+        .expect("persona");
+        PersonaRepository::create(&database, persona.clone()).expect("create");
+        let events = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = events.clone();
+        database.on_library_change(move |kind, changed_id| {
+            if kind == crate::LibraryKind::Persona && changed_id == id.to_string() {
+                observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+        let apply = |key: &str, digest: &str, revision| {
+            database.commit_api_operation::<Persona, crate::ApiOperationError>(
+                "persona_save",
+                key,
+                digest,
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_persona(
+                            Some(id),
+                            Some(revision),
+                            PersonaDraftUpdate {
+                                title: "After".into(),
+                                description: "Changed".into(),
+                                nickname: Some("Alias".into()),
+                                design_description: None,
+                                avatar_crop: None,
+                                image_recommendation: None,
+                            },
+                            PersonaMedia::default(),
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|error| match error {
+                            RepositoryError::StaleRevision { .. } => {
+                                crate::ApiOperationError::Conflict
+                            }
+                            _ => crate::ApiOperationError::Storage,
+                        })
+                },
+            )
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_persona_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(
+            apply("save", "digest", Revision::INITIAL),
+            Err(crate::ApiOperationError::Storage)
+        );
+        assert_eq!(
+            PersonaRepository::get(&database, id).expect("get"),
+            Some(persona)
+        );
+        assert!(
+            database
+                .lookup_api_operation("persona_save", "save")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_persona_save_receipt;")
+            .expect("clear");
+        assert_eq!(events.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let saved = apply("save", "digest", Revision::INITIAL).expect("save");
+        assert_eq!(events.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(saved.title, "After");
+        assert_eq!(saved.revision, Revision::new(2));
+        assert_eq!(
+            apply("save", "digest", Revision::INITIAL).expect("replay"),
+            saved
+        );
+        assert_eq!(
+            apply("save", "different", Revision::INITIAL),
+            Err(crate::ApiOperationError::Conflict)
+        );
+        assert_eq!(
+            apply("stale", "digest", Revision::INITIAL),
+            Err(crate::ApiOperationError::Conflict)
+        );
+    }
+    #[test]
+    fn persona_save_process_exit_preserves_fields_media_and_replay_state() {
+        if let Some(path) = std::env::var_os("LETTUCE_PERSONA_SAVE_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id = std::env::var("LETTUCE_PERSONA_SAVE_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("persona id");
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_persona_save",
+                        0,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |_| -> rusqlite::Result<i64> {
+                            std::process::exit(77);
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_persona_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_persona_save(); END;").expect("trigger");
+            }
+            database
+                .commit_api_operation::<Persona, crate::ApiOperationError>(
+                    "persona_save",
+                    "crash",
+                    "digest",
+                    TimestampMillis::new(2),
+                    |scope| {
+                        scope
+                            .save_persona(
+                                Some(id),
+                                Some(Revision::INITIAL),
+                                PersonaDraftUpdate {
+                                    title: "After".into(),
+                                    description: "Changed".into(),
+                                    nickname: None,
+                                    design_description: None,
+                                    avatar_crop: None,
+                                    image_recommendation: None,
+                                },
+                                PersonaMedia::default(),
+                                TimestampMillis::new(2),
+                            )
+                            .map_err(|_| crate::ApiOperationError::Storage)
+                    },
+                )
+                .expect("save");
+            panic!("crash hook was not reached");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "slice5-persona-save-crash-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let asset_id = image_asset(&database, 'c');
+        let mut persona = Persona::new(
+            PersonaId::new(),
+            "Before".into(),
+            "Original".into(),
+            TimestampMillis::new(1),
+        )
+        .expect("persona");
+        persona.media.links.push(PersonaMediaLink {
+            asset_id,
+            slot: PersonaMediaSlot::Avatar,
+            ordinal: 0,
+        });
+        let persona = PersonaRepository::create(&database, persona).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::persona_adapter::tests::persona_save_process_exit_preserves_fields_media_and_replay_state"])
+            .env("LETTUCE_PERSONA_SAVE_CRASH_DATABASE", &path).env("LETTUCE_PERSONA_SAVE_CRASH_ID", persona.id.to_string()).output().expect("child");
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            PersonaRepository::get(&database, persona.id).expect("get"),
+            Some(persona.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("persona_save", "crash")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .commit_api_operation::<Persona, crate::ApiOperationError>(
+                "persona_save",
+                "crash",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_persona(
+                            Some(persona.id),
+                            Some(Revision::INITIAL),
+                            PersonaDraftUpdate {
+                                title: "After".into(),
+                                description: "Changed".into(),
+                                nickname: None,
+                                design_description: None,
+                                avatar_crop: None,
+                                image_recommendation: None,
+                            },
+                            PersonaMedia::default(),
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("retry");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+    #[test]
+    fn concurrent_persona_saves_have_one_cas_winner() {
+        let database = Database::open_in_memory().expect("database");
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Original".into(),
+            "Description".into(),
+            TimestampMillis::new(1),
+        )
+        .expect("persona");
+        let id = persona.id;
+        PersonaRepository::create(&database, persona).expect("create");
+        let barrier = std::sync::Barrier::new(2);
+        let results = std::thread::scope(|threads| {
+            let handles: Vec<_> = ["First", "Second"]
+                .into_iter()
+                .map(|name| {
+                    let database = &database;
+                    let barrier = &barrier;
+                    threads.spawn(move || {
+                        barrier.wait();
+                        database.commit_api_operation::<Persona, crate::ApiOperationError>(
+                            "persona_save",
+                            name,
+                            name,
+                            TimestampMillis::new(2),
+                            |scope| {
+                                scope
+                                    .save_persona(
+                                        Some(id),
+                                        Some(Revision::INITIAL),
+                                        PersonaDraftUpdate {
+                                            title: name.into(),
+                                            description: "Changed".into(),
+                                            nickname: None,
+                                            design_description: None,
+                                            avatar_crop: None,
+                                            image_recommendation: None,
+                                        },
+                                        PersonaMedia::default(),
+                                        TimestampMillis::new(2),
+                                    )
+                                    .map_err(|error| match error {
+                                        RepositoryError::StaleRevision { .. } => {
+                                            crate::ApiOperationError::Conflict
+                                        }
+                                        _ => crate::ApiOperationError::Storage,
+                                    })
+                            },
+                        )
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("worker"))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, Err(crate::ApiOperationError::Conflict)))
+                .count(),
+            1
+        );
+        let winner = results.into_iter().find_map(Result::ok).expect("winner");
+        assert_eq!(
+            PersonaRepository::get(&database, id).expect("get"),
+            Some(winner)
+        );
     }
 }

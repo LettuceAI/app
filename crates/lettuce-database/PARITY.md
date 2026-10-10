@@ -228,3 +228,5 @@ A deferred sync change that rolls back to a savepoint no longer publishes a libr
 Persona lorebook bindings preserve the authored ordered list previously stored as active_lorebook_ids (old-code/src-tauri/src/storage_manager/personas.rs:282–287,309–335). Binding commands add explicit owner CAS and replay receipts over the existing typed ports rather than separate relationship writers.
 
 Character duplicate identity and authored graph now commit with the API replay receipt. A receipt failure removes the entire attempted copy while leaving the source intact. The copy retains shared media and external bindings, including archived books, but creates no conversations.
+
+Persona saves keep the media graph and replay receipt in one transaction. A forced process exit before receipt insertion leaves the original fields and avatar intact; retry succeeds. Legacy saved authored persona data in a tracked transaction but removed design references afterward (old-code/src-tauri/src/storage_manager/personas.rs:265-356; old-code/src/ui/pages/personas/hooks/usePersonaFormController.ts:335-339).

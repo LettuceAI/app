@@ -705,3 +705,5 @@ Group deletion cancels work in every source conversation and waits on committed 
 Each library entity exposes lorebook list, bind, unbind, enable and reorder commands. Writes return the new binding list and owner revision, use the shared operation receipt transaction and refresh views from the committed library signal.
 
 Character duplication runs the existing authored graph copy in the API receipt transaction and returns the new library summary. It allocates a fresh identity and uses the source name followed by (Copy). Companion copies require installed embedding and emotion models; an existing operation receipt replays before that gate is applied.
+
+Persona editor saves carry the authored fields and complete media links with one expected revision and client operation id. The API returns an editable draft, revision metadata and asset URLs after committing the save and replay result together. Default selection and lorebook bindings use their own typed commands.

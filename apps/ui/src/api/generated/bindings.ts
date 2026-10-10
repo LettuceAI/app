@@ -109,6 +109,8 @@ export const commands = {
 	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
+	personaGet: (request: PersonaGetRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_get", { request })),
+	personaSave: (request: PersonaSaveRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_save", { request })),
 	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
 	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("persona_delete", { request })),
 	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("character_lorebooks_list", { request })),
@@ -2738,6 +2740,18 @@ export type LaunchGroupResponse = {
 	conversation_id: string,
 };
 
+export type LibraryCrop = {
+	x: number | null,
+	y: number | null,
+	scale: number | null,
+};
+
+export type LibraryImageRecommendation = {
+	artifact_id: string | null,
+	unresolved_legacy_name: string | null,
+	strength: number | null,
+};
+
 export type LibraryLorebookBinding = {
 	lorebook_id: string,
 	enabled: boolean,
@@ -4165,6 +4179,20 @@ export type PersonaDeleteRequest = {
 	client_operation_id: string,
 };
 
+export type PersonaDraft = {
+	title: string,
+	description: string,
+	nickname: string | null,
+	design_description: string | null,
+	avatar_crop: LibraryCrop | null,
+	image_recommendation: LibraryImageRecommendation | null,
+	media: PersonaMediaLink[],
+};
+
+export type PersonaGetRequest = {
+	persona_id: string,
+};
+
 export type PersonaLorebookBindRequest = {
 	persona_id: string,
 	lorebook_id: string,
@@ -4198,6 +4226,31 @@ export type PersonaLorebookUnbindRequest = {
 
 export type PersonaLorebooksListRequest = {
 	persona_id: string,
+};
+
+export type PersonaMediaLink = {
+	asset_id: string,
+	slot: PersonaMediaSlot,
+	ordinal: number,
+};
+
+export type PersonaMediaSlot = "avatar" | "design_reference";
+
+export type PersonaSaveRequest = {
+	persona_id: string | null,
+	draft: PersonaDraft,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type PersonaView = {
+	id: string,
+	archived: boolean,
+	draft: PersonaDraft,
+	assets: AssetRef[],
+	revision: number,
+	created_at: number,
+	updated_at: number,
 };
 
 export type PlaygroundEntry = {
