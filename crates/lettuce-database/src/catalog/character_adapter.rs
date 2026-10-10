@@ -1009,7 +1009,7 @@ fn insert_scene_assets(
     let owner = character_id.to_string();
     let scene = scene_id.to_string();
     for asset in assets {
-        tx.execute("INSERT INTO scene_assets(character_id,scene_id,id,asset_id,slot,ordinal) SELECT ?1,?2,?3,?4,?5,?6 WHERE NOT EXISTS (SELECT 1 FROM scene_assets WHERE character_id=?1 AND id=?3)", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
+        tx.execute("INSERT INTO scene_assets(character_id,scene_id,id,asset_id,slot,ordinal) SELECT ?1,?2,?3,?4,?5,?6 WHERE NOT EXISTS (SELECT 1 FROM scene_assets WHERE character_id=?1 AND (scene_id,id,asset_id,slot,ordinal)=(?2,?3,?4,?5,?6))", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -5752,6 +5752,20 @@ mod smoke_tests {
         assert_eq!(apply("digest").expect("replay"), destination.to_string());
         assert_eq!(apply("different"), Err(crate::ApiOperationError::Conflict));
     }
+    #[test]
+    fn adding_scene_rejects_an_existing_link_identity() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan.clone()).expect("create");
+        let mut scene = plan.scenes[0].clone();
+        scene.id = SceneId::new();
+        scene.ordinal = 1;
+        scene.selected_variant_id = None;
+        scene.assets.truncate(1);
+        assert_eq!(SceneRepository::add_scene(&database, plan.character.id, Revision::INITIAL, scene, TimestampMillis::new(10)), Err(RepositoryError::AlreadyExists));
+        assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(before));
+    }
+
     #[test]
     fn character_save_moves_scene_asset_link_to_an_earlier_scene() {
         let database = Database::open_in_memory().expect("database");
