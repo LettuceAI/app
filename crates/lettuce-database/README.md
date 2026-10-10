@@ -414,3 +414,5 @@ Character, persona and group lorebook binding commands compose the existing type
 The authored character duplicate can run on an existing API operation transaction, sharing its atomic commit with replay evidence. The ordinary typed repository operation uses the same copy function and owns its transaction.
 
 Persona editor saves reuse the persona revision, media replacement and canonical change journal operations inside the API receipt transaction. Creation assigns repository identity and revision metadata; edits compare the root revision before replacing authored fields and media.
+
+Character editor saves share the graph replacement writer with sync while keeping local reference validation and companion Soul reconciliation. The API transaction checks the root revision before replacing fields, scenes, variants, starters, media and presentation references, then commits replay evidence with the graph. Existing child timestamps and revisions survive unchanged content; changed children advance their revisions, and new children receive server metadata.
