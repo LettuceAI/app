@@ -981,6 +981,108 @@ impl GroupRepository for Database {
         Ok(result)
     }
 
+    fn search(
+        &self,
+        request: lettuce_characters::GroupSearch,
+        page: PageRequest,
+    ) -> Result<Page<lettuce_characters::GroupLibraryItem>, RepositoryError> {
+        use super::library_cursor::{LibraryCursor, LibraryCursorKey};
+        use lettuce_characters::{GroupLibraryItem, LibrarySort};
+        let query = canonical_name(request.text.trim());
+        let cursor = LibraryCursor::decode(
+            page.cursor.as_deref(),
+            "group",
+            request.sort,
+            &query,
+            false,
+            request.include_archived,
+        )?;
+        if let Some(cursor) = &cursor {
+            cursor.id.parse::<GroupId>().map_err(|_| {
+                RepositoryError::Invalid(ValidationError::InvalidValue {
+                    field: "library.cursor",
+                })
+            })?;
+        }
+        let (column, comparison, direction) = match request.sort {
+            LibrarySort::CreatedAsc => ("created_at", ">", "ASC"),
+            LibrarySort::UpdatedDesc => ("activity_at", "<", "DESC"),
+            LibrarySort::Name => ("normalized_name", ">", "ASC"),
+        };
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let sql = format!("WITH library AS (
+            SELECT groups.*, COALESCE((SELECT MAX(conversation.updated_at) FROM conversations conversation
+              WHERE conversation.kind='group' AND json_extract(conversation.kind_json, '$.value.details.group.source_id')=groups.id), groups.updated_at) AS activity_at FROM groups
+        ) SELECT id,activity_at,{column} FROM library WHERE (?1 OR status='active') AND normalized_name LIKE ?2 ESCAPE '\\'
+          AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column}=?3 AND id>?4)) ORDER BY {column} {direction},id ASC LIMIT ?5");
+        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(db_error)?;
+        let limit = usize::from(page.limit.get()).max(1);
+        let mut statement = tx.prepare(&sql).map_err(db_error)?;
+        let keys = statement
+            .query_map(
+                params![
+                    request.include_archived,
+                    pattern,
+                    cursor.as_ref().map(|value| value.key.sql_value()),
+                    cursor.as_ref().map(|value| &value.id),
+                    i64::try_from(limit + 1).map_err(|_| RepositoryError::Storage)?
+                ],
+                |row| {
+                    let key = match request.sort {
+                        LibrarySort::Name => LibraryCursorKey::Name(row.get(2)?),
+                        _ => LibraryCursorKey::Time(row.get(2)?),
+                    };
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, key))
+                },
+            )
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        drop(statement);
+        let has_more = keys.len() > limit;
+        let mut items = Vec::with_capacity(limit.min(keys.len()));
+        let mut last = None;
+        for (id, activity, key) in keys.into_iter().take(limit) {
+            let group_id = id.parse().map_err(|_| RepositoryError::Storage)?;
+            let details = load_details(&tx, group_id)
+                .map_err(db_error)?
+                .ok_or(RepositoryError::Storage)?;
+            items.push(GroupLibraryItem {
+                details,
+                last_activity_at: TimestampMillis::new(activity),
+            });
+            last = Some((id, key));
+        }
+        let next_cursor = if has_more {
+            last.map(|(id, key)| {
+                LibraryCursor {
+                    entity: "group".into(),
+                    sort: request.sort,
+                    query,
+                    search_nickname: false,
+                    include_archived: request.include_archived,
+                    key,
+                    id,
+                }
+                .encode()
+            })
+            .transpose()?
+        } else {
+            None
+        };
+        tx.commit().map_err(db_error)?;
+        Ok(Page { items, next_cursor })
+    }
+
     fn list(
         &self,
         request: PageRequest,

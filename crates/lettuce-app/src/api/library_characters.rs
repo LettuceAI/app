@@ -15,7 +15,7 @@ fn mapping_error() -> ApiError {
     )
 }
 
-fn view(context: &ApiContext, details: CharacterDetails) -> Result<dto::CharacterView, ApiError> {
+pub(super) fn view(context: &ApiContext, details: CharacterDetails) -> Result<dto::CharacterView, ApiError> {
     let character = &details.character;
     let mut assets = std::collections::BTreeSet::new();
     assets.extend(character.media.links.iter().map(|link| link.asset_id));

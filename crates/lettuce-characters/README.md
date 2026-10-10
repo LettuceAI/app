@@ -56,3 +56,5 @@ The complete `CharacterDetails` and `GroupDetails` aggregates are serializable a
 A character can hold an independent Banner media slot alongside its original avatar, background and ordered design references. Each single slot permits only one asset.
 
 Character and persona search requests select creation, update or normalized-name order and whether nicknames participate. Repository search defaults retain update order and nickname matching; the application library commands choose creation order and name-only matching.
+
+Group library search pages the authored graph in latest conversation activity order by default; creation and normalized name order remain explicit options. Character and persona media mutations address one slot ordinal, append at its length and renumber later references after removal.

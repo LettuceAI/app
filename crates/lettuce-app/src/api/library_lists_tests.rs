@@ -270,3 +270,78 @@ fn existing_character_picker_requests_keep_their_wire_shape() {
     assert_eq!(request.sort, None);
     assert!(!request.search_nickname);
 }
+
+#[tokio::test]
+async fn group_library_pages_follow_activity_and_bind_cursor_to_filter_and_sort() {
+    use crate::launch::tests::{member, seed_group, seed_named_character};
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let second = seed_named_character(database, "Second");
+    let group = |name: &str| {
+        seed_group(
+            database,
+            vec![member(harness.character_id, 0), member(second, 1)],
+            None,
+            |group| group.name = name.into(),
+        )
+    };
+    let zed = group("Library-Zed");
+    let alpha = group("Library-Alpha");
+    conversation_launch_group(
+        &harness.context,
+        dto::LaunchGroupRequest {
+            group_id: zed.to_string(),
+            client_operation_id: "list-activity-launch".into(),
+        },
+    )
+    .await
+    .expect("launch");
+    let request = dto::GroupsListRequest {
+        query: Some("Library-".into()),
+        sort: None,
+        cursor: None,
+        limit: 1,
+    };
+    let page = groups_list(&harness.context, request.clone())
+        .await
+        .expect("page");
+    assert_eq!(page.items[0].group.id, zed.to_string());
+    let cursor = page.next_cursor.expect("cursor");
+    let next = groups_list(
+        &harness.context,
+        dto::GroupsListRequest {
+            cursor: Some(cursor.clone()),
+            ..request.clone()
+        },
+    )
+    .await
+    .expect("next");
+    assert_eq!(next.items[0].group.id, alpha.to_string());
+    assert!(next.next_cursor.is_none());
+    assert_eq!(
+        groups_list(
+            &harness.context,
+            dto::GroupsListRequest {
+                cursor: Some(cursor),
+                sort: Some(dto::LibrarySort::Name),
+                ..request.clone()
+            }
+        )
+        .await
+        .expect_err("sort")
+        .code,
+        ApiErrorCode::InvalidInput
+    );
+    let names = groups_list(
+        &harness.context,
+        dto::GroupsListRequest {
+            sort: Some(dto::LibrarySort::Name),
+            limit: 100,
+            ..request
+        },
+    )
+    .await
+    .expect("names");
+    assert_eq!(names.items[0].group.id, alpha.to_string());
+    assert_eq!(names.items[1].group.id, zed.to_string());
+}

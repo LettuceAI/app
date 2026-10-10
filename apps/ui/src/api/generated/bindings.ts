@@ -113,11 +113,15 @@ export const commands = {
 	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_save", { request })),
 	characterArchive: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_archive", { request })),
 	characterRestore: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_restore", { request })),
+	characterDelete: (request: CharacterDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("character_delete", { request })),
+	characterMediaSet: (request: CharacterMediaSetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_media_set", { request })),
+	personaMediaSet: (request: PersonaMediaSetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_media_set", { request })),
 	personaGet: (request: PersonaGetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_get", { request })),
 	personasList: (request: PersonasListRequest) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
 	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_save", { request })),
 	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
 	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
+	groupsList: (request: GroupsListRequest) => typedError<GroupPage_Serialize, ApiError>(__TAURI_INVOKE("groups_list", { request })),
 	groupGet: (request: GroupGetRequest) => typedError<GroupView_Serialize, ApiError>(__TAURI_INVOKE("group_get", { request })),
 	groupSave: (request: GroupSaveRequest_Deserialize) => typedError<GroupView_Serialize, ApiError>(__TAURI_INVOKE("group_save", { request })),
 	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
@@ -792,6 +796,12 @@ export type CertificatesView = {
 	revision: number,
 };
 
+export type CharacterDeleteRequest = {
+	character_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
 export type CharacterDraft = CharacterDraft_Serialize | CharacterDraft_Deserialize;
 
 export type CharacterDraft_Deserialize = {
@@ -866,6 +876,15 @@ export type CharacterLorebookUnbindRequest = {
 
 export type CharacterLorebooksListRequest = {
 	character_id: string,
+};
+
+export type CharacterMediaSetRequest = {
+	character_id: string,
+	slot: LibraryCharacterMediaSlot,
+	ordinal: number,
+	input: LibraryMediaInput,
+	expected_revision: number,
+	client_operation_id: string,
 };
 
 export type CharacterPage = {
@@ -1852,6 +1871,18 @@ export type GroupGetRequest = {
 	group_id: string,
 };
 
+export type GroupListItem = GroupListItem_Serialize | GroupListItem_Deserialize;
+
+export type GroupListItem_Deserialize = {
+	group: GroupView_Deserialize,
+	last_activity_at: number,
+};
+
+export type GroupListItem_Serialize = {
+	group: GroupView_Serialize,
+	last_activity_at: number,
+};
+
 export type GroupLorebookBindRequest = {
 	group_id: string,
 	lorebook_id: string,
@@ -1898,6 +1929,18 @@ export type GroupMembersSettings = {
 	participants: ParticipantSettings[],
 };
 
+export type GroupPage = GroupPage_Serialize | GroupPage_Deserialize;
+
+export type GroupPage_Deserialize = {
+	items: GroupListItem_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type GroupPage_Serialize = {
+	items: GroupListItem_Serialize[],
+	next_cursor: string | null,
+};
+
 export type GroupSaveRequest = GroupSaveRequest_Serialize | GroupSaveRequest_Deserialize;
 
 export type GroupSaveRequest_Deserialize = {
@@ -1934,6 +1977,13 @@ export type GroupView_Serialize = {
 	revision: number,
 	created_at: number,
 	updated_at: number,
+};
+
+export type GroupsListRequest = {
+	query: string | null,
+	sort: LibrarySort | null,
+	cursor: string | null,
+	limit: number,
 };
 
 export type HelpMeReplyMode = "new" | "enrich";
@@ -3233,6 +3283,8 @@ export type LibraryLorebookMutationResult = {
 };
 
 export type LibraryLorebookSelection = { kind: "inherit" } | { kind: "explicit"; value: string[] } | { kind: "disabled" };
+
+export type LibraryMediaInput = { kind: "none" } | { kind: "asset"; asset_id: string } | { kind: "source"; source: FileSource };
 
 export type LibraryMemoryPolicy = "manual" | "dynamic";
 
@@ -4896,6 +4948,15 @@ export type PersonaMediaLink = {
 	asset_id: string,
 	slot: PersonaMediaSlot,
 	ordinal: number,
+};
+
+export type PersonaMediaSetRequest = {
+	persona_id: string,
+	slot: PersonaMediaSlot,
+	ordinal: number,
+	input: LibraryMediaInput,
+	expected_revision: number,
+	client_operation_id: string,
 };
 
 export type PersonaMediaSlot = "avatar" | "design_reference";

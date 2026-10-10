@@ -6,7 +6,7 @@ use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::lorebooks::Failure;
 
-fn view(context: &ApiContext, persona: Persona) -> dto::PersonaView {
+pub(super) fn view(context: &ApiContext, persona: Persona) -> dto::PersonaView {
     dto::PersonaView {
         id: persona.id.to_string(),
         archived: persona.status == lettuce_characters::LifecycleStatus::Archived,

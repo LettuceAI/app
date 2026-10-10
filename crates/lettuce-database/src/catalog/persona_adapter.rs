@@ -1935,6 +1935,64 @@ impl PersonaDependencyReader for Database {
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn set_library_persona_media(
+        &self,
+        id: PersonaId,
+        expected: Revision,
+        slot: PersonaMediaSlot,
+        ordinal: u32,
+        asset: Option<AssetId>,
+        now: TimestampMillis,
+    ) -> Result<Persona, RepositoryError> {
+        let current = ensure_active(self.transaction, id, expected)?;
+        let mut media = current.media.clone();
+        let count = media.links.iter().filter(|link| link.slot == slot).count();
+        if (slot != PersonaMediaSlot::DesignReference && ordinal != 0)
+            || usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? > count
+            || (slot == PersonaMediaSlot::DesignReference
+                && asset.is_none()
+                && usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? == count)
+        {
+            return Err(RepositoryError::Invalid(
+                lettuce_characters::ValidationError::InvalidValue { field: "ordinal" },
+            ));
+        }
+        media
+            .links
+            .retain(|link| !(link.slot == slot && link.ordinal == ordinal));
+        match asset {
+            Some(asset_id) => {
+                image_assets(self.transaction, [asset_id])?;
+                media.links.push(PersonaMediaLink {
+                    asset_id,
+                    slot,
+                    ordinal,
+                });
+            }
+            None => {
+                for link in &mut media.links {
+                    if link.slot == slot && link.ordinal > ordinal {
+                        link.ordinal -= 1;
+                    }
+                }
+            }
+        }
+        self.save_persona(
+            Some(id),
+            Some(expected),
+            PersonaDraftUpdate {
+                title: current.title,
+                description: current.description,
+                nickname: current.nickname,
+                design_description: current.design_description,
+                avatar_crop: current.avatar_crop,
+                image_recommendation: current.image_recommendation,
+            },
+            media,
+            now,
+        )
+    }
+
     pub fn set_library_default_persona(
         &self,
         id: Option<PersonaId>,

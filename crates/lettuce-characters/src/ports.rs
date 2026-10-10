@@ -871,9 +871,27 @@ pub trait PersonaRepository: Send + Sync {
     ) -> Result<Persona, RepositoryError>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupSearch {
+    pub text: String,
+    pub include_archived: bool,
+    pub sort: LibrarySort,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupLibraryItem {
+    pub details: GroupDetails,
+    pub last_activity_at: TimestampMillis,
+}
+
 pub trait GroupRepository: Send + Sync {
     fn create(&self, plan: CreateGroupPlan) -> Result<GroupDetails, RepositoryError>;
     fn get(&self, id: GroupId) -> Result<Option<GroupDetails>, RepositoryError>;
+    fn search(
+        &self,
+        request: GroupSearch,
+        page: PageRequest,
+    ) -> Result<Page<GroupLibraryItem>, RepositoryError>;
     fn list(
         &self,
         request: PageRequest,

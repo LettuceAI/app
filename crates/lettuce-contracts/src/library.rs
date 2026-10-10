@@ -3,6 +3,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
+pub struct CharacterDeleteRequest {
+    pub character_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
 pub struct GroupDeleteRequest {
     pub group_id: String,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -402,4 +412,39 @@ mod tests {
             );
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LibraryMediaInput {
+    None,
+    Asset { asset_id: String },
+    Source { source: crate::FileSource },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct CharacterMediaSetRequest {
+    pub character_id: String,
+    pub slot: crate::LibraryCharacterMediaSlot,
+    pub ordinal: u32,
+    pub input: LibraryMediaInput,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaMediaSetRequest {
+    pub persona_id: String,
+    pub slot: crate::PersonaMediaSlot,
+    pub ordinal: u32,
+    pub input: LibraryMediaInput,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
 }

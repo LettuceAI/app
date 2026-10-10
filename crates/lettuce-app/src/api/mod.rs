@@ -12,7 +12,7 @@ mod assets;
 mod branches;
 mod characters;
 mod library_delete;
-pub use library_delete::{group_delete, persona_delete};
+pub use library_delete::{character_delete, group_delete, persona_delete};
 #[cfg(test)]
 mod library_delete_tests;
 pub(crate) mod companion;
@@ -370,4 +370,10 @@ pub use library_characters::{character_archive, character_get, character_restore
 mod library_groups_tests;
 
 mod library_groups;
-pub use library_groups::{group_get, group_save};
+pub use library_groups::{group_get, group_save, groups_list};
+
+#[cfg(test)]
+mod library_media_tests;
+
+mod library_media;
+pub use library_media::{character_media_set, persona_media_set};

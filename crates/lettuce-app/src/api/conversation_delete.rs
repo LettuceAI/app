@@ -155,6 +155,16 @@ pub(crate) fn cancel_work(
     conversation_id: ConversationId,
     before_settle: &BeforeSettle,
 ) -> Result<(), ApiError> {
+    cancel_turn_work(context, conversation_id, before_settle)?;
+    cancel_memory_work(context, conversation_id)?;
+    cancel_feature_work(context, conversation_id)
+}
+
+pub(crate) fn cancel_turn_work(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    before_settle: &BeforeSettle,
+) -> Result<(), ApiError> {
     let database = context.backend().database();
     if let Some(turn_id) = ConversationOverviewReader::live_turn(database, conversation_id)
         .map_err(IntoApiError::into_api_error)?
@@ -213,8 +223,7 @@ pub(crate) fn cancel_work(
             }
         }
     }
-    cancel_memory_work(context, conversation_id)?;
-    cancel_feature_work(context, conversation_id)
+    Ok(())
 }
 
 /// Requests cancellation of the conversation's unfinished memory jobs: a

@@ -2349,6 +2349,59 @@ fn duplicate_character_in(
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn set_library_character_media(
+        &self,
+        id: CharacterId,
+        expected: Revision,
+        slot: CharacterMediaSlot,
+        ordinal: u32,
+        asset: Option<AssetId>,
+        now: TimestampMillis,
+    ) -> Result<CharacterDetails, RepositoryError> {
+        let current = ensure_root(self.transaction, id, expected, false)?;
+        let mut media = current.character.media;
+        let count = media.links.iter().filter(|link| link.slot == slot).count();
+        if (slot != CharacterMediaSlot::DesignReference && ordinal != 0)
+            || usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? > count
+            || (slot == CharacterMediaSlot::DesignReference
+                && asset.is_none()
+                && usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? == count)
+        {
+            return Err(RepositoryError::Invalid(
+                lettuce_characters::ValidationError::InvalidValue { field: "ordinal" },
+            ));
+        }
+        media
+            .links
+            .retain(|link| !(link.slot == slot && link.ordinal == ordinal));
+        match asset {
+            Some(asset_id) => {
+                image_assets(self.transaction, [asset_id])?;
+                media.links.push(CharacterMediaLink {
+                    asset_id,
+                    slot,
+                    ordinal,
+                });
+            }
+            None => {
+                for link in &mut media.links {
+                    if link.slot == slot && link.ordinal > ordinal {
+                        link.ordinal -= 1;
+                    }
+                }
+            }
+        }
+        media
+            .links
+            .sort_by_key(|link| (media_slot_name(link.slot), link.ordinal));
+        media.validate()?;
+        replace_character_media(self.transaction, id, &media)?;
+        bump_root(self.transaction, id, expected, now)?;
+        load_details(self.transaction, id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::NotFound)
+    }
+
     pub fn set_library_character_status(
         &self,
         id: CharacterId,
@@ -6184,5 +6237,330 @@ mod smoke_tests {
         assert_eq!(archived.scenes, before.scenes);
         assert_eq!(archived.starters, before.starters);
         assert_eq!(apply().expect("replay"), archived);
+    }
+    #[test]
+    fn character_delete_receipt_failure_preserves_graph_and_retry_is_safe() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        let apply = |digest| {
+            database.purge_character_operation(
+                before.character.id,
+                Revision::INITIAL,
+                "delete",
+                digest,
+                TimestampMillis::new(2),
+            )
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_character_delete_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(apply("digest"), Err(crate::PurgeError::Storage));
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_delete", "delete")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_character_delete_receipt;")
+            .expect("clear");
+        assert_eq!(
+            database.purge_character_operation(
+                before.character.id,
+                Revision::new(2),
+                "stale",
+                "digest",
+                TimestampMillis::new(2)
+            ),
+            Err(crate::PurgeError::Conflict)
+        );
+        apply("digest").expect("delete");
+        apply("digest").expect("replay");
+        assert_eq!(apply("different"), Err(crate::PurgeError::Conflict));
+        assert!(
+            CharacterRepository::get(&database, before.character.id)
+                .expect("get")
+                .is_none()
+        );
+    }
+    fn library_upload_candidate() -> lettuce_media::IngestedMedia {
+        use lettuce_media::{
+            AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaBlob, MediaKind,
+            RetentionClass,
+        };
+        let now = TimestampMillis::new(2);
+        let blob = MediaBlob {
+            id: lettuce_types::MediaBlobId::new(),
+            content_hash: lettuce_types::ContentHash::parse("ab".repeat(32)).expect("hash"),
+            kind: MediaKind::Image,
+            mime_type: "image/png".into(),
+            byte_size: 1,
+            width: Some(1),
+            height: Some(1),
+            duration_ms: None,
+            validation_version: 1,
+            state: BlobState::Ready,
+            created_at: now,
+            updated_at: now,
+        };
+        let asset = MediaAsset::new(
+            AssetId::new(),
+            blob.id,
+            AssetKind::OtherImage,
+            AssetOrigin::Upload,
+            RetentionClass::Persistent,
+            AssetProvenanceV1::default(),
+            Revision::INITIAL,
+            now,
+            now,
+        )
+        .expect("asset");
+        lettuce_media::IngestedMedia { asset, blob }
+    }
+
+    #[test]
+    fn library_media_receipt_failure_rolls_back_catalog_owner_and_gc_queue() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, old_asset, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE media_assets SET retention='persistent' WHERE id=?1",
+                [old_asset.to_string()],
+            )
+            .expect("persistent asset");
+        let upload = library_upload_candidate();
+        let asset_id = upload.asset.id;
+        let blob_id = upload.blob.id;
+        let apply = || {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+            "character_media_set", "upload", "digest", TimestampMillis::new(2), |scope| {
+                let asset = scope.install_library_upload(lettuce_media::IngestedMedia { asset: upload.asset.clone(), blob: upload.blob.clone() }).map_err(|_| crate::ApiOperationError::Storage)?;
+                scope.set_library_character_media(before.character.id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+            })
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_library_upload_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(apply(), Err(crate::ApiOperationError::Storage));
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            lettuce_media::MediaAssetRepository::get(&database, asset_id)
+                .expect("asset")
+                .is_none()
+        );
+        assert!(
+            lettuce_media::MediaBlobRepository::get(&database, blob_id)
+                .expect("blob")
+                .is_none()
+        );
+        let queued = || {
+            database
+                .connection()
+                .expect("lock")
+                .query_row(
+                    "SELECT count(*) FROM media_gc_candidates WHERE asset_id=?1",
+                    [old_asset.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("queue")
+        };
+        assert_eq!(queued(), 0);
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_library_upload_receipt;")
+            .expect("clear");
+        let saved = apply().expect("upload");
+        assert_eq!(saved.character.revision, Revision::new(2));
+        assert_eq!(queued(), 1);
+        assert_eq!(apply().expect("replay"), saved);
+    }
+
+    #[test]
+    fn library_media_process_exit_before_receipt_preserves_original_catalog_and_owner() {
+        if let Some(path) = std::env::var_os("LETTUCE_LIBRARY_UPLOAD_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id = std::env::var("LETTUCE_LIBRARY_UPLOAD_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("character id");
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_library_upload",
+                        0,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |_| -> rusqlite::Result<i64> {
+                            std::process::exit(77);
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_upload_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_library_upload(); END;").expect("trigger");
+            }
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_media_set", "crash-upload", "digest", TimestampMillis::new(2), |scope| {
+                let asset = scope.install_library_upload(library_upload_candidate()).map_err(|_| crate::ApiOperationError::Storage)?;
+                scope.set_library_character_media(id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+            }).expect("upload");
+            panic!("crash hook was not reached");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "slice5-library-upload-crash-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::character_adapter::smoke_tests::library_media_process_exit_before_receipt_preserves_original_catalog_and_owner"])
+            .env("LETTUCE_LIBRARY_UPLOAD_CRASH_DATABASE", &path).env("LETTUCE_LIBRARY_UPLOAD_CRASH_ID", before.character.id.to_string()).output().expect("child");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("running 1 test"));
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            lettuce_media::MediaBlobRepository::find_by_hash(
+                &database,
+                &lettuce_types::ContentHash::parse("ab".repeat(32)).expect("hash")
+            )
+            .expect("blob")
+            .is_none()
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_media_set", "crash-upload")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+                "character_media_set",
+                "crash-upload",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    let asset = scope
+                        .install_library_upload(library_upload_candidate())
+                        .map_err(|_| crate::ApiOperationError::Storage)?;
+                    scope
+                        .set_library_character_media(
+                            before.character.id,
+                            Revision::INITIAL,
+                            CharacterMediaSlot::AvatarOriginal,
+                            0,
+                            Some(asset),
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("retry");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+    #[test]
+    fn character_delete_process_exit_before_receipt_preserves_the_complete_graph() {
+        if let Some(path) = std::env::var_os("LETTUCE_CHARACTER_DELETE_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id = std::env::var("LETTUCE_CHARACTER_DELETE_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("character id");
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_character_delete",
+                        0,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |_| -> rusqlite::Result<i64> {
+                            std::process::exit(77);
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_character_delete_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_character_delete(); END;").expect("trigger");
+            }
+            database
+                .purge_character_operation(
+                    id,
+                    Revision::INITIAL,
+                    "crash-delete",
+                    "digest",
+                    TimestampMillis::new(2),
+                )
+                .expect("delete");
+            panic!("crash hook was not reached");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "slice5-character-delete-crash-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::character_adapter::smoke_tests::character_delete_process_exit_before_receipt_preserves_the_complete_graph"])
+            .env("LETTUCE_CHARACTER_DELETE_CRASH_DATABASE", &path).env("LETTUCE_CHARACTER_DELETE_CRASH_ID", before.character.id.to_string()).output().expect("child");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("running 1 test"));
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_delete", "crash-delete")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .purge_character_operation(
+                before.character.id,
+                Revision::INITIAL,
+                "crash-delete",
+                "digest",
+                TimestampMillis::new(2),
+            )
+            .expect("retry");
+        database
+            .purge_character_operation(
+                before.character.id,
+                Revision::INITIAL,
+                "crash-delete",
+                "digest",
+                TimestampMillis::new(2),
+            )
+            .expect("replay");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

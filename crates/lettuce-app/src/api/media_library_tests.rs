@@ -16,7 +16,7 @@ fn row(values: Vec<(&str, BackupSqlValue)>) -> BackupSqlRow {
         .collect()
 }
 
-fn harness(root: &std::path::Path) -> super::tests::Harness {
+pub(super) fn harness(root: &std::path::Path) -> super::tests::Harness {
     let authority = FilesystemAuthority::new(&DirectorySnapshot::new(root).expect("snapshot"))
         .expect("authority");
     let location = crate::AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)

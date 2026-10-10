@@ -26,6 +26,12 @@ pub enum PurgeError {
     Storage,
 }
 
+#[derive(Debug)]
+pub struct CharacterDeleteWork {
+    pub direct_conversations: Vec<ConversationId>,
+    pub group_conversations: Vec<ConversationId>,
+}
+
 /// What one purge deleted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PurgeReceipt {
@@ -492,6 +498,9 @@ impl<'c> Purge<'c> {
         if !self.exists("SELECT EXISTS(SELECT 1 FROM characters WHERE id = ?1)", one)? {
             return Err(PurgeError::NotFound);
         }
+        if !character_group_turns(self.connection, id)?.is_empty() {
+            return Err(PurgeError::Busy);
+        }
         for conversation in direct_conversations(self.connection, id)? {
             if self.conversation_busy(&conversation)? {
                 return Err(PurgeError::Busy);
@@ -595,10 +604,19 @@ impl<'c> Purge<'c> {
                 "SELECT character_id FROM group_members WHERE group_id = ?1 ORDER BY ordinal",
                 &values[..1],
             )?;
+            let largest: i64 = self
+                .connection
+                .query_row(
+                    "SELECT COALESCE(MAX(ordinal),-1) FROM group_members WHERE group_id=?1",
+                    [&group],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            let offset = largest.checked_add(1).ok_or(PurgeError::Storage)?;
             self.connection
                 .execute(
-                    "UPDATE group_members SET ordinal = ordinal + 1000000 WHERE group_id = ?1",
-                    [&group],
+                    "UPDATE group_members SET ordinal = ordinal + ?2 WHERE group_id = ?1",
+                    params![group, offset],
                 )
                 .map_err(storage)?;
             for (ordinal, member) in remaining.iter().enumerate() {
@@ -818,6 +836,22 @@ fn direct_conversations(
                 .collect()
         })
         .map_err(storage)
+}
+
+fn character_group_turns(
+    connection: &Connection,
+    character: &str,
+) -> Result<Vec<String>, PurgeError> {
+    connection.prepare(&format!(
+        "SELECT DISTINCT turn.conversation_id FROM conversation_turns turn
+         JOIN conversations conversation ON conversation.id=turn.conversation_id
+         LEFT JOIN conversation_participants speaker ON speaker.conversation_id=turn.conversation_id AND speaker.id=turn.selected_speaker_participant_id
+         WHERE conversation.kind='group' AND turn.status NOT IN {TERMINAL_TURN}
+           AND (speaker.source_id=?1 OR (turn.selected_speaker_participant_id IS NULL AND EXISTS (
+             SELECT 1 FROM group_members member WHERE member.character_id=?1
+               AND member.group_id=json_extract(conversation.kind_json, '$.value.details.group.source_id'))))
+         ORDER BY turn.conversation_id"
+    )).and_then(|mut statement| statement.query_map([character], |row| row.get(0))?.collect()).map_err(storage)
 }
 
 fn group_conversations(connection: &Connection, group: &str) -> Result<Vec<String>, PurgeError> {
@@ -1356,6 +1390,78 @@ fn record_deleted_at(
 }
 
 impl Database {
+    pub fn character_delete_conversations(
+        &self,
+        id: CharacterId,
+        expected: Revision,
+        key: &str,
+        digest: &str,
+    ) -> Result<Option<CharacterDeleteWork>, PurgeError> {
+        let connection = self.connection().map_err(storage)?;
+        if let Some(receipt) =
+            crate::api_operation_adapter::lookup_in(&connection, "character_delete", key)
+                .map_err(storage)?
+        {
+            return if receipt.request_digest == digest {
+                Ok(None)
+            } else {
+                Err(PurgeError::Conflict)
+            };
+        }
+        check_character_delete_revision(&connection, id, expected)?;
+        let parse = |ids: Vec<String>| {
+            ids.into_iter()
+                .map(|id| id.parse().map_err(storage))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(Some(CharacterDeleteWork {
+            direct_conversations: parse(direct_conversations(&connection, &id.to_string())?)?,
+            group_conversations: parse(character_group_turns(&connection, &id.to_string())?)?,
+        }))
+    }
+
+    pub fn purge_character_operation(
+        &self,
+        id: CharacterId,
+        expected: Revision,
+        key: &str,
+        digest: &str,
+        now: TimestampMillis,
+    ) -> Result<(), PurgeError> {
+        if key.trim().is_empty() || digest.trim().is_empty() {
+            return Err(PurgeError::Conflict);
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+            if let Some(receipt) =
+                crate::api_operation_adapter::lookup_in(purge.connection, "character_delete", key)
+                    .map_err(storage)?
+            {
+                return if receipt.request_digest == digest {
+                    Ok(())
+                } else {
+                    Err(PurgeError::Conflict)
+                };
+            }
+            check_character_delete_revision(purge.connection, id, expected)?;
+            record_deleted_at(purge.connection, "character", &id.to_string(), now)?;
+            purge.character_entry(&id.to_string())?;
+            crate::api_operation_adapter::insert_in(
+                purge.connection,
+                &lettuce_transfer::BackupApiOperationReceipt {
+                    result_format_version: 2,
+                    command: "character_delete".into(),
+                    client_operation_id: key.into(),
+                    request_digest: digest.into(),
+                    result: serde_json::json!(true),
+                    committed_at: now,
+                },
+            )
+            .map_err(storage)
+        })
+        .map(|_| ())
+    }
+
     pub fn group_delete_conversations(
         &self,
         id: GroupId,
@@ -1499,6 +1605,28 @@ impl Database {
     pub fn run_queued_purges(&self, now: TimestampMillis) -> Result<Vec<PurgeReceipt>, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
         run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)
+    }
+}
+
+fn check_character_delete_revision(
+    connection: &Connection,
+    id: CharacterId,
+    expected: Revision,
+) -> Result<(), PurgeError> {
+    let revision: Option<i64> = connection
+        .query_row(
+            "SELECT revision FROM characters WHERE id=?1",
+            [id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    match revision {
+        None => Err(PurgeError::NotFound),
+        Some(value) if u64::try_from(value).map_err(storage)? != expected.get() => {
+            Err(PurgeError::Conflict)
+        }
+        Some(_) => Ok(()),
     }
 }
 

@@ -1851,68 +1851,76 @@ fn media_error(error: rusqlite::Error) -> MediaBlobRepositoryError {
     }
 }
 
+pub(crate) fn register_media_blob_in(
+    connection: &Connection,
+    blob: MediaBlob,
+) -> Result<MediaBlob, MediaBlobRepositoryError> {
+    if blob.state != BlobState::Staged {
+        return Err(MediaBlobRepositoryError::InvalidState);
+    }
+    blob.validate()
+        .map_err(|_| MediaBlobRepositoryError::InvalidData)?;
+    let by_id = connection
+        .query_row(
+            &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+            [blob.id.to_string()],
+            media_from_row,
+        )
+        .optional()
+        .map_err(media_error)?;
+    let by_hash = connection
+        .query_row(
+            &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE content_hash=?1"),
+            [blob.content_hash.as_str()],
+            media_from_row,
+        )
+        .optional()
+        .map_err(media_error)?;
+
+    if let Some(existing) = by_hash {
+        if existing.content_hash != blob.content_hash
+            || existing.kind != blob.kind
+            || existing.mime_type != blob.mime_type
+            || existing.byte_size != blob.byte_size
+            || existing.width != blob.width
+            || existing.height != blob.height
+            || existing.duration_ms != blob.duration_ms
+            || existing.validation_version != blob.validation_version
+        {
+            return Err(MediaBlobRepositoryError::InvalidData);
+        }
+        if let Some(existing_by_id) = by_id {
+            if existing_by_id.content_hash != existing.content_hash {
+                return Err(MediaBlobRepositoryError::InvalidData);
+            }
+        }
+        return Ok(existing);
+    }
+
+    if by_id.is_some() {
+        return Err(MediaBlobRepositoryError::InvalidData);
+    }
+
+    insert_media_blob_row(connection, &blob)?;
+    let stored = connection
+        .query_row(
+            &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+            [blob.id.to_string()],
+            media_from_row,
+        )
+        .map_err(media_error)?;
+    Ok(stored)
+}
+
 impl MediaBlobRepository for Database {
     fn register(&self, blob: MediaBlob) -> Result<MediaBlob, MediaBlobRepositoryError> {
-        if blob.state != BlobState::Staged {
-            return Err(MediaBlobRepositoryError::InvalidState);
-        }
-        blob.validate()
-            .map_err(|_| MediaBlobRepositoryError::InvalidData)?;
         let mut connection = self
             .connection()
             .map_err(|_| MediaBlobRepositoryError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(media_error)?;
-        let by_id = transaction
-            .query_row(
-                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
-                [blob.id.to_string()],
-                media_from_row,
-            )
-            .optional()
-            .map_err(media_error)?;
-        let by_hash = transaction
-            .query_row(
-                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE content_hash=?1"),
-                [blob.content_hash.as_str()],
-                media_from_row,
-            )
-            .optional()
-            .map_err(media_error)?;
-
-        if let Some(existing) = by_hash {
-            if existing.content_hash != blob.content_hash
-                || existing.kind != blob.kind
-                || existing.mime_type != blob.mime_type
-                || existing.byte_size != blob.byte_size
-                || existing.width != blob.width
-                || existing.height != blob.height
-                || existing.duration_ms != blob.duration_ms
-                || existing.validation_version != blob.validation_version
-            {
-                return Err(MediaBlobRepositoryError::InvalidData);
-            }
-            if let Some(existing_by_id) = by_id {
-                if existing_by_id.content_hash != existing.content_hash {
-                    return Err(MediaBlobRepositoryError::InvalidData);
-                }
-            }
-            return Ok(existing);
-        }
-
-        if by_id.is_some() {
-            return Err(MediaBlobRepositoryError::InvalidData);
-        }
-
-        insert_media_blob_row(&transaction, &blob)?;
-        let stored = transaction
-            .query_row(
-                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
-                [blob.id.to_string()],
-                media_from_row,
-            )
-            .map_err(media_error)?;
+        let stored = register_media_blob_in(&transaction, blob)?;
         transaction.commit().map_err(media_error)?;
         Ok(stored)
     }
@@ -2238,44 +2246,52 @@ pub(crate) fn load_asset_with_blob(
     Ok(Some(asset))
 }
 
+pub(crate) fn create_media_asset_in(
+    connection: &Connection,
+    asset: MediaAsset,
+) -> Result<MediaAsset, MediaAssetRepositoryError> {
+    asset
+        .validate()
+        .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+    let blob = connection
+        .query_row(
+            &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+            [asset.blob_id.to_string()],
+            media_from_row,
+        )
+        .optional()
+        .map_err(asset_error)?;
+    let Some(blob) = blob else {
+        return Err(MediaAssetRepositoryError::BlobMissing);
+    };
+    if blob.state != BlobState::Ready {
+        return Err(MediaAssetRepositoryError::BlobNotReady);
+    }
+    if blob.kind != asset.kind.blob_kind() {
+        return Err(MediaAssetRepositoryError::InvalidData);
+    }
+    if load_asset_with_blob(connection, asset.id)
+        .map_err(asset_error)?
+        .is_some()
+    {
+        return Err(MediaAssetRepositoryError::AlreadyExists);
+    }
+    insert_media_asset_row(connection, &asset)?;
+    let stored = load_asset_with_blob(connection, asset.id)
+        .map_err(asset_error)?
+        .ok_or(MediaAssetRepositoryError::InvalidData)?;
+    Ok(stored)
+}
+
 impl MediaAssetRepository for Database {
     fn create(&self, asset: MediaAsset) -> Result<MediaAsset, MediaAssetRepositoryError> {
-        asset
-            .validate()
-            .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
         let mut connection = self
             .connection()
             .map_err(|_| MediaAssetRepositoryError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(asset_error)?;
-        let blob = transaction
-            .query_row(
-                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
-                [asset.blob_id.to_string()],
-                media_from_row,
-            )
-            .optional()
-            .map_err(asset_error)?;
-        let Some(blob) = blob else {
-            return Err(MediaAssetRepositoryError::BlobMissing);
-        };
-        if blob.state != BlobState::Ready {
-            return Err(MediaAssetRepositoryError::BlobNotReady);
-        }
-        if blob.kind != asset.kind.blob_kind() {
-            return Err(MediaAssetRepositoryError::InvalidData);
-        }
-        if load_asset_with_blob(&transaction, asset.id)
-            .map_err(asset_error)?
-            .is_some()
-        {
-            return Err(MediaAssetRepositoryError::AlreadyExists);
-        }
-        insert_media_asset_row(&transaction, &asset)?;
-        let stored = load_asset_with_blob(&transaction, asset.id)
-            .map_err(asset_error)?
-            .ok_or(MediaAssetRepositoryError::InvalidData)?;
+        let stored = create_media_asset_in(&transaction, asset)?;
         transaction.commit().map_err(asset_error)?;
         Ok(stored)
     }

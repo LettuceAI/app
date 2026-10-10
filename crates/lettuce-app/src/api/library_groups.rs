@@ -193,3 +193,47 @@ pub async fn group_save(
         })
         .await
 }
+
+pub async fn groups_list(
+    context: &ApiContext,
+    request: dto::GroupsListRequest,
+) -> Result<dto::GroupPage, ApiError> {
+    context
+        .blocking(move |context| {
+            let page = GroupRepository::search(
+                context.backend().database(),
+                lettuce_characters::GroupSearch {
+                    text: request.query.unwrap_or_default(),
+                    include_archived: false,
+                    sort: match request.sort {
+                        None | Some(dto::LibrarySort::UpdatedDesc) => {
+                            lettuce_characters::LibrarySort::UpdatedDesc
+                        }
+                        Some(dto::LibrarySort::CreatedAsc) => {
+                            lettuce_characters::LibrarySort::CreatedAsc
+                        }
+                        Some(dto::LibrarySort::Name) => lettuce_characters::LibrarySort::Name,
+                    },
+                },
+                lettuce_types::PageRequest {
+                    cursor: request.cursor,
+                    limit: super::mapping::page_limit(Some(request.limit)),
+                },
+            )
+            .map_err(IntoApiError::into_api_error)?;
+            Ok(dto::GroupPage {
+                items: page
+                    .items
+                    .into_iter()
+                    .map(|item| {
+                        Ok(dto::GroupListItem {
+                            group: view(context, item.details)?,
+                            last_activity_at: item.last_activity_at.get(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ApiError>>()?,
+                next_cursor: page.next_cursor,
+            })
+        })
+        .await
+}

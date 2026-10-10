@@ -516,24 +516,7 @@ where
         input: R,
         request: IngestRequest,
     ) -> Result<IngestedMedia, MediaStoreError> {
-        request
-            .provenance
-            .validate()
-            .map_err(|_| MediaStoreError::InvalidMetadata)?;
-        let bytes = read_bounded(input)?;
-        let sniffed = if request.asset_kind == AssetKind::SourceDocument {
-            sniff_document(&bytes)?
-        } else {
-            sniff(&bytes)?
-        };
-        if sniffed.kind != request.asset_kind.blob_kind() {
-            return Err(MediaStoreError::KindMismatch);
-        }
-        if let Some(declared) = &request.declared_mime_type {
-            if !mime_matches(declared, sniffed.mime_type) {
-                return Err(MediaStoreError::MimeMismatch);
-            }
-        }
+        let (bytes, sniffed) = read_ingest(input, &request)?;
 
         let _lifecycle = blob_lifecycle();
         let now = TimestampMillis::now().map_err(|_| MediaStoreError::Clock)?;
@@ -666,6 +649,49 @@ where
             Err(_) => return Err(MediaStoreError::CatalogFailure),
         };
         Ok(IngestedMedia { asset, blob })
+    }
+
+    pub fn ingest_with_commit<R: Read, T>(
+        &self,
+        input: R,
+        request: IngestRequest,
+        commit: impl FnOnce(IngestedMedia) -> T,
+    ) -> Result<T, MediaStoreError> {
+        let (bytes, sniffed) = read_ingest(input, &request)?;
+        let _lifecycle = blob_lifecycle();
+        let now = TimestampMillis::now().map_err(|_| MediaStoreError::Clock)?;
+        let content_hash = content_hash(blake3::hash(&bytes));
+        let key = object_key(&content_hash)?;
+        let blob = MediaBlob {
+            id: MediaBlobId::new(),
+            content_hash,
+            kind: sniffed.kind,
+            mime_type: sniffed.mime_type.into(),
+            byte_size: bytes.len() as u64,
+            width: sniffed.width,
+            height: sniffed.height,
+            duration_ms: None,
+            validation_version: BLOB_VALIDATION_VERSION,
+            state: BlobState::Ready,
+            created_at: now,
+            updated_at: now,
+        };
+        blob.validate()
+            .map_err(|_| MediaStoreError::InvalidMetadata)?;
+        let asset = MediaAsset::new(
+            AssetId::new(),
+            blob.id,
+            request.asset_kind,
+            request.origin,
+            request.retention,
+            request.provenance,
+            Revision::INITIAL,
+            now,
+            now,
+        )
+        .map_err(|_| MediaStoreError::InvalidMetadata)?;
+        self.commit_object(&key, blob.byte_size, &blob.content_hash, &bytes)?;
+        Ok(commit(IngestedMedia { asset, blob }))
     }
 
     /// Deletes a ready blob's bytes once `release` has marked its catalog row
@@ -936,6 +962,31 @@ fn read_bounded<R: Read>(mut input: R) -> Result<Vec<u8>, MediaStoreError> {
     } else {
         Ok(bytes)
     }
+}
+
+fn read_ingest<R: Read>(
+    input: R,
+    request: &IngestRequest,
+) -> Result<(Vec<u8>, SniffedMedia), MediaStoreError> {
+    request
+        .provenance
+        .validate()
+        .map_err(|_| MediaStoreError::InvalidMetadata)?;
+    let bytes = read_bounded(input)?;
+    let sniffed = if request.asset_kind == AssetKind::SourceDocument {
+        sniff_document(&bytes)?
+    } else {
+        sniff(&bytes)?
+    };
+    if sniffed.kind != request.asset_kind.blob_kind() {
+        return Err(MediaStoreError::KindMismatch);
+    }
+    if let Some(declared) = &request.declared_mime_type {
+        if !mime_matches(declared, sniffed.mime_type) {
+            return Err(MediaStoreError::MimeMismatch);
+        }
+    }
+    Ok((bytes, sniffed))
 }
 
 #[derive(Debug, Clone, Copy)]

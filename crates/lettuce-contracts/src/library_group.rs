@@ -93,3 +93,30 @@ pub struct GroupSaveRequest {
     pub expected_revision: Option<u64>,
     pub client_operation_id: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupsListRequest {
+    pub query: Option<String>,
+    pub sort: Option<crate::LibrarySort>,
+    pub cursor: Option<String>,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupListItem {
+    pub group: GroupView,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub last_activity_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupPage {
+    pub items: Vec<GroupListItem>,
+    pub next_cursor: Option<String>,
+}

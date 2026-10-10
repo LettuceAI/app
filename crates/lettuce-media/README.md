@@ -67,3 +67,5 @@ Bytes leave the store in three ways, all under the same lifecycle lock as ingest
 Library references identify the owning domain and an opaque owner identity. UUID owners keep their identity; composite or non-UUID record keys use a digest, so bookkeeping keys and native paths cannot become navigation paths. Reference reads, guarded removal, active GC and kept-set capture use one database reference rule.
 
 The local store exposes its repository owners to the composition root so a database cutover can close every native database handle. Reset retains media through the same kept-file sets used by garbage collection.
+
+ingest_with_commit shares upload validation and object installation with ordinary ingest, then hands prepared catalog records to the composition callback while holding the existing lifecycle lock. The library callback installs those records with the owner mutation and API receipt in one database transaction. A crash before that transaction can leave an unregistered object, which the existing orphan sweep collects.

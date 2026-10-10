@@ -122,3 +122,5 @@ The character editor draft describes the authored profile, provenance, defaults,
 Group editor drafts reuse the character editor's typed scene, variant and chat appearance vocabulary. Ordered member choices and tri-state persona selection remain explicit, nullable replacements require null, and responses supply server metadata and asset URLs.
 
 Character archive and restore take one root revision and operation key and return the committed CharacterView.
+
+Group pages carry the full authored view and its latest activity timestamp. Media replacement accepts a FileSource, an existing asset id or an explicit none, alongside a slot ordinal, root revision and operation key. A design-reference ordinal at the list length appends, removal closes the gap and an ordinal above the length fails validation.

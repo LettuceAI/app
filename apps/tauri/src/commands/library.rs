@@ -262,3 +262,39 @@ pub async fn character_restore(
 ) -> Result<lettuce_contracts::CharacterView, ApiError> {
     api::character_restore(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_delete(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterDeleteRequest,
+) -> Result<(), ApiError> {
+    api::character_delete(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn groups_list(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::GroupsListRequest,
+) -> Result<lettuce_contracts::GroupPage, ApiError> {
+    api::groups_list(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_media_set(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterMediaSetRequest,
+) -> Result<lettuce_contracts::CharacterView, ApiError> {
+    api::character_media_set(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_media_set(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::PersonaMediaSetRequest,
+) -> Result<lettuce_contracts::PersonaView, ApiError> {
+    api::persona_media_set(&context, request).await
+}
