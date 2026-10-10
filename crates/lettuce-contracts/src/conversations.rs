@@ -833,6 +833,15 @@ pub struct LaunchGroupResponse {
 pub struct CharactersListRequest {
     pub cursor: Option<String>,
     pub limit: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub query: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub sort: Option<crate::LibrarySort>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub search_nickname: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

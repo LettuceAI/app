@@ -1338,6 +1338,74 @@ macro_rules! impl_binding_repository {
                 )
             }
         }
+        impl crate::ApiOperationTransaction<'_, '_> {
+            pub fn $bind(
+                &self,
+                owner: $owner,
+                expected: Revision,
+                binding: LorebookBindingCreate,
+                now: TimestampMillis,
+            ) -> Result<BindingMutationResult, BindingRepositoryError> {
+                binding_mutation(
+                    self.transaction,
+                    $kind,
+                    &owner.to_string(),
+                    expected,
+                    BindingOperation::Bind(binding),
+                    now,
+                )
+            }
+            pub fn $unbind(
+                &self,
+                owner: $owner,
+                expected: Revision,
+                lorebook_id: LorebookId,
+                now: TimestampMillis,
+            ) -> Result<BindingMutationResult, BindingRepositoryError> {
+                binding_mutation(
+                    self.transaction,
+                    $kind,
+                    &owner.to_string(),
+                    expected,
+                    BindingOperation::Unbind(lorebook_id),
+                    now,
+                )
+            }
+            pub fn $enable(
+                &self,
+                owner: $owner,
+                expected: Revision,
+                lorebook_id: LorebookId,
+                enabled: bool,
+                now: TimestampMillis,
+            ) -> Result<BindingMutationResult, BindingRepositoryError> {
+                binding_mutation(
+                    self.transaction,
+                    $kind,
+                    &owner.to_string(),
+                    expected,
+                    BindingOperation::Enable(lorebook_id, enabled),
+                    now,
+                )
+            }
+            pub fn $reorder(
+                &self,
+                owner: $owner,
+                expected: Revision,
+                lorebook_id: LorebookId,
+                target_ordinal: usize,
+                now: TimestampMillis,
+            ) -> Result<BindingMutationResult, BindingRepositoryError> {
+                binding_mutation(
+                    self.transaction,
+                    $kind,
+                    &owner.to_string(),
+                    expected,
+                    BindingOperation::Reorder(lorebook_id, target_ordinal),
+                    now,
+                )
+            }
+        }
     };
 }
 
@@ -2988,5 +3056,68 @@ mod tests {
             CharacterLorebookBindingRepository::list_character_bindings(&database, owner),
             Err(BindingRepositoryError::Failure(_))
         ));
+    }
+    #[test]
+    fn binding_receipt_failure_rolls_back_the_owner_and_relationship() {
+        let database = Database::open_in_memory().expect("database");
+        let persona = PersonaId::new();
+        insert_persona(&database, persona);
+        let book =
+            LorebookRepository::create(&database, metadata(), Vec::new(), TimestampMillis::new(1))
+                .expect("book")
+                .book
+                .id;
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_binding_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        let apply = |digest: &str| {
+            database.commit_api_operation::<u64, crate::ApiOperationError>(
+                "persona_lorebooks_bind",
+                "binding",
+                digest,
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .bind_persona_lorebook(
+                            persona,
+                            Revision::INITIAL,
+                            LorebookBindingCreate {
+                                lorebook_id: book,
+                                target: BindingInsertionTarget::Append,
+                            },
+                            TimestampMillis::new(2),
+                        )
+                        .map(|result| result.owner_revision.get())
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+        };
+        assert_eq!(apply("digest"), Err(crate::ApiOperationError::Storage));
+        assert!(
+            database
+                .list_persona_bindings(persona)
+                .expect("bindings")
+                .is_empty()
+        );
+        assert_eq!(
+            lettuce_characters::PersonaRepository::get(&database, persona)
+                .expect("persona")
+                .expect("exists")
+                .revision,
+            Revision::INITIAL
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_binding_receipt;")
+            .expect("clear fault");
+        assert_eq!(apply("digest").expect("write"), 2);
+        assert_eq!(apply("digest").expect("replay"), 2);
+        assert_eq!(apply("changed"), Err(crate::ApiOperationError::Conflict));
+        assert_eq!(
+            database
+                .list_persona_bindings(persona)
+                .expect("bindings")
+                .len(),
+            1
+        );
     }
 }

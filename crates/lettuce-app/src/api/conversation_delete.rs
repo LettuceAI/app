@@ -150,7 +150,17 @@ pub(crate) fn cancel_conversation_work(
 
 /// A turn read before another write moved it on (a job attached, a stage
 /// appended) is left for the next step, which reads it again.
-fn cancel_work(
+pub(crate) fn cancel_work(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    before_settle: &BeforeSettle,
+) -> Result<(), ApiError> {
+    cancel_turn_work(context, conversation_id, before_settle)?;
+    cancel_memory_work(context, conversation_id)?;
+    cancel_feature_work(context, conversation_id)
+}
+
+pub(crate) fn cancel_turn_work(
     context: &ApiContext,
     conversation_id: ConversationId,
     before_settle: &BeforeSettle,
@@ -213,8 +223,7 @@ fn cancel_work(
             }
         }
     }
-    cancel_memory_work(context, conversation_id)?;
-    cancel_feature_work(context, conversation_id)
+    Ok(())
 }
 
 /// Requests cancellation of the conversation's unfinished memory jobs: a

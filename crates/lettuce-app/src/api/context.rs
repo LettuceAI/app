@@ -168,6 +168,15 @@ impl ApiContext {
         if !parts.asset_url_base.ends_with('/') {
             parts.asset_url_base.push('/');
         }
+        let library_events = parts.events.clone();
+        parts.backend.database().on_library_change(move |kind, id| {
+            let event = match kind {
+                lettuce_database::LibraryKind::Character => lettuce_contracts::ApiEvent::CharacterChanged { character_id: id.to_owned() },
+                lettuce_database::LibraryKind::Persona => lettuce_contracts::ApiEvent::PersonaChanged { persona_id: id.to_owned() },
+                lettuce_database::LibraryKind::Group => lettuce_contracts::ApiEvent::GroupChanged { group_id: id.to_owned() },
+            };
+            library_events.emit(event);
+        });
         let now = parts.clock.now();
         let jobs = JobHostState::default();
         let changed = jobs.change_signal();

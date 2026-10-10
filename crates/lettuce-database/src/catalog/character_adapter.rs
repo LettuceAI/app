@@ -1,21 +1,17 @@
 //! SQLite persistence for the authored character graph.
-//!
-//! This module deliberately contains the storage representation and never
-//! exposes it as part of the public database API. The domain ports remain the
-//! only contract consumed by the composition root.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use lettuce_characters::{
-    Character, CharacterDefaults, CharacterDependencyReader, CharacterMedia, CharacterMediaLink,
-    CharacterMediaSlot, CharacterPresentationV1, CharacterProfile, CharacterProvenance,
-    CharacterRepository, CharacterSearch, ConversationStarter, ConversationStarterDraftUpdate,
-    CreateCharacterPlan, DependencyReference, DependencyReport, IdRemap, ImageRecommendation,
-    LifecycleStatus, ProfileDuplicateRepository, ProfileDuplicateRequest, ProfileDuplicateResult,
-    RepositoryError, RetainedExternalReferences, Scene, SceneAssetLink, SceneAssetSlot,
-    SceneDocumentV1, SceneDraftUpdate, SceneOwner, ScenePart, SceneRepository, SceneVariant,
-    SceneVariantDraftUpdate, Selection, StarterMessage, StarterRepository, StarterRole,
-    UnresolvedLegacyReference, WidgetImageSource, WidgetNode,
+    Character, CharacterDefaults, CharacterDependencyReader, CharacterDetails, CharacterMedia,
+    CharacterMediaLink, CharacterMediaSlot, CharacterPresentationV1, CharacterProfile,
+    CharacterProvenance, CharacterRepository, CharacterSearch, ConversationStarter,
+    ConversationStarterDraftUpdate, CreateCharacterPlan, DependencyReference, DependencyReport,
+    IdRemap, ImageRecommendation, LifecycleStatus, ProfileDuplicateRepository,
+    ProfileDuplicateRequest, ProfileDuplicateResult, RepositoryError, RetainedExternalReferences,
+    Scene, SceneAssetLink, SceneAssetSlot, SceneDocumentV1, SceneDraftUpdate, SceneOwner,
+    ScenePart, SceneRepository, SceneVariant, SceneVariantDraftUpdate, Selection, StarterMessage,
+    StarterRepository, StarterRole, UnresolvedLegacyReference, WidgetImageSource, WidgetNode,
 };
 use lettuce_companions::{SoulOwner, initial_soul_state};
 use lettuce_types::{
@@ -23,7 +19,7 @@ use lettuce_types::{
     Revision, SceneAssetLinkId, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::Database;
 
@@ -34,14 +30,8 @@ const PRESENTATION_VERSION: u32 = 1;
 const RECOMMENDATION_VERSION: u32 = 1;
 const DOCUMENT_VERSION: u32 = 1;
 const LOREBOOK_VERSION: u32 = 1;
-const CHARACTER_CURSOR_VERSION: u32 = 1;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Envelope<T> {
-    format_version: u32,
-    value: T,
-}
+use super::{Envelope, cursor_decode, cursor_encode};
 
 fn encode<T: Serialize>(value: &T, version: u32) -> Result<String, RepositoryError> {
     serde_json::to_string(&Envelope {
@@ -266,6 +256,7 @@ fn memory_from_name(value: &str) -> Result<lettuce_characters::MemoryPolicy, rus
 fn media_slot_name(value: CharacterMediaSlot) -> &'static str {
     match value {
         CharacterMediaSlot::AvatarOriginal => "avatar_original",
+        CharacterMediaSlot::Banner => "banner",
         CharacterMediaSlot::Background => "background",
         CharacterMediaSlot::DesignReference => "design_reference",
     }
@@ -274,6 +265,7 @@ fn media_slot_name(value: CharacterMediaSlot) -> &'static str {
 fn media_slot_from_name(value: &str) -> Result<CharacterMediaSlot, rusqlite::Error> {
     match value {
         "avatar_original" => Ok(CharacterMediaSlot::AvatarOriginal),
+        "banner" => Ok(CharacterMediaSlot::Banner),
         "background" => Ok(CharacterMediaSlot::Background),
         "design_reference" => Ok(CharacterMediaSlot::DesignReference),
         _ => Err(invalid()),
@@ -334,49 +326,6 @@ fn next_revision(value: Revision) -> Result<Revision, RepositoryError> {
 
 fn id_text<T: ToString>(value: Option<T>) -> Option<String> {
     value.map(|value| value.to_string())
-}
-
-fn cursor_encode(updated_at: TimestampMillis, id: CharacterId) -> Result<String, RepositoryError> {
-    let envelope = Envelope {
-        format_version: CHARACTER_CURSOR_VERSION,
-        value: (updated_at.get(), id.to_string()),
-    };
-    serde_json::to_vec(&envelope)
-        .map(|bytes| crate::hex_encode(&bytes))
-        .map_err(|_| {
-            RepositoryError::Invalid(lettuce_characters::ValidationError::Invariant {
-                field: "character.cursor",
-            })
-        })
-}
-
-fn cursor_decode(value: Option<&str>) -> Result<Option<(i64, CharacterId)>, RepositoryError> {
-    let Some(value) = value else { return Ok(None) };
-    let bytes = crate::hex_decode(value).map_err(|_| {
-        RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-            field: "character.cursor",
-        })
-    })?;
-    let envelope: Envelope<(i64, String)> = serde_json::from_slice(&bytes).map_err(|_| {
-        RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-            field: "character.cursor",
-        })
-    })?;
-    if envelope.format_version != CHARACTER_CURSOR_VERSION {
-        return Err(RepositoryError::Invalid(
-            lettuce_characters::ValidationError::InvalidValue {
-                field: "character.cursor",
-            },
-        ));
-    }
-    Ok(Some((
-        envelope.value.0,
-        envelope.value.1.parse().map_err(|_| {
-            RepositoryError::Invalid(lettuce_characters::ValidationError::InvalidValue {
-                field: "character.cursor",
-            })
-        })?,
-    )))
 }
 
 fn image_assets(
@@ -967,6 +916,7 @@ fn insert_character(tx: &Transaction<'_>, character: &Character) -> Result<(), R
 fn update_character_root(
     tx: &Transaction<'_>,
     character: &Character,
+    synced: bool,
 ) -> Result<(), RepositoryError> {
     let profile = encode(&character.profile, PROFILE_VERSION)?;
     let provenance = encode(&character.provenance, PROVENANCE_VERSION)?;
@@ -1006,7 +956,7 @@ fn update_character_root(
         character.id,
         was_shared,
         &character.defaults,
-        true,
+        synced,
         character.updated_at,
     )
 }
@@ -1016,24 +966,8 @@ fn replace_character_media(
     character_id: CharacterId,
     media: &CharacterMedia,
 ) -> Result<(), RepositoryError> {
-    tx.execute(
-        "DELETE FROM character_media WHERE character_id=?1",
-        [character_id.to_string()],
-    )
-    .map_err(db_error)?;
-    for link in &media.links {
-        tx.execute(
-            "INSERT INTO character_media(character_id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4)",
-            params![
-                character_id.to_string(),
-                link.asset_id.to_string(),
-                media_slot_name(link.slot),
-                link.ordinal
-            ],
-        )
-        .map_err(db_error)?;
-    }
-    Ok(())
+    let links = media.links.iter().map(|link| (link.asset_id.to_string(), media_slot_name(link.slot), link.ordinal)).collect::<Vec<_>>();
+    super::replace_media_links(tx, &character_id.to_string(), &links, ("character_media", "character_id", false), db_error)
 }
 
 fn insert_character_presentation_refs(
@@ -1041,9 +975,11 @@ fn insert_character_presentation_refs(
     character_id: CharacterId,
     presentation: &CharacterPresentationV1,
 ) -> Result<(), RepositoryError> {
+    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM character_presentation_asset_refs WHERE character_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![character_id.to_string(), ids]).map_err(db_error)?;
     for asset_id in presentation.referenced_asset_ids() {
         tx.execute(
-            "INSERT INTO character_presentation_asset_refs(character_id,asset_id) VALUES (?1,?2)",
+            "INSERT OR IGNORE INTO character_presentation_asset_refs(character_id,asset_id) VALUES (?1,?2)",
             params![character_id.to_string(), asset_id.to_string()],
         )
         .map_err(db_error)?;
@@ -1057,7 +993,7 @@ fn insert_scene(
     scene: &Scene,
 ) -> Result<(), RepositoryError> {
     tx.execute(
-        "INSERT INTO scenes (character_id,id,status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+        "INSERT INTO scenes (character_id,id,status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(character_id,id) DO UPDATE SET status=excluded.status,ordinal=excluded.ordinal,content_json=excluded.content_json,direction=excluded.direction,selected_variant_id=excluded.selected_variant_id,revision=excluded.revision,created_at=excluded.created_at,updated_at=excluded.updated_at WHERE (status,ordinal,content_json,direction,selected_variant_id,revision,created_at,updated_at) IS NOT (excluded.status,excluded.ordinal,excluded.content_json,excluded.direction,excluded.selected_variant_id,excluded.revision,excluded.created_at,excluded.updated_at)",
         params![character_id.to_string(), scene.id.to_string(), status_name(scene.status), scene.ordinal,
             encode(&scene.content, DOCUMENT_VERSION)?, scene.direction, id_text(scene.selected_variant_id), sql_u64(scene.revision.get())?, scene.created_at.get(), scene.updated_at.get()],
     ).map_err(db_error)?;
@@ -1070,11 +1006,10 @@ fn insert_scene_assets(
     scene_id: SceneId,
     assets: &[SceneAssetLink],
 ) -> Result<(), RepositoryError> {
+    let owner = character_id.to_string();
+    let scene = scene_id.to_string();
     for asset in assets {
-        tx.execute(
-            "INSERT INTO scene_assets (character_id,scene_id,id,asset_id,slot,ordinal) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![character_id.to_string(), scene_id.to_string(), asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal],
-        ).map_err(db_error)?;
+        tx.execute("INSERT INTO scene_assets(character_id,scene_id,id,asset_id,slot,ordinal) SELECT ?1,?2,?3,?4,?5,?6 WHERE NOT EXISTS (SELECT 1 FROM scene_assets WHERE character_id=?1 AND (scene_id,id,asset_id,slot,ordinal)=(?2,?3,?4,?5,?6))", params![owner, scene, asset.id.to_string(), asset.asset_id.to_string(), scene_slot_name(asset.slot), asset.ordinal]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -1222,6 +1157,14 @@ pub(crate) fn sync_replace_character(
             details.character.defaults.voice = None;
         }
     }
+    replace_character_graph(tx, &details, true)
+}
+
+fn replace_character_graph(
+    tx: &Transaction<'_>,
+    details: &lettuce_characters::CharacterDetails,
+    synced: bool,
+) -> Result<(), RepositoryError> {
     let plan = CreateCharacterPlan {
         character: details.character.clone(),
         scenes: details.scenes.clone(),
@@ -1234,13 +1177,11 @@ pub(crate) fn sync_replace_character(
         return Ok(());
     }
     validate_plan_assets(tx, &plan)?;
+    let current = load_details(tx, id).map_err(db_error)?.ok_or(RepositoryError::NotFound)?;
     for table in [
         "starter_messages",
         "conversation_starters",
-        "scene_assets",
         "scene_variants",
-        "scenes",
-        "character_presentation_asset_refs",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE character_id=?1"),
@@ -1248,7 +1189,18 @@ pub(crate) fn sync_replace_character(
         )
         .map_err(db_error)?;
     }
-    update_character_root(tx, &details.character)?;
+    let assets = details.scenes.iter().flat_map(|scene| scene.assets.iter().map(move |link| (link.id.to_string(), scene.id.to_string(), link.asset_id.to_string(), scene_slot_name(link.slot), link.ordinal))).collect::<Vec<_>>();
+    let assets = serde_json::to_string(&assets).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM scene_assets WHERE character_id=?1 AND NOT EXISTS (SELECT 1 FROM json_each(?2) WHERE (scene_assets.id,scene_assets.scene_id,scene_assets.asset_id,scene_assets.slot,scene_assets.ordinal) = (json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),json_extract(value,'$[4]')))", params![id.to_string(), assets]).map_err(db_error)?;
+    let scene_ids = serde_json::to_string(&details.scenes.iter().map(|scene| scene.id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    tx.execute("DELETE FROM scenes WHERE character_id=?1 AND id NOT IN (SELECT value FROM json_each(?2))", params![id.to_string(), scene_ids]).map_err(db_error)?;
+    let offset = current.scenes.iter().map(|scene| i64::from(scene.ordinal)).chain(details.scenes.iter().map(|scene| i64::from(scene.ordinal))).max().unwrap_or(0) + 1;
+    for (index, old) in current.scenes.iter().enumerate() {
+        if details.scenes.iter().any(|scene| scene.id == old.id && scene.ordinal != old.ordinal) {
+            tx.execute("UPDATE scenes SET ordinal=?3 WHERE character_id=?1 AND id=?2", params![id.to_string(), old.id.to_string(), offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+        }
+    }
+    update_character_root(tx, &details.character, synced)?;
     replace_character_media(tx, id, &details.character.media)?;
     insert_character_presentation_refs(tx, id, &details.character.presentation)?;
     for scene in &details.scenes {
@@ -1449,121 +1401,67 @@ impl CharacterRepository for Database {
         Ok(details)
     }
 
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Character>, RepositoryError> {
-        let cursor = cursor_decode(request.cursor.as_deref())?;
-        let limit = usize::from(request.limit.get()).max(1);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(db_error)?;
-        let mut sql = String::from("SELECT id FROM characters WHERE (?1 OR status='active')");
-        if cursor.is_some() {
-            sql.push_str(" AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3))");
-        }
-        sql.push_str(" ORDER BY updated_at DESC,id ASC LIMIT ?4");
-        let (cursor_time, cursor_id) = cursor
-            .map(|(time, id)| (Some(time), Some(id.to_string())))
-            .unwrap_or((None, None));
-        let mut statement = tx.prepare(&sql).map_err(db_error)?;
-        let ids = statement
-            .query_map(
-                params![
-                    include_archived,
-                    cursor_time,
-                    cursor_id,
-                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
-                ],
-                |row| id(row.get(0)?),
-            )
-            .map_err(db_error)?
-            .collect::<rusqlite::Result<Vec<CharacterId>>>()
-            .map_err(db_error)?;
-        drop(statement);
-        let mut ids = ids;
-        let has_more = ids.len() > limit;
-        if has_more {
-            ids.truncate(limit);
-        }
-        let mut items = Vec::with_capacity(ids.len());
-        for id in ids {
-            items.push(load_character(&tx, id)?);
-        }
-        let next_cursor = if has_more {
-            items
-                .last()
-                .map(|item| cursor_encode(item.updated_at, item.id))
-                .transpose()?
-        } else {
-            None
-        };
-        tx.commit().map_err(db_error)?;
-        Ok(Page { items, next_cursor })
-    }
-
     fn search(
         &self,
         request: CharacterSearch,
         page: PageRequest,
     ) -> Result<Page<Character>, RepositoryError> {
-        if request.text.trim().is_empty() {
-            return self.list(page, request.include_archived);
-        }
-        let cursor = cursor_decode(page.cursor.as_deref())?;
+        use lettuce_characters::LibrarySort;
+
+        let query = canonical_name(request.text.trim());
+        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"))?;
         let limit = usize::from(page.limit.get()).max(1);
-        let text = request
-            .text
-            .to_lowercase()
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        let pattern = format!("%{text}%");
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let (column, comparison, direction) = match request.sort {
+            LibrarySort::CreatedAsc => ("created_at", ">", "ASC"),
+            LibrarySort::UpdatedDesc => ("updated_at", "<", "DESC"),
+            LibrarySort::Name => ("normalized_name", ">", "ASC"),
+        };
+        let sql = format!(
+            "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
+        );
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
-        let mut sql = String::from(
-            "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR normalized_nickname LIKE ?2 ESCAPE '\\')",
-        );
-        if cursor.is_some() {
-            sql.push_str(" AND (updated_at < ?3 OR (updated_at = ?3 AND id > ?4))");
-        }
-        sql.push_str(" ORDER BY updated_at DESC,id ASC LIMIT ?5");
-        let (cursor_time, cursor_id) = cursor
-            .map(|(time, id)| (Some(time), Some(id.to_string())))
-            .unwrap_or((None, None));
         let mut statement = tx.prepare(&sql).map_err(db_error)?;
         let ids = statement
             .query_map(
                 params![
                     request.include_archived,
                     pattern,
-                    cursor_time,
-                    cursor_id,
-                    i64::try_from(limit + 1).unwrap_or(i64::MAX)
+                    cursor.as_ref().map(|value| &value.0),
+                    cursor.as_ref().map(|value| &value.1),
+                    i64::try_from(limit + 1).unwrap_or(i64::MAX),
+                    request.search_nickname
                 ],
-                |row| id(row.get(0)?),
+                |row| parse_id(row.get(0)?),
             )
             .map_err(db_error)?
             .collect::<rusqlite::Result<Vec<CharacterId>>>()
             .map_err(db_error)?;
         drop(statement);
-        let mut ids = ids;
         let has_more = ids.len() > limit;
-        if has_more {
-            ids.truncate(limit);
-        }
-        let mut items = Vec::with_capacity(ids.len());
-        for id in ids {
+        let mut items = Vec::with_capacity(limit.min(ids.len()));
+        for id in ids.into_iter().take(limit) {
             items.push(load_character(&tx, id)?);
         }
         let next_cursor = if has_more {
             items
                 .last()
-                .map(|item| cursor_encode(item.updated_at, item.id))
+                .map(|item| {
+                    cursor_encode(match request.sort {
+                        LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
+                        LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
+                        LibrarySort::Name => serde_json::json!(canonical_name(&item.profile.name)),
+                    }, item.id.to_string(), (request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"))
+                })
                 .transpose()?
         } else {
             None
@@ -1936,17 +1834,29 @@ impl Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        ensure_root(&tx, id, expected_revision, true)?;
-        tx.execute(
-            "UPDATE characters SET status=?2 WHERE id=?1",
-            params![id.to_string(), status_name(status)],
-        )
-        .map_err(db_error)?;
-        bump_root(&tx, id, expected_revision, now)?;
-        let character = load_character(&tx, id)?;
+        let details = set_character_status_in(&tx, id, expected_revision, status, now)?;
         tx.commit().map_err(db_error)?;
-        Ok(character)
+        Ok(details.character)
     }
+}
+
+fn set_character_status_in(
+    tx: &Transaction<'_>,
+    id: CharacterId,
+    expected_revision: Revision,
+    status: LifecycleStatus,
+    now: TimestampMillis,
+) -> Result<CharacterDetails, RepositoryError> {
+    ensure_root(tx, id, expected_revision, true)?;
+    tx.execute(
+        "UPDATE characters SET status=?2 WHERE id=?1",
+        params![id.to_string(), status_name(status)],
+    )
+    .map_err(db_error)?;
+    bump_root(tx, id, expected_revision, now)?;
+    load_details(tx, id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::NotFound)
 }
 
 impl CharacterDependencyReader for Database {
@@ -2035,213 +1945,439 @@ impl ProfileDuplicateRepository for Database {
         &self,
         request: ProfileDuplicateRequest,
     ) -> Result<ProfileDuplicateResult, RepositoryError> {
-        request.validate()?;
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let source = load_details(&tx, request.source_character_id)
+        let result = duplicate_character_in(&tx, request)?;
+        tx.commit().map_err(db_error)?;
+        Ok(result)
+    }
+}
+
+fn duplicate_character_in(
+    tx: &Transaction<'_>,
+    request: ProfileDuplicateRequest,
+) -> Result<ProfileDuplicateResult, RepositoryError> {
+    request.validate()?;
+    let source = load_details(tx, request.source_character_id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::NotFound)?;
+    if load_details(tx, request.destination_character_id)
+        .map_err(db_error)?
+        .is_some()
+    {
+        return Err(RepositoryError::AlreadyExists);
+    }
+
+    let scene_remaps: Vec<_> = source
+        .scenes
+        .iter()
+        .map(|scene| IdRemap {
+            source: scene.id,
+            destination: SceneId::new(),
+        })
+        .collect();
+    let scene_ids: HashMap<_, _> = scene_remaps
+        .iter()
+        .map(|remap| (remap.source, remap.destination))
+        .collect();
+    let link_remaps: Vec<_> = source
+        .scenes
+        .iter()
+        .flat_map(|scene| scene.assets.iter())
+        .map(|link| IdRemap {
+            source: link.id,
+            destination: SceneAssetLinkId::new(),
+        })
+        .collect();
+    let link_ids: HashMap<_, _> = link_remaps
+        .iter()
+        .map(|remap| (remap.source, remap.destination))
+        .collect();
+    let variant_remaps: Vec<_> = source
+        .variants
+        .iter()
+        .map(|variant| IdRemap {
+            source: variant.id,
+            destination: SceneVariantId::new(),
+        })
+        .collect();
+    let variant_ids: HashMap<_, _> = variant_remaps
+        .iter()
+        .map(|remap| (remap.source, remap.destination))
+        .collect();
+    let starter_remaps: Vec<_> = source
+        .starters
+        .iter()
+        .map(|starter| IdRemap {
+            source: starter.id,
+            destination: ConversationStarterId::new(),
+        })
+        .collect();
+    let starter_ids: HashMap<_, _> = starter_remaps
+        .iter()
+        .map(|remap| (remap.source, remap.destination))
+        .collect();
+    let message_remaps: Vec<_> = source
+        .starters
+        .iter()
+        .flat_map(|starter| starter.messages.iter())
+        .map(|message| IdRemap {
+            source: message.id,
+            destination: StarterMessageId::new(),
+        })
+        .collect();
+    let message_ids: HashMap<_, _> = message_remaps
+        .iter()
+        .map(|remap| (remap.source, remap.destination))
+        .collect();
+
+    let mut character = source.character.clone();
+    character.id = request.destination_character_id;
+    character.status = LifecycleStatus::Active;
+    character.revision = Revision::INITIAL;
+    character.created_at = request.now;
+    character.updated_at = request.now;
+    if let Some(name) = &request.destination_name {
+        character.profile.name = name.clone();
+    }
+    character.defaults.default_scene_id = character
+        .defaults
+        .default_scene_id
+        .and_then(|id| scene_ids.get(&id).copied());
+    character.defaults.default_starter_id = character
+        .defaults
+        .default_starter_id
+        .and_then(|id| starter_ids.get(&id).copied());
+    remap_presentation_character_id(
+        &mut character.presentation,
+        request.source_character_id,
+        request.destination_character_id,
+    );
+
+    let scenes: Vec<_> = source
+        .scenes
+        .iter()
+        .map(|scene| {
+            let mut copy = scene.clone();
+            copy.id = scene_ids[&scene.id];
+            copy.owner = SceneOwner::Character(request.destination_character_id);
+            copy.selected_variant_id = scene
+                .selected_variant_id
+                .and_then(|id| variant_ids.get(&id).copied());
+            copy.content = remap_document(&scene.content, &link_ids);
+            copy.assets = scene
+                .assets
+                .iter()
+                .map(|link| {
+                    let mut link = link.clone();
+                    link.id = link_ids[&link.id];
+                    link
+                })
+                .collect();
+            copy.revision = Revision::INITIAL;
+            copy.created_at = request.now;
+            copy.updated_at = request.now;
+            copy
+        })
+        .collect();
+    let variants: Vec<_> = source
+        .variants
+        .iter()
+        .map(|variant| {
+            let mut copy = variant.clone();
+            copy.id = variant_ids[&variant.id];
+            copy.scene_id = scene_ids[&variant.scene_id];
+            copy.content = remap_document(&variant.content, &link_ids);
+            copy.revision = Revision::INITIAL;
+            copy.created_at = request.now;
+            copy.updated_at = request.now;
+            copy
+        })
+        .collect();
+    let starters: Vec<_> = source
+        .starters
+        .iter()
+        .map(|starter| {
+            let mut copy = starter.clone();
+            copy.id = starter_ids[&starter.id];
+            copy.character_id = request.destination_character_id;
+            copy.scene_id = starter.scene_id.and_then(|id| scene_ids.get(&id).copied());
+            copy.messages = starter
+                .messages
+                .iter()
+                .map(|message| StarterMessage {
+                    id: message_ids[&message.id],
+                    ..message.clone()
+                })
+                .collect();
+            copy.revision = Revision::INITIAL;
+            copy.created_at = request.now;
+            copy.updated_at = request.now;
+            copy
+        })
+        .collect();
+    let plan = CreateCharacterPlan {
+        character,
+        scenes,
+        variants,
+        starters,
+    };
+    plan.validate()?;
+    validate_plan_assets(tx, &plan)?;
+    insert_character(tx, &plan.character)?;
+    if plan.character.defaults.interaction_mode == lettuce_characters::InteractionMode::Companion {
+        crate::companion::soul_adapter::ensure_character_soul_in(
+            tx,
+            plan.character.id,
+            plan.character.defaults.companion_soul.as_ref(),
+            true,
+            request.now,
+        )
+        .map_err(|_| RepositoryError::Storage)?;
+    }
+    replace_character_media(tx, plan.character.id, &plan.character.media)?;
+    insert_character_presentation_refs(tx, plan.character.id, &plan.character.presentation)?;
+    for scene in &plan.scenes {
+        insert_scene(tx, plan.character.id, scene)?;
+    }
+    for variant in &plan.variants {
+        insert_variant(tx, plan.character.id, variant)?;
+    }
+    for starter in &plan.starters {
+        insert_starter(tx, plan.character.id, starter)?;
+    }
+    let mut bindings = crate::lorebook::lorebook_adapter::read_bindings(
+        tx,
+        crate::lorebook::lorebook_adapter::OwnerKind::Character,
+        &request.source_character_id.to_string(),
+    )
+    .map_err(|_| RepositoryError::Storage)?;
+    for binding in &mut bindings {
+        binding.revision = Revision::INITIAL;
+        binding.created_at = request.now;
+        binding.updated_at = request.now;
+    }
+    crate::lorebook::lorebook_adapter::insert_bindings_in(
+        tx,
+        crate::lorebook::lorebook_adapter::OwnerKind::Character,
+        &request.destination_character_id.to_string(),
+        &bindings,
+    )
+    .map_err(db_error)?;
+    let note_ids = tx
+        .prepare("SELECT id FROM companion_scheduled_notes WHERE character_id=?1 ORDER BY id")
+        .map_err(db_error)?
+        .query_map([request.source_character_id.to_string()], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(db_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(db_error)?;
+    for id in note_ids {
+        let mut note = crate::memory::scheduled_note_adapter::load_in(
+            tx,
+            id.parse().map_err(|_| RepositoryError::Storage)?,
+        )
+        .map_err(|_| RepositoryError::Storage)?
+        .ok_or(RepositoryError::Storage)?;
+        note.id = uuid::Uuid::new_v4();
+        note.character_id = request.destination_character_id;
+        note.created_at = request.now;
+        note.updated_at = request.now;
+        crate::memory::scheduled_note_adapter::insert_restored_note_in(tx, &note)
+            .map_err(|_| RepositoryError::Storage)?;
+    }
+    let mut retained = duplicate_external_references(&source);
+    retained
+        .lorebook_ids
+        .extend(bindings.iter().map(|binding| binding.lorebook_id));
+    retained.lorebook_ids.sort_unstable();
+    retained.lorebook_ids.dedup();
+    let result = ProfileDuplicateResult {
+        character_id: request.destination_character_id,
+        remapped_scene_ids: scene_remaps,
+        remapped_variant_ids: variant_remaps,
+        remapped_scene_asset_link_ids: link_remaps,
+        remapped_starter_ids: starter_remaps,
+        remapped_starter_message_ids: message_remaps,
+        retained_external_references: retained,
+    };
+    result.validate_for(&request)?;
+    Ok(result)
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn set_library_character_media(
+        &self,
+        id: CharacterId,
+        expected: Revision,
+        slot: CharacterMediaSlot,
+        ordinal: u32,
+        asset: Option<AssetId>,
+        now: TimestampMillis,
+    ) -> Result<CharacterDetails, RepositoryError> {
+        let current = ensure_root(self.transaction, id, expected, false)?;
+        let mut media = current.character.media;
+        let count = media.links.iter().filter(|link| link.slot == slot).count();
+        if (slot != CharacterMediaSlot::DesignReference && ordinal != 0)
+            || usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? > count
+            || (slot == CharacterMediaSlot::DesignReference
+                && asset.is_none()
+                && usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? == count)
+        {
+            return Err(RepositoryError::Invalid(
+                lettuce_characters::ValidationError::InvalidValue { field: "ordinal" },
+            ));
+        }
+        media
+            .links
+            .retain(|link| !(link.slot == slot && link.ordinal == ordinal));
+        match asset {
+            Some(asset_id) => {
+                image_assets(self.transaction, [asset_id])?;
+                media.links.push(CharacterMediaLink {
+                    asset_id,
+                    slot,
+                    ordinal,
+                });
+            }
+            None => {
+                for link in &mut media.links {
+                    if link.slot == slot && link.ordinal > ordinal {
+                        link.ordinal -= 1;
+                    }
+                }
+            }
+        }
+        media
+            .links
+            .sort_by_key(|link| (media_slot_name(link.slot), link.ordinal));
+        media.validate()?;
+        replace_character_media(self.transaction, id, &media)?;
+        bump_root(self.transaction, id, expected, now)?;
+        load_details(self.transaction, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::NotFound)?;
-        if load_details(&tx, request.destination_character_id)
-            .map_err(db_error)?
-            .is_some()
+            .ok_or(RepositoryError::NotFound)
+    }
+
+    pub fn set_library_character_status(
+        &self,
+        id: CharacterId,
+        expected_revision: Revision,
+        status: LifecycleStatus,
+        now: TimestampMillis,
+    ) -> Result<CharacterDetails, RepositoryError> {
+        set_character_status_in(self.transaction, id, expected_revision, status, now)
+    }
+
+    pub fn library_character(&self, id: CharacterId) -> Result<Character, RepositoryError> {
+        load_character(self.transaction, id)
+    }
+
+    pub fn save_character(
+        &self,
+        mut plan: CreateCharacterPlan,
+        expected_revision: Option<Revision>,
+        now: TimestampMillis,
+    ) -> Result<lettuce_characters::CharacterDetails, RepositoryError> {
+        let current = expected_revision
+            .map(|expected| ensure_root(self.transaction, plan.character.id, expected, false))
+            .transpose()?;
+        match &current {
+            Some(before) => {
+                plan.character.status = before.character.status;
+                plan.character.created_at = before.character.created_at;
+                plan.character.revision = next_revision(before.character.revision)?;
+            }
+            None => {
+                plan.character.status = LifecycleStatus::Active;
+                plan.character.created_at = now;
+                plan.character.revision = Revision::INITIAL;
+            }
+        }
+        plan.character.updated_at = now;
+        for scene in &mut plan.scenes {
+            if let Some(before) = current
+                .as_ref()
+                .and_then(|details| details.scenes.iter().find(|value| value.id == scene.id))
+            {
+                scene.status = before.status;
+                scene.created_at = before.created_at;
+                scene.updated_at = before.updated_at;
+                scene.revision = before.revision;
+                if scene != before {
+                    scene.updated_at = now;
+                    scene.revision = next_revision(before.revision)?;
+                }
+            } else {
+                scene.created_at = now;
+                scene.updated_at = now;
+                scene.revision = Revision::INITIAL;
+            }
+        }
+        for variant in &mut plan.variants {
+            if let Some(before) = current
+                .as_ref()
+                .and_then(|details| details.variants.iter().find(|value| value.id == variant.id))
+            {
+                variant.created_at = before.created_at;
+                variant.updated_at = before.updated_at;
+                variant.revision = before.revision;
+                if variant != before {
+                    variant.updated_at = now;
+                    variant.revision = next_revision(before.revision)?;
+                }
+            } else {
+                variant.created_at = now;
+                variant.updated_at = now;
+                variant.revision = Revision::INITIAL;
+            }
+        }
+        for starter in &mut plan.starters {
+            if let Some(before) = current
+                .as_ref()
+                .and_then(|details| details.starters.iter().find(|value| value.id == starter.id))
+            {
+                starter.created_at = before.created_at;
+                starter.updated_at = before.updated_at;
+                starter.revision = before.revision;
+                if starter != before {
+                    starter.updated_at = now;
+                    starter.revision = next_revision(before.revision)?;
+                }
+            } else {
+                starter.created_at = now;
+                starter.updated_at = now;
+                starter.revision = Revision::INITIAL;
+            }
+        }
+        plan.validate()?;
+        let details = lettuce_characters::CharacterDetails {
+            character: plan.character,
+            scenes: plan.scenes,
+            variants: plan.variants,
+            starters: plan.starters,
+        };
+        if current.is_none()
+            && character_row(self.transaction, details.character.id)
+                .map_err(db_error)?
+                .is_some()
         {
             return Err(RepositoryError::AlreadyExists);
         }
+        replace_character_graph(self.transaction, &details, false)?;
+        load_details(self.transaction, details.character.id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::Storage)
+    }
 
-        let scene_remaps: Vec<_> = source
-            .scenes
-            .iter()
-            .map(|scene| IdRemap {
-                source: scene.id,
-                destination: SceneId::new(),
-            })
-            .collect();
-        let scene_ids: HashMap<_, _> = scene_remaps
-            .iter()
-            .map(|remap| (remap.source, remap.destination))
-            .collect();
-        let link_remaps: Vec<_> = source
-            .scenes
-            .iter()
-            .flat_map(|scene| scene.assets.iter())
-            .map(|link| IdRemap {
-                source: link.id,
-                destination: SceneAssetLinkId::new(),
-            })
-            .collect();
-        let link_ids: HashMap<_, _> = link_remaps
-            .iter()
-            .map(|remap| (remap.source, remap.destination))
-            .collect();
-        let variant_remaps: Vec<_> = source
-            .variants
-            .iter()
-            .map(|variant| IdRemap {
-                source: variant.id,
-                destination: SceneVariantId::new(),
-            })
-            .collect();
-        let variant_ids: HashMap<_, _> = variant_remaps
-            .iter()
-            .map(|remap| (remap.source, remap.destination))
-            .collect();
-        let starter_remaps: Vec<_> = source
-            .starters
-            .iter()
-            .map(|starter| IdRemap {
-                source: starter.id,
-                destination: ConversationStarterId::new(),
-            })
-            .collect();
-        let starter_ids: HashMap<_, _> = starter_remaps
-            .iter()
-            .map(|remap| (remap.source, remap.destination))
-            .collect();
-        let message_remaps: Vec<_> = source
-            .starters
-            .iter()
-            .flat_map(|starter| starter.messages.iter())
-            .map(|message| IdRemap {
-                source: message.id,
-                destination: StarterMessageId::new(),
-            })
-            .collect();
-        let message_ids: HashMap<_, _> = message_remaps
-            .iter()
-            .map(|remap| (remap.source, remap.destination))
-            .collect();
-
-        let mut character = source.character.clone();
-        character.id = request.destination_character_id;
-        character.status = LifecycleStatus::Active;
-        character.revision = Revision::INITIAL;
-        character.created_at = request.now;
-        character.updated_at = request.now;
-        if let Some(name) = &request.destination_name {
-            character.profile.name = name.clone();
-        }
-        character.defaults.default_scene_id = character
-            .defaults
-            .default_scene_id
-            .and_then(|id| scene_ids.get(&id).copied());
-        character.defaults.default_starter_id = character
-            .defaults
-            .default_starter_id
-            .and_then(|id| starter_ids.get(&id).copied());
-        remap_presentation_character_id(
-            &mut character.presentation,
-            request.source_character_id,
-            request.destination_character_id,
-        );
-
-        let scenes: Vec<_> = source
-            .scenes
-            .iter()
-            .map(|scene| {
-                let mut copy = scene.clone();
-                copy.id = scene_ids[&scene.id];
-                copy.owner = SceneOwner::Character(request.destination_character_id);
-                copy.selected_variant_id = scene
-                    .selected_variant_id
-                    .and_then(|id| variant_ids.get(&id).copied());
-                copy.content = remap_document(&scene.content, &link_ids);
-                copy.assets = scene
-                    .assets
-                    .iter()
-                    .map(|link| {
-                        let mut link = link.clone();
-                        link.id = link_ids[&link.id];
-                        link
-                    })
-                    .collect();
-                copy.revision = Revision::INITIAL;
-                copy.created_at = request.now;
-                copy.updated_at = request.now;
-                copy
-            })
-            .collect();
-        let variants: Vec<_> = source
-            .variants
-            .iter()
-            .map(|variant| {
-                let mut copy = variant.clone();
-                copy.id = variant_ids[&variant.id];
-                copy.scene_id = scene_ids[&variant.scene_id];
-                copy.content = remap_document(&variant.content, &link_ids);
-                copy.revision = Revision::INITIAL;
-                copy.created_at = request.now;
-                copy.updated_at = request.now;
-                copy
-            })
-            .collect();
-        let starters: Vec<_> = source
-            .starters
-            .iter()
-            .map(|starter| {
-                let mut copy = starter.clone();
-                copy.id = starter_ids[&starter.id];
-                copy.character_id = request.destination_character_id;
-                copy.scene_id = starter.scene_id.and_then(|id| scene_ids.get(&id).copied());
-                copy.messages = starter
-                    .messages
-                    .iter()
-                    .map(|message| StarterMessage {
-                        id: message_ids[&message.id],
-                        ..message.clone()
-                    })
-                    .collect();
-                copy.revision = Revision::INITIAL;
-                copy.created_at = request.now;
-                copy.updated_at = request.now;
-                copy
-            })
-            .collect();
-        let plan = CreateCharacterPlan {
-            character,
-            scenes,
-            variants,
-            starters,
-        };
-        plan.validate()?;
-        validate_plan_assets(&tx, &plan)?;
-        insert_character(&tx, &plan.character)?;
-        if plan.character.defaults.interaction_mode
-            == lettuce_characters::InteractionMode::Companion
-        {
-            crate::companion::soul_adapter::copy_character_soul_in(
-                &tx,
-                request.source_character_id,
-                plan.character.id,
-                plan.character.defaults.companion_soul.as_ref(),
-                request.now,
-            )
-            .map_err(|_| RepositoryError::Storage)?;
-        }
-        replace_character_media(&tx, plan.character.id, &plan.character.media)?;
-        insert_character_presentation_refs(&tx, plan.character.id, &plan.character.presentation)?;
-        for scene in &plan.scenes {
-            insert_scene(&tx, plan.character.id, scene)?;
-        }
-        for variant in &plan.variants {
-            insert_variant(&tx, plan.character.id, variant)?;
-        }
-        for starter in &plan.starters {
-            insert_starter(&tx, plan.character.id, starter)?;
-        }
-        let result = ProfileDuplicateResult {
-            character_id: request.destination_character_id,
-            remapped_scene_ids: scene_remaps,
-            remapped_variant_ids: variant_remaps,
-            remapped_scene_asset_link_ids: link_remaps,
-            remapped_starter_ids: starter_remaps,
-            remapped_starter_message_ids: message_remaps,
-            retained_external_references: duplicate_external_references(&source),
-        };
-        result.validate_for(&request)?;
-        tx.commit().map_err(db_error)?;
-        Ok(result)
+    pub fn duplicate_character(
+        &self,
+        request: ProfileDuplicateRequest,
+    ) -> Result<ProfileDuplicateResult, RepositoryError> {
+        duplicate_character_in(self.transaction, request)
     }
 }
 
@@ -3879,12 +4015,15 @@ mod smoke_tests {
             },
         )
         .expect("duplicate");
-        assert_eq!(
-            SoulRepository::get(&database, SoulOwner::Character(copy.character_id))
-                .expect("get copied soul")
-                .expect("copied soul")
-                .facts,
-            soul.facts
+        let copied = SoulRepository::get(&database, SoulOwner::Character(copy.character_id))
+            .expect("get copied soul")
+            .expect("copied soul");
+        assert_eq!(copied.facts.len(), soul.facts.len());
+        assert!(
+            copied
+                .facts
+                .iter()
+                .all(|fact| fact.created_at == TimestampMillis::new(30))
         );
 
         let synced_id = CharacterId::new();
@@ -4106,6 +4245,150 @@ mod smoke_tests {
             scene_id,
             starter_id,
         )
+    }
+
+    #[test]
+    fn detached_media_is_queued_atomically_and_stale_writes_leave_it_attached() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, asset, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        assert!(
+            CharacterRepository::update_media(
+                &database,
+                before.character.id,
+                Revision::new(99),
+                CharacterMedia::default(),
+                TimestampMillis::new(2),
+            )
+            .is_err()
+        );
+        let count = |database: &Database| -> i64 {
+            database
+                .connection()
+                .expect("connection")
+                .query_row(
+                    "SELECT count(*) FROM media_gc_candidates WHERE asset_id=?1",
+                    [asset.to_string()],
+                    |row| row.get(0),
+                )
+                .expect("candidates")
+        };
+        assert_eq!(count(&database), 0);
+        database.connection().expect("connection").execute_batch(
+            "CREATE TEMP TRIGGER fail_media_bump BEFORE UPDATE OF revision ON characters BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        ).expect("fault");
+        assert!(
+            CharacterRepository::update_media(
+                &database,
+                before.character.id,
+                before.character.revision,
+                CharacterMedia::default(),
+                TimestampMillis::new(2),
+            )
+            .is_err()
+        );
+        assert_eq!(count(&database), 0);
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id)
+                .expect("get")
+                .expect("exists"),
+            before
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER fail_media_bump")
+            .expect("clear fault");
+        CharacterRepository::update_media(
+            &database,
+            before.character.id,
+            before.character.revision,
+            CharacterMedia::default(),
+            TimestampMillis::new(2),
+        )
+        .expect("detach");
+        assert_eq!(count(&database), 1);
+    }
+
+    #[test]
+    fn duplicate_preserves_archived_bindings_and_scheduled_notes_atomically() {
+        use lettuce_companions::CompanionScheduledNoteRepository;
+        use lettuce_context::{CharacterLorebookBindingRepository, LorebookRepository};
+        let database = Database::open_in_memory().expect("database");
+        let source = CharacterId::new();
+        CharacterRepository::create(&database, companion_plan(source)).expect("companion");
+        let book = LorebookRepository::create(
+            &database,
+            lettuce_context::LorebookMetadataDraft {
+                name: "Archived world".into(),
+                detection_policy: lettuce_context::DetectionPolicy::RecentMessageWindow,
+                icon_asset_id: None,
+                behavior_version: lettuce_context::LorebookBehaviorVersion::LegacyV1,
+            },
+            vec![],
+            TimestampMillis::new(8),
+        )
+        .expect("book");
+        CharacterLorebookBindingRepository::bind_character_lorebook(
+            &database,
+            source,
+            Revision::INITIAL,
+            lettuce_context::LorebookBindingCreate {
+                lorebook_id: book.book.id,
+                target: lettuce_context::BindingInsertionTarget::Append,
+            },
+            TimestampMillis::new(9),
+        )
+        .expect("bind");
+        LorebookRepository::archive(
+            &database,
+            book.book.id,
+            book.book.revision,
+            TimestampMillis::new(10),
+        )
+        .expect("archive");
+        let id = uuid::Uuid::new_v4();
+        database.connection().expect("connection").execute(
+            "INSERT INTO companion_scheduled_notes(id,character_id,label,content,available_at,expires_at,recurrence,recurrence_window_ms,enabled,created_at,updated_at) VALUES (?1,?2,'Birthday','Remember this',100,NULL,'yearly',NULL,1,8,8)",
+            params![id.to_string(),source.to_string()],
+        ).expect("note");
+        let destination = CharacterId::new();
+        let request = ProfileDuplicateRequest {
+            source_character_id: source,
+            destination_character_id: destination,
+            destination_name: Some("Ada (Copy)".into()),
+            now: TimestampMillis::new(11),
+        };
+        ProfileDuplicateRepository::duplicate_character(&database, request.clone())
+            .expect("duplicate");
+        let bindings =
+            CharacterLorebookBindingRepository::list_character_bindings(&database, destination)
+                .expect("bindings");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].lorebook_id, book.book.id);
+        let notes = database.list_scheduled_notes(destination).expect("notes");
+        assert_eq!(notes.len(), 1);
+        assert_ne!(notes[0].id, id);
+        assert_eq!(notes[0].available_at, TimestampMillis::new(100));
+        let failed_destination = CharacterId::new();
+        database.connection().expect("connection").execute_batch(
+            "CREATE TEMP TRIGGER fail_duplicate_note BEFORE INSERT ON companion_scheduled_notes BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        ).expect("fault");
+        assert!(
+            ProfileDuplicateRepository::duplicate_character(
+                &database,
+                ProfileDuplicateRequest {
+                    destination_character_id: failed_destination,
+                    ..request
+                }
+            )
+            .is_err()
+        );
+        assert!(
+            CharacterRepository::get(&database, failed_destination)
+                .expect("get")
+                .is_none()
+        );
     }
 
     fn sync_characters(from: &Database, to: &Database, at: i64) {
@@ -4489,6 +4772,7 @@ mod smoke_tests {
             CharacterSearch {
                 text: "äDA".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest::default(),
         )
@@ -4499,6 +4783,7 @@ mod smoke_tests {
             CharacterSearch {
                 text: "ЖЕН".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest::default(),
         )
@@ -4806,24 +5091,16 @@ mod smoke_tests {
                     .id,
             );
         }
-        let first = CharacterRepository::list(
-            &database,
-            PageRequest {
+        let first = CharacterRepository::search(&database, lettuce_characters::CharacterSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                 cursor: None,
                 limit: PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("first page");
         assert_eq!(first.items.len(), 2);
-        let second = CharacterRepository::list(
-            &database,
-            PageRequest {
+        let second = CharacterRepository::search(&database, lettuce_characters::CharacterSearch { include_archived: false, search_nickname: false, ..Default::default() }, PageRequest {
                 cursor: first.next_cursor,
                 limit: PageLimit::new(2),
-            },
-            false,
-        )
+            })
         .expect("second page");
         assert_eq!(second.items.len(), 1);
         let search = CharacterRepository::search(
@@ -4831,6 +5108,7 @@ mod smoke_tests {
             CharacterSearch {
                 text: "alp".into(),
                 include_archived: false,
+                ..Default::default()
             },
             PageRequest {
                 cursor: None,
@@ -4855,7 +5133,8 @@ mod smoke_tests {
                 &database,
                 CharacterSearch {
                     text: "alp".into(),
-                    include_archived: false
+                    include_archived: false,
+                    ..Default::default()
                 },
                 PageRequest::default()
             )
@@ -5329,5 +5608,877 @@ mod smoke_tests {
                 0
             );
         }
+    }
+    #[test]
+    fn library_purges_sync_and_character_apply_emits_once() {
+        use lettuce_characters::{CreateGroupPlan, GroupMember, GroupProfile, GroupRepository};
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let first = CharacterId::new();
+        let second = CharacterId::new();
+        CharacterRepository::create(&a, companion_plan(first)).expect("first");
+        CharacterRepository::create(&a, companion_plan(second)).expect("second");
+        let persona = lettuce_types::PersonaId::new();
+        a.connection().expect("lock").execute("INSERT INTO personas (id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [persona.to_string()]).expect("persona");
+        let mut group = GroupProfile::new(
+            lettuce_types::GroupId::new(),
+            "Cast".into(),
+            vec![
+                GroupMember {
+                    character_id: first,
+                    ordinal: 0,
+                    muted: false,
+                    model_profile_override: None,
+                },
+                GroupMember {
+                    character_id: second,
+                    ordinal: 1,
+                    muted: false,
+                    model_profile_override: None,
+                },
+            ],
+            TimestampMillis::new(1),
+        )
+        .expect("group");
+        group.persona = lettuce_characters::Selection::Explicit(persona);
+        let id = group.id;
+        GroupRepository::create(
+            &a,
+            CreateGroupPlan {
+                group,
+                starting_scene: None,
+            },
+        )
+        .expect("create group");
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture = events.clone();
+        b.on_library_change(move |kind, id| {
+            capture.lock().expect("events").push((kind, id.to_owned()))
+        });
+        sync_characters(&a, &b, 100);
+        assert_eq!(
+            events
+                .lock()
+                .expect("events")
+                .iter()
+                .filter(
+                    |(kind, id)| *kind == crate::LibraryKind::Character && *id == first.to_string()
+                )
+                .count(),
+            1
+        );
+        sync_characters(&b, &a, 110);
+        a.purge_library_operation(crate::LibraryKind::Persona, &persona.to_string(),
+            Revision::INITIAL,
+            "persona",
+            "persona-digest",
+            TimestampMillis::new(200),
+        )
+        .expect("persona purge");
+        sync_characters(&a, &b, 210);
+        assert!(
+            lettuce_characters::PersonaRepository::get(&b, persona)
+                .expect("persona")
+                .is_none()
+        );
+        assert_eq!(
+            GroupRepository::get(&b, id)
+                .expect("group")
+                .expect("exists")
+                .group
+                .persona,
+            lettuce_characters::Selection::Inherit
+        );
+        a.purge_library_operation(crate::LibraryKind::Group, &id.to_string(),
+            Revision::new(2),
+            "group",
+            "group-digest",
+            TimestampMillis::new(300),
+        )
+        .expect("group purge");
+        sync_characters(&a, &b, 310);
+        assert!(GroupRepository::get(&b, id).expect("group").is_none());
+        assert!(
+            CharacterRepository::get(&b, first)
+                .expect("character")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn duplicate_and_operation_receipt_roll_back_and_replay_together() {
+        let database = Database::open_in_memory().expect("database");
+        let source = CharacterId::new();
+        CharacterRepository::create(&database, companion_plan(source)).expect("source");
+        let destination = CharacterId::new();
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_duplicate_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        let apply = |digest: &str| {
+            database.commit_api_operation::<String, crate::ApiOperationError>(
+                "character_duplicate",
+                "duplicate",
+                digest,
+                TimestampMillis::new(20),
+                |scope| {
+                    scope
+                        .duplicate_character(ProfileDuplicateRequest {
+                            source_character_id: source,
+                            destination_character_id: destination,
+                            destination_name: Some("Copy".into()),
+                            now: TimestampMillis::new(20),
+                        })
+                        .map(|result| result.character_id.to_string())
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+        };
+        assert_eq!(apply("digest"), Err(crate::ApiOperationError::Storage));
+        assert!(
+            CharacterRepository::get(&database, destination)
+                .expect("copy")
+                .is_none()
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_duplicate", "duplicate")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_duplicate_receipt;")
+            .expect("clear fault");
+        assert_eq!(apply("digest").expect("duplicate"), destination.to_string());
+        assert_eq!(apply("digest").expect("replay"), destination.to_string());
+        assert_eq!(apply("different"), Err(crate::ApiOperationError::Conflict));
+    }
+    #[test]
+    fn adding_scene_rejects_an_existing_link_identity() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan.clone()).expect("create");
+        let mut scene = plan.scenes[0].clone();
+        scene.id = SceneId::new();
+        scene.ordinal = 1;
+        scene.selected_variant_id = None;
+        scene.assets.truncate(1);
+        assert_eq!(SceneRepository::add_scene(&database, plan.character.id, Revision::INITIAL, scene, TimestampMillis::new(10)), Err(RepositoryError::AlreadyExists));
+        assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(before));
+    }
+
+    #[test]
+    fn character_save_moves_scene_asset_link_to_an_earlier_scene() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        plan.variants.clear();
+        plan.scenes[0].selected_variant_id = None;
+        let moved = plan.scenes[0].assets.pop().expect("second link");
+        let mut second = plan.scenes[0].clone();
+        second.id = SceneId::new();
+        second.ordinal = 1;
+        second.content = SceneDocumentV1::new(vec![ScenePart::InlineAsset { link_id: moved.id }]).expect("content");
+        second.assets = vec![SceneAssetLink { ordinal: 0, ..moved.clone() }];
+        plan.scenes.push(second);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.scenes[1].assets.clear();
+        plan.scenes[1].content = SceneDocumentV1::new(vec![ScenePart::Text { text: "Second scene".into() }]).expect("content");
+        plan.scenes[0].content = SceneDocumentV1::new(vec![ScenePart::InlineAsset { link_id: plan.scenes[0].assets[0].id }, ScenePart::InlineAsset { link_id: moved.id }]).expect("content");
+        plan.scenes[0].assets.push(moved);
+        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "move-link", "move-link", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("move link");
+        assert_eq!(saved.scenes[0].assets, plan.scenes[0].assets);
+        assert!(saved.scenes[1].assets.is_empty());
+        assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(saved));
+    }
+
+    #[test]
+    fn character_save_swaps_scene_asset_ordinals() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.scenes[0].assets[0].ordinal = 1;
+        plan.scenes[0].assets[1].ordinal = 0;
+        plan.scenes[0].assets.sort_by_key(|link| link.ordinal);
+        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "swap-links", "swap-links", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("swap ordinals");
+        assert_eq!(saved.scenes[0].assets, plan.scenes[0].assets);
+        assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(saved));
+    }
+
+    #[test]
+    fn character_save_queues_only_detached_assets() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, avatar, _, _) = graph_fixture(&database);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        let save = |plan: CreateCharacterPlan, revision, key: &str| {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", key, key, TimestampMillis::new(10), |scope| scope.save_character(plan, Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+        };
+        let queued = || {
+            let connection = database.connection().expect("lock");
+            connection.prepare("SELECT asset_id FROM media_gc_candidates ORDER BY asset_id").expect("query").query_map([], |row| row.get::<_, String>(0)).expect("rows").collect::<rusqlite::Result<Vec<_>>>().expect("ids")
+        };
+        save(plan.clone(), 1, "unchanged");
+        assert!(queued().is_empty(), "unchanged avatar and scene assets must stay out of GC");
+        plan.scenes[0].direction = Some("Edited scene".into());
+        save(plan.clone(), 2, "scene-edit");
+        assert!(queued().is_empty(), "editing scene text must retain its assets");
+        plan.character.media.links.retain(|link| link.asset_id != avatar);
+        save(plan, 3, "detach");
+        assert_eq!(queued(), vec![avatar.to_string()]);
+    }
+
+    #[test]
+    fn character_save_and_receipt_are_atomic_and_preserve_authored_fields() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, avatar, _, _) = graph_fixture(&database);
+        plan.character.profile.rules = vec!["authored-rule".into()];
+        plan.character.profile.scenario = Some("authored-scenario".into());
+        plan.character.provenance.sources = vec!["authored-source".into()];
+        plan.character.image_recommendation = Some(ImageRecommendation {
+            artifact_id: None,
+            unresolved_legacy_name: Some("authored-lora".into()),
+            strength: 0.75,
+        });
+        let before = CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.character.profile.name = "Edited".into();
+        plan.character.media.links.clear();
+        plan.scenes[0].direction = Some("Edited direction".into());
+        plan.variants[0].direction = Some("Edited variant".into());
+        plan.starters[0].messages[0].content = "Edited starter".into();
+        let apply = |key: &str, digest: &str| {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", key, digest, TimestampMillis::new(2), |scope| {
+            scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|error| match error {
+                RepositoryError::StaleRevision { .. } => crate::ApiOperationError::Conflict,
+                _ => crate::ApiOperationError::Storage,
+            })
+        })
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_character_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(
+            apply("save", "digest"),
+            Err(crate::ApiOperationError::Storage)
+        );
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_save", "save")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_character_save_receipt;")
+            .expect("clear");
+        let saved = apply("save", "digest").expect("save");
+        assert_eq!(saved.character.revision, Revision::new(2));
+        assert_eq!(saved.character.created_at, before.character.created_at);
+        assert_eq!(
+            saved.character.profile.rules,
+            before.character.profile.rules
+        );
+        assert_eq!(
+            saved.character.profile.scenario,
+            before.character.profile.scenario
+        );
+        assert_eq!(
+            saved.character.provenance.sources,
+            before.character.provenance.sources
+        );
+        assert_eq!(
+            saved.character.image_recommendation,
+            before.character.image_recommendation
+        );
+        assert_eq!(saved.scenes[0].revision, Revision::new(2));
+        assert_eq!(saved.variants[0].revision, Revision::new(2));
+        assert_eq!(saved.starters[0].revision, Revision::new(2));
+        assert_eq!(apply("save", "digest").expect("replay"), saved);
+        assert_eq!(
+            apply("save", "different"),
+            Err(crate::ApiOperationError::Conflict)
+        );
+        assert_eq!(
+            apply("stale", "digest"),
+            Err(crate::ApiOperationError::Conflict)
+        );
+        let queued: i64 = database
+            .connection()
+            .expect("lock")
+            .query_row(
+                "SELECT count(*) FROM media_gc_candidates WHERE asset_id=?1",
+                [avatar.to_string()],
+                |row| row.get(0),
+            )
+            .expect("candidate");
+        assert_eq!(queued, 1);
+    }
+
+    #[test]
+    fn character_save_process_exit_mid_graph_preserves_the_complete_original() {
+        if let Some(path) = std::env::var_os("LETTUCE_CHARACTER_SAVE_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id = std::env::var("LETTUCE_CHARACTER_SAVE_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("character id");
+            let original = CharacterRepository::get(&database, id)
+                .expect("get")
+                .expect("exists");
+            let mut plan = CreateCharacterPlan {
+                character: original.character,
+                scenes: original.scenes,
+                variants: original.variants,
+                starters: original.starters,
+            };
+            plan.character.profile.name = "Edited".into();
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_character_save",
+                        0,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |_| -> rusqlite::Result<i64> {
+                            std::process::exit(77);
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_character_save_scene BEFORE INSERT ON scenes BEGIN SELECT crash_character_save(); END;").expect("trigger");
+            }
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "crash", "digest", TimestampMillis::new(2), |scope| {
+                scope.save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+            }).expect("save");
+            panic!("crash hook was not reached");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "slice5-character-save-crash-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan.clone()).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::character_adapter::smoke_tests::character_save_process_exit_mid_graph_preserves_the_complete_original"])
+            .env("LETTUCE_CHARACTER_SAVE_CRASH_DATABASE", &path).env("LETTUCE_CHARACTER_SAVE_CRASH_ID", before.character.id.to_string()).output().expect("child");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
+            "child test must run"
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before)
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_save", "crash")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+                "character_save",
+                "crash",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("retry");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+    #[test]
+    fn character_save_serializes_concurrent_revision_writers() {
+        let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
+        let (plan, _, _, _) = graph_fixture(&database);
+        CharacterRepository::create(&*database, plan.clone()).expect("create");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let writers: Vec<_> = (0..2).map(|index| {
+            let database = database.clone();
+            let barrier = barrier.clone();
+            let mut plan = plan.clone();
+            plan.character.profile.name = format!("Writer {index}");
+            std::thread::spawn(move || {
+                barrier.wait();
+                database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", &format!("writer-{index}"), "digest", TimestampMillis::new(2), |scope| {
+                    scope.save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|error| match error {
+                        RepositoryError::StaleRevision { .. } => crate::ApiOperationError::Conflict,
+                        _ => crate::ApiOperationError::Storage,
+                    })
+                })
+            })
+        }).collect();
+        let outcomes: Vec<_> = writers
+            .into_iter()
+            .map(|writer| writer.join().expect("join"))
+            .collect();
+        assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|result| **result == Err(crate::ApiOperationError::Conflict))
+                .count(),
+            1
+        );
+        let after = CharacterRepository::get(&*database, plan.character.id)
+            .expect("get")
+            .expect("exists");
+        assert_eq!(after.character.revision, Revision::new(2));
+        assert_eq!(after.scenes, plan.scenes);
+        assert_eq!(after.variants, plan.variants);
+        assert_eq!(after.starters, plan.starters);
+    }
+
+    #[test]
+    fn character_save_assigns_metadata_and_rejects_missing_live_references() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        plan.character.status = LifecycleStatus::Archived;
+        plan.character.revision = Revision::new(99);
+        let saved = database
+            .commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+                "character_save",
+                "new",
+                "digest",
+                TimestampMillis::new(5),
+                |scope| {
+                    scope
+                        .save_character(plan.clone(), None, TimestampMillis::new(5))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("create");
+        assert_eq!(saved.character.status, LifecycleStatus::Active);
+        assert_eq!(saved.character.revision, Revision::INITIAL);
+        assert_eq!(saved.character.created_at, TimestampMillis::new(5));
+        assert_eq!(saved.scenes[0].created_at, TimestampMillis::new(5));
+        assert_eq!(saved.variants[0].created_at, TimestampMillis::new(5));
+        assert_eq!(saved.starters[0].created_at, TimestampMillis::new(5));
+        let mut plan = CreateCharacterPlan {
+            character: saved.character.clone(),
+            scenes: saved.scenes.clone(),
+            variants: saved.variants.clone(),
+            starters: saved.starters.clone(),
+        };
+        plan.character.defaults.model_profile_id = Some(lettuce_types::ModelProfileId::new());
+        let result = database.commit_api_operation::<(), crate::ApiOperationError>(
+            "character_save",
+            "missing-model",
+            "digest",
+            TimestampMillis::new(6),
+            |scope| match scope.save_character(
+                plan,
+                Some(Revision::INITIAL),
+                TimestampMillis::new(6),
+            ) {
+                Err(RepositoryError::Invalid(
+                    lettuce_characters::ValidationError::InvalidReference { .. },
+                )) => Err(crate::ApiOperationError::Conflict),
+                _ => panic!("missing live model must fail typed"),
+            },
+        );
+        assert_eq!(result, Err(crate::ApiOperationError::Conflict));
+        assert_eq!(
+            CharacterRepository::get(&database, saved.character.id).expect("get"),
+            Some(saved)
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_save", "missing-model")
+                .expect("receipt")
+                .is_none()
+        );
+    }
+    #[test]
+    fn character_save_preserves_existing_scene_lifecycle() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        plan.scenes[0].status = LifecycleStatus::Archived;
+        let before = CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.scenes[0].status = LifecycleStatus::Active;
+        let after = database
+            .commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+                "character_save",
+                "lifecycle",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("save");
+        assert_eq!(after.scenes, before.scenes);
+    }
+    #[test]
+    fn character_lifecycle_and_receipt_roll_back_together() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        let apply = || {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+            "character_archive", "archive", "digest", TimestampMillis::new(2), |scope| {
+                scope.set_library_character_status(before.character.id, Revision::INITIAL, LifecycleStatus::Archived, TimestampMillis::new(2))
+                    .map_err(|_| crate::ApiOperationError::Storage)
+            })
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_archive_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(apply(), Err(crate::ApiOperationError::Storage));
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_archive", "archive")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_archive_receipt;")
+            .expect("clear");
+        let archived = apply().expect("archive");
+        assert_eq!(archived.character.status, LifecycleStatus::Archived);
+        assert_eq!(archived.scenes, before.scenes);
+        assert_eq!(archived.starters, before.starters);
+        assert_eq!(apply().expect("replay"), archived);
+    }
+    #[test]
+    fn character_delete_receipt_failure_preserves_graph_and_retry_is_safe() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        let apply = |digest| {
+            database.purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
+                Revision::INITIAL,
+                "delete",
+                digest,
+                TimestampMillis::new(2),
+            )
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_character_delete_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(apply("digest"), Err(crate::PurgeError::Storage));
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_delete", "delete")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_character_delete_receipt;")
+            .expect("clear");
+        assert_eq!(
+            database.purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
+                Revision::new(2),
+                "stale",
+                "digest",
+                TimestampMillis::new(2)
+            ),
+            Err(crate::PurgeError::Conflict)
+        );
+        apply("digest").expect("delete");
+        apply("digest").expect("replay");
+        assert_eq!(apply("different"), Err(crate::PurgeError::Conflict));
+        assert!(
+            CharacterRepository::get(&database, before.character.id)
+                .expect("get")
+                .is_none()
+        );
+    }
+    fn library_upload_candidate() -> lettuce_media::IngestedMedia {
+        use lettuce_media::{
+            AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaBlob, MediaKind,
+            RetentionClass,
+        };
+        let now = TimestampMillis::new(2);
+        let blob = MediaBlob {
+            id: lettuce_types::MediaBlobId::new(),
+            content_hash: lettuce_types::ContentHash::parse("ab".repeat(32)).expect("hash"),
+            kind: MediaKind::Image,
+            mime_type: "image/png".into(),
+            byte_size: 1,
+            width: Some(1),
+            height: Some(1),
+            duration_ms: None,
+            validation_version: 1,
+            state: BlobState::Ready,
+            created_at: now,
+            updated_at: now,
+        };
+        let asset = MediaAsset::new(
+            AssetId::new(),
+            blob.id,
+            AssetKind::OtherImage,
+            AssetOrigin::Upload,
+            RetentionClass::Persistent,
+            AssetProvenanceV1::default(),
+            Revision::INITIAL,
+            now,
+            now,
+        )
+        .expect("asset");
+        lettuce_media::IngestedMedia { asset, blob }
+    }
+
+    #[test]
+    fn library_media_receipt_failure_rolls_back_catalog_owner_and_gc_queue() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, old_asset, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE media_assets SET retention='persistent' WHERE id=?1",
+                [old_asset.to_string()],
+            )
+            .expect("persistent asset");
+        let upload = library_upload_candidate();
+        let asset_id = upload.asset.id;
+        let blob_id = upload.blob.id;
+        let apply = || {
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+            "character_media_set", "upload", "digest", TimestampMillis::new(2), |scope| {
+                let asset = scope.install_library_upload(lettuce_media::IngestedMedia { asset: upload.asset.clone(), blob: upload.blob.clone() }).map_err(|_| crate::ApiOperationError::Storage)?;
+                scope.set_library_character_media(before.character.id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+            })
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_library_upload_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(apply(), Err(crate::ApiOperationError::Storage));
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            lettuce_media::MediaAssetRepository::get(&database, asset_id)
+                .expect("asset")
+                .is_none()
+        );
+        assert!(
+            lettuce_media::MediaBlobRepository::get(&database, blob_id)
+                .expect("blob")
+                .is_none()
+        );
+        let queued = || {
+            database
+                .connection()
+                .expect("lock")
+                .query_row(
+                    "SELECT count(*) FROM media_gc_candidates WHERE asset_id=?1",
+                    [old_asset.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("queue")
+        };
+        assert_eq!(queued(), 0);
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_library_upload_receipt;")
+            .expect("clear");
+        let saved = apply().expect("upload");
+        assert_eq!(saved.character.revision, Revision::new(2));
+        assert_eq!(queued(), 1);
+        assert_eq!(apply().expect("replay"), saved);
+    }
+
+    #[test]
+    fn library_media_process_exit_before_receipt_preserves_original_catalog_and_owner() {
+        if let Some(path) = std::env::var_os("LETTUCE_LIBRARY_UPLOAD_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id = std::env::var("LETTUCE_LIBRARY_UPLOAD_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("character id");
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_library_upload",
+                        0,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |_| -> rusqlite::Result<i64> {
+                            std::process::exit(77);
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_upload_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_library_upload(); END;").expect("trigger");
+            }
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_media_set", "crash-upload", "digest", TimestampMillis::new(2), |scope| {
+                let asset = scope.install_library_upload(library_upload_candidate()).map_err(|_| crate::ApiOperationError::Storage)?;
+                scope.set_library_character_media(id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+            }).expect("upload");
+            panic!("crash hook was not reached");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "slice5-library-upload-crash-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::character_adapter::smoke_tests::library_media_process_exit_before_receipt_preserves_original_catalog_and_owner"])
+            .env("LETTUCE_LIBRARY_UPLOAD_CRASH_DATABASE", &path).env("LETTUCE_LIBRARY_UPLOAD_CRASH_ID", before.character.id.to_string()).output().expect("child");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("running 1 test"));
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            lettuce_media::MediaBlobRepository::find_by_hash(
+                &database,
+                &lettuce_types::ContentHash::parse("ab".repeat(32)).expect("hash")
+            )
+            .expect("blob")
+            .is_none()
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_media_set", "crash-upload")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+                "character_media_set",
+                "crash-upload",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    let asset = scope
+                        .install_library_upload(library_upload_candidate())
+                        .map_err(|_| crate::ApiOperationError::Storage)?;
+                    scope
+                        .set_library_character_media(
+                            before.character.id,
+                            Revision::INITIAL,
+                            CharacterMediaSlot::AvatarOriginal,
+                            0,
+                            Some(asset),
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("retry");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+    #[test]
+    fn character_delete_process_exit_before_receipt_preserves_the_complete_graph() {
+        if let Some(path) = std::env::var_os("LETTUCE_CHARACTER_DELETE_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id: CharacterId = std::env::var("LETTUCE_CHARACTER_DELETE_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("character id");
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_character_delete",
+                        0,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |_| -> rusqlite::Result<i64> {
+                            std::process::exit(77);
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_character_delete_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_character_delete(); END;").expect("trigger");
+            }
+            database
+                .purge_library_operation(crate::LibraryKind::Character, &id.to_string(),
+                    Revision::INITIAL,
+                    "crash-delete",
+                    "digest",
+                    TimestampMillis::new(2),
+                )
+                .expect("delete");
+            panic!("crash hook was not reached");
+        }
+        let root = std::env::temp_dir().join(format!(
+            "slice5-character-delete-crash-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let (plan, _, _, _) = graph_fixture(&database);
+        let before = CharacterRepository::create(&database, plan).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::character_adapter::smoke_tests::character_delete_process_exit_before_receipt_preserves_the_complete_graph"])
+            .env("LETTUCE_CHARACTER_DELETE_CRASH_DATABASE", &path).env("LETTUCE_CHARACTER_DELETE_CRASH_ID", before.character.id.to_string()).output().expect("child");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("running 1 test"));
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            CharacterRepository::get(&database, before.character.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("character_delete", "crash-delete")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
+                Revision::INITIAL,
+                "crash-delete",
+                "digest",
+                TimestampMillis::new(2),
+            )
+            .expect("retry");
+        database
+            .purge_library_operation(crate::LibraryKind::Character, &before.character.id.to_string(),
+                Revision::INITIAL,
+                "crash-delete",
+                "digest",
+                TimestampMillis::new(2),
+            )
+            .expect("replay");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

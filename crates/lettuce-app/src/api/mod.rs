@@ -11,6 +11,10 @@ pub use settings::{settings_get, settings_sampler_defaults_update, settings_upda
 mod assets;
 mod branches;
 mod characters;
+mod library_delete;
+pub use library_delete::{character_delete, group_delete, persona_delete};
+#[cfg(test)]
+mod library_delete_tests;
 pub(crate) mod companion;
 mod context;
 mod conversation_delete;
@@ -328,3 +332,48 @@ mod media_library_tests;
 
 #[cfg(test)]
 mod storage_tests;
+
+mod library_bindings;
+pub use library_bindings::{character_lorebooks_list, character_lorebooks_bind, character_lorebooks_unbind, character_lorebooks_enable, character_lorebooks_reorder, persona_lorebooks_list, persona_lorebooks_bind, persona_lorebooks_unbind, persona_lorebooks_enable, persona_lorebooks_reorder, group_lorebooks_list, group_lorebooks_bind, group_lorebooks_unbind, group_lorebooks_enable, group_lorebooks_reorder};
+
+#[cfg(test)]
+mod library_bindings_tests;
+
+#[cfg(test)]
+mod library_duplicate_tests;
+
+mod library_duplicate;
+pub use library_duplicate::character_duplicate;
+
+#[cfg(test)]
+mod library_personas_tests;
+
+mod library_personas;
+pub use library_personas::{persona_get, persona_save, personas_list};
+
+#[cfg(test)]
+mod library_persona_default_tests;
+
+mod library_persona_default;
+pub use library_persona_default::{persona_default_set, persona_default_clear};
+
+#[cfg(test)]
+mod library_lists_tests;
+
+#[cfg(test)]
+mod library_characters_tests;
+
+mod library_characters;
+pub use library_characters::{character_archive, character_get, character_restore, character_save};
+
+#[cfg(test)]
+mod library_groups_tests;
+
+mod library_groups;
+pub use library_groups::{group_get, group_save, groups_list};
+
+#[cfg(test)]
+mod library_media_tests;
+
+mod library_media;
+pub use library_media::{character_media_set, persona_media_set};

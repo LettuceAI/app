@@ -206,6 +206,7 @@ impl ImageRecommendationV1 {
 #[serde(rename_all = "snake_case")]
 pub enum CharacterMediaSlotV1 {
     AvatarOriginal,
+    Banner,
     Background,
     DesignReference,
 }
@@ -313,16 +314,18 @@ impl SnapshotDocumentBody for CharacterSnapshotBodyV1 {
             self.media.iter().map(|link| link.asset_id),
         )?;
         let mut avatars = 0;
+        let mut banners = 0;
         let mut backgrounds = 0;
         let mut design_ordinals = Vec::new();
         for link in &self.media {
             match link.slot {
                 CharacterMediaSlotV1::AvatarOriginal => avatars += 1,
+                CharacterMediaSlotV1::Banner => banners += 1,
                 CharacterMediaSlotV1::Background => backgrounds += 1,
                 CharacterMediaSlotV1::DesignReference => design_ordinals.push(link.ordinal),
             }
         }
-        if avatars > 1 || backgrounds > 1 {
+        if avatars > 1 || banners > 1 || backgrounds > 1 {
             return Err(ValidationError::Invariant {
                 field: "character_document.media.single_slot",
             });

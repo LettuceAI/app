@@ -535,12 +535,12 @@ mod tests {
         );
         assert_eq!(
             crate::CHARACTER_SYNC_VERSION,
-            2,
-            "provider voices extend the character payload"
+            3,
+            "banner media extends the character payload"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "16a3c4e407b8097a875dac56dc67af954fac4a5ea03c2268af0043d6db8e5371"
+            "daf6952da0b5c16bf0b75712d805d35270ab80b20a5a20aa9ef58096f849152e"
         );
     }
 

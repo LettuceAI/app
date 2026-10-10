@@ -88,6 +88,7 @@ pub struct LegacyBackupCharacterPresentation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LegacyBackupCharacterMedia {
+    pub banner: Option<LegacyMediaReference>,
     pub avatar: Option<LegacyMediaReference>,
     pub background: Option<LegacyMediaReference>,
     pub design_references: Vec<LegacyMediaReference>,
@@ -1134,6 +1135,7 @@ pub(crate) fn map_character_row(
         defaults,
         presentation,
         media: LegacyBackupCharacterMedia {
+            banner: None,
             avatar: media(
                 row.avatar_path,
                 LegacyBackupDocumentKind::Characters,

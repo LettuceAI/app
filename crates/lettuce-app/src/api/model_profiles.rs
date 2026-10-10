@@ -376,7 +376,7 @@ pub async fn model_delete(
     request: dto::ModelDeleteRequest,
 ) -> Result<(), ApiError> {
     let copy = request.clone();
-    let (characters, groups) = mutate(
+    let (_characters, _groups) = mutate(
         context,
         "model_delete",
         copy,
@@ -391,12 +391,6 @@ pub async fn model_delete(
         },
     )
     .await?;
-    for character_id in characters {
-        context.emit(dto::ApiEvent::CharacterChanged { character_id });
-    }
-    for group_id in groups {
-        context.emit(dto::ApiEvent::GroupChanged { group_id });
-    }
     super::content_filter::publish_pending(context).await;
     Ok(())
 }

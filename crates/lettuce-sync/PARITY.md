@@ -98,3 +98,9 @@ Deleted lorebooks and prompts no longer prevent first sync of their retained his
 Application settings payload version 4 carries developer mode and the lorebook generator JSON/XML preference, which legacy stored in advanced settings (`old-code/src/core/storage/schemas.ts:3353,3374`). Their addition changes the handshake schema fingerprint.
 
 Conversation message payload version 5 carries every usage event's required immutable origin. The handshake fingerprint changes with it. This preserves the distinction between imported message evidence and historical usage records; legacy reports read only usage records (`old-code/src-tauri/src/usage/repository.rs:270-306,483-501`). Missing origin never defaults to live.
+
+The character and protected-snapshot schema versions advance for the independent Banner media slot. Legacy saved an independent banner file (`old-code/src-tauri/src/storage_manager/media.rs:1032-1038`); synchronized authored records and launch artifacts now retain its reference.
+
+Library group and persona hard deletes propagate through canonical delete changes and the existing purge queue. The group purge includes source conversations; historical persona apply receipts remain replay evidence after their persona is removed.
+
+The handshake fingerprint assertion includes character payload version 3 for Banner media, so synchronized peers must agree on the complete authored media schema.

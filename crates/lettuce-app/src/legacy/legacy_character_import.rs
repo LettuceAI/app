@@ -110,7 +110,7 @@ mod tests {
         let legacy_lorebook = LorebookId::new();
         let legacy_provider = lettuce_types::ProviderAccountId::new();
         let legacy_model = lettuce_types::ModelProfileId::new();
-        let plan = LegacyImportPlan {
+        let mut plan = LegacyImportPlan {
             provider_models: LegacyProviderModelPlan {
                 skipped: Vec::new(),
                 provider_accounts: vec![lettuce_transfer::LegacyProviderAccountCandidate {
@@ -258,6 +258,49 @@ mod tests {
             group_conversations: 0,
         };
         let character_id = CharacterId::new();
+        let legacy_root = path.with_extension("legacy");
+        let media_root = path.with_extension("media");
+        let relative_path = format!("avatars/character-{character_id}/avatar_banner.webp");
+        let bytes = [
+            b"\x89PNG\r\n\x1a\n".as_slice(),
+            &13_u32.to_be_bytes(),
+            b"IHDR",
+            &2_u32.to_be_bytes(),
+            &3_u32.to_be_bytes(),
+            &[8, 6, 0, 0, 0],
+            b"banner",
+        ]
+        .concat();
+        fs::create_dir_all(legacy_root.join(format!("avatars/character-{character_id}")))
+            .expect("legacy avatars");
+        fs::write(legacy_root.join(&relative_path), &bytes).expect("banner source");
+        plan.media
+            .media
+            .push(lettuce_transfer::LegacyMediaCandidate {
+                relative_path: relative_path.clone(),
+                source_locator: relative_path,
+                byte_len: bytes.len() as u64,
+                content_hash: ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
+                    .expect("hash"),
+                uses: vec![lettuce_transfer::LegacyMediaUse::CharacterBanner { character_id }],
+            });
+        plan.media.total_bytes = bytes.len() as u64;
+        let media_store = || {
+            use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+            let snapshot = DirectorySnapshot::new(&media_root).expect("snapshot");
+            let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+            lettuce_media::LocalMediaBlobStore::new(
+                authority.managed_files(),
+                authority
+                    .read_capability(ManagedRoot::MediaBlobs)
+                    .expect("read"),
+                authority
+                    .write_capability(ManagedRoot::MediaBlobs)
+                    .expect("write"),
+                lettuce_database::Database::open(&path).expect("blobs"),
+                lettuce_database::Database::open(&path).expect("assets"),
+            )
+        };
         let scene_id = SceneId::new();
         let variant_id = SceneVariantId::new();
         let starter_id = ConversationStarterId::new();
@@ -300,7 +343,12 @@ mod tests {
                 secondary_text_color: None,
                 chat_appearance: ChatAppearanceV1::default(),
             },
-            media: LegacyBackupCharacterMedia::default(),
+            media: LegacyBackupCharacterMedia {
+                banner: Some(lettuce_transfer::LegacyMediaReference {
+                    locator: "avatar_banner.webp".into(),
+                }),
+                ..Default::default()
+            },
             image_recommendation: None,
             active_lorebook_ids: vec![legacy_lorebook],
             scenes: vec![LegacyBackupSceneCandidate {
@@ -361,6 +409,7 @@ mod tests {
                 ..character.defaults.clone()
             },
             active_lorebook_ids: Vec::new(),
+            media: LegacyBackupCharacterMedia::default(),
             scenes: vec![LegacyBackupSceneCandidate {
                 id: second_scene_id,
                 ordinal: 0,
@@ -480,6 +529,17 @@ mod tests {
                 _ => None,
             })
             .expect("lorebook assignment");
+        let store = media_store();
+        let imported_banner = backend
+            .legacy_media_importer(&store)
+            .execute(
+                &legacy_root,
+                &admission,
+                &plan.media,
+                TimestampMillis::new(25),
+            )
+            .expect("import banner")[0]
+            .destination_asset_id;
         backend
             .legacy_import_executor()
             .execute(&admission, &plan, TimestampMillis::new(30))
@@ -546,6 +606,21 @@ mod tests {
             Some("At the harbor")
         );
         assert_eq!(details.character.profile.rules, ["Stay kind"]);
+        assert_eq!(
+            details.character.media.links,
+            vec![lettuce_characters::CharacterMediaLink {
+                asset_id: imported_banner,
+                slot: lettuce_characters::CharacterMediaSlot::Banner,
+                ordinal: 0,
+            }]
+        );
+        let mut banner = store.open_ready(imported_banner).expect("ready banner");
+        let mut stored_bytes = Vec::new();
+        std::io::Read::read_to_end(&mut banner.reader, &mut stored_bytes).expect("banner bytes");
+        assert_eq!(stored_bytes, bytes);
+        drop(banner);
+        drop(store);
+
         let defaults = &details.character.defaults;
         assert_eq!(defaults.direct_prompt_id, Some(prompt_id));
         assert_eq!(defaults.group_conversation_prompt_id, None);
@@ -1663,6 +1738,17 @@ mod tests {
             )
             .expect("admit a second legacy source");
         assert!(!second.replayed);
+        let store = media_store();
+        reopened
+            .legacy_media_importer(&store)
+            .execute(
+                &legacy_root,
+                &second,
+                &second_plan.media,
+                TimestampMillis::new(100),
+            )
+            .expect("second banner");
+        drop(store);
         reopened
             .legacy_import_executor()
             .execute(&second, &second_plan, TimestampMillis::new(101))
@@ -1731,6 +1817,8 @@ mod tests {
             );
         }
         drop(reopened);
+        fs::remove_dir_all(legacy_root).expect("remove legacy files");
+        fs::remove_dir_all(media_root).expect("remove media files");
         fs::remove_file(path).expect("remove database");
     }
 }

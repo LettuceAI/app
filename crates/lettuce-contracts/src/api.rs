@@ -144,6 +144,9 @@ pub enum ApiErrorDetails {
     Model {
         model: RequiredModel,
     },
+    MissingModels {
+        missing_models: Vec<RequiredModel>,
+    },
     HuggingFace {
         failure: HfFailure,
     },

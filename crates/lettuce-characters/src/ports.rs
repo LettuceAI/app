@@ -206,16 +206,51 @@ impl GroupDetails {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySort {
+    CreatedAsc,
+    #[default]
+    UpdatedDesc,
+    Name,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CharacterSearch {
     pub text: String,
     pub include_archived: bool,
+    pub sort: LibrarySort,
+    pub search_nickname: bool,
+}
+
+impl Default for CharacterSearch {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            include_archived: false,
+            sort: LibrarySort::UpdatedDesc,
+            search_nickname: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersonaSearch {
     pub text: String,
     pub include_archived: bool,
+    pub sort: LibrarySort,
+    pub search_nickname: bool,
+}
+
+impl Default for PersonaSearch {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            include_archived: false,
+            sort: LibrarySort::UpdatedDesc,
+            search_nickname: true,
+        }
+    }
 }
 
 /// CAS arguments for archiving a persona. If the persona is the current
@@ -461,11 +496,6 @@ impl ProfileDuplicateResult {
 pub trait CharacterRepository: Send + Sync {
     fn create(&self, plan: CreateCharacterPlan) -> Result<CharacterDetails, RepositoryError>;
     fn get(&self, id: CharacterId) -> Result<Option<CharacterDetails>, RepositoryError>;
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Character>, RepositoryError>;
     fn search(
         &self,
         request: CharacterSearch,
@@ -754,11 +784,6 @@ pub trait PersonaRepository: Send + Sync {
     fn get(&self, id: PersonaId) -> Result<Option<Persona>, RepositoryError>;
     /// Resolves the singleton and selected persona in one read snapshot.
     fn get_default_snapshot(&self) -> Result<PersonaDefaultSnapshot, RepositoryError>;
-    fn list(
-        &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<Persona>, RepositoryError>;
     fn search(
         &self,
         request: PersonaSearch,
@@ -836,14 +861,27 @@ pub trait PersonaRepository: Send + Sync {
     ) -> Result<Persona, RepositoryError>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupSearch {
+    pub text: String,
+    pub include_archived: bool,
+    pub sort: LibrarySort,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupLibraryItem {
+    pub details: GroupDetails,
+    pub last_activity_at: TimestampMillis,
+}
+
 pub trait GroupRepository: Send + Sync {
     fn create(&self, plan: CreateGroupPlan) -> Result<GroupDetails, RepositoryError>;
     fn get(&self, id: GroupId) -> Result<Option<GroupDetails>, RepositoryError>;
-    fn list(
+    fn search(
         &self,
-        request: PageRequest,
-        include_archived: bool,
-    ) -> Result<Page<GroupProfile>, RepositoryError>;
+        request: GroupSearch,
+        page: PageRequest,
+    ) -> Result<Page<GroupLibraryItem>, RepositoryError>;
     fn rename(
         &self,
         id: GroupId,
@@ -1248,6 +1286,7 @@ mod tests {
         let request = PersonaSearch {
             text: "writer".into(),
             include_archived: true,
+            ..Default::default()
         };
         assert_eq!(request.text, "writer");
         assert!(request.include_archived);

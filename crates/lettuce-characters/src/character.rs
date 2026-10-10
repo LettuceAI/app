@@ -242,6 +242,7 @@ impl CharacterDefaults {
 #[serde(rename_all = "snake_case")]
 pub enum CharacterMediaSlot {
     AvatarOriginal,
+    Banner,
     Background,
     DesignReference,
 }
@@ -263,16 +264,18 @@ pub struct CharacterMedia {
 impl CharacterMedia {
     pub fn validate(&self) -> Result<(), ValidationError> {
         let mut avatars = 0;
+        let mut banners = 0;
         let mut backgrounds = 0;
         let mut design = Vec::new();
         for link in &self.links {
             match link.slot {
                 CharacterMediaSlot::AvatarOriginal => avatars += 1,
+                CharacterMediaSlot::Banner => banners += 1,
                 CharacterMediaSlot::Background => backgrounds += 1,
                 CharacterMediaSlot::DesignReference => design.push(link),
             }
         }
-        if avatars > 1 || backgrounds > 1 {
+        if avatars > 1 || banners > 1 || backgrounds > 1 {
             return Err(ValidationError::Invariant {
                 field: "character.media.single_slot",
             });
@@ -451,6 +454,19 @@ mod tests {
         let encoded = serde_json::to_string(&character).expect("character should serialize");
         let decoded: Character = serde_json::from_str(&encoded).expect("character should decode");
         assert_eq!(decoded, character);
+    }
+
+    #[test]
+    fn banner_media_round_trips_and_rejects_multiple_banners() {
+        let slot: CharacterMediaSlot = serde_json::from_str("\"banner\"").expect("banner slot");
+        let mut media = CharacterMedia {
+            links: vec![CharacterMediaLink { asset_id: AssetId::new(), slot, ordinal: 0 }],
+        };
+        media.validate().expect("single banner");
+        let encoded = serde_json::to_string(&media).expect("encode");
+        assert_eq!(serde_json::from_str::<CharacterMedia>(&encoded).expect("decode"), media);
+        media.links.push(CharacterMediaLink { asset_id: AssetId::new(), slot, ordinal: 1 });
+        assert!(media.validate().is_err());
     }
 
     #[test]

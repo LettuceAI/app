@@ -112,3 +112,15 @@ Storage file contracts expose basenames, creation kind and time, size, active st
 Media library requests filter image or audio and carry an opaque cursor and page limit. Items return asset URLs, known catalog metadata, retention and reference domains with opaque identities. Removal takes a client operation id and reports InUse with the references that prevent it; no native media path or bytes enter these contracts.
 
 Storage optimization takes an operation id and returns JobAccepted. Its terminal job result is StorageOptimized; checkpoint contention, kept-file refusal and storage failure have distinct failure reasons.
+
+Library saves and mutations carry client operation ids and expected revisions. Persona drafts contain authored fields and catalog media links; views also provide asset URLs. Default persona commands compare the separate singleton revision and return its selected id and metadata. Companion creation failures list the missing required models in typed error details.
+
+Full persona drafts require nullable fields to be present explicitly. A null clears the field; an omitted field is invalid, preventing a partial editor payload from implicitly clearing stored metadata or an image recommendation.
+
+The character editor draft describes the authored profile, provenance, defaults, presentation and recursive widgets, media links, scenes, variants and starters with concrete transport types. Nullable draft fields require an explicit null to clear them; omission is invalid input. The view carries server revision metadata and asset URLs, while save requests carry asset identities and one operation key.
+
+Group editor drafts reuse the character editor's typed scene, variant and chat appearance vocabulary. Ordered member choices and tri-state persona selection remain explicit, nullable replacements require null, and responses supply server metadata and asset URLs.
+
+Character archive and restore take one root revision and operation key and return the committed CharacterView.
+
+Group pages carry the full authored view and its latest activity timestamp. Media replacement accepts a FileSource, an existing asset id or an explicit none, alongside a slot ordinal, root revision and operation key. A design-reference ordinal at the list length appends, removal closes the gap and an ordinal above the length fails validation.

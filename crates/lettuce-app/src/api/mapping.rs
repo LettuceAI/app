@@ -214,3 +214,13 @@ pub(crate) fn timeline_message(
         scene_image: scene_images.get(&item.message.id).cloned(),
     }
 }
+
+pub(super) fn library_sort(
+    sort: Option<lettuce_contracts::LibrarySort>,
+) -> lettuce_characters::LibrarySort {
+    match sort.unwrap_or(lettuce_contracts::LibrarySort::CreatedAsc) {
+        lettuce_contracts::LibrarySort::CreatedAsc => lettuce_characters::LibrarySort::CreatedAsc,
+        lettuce_contracts::LibrarySort::UpdatedDesc => lettuce_characters::LibrarySort::UpdatedDesc,
+        lettuce_contracts::LibrarySort::Name => lettuce_characters::LibrarySort::Name,
+    }
+}

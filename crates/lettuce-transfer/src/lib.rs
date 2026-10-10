@@ -708,6 +708,7 @@ pub enum LegacyMediaUse {
     PersonaDesignReference { persona_id: PersonaId, ordinal: u32 },
     LorebookAvatar { lorebook_id: LorebookId },
     CharacterAvatar { character_id: CharacterId },
+    CharacterBanner { character_id: CharacterId },
     CharacterBackground { character_id: CharacterId },
     CharacterDesignReference { character_id: CharacterId, ordinal: u32 },
     CharacterSceneBackground { character_id: CharacterId, scene_id: SceneId },

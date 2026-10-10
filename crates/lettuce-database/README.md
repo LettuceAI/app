@@ -85,7 +85,7 @@ The same few patterns run through every adapter:
 - Operations that may be retried carry an operation id or request hash. An exact retry returns the stored result; the same id with different input conflicts.
 - Evidence is immutable. Usage events, dispatch checkpoints, run documents, apply receipts, import evidence and journal rows are insert-only, and triggers reject `UPDATE` and `DELETE` on them. The only way such rows go is a purge (below).
 - Triggers restate the invariants the domain already checks: legal state transitions, topology, ownership, settle-once. A trigger abort that names a known invariant maps to `Conflict`; anything else is a storage fault.
-- Library pages use an opaque `(updated_at, id)` keyset cursor. This is not snapshot pagination: rows changed between requests may move relative to an earlier page.
+Library repositories expose one search path using an opaque `(key, id)` cursor. A shared encoder and decoder bind the entity, search options and sort to that cursor. Character, persona and group search accept creation, update and normalized-name order. Pagination does not retain a snapshot, so later writes can move rows between pages.
 - Secrets are never stored. Provider rows hold opaque `SecretRef` values and secret owner ids; the values live in the native secret store behind `lettuce_settings::SecretStore`.
 
 ## Settings, providers and models
@@ -398,3 +398,31 @@ Storage inspection opens an existing database in SQLite read-only mode and reads
 A fenced database connection can close its native SQLite handle and file-use lease while its Rust owner remains alive. Later reads and writes return a closed-connection error. Closure is idempotent, refuses an unfenced database, and restores the original connection if SQLite cannot close it. This permits a reset coordinator to rename the kept file after every owned handle releases it, without rebinding an existing backend.
 
 Reset reads its seed only from a write-fenced source. Fresh-file creation refuses an existing target and inserts provider accounts and device-local model folders in one transaction. Explicit job identity admission keeps the reset command and its replay receipt atomic in the new database. Opening a fenced filename fails before creating a database file, and reset closes native handles before the host renames the source.
+
+Library media association deletion and replacement queue the prior asset for collection inside the owning transaction. This covers character and persona media, scene assets, presentation references and group backgrounds, including writes made by synchronization. Collection rechecks retained references and Library retention before removing anything.
+
+Character duplication writes the copied authored graph, lorebook bindings and scheduled notes together. Notes receive fresh identities and retain their schedule; the companion Soul starts from the copied authored configuration. The resulting reference report includes bound lorebooks even when archived.
+
+Library changes use the SQLite pre-update hook to read the entity identity from the new row on insert or update and from the old row on delete. Character, persona and group child tables refresh their parent. The signal deduplicates identities in memory and marks them at the commit hook. SQLite statement completion publishes them only after the transaction has committed, and rollback discards them, including a failed disk commit. Default persona changes refresh both the old and new selections. SQLite connection client data retains the callback state until connection close. Listeners run on the committing thread and must not access the database.
+
+Group hard deletion purges every conversation launched from that group in the same immediate transaction as its catalog graph and API replay receipt. Busy conversations prevent the whole purge. Persona hard deletion clears the default selection, makes explicitly selected groups inherit, clears explicit conversation overrides, nulls nullable helper run references and removes media and bindings; immutable helper receipts retain historical persona identities without a live foreign key. Both entities participate in the existing queued sync-delete and unseen-change protection.
+
+Library feeds collect identities with the preupdate hook and publish once from the same commit hook as settings, jobs and conversations. A full rollback clears pending identities. A savepoint rollback followed by commit, or a failed disk commit, can cause an extra refresh; listeners re-read current state.
+
+Character, persona and group lorebook binding commands compose the existing typed binding mutation in the API receipt transaction. The relationship list and owner revision change together; an aborted receipt insertion rolls both back.
+
+The authored character duplicate can run on an existing API operation transaction, sharing its atomic commit with replay evidence. The ordinary typed repository operation uses the same copy function and owns its transaction.
+
+Persona editor saves reuse the persona revision, media replacement and canonical change journal operations inside the API receipt transaction. Creation assigns repository identity and revision metadata; edits compare the root revision before replacing authored fields and media.
+
+Character editor saves share the graph replacement writer with sync while keeping local reference validation and companion Soul reconciliation. The API transaction checks the root revision before replacing fields, scenes, variants, starters, media and presentation references, then commits replay evidence with the graph. Existing child timestamps and revisions survive unchanged content; changed children advance their revisions, and new children receive server metadata.
+
+Group editor saves use the existing group graph and scene metadata writers inside the API receipt transaction. Creation captures the default persona under the same transaction, storing an explicit selection or disabled selection when no default exists. Unchanged membership remains editable after member deletion; explicit membership edits retain the typed membership and reference checks. Local saves reject missing model overrides instead of applying sync cleanup.
+
+Character lifecycle changes share one transaction writer between the typed repository and API receipts, preserving authored children while advancing the root revision.
+
+Character API purges check the root revision and receipt in the purge transaction, and refuse active group turns whose selected speaker is the character or whose unresolved selection still includes it. Other members can finish their turns. Group search uses the latest conversation update time as its activity key, with the group update time used only when no conversation exists. Library upload installation reuses the blob registration and asset creation writers in the owner transaction, including content deduplication and restoration of missing blobs.
+
+Library deletion uses one kind-parameterized purge operation and revision check. Character, persona and group pages share their adapter search path; the existing key/identity cursor also binds entity, sort, normalized query and filter flags. Saves compare media links and presentation references, preserve surviving scene rows and update changed asset links without queuing retained assets for GC. Persona purge changes dependent revisions and selections while preserving their timestamps.
+
+Character and persona media saves share a diff writer that retains unchanged links. Character scene assets are compared across the whole character before per-scene inserts, so link identities can move between scenes. Group scene assets remain scoped to the single starting scene and require image assets.

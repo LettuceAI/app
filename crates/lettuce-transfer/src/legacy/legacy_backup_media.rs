@@ -37,6 +37,12 @@ struct PlannedMedia<'a> {
 pub fn plan_legacy_backup_authored_media(
     mut authored: LegacyBackupAuthoredPlan,
 ) -> Result<LegacyBackupAuthoredMediaPlan, LegacyBackupMediaPlanError> {
+    for character in &mut authored.characters {
+        let directory = format!("character-{}", character.id);
+        if exact_media(&authored.configuration.source.media, LegacyBackupMediaRoot::Avatars, &[&directory, "avatar_banner.webp"]).is_some() {
+            character.media.banner = Some(LegacyMediaReference { locator: "avatar_banner.webp".into() });
+        }
+    }
     inline_data_urls(&mut authored);
     let skipped = prune_missing_media(&mut authored)?;
     let mut planned = BTreeMap::<String, PlannedMedia<'_>>::new();
@@ -81,6 +87,10 @@ pub fn plan_legacy_backup_authored_media(
         }
     }
     for character in &authored.characters {
+        if let Some(banner) = &character.media.banner {
+            add_avatar(&authored, &mut planned, banner, &format!("character-{}", character.id),
+                LegacyMediaUse::CharacterBanner { character_id: character.id }, &mut references)?;
+        }
         if let Some(avatar) = &character.media.avatar {
             add_avatar(
                 &authored,
@@ -1246,6 +1256,11 @@ mod tests {
                 &[&format!("character-{first_character}"), "mira.png"],
                 b"character avatar",
             ),
+            media(
+                LegacyBackupMediaRoot::Avatars,
+                &[&format!("character-{first_character}"), "avatar_banner.webp"],
+                b"character banner",
+            ),
             media(LegacyBackupMediaRoot::Images, &["shared.webp"], b"shared"),
             media(LegacyBackupMediaRoot::Images, &["lorebook.png"], b"book"),
             media(LegacyBackupMediaRoot::Images, &["design.jpg"], b"design"),
@@ -1255,7 +1270,8 @@ mod tests {
 
         let plan = plan_legacy_backup_authored_media(authored(documents, source_media))
             .expect("media plan");
-        assert_eq!(plan.media.media.len(), 7);
+        assert_eq!(plan.media.media.len(), 8);
+        assert!(plan.media.media.iter().any(|candidate| candidate.relative_path.ends_with("/avatar_banner.webp")));
         let shared = plan
             .media
             .media

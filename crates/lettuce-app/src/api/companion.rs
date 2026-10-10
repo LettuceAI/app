@@ -337,7 +337,7 @@ fn fact_from(view: &dto::SoulFactView) -> SoulFact {
     }
 }
 
-fn config_view(config: &CompanionSoulConfig) -> dto::CompanionSoulConfigView {
+pub(crate) fn config_view(config: &CompanionSoulConfig) -> dto::CompanionSoulConfigView {
     dto::CompanionSoulConfigView {
         soul: identity_view(&config.soul),
         authored_facts: config.authored_facts.iter().map(fact_view).collect(),
@@ -350,6 +350,21 @@ fn config_view(config: &CompanionSoulConfig) -> dto::CompanionSoulConfigView {
         share_memory_across_chats: config.share_memory_across_chats,
         share_soul_growth_across_chats: config.share_soul_growth_across_chats,
     }
+}
+
+pub(crate) fn config_from(config: &dto::CompanionSoulConfigView) -> Result<CompanionSoulConfig, ApiError> {
+    Ok(CompanionSoulConfig {
+        soul: identity_from(&config.soul),
+        authored_facts: config.authored_facts.iter().map(fact_from).collect(),
+        relationship_defaults: defaults_from(&config.relationship_defaults),
+        prompting: lettuce_companions::CompanionPromptingConfig {
+            prompt_template_id: config.prompting.prompt_template_id.as_deref().map(|id| parse_id(id, "companion_soul.prompt_template_id")).transpose()?,
+            style_notes: config.prompting.style_notes.clone(),
+        },
+        time_awareness: config.time_awareness,
+        share_memory_across_chats: config.share_memory_across_chats,
+        share_soul_growth_across_chats: config.share_soul_growth_across_chats,
+    })
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

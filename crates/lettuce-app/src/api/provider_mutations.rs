@@ -346,7 +346,7 @@ pub async fn provider_account_delete(
     let digest = digest(&request, &request.client_operation_id)?;
     let id: ProviderAccountId = parse_id(&request.account_id, "account_id")?;
     let expected = super::lorebooks::revision(request.expected_revision, "expected_revision")?;
-    let (characters, groups) = context
+    let (_characters, _groups) = context
         .blocking(move |context| {
             context
                 .backend()
@@ -370,12 +370,6 @@ pub async fn provider_account_delete(
                 .map_err(|failure: Failure| failure.0)
         })
         .await?;
-    for character_id in characters {
-        context.emit(dto::ApiEvent::CharacterChanged { character_id });
-    }
-    for group_id in groups {
-        context.emit(dto::ApiEvent::GroupChanged { group_id });
-    }
     super::content_filter::publish_pending(context).await;
     cleanup_secrets(context, false).await?;
     Ok(())

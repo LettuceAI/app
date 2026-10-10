@@ -6564,6 +6564,143 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn character_delete_uses_disabled_conversation_participants() {
+        character_delete_participant_override(false, true);
+    }
+
+    #[test]
+    fn character_delete_uses_retained_conversation_participants() {
+        character_delete_participant_override(true, false);
+    }
+
+    fn character_delete_participant_override(enabled: bool, in_group: bool) {
+        let group = GroupId::new();
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        let fixture = group_fixture_for(database.clone(), group);
+        group_selecting_turn(&fixture, "participant-override");
+        let character: CharacterId;
+        {
+            let connection = database.connection().expect("connection");
+            character = connection.query_row("SELECT source_id FROM conversation_participants WHERE conversation_id=?1 AND id=?2", params![fixture.conversation_id.to_string(), fixture.characters[0].to_string()], |row| row.get::<_, String>(0)).expect("source").parse().expect("id");
+            connection.execute("INSERT INTO characters(id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','First','first','{}','{}','{}','roleplay','manual',0,'{}',1,1,1)", [character.to_string()]).expect("character");
+            connection.execute("INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit','round_robin','manual',0,'{}',1,1,1)", [group.to_string()]).expect("group");
+            if in_group {
+                connection.execute("INSERT INTO group_members(group_id,character_id,ordinal,muted) VALUES (?1,?2,0,0)", params![group.to_string(), character.to_string()]).expect("member");
+            }
+            connection.execute("UPDATE conversation_participants SET enabled=?3 WHERE conversation_id=?1 AND id=?2", params![fixture.conversation_id.to_string(), fixture.characters[0].to_string(), enabled]).expect("override");
+        }
+        let work = database.character_delete_conversations(character, Revision::INITIAL, "delete", "digest").expect("work").expect("not replay");
+        assert_eq!(work.group_conversations, if enabled { vec![fixture.conversation_id] } else { Vec::new() });
+    }
+
+    #[test]
+    fn persona_purge_keeps_all_dependent_rows_identical_across_devices() {
+        let root = std::env::temp_dir().join(format!("slice5-persona-replicas-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let first = root.join("first.sqlite3");
+        let second = root.join("second.sqlite3");
+        let persona = lettuce_types::PersonaId::new();
+        {
+            let database = std::rc::Rc::new(Database::open(&first).expect("database"));
+            let fixture = group_fixture_on(database.clone());
+            let connection = database.connection().expect("lock");
+            connection.execute("INSERT INTO personas(id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [persona.to_string()]).expect("persona");
+            connection.execute("UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=1", [persona.to_string()]).expect("default");
+            connection.execute("INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','explicit',?2,'round_robin','manual',0,'{}',1,1,1)", params![GroupId::new().to_string(), persona.to_string()]).expect("group");
+            let snapshot = serde_json::json!({"format_version":1,"value":{"source_id":persona.to_string()}}).to_string();
+            connection.execute("INSERT INTO conversation_settings(conversation_id,revision,author_note_provenance,memory_provenance,model_provenance,voice_provenance,prompt_provenance,lorebooks_provenance,persona_json,persona_provenance,scene_provenance,created_at,updated_at) VALUES (?1,1,'launch_inherited','launch_inherited','launch_inherited','launch_inherited','launch_inherited','launch_inherited',?2,'current_override','launch_inherited',10,10)", params![fixture.conversation_id.to_string(), snapshot]).expect("override");
+        }
+        std::fs::copy(&first, &second).expect("replicate");
+        let apply = |path: &std::path::Path, now| {
+            let database = Database::open(path).expect("database");
+            database.purge_library_operation(crate::LibraryKind::Persona, &persona.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(now)).expect("purge");
+            let connection = database.connection().expect("lock");
+            ["persona_defaults", "groups", "conversations", "conversation_settings"].map(|table| {
+                let mut statement = connection.prepare(&format!("SELECT * FROM {table}")).expect("query");
+                let columns = statement.column_count();
+                statement.query_map([], |row| (0..columns).map(|index| row.get::<_, rusqlite::types::Value>(index)).collect::<rusqlite::Result<Vec<_>>>()).expect("rows").collect::<rusqlite::Result<Vec<_>>>().expect("values")
+            })
+        };
+        assert_eq!(apply(&first, 40), apply(&second, 50));
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn group_purge_and_receipt_roll_back_together_then_replay_after_reopen() {
+        let root = std::env::temp_dir().join(format!("slice5-group-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = std::rc::Rc::new(Database::open(&path).expect("database"));
+        let group = GroupId::new();
+        let fixture = group_fixture_for(database.clone(), group);
+        let presentation = crate::encode_versioned(&lettuce_characters::ChatAppearanceV1::default(), 1).expect("presentation");
+        database.connection().expect("connection").execute(
+            "INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit',NULL,'round_robin','manual',0,NULL,NULL,?2,NULL,'image',NULL,1,1,1)",
+            params![group.to_string(), presentation],
+        ).expect("group");
+        database.connection().expect("connection").execute_batch(
+            "CREATE TEMP TRIGGER fail_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        ).expect("fault");
+        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Storage));
+        assert!(ConversationReader::get(database.as_ref(), fixture.conversation_id).is_ok());
+        assert!(lettuce_characters::GroupRepository::get(database.as_ref(), group).expect("group").is_some());
+        assert!(database.lookup_api_operation("group_delete", "delete").expect("receipt").is_none());
+        database.connection().expect("connection").execute_batch("DROP TRIGGER fail_group_receipt").expect("clear fault");
+        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::new(2), "stale", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Conflict));
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)).expect("delete");
+        assert!(matches!(ConversationReader::get(database.as_ref(), fixture.conversation_id), Err(ConversationRepositoryError::NotFound)));
+        drop(fixture);
+        drop(database);
+        let database = Database::open(&path).expect("reopen");
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(21)).expect("replay");
+        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "changed", TimestampMillis::new(21)), Err(crate::PurgeError::Conflict));
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn group_purge_process_exit_keeps_the_group_chat_and_receipt_atomic() {
+        let root = std::env::temp_dir().join(format!("slice5-group-crash-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = std::rc::Rc::new(Database::open(&path).expect("database"));
+        let group = GroupId::new();
+        let fixture = group_fixture_for(database.clone(), group);
+        let chat = fixture.conversation_id;
+        let presentation = crate::encode_versioned(&lettuce_characters::ChatAppearanceV1::default(), 1).expect("presentation");
+        database.connection().expect("lock").execute("INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,background_blob_kind,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit','round_robin','manual',0,?2,'image',1,1,1)", params![group.to_string(), presentation]).expect("group");
+        drop(fixture);
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "conversation::conversation_mutations::tests::group_purge_crash_child"])
+            .env("LETTUCE_GROUP_PURGE_CRASH_DATABASE", &path)
+            .env("LETTUCE_GROUP_PURGE_CRASH_ID", group.to_string())
+            .output().expect("child");
+        assert_eq!(output.status.code(), Some(77), "{}", String::from_utf8_lossy(&output.stdout));
+        let database = Database::open(&path).expect("reopen");
+        assert!(lettuce_characters::GroupRepository::get(&database, group).expect("group").is_some());
+        assert!(ConversationReader::get(&database, chat).is_ok());
+        assert!(database.lookup_api_operation("group_delete", "crash").expect("receipt").is_none());
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("retry");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn group_purge_crash_child() {
+        let Some(path) = std::env::var_os("LETTUCE_GROUP_PURGE_CRASH_DATABASE") else { return; };
+        let group: GroupId = std::env::var("LETTUCE_GROUP_PURGE_CRASH_ID").expect("id").parse().expect("group id");
+        let database = Database::open(path).expect("database");
+        {
+            let connection = database.connection().expect("lock");
+            connection.create_scalar_function("crash_group_purge", 0, rusqlite::functions::FunctionFlags::SQLITE_UTF8, |_| -> rusqlite::Result<i64> { std::process::exit(77); }).expect("crash function");
+            connection.execute_batch("CREATE TEMP TRIGGER crash_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_group_purge(); END;").expect("crash trigger");
+        }
+        database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("purge");
+        panic!("crash hook was not reached");
+    }
+
     fn group_fixture_on(database: std::rc::Rc<Database>) -> Fixture {
         group_fixture_for(database, GroupId::new())
     }

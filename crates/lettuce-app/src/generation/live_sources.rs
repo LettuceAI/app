@@ -249,8 +249,8 @@ fn selection_value<T: Clone>(selection: &SnapshotSelection<T>) -> Option<T> {
 /// launch that found no default then, or when its persona no longer exists
 /// or is archived. A group chat uses its own persona, else the persona its
 /// launch chose explicitly, else the group's current selection (the default
-/// persona when the group inherits it), and a persona that no longer exists
-/// is none.
+/// persona when the group inherits it). Missing or archived selections follow
+/// the current default persona.
 pub(crate) fn live_persona<S: PersonaRepository + ?Sized>(
     sources: &S,
     conversation: &Conversation,
@@ -286,15 +286,13 @@ pub(crate) fn live_persona<S: PersonaRepository + ?Sized>(
             },
         },
     };
-    let group_chat = matches!(conversation.kind, ConversationKind::Group(_));
     match chosen {
         Chosen::Explicit(Some(id)) => {
             let persona = sources.get(id)?;
             match persona {
-                Some(persona) if group_chat || persona.status == LifecycleStatus::Active => {
+                Some(persona) if persona.status == LifecycleStatus::Active => {
                     Ok(Some(persona))
                 }
-                _ if group_chat => Ok(None),
                 _ => default_persona(sources),
             }
         }

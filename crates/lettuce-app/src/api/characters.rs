@@ -1,4 +1,4 @@
-use lettuce_characters::CharacterRepository;
+use lettuce_characters::{CharacterRepository, CharacterSearch};
 use lettuce_contracts::{self as dto, ApiError};
 use lettuce_types::PageRequest;
 
@@ -13,13 +13,18 @@ pub async fn characters_list(
 ) -> Result<dto::CharacterPage, ApiError> {
     context
         .blocking(move |context| {
-            let page = CharacterRepository::list(
+            let page = CharacterRepository::search(
                 context.backend().database(),
+                CharacterSearch {
+                    text: request.query.unwrap_or_default(),
+                    include_archived: false,
+                    sort: mapping::library_sort(request.sort),
+                    search_nickname: request.search_nickname,
+                },
                 PageRequest {
                     cursor: request.cursor,
                     limit: mapping::page_limit(request.limit),
                 },
-                false,
             )
             .map_err(IntoApiError::into_api_error)?;
             Ok(dto::CharacterPage {
