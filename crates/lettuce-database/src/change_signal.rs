@@ -64,6 +64,7 @@ type SettingsChangeListener = Arc<dyn Fn(&'static str) + Send + Sync>;
 struct LibraryChanges {
     ids: std::collections::BTreeSet<(LibraryKind, String)>,
     savepoints: Vec<(String, std::collections::BTreeSet<(LibraryKind, String)>)>,
+    commit_pending: bool,
 }
 
 pub(crate) struct ChangeSignal {
@@ -83,6 +84,28 @@ impl std::fmt::Debug for ChangeSignal {
             .debug_struct("ChangeSignal")
             .finish_non_exhaustive()
     }
+}
+
+unsafe extern "C" fn drop_library_signal(context: *mut std::ffi::c_void) {
+    drop(unsafe { Arc::from_raw(context.cast::<ChangeSignal>()) });
+}
+
+unsafe extern "C" fn library_statement_completed(
+    event: u32,
+    context: *mut std::ffi::c_void,
+    statement: *mut std::ffi::c_void,
+    _: *mut std::ffi::c_void,
+) -> std::ffi::c_int {
+    if event == rusqlite::ffi::SQLITE_TRACE_PROFILE && !statement.is_null() {
+        let database = unsafe {
+            rusqlite::ffi::sqlite3_db_handle(statement.cast::<rusqlite::ffi::sqlite3_stmt>())
+        };
+        if unsafe { rusqlite::ffi::sqlite3_get_autocommit(database) } != 0 {
+            let signal = unsafe { &*context.cast::<ChangeSignal>() };
+            signal.publish_library_changes();
+        }
+    }
+    rusqlite::ffi::SQLITE_OK
 }
 
 impl ChangeSignal {
@@ -250,20 +273,10 @@ impl ChangeSignal {
         let committed = Arc::clone(&signal);
         connection.commit_hook(Some(move || {
             let changed = committed.pending.swap(0, Ordering::AcqRel);
-            let changes = {
+            {
                 let mut pending = committed.library_changes.lock().expect("library changes");
                 pending.savepoints.clear();
-                std::mem::take(&mut pending.ids)
-            };
-            let listeners = committed
-                .library_listeners
-                .lock()
-                .expect("library listeners")
-                .clone();
-            for (kind, id) in changes {
-                for listener in &listeners {
-                    listener(kind, &id);
-                }
+                pending.commit_pending = true;
             }
             if changed & ChangeFeed::Settings.bit() != 0 {
                 committed.settings_generation.fetch_add(1, Ordering::AcqRel);
@@ -297,6 +310,7 @@ impl ChangeSignal {
                 let mut pending = rolled_back.library_changes.lock().expect("library changes");
                 pending.ids.clear();
                 pending.savepoints.clear();
+                pending.commit_pending = false;
             }
             rolled_back
                 .settings_sections
@@ -308,7 +322,68 @@ impl ChangeSignal {
                 .lock()
                 .expect("settings section") = None;
         }))?;
+        signal.install_statement_completion(connection)?;
         Ok(signal)
+    }
+
+    fn install_statement_completion(
+        self: &Arc<Self>,
+        connection: &rusqlite::Connection,
+    ) -> rusqlite::Result<()> {
+        let signal = Arc::into_raw(Arc::clone(self))
+            .cast_mut()
+            .cast::<std::ffi::c_void>();
+        let database = unsafe { connection.handle() };
+        let registered = unsafe {
+            rusqlite::ffi::sqlite3_set_clientdata(
+                database,
+                c"lettuce.library.change_signal".as_ptr(),
+                signal,
+                Some(drop_library_signal),
+            )
+        };
+        if registered != rusqlite::ffi::SQLITE_OK {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(registered),
+                None,
+            ));
+        }
+        let traced = unsafe {
+            rusqlite::ffi::sqlite3_trace_v2(
+                database,
+                rusqlite::ffi::SQLITE_TRACE_PROFILE,
+                Some(library_statement_completed),
+                signal,
+            )
+        };
+        if traced != rusqlite::ffi::SQLITE_OK {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(traced),
+                None,
+            ));
+        }
+        Ok(())
+    }
+
+    fn publish_library_changes(&self) {
+        let changes = {
+            let mut pending = self.library_changes.lock().expect("library changes");
+            if !pending.commit_pending {
+                return;
+            }
+            pending.commit_pending = false;
+            std::mem::take(&mut pending.ids)
+        };
+        let listeners = self
+            .library_listeners
+            .lock()
+            .expect("library listeners")
+            .clone();
+        for (kind, id) in changes {
+            for listener in &listeners {
+                listener(kind, &id);
+            }
+        }
     }
 
     pub(crate) fn settings_section(&self, section: &'static str) {
@@ -470,5 +545,137 @@ mod library_tests {
             *events.lock().expect("events"),
             vec![(LibraryKind::Character, "character".to_owned())]
         );
+    }
+    #[test]
+    fn failed_commit_io_does_not_emit_library_changes() {
+        if std::env::var_os("LETTUCE_LIBRARY_COMMIT_FAULT").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+                .args([
+                    "--exact",
+                    "change_signal::library_tests::failed_commit_io_does_not_emit_library_changes",
+                ])
+                .env("LETTUCE_LIBRARY_COMMIT_FAULT", "1")
+                .output()
+                .expect("child");
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
+                "child did not run the fault test"
+            );
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        unsafe extern "C" fn fault(code: std::ffi::c_int) -> std::ffi::c_int {
+            i32::from(code == 400)
+        }
+        let connection = rusqlite::Connection::open_in_memory().expect("database");
+        connection
+            .execute_batch("CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT);")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("signal");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let observed = events.clone();
+        signal.listen_library(Arc::new(move |kind, id| {
+            observed.lock().expect("events").push((kind, id.to_owned()))
+        }));
+        connection
+            .execute_batch("BEGIN; INSERT INTO characters VALUES ('character','Name');")
+            .expect("write");
+        unsafe {
+            rusqlite::ffi::sqlite3_test_control(
+                9,
+                fault as unsafe extern "C" fn(std::ffi::c_int) -> std::ffi::c_int,
+            );
+        }
+        let result = connection.execute_batch("COMMIT;");
+        unsafe {
+            rusqlite::ffi::sqlite3_test_control(9, std::ptr::null::<std::ffi::c_void>());
+        }
+        assert!(result.is_err(), "commit fault must be exercised");
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM characters", [], |row| row.get(0))
+            .expect("rows");
+        assert_eq!(count, 0);
+        assert!(
+            events.lock().expect("events").is_empty(),
+            "a failed commit must not emit an event"
+        );
+        connection
+            .execute_batch("INSERT INTO characters VALUES ('character','Retry');")
+            .expect("retry");
+        assert_eq!(
+            *events.lock().expect("events"),
+            vec![(LibraryKind::Character, "character".to_owned())]
+        );
+    }
+    #[test]
+    fn reused_transaction_statements_publish_only_their_committed_ids() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE characters (id TEXT PRIMARY KEY);")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("signal");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let observed = events.clone();
+        signal.listen_library(Arc::new(move |kind, id| {
+            observed.lock().expect("events").push((kind, id.to_owned()))
+        }));
+        let mut begin = connection.prepare("BEGIN").expect("begin");
+        let mut commit = connection.prepare("COMMIT").expect("commit");
+        let mut rollback = connection.prepare("ROLLBACK").expect("rollback");
+        begin.execute([]).expect("begin first");
+        connection
+            .execute("INSERT INTO characters VALUES ('first')", [])
+            .expect("first");
+        assert!(events.lock().expect("events").is_empty());
+        commit.execute([]).expect("commit first");
+        begin.execute([]).expect("begin empty");
+        rollback.execute([]).expect("rollback empty");
+        begin.execute([]).expect("begin failed");
+        connection
+            .execute("INSERT INTO characters VALUES ('discarded')", [])
+            .expect("discarded");
+        rollback.execute([]).expect("rollback write");
+        begin.execute([]).expect("begin second");
+        connection
+            .execute("INSERT INTO characters VALUES ('second')", [])
+            .expect("second");
+        commit.execute([]).expect("commit second");
+        assert_eq!(
+            *events.lock().expect("events"),
+            vec![
+                (LibraryKind::Character, "first".to_owned()),
+                (LibraryKind::Character, "second".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn statement_callback_keeps_its_signal_until_the_connection_closes() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE characters (id TEXT PRIMARY KEY);")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("signal");
+        let weak = Arc::downgrade(&signal);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let observed = events.clone();
+        signal.listen_library(Arc::new(move |kind, id| {
+            observed.lock().expect("events").push((kind, id.to_owned()))
+        }));
+        drop(signal);
+        connection
+            .execute("INSERT INTO characters VALUES ('retained')", [])
+            .expect("write");
+        assert_eq!(
+            *events.lock().expect("events"),
+            vec![(LibraryKind::Character, "retained".to_owned())]
+        );
+        drop(connection);
+        assert!(weak.upgrade().is_none());
     }
 }
