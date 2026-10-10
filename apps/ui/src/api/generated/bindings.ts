@@ -4518,7 +4518,7 @@ export type PurgeNoticeList = {
 	items: PurgeNoticeView[],
 };
 
-export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried" | "usage_record_unreadable";
+export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried" | "usage_record_unreadable" | "usage_cost_capture_skipped";
 
 /**
  *  A delete that needs the user's attention; `entity_id` names the entity
@@ -5749,6 +5749,8 @@ export type StorageSummary = {
 	kept_database_bytes: number,
 	media: StorageSize[],
 	models: StorageSize[],
+	/**  Model files the catalog names that are not on disk. */
+	missing_model_files: number,
 	logs_bytes: number,
 };
 
