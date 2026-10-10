@@ -54,3 +54,5 @@ Media library kind selects image or audio and each item returns its role, replac
 Usage filters preserve the inclusive legacy date bounds (`old-code/src-tauri/src/usage/repository.rs:275-283`) and add stable cursor pages over one deduplicated charge read. Statistics group days in an explicit device-local timezone rather than relying on webview Date conversion (`old-code/src/ui/pages/settings/UsagePage.tsx:490-496`). Nullable fields and unknown-request counts replace zero substitutions. CSV completion is returned after writing a FileTarget, preserving the UI's export-before-completion flow (`UsagePage.tsx:651-666`).
 
 Storage optimization exposes a job and typed completion or failure instead of the legacy developer button assuming completion from a void command (`old-code/src/ui/pages/settings/DeveloperPage.tsx:1967-1974`).
+
+Full persona draft validation distinguishes an explicit null from an omitted nullable field. Legacy persona save omitted LoRA fields in its repository payload and then wrote NULL (old-code/src/core/storage/repo.ts:2257-2270; old-code/src-tauri/src/storage_manager/personas.rs:342-346); an incomplete typed draft now fails before any write.

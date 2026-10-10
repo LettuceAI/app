@@ -255,9 +255,13 @@ pub struct PersonaMediaLink {
 pub struct PersonaDraft {
     pub title: String,
     pub description: String,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub nickname: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub design_description: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub avatar_crop: Option<LibraryCrop>,
+    #[serde(deserialize_with = "Option::deserialize")]
     pub image_recommendation: Option<LibraryImageRecommendation>,
     pub media: Vec<PersonaMediaLink>,
 }
@@ -366,4 +370,32 @@ pub struct PersonaPage {
     pub items: Vec<PersonaSummary>,
     pub next_cursor: Option<String>,
     pub default_persona: PersonaDefaultView,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PersonaDraft;
+
+    #[test]
+    fn persona_full_drafts_require_explicit_nullable_fields() {
+        let draft = serde_json::json!({
+            "title": "Writer", "description": "Description", "nickname": null,
+            "design_description": null, "avatar_crop": null, "image_recommendation": null,
+            "media": []
+        });
+        serde_json::from_value::<PersonaDraft>(draft.clone()).expect("full draft");
+        for field in [
+            "nickname",
+            "design_description",
+            "avatar_crop",
+            "image_recommendation",
+        ] {
+            let mut incomplete = draft.clone();
+            incomplete.as_object_mut().expect("object").remove(field);
+            assert!(
+                serde_json::from_value::<PersonaDraft>(incomplete).is_err(),
+                "missing {field} must not implicitly clear stored data"
+            );
+        }
+    }
 }
