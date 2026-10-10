@@ -850,6 +850,13 @@ pub(crate) fn sync_replace_group(
             member.model_profile_override = None;
         }
     }
+    replace_group_graph(tx, &details)
+}
+
+fn replace_group_graph(
+    tx: &Transaction<'_>,
+    details: &GroupDetails,
+) -> Result<(), RepositoryError> {
     let plan = CreateGroupPlan {
         group: details.group.clone(),
         starting_scene: details.starting_scene.clone(),
@@ -874,6 +881,83 @@ pub(crate) fn sync_replace_group(
         insert_scene(tx, group.id, starting)?;
     }
     Ok(())
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn library_group(&self, id: GroupId) -> Result<GroupDetails, RepositoryError> {
+        load_details(self.transaction, id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::NotFound)
+    }
+
+    pub fn save_group(
+        &self,
+        mut plan: CreateGroupPlan,
+        expected_revision: Option<Revision>,
+        now: TimestampMillis,
+    ) -> Result<GroupDetails, RepositoryError> {
+        let current = expected_revision
+            .map(|expected| ensure_group(self.transaction, plan.group.id, expected, false))
+            .transpose()?;
+        if let Some(before) = &current {
+            plan.group.status = before.group.status;
+            plan.group.created_at = before.group.created_at;
+            plan.group.revision = next_revision(before.group.revision)?;
+        } else {
+            if load_details(self.transaction, plan.group.id)
+                .map_err(db_error)?
+                .is_some()
+            {
+                return Err(RepositoryError::AlreadyExists);
+            }
+            plan.group.status = LifecycleStatus::Active;
+            plan.group.created_at = now;
+            plan.group.revision = Revision::INITIAL;
+            if plan.group.persona == Selection::Inherit {
+                plan.group.persona = match super::persona_adapter::read_default(self.transaction)
+                    .map_err(db_error)?
+                    .persona_id
+                {
+                    Some(id) => Selection::Explicit(id),
+                    None => Selection::Disabled,
+                };
+            }
+        }
+        plan.group.updated_at = now;
+        if current
+            .as_ref()
+            .is_none_or(|before| before.group.members != plan.group.members)
+        {
+            plan.group.validate_membership()?;
+            validate_member_assignments(self.transaction, &plan.group.members)?;
+        }
+        if current
+            .as_ref()
+            .is_none_or(|before| before.group.persona != plan.group.persona)
+            && let Selection::Explicit(id) = plan.group.persona
+        {
+            ensure_active_persona(self.transaction, id)?;
+        }
+        if let Some(mut starting) = plan.starting_scene.take() {
+            let before = current
+                .as_ref()
+                .and_then(|details| details.starting_scene.as_ref());
+            starting.scene.status = before
+                .filter(|before| before.scene.id == starting.scene.id)
+                .map_or(LifecycleStatus::Active, |before| before.scene.status);
+            plan.starting_scene = Some(normalize_starting_scene(before, starting, now)?);
+        }
+        let details = GroupDetails {
+            group: plan.group,
+            starting_scene: plan.starting_scene,
+        };
+        details.validate()?;
+        for asset in group_asset_ids(&details) {
+            ensure_image_asset(self.transaction, asset)?;
+        }
+        replace_group_graph(self.transaction, &details)?;
+        self.library_group(details.group.id)
+    }
 }
 
 impl GroupRepository for Database {
@@ -3018,5 +3102,401 @@ mod tests {
         drop(reader);
         drop(writer);
         let _ = std::fs::remove_file(path);
+    }
+    fn library_plan(database: &Database) -> CreateGroupPlan {
+        let members = (0..2)
+            .map(|ordinal| {
+                let character_id = CharacterId::new();
+                character(database, character_id);
+                GroupMember {
+                    character_id,
+                    ordinal,
+                    muted: false,
+                    model_profile_override: None,
+                }
+            })
+            .collect();
+        CreateGroupPlan {
+            group: GroupProfile::new(
+                GroupId::new(),
+                "Library group".into(),
+                members,
+                TimestampMillis::new(1),
+            )
+            .expect("group"),
+            starting_scene: None,
+        }
+    }
+
+    #[test]
+    fn group_save_and_receipt_roll_back_replay_and_compare_revisions() {
+        let database = Database::open_in_memory().expect("database");
+        let mut plan = library_plan(&database);
+        let old_background = image_asset(&database, 'a');
+        plan.group.background_asset_id = Some(old_background);
+        let before = GroupRepository::create(&database, plan.clone()).expect("create");
+        plan.group.name = "Edited group".into();
+        plan.group.members[1].muted = true;
+        plan.group.background_asset_id = None;
+        let apply = |key: &str, digest: &str| {
+            database.commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                "group_save",
+                key,
+                digest,
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_group(
+                            plan.clone(),
+                            Some(Revision::INITIAL),
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|error| match error {
+                            RepositoryError::StaleRevision { .. } => {
+                                crate::ApiOperationError::Conflict
+                            }
+                            _ => crate::ApiOperationError::Storage,
+                        })
+                },
+            )
+        };
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_group_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        assert_eq!(
+            apply("save", "digest"),
+            Err(crate::ApiOperationError::Storage)
+        );
+        assert_eq!(
+            GroupRepository::get(&database, before.group.id).expect("get"),
+            Some(before.clone())
+        );
+        assert!(
+            database
+                .lookup_api_operation("group_save", "save")
+                .expect("receipt")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute_batch("DROP TRIGGER fail_group_save_receipt;")
+            .expect("clear");
+        let after = apply("save", "digest").expect("save");
+        assert_eq!(after.group.revision, Revision::new(2));
+        assert_eq!(after.group.created_at, before.group.created_at);
+        assert_eq!(after.group.members, plan.group.members);
+        assert_eq!(after.group.background_asset_id, None);
+        assert_eq!(apply("save", "digest").expect("replay"), after);
+        assert_eq!(
+            apply("save", "different"),
+            Err(crate::ApiOperationError::Conflict)
+        );
+        assert_eq!(
+            apply("stale", "digest"),
+            Err(crate::ApiOperationError::Conflict)
+        );
+        let queued: i64 = database
+            .connection()
+            .expect("lock")
+            .query_row(
+                "SELECT count(*) FROM media_gc_candidates WHERE asset_id=?1",
+                [old_background.to_string()],
+                |row| row.get(0),
+            )
+            .expect("candidate");
+        assert_eq!(queued, 1);
+    }
+
+    #[test]
+    fn group_save_captures_the_default_persona_only_at_creation() {
+        use lettuce_characters::PersonaRepository;
+        let database = Database::open_in_memory().expect("database");
+        let first = PersonaId::new();
+        let second = PersonaId::new();
+        persona(&database, first, "active");
+        persona(&database, second, "active");
+        let default = PersonaRepository::get_default_snapshot(&database)
+            .expect("default")
+            .state;
+        let selected = PersonaRepository::set_default(
+            &database,
+            first,
+            default.revision,
+            TimestampMillis::new(2),
+        )
+        .expect("default first");
+        let plan = library_plan(&database);
+        let before = database
+            .commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                "group_save",
+                "new",
+                "digest",
+                TimestampMillis::new(3),
+                |scope| {
+                    scope
+                        .save_group(plan, None, TimestampMillis::new(3))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("create");
+        assert_eq!(before.group.persona, Selection::Explicit(first));
+        assert_eq!(before.group.revision, Revision::INITIAL);
+        PersonaRepository::set_default(
+            &database,
+            second,
+            selected.revision,
+            TimestampMillis::new(4),
+        )
+        .expect("default second");
+        let mut plan = CreateGroupPlan {
+            group: before.group.clone(),
+            starting_scene: before.starting_scene.clone(),
+        };
+        plan.group.name = "Edited group".into();
+        let after = database
+            .commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                "group_save",
+                "edit",
+                "digest",
+                TimestampMillis::new(5),
+                |scope| {
+                    scope
+                        .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(5))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("edit");
+        assert_eq!(after.group.persona, Selection::Explicit(first));
+    }
+    #[test]
+    fn group_save_process_exit_mid_members_preserves_the_original() {
+        if let Some(path) = std::env::var_os("LETTUCE_GROUP_SAVE_CRASH_DATABASE") {
+            let database = Database::open(path).expect("child database");
+            let id: GroupId = std::env::var("LETTUCE_GROUP_SAVE_CRASH_ID")
+                .expect("id")
+                .parse()
+                .expect("group id");
+            let before = GroupRepository::get(&database, id)
+                .expect("get")
+                .expect("exists");
+            let mut plan = CreateGroupPlan {
+                group: before.group,
+                starting_scene: before.starting_scene,
+            };
+            plan.group.name = "Edited".into();
+            plan.group.members[1].muted = true;
+            {
+                let connection = database.connection().expect("lock");
+                connection
+                    .create_scalar_function(
+                        "crash_group_save",
+                        1,
+                        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                        |context| -> rusqlite::Result<i64> {
+                            if context.get::<i64>(0)? == 1 {
+                                std::process::exit(77);
+                            }
+                            Ok(0)
+                        },
+                    )
+                    .expect("function");
+                connection.execute_batch("CREATE TEMP TRIGGER crash_group_save_member BEFORE INSERT ON group_members BEGIN SELECT crash_group_save(NEW.ordinal); END;").expect("trigger");
+            }
+            database
+                .commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                    "group_save",
+                    "crash",
+                    "digest",
+                    TimestampMillis::new(2),
+                    |scope| {
+                        scope
+                            .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
+                            .map_err(|_| crate::ApiOperationError::Storage)
+                    },
+                )
+                .expect("save");
+            panic!("crash hook was not reached");
+        }
+        let root =
+            std::env::temp_dir().join(format!("slice5-group-save-crash-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let mut plan = library_plan(&database);
+        let before = GroupRepository::create(&database, plan.clone()).expect("create");
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "catalog::group_adapter::tests::group_save_process_exit_mid_members_preserves_the_original"])
+            .env("LETTUCE_GROUP_SAVE_CRASH_DATABASE", &path).env("LETTUCE_GROUP_SAVE_CRASH_ID", before.group.id.to_string()).output().expect("child");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
+            "child test must run"
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(77),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            GroupRepository::get(&database, before.group.id).expect("get"),
+            Some(before)
+        );
+        assert!(
+            database
+                .lookup_api_operation("group_save", "crash")
+                .expect("receipt")
+                .is_none()
+        );
+        plan.group.name = "Edited".into();
+        plan.group.members[1].muted = true;
+        let after = database
+            .commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                "group_save",
+                "crash",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("retry");
+        assert_eq!(after.group.name, "Edited");
+        assert!(after.group.members[1].muted);
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn group_save_has_one_concurrent_revision_winner() {
+        let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
+        let plan = library_plan(&database);
+        GroupRepository::create(&*database, plan.clone()).expect("create");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let writers: Vec<_> = (0..2)
+            .map(|index| {
+                let database = database.clone();
+                let barrier = barrier.clone();
+                let mut plan = plan.clone();
+                plan.group.name = format!("Writer {index}");
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    database.commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                        "group_save",
+                        &format!("writer-{index}"),
+                        "digest",
+                        TimestampMillis::new(2),
+                        |scope| {
+                            scope
+                                .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
+                                .map_err(|error| match error {
+                                    RepositoryError::StaleRevision { .. } => {
+                                        crate::ApiOperationError::Conflict
+                                    }
+                                    _ => crate::ApiOperationError::Storage,
+                                })
+                        },
+                    )
+                })
+            })
+            .collect();
+        let outcomes: Vec<_> = writers
+            .into_iter()
+            .map(|writer| writer.join().expect("join"))
+            .collect();
+        assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|result| **result == Err(crate::ApiOperationError::Conflict))
+                .count(),
+            1
+        );
+        assert_eq!(
+            GroupRepository::get(&*database, plan.group.id)
+                .expect("get")
+                .expect("exists")
+                .group
+                .revision,
+            Revision::new(2)
+        );
+    }
+    #[test]
+    fn group_save_keeps_reduced_membership_and_rejects_invalid_reference_edits() {
+        let database = Database::open_in_memory().expect("database");
+        let mut plan = library_plan(&database);
+        let before = GroupRepository::create(&database, plan.clone()).expect("create");
+        plan.group.members[0].model_profile_override = Some(ModelProfileId::new());
+        let result = database.commit_api_operation::<(), crate::ApiOperationError>(
+            "group_save",
+            "missing-model",
+            "digest",
+            TimestampMillis::new(2),
+            |scope| match scope.save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(2)) {
+                Err(RepositoryError::NotFound) => Err(crate::ApiOperationError::Conflict),
+                _ => panic!("missing override must fail typed"),
+            },
+        );
+        assert_eq!(result, Err(crate::ApiOperationError::Conflict));
+        assert_eq!(
+            GroupRepository::get(&database, before.group.id).expect("get"),
+            Some(before.clone())
+        );
+        database
+            .purge_character(
+                before.group.members[0].character_id,
+                TimestampMillis::new(3),
+            )
+            .expect("remove member");
+        let reduced = GroupRepository::get(&database, before.group.id)
+            .expect("get")
+            .expect("retained");
+        assert_eq!(reduced.group.members.len(), 1);
+        let mut plan = CreateGroupPlan {
+            group: reduced.group.clone(),
+            starting_scene: reduced.starting_scene.clone(),
+        };
+        plan.group.name = "Retained group".into();
+        let after = database
+            .commit_api_operation::<GroupDetails, crate::ApiOperationError>(
+                "group_save",
+                "rename-reduced",
+                "digest",
+                TimestampMillis::new(4),
+                |scope| {
+                    scope
+                        .save_group(plan, Some(reduced.group.revision), TimestampMillis::new(4))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("rename retains membership");
+        assert_eq!(after.group.members, reduced.group.members);
+        let mut plan = CreateGroupPlan {
+            group: after.group.clone(),
+            starting_scene: after.starting_scene.clone(),
+        };
+        plan.group.members[0].muted = true;
+        let result = database.commit_api_operation::<(), crate::ApiOperationError>(
+            "group_save",
+            "invalid-members",
+            "digest",
+            TimestampMillis::new(5),
+            |scope| match scope.save_group(
+                plan,
+                Some(after.group.revision),
+                TimestampMillis::new(5),
+            ) {
+                Err(RepositoryError::Invalid(_)) => Err(crate::ApiOperationError::Conflict),
+                _ => panic!("invalid edited membership must fail typed"),
+            },
+        );
+        assert_eq!(result, Err(crate::ApiOperationError::Conflict));
+        assert_eq!(
+            GroupRepository::get(&database, after.group.id).expect("get"),
+            Some(after)
+        );
     }
 }
