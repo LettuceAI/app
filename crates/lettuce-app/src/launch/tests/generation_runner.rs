@@ -9203,13 +9203,21 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
 
     let broken = hard_delete_path(&root, "broken.sqlite3");
     std::fs::write(&broken, b"not a database").expect("broken file");
-    assert!(matches!(
-        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_200)),
-        Err(crate::HardDeleteError::DatabaseFiles(
-            crate::AppDatabaseLocationError::Storage
-        ))
-    ));
+    assert_eq!(
+        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_200))
+            .expect("an unreadable file blocks only collection")
+            .removed,
+        0
+    );
     assert!(media_object(&root, &image.blob.content_hash).exists());
+    assert!(
+        database
+            .purge_notices()
+            .expect("notices")
+            .iter()
+            .any(|notice| notice.entity_id == "broken.sqlite3"
+                && notice.reason == lettuce_database::PurgeNoticeReason::MediaCollectionSkipped)
+    );
     std::fs::remove_file(&broken).expect("remove broken file");
 
     drop(kept_media);
