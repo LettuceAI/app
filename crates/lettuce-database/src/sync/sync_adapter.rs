@@ -1687,7 +1687,17 @@ const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
             })
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: None,
+    delete: Some(|tx, change, now| {
+        crate::purge::queue_purge(
+            tx,
+            crate::purge::PurgeKind::Persona,
+            change.entity().id(),
+            change,
+            now,
+        )
+        .map(|_| true)
+        .map_err(|_| ApplyOneError::Storage)
+    }),
     decode: |id, bytes| {
         let incoming: Persona =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
@@ -2139,7 +2149,17 @@ const GROUP_CODEC: SnapshotCodec = SnapshotCodec {
     ids: Some(|connection| {
         crate::catalog::group_adapter::sync_group_ids(connection).map_err(repository_apply_error)
     }),
-    delete: None,
+    delete: Some(|tx, change, now| {
+        crate::purge::queue_purge(
+            tx,
+            crate::purge::PurgeKind::Group,
+            change.entity().id(),
+            change,
+            now,
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+        Ok(true)
+    }),
     empty: None,
     seed: None,
 };
@@ -3465,6 +3485,10 @@ fn purged_conversations(
 ) -> Result<Vec<String>, ApplyOneError> {
     match kind {
         crate::purge::PurgeKind::Conversation => Ok(vec![id.to_owned()]),
+        crate::purge::PurgeKind::Persona => Ok(Vec::new()),
+        crate::purge::PurgeKind::Group => tx.prepare("SELECT id FROM conversations WHERE kind='group' AND json_extract(kind_json, '$.value.details.group.source_id')=?1 ORDER BY id")
+            .and_then(|mut statement| statement.query_map([id], |row| row.get(0))?.collect())
+            .map_err(|_| ApplyOneError::Storage),
         crate::purge::PurgeKind::Character => tx
             .prepare(
                 "SELECT DISTINCT conversation.id FROM conversations conversation
@@ -3762,6 +3786,8 @@ const fn notice_entity(kind: crate::purge::PurgeKind) -> crate::PurgeNoticeEntit
     match kind {
         crate::purge::PurgeKind::Conversation => crate::PurgeNoticeEntity::Conversation,
         crate::purge::PurgeKind::Character => crate::PurgeNoticeEntity::Character,
+        crate::purge::PurgeKind::Group => crate::PurgeNoticeEntity::Group,
+        crate::purge::PurgeKind::Persona => crate::PurgeNoticeEntity::SyncEntity,
     }
 }
 
@@ -3967,10 +3993,11 @@ fn pending_rejournal_scopes(tx: &Transaction<'_>) -> Result<Vec<PurgeScope>, App
     pending
         .into_iter()
         .map(|(kind, id)| {
-            let kind = if kind == crate::purge::PurgeKind::Character.name() {
-                crate::purge::PurgeKind::Character
-            } else {
-                crate::purge::PurgeKind::Conversation
+            let kind = match kind.as_str() {
+                "character" => crate::purge::PurgeKind::Character,
+                "group" => crate::purge::PurgeKind::Group,
+                "persona" => crate::purge::PurgeKind::Persona,
+                _ => crate::purge::PurgeKind::Conversation,
             };
             PurgeScope::load(tx, kind, &id)
         })
@@ -3994,14 +4021,17 @@ fn retry_pending_rejournals(
         })
         .map_err(|_| ApplyOneError::Storage)?;
     for (kind_name, id) in pending {
-        let kind = if kind_name == crate::purge::PurgeKind::Character.name() {
-            crate::purge::PurgeKind::Character
-        } else {
-            crate::purge::PurgeKind::Conversation
+        let kind = match kind_name.as_str() {
+            "character" => crate::purge::PurgeKind::Character,
+            "group" => crate::purge::PurgeKind::Group,
+            "persona" => crate::purge::PurgeKind::Persona,
+            _ => crate::purge::PurgeKind::Conversation,
         };
         let table = match kind {
             crate::purge::PurgeKind::Conversation => "conversations",
             crate::purge::PurgeKind::Character => "characters",
+            crate::purge::PurgeKind::Group => "groups",
+            crate::purge::PurgeKind::Persona => "personas",
         };
         let exists: bool = tx
             .query_row(

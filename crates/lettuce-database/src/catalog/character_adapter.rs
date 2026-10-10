@@ -5430,4 +5430,35 @@ mod smoke_tests {
             );
         }
     }
+    #[test]
+    fn library_purges_sync_and_character_apply_emits_once() {
+        use lettuce_characters::{CreateGroupPlan, GroupMember, GroupProfile, GroupRepository};
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let first = CharacterId::new();
+        let second = CharacterId::new();
+        CharacterRepository::create(&a, companion_plan(first)).expect("first");
+        CharacterRepository::create(&a, companion_plan(second)).expect("second");
+        let persona = lettuce_types::PersonaId::new();
+        a.connection().expect("lock").execute("INSERT INTO personas (id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [persona.to_string()]).expect("persona");
+        let mut group = GroupProfile::new(lettuce_types::GroupId::new(), "Cast".into(), vec![GroupMember { character_id: first, ordinal: 0, muted: false, model_profile_override: None }, GroupMember { character_id: second, ordinal: 1, muted: false, model_profile_override: None }], TimestampMillis::new(1)).expect("group");
+        group.persona = lettuce_characters::Selection::Explicit(persona);
+        let id = group.id;
+        GroupRepository::create(&a, CreateGroupPlan { group, starting_scene: None }).expect("create group");
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let capture = events.clone();
+        b.on_library_change(move |kind, id| capture.lock().expect("events").push((kind, id.to_owned())));
+        sync_characters(&a, &b, 100);
+        assert_eq!(events.lock().expect("events").iter().filter(|(kind, id)| *kind == crate::LibraryKind::Character && *id == first.to_string()).count(), 1);
+        sync_characters(&b, &a, 110);
+        a.purge_persona_operation(persona, Revision::INITIAL, "persona", "persona-digest", TimestampMillis::new(200)).expect("persona purge");
+        sync_characters(&a, &b, 210);
+        assert!(lettuce_characters::PersonaRepository::get(&b, persona).expect("persona").is_none());
+        assert_eq!(GroupRepository::get(&b, id).expect("group").expect("exists").group.persona, lettuce_characters::Selection::Inherit);
+        a.purge_group_operation(id, Revision::new(2), "group", "group-digest", TimestampMillis::new(300)).expect("group purge");
+        sync_characters(&a, &b, 310);
+        assert!(GroupRepository::get(&b, id).expect("group").is_none());
+        assert!(CharacterRepository::get(&b, first).expect("character").is_some());
+    }
+
 }

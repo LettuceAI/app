@@ -271,3 +271,5 @@ Application settings payload version 4 includes developer mode and the lorebook 
 Job usage payload version 2 carries the frozen attribution snapshot of each job dispatch and the typed failure snapshot of a failed or cancelled one. The handshake fingerprint changes with it, so a peer still sending version 1 rows cannot negotiate a session.
 
 Character snapshots use schema version 3 and protected conversation snapshots use version 2 to carry the independent banner media slot. The schema fingerprint changes with these versions.
+
+Persona and group deletes use the queued purge path and its unseen local or remote change protection. Group ownership includes its launched conversations; persona deletion repairs live references without deleting conversations.

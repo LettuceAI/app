@@ -18,6 +18,7 @@ mod lorebooks;
 mod memory;
 mod memory_models;
 mod metrics;
+mod library;
 mod ollama;
 mod prompts;
 mod provider_control;
@@ -26,6 +27,7 @@ mod speech_asr;
 mod speech_tts;
 
 pub use api::*;
+pub use library::*;
 pub use app::*;
 pub use companion::*;
 pub use conversations::*;

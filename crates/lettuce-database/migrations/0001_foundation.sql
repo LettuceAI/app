@@ -340,7 +340,7 @@ CREATE TABLE purge_authorizations (
 -- Purges received through sync. Each runs in its own transaction after the
 -- batch that carried it commits.
 CREATE TABLE purge_queue (
-    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character')),
+    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character', 'group', 'persona')),
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
     change_id TEXT NOT NULL CHECK (length(change_id) = 36),
     queued_at INTEGER NOT NULL,
@@ -351,7 +351,7 @@ CREATE TABLE purge_queue (
 -- Conversations and characters kept against a received delete whose
 -- re-journal waits for a snapshot or media blob to be complete here.
 CREATE TABLE purge_rejournals (
-    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character')),
+    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character', 'group', 'persona')),
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     PRIMARY KEY (entity_kind, entity_id)

@@ -103,3 +103,188 @@ fn a_database_that_lost_foreign_key_enforcement_refuses_every_use() {
         Err(crate::DatabaseError::ForeignKeysLost)
     ));
 }
+
+#[test]
+fn persona_purge_retains_helper_receipts_and_rolls_back_late_failure() {
+    let database = Database::open_in_memory().expect("database");
+    let id = lettuce_types::PersonaId::new();
+    {
+        let connection = database.connection().expect("lock");
+        connection.execute("INSERT INTO personas (id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [id.to_string()]).expect("persona");
+        connection.execute("UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=1", [id.to_string()]).expect("default");
+        connection.execute_batch("INSERT INTO creation_workflows VALUES ('workflow','{}','drafting',NULL,1,1,1); INSERT INTO creation_proposals VALUES ('proposal','workflow',NULL,NULL,0,'drafting','{}','[]',1);").expect("helper");
+        connection
+            .execute(
+                "INSERT INTO creation_apply_receipts VALUES ('workflow',1,'proposal',?1,1,1)",
+                [id.to_string()],
+            )
+            .expect("receipt");
+        connection.execute_batch("CREATE TEMP TRIGGER fail_persona_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+    }
+    let delete = || {
+        database.purge_persona_operation(
+            id,
+            Revision::new(1),
+            "delete-persona",
+            "digest",
+            TimestampMillis::new(2),
+        )
+    };
+    assert_eq!(delete(), Err(PurgeError::Storage));
+    {
+        let connection = database.connection().expect("lock");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT default_persona_id FROM persona_defaults",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .expect("default"),
+            id.to_string()
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM personas", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("persona"),
+            1
+        );
+        connection
+            .execute_batch("DROP TRIGGER fail_persona_receipt;")
+            .expect("remove fault");
+    }
+    delete().expect("purge");
+    delete().expect("replay");
+    assert_eq!(
+        database.purge_persona_operation(
+            id,
+            Revision::new(1),
+            "delete-persona",
+            "changed",
+            TimestampMillis::new(2)
+        ),
+        Err(PurgeError::Conflict)
+    );
+    let connection = database.connection().expect("lock");
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM personas", [], |row| row
+                .get::<_, i64>(0))
+            .expect("persona"),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT default_persona_id FROM persona_defaults",
+                [],
+                |row| row.get::<_, Option<String>>(0)
+            )
+            .expect("default"),
+        None
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT persona_id FROM creation_apply_receipts",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .expect("receipt"),
+        id.to_string()
+    );
+}
+
+#[test]
+fn persona_purge_process_exit_preserves_the_default_and_replay_state() {
+    let root = std::env::temp_dir().join(format!("slice5-persona-crash-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).expect("directory");
+    let path = root.join("library.sqlite3");
+    let id = lettuce_types::PersonaId::new();
+    let database = Database::open(&path).expect("database");
+    {
+        let connection = database.connection().expect("lock");
+        connection.execute("INSERT INTO personas (id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Persona','persona','Description',1,1,1)", [id.to_string()]).expect("persona");
+        connection.execute("UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=1", [id.to_string()]).expect("default");
+    }
+    drop(database);
+    let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+        .args(["--exact", "purge::tests::persona_purge_crash_child"])
+        .env("LETTUCE_PERSONA_PURGE_CRASH_DATABASE", &path)
+        .env("LETTUCE_PERSONA_PURGE_CRASH_ID", id.to_string())
+        .output()
+        .expect("child");
+    assert_eq!(
+        output.status.code(),
+        Some(77),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let database = Database::open(&path).expect("reopen");
+    assert!(
+        database
+            .lookup_api_operation("persona_delete", "crash")
+            .expect("receipt")
+            .is_none()
+    );
+    assert_eq!(
+        database
+            .connection()
+            .expect("lock")
+            .query_row(
+                "SELECT default_persona_id FROM persona_defaults",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .expect("default"),
+        id.to_string()
+    );
+    database
+        .purge_persona_operation(
+            id,
+            Revision::INITIAL,
+            "crash",
+            "digest",
+            TimestampMillis::new(20),
+        )
+        .expect("retry");
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn persona_purge_crash_child() {
+    let Some(path) = std::env::var_os("LETTUCE_PERSONA_PURGE_CRASH_DATABASE") else {
+        return;
+    };
+    let id = std::env::var("LETTUCE_PERSONA_PURGE_CRASH_ID")
+        .expect("id")
+        .parse()
+        .expect("persona id");
+    let database = Database::open(path).expect("database");
+    {
+        let connection = database.connection().expect("lock");
+        connection
+            .create_scalar_function(
+                "crash_persona_purge",
+                0,
+                rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+                |_| -> rusqlite::Result<i64> {
+                    std::process::exit(77);
+                },
+            )
+            .expect("crash function");
+        connection.execute_batch("CREATE TEMP TRIGGER crash_persona_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_persona_purge(); END;").expect("crash trigger");
+    }
+    database
+        .purge_persona_operation(
+            id,
+            Revision::INITIAL,
+            "crash",
+            "digest",
+            TimestampMillis::new(20),
+        )
+        .expect("purge");
+    panic!("crash hook was not reached");
+}

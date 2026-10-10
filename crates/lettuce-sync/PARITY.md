@@ -100,3 +100,5 @@ Application settings payload version 4 carries developer mode and the lorebook g
 Conversation message payload version 5 carries every usage event's required immutable origin. The handshake fingerprint changes with it. This preserves the distinction between imported message evidence and historical usage records; legacy reports read only usage records (`old-code/src-tauri/src/usage/repository.rs:270-306,483-501`). Missing origin never defaults to live.
 
 The character and protected-snapshot schema versions advance for the independent Banner media slot. Legacy saved an independent banner file (`old-code/src-tauri/src/storage_manager/media.rs:1032-1038`); synchronized authored records and launch artifacts now retain its reference.
+
+Library group and persona hard deletes propagate through canonical delete changes and the existing purge queue. The group purge includes source conversations; historical persona apply receipts remain replay evidence after their persona is removed.

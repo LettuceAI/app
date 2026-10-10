@@ -597,3 +597,5 @@ Application reset deliberately keeps the old database under a kept name, its ret
 Group persona resolution now falls back to the current default for missing or archived selections. This is an intentional deviation: legacy group `load_persona` returned only an exact match and generation used no default when missing (`old-code/src-tauri/src/group_chat_manager/mod.rs:5616-5619,5865-5869`).
 
 Library refreshes are driven by committed database writes rather than individual command completion, preserving the legacy database-reloaded refresh intent across all write paths.
+
+Persona deletion refreshes library views through the committed signal; legacy library deletion awaited persona_delete and then reloaded personas (old-code/src/ui/pages/library/LibraryPage.tsx:223–235). Group deletion settles running work before deleting its conversations together, extending the legacy transaction with the shared conversation deletion rule.

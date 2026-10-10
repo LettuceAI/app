@@ -150,7 +150,7 @@ pub(crate) fn cancel_conversation_work(
 
 /// A turn read before another write moved it on (a job attached, a stage
 /// appended) is left for the next step, which reads it again.
-fn cancel_work(
+pub(crate) fn cancel_work(
     context: &ApiContext,
     conversation_id: ConversationId,
     before_settle: &BeforeSettle,

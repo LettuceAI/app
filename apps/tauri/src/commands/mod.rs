@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod characters;
+pub mod library;
 pub mod companion;
 pub mod conversations;
 pub mod files;

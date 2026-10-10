@@ -98,6 +98,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::conversations::conversation_participant_add,
             commands::conversations::conversation_participant_update,
             commands::characters::characters_list,
+            commands::library::group_delete,
+            commands::library::persona_delete,
             commands::prompts::prompts_list,
             commands::prompts::prompt_placeholders,
             commands::prompts::prompt_validate,

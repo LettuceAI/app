@@ -140,8 +140,7 @@ CREATE TABLE creation_apply_receipts (
     applied_at INTEGER NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
     FOREIGN KEY (workflow_id, proposal_id)
-        REFERENCES creation_proposals(workflow_id, id) ON DELETE RESTRICT,
-    FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE RESTRICT
+        REFERENCES creation_proposals(workflow_id, id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TRIGGER creation_apply_receipts_immutable_update

@@ -11,6 +11,10 @@ pub use settings::{settings_get, settings_sampler_defaults_update, settings_upda
 mod assets;
 mod branches;
 mod characters;
+mod library_delete;
+pub use library_delete::{group_delete, persona_delete};
+#[cfg(test)]
+mod library_delete_tests;
 pub(crate) mod companion;
 mod context;
 mod conversation_delete;

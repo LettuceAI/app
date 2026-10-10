@@ -6564,6 +6564,81 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn group_purge_and_receipt_roll_back_together_then_replay_after_reopen() {
+        let root = std::env::temp_dir().join(format!("slice5-group-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = std::rc::Rc::new(Database::open(&path).expect("database"));
+        let group = GroupId::new();
+        let fixture = group_fixture_for(database.clone(), group);
+        let presentation = crate::encode_versioned(&lettuce_characters::ChatAppearanceV1::default(), 1).expect("presentation");
+        database.connection().expect("connection").execute(
+            "INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit',NULL,'round_robin','manual',0,NULL,NULL,?2,NULL,'image',NULL,1,1,1)",
+            params![group.to_string(), presentation],
+        ).expect("group");
+        database.connection().expect("connection").execute_batch(
+            "CREATE TEMP TRIGGER fail_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'fault'); END;",
+        ).expect("fault");
+        assert_eq!(database.purge_group_operation(group, Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Storage));
+        assert!(ConversationReader::get(database.as_ref(), fixture.conversation_id).is_ok());
+        assert!(lettuce_characters::GroupRepository::get(database.as_ref(), group).expect("group").is_some());
+        assert!(database.lookup_api_operation("group_delete", "delete").expect("receipt").is_none());
+        database.connection().expect("connection").execute_batch("DROP TRIGGER fail_group_receipt").expect("clear fault");
+        assert_eq!(database.purge_group_operation(group, Revision::new(2), "stale", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Conflict));
+        database.purge_group_operation(group, Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)).expect("delete");
+        assert!(matches!(ConversationReader::get(database.as_ref(), fixture.conversation_id), Err(ConversationRepositoryError::NotFound)));
+        drop(fixture);
+        drop(database);
+        let database = Database::open(&path).expect("reopen");
+        database.purge_group_operation(group, Revision::INITIAL, "delete", "digest", TimestampMillis::new(21)).expect("replay");
+        assert_eq!(database.purge_group_operation(group, Revision::INITIAL, "delete", "changed", TimestampMillis::new(21)), Err(crate::PurgeError::Conflict));
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn group_purge_process_exit_keeps_the_group_chat_and_receipt_atomic() {
+        let root = std::env::temp_dir().join(format!("slice5-group-crash-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("library.sqlite3");
+        let database = std::rc::Rc::new(Database::open(&path).expect("database"));
+        let group = GroupId::new();
+        let fixture = group_fixture_for(database.clone(), group);
+        let chat = fixture.conversation_id;
+        let presentation = crate::encode_versioned(&lettuce_characters::ChatAppearanceV1::default(), 1).expect("presentation");
+        database.connection().expect("lock").execute("INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,background_blob_kind,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit','round_robin','manual',0,?2,'image',1,1,1)", params![group.to_string(), presentation]).expect("group");
+        drop(fixture);
+        drop(database);
+        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", "conversation::conversation_mutations::tests::group_purge_crash_child"])
+            .env("LETTUCE_GROUP_PURGE_CRASH_DATABASE", &path)
+            .env("LETTUCE_GROUP_PURGE_CRASH_ID", group.to_string())
+            .output().expect("child");
+        assert_eq!(output.status.code(), Some(77), "{}", String::from_utf8_lossy(&output.stdout));
+        let database = Database::open(&path).expect("reopen");
+        assert!(lettuce_characters::GroupRepository::get(&database, group).expect("group").is_some());
+        assert!(ConversationReader::get(&database, chat).is_ok());
+        assert!(database.lookup_api_operation("group_delete", "crash").expect("receipt").is_none());
+        database.purge_group_operation(group, Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("retry");
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn group_purge_crash_child() {
+        let Some(path) = std::env::var_os("LETTUCE_GROUP_PURGE_CRASH_DATABASE") else { return; };
+        let group: GroupId = std::env::var("LETTUCE_GROUP_PURGE_CRASH_ID").expect("id").parse().expect("group id");
+        let database = Database::open(path).expect("database");
+        {
+            let connection = database.connection().expect("lock");
+            connection.create_scalar_function("crash_group_purge", 0, rusqlite::functions::FunctionFlags::SQLITE_UTF8, |_| -> rusqlite::Result<i64> { std::process::exit(77); }).expect("crash function");
+            connection.execute_batch("CREATE TEMP TRIGGER crash_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_group_purge(); END;").expect("crash trigger");
+        }
+        database.purge_group_operation(group, Revision::INITIAL, "crash", "digest", TimestampMillis::new(20)).expect("purge");
+        panic!("crash hook was not reached");
+    }
+
     fn group_fixture_on(database: std::rc::Rc<Database>) -> Fixture {
         group_fixture_for(database, GroupId::new())
     }
