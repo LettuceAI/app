@@ -261,7 +261,7 @@ fn commit_staged(
 /// `renameat2`, which older releases' seccomp policy answers with `SIGSYS`;
 /// there the existence check and a plain rename run under a process-wide lock
 /// for the target directory. Other targets publish through a hard link.
-fn publish_new(
+pub(crate) fn publish_new(
     stage_parent: &cap_std::fs::Dir,
     stage_name: &str,
     parent: &cap_std::fs::Dir,

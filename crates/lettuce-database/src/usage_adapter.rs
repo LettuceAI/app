@@ -72,6 +72,7 @@ impl lettuce_usage::JobUsageLedger for Database {
         if record.result.is_some()
             || record.model_revision.get() == 0
             || record.provider_account_revision.get() == 0
+            || record.validate_snapshot().is_err()
         {
             return Err(UsageLedgerError::Invalid);
         }
@@ -98,7 +99,37 @@ impl lettuce_usage::JobUsageLedger for Database {
         result: lettuce_usage::JobInferenceUsageResult,
     ) -> Result<(), UsageLedgerError> {
         let encoded = crate::encode_versioned(&result, 1).map_err(|_| UsageLedgerError::Invalid)?;
-        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let db = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let admission: Option<(String, Option<String>)> = db
+            .query_row(
+                "SELECT record_json,result_json FROM job_inference_usage WHERE id=?1",
+                [id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let (admission, settled) = admission.ok_or(UsageLedgerError::Conflict)?;
+        let admission: lettuce_usage::JobInferenceUsage =
+            crate::decode_versioned(&admission, 1).map_err(|_| UsageLedgerError::Storage)?;
+        admission
+            .validate_snapshot()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        if let Some(settled) = settled {
+            let settled =
+                crate::decode_versioned(&settled, 1).map_err(|_| UsageLedgerError::Storage)?;
+            admission
+                .validate_result_snapshot(&settled)
+                .map_err(|_| UsageLedgerError::Storage)?;
+            if settled != result {
+                return Err(UsageLedgerError::Conflict);
+            }
+            db.commit().map_err(|_| UsageLedgerError::Storage)?;
+            return Ok(());
+        }
+        admission.validate_result_snapshot(&result)?;
         db.execute(
             "UPDATE job_inference_usage SET result_json=?2 WHERE id=?1 AND result_json IS NULL",
             params![id.to_string(), encoded],
@@ -122,6 +153,7 @@ impl lettuce_usage::JobUsageLedger for Database {
         if saved.as_ref() != Some(&result) {
             return Err(UsageLedgerError::Conflict);
         }
+        db.commit().map_err(|_| UsageLedgerError::Storage)?;
         Ok(())
     }
     fn job_usage(
@@ -143,6 +175,9 @@ impl lettuce_usage::JobUsageLedger for Database {
                 record.result = result
                     .map(|r| crate::decode_versioned(&r, 1))
                     .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?;
+                record
+                    .validate_snapshot()
                     .map_err(|_| UsageLedgerError::Storage)?;
                 Ok(record)
             })
@@ -374,10 +409,36 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         image_tokens: row.get(18)?,
         audio_tokens: row.get(19)?,
         total_tokens: row.get(20)?,
+        snapshot_present: row.get(21)?,
+        character_source_id: row.get(22)?,
+        character_name: row.get(23)?,
+        model_name: row.get(24)?,
+        provider_kind: row.get(25)?,
+        provider_label: row.get(26)?,
+        operation_kind: row.get(27)?,
+        finish_reason: row.get(28)?,
+        error_message: row.get(29)?,
+        memory_tokens: row.get(30)?,
+        summary_tokens: row.get(31)?,
+        provider_response_id: row.get(32)?,
+        origin: row.get(33)?,
     })
 }
 
 struct RawUsageEvent {
+    origin: String,
+    snapshot_present: bool,
+    character_source_id: Option<String>,
+    character_name: Option<String>,
+    model_name: Option<String>,
+    provider_kind: Option<String>,
+    provider_label: Option<String>,
+    operation_kind: Option<String>,
+    finish_reason: Option<String>,
+    error_message: Option<String>,
+    memory_tokens: Option<i64>,
+    summary_tokens: Option<i64>,
+    provider_response_id: Option<String>,
     provider_reported_cost: Option<f64>,
     image_tokens: Option<i64>,
     audio_tokens: Option<i64>,
@@ -403,6 +464,34 @@ struct RawUsageEvent {
 
 impl RawUsageEvent {
     fn decode(self) -> Result<UsageEvent, UsageLedgerError> {
+        let snapshot = if self.snapshot_present {
+            Some(lettuce_conversations::UsageRecordSnapshot {
+                character_id: self
+                    .character_source_id
+                    .map(|value| value.parse().map_err(|_| UsageLedgerError::Storage))
+                    .transpose()?,
+                character_name: self.character_name,
+                model_name: self.model_name,
+                provider_kind: self.provider_kind,
+                provider_label: self.provider_label,
+                operation_kind: self.operation_kind,
+                finish_reason: self.finish_reason,
+                error_message: self.error_message,
+                memory_tokens: self
+                    .memory_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                summary_tokens: self
+                    .summary_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                provider_response_id: self.provider_response_id,
+            })
+        } else {
+            None
+        };
         let usage = match self.counters_kind.as_str() {
             "known" => UsageCounters::Known(InferenceUsage {
                 provider_reported_cost: self
@@ -463,7 +552,13 @@ impl RawUsageEvent {
         };
         let event = UsageEvent {
             id: UsageEventId::from_str(&self.id).map_err(|_| UsageLedgerError::Storage)?,
+            origin: match self.origin.as_str() {
+                "live" => lettuce_usage::UsageEventOrigin::Live,
+                "legacy_import" => lettuce_usage::UsageEventOrigin::LegacyImport,
+                _ => return Err(UsageLedgerError::Storage),
+            },
             record: UsageRecord {
+                snapshot,
                 turn_id: self
                     .turn_id
                     .parse()
@@ -513,7 +608,8 @@ impl RawUsageEvent {
 
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
-    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens FROM usage_events";
+    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens,
+    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id,origin FROM usage_events";
 
 pub(crate) fn load_all_usage_in(
     transaction: &rusqlite::Transaction<'_>,
@@ -612,13 +708,25 @@ pub(crate) fn insert_usage_event_in(
             ("unavailable", None, None, Some(unavailable_name(reason)))
         }
     };
+    let snapshot = event.record.snapshot.as_ref();
+    let memory_tokens = snapshot
+        .and_then(|value| value.memory_tokens)
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| UsageLedgerError::Invalid)?;
+    let summary_tokens = snapshot
+        .and_then(|value| value.summary_tokens)
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| UsageLedgerError::Invalid)?;
     transaction
             .execute(
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens,
+                    snapshot_present,character_source_id,character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id,origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)",
                 params![
                     event.id.to_string(),
                     conversation_id,
@@ -650,6 +758,19 @@ pub(crate) fn insert_usage_event_in(
                     image?,
                     audio?,
                     total?,
+                    snapshot.is_some(),
+                    snapshot.and_then(|value| value.character_id).map(|id| id.to_string()),
+                    snapshot.and_then(|value| value.character_name.as_deref()),
+                    snapshot.and_then(|value| value.model_name.as_deref()),
+                    snapshot.and_then(|value| value.provider_kind.as_deref()),
+                    snapshot.and_then(|value| value.provider_label.as_deref()),
+                    snapshot.and_then(|value| value.operation_kind.as_deref()),
+                    snapshot.and_then(|value| value.finish_reason.as_deref()),
+                    snapshot.and_then(|value| value.error_message.as_deref()),
+                    memory_tokens,
+                    summary_tokens,
+                    snapshot.and_then(|value| value.provider_response_id.as_deref()),
+                    event.origin.as_str(),
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -672,6 +793,10 @@ impl UsageLedger for Database {
             .optional()
             .map_err(|_| UsageLedgerError::Storage)?
             .ok_or(UsageLedgerError::Conflict)?;
+        let cleared: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='conversation' AND json_extract(proof_json,'$.value.attempt_id')=?1)", [record.attempt_id.to_string()], |row| row.get(0)).map_err(|_| UsageLedgerError::Storage)?;
+        if cleared {
+            return Err(UsageLedgerError::Conflict);
+        }
         let existing = transaction
             .query_row(
                 &format!(
@@ -689,7 +814,8 @@ impl UsageLedger for Database {
             .map(RawUsageEvent::decode)
             .transpose()?;
         if let Some(existing) = existing {
-            if existing.record != record {
+            if existing.record != record || existing.origin != lettuce_usage::UsageEventOrigin::Live
+            {
                 return Err(UsageLedgerError::Conflict);
             }
             transaction
@@ -699,6 +825,7 @@ impl UsageLedger for Database {
         }
         let event = UsageEvent {
             id: UsageEventId::new(),
+            origin: lettuce_usage::UsageEventOrigin::Live,
             record,
         };
         insert_usage_event_in(&transaction, &conversation_id, &event)?;
@@ -756,6 +883,102 @@ impl UsagePort for Database {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn dispatch_snapshots_reject_changed_names_and_response_identity() {
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+        use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
+        let database = Database::open_in_memory().expect("database");
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::CreationRun,
+                    JobSubject::new(SubjectKind::CreationProject, "snapshot").expect("subject"),
+                    OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+                )
+                .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+            )
+            .expect("job")
+            .job;
+        let snapshot = lettuce_conversations::UsageRecordSnapshot {
+            model_name: Some("Recorded model".into()),
+            provider_kind: Some("openrouter".into()),
+            provider_label: Some("Recorded account".into()),
+            operation_kind: Some("reply_helper".into()),
+            ..Default::default()
+        };
+        let record = JobInferenceUsage {
+            snapshot: Some(snapshot.clone()),
+            id: lettuce_types::UsageEventId::new(),
+            job_id: job.id,
+            logical_attempt_id: GenerationAttemptId::new(),
+            model_profile_id: ModelProfileId::new(),
+            model_revision: Revision::INITIAL,
+            provider_account_id: ProviderAccountId::new(),
+            provider_account_revision: Revision::INITIAL,
+            admitted_at: TimestampMillis::new(1),
+            result: None,
+        };
+        database
+            .admit_job_usage(record.clone())
+            .expect("admit snapshot");
+        database
+            .admit_job_usage(record.clone())
+            .expect("replay admission");
+        let mut changed = record.clone();
+        changed.snapshot.as_mut().expect("snapshot").model_name = Some("Changed model".into());
+        assert_eq!(
+            database.admit_job_usage(changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        let completed = lettuce_conversations::UsageRecordSnapshot {
+            finish_reason: Some("stop".into()),
+            provider_response_id: Some("recorded-response".into()),
+            ..snapshot.clone()
+        };
+        let result = |snapshot| JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(snapshot)),
+            usage: None,
+            provider_response_id: Some("recorded-response".into()),
+        };
+        let mut foreign = completed.clone();
+        foreign.provider_response_id = Some("foreign-response".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(foreign)),
+            Err(UsageLedgerError::Invalid)
+        );
+        let mut changed = completed.clone();
+        changed.provider_label = Some("Changed account".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(changed)),
+            Err(UsageLedgerError::Invalid)
+        );
+        assert_eq!(
+            database.job_usage(job.id).expect("unsettled snapshot"),
+            vec![record.clone()]
+        );
+        database
+            .settle_job_usage(record.id, result(completed.clone()))
+            .expect("settle snapshot");
+        database
+            .settle_job_usage(record.id, result(completed.clone()))
+            .expect("replay settlement");
+        let saved = database.job_usage(job.id).expect("settled snapshot");
+        assert_eq!(saved[0].snapshot, record.snapshot);
+        assert_eq!(saved[0].result, Some(result(completed.clone())));
+        let mut changed = completed.clone();
+        changed.finish_reason = Some("length".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(changed)),
+            Err(UsageLedgerError::Conflict)
+        );
+        let mut changed = completed;
+        changed.provider_label = Some("Different account".into());
+        assert_eq!(
+            database.settle_job_usage(record.id, result(changed)),
+            Err(UsageLedgerError::Conflict)
+        );
+    }
+
+    #[test]
     fn job_dispatch_evidence_survives_reopen_and_rejects_mutation() {
         use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
         use lettuce_types::UsageEventId;
@@ -768,6 +991,7 @@ mod tests {
         assert_eq!(
             old,
             JobInferenceUsageResult::Response {
+                snapshot: None,
                 usage: None,
                 provider_response_id: None
             }
@@ -787,6 +1011,7 @@ mod tests {
             .expect("job")
             .job;
         let record = JobInferenceUsage {
+            snapshot: None,
             id: UsageEventId::new(),
             job_id: job.id,
             logical_attempt_id: GenerationAttemptId::new(),
@@ -885,6 +1110,7 @@ mod tests {
         for result in [
             JobInferenceUsageResult::Cancelled,
             JobInferenceUsageResult::Response {
+                snapshot: None,
                 usage: None,
                 provider_response_id: None,
             },
@@ -908,6 +1134,7 @@ mod tests {
             .admit_job_usage(retry.clone())
             .expect("retry dispatch");
         let result = JobInferenceUsageResult::Response {
+            snapshot: None,
             provider_response_id: Some("gen-retry".into()),
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -1047,6 +1274,140 @@ mod tests {
 
     fn fixture() -> (Database, UsageRecord) {
         let database = Database::open_in_memory().expect("database");
+        fixture_in(database)
+    }
+
+    #[test]
+    fn usage_origin_is_required_and_unknown_origins_are_rejected() {
+        let (database, record) = fixture();
+        let event = database.record(record).expect("live event");
+        let mut json = serde_json::to_value(event).expect("payload");
+        json.as_object_mut().expect("event object").remove("origin");
+        assert!(serde_json::from_value::<lettuce_usage::UsageEvent>(json.clone()).is_err());
+        json["origin"] = serde_json::json!("unknown");
+        assert!(serde_json::from_value::<lettuce_usage::UsageEvent>(json).is_err());
+    }
+
+    #[test]
+    fn usage_report_reads_charge_evidence_once_and_keeps_unknown_counters() {
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+        use lettuce_usage::{JobUsageLedger, UsageCostLedger, UsageReportRepository};
+        let (database, record) = fixture();
+        let event = database.record(record.clone()).expect("terminal aggregate");
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    JobSubject::new(SubjectKind::ArtifactInstall, "report-test").expect("subject"),
+                    OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+                )
+                .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+            )
+            .expect("job")
+            .job;
+        let dispatch = lettuce_usage::JobInferenceUsage {
+            snapshot: None,
+            id: lettuce_types::UsageEventId::new(),
+            job_id: job.id,
+            logical_attempt_id: record.attempt_id,
+            model_profile_id: record.model_profile_id.expect("model"),
+            model_revision: record.model_revision.expect("model revision"),
+            provider_account_id: record.provider_account_id.expect("account"),
+            provider_account_revision: record.provider_account_revision.expect("account revision"),
+            admitted_at: lettuce_types::TimestampMillis::new(1),
+            result: None,
+        };
+        database.admit_job_usage(dispatch.clone()).expect("admit");
+        let counters = match record.usage {
+            lettuce_conversations::UsageCounters::Known(value) => value,
+            _ => unreachable!(),
+        };
+        database
+            .settle_job_usage(
+                dispatch.id,
+                lettuce_usage::JobInferenceUsageResult::Response {
+                    snapshot: None,
+                    usage: Some(counters),
+                    provider_response_id: None,
+                },
+            )
+            .expect("settle");
+        let rows = database.read_usage_report().expect("report");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, dispatch.id.to_string());
+        assert_eq!(rows[0].prompt_tokens, Some(120));
+        assert_eq!(rows[0].memory_tokens, None);
+        assert_eq!(rows[0].total_cost, None);
+        assert_eq!(
+            UsageLedger::get(&database, event.id).expect("aggregate retained"),
+            Some(event.clone())
+        );
+        let basis = lettuce_usage::UsageCostBasis {
+            openrouter: None,
+            model_profile_id: dispatch.model_profile_id,
+            provider_account_id: dispatch.provider_account_id,
+            source: "recorded prices".into(),
+            captured_at: lettuce_types::TimestampMillis::new(11),
+            pricing: lettuce_usage::ModelPricing {
+                prompt: "0.001".into(),
+                completion: "0.002".into(),
+                request: "0".into(),
+                image: "0".into(),
+                image_output: "0".into(),
+                web_search: "0".into(),
+                internal_reasoning: "0".into(),
+                input_cache_read: "0".into(),
+                input_cache_write: "0".into(),
+            },
+            input: lettuce_usage::OpenRouterCostInput {
+                prompt_tokens: 120,
+                completion_tokens: 30,
+                ..lettuce_usage::OpenRouterCostInput::default()
+            },
+        };
+        database
+            .record_cost(event.id, basis.clone())
+            .expect("aggregate cost");
+        let rows = database
+            .read_usage_report()
+            .expect("one aggregate-priced charge");
+        assert_eq!(rows.len(), 1);
+        assert!((rows[0].total_cost.expect("known aggregate cost") - 0.18).abs() < 1e-12);
+        database
+            .record_job_cost(dispatch.id, basis)
+            .expect("dispatch cost");
+        let rows = database.read_usage_report().expect("one priced charge");
+        assert_eq!(rows.len(), 1);
+        assert!((rows[0].total_cost.expect("known cost") - 0.18).abs() < 1e-12);
+    }
+
+    #[test]
+    fn usage_origin_is_explicit_immutable_and_bound_to_replay() {
+        let (database, record) = fixture();
+        let event = database.record(record.clone()).expect("live event");
+        let mut json = serde_json::to_value(&event).expect("payload");
+        assert_eq!(json.get("origin"), Some(&serde_json::json!("live")));
+        assert_eq!(database.record(record).expect("same replay"), event);
+        json["origin"] = serde_json::json!("legacy_import");
+        let changed: lettuce_usage::UsageEvent =
+            serde_json::from_value(json).expect("origin payload");
+        let mut connection = database.connection().expect("connection");
+        assert!(
+            connection
+                .execute("UPDATE usage_events SET origin='legacy_import'", [])
+                .is_err()
+        );
+        let tx = connection.transaction().expect("transaction");
+        assert_eq!(
+            super::insert_usage_event_in(&tx, &ConversationId::new().to_string(), &changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        drop(tx);
+        drop(connection);
+        assert_eq!(database.get(event.id).expect("retained event"), Some(event));
+    }
+
+    fn fixture_in(database: Database) -> (Database, UsageRecord) {
         database
             .connection()
             .expect("connection")
@@ -1076,6 +1437,7 @@ mod tests {
         (
             database,
             UsageRecord {
+                snapshot: None,
                 turn_id,
                 attempt_id,
                 outcome: UsageOutcome::Succeeded,
@@ -1098,6 +1460,197 @@ mod tests {
                 recorded_at: TimestampMillis::new(10),
             },
         )
+    }
+
+    #[test]
+    fn usage_snapshot_crash_child() {
+        let Some(path) = std::env::var_os("LETTUCE_USAGE_SNAPSHOT_CRASH_DATABASE") else {
+            return;
+        };
+        let database = Database::open(path).expect("open crash fixture");
+        let record: UsageRecord = serde_json::from_str(
+            &std::env::var("LETTUCE_USAGE_SNAPSHOT_CRASH_RECORD").expect("crash record"),
+        )
+        .expect("snapshot record");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("transaction");
+        let conversation_id: String = transaction
+            .query_row(
+                "SELECT conversation_id FROM generation_attempts WHERE id=?1",
+                [record.attempt_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("owner");
+        super::insert_usage_event_in(
+            &transaction,
+            &conversation_id,
+            &lettuce_usage::UsageEvent {
+                origin: lettuce_usage::UsageEventOrigin::Live,
+                id: lettuce_types::UsageEventId::new(),
+                record,
+            },
+        )
+        .expect("write snapshot before crash");
+        std::process::exit(77);
+    }
+
+    #[test]
+    fn usage_snapshot_crash_rolls_back_identity_counters_and_display_together() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-usage-snapshot-{}.sqlite3",
+            lettuce_types::RequestId::new()
+        ));
+        let (database, record) = fixture_in(Database::open(&path).expect("database"));
+        let mut document = serde_json::to_value(&record).expect("encode usage");
+        document["snapshot"] = serde_json::json!({"model_name":"Recorded model", "provider_response_id":"recorded-response"});
+        drop(database);
+        let child = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .arg("usage_adapter::tests::usage_snapshot_crash_child")
+            .arg("--exact")
+            .env("LETTUCE_USAGE_SNAPSHOT_CRASH_DATABASE", &path)
+            .env("LETTUCE_USAGE_SNAPSHOT_CRASH_RECORD", document.to_string())
+            .output()
+            .expect("run crash child");
+        assert_eq!(
+            child.status.code(),
+            Some(77),
+            "{}",
+            String::from_utf8_lossy(&child.stdout)
+        );
+        let database = Database::open(&path).expect("reopen after crash");
+        assert!(
+            UsageLedger::get_for_attempt(&database, record.turn_id, record.attempt_id)
+                .expect("read usage")
+                .is_none()
+        );
+        let record: UsageRecord = serde_json::from_value(document).expect("retry snapshot");
+        let event = UsageLedger::record(&database, record.clone()).expect("retry after crash");
+        assert_eq!(event.record, record);
+        assert_eq!(UsageLedger::record(&database, record), Ok(event.clone()));
+        assert!(
+            database
+                .connection()
+                .expect("connection")
+                .execute("DELETE FROM usage_events", [])
+                .is_err()
+        );
+        drop(database);
+        let database = Database::open(&path).expect("reopen committed snapshot");
+        assert_eq!(UsageLedger::get(&database, event.id), Ok(Some(event)));
+        drop(database);
+        std::fs::remove_file(path).expect("remove crash fixture");
+    }
+
+    #[test]
+    fn usage_display_snapshot_is_immutable_and_unknown_history_stays_unknown() {
+        let (database, record) = fixture();
+        let original = serde_json::to_value(&record).expect("encode usage");
+        let mut document = original.clone();
+        document["snapshot"] = serde_json::json!({
+            "character_id": lettuce_types::CharacterId::new(),
+            "character_name": "Historical character",
+            "model_name": "Historical model",
+            "provider_kind": "openrouter",
+            "provider_label": "Historical account",
+            "operation_kind": "send",
+            "finish_reason": "stop",
+            "error_message": null,
+            "memory_tokens": 0,
+            "summary_tokens": null,
+            "provider_response_id": "generation-recorded-response"
+        });
+        let record: UsageRecord =
+            serde_json::from_value(document.clone()).expect("decode snapshot");
+        let event = UsageLedger::record(&database, record.clone()).expect("record snapshot");
+        assert_eq!(
+            serde_json::to_value(&event.record).expect("saved usage"),
+            document
+        );
+        let projection = database.connection().expect("connection").query_row(
+            "SELECT character_name,model_name,provider_kind,provider_label,operation_kind,finish_reason,error_message,memory_tokens,summary_tokens,provider_response_id FROM usage_events WHERE id=?1",
+            [event.id.to_string()],
+            |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,String>(5)?,row.get::<_,Option<String>>(6)?,row.get::<_,Option<i64>>(7)?,row.get::<_,Option<i64>>(8)?,row.get::<_,String>(9)?)),
+        ).expect("snapshot columns");
+        assert_eq!(
+            projection,
+            (
+                "Historical character".into(),
+                "Historical model".into(),
+                "openrouter".into(),
+                "Historical account".into(),
+                "send".into(),
+                "stop".into(),
+                None,
+                Some(0),
+                None,
+                "generation-recorded-response".into()
+            )
+        );
+        assert_eq!(UsageLedger::record(&database, record), Ok(event.clone()));
+        document["snapshot"]["provider_label"] = serde_json::json!("Renamed account");
+        let changed: UsageRecord = serde_json::from_value(document).expect("changed snapshot");
+        assert_eq!(
+            UsageLedger::record(&database, changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        assert!(
+            database
+                .connection()
+                .expect("connection")
+                .execute("UPDATE usage_events SET model_name='changed'", [])
+                .is_err()
+        );
+        assert_eq!(UsageLedger::get(&database, event.id), Ok(Some(event)));
+        let old: UsageRecord = serde_json::from_value(original.clone()).expect("old record");
+        assert_eq!(serde_json::to_value(old).expect("old round trip"), original);
+    }
+
+    #[test]
+    fn competing_terminal_snapshots_keep_one_complete_immutable_winner() {
+        let (database, record) = fixture();
+        let database = std::sync::Arc::new(database);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let workers = [UsageOutcome::Succeeded, UsageOutcome::Cancelled].map(|outcome| {
+            let database = std::sync::Arc::clone(&database);
+            let barrier = std::sync::Arc::clone(&barrier);
+            let mut record = record.clone();
+            record.outcome = outcome;
+            record.snapshot = Some(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(format!("Snapshot {outcome:?}")),
+                provider_label: Some(format!("Account {outcome:?}")),
+                finish_reason: Some(format!("{outcome:?}")),
+                ..Default::default()
+            });
+            std::thread::spawn(move || {
+                barrier.wait();
+                let result = UsageLedger::record(database.as_ref(), record.clone());
+                (record, result)
+            })
+        });
+        let results = workers.map(|worker| worker.join().expect("writer"));
+        assert_eq!(
+            results.iter().filter(|(_, result)| result.is_ok()).count(),
+            1
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|(_, result)| *result == Err(UsageLedgerError::Conflict))
+                .count(),
+            1
+        );
+        let (winner, event) = results
+            .iter()
+            .find(|(_, result)| result.is_ok())
+            .expect("winner");
+        let event = event.as_ref().expect("winner event");
+        assert_eq!(&event.record, winner);
+        assert_eq!(
+            UsageLedger::get(database.as_ref(), event.id),
+            Ok(Some(event.clone()))
+        );
     }
 
     #[test]

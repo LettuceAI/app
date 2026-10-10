@@ -177,6 +177,39 @@ pub(crate) fn row_materialize(
     bytes: &[u8],
 ) -> Result<bool, RowSyncError> {
     let object = row_decode(spec, bytes)?;
+    let tombstone = match spec.table {
+        "usage_costs" => Some(("conversation", id.to_owned())),
+        "job_usage_costs" | "job_inference_usage" => Some(("job", id.to_owned())),
+        "legacy_usage_records" => {
+            let mut keys = key_values(spec, id)?.into_iter().map(|value| match value {
+                Value::Text(value) => Ok(value),
+                _ => Err(RowSyncError::Corrupt),
+            });
+            let (Some(run_id), Some(source_id)) = (keys.next(), keys.next()) else {
+                return Err(RowSyncError::Corrupt);
+            };
+            Some(
+                lettuce_usage::UsageTombstone::Legacy {
+                    run_id: run_id?,
+                    source_id: source_id?,
+                }
+                .key(),
+            )
+        }
+        _ => None,
+    };
+    if let Some((ledger, id)) = tombstone {
+        let cleared: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger=?1 AND event_key=?2)",
+                rusqlite::params![ledger, id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if cleared {
+            return Ok(true);
+        }
+    }
     let mut values = spec
         .columns
         .iter()
@@ -674,6 +707,50 @@ mod tests {
         assert_eq!(
             row_current(&transaction, &LEGACY_USAGE_RECORDS, &ids[0]).expect("current"),
             Some(bytes)
+        );
+    }
+    #[test]
+    fn a_cleared_legacy_usage_record_resent_by_sync_stays_cleared() {
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        source
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO legacy_usage_records (run_id, source_id, recorded_at, session_source_id, character_source_id, character_name, model_source_id, model_profile_id, model_name, provider_source_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, audio_tokens, prompt_cost, completion_cost, total_cost, success, error_message, metadata_json) VALUES ('run', 'usage:1', 5, 's', 'c', 'Ada', 'm', NULL, 'Model', 'p', 'Provider', 'chat', 'stop', 10, 4, 14, NULL, NULL, NULL, NULL, NULL, 0.25, 0.5, 0.75, 1, NULL, '{}')",
+                [],
+            )
+            .expect("legacy usage");
+        let mut connection = source.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        let id = row_ids(&transaction, &LEGACY_USAGE_RECORDS)
+            .expect("ids")
+            .remove(0);
+        let bytes = row_current(&transaction, &LEGACY_USAGE_RECORDS, &id)
+            .expect("current")
+            .expect("present");
+        drop(transaction);
+        drop(connection);
+        let mut connection = target.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        crate::usage_clear::insert_tombstone_in(
+            &transaction,
+            &lettuce_usage::UsageTombstone::Legacy {
+                run_id: "run".into(),
+                source_id: "usage:1".into(),
+            },
+        )
+        .expect("tombstone");
+        transaction
+            .execute_batch("DROP TRIGGER legacy_usage_cleared_before_insert")
+            .expect("isolate the sync fast path");
+        assert!(
+            row_materialize(&transaction, &LEGACY_USAGE_RECORDS, &id, &bytes)
+                .expect("re-send is accepted as already settled")
+        );
+        assert_eq!(
+            row_current(&transaction, &LEGACY_USAGE_RECORDS, &id).expect("current"),
+            None
         );
     }
 }

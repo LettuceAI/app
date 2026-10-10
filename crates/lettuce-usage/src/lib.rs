@@ -10,16 +10,41 @@ mod costing;
 pub use costing::*;
 mod job_usage;
 pub use job_usage::*;
+mod capture_targets;
+mod tombstone;
+pub use capture_targets::*;
+pub use tombstone::*;
 mod app_usage;
 pub use app_usage::*;
+mod reporting;
+pub use reporting::*;
+mod report_query;
+pub use report_query::*;
 
 use lettuce_conversations::UsageRecord;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, UsageEventId};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageEventOrigin {
+    Live,
+    LegacyImport,
+}
+
+impl UsageEventOrigin {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::LegacyImport => "legacy_import",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageEvent {
     pub id: UsageEventId,
+    pub origin: UsageEventOrigin,
     pub record: UsageRecord,
 }
 

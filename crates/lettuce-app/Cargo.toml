@@ -56,6 +56,7 @@ lettuce-transfer.workspace = true
 lettuce-sync.workspace = true
 lettuce-usage.workspace = true
 regex = "1"
+url = "2.5"
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
@@ -70,6 +71,7 @@ zeroize.workspace = true
 image.workspace = true
 
 [dev-dependencies]
+same-file = "1.0.6"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 flate2.workspace = true
 sha1_smol.workspace = true

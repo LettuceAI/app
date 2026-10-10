@@ -941,6 +941,18 @@ mod tests {
         let known_usage = UsageLedger::record(
             backend.database(),
             UsageRecord {
+                snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                    character_name: Some("Recorded character".into()),
+                    model_name: Some("Recorded model".into()),
+                    provider_kind: Some("openrouter".into()),
+                    provider_label: Some("Recorded account".into()),
+                    operation_kind: Some("send".into()),
+                    finish_reason: Some("error".into()),
+                    error_message: Some("Recorded failure".into()),
+                    memory_tokens: Some(0),
+                    provider_response_id: Some("recorded-response-id".into()),
+                    ..Default::default()
+                }),
                 turn_id: pending_send.turn.id,
                 attempt_id,
                 outcome: UsageOutcome::Failed,
@@ -1094,6 +1106,7 @@ mod tests {
         let unavailable_usage = UsageLedger::record(
             backend.database(),
             UsageRecord {
+                snapshot: None,
                 turn_id: unavailable_send.turn.id,
                 attempt_id: unavailable_send.attempt.id,
                 outcome: UsageOutcome::Failed,
@@ -1230,6 +1243,7 @@ mod tests {
         let effect_usage = UsageLedger::record(
             backend.database(),
             UsageRecord {
+                snapshot: None,
                 turn_id: effect_send.turn.id,
                 attempt_id: effect_attempt_id,
                 outcome: UsageOutcome::Succeeded,
@@ -1894,6 +1908,7 @@ mod tests {
         backend
             .database()
             .admit_job_usage(JobInferenceUsage {
+                snapshot: None,
                 id: usage_id,
                 job_id: backup_job.id,
                 logical_attempt_id: attempt_id,
@@ -1910,6 +1925,7 @@ mod tests {
             .settle_job_usage(
                 usage_id,
                 JobInferenceUsageResult::Response {
+                    snapshot: None,
                     usage: Some(lettuce_conversations::InferenceUsage {
                         image_tokens: None,
                         audio_tokens: None,
@@ -2432,6 +2448,7 @@ mod tests {
             .iter()
             .find(|entry| entry.event.id == known_usage.id)
             .expect("known usage");
+        assert_eq!(known.event, known_usage);
         assert!(known.cost_basis.is_some());
         assert_eq!(known.overlapping_job_inference_ids, vec![usage_id]);
         let unavailable = usage

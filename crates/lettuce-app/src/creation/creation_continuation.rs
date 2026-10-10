@@ -234,7 +234,15 @@ impl<
                 handle,
                 stream_sink,
             )
-            .map(|request| (text, request))
+            .map(|mut request| {
+                if let lettuce_creation::CreationTarget::ExistingCharacter { id, .. } =
+                    workflow.target
+                    && let Some(snapshot) = request.context.attributions.usage_snapshot.as_mut()
+                {
+                    snapshot.character_id = Some(id);
+                }
+                (text, request)
+            })
         });
         let (text, mut request) = self.fail_unless_storage(&attempt, now, prepared)?;
         let mut rounds = self
@@ -632,7 +640,18 @@ fn build_creation_inference_request(
         u32::try_from(messages.len()).map_err(|_| CreationContinuationError::ContextTooLarge)?;
     let context = ProviderNeutralContext {
         messages,
-        attributions: ContextAttributions::default(),
+        attributions: ContextAttributions {
+            usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                character_name: match &base.draft {
+                    lettuce_creation::CreationDraft::Character { name, .. }
+                    | lettuce_creation::CreationDraft::Persona { name, .. }
+                    | lettuce_creation::CreationDraft::Lorebook { name, .. } => name.clone(),
+                },
+                operation_kind: Some("ai_creator".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
         budget: ContextBudgetReport {
             selected_messages,
             omitted_messages: 0,
@@ -1370,9 +1389,20 @@ mod tests {
         assert_eq!(result.rounds.len(), 3);
         let evidence = database.job_usage(handle.id()).expect("dispatches");
         assert_eq!(evidence.len(), 3);
+        for event in &evidence {
+            assert_eq!(
+                event
+                    .snapshot
+                    .as_ref()
+                    .expect("admission snapshot")
+                    .operation_kind
+                    .as_deref(),
+                Some("ai_creator")
+            );
+        }
         for (input, output) in [(10, 4), (12, 3), (5, 2)] {
             assert!(evidence.iter().any(|event| matches!(&event.result,
-                Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+                Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) , ..})
                     if id == &format!("gen-creation-{input}") && usage.input_tokens == input && usage.output_tokens == output)));
         }
 
@@ -1998,9 +2028,8 @@ mod tests {
         assert_eq!(attempt.status, CreationAttemptStatus::Failed);
         let evidence = database.job_usage(handle.id()).expect("failed dispatch");
         assert_eq!(evidence.len(), 1);
-        assert_eq!(
-            evidence[0].result,
-            Some(lettuce_usage::JobInferenceUsageResult::InferenceFailed)
+        assert!(
+            matches!(&evidence[0].result, Some(lettuce_usage::JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.operation_kind.as_deref() == Some("ai_creator") && snapshot.finish_reason.as_deref() == Some("error") && snapshot.error_message.as_deref() == Some("conversation dependency is unavailable"))
         );
 
         assert_eq!(
@@ -2038,6 +2067,15 @@ mod tests {
             );
             response.finish_reason = finish;
             let expected = lettuce_usage::JobInferenceUsageResult::Response {
+                snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                    operation_kind: Some("ai_creator".into()),
+                    model_name: Some(profile.chat_profile.model_display_name.clone()),
+                    provider_kind: Some(profile.chat_profile.provider_kind.clone()),
+                    provider_label: profile.chat_profile.provider_label.clone(),
+                    finish_reason: Some("stop".into()),
+                    provider_response_id: response.provider_response_id.clone(),
+                    ..Default::default()
+                })),
                 usage: response.usage.clone(),
                 provider_response_id: response.provider_response_id.clone(),
             };

@@ -28,6 +28,10 @@ pub enum FileAccessError {
     PermissionDenied,
     #[error("the file location is not supported")]
     Unsupported,
+    #[error("export target is a protected file")]
+    SourceIsTarget,
+    #[error("the export target is busy")]
+    Busy,
     #[error("the file could not be read or written")]
     Io,
 }
@@ -41,6 +45,15 @@ pub trait FileAccess: Send + Sync {
     fn open(&self, uri: &str) -> Result<Box<dyn FileReader>, FileAccessError>;
 
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError>;
+
+    fn create_export(
+        &self,
+        _uri: &str,
+        _source: Option<&std::fs::File>,
+        _protected: ExportProtection<'_>,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
 
     /// Shows the platform open dialog and returns the picked URIs, empty
     /// when the user cancelled.
@@ -125,6 +138,8 @@ impl IntoApiError for FileAccessError {
     fn into_api_error(self) -> ApiError {
         let code = match self {
             Self::NotFound => ApiErrorCode::NotFound,
+            Self::SourceIsTarget => ApiErrorCode::Conflict,
+            Self::Busy => ApiErrorCode::Busy,
             Self::PermissionDenied | Self::Io => ApiErrorCode::Unavailable,
             Self::Unsupported => ApiErrorCode::Unsupported,
         };
@@ -268,4 +283,70 @@ pub async fn assets_ingest(
             Ok(context.asset_ref(ingested.asset.id))
         })
         .await
+}
+
+pub type ExportProtection<'a> =
+    &'a dyn Fn(&str, Option<&std::fs::File>) -> Result<bool, FileAccessError>;
+
+pub(super) struct FileExportProtection<'a> {
+    context: &'a ApiContext,
+    lifecycle: Option<crate::DatabaseFileLifecycle>,
+}
+
+impl<'a> FileExportProtection<'a> {
+    pub(super) fn new(context: &'a ApiContext) -> Result<Self, ApiError> {
+        let lifecycle = context
+            .database_files()
+            .map(|files| files.location.try_file_lifecycle())
+            .transpose()
+            .map_err(|error| super::storage::file_error(error, None))?;
+        Ok(Self { context, lifecycle })
+    }
+
+    pub(super) fn protects(
+        &self,
+        uri: &str,
+        target: Option<&std::fs::File>,
+    ) -> Result<bool, FileAccessError> {
+        if let Some(lifecycle) = &self.lifecycle {
+            let protected = if let Some(target) = target {
+                lifecycle.protects_export_target(target)
+            } else {
+                lifecycle.protects_export_location(uri)
+            }
+            .map_err(|_| FileAccessError::Io)?;
+            if protected {
+                return Ok(true);
+            }
+        }
+        if let Some(target) = target {
+            self.context
+                .media()
+                .map(|media| media.contains_file(target))
+                .transpose()
+                .map(|protected| protected.unwrap_or(false))
+                .map_err(|_| FileAccessError::Io)
+        } else {
+            let Some(root) = self.context.app_folder() else {
+                return Ok(false);
+            };
+            let path = if uri.contains("://") {
+                let uri = url::Url::parse(uri).map_err(|_| FileAccessError::Io)?;
+                if uri.scheme() != "file" {
+                    return Ok(false);
+                }
+                uri.to_file_path().map_err(|_| FileAccessError::Io)?
+            } else {
+                std::path::PathBuf::from(uri)
+            };
+            let parent = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .canonicalize()
+                .map_err(|_| FileAccessError::Io)?;
+            let root = root.canonicalize().map_err(|_| FileAccessError::Io)?;
+            Ok(parent.starts_with(root.join("platform-v2/media-blobs")))
+        }
+    }
 }

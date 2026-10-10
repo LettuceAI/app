@@ -1520,6 +1520,7 @@ pub struct ContextRequest {
     /// the wall clock without one. The companion state and scheduled notes
     /// are rendered at it.
     pub reference_time: TimestampMillis,
+    pub usage_snapshot: Option<UsageRecordSnapshot>,
     pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,
 }
@@ -2024,6 +2025,8 @@ impl ProviderNeutralContext {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextAttributions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_snapshot: Option<UsageRecordSnapshot>,
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
     pub memory: Option<MemoryAttribution>,
@@ -2462,6 +2465,8 @@ pub struct CompanionEffectProposal {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<UsageRecordSnapshot>,
     pub turn_id: GenerationTurnId,
     pub attempt_id: GenerationAttemptId,
     pub outcome: UsageOutcome,
@@ -2471,6 +2476,22 @@ pub struct UsageRecord {
     pub provider_account_id: Option<lettuce_types::ProviderAccountId>,
     pub provider_account_revision: Option<lettuce_types::Revision>,
     pub recorded_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UsageRecordSnapshot {
+    pub character_id: Option<lettuce_types::CharacterId>,
+    pub character_name: Option<String>,
+    pub model_name: Option<String>,
+    pub provider_kind: Option<String>,
+    pub provider_label: Option<String>,
+    pub operation_kind: Option<String>,
+    pub finish_reason: Option<String>,
+    pub error_message: Option<String>,
+    pub memory_tokens: Option<u64>,
+    pub summary_tokens: Option<u64>,
+    pub provider_response_id: Option<String>,
 }
 
 impl UsageRecord {
@@ -2727,6 +2748,7 @@ mod tests {
             prompt_runtime: PromptRuntimeFacts::default(),
             prompt_values: PromptRuntimeValues::default(),
             reference_time: TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: Vec::new(),
         };

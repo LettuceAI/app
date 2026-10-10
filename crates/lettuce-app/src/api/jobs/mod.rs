@@ -141,7 +141,10 @@ pub async fn job_cancel(
     let job_id: JobId = parse_id(&request.job_id, "job_id")?;
     context
         .blocking(move |context| {
-            let database = context.backend().database();
+            let reset_database = super::app_reset::database_for_job(context, job_id)?;
+            let database = reset_database
+                .as_deref()
+                .unwrap_or_else(|| context.backend().database());
             let job = load(context, job_id)?;
             if job.kind == JobKind::ConversationGeneration {
                 return Err(api_error(
@@ -215,9 +218,10 @@ pub async fn job_watch(
 }
 
 fn load(context: &ApiContext, job_id: JobId) -> Result<JobSnapshot, ApiError> {
-    context
-        .backend()
-        .database()
+    let reset_database = super::app_reset::database_for_job(context, job_id)?;
+    reset_database
+        .as_deref()
+        .unwrap_or_else(|| context.backend().database())
         .get(job_id)
         .map_err(IntoApiError::into_api_error)?
         .ok_or_else(|| api_error(ApiErrorCode::NotFound, "job was not found"))
@@ -299,6 +303,9 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
                 })
             }),
         result: feature
+            .or(super::usage_billing::result_view(context, job)?)
+            .or(super::maintenance_jobs::result_view(context, job)?)
+            .or(super::app_reset::result_view(context, job)?)
             .or(local.result)
             .or(soul_result)
             .or(lorebook_result)
@@ -403,6 +410,25 @@ fn job_result(context: &ApiContext, result: &OutcomeRef) -> Option<dto::JobResul
 
 /// What a chat feature job needs changed, from the label its error carries.
 pub(super) fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
+    match label {
+        "reset-workers" => return Some(dto::JobFailureReason::ResetWorkers),
+        "reset-database" => return Some(dto::JobFailureReason::ResetDatabase),
+        "reset-webview-storage" => return Some(dto::JobFailureReason::ResetWebviewStorage),
+        "reset-restart" => return Some(dto::JobFailureReason::ResetRestart),
+        "usage-billing-unavailable" => return Some(dto::JobFailureReason::UsageBillingUnavailable),
+        "usage-billing-malformed" => return Some(dto::JobFailureReason::UsageBillingMalformed),
+        "usage-account-missing" => return Some(dto::JobFailureReason::UsageAccountMissing),
+        "usage-cost-conflict" => return Some(dto::JobFailureReason::UsageCostConflict),
+        "usage-cost-storage" => return Some(dto::JobFailureReason::UsageCostStorage),
+        "usage-billing-credentials" => return Some(dto::JobFailureReason::UsageBillingCredentials),
+        "usage-billing-rejected" => return Some(dto::JobFailureReason::UsageBillingRejected),
+        "usage-billing-unsupported" => return Some(dto::JobFailureReason::UsageBillingUnsupported),
+        "usage-cost-invalid" => return Some(dto::JobFailureReason::UsageCostInvalid),
+        "storage-checkpoint-busy" => return Some(dto::JobFailureReason::StorageCheckpointBusy),
+        "storage-unavailable" => return Some(dto::JobFailureReason::StorageUnavailable),
+        "database-kept-read-only" => return Some(dto::JobFailureReason::DatabaseKeptReadOnly),
+        _ => {}
+    }
     use crate::jobs::failure_labels as labels;
     Some(match label {
         labels::HELP_ME_REPLY_DISABLED => dto::JobFailureReason::HelpMeReplyDisabled,

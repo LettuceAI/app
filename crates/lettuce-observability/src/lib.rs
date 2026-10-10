@@ -19,7 +19,7 @@ pub use correlation::{
     CONVERSATION_ID_FIELD, Correlation, CorrelationContext, GENERATION_TURN_ID_FIELD, JOB_ID_FIELD,
     OPERATION_FIELD, OPERATION_ID_FIELD, REQUEST_ID_FIELD,
 };
-pub use init::{InitError, LocalOutput, LogSink, install};
+pub use init::{InitError, LocalOutput, LogSink, install, local_output};
 pub use line_layer::LineLayer;
 pub use log_files::{
     DailyLogWriter, LogDirectory, LogEntry, LogFileError, LogPage, LogSearchOptions,
@@ -205,11 +205,11 @@ mod tests {
         ));
         assert!(fs::create_dir(&directory).is_ok());
 
-        let (writer, guard) = super::init::local_output_writer(
+        let (writer, output) = super::init::local_output_writer(
             super::LocalOutputConfig::new(&directory).with_queue_capacity(8),
         )
         .expect("isolated temporary output directory should be writable");
-        let sink = super::LogSink::new(writer.clone());
+        let super::LocalOutput { guard, sink } = output;
         let subscriber = registry()
             .with(tracing_subscriber::EnvFilter::new("trace"))
             .with(super::LineLayer::new(writer));
@@ -230,6 +230,7 @@ mod tests {
             tracing::info!(msg = "aliased");
             tracing::trace!("not written");
         });
+        drop(guard);
         sink.append(&super::LogEntry {
             timestamp: "t".to_owned(),
             level: "INFO".to_owned(),
@@ -238,7 +239,6 @@ mod tests {
             message: "raw key=kept".to_owned(),
         })
         .expect("append");
-        drop(guard);
 
         let logs = super::LogDirectory::new(directory.clone());
         let files = logs.list().expect("the daily file exists");

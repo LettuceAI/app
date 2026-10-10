@@ -269,6 +269,7 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
         if is_terminal_attempt(attempt.status) {
             return Ok(());
         }
+        let aggregate = ConversationReader::get(self.conversations, turn.conversation_id)?;
         let usage_event_id =
             match UsageLedger::get_for_attempt(self.conversations, turn.id, attempt.id)? {
                 Some(event) => event.id,
@@ -277,6 +278,18 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
                     UsageLedger::record(
                         self.conversations,
                         UsageRecord {
+                            snapshot: Some(super::terminal_usage_snapshot::terminal_snapshot(
+                                turn,
+                                &aggregate.conversation,
+                                &[],
+                                UsageOutcome::Cancelled,
+                                Some(
+                                    ConversationGenerationRunError::Cancelled {
+                                        evidence: GenerationUsageEvidence::None,
+                                    }
+                                    .to_string(),
+                                ),
+                            )),
                             turn_id: turn.id,
                             attempt_id: attempt.id,
                             outcome: UsageOutcome::Cancelled,
@@ -294,7 +307,6 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
                     .id
                 }
             };
-        let aggregate = ConversationReader::get(self.conversations, turn.conversation_id)?;
         let token = |operation| {
             operation_token(turn.conversation_id, turn.id, attempt.id, job.id, operation)
         };
@@ -872,6 +884,13 @@ impl<
                             expected_conversation_revision: aggregate.conversation.revision,
                             expected_turn_revision: turn.revision,
                             operation: token(ConversationGenerationOperation::Finalize),
+                            usage_snapshot: crate::jobs::job_inference_usage::settle_usage_snapshot(
+                                crate::jobs::job_inference_usage::inference_usage_snapshot(
+                                    &input.profile,
+                                    &input.context,
+                                ),
+                                &outcome,
+                            ),
                             model: input.model,
                             usage_recorded_at: settled_at,
                             finalized_at: now,
@@ -943,6 +962,7 @@ impl<
         let usage_event_id = UsagePort::record(
             self.repository,
             UsageRecord {
+                snapshot: Some(context.usage_snapshot.clone()),
                 turn_id: attempt.turn_id,
                 attempt_id: attempt.id,
                 outcome: UsageOutcome::Succeeded,
@@ -1010,16 +1030,28 @@ impl<
             matches!(
                 record.result,
                 None | Some(JobInferenceUsageResult::InferenceFailed)
+                    | Some(JobInferenceUsageResult::Failure {
+                        cancelled: false,
+                        ..
+                    })
             )
         }) {
             return Ok(UsageCounters::Unavailable(
                 UsageUnavailableReason::TransportFailed,
             ));
         }
-        if records
-            .iter()
-            .any(|record| matches!(record.result, Some(JobInferenceUsageResult::Cancelled)))
-        {
+        if records.iter().any(|record| {
+            matches!(
+                record.result,
+                Some(
+                    JobInferenceUsageResult::Cancelled
+                        | JobInferenceUsageResult::Failure {
+                            cancelled: true,
+                            ..
+                        }
+                )
+            )
+        }) {
             return Ok(UsageCounters::Unavailable(
                 UsageUnavailableReason::CancelledBeforeResponse,
             ));
@@ -1470,7 +1502,13 @@ impl<
             }
             Some(ConversationGenerationTerminalFailure::Failed(code)) => {
                 if self
-                    .turn_side(self.fail_turn(&work.target(), code, error.evidence(), at))?
+                    .turn_side(self.fail_turn(
+                        &work.target(),
+                        code,
+                        error.evidence(),
+                        error.to_string(),
+                        at,
+                    ))?
                     .is_none()
                 {
                     return self.retry(work, error, at);
@@ -1523,6 +1561,7 @@ impl<
                         &work.target(),
                         GenerationFailureCode::Internal,
                         error.evidence(),
+                        error.to_string(),
                         at,
                     ),
                     Err(error) => Err(error),
@@ -1611,6 +1650,7 @@ impl<
         attempt: &GenerationAttempt,
         evidence: GenerationUsageEvidence,
         outcome: UsageOutcome,
+        error_message: Option<String>,
     ) -> Result<UsageEventId, ConversationGenerationDispatchError> {
         if let Some(existing) = self.conversations.get_for_attempt(turn.id, attempt.id)? {
             return Ok(existing.id);
@@ -1639,13 +1679,25 @@ impl<
                     matches!(
                         record.result,
                         None | Some(JobInferenceUsageResult::InferenceFailed)
+                            | Some(JobInferenceUsageResult::Failure {
+                                cancelled: false,
+                                ..
+                            })
                     )
                 }) {
                     UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
-                } else if records
-                    .iter()
-                    .any(|record| matches!(record.result, Some(JobInferenceUsageResult::Cancelled)))
-                {
+                } else if records.iter().any(|record| {
+                    matches!(
+                        record.result,
+                        Some(
+                            JobInferenceUsageResult::Cancelled
+                                | JobInferenceUsageResult::Failure {
+                                    cancelled: true,
+                                    ..
+                                }
+                        )
+                    )
+                }) {
                     UsageCounters::Unavailable(UsageUnavailableReason::CancelledBeforeResponse)
                 } else {
                     let usages = records
@@ -1703,9 +1755,18 @@ impl<
                 ),
                 None => (None, None, None, None),
             };
+        let aggregate = ConversationReader::get(self.conversations, turn.conversation_id)?;
+        let snapshot = super::terminal_usage_snapshot::terminal_snapshot(
+            turn,
+            &aggregate.conversation,
+            &records,
+            outcome,
+            error_message,
+        );
         Ok(self
             .conversations
             .record(UsageRecord {
+                snapshot: Some(snapshot),
                 turn_id: turn.id,
                 attempt_id: attempt.id,
                 outcome,
@@ -1729,8 +1790,14 @@ impl<
         if is_terminal_attempt(attempt.status) {
             return Ok(());
         }
-        let usage_event_id =
-            self.attempt_usage_event(work, &turn, &attempt, evidence, UsageOutcome::Cancelled)?;
+        let usage_event_id = self.attempt_usage_event(
+            work,
+            &turn,
+            &attempt,
+            evidence,
+            UsageOutcome::Cancelled,
+            Some(ConversationGenerationRunError::Cancelled { evidence }.to_string()),
+        )?;
         let token = |operation| {
             operation_token(
                 work.conversation_id,
@@ -1778,14 +1845,21 @@ impl<
         work: &GenerationWorkTarget,
         code: GenerationFailureCode,
         evidence: GenerationUsageEvidence,
+        error_message: String,
         at: TimestampMillis,
     ) -> Result<(), ConversationGenerationDispatchError> {
         let (conversation_revision, turn, attempt) = self.current(work)?;
         if is_terminal_attempt(attempt.status) {
             return Ok(());
         }
-        let usage_event_id =
-            self.attempt_usage_event(work, &turn, &attempt, evidence, UsageOutcome::Failed)?;
+        let usage_event_id = self.attempt_usage_event(
+            work,
+            &turn,
+            &attempt,
+            evidence,
+            UsageOutcome::Failed,
+            Some(error_message),
+        )?;
         self.conversations.fail_generation(
             work.turn_id,
             work.attempt_id,
@@ -1897,6 +1971,10 @@ impl<
                 &target,
                 GenerationFailureCode::Internal,
                 GenerationUsageEvidence::None,
+                ConversationGenerationRunError::PreparationFailed {
+                    code: GenerationFailureCode::Internal,
+                }
+                .to_string(),
                 at,
             )
         } else {
@@ -1968,6 +2046,10 @@ impl<
                     &target,
                     GenerationFailureCode::RecoveryUnavailable,
                     GenerationUsageEvidence::None,
+                    ConversationGenerationRunError::PreparationFailed {
+                        code: GenerationFailureCode::RecoveryUnavailable,
+                    }
+                    .to_string(),
                     at,
                 )?;
                 Settlement::Failed
@@ -2091,8 +2173,14 @@ impl<
                 }
             }
         }
-        let usage_event_id =
-            self.attempt_usage_event(work, &turn, &attempt, evidence, UsageOutcome::Interrupted)?;
+        let usage_event_id = self.attempt_usage_event(
+            work,
+            &turn,
+            &attempt,
+            evidence,
+            UsageOutcome::Interrupted,
+            Some(ConversationGenerationRunError::Pending { evidence }.to_string()),
+        )?;
         self.conversations.interrupt_generation(
             work.turn_id,
             work.attempt_id,
@@ -2251,6 +2339,7 @@ fn job_error(code: GenerationFailureCode) -> JobError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FinalizationContext {
+    usage_snapshot: lettuce_conversations::UsageRecordSnapshot,
     conversation_id: ConversationId,
     expected_conversation_revision: lettuce_types::Revision,
     expected_turn_revision: lettuce_types::Revision,

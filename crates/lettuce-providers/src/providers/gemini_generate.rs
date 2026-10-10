@@ -1465,6 +1465,7 @@ mod tests {
             secret_owner_id: lettuce_settings::SecretOwnerId::new(),
             external_model_id: "gemini-2.0-flash".to_owned(),
             model_display_name: "Test model".into(),
+            provider_label: Some("Test account".into()),
             provider_kind: "gemini".to_owned(),
             provider_protocol: ProviderProtocol::Gemini,
             endpoint: Some("https://generativelanguage.googleapis.com/v1beta".to_owned()),

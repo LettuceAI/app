@@ -30,6 +30,8 @@ Facts about how `lettuce-models` relates to the legacy app (2.2.x). The crate RE
 
 Resolved profiles now retain the model display name for non-blocking creation history references. Model deletion clears authored selections in the persistence core, rather than refusing them, and the default promotes the first remaining model (old-code/src/core/storage/repo.ts:970-979).
 
+Resolved chat profiles retain the provider account label before dispatch, matching the label copied into successful and failed usage records in `old-code/src-tauri/src/chat_manager/service.rs:515-519,617-621`. Older serialized profiles keep an unknown label rather than deriving a historical name from a current account. This supplies frozen metadata to the usage writer; it does not itself write usage or prices.
+
 Model-folder relocation merges folder and retained-root fields into current device settings in the same immediate transaction as model path changes, preserving concurrent certificate and device selections.
 
 Editor scopes now count as declared capability evidence, preserving legacy's stored input/output scopes (`old-code/src-tauri/src/storage_manager/models.rs:126-159`) with Unknown rejection retained by clarification. Explicit Unsupported remains authoritative without remote metadata; reported modalities override echoed statuses. Removed declarations revert Supported to Unknown. Duplicate names are provided by the UI using the localized suffix and collision numbering from `old-code/src/ui/pages/settings/ModelsPage.tsx:241-254`; configuration and provider references are copied, while id, revision and timestamps are fresh.

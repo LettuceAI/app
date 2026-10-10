@@ -268,11 +268,22 @@ pub fn decode_provider_backup_restore_plan(
         "conversation-runtime.v1",
     )?;
     let job_backup = take_json(sections, "data/jobs.json", "jobs.v1")?;
-    let conversation_usage = take_json(
-        sections,
-        "data/conversation-usage.json",
-        "conversation-usage.v1",
-    )?;
+    let usage_schema = sections
+        .sections
+        .get("data/conversation-usage.json")
+        .map(|(_, section)| section.schema.clone())
+        .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
+    let usage_version = match usage_schema.as_str() {
+        "conversation-usage.v1" => 1,
+        "conversation-usage.v2" => 2,
+        "conversation-usage.v3" => 3,
+        _ => return Err(ProviderBackupRestorePlanError::InvalidInventory),
+    };
+    let conversation_usage: crate::ConversationUsageBackup =
+        take_json(sections, "data/conversation-usage.json", &usage_schema)?;
+    if conversation_usage.version != usage_version {
+        return Err(ProviderBackupRestorePlanError::InvalidInventory);
+    }
     let conversation_outbox = take_json(
         sections,
         "data/conversation-outbox.json",

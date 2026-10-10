@@ -83,6 +83,8 @@ pub struct ApiContext {
 }
 
 struct ApiContextInner {
+    usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
+    maintenance: super::maintenance::MaintenanceGate,
     parts: ApiContextParts,
     models: ModelSlots,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
@@ -96,6 +98,8 @@ struct ApiContextInner {
     settings_sections: Arc<std::sync::Mutex<Vec<&'static str>>>,
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
+    logs: Mutex<Option<super::logs::LogHost>>,
+    reset: super::app_reset::ResetState,
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     provider_writes: tokio::sync::Mutex<()>,
@@ -114,6 +118,39 @@ impl std::fmt::Debug for ApiContext {
 }
 
 impl ApiContext {
+    pub fn with_usage_billing(self, billing: Arc<dyn crate::OpenRouterBillingPort>) -> Self {
+        *self
+            .inner
+            .usage_billing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(billing);
+        self
+    }
+
+    pub(super) fn usage_billing(&self) -> Result<Arc<dyn crate::OpenRouterBillingPort>, ApiError> {
+        if let Some(billing) = self
+            .inner
+            .usage_billing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+        {
+            return Ok(billing);
+        }
+        Ok(Arc::new(super::ollama::remote_providers(self)?))
+    }
+    pub(super) fn maintenance(&self) -> &super::maintenance::MaintenanceGate {
+        &self.inner.maintenance
+    }
+
+    pub(crate) fn accepts_database_work(&self) -> Result<bool, ApiError> {
+        self.backend()
+            .database()
+            .is_file_write_fenced()
+            .map(|fenced| !fenced)
+            .map_err(|_| super::storage::file_error(crate::AppDatabaseLocationError::Storage, None))
+    }
+
     #[must_use]
     pub fn new(parts: ApiContextParts) -> Self {
         Self::new_with_filter(
@@ -188,6 +225,8 @@ impl ApiContext {
         });
         let context = Self {
             inner: Arc::new(ApiContextInner {
+                usage_billing: Mutex::new(None),
+                maintenance: super::maintenance::MaintenanceGate::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
                 streams: Mutex::new(HashMap::new()),
@@ -201,6 +240,8 @@ impl ApiContext {
                 settings_sections,
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
+                logs: Mutex::new(None),
+                reset: super::app_reset::ResetState::default(),
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 provider_writes: tokio::sync::Mutex::new(()),
@@ -252,15 +293,21 @@ impl ApiContext {
         let location =
             AppDatabaseLocation::new(app_data_dir.join(PRIVATE_PERSISTENT_DIRECTORY), &authority)
                 .map_err(|error| storage_error("database location", error))?;
-        let path = location
-            .active_path()
-            .map_err(|error| storage_error("database location", error))?;
+        let file_lifecycle = location
+            .acquire_file_lifecycle(true)
+            .map_err(|error| super::storage::file_error(error, None))?;
+        let path = file_lifecycle
+            .prepare_open(clock.now())
+            .map_err(|error| super::storage::file_error(error, None))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| storage_error("database directory", error))?;
         }
         let backend = AppBackend::open(&path, clock.now())
             .map_err(|error| storage_error("application database", error))?;
+        file_lifecycle
+            .complete_open()
+            .map_err(|error| super::storage::file_error(error, None))?;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let backend = {
             use lettuce_settings::DeviceSettingsStore;
@@ -520,6 +567,18 @@ impl ApiContext {
         &self.inner.shutdown
     }
 
+    pub(super) fn reset_state(&self) -> &super::app_reset::ResetState {
+        &self.inner.reset
+    }
+
+    pub(super) fn flush_app_usage_for_reset(&self) -> Result<(), ApiError> {
+        self.inner
+            .app_usage
+            .flush(self.backend().database(), self.now())
+            .map_err(super::app::app_usage_error)?;
+        Ok(())
+    }
+
     pub(crate) fn asset_id_from_url(
         &self,
         uri: &str,
@@ -574,6 +633,47 @@ impl ApiContext {
     pub fn models_changed(&self) {
         self.inner.models.forget();
         self.emit(lettuce_contracts::ApiEvent::RequiredModelsChanged);
+    }
+
+    pub fn attach_logs(&self, directory: PathBuf, sink: lettuce_observability::LogSink) {
+        let gate = self.downgrade();
+        let weak = self.downgrade();
+        sink.set_observer(
+            move || {
+                gate.upgrade()
+                    .is_some_and(|context| context.content_filter().logging_enabled() == Ok(true))
+            },
+            move |line| {
+                if let Some(context) = weak.upgrade() {
+                    context.emit(lettuce_contracts::ApiEvent::DeveloperLogLine {
+                        line: line.to_owned(),
+                    });
+                }
+            },
+        );
+        *self.inner.logs.lock().expect("log host") = Some(super::logs::LogHost {
+            directory: lettuce_observability::LogDirectory::new(directory),
+            sink,
+        });
+    }
+
+    pub(super) fn logs(&self) -> Result<super::logs::LogHost, ApiError> {
+        self.inner
+            .logs
+            .lock()
+            .map_err(|_| {
+                super::logs::unavailable(
+                    lettuce_contracts::LogFailureReason::HostUnavailable,
+                    "log host unavailable",
+                )
+            })?
+            .clone()
+            .ok_or_else(|| {
+                super::logs::unavailable(
+                    lettuce_contracts::LogFailureReason::HostUnavailable,
+                    "log host unavailable",
+                )
+            })
     }
 
     pub(crate) fn files(&self) -> &dyn FileAccess {
@@ -651,13 +751,27 @@ impl ApiContext {
     /// Adds the counted active time to each day's usage; the host calls it on
     /// exit.
     pub fn flush_app_usage(&self) {
-        if let Err(error) = self
+        match self
             .inner
             .app_usage
             .flush(self.backend().database(), self.now())
         {
-            tracing::warn!(%error, "app active time could not be recorded");
+            Ok(0) => {}
+            Ok(_) => self.emit(lettuce_contracts::ApiEvent::AppUsageChanged),
+            Err(error) => {
+                self.emit(lettuce_contracts::ApiEvent::AppUsageChanged);
+                self.emit(lettuce_contracts::ApiEvent::AppUsageWriteFailed {
+                    error: super::app::app_usage_error(error),
+                });
+            }
         }
+    }
+
+    pub(super) fn app_usage_days(&self) -> Result<Vec<lettuce_usage::AppUsageDay>, ApiError> {
+        self.inner
+            .app_usage
+            .days(self.backend().database(), self.now())
+            .map_err(super::app::app_usage_error)
     }
 
     pub(crate) fn media(&self) -> Option<&ApiMediaStore> {
@@ -886,6 +1000,40 @@ impl ApiContext {
         tokio::task::spawn_blocking(move || work(&context))
             .await
             .map_err(IntoApiError::into_api_error)?
+            .map_err(|error| self.typed_write_fence(error))
+    }
+
+    /// A storage failure on a database a cutover fenced is the fence.
+    pub(crate) fn typed_write_fence(&self, error: ApiError) -> ApiError {
+        let storage = matches!(
+            error.code,
+            ApiErrorCode::Unavailable | ApiErrorCode::Internal
+        ) && !matches!(
+            error.details,
+            Some(
+                lettuce_contracts::ApiErrorDetails::AppDataReset { .. }
+                    | lettuce_contracts::ApiErrorDetails::DatabaseWriteFenced
+            )
+        );
+        if storage
+            && self
+                .backend()
+                .database()
+                .is_file_write_fenced()
+                .unwrap_or(false)
+        {
+            write_fenced_error()
+        } else {
+            error
+        }
+    }
+}
+
+pub(crate) fn write_fenced_error() -> ApiError {
+    ApiError {
+        code: ApiErrorCode::Unavailable,
+        message: "this database was kept by a cutover and accepts no writes".into(),
+        details: Some(lettuce_contracts::ApiErrorDetails::DatabaseWriteFenced),
     }
 }
 

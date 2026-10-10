@@ -42,3 +42,15 @@ Optional UI choices reject explicit null instead of silently omitting it; legacy
 DeviceEmbedding updates use the device view revision rather than the global settings revision, keeping install-local changes outside the sync document. The model-folder path is read-only and changes through the existing relocation job.
 
 The second settings review narrows SettingsChanged to actual settings-table commits and gives every device record write the device label. Catalog-only writes use ModelsChanged, replacing the broad legacy broadcast after every save or removal (`old-code/src/core/storage/repo.ts:965,979`). Default changes and deletion that clears or promotes a selection retain the settings notification.
+
+The log API preserves viewer operations from `old-code/src-tauri/src/infra/logger.rs:660` with typed errors and FileTarget exports. Its live event carries a written line instead of legacy chat://debug JSON (`old-code/src-tauri/src/infra/utils.rs:373`). App usage reads include the current stretch, as legacy flushed before reading (`old-code/src-tauri/src/usage/commands.rs:62`), with an event replacing the frontend timer (`old-code/src/ui/pages/settings/UsagePage.tsx:448`).
+
+Metrics keep the Performance page's summaries and samples (`old-code/src/ui/pages/settings/PerformancePage.tsx:100`) with an owned envelope rather than flattening arbitrary JSON. Cursor pages replace the legacy whole-list fetch (`old-code/src/core/storage/metrics.ts:9`); explicit clear carries a durable operation identity.
+
+Usage clear-before preserves the strict cutoff from `old-code/src-tauri/src/usage/repository.rs:503-518`. It deliberately skips unsettled dispatches and nonterminal owners, commits costs and exact ownership tombstones with the deletion receipt, and consumes synchronized re-sends by id. Legacy counted with a zero fallback and deleted in a separate statement (`old-code/src-tauri/src/usage/repository.rs:506-518`); the rewrite fails typed and commits atomically. Backups retain proofs for terminal references instead of losing their audit integrity.
+
+Media library kind selects image or audio and each item returns its role, replacing the separate legacy inventories (`old-code/src-tauri/src/storage_manager/media.rs:559-576,875-895`). Referenced removal is a typed InUse result with reference details instead of a dangling file path (`old-code/src-tauri/src/storage_manager/media.rs:988-1023`).
+
+Usage filters preserve the inclusive legacy date bounds (`old-code/src-tauri/src/usage/repository.rs:275-283`) and add stable cursor pages over one deduplicated charge read. Statistics group days in an explicit device-local timezone rather than relying on webview Date conversion (`old-code/src/ui/pages/settings/UsagePage.tsx:490-496`). Nullable fields and unknown-request counts replace zero substitutions. CSV completion is returned after writing a FileTarget, preserving the UI's export-before-completion flow (`UsagePage.tsx:651-666`).
+
+Storage optimization exposes a job and typed completion or failure instead of the legacy developer button assuming completion from a void command (`old-code/src/ui/pages/settings/DeveloperPage.tsx:1967-1974`).

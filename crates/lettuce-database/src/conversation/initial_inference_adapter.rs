@@ -75,14 +75,28 @@ fn verify_usage(
     {
         return Err(ConversationRepositoryError::Conflict);
     }
+    admission
+        .validate_result_snapshot(&evidence)
+        .map_err(|_| ConversationRepositoryError::Conflict)?;
     let matches = match (result, evidence) {
         (
             InitialInferenceResult::Response(outcome),
             lettuce_usage::JobInferenceUsageResult::Response {
                 usage,
                 provider_response_id,
+                ..
             },
         ) => outcome.usage == usage && outcome.provider_response_id == provider_response_id,
+        (
+            InitialInferenceResult::Failed(error),
+            lettuce_usage::JobInferenceUsageResult::Failure {
+                cancelled,
+                snapshot,
+            },
+        ) => {
+            cancelled == (*error == lettuce_conversations::PortError::Cancelled)
+                && snapshot.error_message.as_deref() == Some(error.to_string().as_str())
+        }
         (
             InitialInferenceResult::Failed(lettuce_conversations::PortError::Cancelled),
             lettuce_usage::JobInferenceUsageResult::Cancelled,
@@ -173,7 +187,15 @@ fn load(
         settled_at: settled_at.map(TimestampMillis::new),
     };
     if let Some(result) = &record.result {
-        verify_usage(transaction, &record, result)?;
+        let proof = crate::usage_clear::dispatch_tombstone_in(transaction, record.usage_event_id)
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        match proof {
+            Some(lettuce_usage::UsageTombstone::Dispatch {
+                attempt_id, job_id, ..
+            }) if attempt_id == record.binding.attempt_id && job_id == record.binding.job_id => {}
+            Some(_) => return Err(ConversationRepositoryError::Conflict),
+            None => verify_usage(transaction, &record, result)?,
+        }
     }
     Ok(Some(record))
 }

@@ -17,6 +17,8 @@ pub enum HardDeleteError {
     Purge(#[from] PurgeError),
     #[error("media collection failed")]
     Media(MediaStoreError),
+    #[error("database file lifecycle is unavailable")]
+    DatabaseFiles(#[from] crate::AppDatabaseLocationError),
 }
 
 /// What a deletion removed: the rows, and the media files nothing else used.
@@ -26,10 +28,6 @@ pub struct HardDeletion {
     pub media: MediaObjectRemoval,
 }
 
-/// The media store, the app's database directory and the database file this
-/// process uses. Every collection lists the other database files in the
-/// directory at that moment (a database a restore kept, or one a restore is
-/// writing), and an object any of them catalogs is never deleted.
 #[derive(Debug)]
 pub struct MediaGarbageScope<'a, BR, AR> {
     pub store: &'a LocalMediaBlobStore<BR, AR>,
@@ -38,35 +36,41 @@ pub struct MediaGarbageScope<'a, BR, AR> {
 }
 
 impl<BR, AR> MediaGarbageScope<'_, BR, AR> {
-    /// The objects the other database files catalog, or `None` when one of
-    /// them cannot be read: collection then does nothing this run and the
-    /// user gets a notice naming the file.
+    /// The media every kept database file holds, or `None` when a database
+    /// file cannot be read: collection then deletes nothing and the user
+    /// gets a notice naming the file.
     fn kept_by_other_databases(
         &self,
         database: &Database,
         now: TimestampMillis,
-    ) -> Result<Option<BTreeSet<ContentHash>>, HardDeleteError> {
-        let files = self
-            .location
-            .other_database_files(self.open_database)
-            .map_err(|_| HardDeleteError::Purge(PurgeError::Storage))?;
-        let mut kept = BTreeSet::new();
-        for path in files {
-            match Database::media_objects_in_file(&path) {
-                Ok(objects) => kept.extend(objects),
-                Err(error) => {
-                    let name = path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    tracing::warn!(%error, file = %name, "media collection skipped: a database file cannot be read");
-                    database.record_media_collection_skipped(&name, now)?;
-                    return Ok(None);
-                }
-            }
+    ) -> Result<Option<(crate::DatabaseFileLifecycle, BTreeSet<ContentHash>)>, HardDeleteError>
+    {
+        let lifecycle = self.location.acquire_file_lifecycle(true)?;
+        let active = self.location.active_path()?;
+        if active != self.open_database {
+            return Err(crate::AppDatabaseLocationError::Conflict.into());
         }
-        Ok(Some(kept))
+        if skip_for_unreadable_files(&lifecycle, database, now)? {
+            return Ok(None);
+        }
+        let kept = lifecycle.kept_media_hashes()?;
+        Ok(Some((lifecycle, kept)))
     }
+}
+
+/// Records a notice for every unreadable database file; `true` when media
+/// deletion must wait until the user deletes them.
+pub(crate) fn skip_for_unreadable_files(
+    lifecycle: &crate::DatabaseFileLifecycle,
+    database: &Database,
+    now: TimestampMillis,
+) -> Result<bool, HardDeleteError> {
+    let unreadable = lifecycle.unreadable_files()?;
+    for name in &unreadable {
+        tracing::warn!(file = %name, "media collection skipped: a database file cannot be read");
+        database.record_media_collection_skipped(name, now)?;
+    }
+    Ok(!unreadable.is_empty())
 }
 
 /// Deletes a conversation (direct or group) and everything recorded for it,
@@ -85,7 +89,7 @@ where
     let receipt = database.purge_conversation(id, now)?;
     Ok(HardDeletion {
         receipt,
-        media: collect_after_purge(database, media, now),
+        media: collect_media_garbage(database, media, now)?,
     })
 }
 
@@ -104,26 +108,8 @@ where
     let receipt = database.purge_character(id, now)?;
     Ok(HardDeletion {
         receipt,
-        media: collect_after_purge(database, media, now),
+        media: collect_media_garbage(database, media, now)?,
     })
-}
-
-fn collect_after_purge<BR, AR>(
-    database: &Database,
-    media: &MediaGarbageScope<'_, BR, AR>,
-    now: TimestampMillis,
-) -> MediaObjectRemoval
-where
-    BR: MediaBlobRepository,
-    AR: MediaAssetRepository,
-{
-    match collect_media_garbage(database, media, now) {
-        Ok(removal) => removal,
-        Err(error) => {
-            tracing::warn!(%error, "media left unused by a deletion stays queued");
-            MediaObjectRemoval::default()
-        }
-    }
 }
 
 /// Runs the deletes received through sync, then collects the media every
@@ -140,7 +126,7 @@ where
     AR: MediaAssetRepository,
 {
     database.run_queued_purges(now)?;
-    let Some(kept) = media.kept_by_other_databases(database, now)? else {
+    let Some((_lifecycle, kept)) = media.kept_by_other_databases(database, now)? else {
         return Ok(MediaObjectRemoval::default());
     };
     let mut purge_error = None;
@@ -164,10 +150,7 @@ where
             purge_error.map_or(HardDeleteError::Media(error), HardDeleteError::Purge)
         })?;
     if removal.failed > 0 {
-        tracing::warn!(
-            failed = removal.failed,
-            "some unused media files were not deleted"
-        );
+        return Err(HardDeleteError::Media(MediaStoreError::ObjectRemovalFailed));
     }
     Ok(removal)
 }
@@ -186,11 +169,11 @@ where
     BR: MediaBlobRepository,
     AR: MediaAssetRepository,
 {
-    let Some(kept) = media.kept_by_other_databases(database, now)? else {
+    let Some((_lifecycle, kept)) = media.kept_by_other_databases(database, now)? else {
         return Ok(MediaObjectRemoval::default());
     };
     let mut purge_error = None;
-    media
+    let removal = media
         .store
         .sweep_orphan_objects(|hash| {
             if kept.contains(hash) {
@@ -201,5 +184,11 @@ where
                 MediaStoreError::CatalogFailure
             })
         })
-        .map_err(|error| purge_error.map_or(HardDeleteError::Media(error), HardDeleteError::Purge))
+        .map_err(|error| {
+            purge_error.map_or(HardDeleteError::Media(error), HardDeleteError::Purge)
+        })?;
+    if removal.failed > 0 {
+        return Err(HardDeleteError::Media(MediaStoreError::ObjectRemovalFailed));
+    }
+    Ok(removal)
 }

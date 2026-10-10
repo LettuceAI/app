@@ -1349,6 +1349,7 @@ mod tests {
             secret_owner_id: lettuce_settings::SecretOwnerId::new(),
             external_model_id: "test-model".to_owned(),
             model_display_name: "Test model".into(),
+            provider_label: Some("Test account".into()),
             provider_kind: "anthropic".to_owned(),
             provider_protocol: ProviderProtocol::Anthropic,
             endpoint: Some("https://api.anthropic.com".to_owned()),

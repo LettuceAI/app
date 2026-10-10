@@ -322,6 +322,14 @@ async fn initial_checkpoint_reopens_with_exact_response_usage_and_signed_replay(
     assert_eq!(
         evidence[0].result,
         Some(JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(request.profile.chat_profile.model_display_name.clone()),
+                provider_kind: Some(request.profile.chat_profile.provider_kind.clone()),
+                provider_label: request.profile.chat_profile.provider_label.clone(),
+                finish_reason: Some("stop".into()),
+                provider_response_id: expected.provider_response_id.clone(),
+                ..Default::default()
+            })),
             usage: expected.usage.clone(),
             provider_response_id: expected.provider_response_id.clone()
         })

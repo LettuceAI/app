@@ -526,8 +526,13 @@ mod tests {
 
     #[test]
     fn current_schema_fingerprint_is_stable_and_complete() {
-        assert_eq!(crate::CONVERSATION_MESSAGE_SYNC_VERSION, 4);
+        assert_eq!(crate::CONVERSATION_MESSAGE_SYNC_VERSION, 5);
         assert_eq!(crate::PROMPT_SYNC_VERSION, 2);
+        assert_eq!(
+            crate::JOB_USAGE_SYNC_VERSION,
+            2,
+            "job usage carries frozen attribution and failure snapshots"
+        );
         assert_eq!(
             crate::CHARACTER_SYNC_VERSION,
             2,
@@ -535,7 +540,7 @@ mod tests {
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "29181b5ac8a9a196c8fd163a1b503062dd5cbec09f7db0c06df06fdf3bca953b"
+            "16a3c4e407b8097a875dac56dc67af954fac4a5ea03c2268af0043d6db8e5371"
         );
     }
 

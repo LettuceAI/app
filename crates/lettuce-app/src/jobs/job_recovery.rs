@@ -169,6 +169,17 @@ impl crate::AppBackend {
             JobKind::Maintenance,
         ] {
             for job in self.pending_jobs(kind) {
+                if kind == JobKind::Maintenance
+                    && matches!(
+                        job.subject.id.as_str(),
+                        "storage-optimize"
+                            | "usage-cost-capture"
+                            | "usage-recalculate-costs"
+                            | "app-data-reset"
+                    )
+                {
+                    continue;
+                }
                 let settled = if kind == JobKind::CreationRun {
                     self.settle_creation_job(&job, now)
                 } else {

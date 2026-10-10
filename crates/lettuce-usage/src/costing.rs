@@ -36,6 +36,7 @@ impl UsageCostBasis {
         let Some(crate::JobInferenceUsageResult::Response {
             usage: Some(tokens),
             provider_response_id,
+            ..
         }) = &event.result
         else {
             return Err(UsageLedgerError::Invalid);
@@ -66,6 +67,7 @@ impl UsageCostBasis {
         let Some(crate::JobInferenceUsageResult::Response {
             usage: Some(usage),
             provider_response_id,
+            ..
         }) = &event.result
         else {
             return Ok(None);

@@ -411,6 +411,7 @@ pub fn plan_provider_backup_export(
     secret_set: ProviderBackupSecretSet,
 ) -> Result<ProviderBackupExportPlan, ProviderBackupGraphError> {
     canonicalize_and_validate(&mut graph)?;
+    graph.conversation_usage.version = crate::CONVERSATION_USAGE_BACKUP_VERSION;
     let expected = expected_secrets(&graph)?;
     let ProviderBackupSecretSet {
         secrets,
@@ -508,7 +509,7 @@ pub fn plan_provider_backup_export(
         BackupSection::new("data/jobs.json", "jobs.v1", jobs),
         BackupSection::new(
             "data/conversation-usage.json",
-            "conversation-usage.v1",
+            "conversation-usage.v3",
             conversation_usage,
         ),
         BackupSection::new(
@@ -852,6 +853,10 @@ pub fn canonicalize_and_validate(
             crate::LegacyImportBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
         })?;
     graph
+        .legacy_imports
+        .validate_media_snapshots(&graph.authored.media_assets, &graph.authored.media_blobs)
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    graph
         .playground_history
         .canonicalize_and_validate()
         .map_err(|error| match error {
@@ -1116,7 +1121,10 @@ fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupG
                 .into_iter()
                 .flatten()
                 {
-                    if inference_owners.get(&dispatch.0) != Some(&dispatch.1) {
+                    let cleared = graph.conversation_usage.tombstones.iter().any(|proof| matches!(proof,
+                        lettuce_usage::UsageTombstone::Dispatch { event_id, attempt_id, job_id }
+                        if *event_id == dispatch.0 && *attempt_id == attempt.attempt_id && *job_id == dispatch.1));
+                    if inference_owners.get(&dispatch.0) != Some(&dispatch.1) && !cleared {
                         return Err(ProviderBackupGraphError::InvalidGraph);
                     }
                 }
@@ -1518,7 +1526,9 @@ pub fn settle_in_flight_generation(graph: &mut ProviderBackupGraph) {
                     events.push(crate::BackupConversationUsage {
                         event: lettuce_usage::UsageEvent {
                             id,
+                            origin: lettuce_usage::UsageEventOrigin::Live,
                             record: UsageRecord {
+                                snapshot: None,
                                 turn_id: turn.id,
                                 attempt_id: attempt.id,
                                 outcome: UsageOutcome::Interrupted,
@@ -1809,6 +1819,7 @@ mod tests {
             conversation_usage: crate::ConversationUsageBackup {
                 version: crate::CONVERSATION_USAGE_BACKUP_VERSION,
                 events: Vec::new(),
+                tombstones: Vec::new(),
             },
             conversation_outbox: crate::ConversationOutboxBackup {
                 version: crate::CONVERSATION_OUTBOX_BACKUP_VERSION,

@@ -5,6 +5,43 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
+	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError>(__TAURI_INVOKE("llm_metrics_list", { request })),
+	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<{
+	id: string,
+	created_at: number,
+	summary: unknown,
+	samples: unknown[] | null,
+} | null, ApiError>(__TAURI_INVOKE("llm_metrics_get", { request })),
+	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<{
+	id: string,
+	created_at: number,
+	summary: unknown,
+	samples: unknown[] | null,
+} | null, ApiError>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
+	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError>(__TAURI_INVOKE("llm_metrics_clear", { request })),
+	appUsageDays: () => typedError<AppUsageDaysView, ApiError>(__TAURI_INVOKE("app_usage_days")),
+	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError>(__TAURI_INVOKE("usage_clear_before", { request })),
+	usageQuery: (request: UsageQueryRequest) => typedError<UsagePage, ApiError>(__TAURI_INVOKE("usage_query", { request })),
+	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError>(__TAURI_INVOKE("usage_stats", { request })),
+	usageExportCsv: (request: UsageExportCsvRequest) => typedError<null, ApiError>(__TAURI_INVOKE("usage_export_csv", { request })),
+	usageRecalculateCosts: (request: UsageRecalculateCostsRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("usage_recalculate_costs", { request })),
+	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
+	storageOptimize: (request: StorageOptimizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("storage_optimize", { request })),
+	storageSummary: () => typedError<StorageSummary, ApiError>(__TAURI_INVOKE("storage_summary")),
+	appDataReset: (request: AppDataResetRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("app_data_reset", { request })),
+	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("storage_database_file_delete", { request })),
+	mediaSaveTo: (request: MediaSaveToRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_save_to", { request })),
+	mediaLibraryList: (request: MediaLibraryListRequest) => typedError<MediaLibraryPage, ApiError>(__TAURI_INVOKE("media_library_list", { request })),
+	mediaLibraryRemove: (request: MediaLibraryRemoveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_library_remove", { request })),
+	logsList: () => typedError<LogsList, ApiError>(__TAURI_INVOKE("logs_list")),
+	logsDiagnosticsReport: () => typedError<string, ApiError>(__TAURI_INVOKE("logs_diagnostics_report")),
+	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError>(__TAURI_INVOKE("log_read_page", { request })),
+	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_search", { request })),
+	logRelevantLines: (request: LogRelevantLinesRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_relevant_lines", { request })),
+	logDelete: (request: LogNameRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_delete", { request })),
+	logsClear: () => typedError<null, ApiError>(__TAURI_INVOKE("logs_clear")),
+	logExport: (request: LogExportRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_export", { request })),
+	logAppend: (request: LogAppendRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_append", { request })),
 	conversationsList: (request: ConversationsListRequest) => typedError<ConversationPage, ApiError>(__TAURI_INVOKE("conversations_list", { request })),
 	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
 	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
@@ -340,7 +377,12 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails =
+/**
+ *  The database this process opened was kept by a cutover (restore or
+ *  reset) and accepts no writes; the app must restart on the active one.
+ */
+{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -366,7 +408,7 @@ export type ApiErrorDetails = { type: "settings"; reason: SettingsFailureReason 
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -389,6 +431,12 @@ export type ApiEvent = { type: "character_changed"; character_id: string } | { t
 { type: "dictation_level"; capture_id: string; level: number };
 
 export type ApiKeyRequirementContract = "required" | "optional" | "not_used";
+
+export type AppDataResetRequest = {
+	client_operation_id: string,
+};
+
+export type AppDataResetStage = "preflight" | "workers" | "database" | "webview_storage" | "restart";
 
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
@@ -413,6 +461,15 @@ export type AppUiStateUpdateRequest = {
 
 export type AppUiStateView = {
 	state: { [key in string]: unknown },
+};
+
+export type AppUsageDayView = {
+	day: string,
+	active_ms: number,
+};
+
+export type AppUsageDaysView = {
+	days: AppUsageDayView[],
 };
 
 export type AppliedCorrectionView = {
@@ -1398,6 +1455,30 @@ export type ConversationsListRequest = {
 	limit: number | null,
 };
 
+export type DatabaseFileDeleteRequest = {
+	file: string,
+	client_operation_id: string,
+};
+
+/**
+ *  Why a listed database file needs attention: an unreadable file blocks
+ *  media collection until it is deleted.
+ */
+export type DatabaseFileError = "unreadable";
+
+export type DatabaseFileKind = "initial" | "restore" | "legacy_restore" | "reset" | "existing";
+
+export type DatabaseFileView = {
+	file: string,
+	kind: DatabaseFileKind,
+	created_at: number | null,
+	modified_at: number,
+	size: number,
+	active: boolean,
+	deletable: boolean,
+	error: DatabaseFileError | null,
+};
+
 export type DefaultCharacterRules = {
 	rules: string[],
 };
@@ -1569,7 +1650,7 @@ export type GenerationCancelRequest = {
  */
 export type GenerationEvent = { type: "started"; turn_id: string } | { type: "model_loading"; turn_id: string; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; turn_id: string; code: RuntimeNoticeCode } | { type: "speaker_selecting"; turn_id: string } | { type: "speaker_selected"; turn_id: string; character_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
-export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
+export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal" | "database_write_fenced";
 
 /**  Where a model and its KV cache would live. */
 export type GpuModeDto = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu";
@@ -2303,7 +2384,7 @@ export type JobFailureDto = {
 };
 
 /**  Why a chat feature job failed, where the user can act on it. */
-export type JobFailureReason = "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
+export type JobFailureReason = "reset_workers" | "reset_database" | "reset_webview_storage" | "reset_restart" | "usage_billing_unavailable" | "usage_billing_malformed" | "usage_account_missing" | "usage_cost_conflict" | "usage_cost_storage" | "usage_billing_credentials" | "usage_billing_rejected" | "usage_billing_unsupported" | "usage_cost_invalid" | "storage_checkpoint_busy" | "storage_unavailable" | "database_kept_read_only" | "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
 
 export type JobGetRequest = {
 	job_id: string,
@@ -2340,7 +2421,7 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
+export type JobResultDto = { type: "usage_costs_updated"; priced: number; cleared: number } | { type: "storage_optimized" } | { type: "app_data_reset"; kept_file: string } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
 /**
  *  The Soul draft a Soul writer job produced, which the caller merges
  *  into its unsaved draft.
@@ -2665,6 +2746,40 @@ export type LlamaSettingsDraft = {
 	dflash_model: FileSource | null,
 };
 
+export type LlmMetricForMessageRequest = {
+	conversation_id: string,
+	message_id: string,
+};
+
+export type LlmMetricGetRequest = {
+	id: string,
+};
+
+export type LlmMetricView = {
+	id: string,
+	created_at: number,
+	summary: unknown,
+	samples: unknown[] | null,
+};
+
+export type LlmMetricsClearRequest = {
+	client_operation_id: string,
+};
+
+export type LlmMetricsCleared = {
+	removed: number,
+};
+
+export type LlmMetricsListRequest = {
+	cursor: string | null,
+	limit: number,
+};
+
+export type LlmMetricsPage = {
+	items: LlmMetricView[],
+	next_cursor: string | null,
+};
+
 /**
  *  How well a model file runs here. Without its GGUF header
  *  (`metadata_available` false) the KV cache is not counted.
@@ -2783,6 +2898,60 @@ export type LocalSidecarsDraft = {
 	mtp_model: FileSource | null,
 	dflash_enabled: boolean,
 	dflash_model: FileSource | null,
+};
+
+export type LogAppendRequest = {
+	timestamp: string,
+	level: LogLevel,
+	component: string,
+	function: string | null,
+	message: string,
+};
+
+export type LogExportRequest = {
+	name: string,
+	target: FileTarget,
+};
+
+export type LogFailureReason = "host_unavailable" | "storage" | "invalid_encoding" | "source_is_target";
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export type LogNameRequest = {
+	name: string,
+};
+
+export type LogPageView = {
+	total: number,
+	lines: string[],
+};
+
+export type LogReadPageRequest = {
+	name: string,
+	offset: number,
+	limit: number,
+};
+
+export type LogRelevantLinesRequest = {
+	name: string,
+	reference_line: string,
+};
+
+export type LogSearchRequest = {
+	name: string,
+	query: string,
+	case_sensitive: boolean,
+	whole_word: boolean,
+	regex: boolean,
+};
+
+export type LogSearchView = {
+	matches: number[],
+	total: number,
+};
+
+export type LogsList = {
+	files: string[],
 };
 
 export type LoraArchitectureSource = "none" | "metadata" | "civitai";
@@ -3226,7 +3395,60 @@ export type LorebooksListRequest = {
 	limit: number | null,
 };
 
+export type MediaFailureReason = "host_unavailable" | "asset_missing" | "blob_missing" | "object_missing" | "not_ready" | "invalid_metadata" | "protected_target" | "storage";
+
+export type MediaLibraryAssetKind = "avatar_original" | "background_image" | "illustration" | "lorebook_icon" | "message_image" | "message_audio" | "generated_image" | "synthesized_speech" | "other_image" | "other_audio" | "source_document";
+
+export type MediaLibraryItem = {
+	asset: AssetRef,
+	role: MediaLibraryRole,
+	asset_kind: MediaLibraryAssetKind,
+	retention: MediaLibraryRetention,
+	expires_at: number | null,
+	mime_type: string,
+	byte_size: number,
+	width: number | null,
+	height: number | null,
+	duration_ms: number | null,
+	source_label: string | null,
+	created_at: number,
+	updated_at: number,
+	references: MediaReferenceView[],
+};
+
+export type MediaLibraryListRequest = {
+	kind: MediaLibraryRole | null,
+	cursor: string | null,
+	limit: number | null,
+};
+
+export type MediaLibraryPage = {
+	items: MediaLibraryItem[],
+	next_cursor: string | null,
+};
+
+export type MediaLibraryRemoveRequest = {
+	asset_id: string,
+	client_operation_id: string,
+};
+
+export type MediaLibraryRetention = "persistent" | "library" | "temporary";
+
+export type MediaLibraryRole = "image" | "audio";
+
+export type MediaReferenceKind = "character" | "persona" | "group" | "scene" | "conversation" | "creation" | "speech" | "image" | "memory" | "companion" | "model" | "settings" | "lorebook" | "prompt" | "job" | "legacy_import" | "sync" | "usage" | "transfer";
+
+export type MediaReferenceView = {
+	kind: MediaReferenceKind,
+	owner_id: string,
+};
+
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
+
+export type MediaSaveToRequest = {
+	asset_id: string,
+	target: FileTarget,
+};
 
 export type MemoryAddRequest = {
 	conversation_id: string,
@@ -4290,13 +4512,13 @@ export type PurgeNoticeDismissRequest = {
 	id: string,
 };
 
-export type PurgeNoticeEntityDto = "conversation" | "character" | "group" | "database_file" | "media_asset" | "sync_entity";
+export type PurgeNoticeEntityDto = "conversation" | "character" | "group" | "database_file" | "media_asset" | "sync_entity" | "usage_record";
 
 export type PurgeNoticeList = {
 	items: PurgeNoticeView[],
 };
 
-export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried";
+export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried" | "usage_record_unreadable" | "usage_cost_capture_skipped";
 
 /**
  *  A delete that needs the user's attention; `entity_id` names the entity
@@ -5513,6 +5735,25 @@ export type SpeechRuntimeKind = "espeak" | "onnx_runtime";
 /**  The final failure before the bounded speech retry budget was exhausted. */
 export type SpeechTransientFailure = { type: "unavailable" } | { type: "network_unavailable" } | { type: "provider_unavailable"; status: number };
 
+export type StorageOptimizeRequest = {
+	client_operation_id: string,
+};
+
+export type StorageSize = {
+	kind: string,
+	bytes: number,
+};
+
+export type StorageSummary = {
+	active_database_bytes: number,
+	kept_database_bytes: number,
+	media: StorageSize[],
+	models: StorageSize[],
+	/**  Model files the catalog names that are not on disk. */
+	missing_model_files: number,
+	logs_bytes: number,
+};
+
 export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
 
 export type TimelineMessage = {
@@ -5628,6 +5869,128 @@ export type UiPreferenceChange = UiPreferenceChange_Serialize | UiPreferenceChan
 export type UiPreferenceChange_Deserialize = { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Deserialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Deserialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Deserialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Deserialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Deserialize[] | null };
 
 export type UiPreferenceChange_Serialize = { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Serialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Serialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Serialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Serialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Serialize[] | null };
+
+export type UsageClearBeforeRequest = {
+	before: number,
+	client_operation_id: string,
+};
+
+export type UsageCleared = {
+	removed: number,
+};
+
+export type UsageDateRange = {
+	start: number | null,
+	end: number | null,
+};
+
+export type UsageExportCsvRequest = {
+	filters: UsageFilters,
+	target: FileTarget,
+};
+
+export type UsageFilters = {
+	range?: UsageDateRange,
+	provider_kind: string | null,
+	model_id: string | null,
+	character_id: string | null,
+	operation_kind: string | null,
+	status: UsageStatus | null,
+};
+
+export type UsageGroupBy = "day" | "model" | "provider" | "character" | "operation";
+
+export type UsageGroupTotals = {
+	key: string | null,
+	label: string | null,
+	totals: UsageTotals,
+};
+
+export type UsagePage = {
+	items: UsageRow[],
+	next_cursor: string | null,
+};
+
+export type UsageQueryRequest = {
+	filters: UsageFilters,
+	sort: UsageSort,
+	cursor: string | null,
+	limit: number,
+};
+
+export type UsageRecalculateCostsRequest = {
+	client_operation_id: string,
+};
+
+export type UsageRow = {
+	id: string,
+	timestamp: number,
+	status: UsageStatus,
+	session_id: string | null,
+	character_id: string | null,
+	character_name: string | null,
+	model_id: string | null,
+	model_name: string | null,
+	provider_kind: string | null,
+	provider_label: string | null,
+	operation_type: string | null,
+	finish_reason: string | null,
+	provider_response_id: string | null,
+	prompt_tokens: number | null,
+	cached_prompt_tokens: number | null,
+	cache_write_tokens: number | null,
+	completion_tokens: number | null,
+	reasoning_tokens: number | null,
+	image_tokens: number | null,
+	audio_tokens: number | null,
+	web_search_requests: number | null,
+	total_tokens: number | null,
+	memory_tokens: number | null,
+	summary_tokens: number | null,
+	input_image_count: number | null,
+	output_image_count: number | null,
+	prompt_cost: number | null,
+	cache_read_cost: number | null,
+	cache_write_cost: number | null,
+	completion_cost: number | null,
+	reasoning_cost: number | null,
+	request_cost: number | null,
+	web_search_cost: number | null,
+	total_cost: number | null,
+	api_cost: number | null,
+	error_message: string | null,
+};
+
+export type UsageSort = "newest_first" | "oldest_first";
+
+export type UsageStats = {
+	totals: UsageTotals,
+	groups: UsageGroupTotals[],
+};
+
+export type UsageStatsRequest = {
+	range: UsageDateRange,
+	provider_kind: string | null,
+	group_by: UsageGroupBy,
+	time_zone: string,
+};
+
+export type UsageStatus = "pending" | "succeeded" | "failed" | "cancelled" | "interrupted";
+
+export type UsageTotals = {
+	requests: number,
+	successful_requests: number,
+	failed_requests: number,
+	cancelled_requests: number,
+	interrupted_requests: number,
+	pending_requests: number,
+	prompt_tokens: number | null,
+	completion_tokens: number | null,
+	total_tokens: number | null,
+	total_cost: number | null,
+	unknown_token_requests: number,
+	unknown_cost_requests: number,
+};
 
 export type UserVoiceCreateRequest = {
 	client_operation_id: string,

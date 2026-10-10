@@ -117,6 +117,8 @@ pub struct ResolvedChatProfile {
     pub external_model_id: String,
     pub model_display_name: String,
     pub provider_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_label: Option<String>,
     pub provider_protocol: ProviderProtocol,
     pub endpoint: Option<String>,
     pub provider_config: ProviderConfig,
@@ -270,6 +272,7 @@ pub fn resolve_chat_profile(
         external_model_id: profile.external_model_id.clone(),
         model_display_name: profile.display_name.clone(),
         provider_kind: account.provider_kind.clone(),
+        provider_label: Some(account.label.clone()),
         provider_protocol: account.protocol,
         endpoint: account.endpoint.clone(),
         provider_config: account.config.clone(),
@@ -907,6 +910,49 @@ mod tests {
             model_kind: profile.kind,
         };
         (expected, profile, account)
+    }
+
+    #[test]
+    fn resolved_account_label_survives_rename_and_old_documents_remain_unknown() {
+        let (expected, profile, mut account) = fixture();
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &ChatParameterResolutionInput::default(),
+            &ChatRequirements::default(),
+        )
+        .expect("resolve account metadata");
+        let mut document = serde_json::to_value(&resolved).expect("encode profile");
+        assert_eq!(document["provider_label"], "Test account");
+        account.label = "Renamed account".into();
+        account.revision = Revision::new(4);
+        assert_eq!(
+            serde_json::to_value(&resolved).expect("frozen profile")["provider_label"],
+            "Test account"
+        );
+        assert!(matches!(
+            resolve_chat_profile(
+                &expected,
+                &profile,
+                &account,
+                &ChatParameterResolutionInput::default(),
+                &ChatRequirements::default(),
+            ),
+            Err(ChatProfileResolutionError::IdentityMismatch {
+                field: IdentityField::ProviderAccountRevision
+            })
+        ));
+        document
+            .as_object_mut()
+            .expect("profile object")
+            .remove("provider_label");
+        let old: ResolvedChatProfile =
+            serde_json::from_value(document.clone()).expect("old profile");
+        assert_eq!(
+            serde_json::to_value(old).expect("encode old profile"),
+            document
+        );
     }
 
     #[test]

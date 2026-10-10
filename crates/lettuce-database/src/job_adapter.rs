@@ -72,6 +72,25 @@ pub(crate) fn ensure_job_attempt_in(
 }
 
 impl Database {
+    pub fn admit_job_with_detail_and_id(
+        &self,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        detail: &serde_json::Value,
+        id: JobId,
+    ) -> Result<JobSnapshot, StoreError> {
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let (job, _, _) = admit_job_detail_with_id_in(
+            &transaction, spec, operation_key, request_digest, detail, Some(id),
+        )?;
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
     pub fn admit_memory_job_with_detail_result(
         &self,
         conversation_id: lettuce_types::ConversationId,
@@ -97,7 +116,7 @@ impl Database {
         detail: &serde_json::Value,
         receipt: Option<(&str, &str, &str, lettuce_types::TimestampMillis)>,
     ) -> Result<CreateJobResult, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -174,7 +193,7 @@ impl Database {
             return Err(StoreError::InvalidData);
         }
         let id = mutation.job_id();
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -212,7 +231,7 @@ impl Database {
         if !detail.is_object() {
             return Err(StoreError::InvalidData);
         }
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -255,7 +274,7 @@ impl Database {
         request_digest: &str,
         detail: &serde_json::Value,
     ) -> Result<CreateJobResult, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -272,7 +291,7 @@ impl Database {
         request_digest: &str,
         detail: &serde_json::Value,
     ) -> Result<JobSnapshot, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -290,7 +309,7 @@ impl Database {
         request: lettuce_speech::SynthesisRequest,
     ) -> Result<JobSnapshot, StoreError> {
         request.validate().map_err(|_| StoreError::InvalidData)?;
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -321,7 +340,7 @@ impl Database {
         if operation_key.trim().is_empty() || request_digest.is_empty() {
             return Err(StoreError::InvalidData);
         }
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -375,7 +394,7 @@ impl Database {
         request: lettuce_speech::TranscriptionRequest,
     ) -> Result<JobSnapshot, StoreError> {
         request.validate().map_err(|_| StoreError::InvalidData)?;
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -408,7 +427,7 @@ impl Database {
             target,
             prompt,
         } = admission;
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -477,7 +496,7 @@ impl Database {
         &self,
         operation: impl FnOnce(&Transaction<'_>) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(|_| StoreError::Storage)?;
@@ -493,7 +512,7 @@ impl Database {
         select: impl FnOnce(&Transaction<'_>) -> Result<JobRecords, StoreError>,
         operation: impl FnOnce(&InMemoryJobStore) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -510,6 +529,17 @@ pub(crate) fn admit_job_detail_in(
     operation_key: &str,
     request_digest: &str,
     detail: &serde_json::Value,
+) -> Result<(JobSnapshot, bool, bool), StoreError> {
+    admit_job_detail_with_id_in(transaction, spec, operation_key, request_digest, detail, None)
+}
+
+fn admit_job_detail_with_id_in(
+    transaction: &Transaction<'_>,
+    spec: NewJob,
+    operation_key: &str,
+    request_digest: &str,
+    detail: &serde_json::Value,
+    identity: Option<JobId>,
 ) -> Result<(JobSnapshot, bool, bool), StoreError> {
     spec.validate()?;
     if operation_key.trim().is_empty() || request_digest.is_empty() || !detail.is_object() {
@@ -529,6 +559,9 @@ pub(crate) fn admit_job_detail_in(
             return Err(StoreError::IdempotencyConflict);
         }
         let id = job_id.parse().map_err(|_| StoreError::InvalidData)?;
+        if identity.is_some_and(|identity| identity != id) {
+            return Err(StoreError::IdempotencyConflict);
+        }
         return Ok((
             select_ids(transaction, [id])?
                 .remove(&id)
@@ -538,8 +571,14 @@ pub(crate) fn admit_job_detail_in(
             false,
         ));
     }
-    let before = creation_set(transaction, &spec)?;
-    let admitted = apply_to_job_set(transaction, before, |store| store.create_or_get(spec))?;
+    let mut before = creation_set(transaction, &spec)?;
+    if let Some(id) = identity {
+        before.extend(select_ids(transaction, [id])?);
+    }
+    let admitted = apply_to_job_set(transaction, before, |store| match identity {
+        Some(id) => store.create_or_get_with_id(spec, id),
+        None => store.create_or_get(spec),
+    })?;
     let stored: Option<String> = transaction
         .query_row(
             "SELECT detail_json FROM job_details WHERE job_id = ?1",
@@ -965,7 +1004,7 @@ impl Database {
         &self,
         conversation_id: lettuce_types::ConversationId,
     ) -> Result<usize, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -1198,7 +1237,7 @@ impl JobStore for Database {
     /// an image generation, a staged lorebook project or a companion growth
     /// run still binds, together with every ancestor such a kept job points at.
     fn prune(&self, policy: RetentionPolicy, now: Timestamp) -> Result<PruneReport, StoreError> {
-        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
@@ -1537,6 +1576,21 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fresh_control_job_identity_and_receipt_commit_and_replay_together() {
+        let database = crate::Database::open_in_memory().expect("fresh database");
+        let id = lettuce_types::JobId::new();
+        let detail = serde_json::json!({"kind":"app_data_reset"});
+        let first = database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, id).expect("admit");
+        assert_eq!(first.id, id);
+        assert_eq!(database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, id).expect("replay"), first);
+        assert_eq!(database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "other digest", &detail, id), Err(lettuce_jobs::StoreError::IdempotencyConflict));
+        assert_eq!(database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, lettuce_types::JobId::new()), Err(lettuce_jobs::StoreError::IdempotencyConflict));
+        let second = lettuce_types::JobId::new();
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER fail_control_receipt BEFORE INSERT ON job_operations BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;").expect("inject failure");
+        assert!(database.admit_job_with_detail_and_id(spec("next-reset"), "next-reset", "digest", &detail, second).is_err());
+        assert!(lettuce_jobs::JobStore::get(&database, second).expect("get rolled back job").is_none());
+    }
     use std::{fs, sync::Arc, thread};
 
     use lettuce_jobs::{
@@ -2071,7 +2125,7 @@ mod tests {
         assert_eq!(changes[0].job_id, first.id);
 
         {
-            let mut connection = database.connection.lock().expect("connection");
+            let mut connection = database.connection().expect("connection");
             let transaction = connection.transaction().expect("transaction");
             transaction
                 .execute(

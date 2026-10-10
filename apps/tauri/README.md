@@ -106,3 +106,31 @@ Provider control commands forward account save/delete, model listing/verificatio
 Model profile and NanoGPT usage commands forward the catalog, profile reads, revisioned save/delete/duplicate/default requests and usage reads to the composition root. Duplicate names are supplied by the UI; the shell builds no localized text. ModelsChanged and ProviderQuota use the shared application event channel and generated contracts.
 
 The settings wrappers expose settings_get, settings_update, settings_sampler_defaults_update, content_filter_log and content_filter_clear. Their requests and results are owned contract types; the shell performs no settings merging or filter work. SettingsChanged and ContentFilterHit travel through the shared application event channel.
+
+Startup resolves the log directory and creates it before installing local output, then installs the chained panic hook and retains the output guard as managed state. The log command module delegates list, page, search, relevant lines, delete, clear, export and append to lettuce-app; app_usage_days returns the current focused-time read. DeveloperLogLine and AppUsageChanged use the shared application event channel. Log-mirror delivery failures go directly to stderr so they cannot create another mirrored warning.
+
+The metrics command module forwards cursor listing, detail, per-message detail and receipt-backed explicit clearing to lettuce-app. Generated DTOs contain summaries and samples, with no native model file paths.
+
+Log exports check reserved database and control-file locations before creating a target, open native paths and Android document targets without truncation, then check source and protected-file identities before truncating through the same descriptor. The app holds the database-file lifecycle lock through the write. Providers that cannot support this operation return a typed file error.
+
+`usage_clear_before` exposes the application ledger maintenance command with a timestamp cutoff and operation id; database deletion and retry semantics remain in the application and database crates.
+
+The shell exposes `storage_database_files_list` and `storage_database_file_delete` through the app API. File identifiers are basenames and deletion is guarded by the app's lifecycle lock, active-file check, live-handle lease and durable retry receipt.
+
+Database-file inventory carries nullable creation time and measured modification time as Unix milliseconds. The shell does not substitute discovery time for an unknown creation time.
+
+`media_save_to` forwards an asset identifier and FileTarget to the app. Native export writers check protected media identities, hold an exclusive operating-system target lease until close and refuse a concurrent writer with Busy before truncation. Process exit releases the lease.
+
+The storage module delegates media_library_list and media_library_remove to the application API. Library items use the shell asset URL base, while removal returns typed reference details and accepts a durable operation identity.
+
+The diagnostics command returns the app support report string. The backend redacts home paths and performs the embedding checks; the shell registers the command alongside the log tools.
+
+Usage query, statistics and CSV wrappers forward owned contracts to the app. Statistics carry an IANA timezone, and CSV exports write through the selected FileTarget with the native target lease and protected-file checks.
+
+The storage optimization wrapper returns the application maintenance job without running database work on the shell thread.
+
+The usage recalculation command admits a durable missing-cost job. The shell returns its job identity and forwards typed completion and failures through the existing jobs API.
+
+`storage_summary` exposes database, media, model-folder and log byte totals through the generated contracts. Storage inspection lives in the application API; the shell supplies no native paths in the result.
+
+The reset host stops application workers, clears the main webview localStorage and sessionStorage with an acknowledged script, and starts the desktop executable before exiting. The database lifecycle lock holds the child at startup until the parent stores the terminal reset result. Worker shutdown joins other worker threads while allowing the current reset job to finish. Android and iOS reset run the same steps and then exit without relaunching; the user reopens the app.

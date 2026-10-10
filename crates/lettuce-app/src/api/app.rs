@@ -160,6 +160,7 @@ const fn entity(entity: PurgeNoticeEntity) -> dto::PurgeNoticeEntityDto {
         PurgeNoticeEntity::DatabaseFile => dto::PurgeNoticeEntityDto::DatabaseFile,
         PurgeNoticeEntity::MediaAsset => dto::PurgeNoticeEntityDto::MediaAsset,
         PurgeNoticeEntity::SyncEntity => dto::PurgeNoticeEntityDto::SyncEntity,
+        PurgeNoticeEntity::UsageRecord => dto::PurgeNoticeEntityDto::UsageRecord,
     }
 }
 
@@ -177,5 +178,36 @@ const fn reason(reason: PurgeNoticeReason) -> dto::PurgeNoticeReasonDto {
         }
         PurgeNoticeReason::NotSynced => dto::PurgeNoticeReasonDto::NotSynced,
         PurgeNoticeReason::ConflictCarried => dto::PurgeNoticeReasonDto::ConflictCarried,
+        PurgeNoticeReason::UsageRecordUnreadable => {
+            dto::PurgeNoticeReasonDto::UsageRecordUnreadable
+        }
+        PurgeNoticeReason::UsageCostCaptureSkipped => {
+            dto::PurgeNoticeReasonDto::UsageCostCaptureSkipped
+        }
+    }
+}
+
+pub async fn app_usage_days(context: &ApiContext) -> Result<dto::AppUsageDaysView, ApiError> {
+    context
+        .blocking(|context| {
+            Ok(dto::AppUsageDaysView {
+                days: context
+                    .app_usage_days()?
+                    .into_iter()
+                    .map(|day| dto::AppUsageDayView {
+                        day: day.day,
+                        active_ms: day.active_ms,
+                    })
+                    .collect(),
+            })
+        })
+        .await
+}
+
+pub(super) fn app_usage_error(error: lettuce_usage::AppUsageError) -> ApiError {
+    ApiError {
+        code: ApiErrorCode::Unavailable,
+        message: error.to_string(),
+        details: Some(dto::ApiErrorDetails::AppUsageStorage),
     }
 }

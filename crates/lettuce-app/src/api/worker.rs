@@ -56,6 +56,9 @@ impl ConversationGenerationWorker {
     /// could not be claimed, or had already ended, counts as not run.
     pub async fn run_once(&self) -> Result<bool, ApiError> {
         let context = &self.context;
+        if !context.accepts_database_work()? {
+            return Ok(false);
+        }
         let next = {
             let backend = context.backend();
             let embedding = context.embedding();
@@ -80,6 +83,7 @@ impl ConversationGenerationWorker {
         next: QueuedConversationGeneration,
     ) -> Result<bool, ApiError> {
         let context = &self.context;
+        let _work = context.maintenance().work(context.shutdown_token()).await;
         let backend = context.backend();
         let database = backend.database();
         let reply_media = context.media().map(|store| backend.reply_media(store));
@@ -173,6 +177,19 @@ impl ConversationGenerationWorker {
                 true
             }
         };
+        if outcome.is_err() && !context.accepts_database_work()? {
+            let event = dto::GenerationEvent::Failed {
+                turn_id: turn_label.clone(),
+                code: dto::GenerationFailureCode::DatabaseWriteFenced,
+            };
+            if context.finish_stream(next.turn_id, event) {
+                context.emit(dto::ApiEvent::GenerationSettled {
+                    conversation_id: next.conversation_id.to_string(),
+                    turn_id: turn_label,
+                });
+            }
+            return Err(super::context::write_fenced_error());
+        }
         if let Some(event) = settled_event(database, next.turn_id)? {
             if matches!(&event, dto::GenerationEvent::Completed { .. }) {
                 let conversation_id = next.conversation_id;
@@ -208,6 +225,7 @@ impl ConversationGenerationWorker {
                 });
             }
         }
+        super::usage_billing::admit_automatic(context, next.job_id).await?;
         outcome.map_err(|error| {
             api_error(
                 lettuce_contracts::ApiErrorCode::Internal,

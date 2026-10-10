@@ -35,7 +35,7 @@ The viewer's parser depends on this layout. `LineLayer` builds each line like th
 
 `DailyLogWriter` sits behind `tracing-appender`'s non-blocking writer, bounded to the configured capacity and lossy: when the queue is full, lines are dropped rather than blocking the caller. It reopens the file when the local date changes or when the current file was deleted.
 
-`LogSink` appends records that do not come from `tracing`, such as the frontend's, to the same files through the same queue. They are written as given, without sanitizing, and a full queue drops them silently.
+`LogSink` appends frontend records synchronously through the shared file writer and reports write failures to its caller. A host observer receives each written line on its own thread through a bounded queue of 1024 lines; while the queue is full new lines skip the observer, so a slow observer (the developer log mirror, a debug view) never blocks a write or the file log. Backend write failures go to stderr.
 
 Files are kept until the user deletes them; there is no automatic retention.
 
@@ -49,7 +49,7 @@ Files are kept until the user deletes them; there is no automatic retention.
 - `relevant_lines` finds lines related to a reference line: any line containing one of its UUIDs, or a line from the same component that is within 30 seconds of it or shares at least two of its words of five or more letters (or more than 40% of them).
 - `delete` removes one file and `clear` removes every `.log` file.
 
-File names must be a single name inside the directory; anything else is not found.
+File names must be a single regular file inside the directory; symlinks and other names are not found. Directory enumeration errors are returned rather than skipped. Exports open a validated file for streaming through a host file target.
 
 ## Panic reports
 

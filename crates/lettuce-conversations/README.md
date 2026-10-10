@@ -203,6 +203,10 @@ The provider's call id is kept apart from the stable `ToolExecutionId`, so provi
 
 The async ports (`ContextAssembler`, `InferencePort`, `UsagePort` and the others) describe the runtime dependencies of a generation workflow. `lettuce-app` implements the ones it uses and composes the flow itself.
 
+`UsageRecordSnapshot` carries the optional character identity and name, model name, provider kind and account label, operation, finish reason, error, memory and summary token counts, and response id supplied to the usage writer. The complete snapshot commits with the terminal counters and identity. Older records without a snapshot remain unknown and serialize unchanged; reading history never resolves names from current authored records.
+
+`ContextAttributions.usage_snapshot` carries known character and operation attribution from context assembly into dispatch admission. An absent attribution remains omitted from serialized historical requests, preserving their stored request fingerprints.
+
 ## Time
 
 `CompanionClockSettings` lets a direct conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking; negative anchors are rejected. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.
@@ -224,3 +228,5 @@ Conversation lineage is optional creation metadata: the source conversation and 
 Branch deletion uses the mutation kernel to retain a tombstoned ancestry row while removing exclusive visible messages and the branch's own memory space. The root and selected branch cannot be deleted. Nonterminal work owned by the target branch returns Busy without cancellation or waiting; the same request can be retried after that work settles.
 
 An empty prompt preview validates its branch path, capabilities, runtime values and memory without requiring a source message. Normal generation requests still require a coherent source message on their timeline.
+
+Context requests can carry stored memory and summary token counts separately from their prompt contribution. The assembler copies this metadata into the immutable usage attribution without changing message selection or prompt rendering.

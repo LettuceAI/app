@@ -1379,6 +1379,7 @@ mod tests {
     #[test]
     fn usage_provenance_is_required_only_when_counters_are_known() {
         let base = UsageRecord {
+            snapshot: None,
             turn_id: GenerationTurnId::new(),
             attempt_id: GenerationAttemptId::new(),
             outcome: UsageOutcome::Succeeded,

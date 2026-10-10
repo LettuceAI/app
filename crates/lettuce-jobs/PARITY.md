@@ -9,3 +9,5 @@ Facts about `lettuce-jobs` that are not architecture. The crate README describes
 ## History
 
 - `ConversationGeneration` was added after the other kinds; its registry key was appended at the end rather than inserted, which is why the registry uses its own key instead of the enum order.
+
+Reset is a durable command rather than the frontend waiting for a table wipe and exiting (`old-code/src/ui/pages/settings/ResetPage.tsx:26-39`). Explicit identity admission preserves the current command replay across its fresh database cutover, without copying historical jobs.

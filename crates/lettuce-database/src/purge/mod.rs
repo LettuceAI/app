@@ -992,16 +992,19 @@ pub enum PurgeNoticeEntity {
     MediaAsset,
     /// A synced entity, as `<kind>/<id>`.
     SyncEntity,
+    /// A usage record, by id.
+    UsageRecord,
 }
 
 impl PurgeNoticeEntity {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Conversation,
         Self::Character,
         Self::Group,
         Self::DatabaseFile,
         Self::MediaAsset,
         Self::SyncEntity,
+        Self::UsageRecord,
     ];
 
     const fn name(self) -> &'static str {
@@ -1012,6 +1015,7 @@ impl PurgeNoticeEntity {
             Self::DatabaseFile => "database_file",
             Self::MediaAsset => "media_asset",
             Self::SyncEntity => "sync_entity",
+            Self::UsageRecord => "usage_record",
         }
     }
 }
@@ -1048,10 +1052,16 @@ pub enum PurgeNoticeReason {
     /// `sync_carried_conflicts` and the entity keeps the side that was
     /// current.
     ConflictCarried,
+    /// A stored usage record cannot be decoded; usage cost capture skips it
+    /// and every other record is still processed.
+    UsageRecordUnreadable,
+    /// Usage cost capture could not be reconciled at startup; costs of
+    /// earlier replies may be missing until a recalculation.
+    UsageCostCaptureSkipped,
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::KeptUnsentLocalChanges,
         Self::RejournalIncomplete,
         Self::RejournalDropped,
@@ -1060,6 +1070,8 @@ impl PurgeNoticeReason {
         Self::MediaCollectionSkipped,
         Self::NotSynced,
         Self::ConflictCarried,
+        Self::UsageRecordUnreadable,
+        Self::UsageCostCaptureSkipped,
     ];
 
     const fn name(self) -> &'static str {
@@ -1072,6 +1084,8 @@ impl PurgeNoticeReason {
             Self::GroupBelowTwoMembers => "group_below_two_members",
             Self::NotSynced => "not_synced",
             Self::ConflictCarried => "conflict_carried",
+            Self::UsageRecordUnreadable => "usage_record_unreadable",
+            Self::UsageCostCaptureSkipped => "usage_cost_capture_skipped",
         }
     }
 }
@@ -1184,6 +1198,43 @@ impl Database {
             PurgeNoticeEntity::DatabaseFile,
             file_name,
             PurgeNoticeReason::MediaCollectionSkipped,
+            now,
+        )
+    }
+
+    pub(crate) fn record_open_notice(
+        connection: &Connection,
+        entity: PurgeNoticeEntity,
+        id: &str,
+        reason: PurgeNoticeReason,
+        now: TimestampMillis,
+    ) -> Result<(), PurgeError> {
+        let open: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM purge_notices WHERE entity_kind = ?1
+                   AND entity_id = ?2 AND reason = ?3 AND dismissed_at IS NULL)",
+                params![entity.name(), id, reason.name()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if open {
+            return Ok(());
+        }
+        record_notice(connection, entity, id, reason, now)
+    }
+
+    /// Records that usage cost capture recovery could not run, unless such
+    /// a notice is still open.
+    pub fn record_usage_cost_capture_skipped(
+        &self,
+        now: TimestampMillis,
+    ) -> Result<(), PurgeError> {
+        let connection = self.connection().map_err(storage)?;
+        Self::record_open_notice(
+            &connection,
+            PurgeNoticeEntity::UsageRecord,
+            "cost-capture",
+            PurgeNoticeReason::UsageCostCaptureSkipped,
             now,
         )
     }

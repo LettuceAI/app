@@ -11,6 +11,15 @@ pub(crate) mod job_details_adapter;
 pub use job_adapter::ManualSceneImageAdmission;
 pub use job_details_adapter::{JobDetailRecord, JobOperation};
 mod usage_adapter;
+mod usage_clear;
+mod usage_report;
+mod usage_capture_targets;
+mod storage_maintenance;
+mod reset_database;
+pub use reset_database::{ResetDatabaseError, ResetDatabaseSeed};
+#[cfg(test)]
+mod reset_database_tests;
+pub use storage_maintenance::StorageMaintenanceError;
 mod conversation;
 mod memory;
 mod companion;
@@ -252,10 +261,18 @@ fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
+    #[error("database file is unavailable")]
+    File(#[from] std::io::Error),
     #[error("database operation failed")]
-    Sql(#[from] rusqlite::Error),
+    Sql(rusqlite::Error),
     #[error("database lock is unavailable")]
     Lock,
+    #[error("this database file has been kept and no longer accepts writes")]
+    WriteFenced,
+    #[error("database connection is closed")]
+    Closed,
+    #[error("database must be fenced before its connections close")]
+    WriteFenceRequired,
     #[error("foreign key enforcement was lost; the database must be reopened")]
     ForeignKeysLost,
     #[error("applied migration {id} has a different checksum")]
@@ -264,12 +281,33 @@ pub enum DatabaseError {
     NewerSchema { id: u32 },
 }
 
+impl From<rusqlite::Error> for DatabaseError {
+    fn from(error: rusqlite::Error) -> Self {
+        if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ReadOnly) {
+            Self::WriteFenced
+        } else {
+            Self::Sql(error)
+        }
+    }
+}
+
+mod write_fence;
+pub use write_fence::DatabaseWriteFence;
+
+mod database_file;
+pub use database_file::DatabaseFileDeletionPermit;
+
 pub struct Database {
     connection: Mutex<Connection>,
+    closed: std::sync::atomic::AtomicBool,
     changes: std::sync::Arc<change_signal::ChangeSignal>,
     /// Set when foreign key enforcement could not be restored after a purge;
     /// every later use of the connection then fails.
     foreign_keys_lost: std::sync::atomic::AtomicBool,
+    usage_delete_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    legacy_media_proof_restore_allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _file_use: Option<database_file::DatabaseFileUse>,
+    write_access: Option<write_fence::FileWriteAccess>,
 }
 
 impl std::fmt::Debug for Database {
@@ -280,17 +318,32 @@ impl std::fmt::Debug for Database {
 
 impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
+        let write_access = write_fence::FileWriteAccess::new(path.as_ref());
+        let write_use = write_access.acquire()?;
+        if write_access.fenced()? {
+            return Err(DatabaseError::WriteFenced);
+        }
+        let file_use = database_file::DatabaseFileUse::open(path.as_ref())?;
         let mut connection = Connection::open(path)?;
         refuse_newer_schema(&connection, MIGRATIONS)?;
         configure(&connection, true)?;
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
+        let usage_delete_allowed = usage_clear::install_guard(&connection)?;
+        let legacy_media_proof_restore_allowed =
+            legacy::legacy_import_backup_adapter::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
+        drop(write_use);
         Ok(Self {
             connection: Mutex::new(connection),
+            closed: std::sync::atomic::AtomicBool::new(false),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
+            usage_delete_allowed,
+            legacy_media_proof_restore_allowed,
+            _file_use: Some(file_use),
+            write_access: Some(write_access),
         })
     }
 
@@ -301,22 +354,42 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
+        let usage_delete_allowed = usage_clear::install_guard(&connection)?;
+        let legacy_media_proof_restore_allowed =
+            legacy::legacy_import_backup_adapter::install_guard(&connection)?;
         let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            closed: std::sync::atomic::AtomicBool::new(false),
             changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
+            usage_delete_allowed,
+            legacy_media_proof_restore_allowed,
+            _file_use: None,
+            write_access: None,
         })
     }
 
-    fn connection(&self) -> Result<std::sync::MutexGuard<'_, Connection>, DatabaseError> {
+    pub fn is_file_write_fenced(&self) -> Result<bool, DatabaseError> {
+        self.write_access
+            .as_ref()
+            .map(write_fence::FileWriteAccess::fenced)
+            .transpose()
+            .map(|fenced| fenced.unwrap_or(false))
+    }
+
+    fn connection(&self) -> Result<write_fence::DatabaseConnection<'_>, DatabaseError> {
         if self
             .foreign_keys_lost
             .load(std::sync::atomic::Ordering::SeqCst)
         {
             return Err(DatabaseError::ForeignKeysLost);
         }
-        self.connection.lock().map_err(|_| DatabaseError::Lock)
+        let connection = self.connection.lock().map_err(|_| DatabaseError::Lock)?;
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(DatabaseError::Closed);
+        }
+        write_fence::DatabaseConnection::new(connection, self.write_access.as_ref())
     }
 }
 
@@ -5905,6 +5978,7 @@ mod tests {
                 "turn_lorebooks",
                 "usage_costs",
                 "usage_events",
+                "usage_tombstones",
                 "user_voices",
             ]
         );
@@ -6025,3 +6099,6 @@ mod tests {
         assert!(starting.commit().is_err());
     }
 }
+
+#[cfg(test)]
+mod database_file_tests;

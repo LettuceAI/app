@@ -167,6 +167,11 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         admission: Option<BackupRestoreAdmissionRequest>,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        let lifecycle = self
+            .location
+            .file_lifecycle()
+            .await
+            .map_err(LegacyRestoreError::Location)?;
         let previous_database_path = self
             .location
             .active_path()
@@ -188,6 +193,9 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 .ok_or(LegacyRestoreError::TargetDirectory)?,
         )
         .map_err(|_| LegacyRestoreError::TargetDirectory)?;
+        lifecycle
+            .begin_file(&name, crate::DatabaseFileKind::LegacyRestore, restored_at)
+            .map_err(LegacyRestoreError::Location)?;
         let backend =
             AppBackend::open(&database_path, restored_at).map_err(LegacyRestoreError::Open)?;
         let run_id = LegacyImportRunId::new();
@@ -216,8 +224,8 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 .map(|request| backend.database().admit_backup_restore(request))
                 .transpose()
                 .map_err(LegacyRestoreError::Admission)?;
-            self.location
-                .activate(&name)
+            lifecycle
+                .activate_file(&name, restored_at)
                 .map_err(LegacyRestoreError::Location)?;
             Ok(admission)
         }
@@ -226,8 +234,14 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         let admission = match outcome {
             Ok(admission) => admission,
             Err(error) => {
-                for (reference, purpose) in written {
-                    let _ = self.secrets.delete(&reference, &purpose, None).await;
+                if self
+                    .location
+                    .active_path()
+                    .is_ok_and(|active| active != database_path)
+                {
+                    for (reference, purpose) in written {
+                        let _ = self.secrets.delete(&reference, &purpose, None).await;
+                    }
                 }
                 return Err(error);
             }

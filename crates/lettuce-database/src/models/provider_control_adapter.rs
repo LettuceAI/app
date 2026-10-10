@@ -342,6 +342,8 @@ impl Database {
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(crate::model_error)?;
         let result = ApiOperationTransaction {
+            command: "provider_certificate_remove",
+            usage_delete_allowed: &self.usage_delete_allowed,
             changes: &self.changes,
             transaction: &transaction,
         }

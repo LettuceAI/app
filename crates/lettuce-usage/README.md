@@ -14,6 +14,10 @@ The crate defines the ledgers as ports and the calculation as pure functions; `l
 
 `UsageLedger` records one terminal `UsageEvent` per generation attempt (the `UsageRecord` from `lettuce-conversations`: counters, outcome, provenance and time). `get_for_attempt` reads the event an attempt already owns, so a settlement path can reuse it instead of recording a conflicting one.
 
+Terminal records accept an immutable display and result snapshot alongside the counters. The database stores its optional names, operation, result fields, response id and memory counts in the same row; exact retries compare the snapshot too. A record created before snapshots were available keeps an absent snapshot through serialization and storage.
+
+Every terminal event carries a required immutable origin: `live` or `legacy_import`. Imported conversation events describe reconstructed message evidence; historical reporting uses the separately imported legacy usage records. Backup and synchronization carry the origin explicitly, and decoding never guesses a missing origin.
+
 Counters include input, output, image, audio and total tokens and optional cached-input and reasoning details. `total_tokens` is only a total the provider reported; readers use `InferenceUsage::effective_total_tokens` (the reported total, else input plus output). When several calls are combined, image and audio counts combine only if every call reported them, and a total if any call did.
 
 ## Job dispatch usage
@@ -25,6 +29,8 @@ Counters include input, output, image, audio and total tokens and optional cache
 3. A dispatch without a result is pending, which means the outcome is unknown, never free or successful.
 
 Retries and fallbacks get new dispatch ids and never overwrite earlier ones, so each charge stays separate. A replayed checkpoint makes no new dispatch. Dispatch evidence survives normal job retention cleanup. A conversation's terminal event may aggregate the same dispatches that the job ledger holds, so reports must not add both as independent charges.
+
+Dispatch admission can retain a frozen usage snapshot. A response adds a settlement snapshot without changing the admission: names, ownership attribution and memory counts must still match, and its response id must equal the response evidence. The same validation applies to persistence reads and backup validation. Older records and responses without snapshots serialize unchanged.
 
 ## Costs
 
@@ -49,3 +55,13 @@ Generation-enriched bases exist for job dispatches only, since those are the rec
 ## App usage
 
 `AppUsageRepository` adds up the time the app was in use per local calendar day (`YYYY-MM-DD`) in one atomic step and lists every day oldest first. It is per install and never syncs. A version 2 backup carries the days in its device state, and a restore writes them back.
+
+Usage clearing keeps immutable identity proofs in `UsageTombstone`: terminal conversation event ownership, dispatch ownership, or imported legacy identity. These proofs let synchronization consume a cleared id and let encrypted backups preserve terminal references without retaining cleared counters.
+
+Reporting reads all charge evidence through `UsageReportRepository` in one consistent storage snapshot. Each provider dispatch remains a separate charge, including retries and fallbacks; an overlapping conversation aggregate contributes no second charge, including when its dispatches were explicitly cleared. Reconstructed legacy conversation events are excluded only by their immutable origin, while real imported usage records retain their historical snapshots and costs. Known owner attribution can supply a dispatch's character and terminal failure without changing its immutable evidence.
+
+Queries filter inclusive timestamp bounds, provider kind, model, character, operation and status. Timestamp and identity provide stable ordering in either direction; cursors bind the filters and sort, and only page sizes are clamped. Statistics use the same rows, preserve unknown totals and count requests with unknown tokens or costs separately. Local-day groups resolve an IANA timezone with bundled timezone data and account for daylight-saving changes.
+
+CSV uses the same filtered charges in ascending timestamp order, the fixed 30-column header, LF newlines and quoted text escaping. Missing counters, cost components and attribution remain empty. `success` is `yes`, `no`, or empty while the outcome is unknown. A known provider-reported total remains available before enrichment, while a calculated basis supplies its recorded cost breakdown. Finite historical adjustments remain signed.
+
+UsageCostTargetReader selects settled OpenRouter dispatches that lack an immutable cost. Automatic targets require a terminal chat owner and no previous automatic operation receipt; explicit recalculation can retry failed capture. A target retains the exact event, attempt and job identities, and its cleared proof must match all three.

@@ -1,6 +1,11 @@
-use std::{io::Write, path::Path};
+use std::{
+    io::{Seek, SeekFrom, Write},
+    path::Path,
+};
 
-use lettuce_app::api::{FileAccess, FileAccessError, FileDescription, FileReader, PickFilter};
+use lettuce_app::api::{
+    ExportProtection, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
+};
 use tauri::{AppHandle, Runtime};
 
 fn access_error(error: &std::io::Error) -> FileAccessError {
@@ -8,6 +13,24 @@ fn access_error(error: &std::io::Error) -> FileAccessError {
         std::io::ErrorKind::NotFound => FileAccessError::NotFound,
         std::io::ErrorKind::PermissionDenied => FileAccessError::PermissionDenied,
         _ => FileAccessError::Io,
+    }
+}
+
+struct ExportTarget(std::fs::File);
+
+impl Write for ExportTarget {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buffer)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl Drop for ExportTarget {
+    fn drop(&mut self) {
+        let _ = fs4::fs_std::FileExt::unlock(&self.0);
     }
 }
 
@@ -43,6 +66,55 @@ fn create_path(uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
     std::fs::File::create(path(uri)?)
         .map(|file| Box::new(file) as Box<dyn Write + Send>)
         .map_err(|error| access_error(&error))
+}
+
+fn prepare_export(
+    uri: &str,
+    target: std::fs::File,
+    source: Option<&std::fs::File>,
+    protected: ExportProtection<'_>,
+) -> Result<Box<dyn Write + Send>, FileAccessError> {
+    let target_handle =
+        same_file::Handle::from_file(target.try_clone().map_err(|error| access_error(&error))?)
+            .map_err(|error| access_error(&error))?;
+    if let Some(source) = source {
+        let source_handle =
+            same_file::Handle::from_file(source.try_clone().map_err(|error| access_error(&error))?)
+                .map_err(|error| access_error(&error))?;
+        if source_handle == target_handle {
+            return Err(FileAccessError::SourceIsTarget);
+        }
+    }
+    if protected(uri, Some(&target))? {
+        return Err(FileAccessError::SourceIsTarget);
+    }
+    if !fs4::fs_std::FileExt::try_lock_exclusive(&target).map_err(|error| access_error(&error))? {
+        return Err(FileAccessError::Busy);
+    }
+    let mut target = ExportTarget(target);
+    target.0.set_len(0).map_err(|error| access_error(&error))?;
+    target
+        .0
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| access_error(&error))?;
+    Ok(Box::new(target))
+}
+
+fn create_export_path(
+    uri: &str,
+    source: Option<&std::fs::File>,
+    protected: ExportProtection<'_>,
+) -> Result<Box<dyn Write + Send>, FileAccessError> {
+    if protected(uri, None)? {
+        return Err(FileAccessError::SourceIsTarget);
+    }
+    let target = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path(uri)?)
+        .map_err(|error| access_error(&error))?;
+    prepare_export(uri, target, source, protected)
 }
 
 /// Files the desktop dialogs return: filesystem paths, opened with `std::fs`.
@@ -83,6 +155,15 @@ impl<R: Runtime> FileAccess for DesktopFileAccess<R> {
 
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
         create_path(uri)
+    }
+
+    fn create_export(
+        &self,
+        uri: &str,
+        source: Option<&std::fs::File>,
+        protected: ExportProtection<'_>,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        create_export_path(uri, source, protected)
     }
 
     fn pick_open(
@@ -173,6 +254,25 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
             .map_err(platform_error)
     }
 
+    fn create_export(
+        &self,
+        uri: &str,
+        source: Option<&std::fs::File>,
+        protected: ExportProtection<'_>,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        let Some(uri) = platform_uri(uri) else {
+            return create_export_path(uri, source, protected);
+        };
+        if protected(&uri.uri, None)? {
+            return Err(FileAccessError::SourceIsTarget);
+        }
+        let target = self
+            .fs()
+            .open_file(&uri, tauri_plugin_android_fs::FileAccessMode::ReadWrite)
+            .map_err(platform_error)?;
+        prepare_export(&uri.uri, target, source, protected)
+    }
+
     fn pick_open(
         &self,
         filter: &PickFilter,
@@ -227,6 +327,15 @@ impl FileAccess for PathFileAccess {
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
         create_path(uri)
     }
+
+    fn create_export(
+        &self,
+        uri: &str,
+        source: Option<&std::fs::File>,
+        protected: ExportProtection<'_>,
+    ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        create_export_path(uri, source, protected)
+    }
 }
 
 /// The file access this platform's shell provides.
@@ -243,5 +352,176 @@ pub(crate) fn file_access<R: Runtime>(handle: &AppHandle<R>) -> std::sync::Arc<d
     {
         let _ = handle;
         std::sync::Arc::new(PathFileAccess)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_refuses_a_concurrent_writer_and_releases_on_close() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-export-concurrent-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("root");
+        let path = root.join("target");
+        let uri = path.to_str().expect("URI");
+        let mut first = create_export_path(uri, None, &|_, _| Ok(false)).expect("first writer");
+        first.write_all(b"first export").expect("write");
+        assert!(matches!(
+            create_export_path(uri, None, &|_, _| Ok(false)),
+            Err(FileAccessError::Busy)
+        ));
+        assert_eq!(
+            std::fs::read(&path).expect("preserved write"),
+            b"first export"
+        );
+        drop(first);
+        let mut retry = create_export_path(uri, None, &|_, _| Ok(false)).expect("released target");
+        retry.write_all(b"retry").expect("retry write");
+        retry.flush().expect("flush");
+        assert_eq!(std::fs::read(&path).expect("export"), b"retry");
+        drop(retry);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn export_retries_after_process_exit_during_a_write() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-export-crash-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("root");
+        let source_path = root.join("source");
+        std::fs::write(&source_path, b"complete export contents").expect("source");
+        let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", "files::tests::export_crash_child", "--nocapture"])
+            .env("LETTUCE_SLICE12_EXPORT_CRASH_ROOT", &root)
+            .status()
+            .expect("child");
+        assert_eq!(status.code(), Some(77));
+        let path = root.join("target");
+        assert_eq!(
+            std::fs::read(&path).expect("interrupted export"),
+            b"partial"
+        );
+        let mut source = std::fs::File::open(&source_path).expect("source");
+        let mut target = create_export_path(path.to_str().expect("URI"), Some(&source), &|_, _| {
+            Ok(false)
+        })
+        .expect("retry after crash");
+        std::io::copy(&mut source, &mut target).expect("copy");
+        target.flush().expect("flush");
+        assert_eq!(
+            std::fs::read(&path).expect("complete export"),
+            b"complete export contents"
+        );
+        assert_eq!(
+            std::fs::read(&source_path).expect("preserved source"),
+            b"complete export contents"
+        );
+        drop(target);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn export_crash_child() {
+        let Some(root) = std::env::var_os("LETTUCE_SLICE12_EXPORT_CRASH_ROOT") else {
+            return;
+        };
+        let path = Path::new(&root).join("target");
+        let mut target = create_export_path(path.to_str().expect("URI"), None, &|_, _| Ok(false))
+            .expect("writer");
+        target.write_all(b"partial").expect("partial write");
+        target.flush().expect("flush");
+        std::process::exit(77);
+    }
+
+    #[test]
+    fn export_checks_reserved_locations_before_creation_and_files_before_truncation() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-export-protected-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("test operation succeeds");
+        let path = root.join("reserved");
+        let uri = path.to_str().expect("test operation succeeds");
+        assert!(matches!(
+            create_export_path(uri, None, &|_, target| Ok(target.is_none())),
+            Err(FileAccessError::SourceIsTarget)
+        ));
+        assert!(!path.exists());
+        std::fs::write(&path, b"preserved database").expect("test operation succeeds");
+        assert!(matches!(
+            create_export_path(uri, None, &|_, target| Ok(target.is_some())),
+            Err(FileAccessError::SourceIsTarget)
+        ));
+        assert_eq!(
+            std::fs::read(&path).expect("test operation succeeds"),
+            b"preserved database"
+        );
+        assert!(matches!(
+            create_export_path(uri, None, &|_, target| {
+                if target.is_some() {
+                    Err(FileAccessError::Io)
+                } else {
+                    Ok(false)
+                }
+            }),
+            Err(FileAccessError::Io)
+        ));
+        assert_eq!(
+            std::fs::read(&path).expect("test operation succeeds"),
+            b"preserved database"
+        );
+        std::fs::remove_dir_all(root).expect("test operation succeeds");
+    }
+
+    #[test]
+    fn export_refuses_source_and_hard_link_before_truncation() {
+        let root = std::env::temp_dir().join(format!("lettuce-export-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("test operation succeeds");
+        let source_path = root.join("source");
+        let alias_path = root.join("alias");
+        std::fs::write(&source_path, b"preserved log").expect("test operation succeeds");
+        let _ = std::fs::remove_file(&alias_path);
+        std::fs::hard_link(&source_path, &alias_path).expect("test operation succeeds");
+        let source = std::fs::File::open(&source_path).expect("test operation succeeds");
+        for target in [&source_path, &alias_path] {
+            assert!(matches!(
+                create_export_path(
+                    target.to_str().expect("test operation succeeds"),
+                    Some(&source),
+                    &|_, _| Ok(false)
+                ),
+                Err(FileAccessError::SourceIsTarget)
+            ));
+            assert_eq!(
+                std::fs::read(&source_path).expect("test operation succeeds"),
+                b"preserved log"
+            );
+        }
+        std::fs::remove_dir_all(root).expect("test operation succeeds");
+    }
+
+    #[test]
+    fn export_truncates_a_distinct_target() {
+        let root =
+            std::env::temp_dir().join(format!("lettuce-export-distinct-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("test operation succeeds");
+        let source_path = root.join("source");
+        let target_path = root.join("target");
+        std::fs::write(&source_path, b"short").expect("test operation succeeds");
+        std::fs::write(&target_path, b"longer old contents").expect("test operation succeeds");
+        let mut source = std::fs::File::open(&source_path).expect("test operation succeeds");
+        let mut target = create_export_path(
+            target_path.to_str().expect("test operation succeeds"),
+            Some(&source),
+            &|_, _| Ok(false),
+        )
+        .expect("test operation succeeds");
+        std::io::copy(&mut source, &mut target).expect("test operation succeeds");
+        target.flush().expect("test operation succeeds");
+        assert_eq!(
+            std::fs::read(&target_path).expect("test operation succeeds"),
+            b"short"
+        );
+        std::fs::remove_dir_all(root).expect("test operation succeeds");
     }
 }

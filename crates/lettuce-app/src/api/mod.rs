@@ -33,7 +33,12 @@ pub(crate) mod local_runtime_events;
 mod lorebook_jobs;
 mod lorebook_projects;
 mod lorebooks;
+mod maintenance;
+mod maintenance_jobs;
 mod mapping;
+pub use maintenance_jobs::storage_optimize;
+#[cfg(test)]
+mod maintenance_tests;
 mod memory;
 mod memory_control;
 mod memory_models;
@@ -100,7 +105,9 @@ mod tests;
 #[cfg(test)]
 mod turns_tests;
 
-pub use app::{app_status, app_ui_state_update, purge_notice_dismiss, purge_notices_list};
+pub use app::{
+    app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
+};
 pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
 pub use branches::{
     conversation_branch_delete, conversation_branch_fork, conversation_branch_rename,
@@ -126,8 +133,8 @@ pub use conversations::{
 };
 pub use events::{ApiEventSink, GenerationEventSink, JobEventSink};
 pub use files::{
-    FileAccess, FileAccessError, FileDescription, FileReader, PickFilter, assets_ingest,
-    files_inspect, files_pick_open, files_pick_save,
+    ExportProtection, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
+    assets_ingest, files_inspect, files_pick_open, files_pick_save,
 };
 pub use hugging_face::{
     hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_download,
@@ -275,3 +282,49 @@ pub use model_profiles::{
 
 mod nanogpt;
 pub use nanogpt::provider_nanogpt_usage;
+
+#[cfg(test)]
+mod logs_tests;
+
+mod diagnostics;
+mod logs;
+pub use diagnostics::logs_diagnostics_report;
+pub use logs::{
+    log_append, log_delete, log_export, log_read_page, log_relevant_lines, log_search, logs_clear,
+    logs_list,
+};
+
+#[cfg(test)]
+mod app_usage_tests;
+
+#[cfg(test)]
+mod metrics_tests;
+
+mod metrics;
+pub use metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list};
+
+#[cfg(test)]
+mod usage_billing_tests;
+#[cfg(test)]
+mod usage_tests;
+
+mod usage;
+mod usage_billing;
+pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
+pub use usage_billing::usage_recalculate_costs;
+
+mod app_reset;
+mod storage;
+pub use app_reset::{AppResetHost, app_data_reset};
+#[cfg(test)]
+mod app_reset_tests;
+pub use storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
+
+mod media_library;
+pub use media_library::{media_library_list, media_library_remove, media_save_to};
+
+#[cfg(test)]
+mod media_library_tests;
+
+#[cfg(test)]
+mod storage_tests;

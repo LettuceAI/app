@@ -3,7 +3,6 @@ use serde_json::Value;
 
 use crate::{Database, DatabaseError};
 
-const LLM_METRICS_RETENTION: i64 = 500;
 const LLM_METRICS_DEFAULT_LIMIT: usize = 500;
 const LLM_METRICS_MAX_LIMIT: usize = 5000;
 const LINKED_TO_A_MESSAGE: &str = "EXISTS (
@@ -22,25 +21,31 @@ pub struct LlmGenerationMetric {
     pub samples: Option<Vec<Value>>,
 }
 
-fn json_or(text: &str, fallback: Value) -> Value {
-    serde_json::from_str(text).unwrap_or(fallback)
+fn metric_json<T: serde::de::DeserializeOwned>(text: &str, column: usize) -> rusqlite::Result<T> {
+    serde_json::from_str(text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
 }
 
-fn metric_with_samples(row: &rusqlite::Row<'_>) -> rusqlite::Result<LlmGenerationMetric> {
-    let samples: String = row.get(4)?;
+fn metric_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<LlmGenerationMetric> {
+    let summary = metric_json::<serde_json::Map<String, Value>>(&row.get::<_, String>(3)?, 3)?;
     Ok(LlmGenerationMetric {
         id: row.get(0)?,
         created_at: row.get(1)?,
         model_path: row.get(2)?,
-        summary: json_or(
-            &row.get::<_, String>(3)?,
-            Value::Object(serde_json::Map::new()),
-        ),
-        samples: Some(match json_or(&samples, Value::Array(Vec::new())) {
-            Value::Array(samples) => samples,
-            _ => Vec::new(),
-        }),
+        summary: Value::Object(summary),
+        samples: None,
     })
+}
+
+fn metric_with_samples(row: &rusqlite::Row<'_>) -> rusqlite::Result<LlmGenerationMetric> {
+    let mut metric = metric_summary(row)?;
+    metric.samples = Some(metric_json(&row.get::<_, String>(4)?, 4)?);
+    Ok(metric)
 }
 
 const NEWEST_LLAMA_MODEL: &str = "SELECT model.id FROM model_profiles model
@@ -112,9 +117,6 @@ impl Database {
         Ok(true)
     }
 
-    /// Records one local generation's metrics, keeping the newest 500 in the
-    /// list. Older rows of a message's generation stay for that message
-    /// without their samples.
     pub fn record_llm_generation_metrics(
         &self,
         id: &str,
@@ -137,21 +139,6 @@ impl Database {
                 Value::Array(samples.to_vec()).to_string()
             ],
         )?;
-        let beyond_retention = "message_stats_only = 0 AND id NOT IN (
-                SELECT id FROM llm_generation_metrics WHERE message_stats_only = 0
-                ORDER BY created_at DESC LIMIT ?1
-             )";
-        transaction.execute(
-            &format!(
-                "UPDATE llm_generation_metrics SET message_stats_only = 1, samples_json = '[]'
-                 WHERE {beyond_retention} AND {LINKED_TO_A_MESSAGE}"
-            ),
-            params![LLM_METRICS_RETENTION],
-        )?;
-        transaction.execute(
-            &format!("DELETE FROM llm_generation_metrics WHERE {beyond_retention}"),
-            params![LLM_METRICS_RETENTION],
-        )?;
         transaction.commit()?;
         Ok(())
     }
@@ -164,28 +151,29 @@ impl Database {
         &self,
         limit: Option<usize>,
     ) -> Result<Vec<LlmGenerationMetric>, DatabaseError> {
+        self.llm_generation_metrics_page(None, limit)
+    }
+
+    pub fn llm_generation_metrics_page(
+        &self,
+        cursor: Option<(i64, String)>,
+        limit: Option<usize>,
+    ) -> Result<Vec<LlmGenerationMetric>, DatabaseError> {
         let limit = limit
             .unwrap_or(LLM_METRICS_DEFAULT_LIMIT)
             .clamp(1, LLM_METRICS_MAX_LIMIT);
+        let (at, id) = cursor.map_or((None, None), |(at, id)| (Some(at), Some(id)));
         let connection = self.connection()?;
         let mut statement = connection.prepare(
             "SELECT id, created_at, model_path, summary_json FROM llm_generation_metrics
              WHERE message_stats_only = 0
+               AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
              ORDER BY created_at DESC, id DESC LIMIT ?1",
         )?;
-        let rows =
-            statement.query_map(params![i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
-                Ok(LlmGenerationMetric {
-                    id: row.get(0)?,
-                    created_at: row.get(1)?,
-                    model_path: row.get(2)?,
-                    summary: json_or(
-                        &row.get::<_, String>(3)?,
-                        Value::Object(serde_json::Map::new()),
-                    ),
-                    samples: None,
-                })
-            })?;
+        let rows = statement.query_map(
+            params![i64::try_from(limit).unwrap_or(i64::MAX), at, id],
+            metric_summary,
+        )?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -207,7 +195,7 @@ impl Database {
     /// The newest metrics of any generation that produced a candidate of the
     /// message: a local generation records its metrics under its attempt id.
     /// A message keeps its row's summary (time to first token, tokens per
-    /// second, MTP stats) after the row leaves the metrics list.
+    /// second, MTP stats) after the user clears the metrics list.
     pub fn llm_generation_metric_for_message(
         &self,
         conversation_id: &str,
@@ -235,19 +223,26 @@ impl Database {
     pub fn clear_llm_generation_metrics(&self) -> Result<usize, DatabaseError> {
         let mut connection = self.connection()?;
         let transaction = connection.transaction()?;
-        let kept = transaction.execute(
-            &format!(
-                "UPDATE llm_generation_metrics SET message_stats_only = 1, samples_json = '[]'
-                 WHERE message_stats_only = 0 AND {LINKED_TO_A_MESSAGE}"
-            ),
-            [],
-        )?;
-        let deleted = transaction.execute(
-            "DELETE FROM llm_generation_metrics WHERE message_stats_only = 0",
-            [],
-        )?;
+        let removed = clear_metrics_in(&transaction)?;
         transaction.commit()?;
-        Ok(kept + deleted)
+        Ok(removed as usize)
+    }
+}
+
+fn clear_metrics_in(connection: &rusqlite::Connection) -> rusqlite::Result<u64> {
+    let kept = connection.execute(
+        &format!("UPDATE llm_generation_metrics SET message_stats_only = 1, samples_json = '[]' WHERE message_stats_only = 0 AND {LINKED_TO_A_MESSAGE}"), [],
+    )?;
+    let deleted = connection.execute(
+        "DELETE FROM llm_generation_metrics WHERE message_stats_only = 0",
+        [],
+    )?;
+    Ok((kept + deleted) as u64)
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn clear_llm_metrics(&self) -> Result<u64, crate::ApiOperationError> {
+        clear_metrics_in(self.transaction).map_err(|_| crate::ApiOperationError::Storage)
     }
 }
 
@@ -292,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn metrics_keep_the_newest_five_hundred() {
+    fn metrics_keep_history_and_clamp_the_requested_page() {
         let database = Database::open_in_memory().expect("database");
         for index in 0..502_i64 {
             database
@@ -314,7 +309,7 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("count");
-        assert_eq!((count, oldest), (500, 2));
+        assert_eq!((count, oldest), (502, 0));
         let newest = database.llm_generation_metrics(Some(0)).expect("list");
         assert_eq!(newest.len(), 1);
         assert_eq!(newest[0].id, "gen-501");
@@ -329,14 +324,19 @@ mod tests {
             .expect("metric");
         assert_eq!(one.summary, json!({"completionTokens": 501}));
         assert_eq!(one.samples, Some(vec![json!({"tMs": 1})]));
-        assert_eq!(database.llm_generation_metric("gen-0").expect("get"), None);
+        assert!(
+            database
+                .llm_generation_metric("gen-0")
+                .expect("get")
+                .is_some()
+        );
         assert_eq!(
             database
                 .llm_generation_metric_for_message("conversation", "message")
                 .expect("by message"),
             None
         );
-        assert_eq!(database.clear_llm_generation_metrics().expect("clear"), 500);
+        assert_eq!(database.clear_llm_generation_metrics().expect("clear"), 502);
         assert!(
             database
                 .llm_generation_metrics(None)
@@ -435,6 +435,136 @@ mod tests {
         assert_eq!(
             database.llama_runtime_report(placeholder).expect("load"),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod slice12_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn clear(
+        database: &Database,
+        key: &str,
+        digest: &str,
+    ) -> Result<u64, crate::ApiOperationError> {
+        database.commit_api_operation(
+            "llm_metrics_clear",
+            key,
+            digest,
+            lettuce_types::TimestampMillis::new(10),
+            |transaction| transaction.clear_llm_metrics(),
+        )
+    }
+
+    #[test]
+    fn clear_rolls_back_with_receipt_failure_and_replays_without_deleting_new_metrics() {
+        let path = std::env::temp_dir().join(format!(
+            "metrics-clear-{}.sqlite3",
+            lettuce_types::OperationId::new()
+        ));
+        let database = Database::open(&path).expect("database");
+        database
+            .record_llm_generation_metrics("first", None, &json!({}), &[], 1)
+            .expect("record");
+        database.connection().expect("connection").execute_batch("CREATE TEMP TRIGGER metrics_receipt_failure BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'injected failure'); END;").expect("fault");
+        assert_eq!(
+            clear(&database, "key", "all"),
+            Err(crate::ApiOperationError::Storage)
+        );
+        assert!(
+            database
+                .llm_generation_metric("first")
+                .expect("rollback")
+                .is_some()
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER metrics_receipt_failure")
+            .expect("remove fault");
+        assert_eq!(clear(&database, "key", "all").expect("clear"), 1);
+        database
+            .record_llm_generation_metrics("second", None, &json!({}), &[], 2)
+            .expect("record");
+        assert_eq!(clear(&database, "key", "all").expect("replay"), 1);
+        assert_eq!(
+            clear(&database, "key", "different"),
+            Err(crate::ApiOperationError::Conflict)
+        );
+        assert!(
+            database
+                .llm_generation_metric("second")
+                .expect("kept")
+                .is_some()
+        );
+        drop(database);
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(clear(&database, "key", "all").expect("reopen replay"), 1);
+        assert!(
+            database
+                .llm_generation_metric("second")
+                .expect("kept after reopen")
+                .is_some()
+        );
+        drop(database);
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
+    #[test]
+    fn concurrent_clear_retries_return_the_same_result() {
+        let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
+        database
+            .record_llm_generation_metrics("first", None, &json!({}), &[], 1)
+            .expect("record");
+        let other = database.clone();
+        let worker = std::thread::spawn(move || clear(&other, "key", "all"));
+        assert_eq!(clear(&database, "key", "all").expect("clear"), 1);
+        assert_eq!(worker.join().expect("worker").expect("retry"), 1);
+    }
+
+    #[test]
+    fn recording_metrics_never_discards_reachable_history() {
+        let database = Database::open_in_memory().expect("database");
+        for index in 0..502 {
+            database
+                .record_llm_generation_metrics(
+                    &format!("metric-{index}"),
+                    None,
+                    &json!({"tokens": index}),
+                    &[],
+                    index,
+                )
+                .expect("record");
+        }
+        assert!(
+            database
+                .llm_generation_metric("metric-0")
+                .expect("read")
+                .is_some()
+        );
+        assert_eq!(
+            database
+                .llm_generation_metrics(Some(5000))
+                .expect("all")
+                .len(),
+            502
+        );
+    }
+
+    #[test]
+    fn corrupt_metric_json_fails_instead_of_becoming_empty() {
+        let database = Database::open_in_memory().expect("database");
+        let connection = database.connection().expect("connection");
+        assert!(
+            connection
+                .query_row(
+                    "SELECT 'bad', 1, NULL, 'broken', '[]'",
+                    [],
+                    metric_with_samples,
+                )
+                .is_err()
         );
     }
 }

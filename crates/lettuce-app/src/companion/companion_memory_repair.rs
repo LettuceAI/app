@@ -294,7 +294,13 @@ fn repair_context(
             truncated: false,
         },
         messages,
-        attributions: lettuce_conversations::ContextAttributions::default(),
+        attributions: lettuce_conversations::ContextAttributions {
+            usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                operation_kind: Some("memory_manager".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
     })
 }
 

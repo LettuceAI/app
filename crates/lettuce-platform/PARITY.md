@@ -12,3 +12,13 @@ Facts about `lettuce-platform` that are not architecture: what the previous READ
 
 - The previous README said create-new always publishes through an atomic hard link. The code now uses `renameat2(RENAME_NOREPLACE)` on Linux and a per-directory lock with a plain rename on Android (to avoid the `SIGSYS` older Android seccomp policies raise for `renameat2`); only other targets use a hard link.
 - The previous README described the private persistent root as serving a settings-owned secret adapter. Its only caller today is `AppDatabaseLocation` in `lettuce-app`, which keeps the active database pointer there; `lettuce-settings` does not use this crate.
+
+Database-file lifecycle coordination now has a confined cross-process file lock. The existing per-authority mutation lock remains separate; no private-persistent removal permission or filesystem constraint was relaxed.
+
+Slice 12 adds a separate database-directory capability for explicit kept-file deletion. It refuses traversal, unexpected file identity and symlink sidecars without relaxing the generic private-persistent deletion restriction. The app owns active-file checks, live-handle reservations and durable operation receipts.
+
+Slice 12 media protection adds confined identity checks and uncapped internal inventories. The existing bounded listing API and private-persistent listing refusal remain intact; symlinks do not grant access to outside files.
+
+Slice 12 write-fence sidecars are removed with an explicitly deleted database. They retain the existing all-sidecars-first symlink preflight and confined deletion permission.
+
+Reset preserves and renames the source database instead of clearing its tables (`old-code/src-tauri/src/storage_manager/usage.rs:70-102`). Confined, identity-checked publication never overwrites another database; journal recovery reverses an interrupted move before pointer cutover and finishes it after cutover.

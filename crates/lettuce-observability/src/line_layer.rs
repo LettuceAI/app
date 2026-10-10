@@ -112,6 +112,8 @@ where
             return;
         }
         let line = event_entry(event, &context).line();
-        let _ = self.writer.make_writer().write_all(line.as_bytes());
+        if let Err(error) = self.writer.make_writer().write_all(line.as_bytes()) {
+            eprintln!("log output failed: {error}");
+        }
     }
 }

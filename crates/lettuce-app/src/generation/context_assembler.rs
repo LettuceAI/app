@@ -694,6 +694,31 @@ where
             history_text_bytes,
         )?;
         let attributions = ContextAttributions {
+            usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                character_id: selected_character(&snapshot, &request).map(|body| body.character_id),
+                character_name: selected_character(&snapshot, &request)
+                    .map(|body| body.name.clone()),
+                memory_tokens: request
+                    .usage_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.memory_tokens),
+                summary_tokens: request
+                    .usage_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.summary_tokens),
+                operation_kind: Some(
+                    match (group, request.operation) {
+                        (false, GenerationOperation::Send) => "chat",
+                        (false, GenerationOperation::Continue) => "continue",
+                        (false, GenerationOperation::Regenerate) => "regenerate",
+                        (true, GenerationOperation::Send) => "group_chat_message",
+                        (true, GenerationOperation::Continue) => "group_chat_continue",
+                        (true, GenerationOperation::Regenerate) => "group_chat_regenerate",
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            }),
             prompt: prompt.map(|document| PromptAttribution {
                 document_id: document.id,
                 name: snapshot.prompt_name.clone().unwrap_or_default(),
@@ -3699,6 +3724,7 @@ mod tests {
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
             reference_time: lettuce_types::TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: vec![
                 item(
@@ -3786,6 +3812,7 @@ mod tests {
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
             reference_time: lettuce_types::TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: vec![
                 item(0, MessageRole::User, 5_000),
@@ -3865,6 +3892,7 @@ mod tests {
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
             reference_time: lettuce_types::TimestampMillis::new(0),
+            usage_snapshot: None,
             memory: None,
             timeline: vec![
                 item(root_message, root_branch, None),

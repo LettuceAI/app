@@ -342,6 +342,12 @@ fn build_request(
         context: ProviderNeutralContext {
             messages,
             attributions: ContextAttributions {
+                usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                    character_id: Some(run.character_id),
+                    character_name: Some(run.companion_name.clone()),
+                    operation_kind: Some("reply_helper".into()),
+                    ..Default::default()
+                }),
                 prompt: Some(PromptAttribution {
                     document_id: prompt.id,
                     name: prompt.name.clone(),

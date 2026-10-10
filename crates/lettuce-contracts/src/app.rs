@@ -77,6 +77,7 @@ pub enum PurgeNoticeEntityDto {
     DatabaseFile,
     MediaAsset,
     SyncEntity,
+    UsageRecord,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +92,8 @@ pub enum PurgeNoticeReasonDto {
     MediaCollectionSkipped,
     NotSynced,
     ConflictCarried,
+    UsageRecordUnreadable,
+    UsageCostCaptureSkipped,
 }
 
 /// A delete that needs the user's attention; `entity_id` names the entity
@@ -119,4 +122,20 @@ pub struct PurgeNoticeList {
 #[serde(deny_unknown_fields)]
 pub struct PurgeNoticeDismissRequest {
     pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AppUsageDayView {
+    pub day: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub active_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AppUsageDaysView {
+    pub days: Vec<AppUsageDayView>,
 }

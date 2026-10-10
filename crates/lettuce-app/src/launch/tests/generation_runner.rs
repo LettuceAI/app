@@ -558,6 +558,14 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
     assert_eq!(
         evidence[0].result,
         Some(JobInferenceUsageResult::Response {
+            snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                model_name: Some(scenario.profile.model_display_name.clone()),
+                provider_kind: Some(scenario.profile.provider_kind.clone()),
+                provider_label: scenario.profile.provider_label.clone(),
+                finish_reason: Some("stop".into()),
+                provider_response_id: Some("plain-1".into()),
+                ..Default::default()
+            })),
             usage: usage(20, 5),
             provider_response_id: Some("plain-1".into()),
         })
@@ -1164,6 +1172,26 @@ async fn restart_recovery_settles_every_turn_the_previous_process_left_live() {
             .outcome,
         UsageOutcome::Interrupted
     );
+    let interrupted_usage = attempt_usage(backend.database(), running.turn_id, 0);
+    let snapshot = interrupted_usage
+        .record
+        .snapshot
+        .as_ref()
+        .expect("interrupted usage snapshot");
+    let dispatch = backend
+        .database()
+        .job_usage(running_job.id)
+        .expect("dispatch evidence");
+    let admitted = dispatch[0]
+        .snapshot
+        .as_ref()
+        .expect("frozen admission snapshot");
+    assert_eq!(snapshot.model_name, admitted.model_name);
+    assert_eq!(snapshot.provider_kind, admitted.provider_kind);
+    assert_eq!(snapshot.provider_label, admitted.provider_label);
+    assert_eq!(snapshot.character_name, admitted.character_name);
+    assert_eq!(snapshot.operation_kind, admitted.operation_kind);
+    assert!(snapshot.error_message.is_some());
     assert_eq!(
         persisted_job(backend.database(), running_job.id).state,
         JobState::Cancelled
@@ -6896,6 +6924,7 @@ async fn provider_failure_fails_turn_and_job_and_replays_without_redispatch() {
         .run(&work, input(&scenario), TimestampMillis::new(1_020))
         .await
         .expect_err("provider failed");
+    let expected_error_message = error.to_string();
     let ConversationGenerationRunError::Provider {
         error: PortError::Unavailable,
         evidence: GenerationUsageEvidence::Dispatch(dispatch_id),
@@ -6943,6 +6972,25 @@ async fn provider_failure_fails_turn_and_job_and_replays_without_redispatch() {
     let usage_event = attempt_usage(&database, scenario.turn_id, 0);
     assert_ne!(usage_event.id, dispatch_id);
     assert_eq!(usage_event.record.outcome, UsageOutcome::Failed);
+    let snapshot = usage_event
+        .record
+        .snapshot
+        .as_ref()
+        .expect("failed usage snapshot");
+    assert_eq!(
+        snapshot.model_name.as_deref(),
+        Some(scenario.profile.model_display_name.as_str())
+    );
+    assert_eq!(
+        snapshot.provider_kind.as_deref(),
+        Some(scenario.profile.provider_kind.as_str())
+    );
+    assert_eq!(snapshot.provider_label, scenario.profile.provider_label);
+    assert_eq!(snapshot.finish_reason.as_deref(), Some("error"));
+    assert_eq!(
+        snapshot.error_message.as_deref(),
+        Some(expected_error_message.as_str())
+    );
     assert_eq!(
         usage_event.record.usage,
         UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
@@ -8560,12 +8608,24 @@ fn hard_delete_path(root: &std::path::Path, name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
-fn hard_delete_location(root: &std::path::Path) -> crate::AppDatabaseLocation {
+fn hard_delete_location(
+    root: &std::path::Path,
+    active: &std::path::Path,
+) -> crate::AppDatabaseLocation {
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority};
     let snapshot = DirectorySnapshot::new(root).expect("directory snapshot");
     let authority = FilesystemAuthority::new(&snapshot).expect("filesystem authority");
-    crate::AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
-        .expect("database location")
+    let location = crate::AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+        .expect("database location");
+    location
+        .activate(
+            active
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("database name"),
+        )
+        .expect("active pointer");
+    location
 }
 
 fn hard_delete_media(
@@ -8705,7 +8765,7 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     let a = Database::open(&path).expect("a");
     let b = database();
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -8765,7 +8825,7 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     let path = hard_delete_path(&root, "app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -8856,7 +8916,7 @@ async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
     let path = hard_delete_path(&root, "app.sqlite3");
     let database = Database::open(&path).expect("database");
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -8943,7 +9003,7 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     let path = hard_delete_path(&root, "app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -9085,8 +9145,6 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// A restore keeps the previous database file; media that file catalogs survive
-/// collection and sweeps of the new one.
 #[tokio::test]
 async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     let root = hard_delete_root("hard-delete-kept-database");
@@ -9098,7 +9156,15 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     let kept_media = hard_delete_media(&kept_path, &root);
     let (scenario, reply) = generated_direct_chat(&database, "hard-delete-kept").await;
     let image = chat_image(&media, b"shared with the kept database");
-    chat_image(&kept_media, b"shared with the kept database");
+    let kept_image = chat_image(&kept_media, b"shared with the kept database");
+    let (kept_chat, kept_reply) = generated_direct_chat(&kept, "kept-owner").await;
+    attach_image(
+        &kept,
+        kept_chat.conversation_id,
+        kept_reply,
+        kept_image.asset.id,
+        2_000,
+    );
     attach_image(
         &database,
         scenario.conversation_id,
@@ -9107,7 +9173,7 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
         2_000,
     );
     drop(kept);
-    let location = hard_delete_location(&root);
+    let location = hard_delete_location(&root, &path);
     let scope = crate::MediaGarbageScope {
         store: &media,
         location: &location,
@@ -9139,24 +9205,34 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     std::fs::write(&broken, b"not a database").expect("broken file");
     assert_eq!(
         crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_200))
-            .expect("skipped sweep"),
-        lettuce_media::MediaObjectRemoval::default()
+            .expect("an unreadable file blocks only collection")
+            .removed,
+        0
     );
-    let notices = database.purge_notices().expect("notices");
-    assert_eq!(notices.len(), 1);
-    assert_eq!(notices[0].entity_id, "broken.sqlite3");
-    assert_eq!(
-        notices[0].reason,
-        lettuce_database::PurgeNoticeReason::MediaCollectionSkipped
+    assert!(media_object(&root, &image.blob.content_hash).exists());
+    assert!(
+        database
+            .purge_notices()
+            .expect("notices")
+            .iter()
+            .any(|notice| notice.entity_id == "broken.sqlite3"
+                && notice.reason == lettuce_database::PurgeNoticeReason::MediaCollectionSkipped)
     );
     std::fs::remove_file(&broken).expect("remove broken file");
 
     drop(kept_media);
-    for suffix in ["", "-wal", "-shm"] {
-        let file = std::path::PathBuf::from(format!("{}{suffix}", kept_path.display()));
-        if file.exists() {
-            std::fs::remove_file(file).expect("remove kept database");
-        }
+    {
+        let lifecycle = location.file_lifecycle().await.expect("file lifecycle");
+        lifecycle
+            .delete_file(
+                kept_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .expect("kept name"),
+                &path,
+                lettuce_types::RequestId::new(),
+            )
+            .expect("explicit deletion of the only holder");
     }
     assert_eq!(
         crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_300))

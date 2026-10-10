@@ -123,6 +123,38 @@ where
                 .get(candidate.relative_path.as_str())
                 .copied()
                 .ok_or(LegacyMediaImportError::InvalidAdmission)?;
+            if let Some(mut proof) = self
+                .repository
+                .get_media_completion(admission.run_id, &candidate.relative_path)
+                .map_err(LegacyMediaImportError::Repository)?
+            {
+                if proof.destination_asset_id != destination_asset_id
+                    || proof.byte_len != candidate.byte_len
+                    || proof.content_hash != candidate.content_hash
+                {
+                    return Err(LegacyMediaImportError::Repository(
+                        LegacyImportRepositoryError::Conflict,
+                    ));
+                }
+                match self.media_store.open_ready(destination_asset_id) {
+                    Ok(opened) => {
+                        if opened.blob.id != proof.blob_id
+                            || opened.blob.content_hash != proof.content_hash
+                            || opened.blob.byte_size != proof.byte_len
+                        {
+                            return Err(LegacyMediaImportError::Repository(
+                                LegacyImportRepositoryError::Conflict,
+                            ));
+                        }
+                        read(candidate)?;
+                    }
+                    Err(MediaStoreError::AssetNotFound) => {}
+                    Err(error) => return Err(LegacyMediaImportError::Media(error)),
+                }
+                proof.replayed = true;
+                completions.push(proof);
+                continue;
+            }
             let bytes = read(candidate)?;
             let ingested = self
                 .media_store
@@ -604,6 +636,97 @@ mod tests {
             Database::open(database_path).expect("blob database"),
             Database::open(database_path).expect("asset database"),
         )
+    }
+
+    #[test]
+    fn removed_legacy_asset_is_not_recreated_when_its_completed_import_is_replayed() {
+        use lettuce_transfer::{BackupSqlValue, ProviderBackupRestoreWriter, ProviderBackupSource};
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-removed-import-{}",
+            LegacyImportRunId::new()
+        ));
+        let legacy_root = root.join("legacy");
+        let images = legacy_root.join("images");
+        fs::create_dir_all(&images).expect("images");
+        let bytes = png_fixture(7);
+        fs::write(images.join("avatar.png"), &bytes).expect("avatar");
+        fs::write(images.join("reference.png"), &bytes).expect("reference");
+        let source_path = root.join("source.sqlite3");
+        let destination = root.join("destination");
+        let backend = AppBackend::open(&source_path, TimestampMillis::new(10)).expect("backend");
+        let (inventory, personas, lorebooks, media) = import_plans(PersonaId::new(), &bytes);
+        let admission = backend
+            .legacy_import_admission()
+            .admit(
+                LegacyImportRunId::new(),
+                &inventory,
+                &import_plan(&personas, &lorebooks, &media),
+                TimestampMillis::new(20),
+            )
+            .expect("admission");
+        let store = media_store(&source_path, &destination);
+        let first = backend
+            .legacy_media_importer(&store)
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(30))
+            .expect("initial import");
+        let removed = first[0].destination_asset_id;
+        let sibling = first[1].destination_asset_id;
+        let mut graph = backend
+            .database()
+            .read_provider_backup_graph()
+            .expect("graph");
+        graph
+            .authored
+            .media_assets
+            .retain(|asset| asset.id != removed);
+        graph.legacy_imports.runs[0]
+            .run
+            .insert("status".into(), BackupSqlValue::Text("failed".into()));
+        let restored_path = root.join("restored.sqlite3");
+        let restored_database = Database::open(&restored_path).expect("restore database");
+        restored_database
+            .restore_provider_backup_graph(&graph, &[])
+            .expect("restore removed asset proof");
+        drop(restored_database);
+        let restored =
+            AppBackend::open(&restored_path, TimestampMillis::new(40)).expect("restored backend");
+        assert_eq!(
+            MediaAssetRepository::get(restored.database(), removed).expect("removed asset"),
+            None
+        );
+        let restored_store = media_store(&restored_path, &destination);
+        fs::remove_file(images.join("avatar.png")).expect("remove completed source");
+        let replay = restored
+            .legacy_media_importer(&restored_store)
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(50))
+            .expect("replay removed completion");
+        assert_eq!(replay.len(), first.len());
+        assert!(replay.iter().all(|proof| proof.replayed));
+        assert_eq!(replay[0].completed_at, first[0].completed_at);
+        assert_eq!(replay[0].content_hash, first[0].content_hash);
+        assert_eq!(
+            MediaAssetRepository::get(restored.database(), removed)
+                .expect("removed asset stays absent"),
+            None
+        );
+        assert!(
+            MediaAssetRepository::get(restored.database(), sibling)
+                .expect("sibling")
+                .is_some()
+        );
+        assert_eq!(
+            restored
+                .database()
+                .read_provider_backup_graph()
+                .expect("unchanged graph")
+                .legacy_imports,
+            graph.legacy_imports
+        );
+        drop(restored_store);
+        drop(restored);
+        drop(store);
+        drop(backend);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

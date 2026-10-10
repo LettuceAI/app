@@ -95,6 +95,24 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    /// The database this process opened was kept by a cutover (restore or
+    /// reset) and accepts no writes; the app must restart on the active one.
+    DatabaseWriteFenced,
+    AppDataReset { stage: crate::AppDataResetStage, kept_file: Option<String> },
+    Logs { reason: crate::LogFailureReason },
+    AppUsageStorage,
+    MetricsUnavailable,
+    UsageStorage,
+    DatabaseFiles { file: Option<String> },
+    StorageSummary { section: String },
+    MediaInUse {
+        asset_id: String,
+        references: Vec<crate::MediaReferenceView>,
+    },
+    Media {
+        asset_id: Option<String>,
+        reason: crate::MediaFailureReason,
+    },
     Settings { reason: crate::SettingsFailureReason },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,
@@ -239,6 +257,9 @@ pub enum ApiEvent {
     },
     ModelsChanged,
     ContentFilterHit,
+    AppUsageChanged,
+    AppUsageWriteFailed { error: ApiError },
+    DeveloperLogLine { line: String },
     ProviderQuota {
         account_id: String,
         level: crate::ProviderQuotaLevel,

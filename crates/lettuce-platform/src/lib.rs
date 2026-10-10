@@ -10,9 +10,11 @@
 
 mod atomic;
 mod authority;
+mod database_files;
 mod directories;
 mod error;
 mod espeak;
+mod file_lock;
 mod install;
 mod keys;
 mod managed;
@@ -22,9 +24,11 @@ mod trash;
 
 pub use atomic::StagedWrite;
 pub use authority::FilesystemAuthority;
+pub use database_files::DatabaseFiles;
 pub use directories::{DirectorySnapshot, ManagedRoot, RootKind};
 pub use error::PlatformError;
 pub use espeak::{EspeakNgError, EspeakNgProcess, EspeakPhonemizer};
+pub use file_lock::ManagedFileLock;
 pub use install::{
     ConfinedDirectoryEntry, ConfinedInstallStore, InstallPreparation, InstalledFile,
     ResumableInstall,
@@ -40,3 +44,9 @@ pub use model::{
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod file_lock_tests;
+
+#[cfg(test)]
+mod database_files_tests;

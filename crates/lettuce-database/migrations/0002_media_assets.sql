@@ -57,8 +57,8 @@ END;
 CREATE TABLE legacy_import_media_completions (
     run_id TEXT NOT NULL,
     relative_path TEXT NOT NULL,
-    destination_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,
-    blob_id TEXT NOT NULL REFERENCES media_blobs(id) ON DELETE RESTRICT,
+    destination_asset_id TEXT NOT NULL,
+    blob_id TEXT NOT NULL,
     byte_len INTEGER NOT NULL CHECK (byte_len >= 0),
     content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
     completed_at INTEGER NOT NULL,
@@ -88,6 +88,28 @@ WHEN NOT EXISTS (
       AND blob.content_hash = NEW.content_hash
       AND blob.byte_size = NEW.byte_len
       AND blob.state = 'ready'
+)
+AND NOT (
+    legacy_media_proof_restore_allowed() = 1
+    AND EXISTS (
+        SELECT 1 FROM legacy_import_assignments AS assignment
+        JOIN legacy_import_runs AS run ON run.id = assignment.run_id
+        WHERE assignment.run_id = NEW.run_id
+          AND assignment.source_kind = 'media'
+          AND assignment.source_key = NEW.relative_path
+          AND assignment.destination_id = NEW.destination_asset_id
+          AND assignment.expected_byte_len = NEW.byte_len
+          AND assignment.expected_content_hash = NEW.content_hash
+          AND run.status IN ('admitted','importing')
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM media_assets
+        WHERE id = NEW.destination_asset_id AND blob_id <> NEW.blob_id
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM media_blobs WHERE id = NEW.blob_id
+        AND (content_hash <> NEW.content_hash OR byte_size <> NEW.byte_len)
+    )
 )
 BEGIN
     SELECT RAISE(ABORT, 'legacy import media completion is invalid');

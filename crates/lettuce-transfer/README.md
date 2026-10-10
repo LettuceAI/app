@@ -4,6 +4,10 @@ Everything that moves data in or out of the app: the encrypted full backup and i
 
 The crate reads, validates and plans; it does not own live state. SQLite reads and writes are in `lettuce-database` (backup source, restore writer, legacy preflight and import adapter), the media store in `lettuce-media`, secrets in `lettuce-settings`, and orchestration, jobs and commands in `lettuce-app`. Formats are defined here against the domain types of the other crates, and every legacy or third-party format is parsed into its own compatibility types first.
 
+Job inference evidence may carry immutable display attribution at admission and a completed snapshot at settlement. Backup validation applies the ledger's shared snapshot checks: completion cannot change admitted attribution and its response identity must match the recorded response.
+
+The conversation usage section exports version 3 with a required origin on every terminal event and exact cleared-usage tombstones. Decoding rejects an event without origin, including in an older rewrite section, before writing any restore state. Terminal attempts and outbox events must resolve to their exact stored usage event or its ownership tombstone.
+
 ## Principles
 
 - External schemas never become domain schemas. A legacy or third-party document is decoded into a compatibility plan and only then mapped onto domain types through the domains' own validation.
@@ -174,3 +178,7 @@ Capability statuses are the only model scope source. Editor saves reject declare
 Legacy settings conversion retains developer mode and the lorebook generator structured fallback format. An absent or NULL app sampler layer seeds 2048 output tokens; a present layer is converted as authored.
 
 Legacy UI preference collections retain all entries without an aggregate preference byte cap. Device UI state keeps its separate malformed-input guard.
+
+Conversation usage section version 2 includes immutable cleared-usage proofs. Export upgrades version 1 documents after validating them, and restore accepts matching version 1 or version 2 section schemas. Every terminal usage reference and outbox usage event must resolve to a stored event or an exact ownership proof. Dispatch references likewise resolve to evidence or a proof with the same event, attempt and job ids.
+
+Legacy media completion proofs carry immutable destination asset and blob identities, content hashes, sizes and completion times. Backup validation resolves each proof to its sealed assignment and checks any surviving catalog records. Removed media stays removed when the proof is restored.

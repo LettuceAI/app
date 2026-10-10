@@ -1150,6 +1150,7 @@ mod tests {
             secret_owner_id: lettuce_settings::SecretOwnerId::new(),
             external_model_id: "test-model".to_owned(),
             model_display_name: "Test model".into(),
+            provider_label: Some("Test account".into()),
             provider_kind: "openai".to_owned(),
             provider_protocol: ProviderProtocol::OpenAiCompatible,
             endpoint: Some("https://api.openai.com".to_owned()),

@@ -21,6 +21,8 @@ All operations are relative to descriptors opened once at construction. The root
 - `open_read` returns a `ReadHandle` that implements `Read` but cannot be turned into a path.
 - `metadata` stats without following symlinks.
 - `list` needs an explicit limit (1 to 1024). It uses the directory entry's own file type, so a symlink is reported as `Other` and its target is never touched. Listing the private persistent root is refused: that root only supports reads and writes of keys the caller already knows.
+- `list_all` reads an uncapped inventory for internal collection; it retains the same capability checks, name validation and private-persistent refusal.
+- `contains_file` checks an opened target's identity against confined regular files, including nested directories and hardlink aliases. It skips symlinks, has no entry-count cap and refuses the private-persistent root.
 
 ## Writing
 
@@ -59,3 +61,13 @@ Trash is in-process only: there is no journal, so a trashed object is not guaran
 ## eSpeak NG
 
 Desktop Kokoro phonemization needs eSpeak NG. `EspeakNgProcess` implements the `EspeakPhonemizer` trait and runs `espeak-ng --ipa --stdin -q -v <language>` with fixed arguments, from `PATH` (`from_path`) or from an absolute executable with an optional data directory (`with_managed_paths`, both must exist). Input is capped at 64 KiB and may not contain NUL; the language must be 1 to 16 ASCII letters, digits, `-` or `_`; stdout and stderr are drained on separate threads and capped at 1 MiB. On Linux the executable's directory is put on `LD_LIBRARY_PATH` for a bundled build, and on Windows the process is started without a console window. There is no generic process runner in the crate.
+
+`ManagedFiles::lock_file` opens a checked regular file without following symlinks or truncating its contents and returns an owned exclusive operating-system lock. Independent authorities and processes share the lock. A caller can fail immediately when it is busy or wait in a blocking worker; waiting does not hold the managed mutation lock. Closing the handle, including process exit, releases the lock.
+
+The composition root can request a database-directory capability from `FilesystemAuthority`. It opens only the private database subdirectory and can unlink an exact regular database file only when its descriptor matches the caller's reserved file. Checking whether an export target is one of these files compares file identities from metadata on Unix and never opens a database, so SQLite's locks on the live file survive. WAL and shared-memory removal validates both sidecars before changing either. Operations remain descriptor-relative and report directory-sync status; the generic private-persistent removal prohibition remains in force.
+
+The database-directory capability can check whether an opened export target has the same identity as a regular database or private control file. It checks entries through confined descriptors without exposing their names or granting general private-directory listing or removal.
+
+Database sidecar validation and explicit deletion cover WAL, shared memory, the write gate, the use lease and the read-only marker. Every sidecar passes the same regular-file and no-symlink preflight before any sidecar is removed.
+
+Database moves are confined to checked database names and SQLite sidecars. Publication refuses replacement, verifies the expected file identity, synchronizes the directory and supports an exact replay after interruption. The application lifecycle journal decides which direction a pending move must finish.

@@ -31,6 +31,7 @@ blake3 = "1"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["std"] }
 spake2 = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jiff = { version = "0.2.37", features = ["tzdb-bundle-always"] }
 cap-primitives = "3.4"
 cap-std = "3.4"
 flate2 = "1"
@@ -84,7 +85,7 @@ zeroize = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 keyring = { version = "=3.6.3", default-features = false }
 keyring-core = "=0.7.4"
-rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup", "hooks"] }
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup", "hooks", "functions"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "multipart"] }
 rand = "0.8"
 sha1_smol = "1"

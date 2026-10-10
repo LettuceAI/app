@@ -1596,7 +1596,9 @@ fn read_conversation_usage(
             return Err(ProviderBackupSourceError::InvalidData);
         }
     }
-    let overlaps = jobs.inference.iter().fold(
+    let tombstones = crate::usage_clear::tombstones_in(transaction)
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    let mut overlaps = jobs.inference.iter().fold(
         std::collections::BTreeMap::<_, Vec<_>>::new(),
         |mut values, dispatch| {
             values
@@ -1606,6 +1608,11 @@ fn read_conversation_usage(
             values
         },
     );
+    for proof in &tombstones {
+        if let lettuce_usage::UsageTombstone::Dispatch { event_id, attempt_id, .. } = proof {
+            overlaps.entry(*attempt_id).or_default().push(*event_id);
+        }
+    }
     let events = usage
         .into_iter()
         .map(|event| BackupConversationUsage {
@@ -1623,6 +1630,7 @@ fn read_conversation_usage(
     Ok(ConversationUsageBackup {
         version: CONVERSATION_USAGE_BACKUP_VERSION,
         events,
+        tombstones,
     })
 }
 

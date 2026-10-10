@@ -47,6 +47,40 @@ impl FileAccess for StdFiles {
             .map(|file| Box::new(file) as Box<dyn std::io::Write + Send>)
             .map_err(|_| FileAccessError::Io)
     }
+    fn create_export(
+        &self,
+        uri: &str,
+        source: Option<&std::fs::File>,
+        protected: ExportProtection<'_>,
+    ) -> Result<Box<dyn std::io::Write + Send>, FileAccessError> {
+        if protected(uri, None)? {
+            return Err(FileAccessError::SourceIsTarget);
+        }
+        let mut target = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(uri)
+            .map_err(|_| FileAccessError::Io)?;
+        let target_handle =
+            same_file::Handle::from_file(target.try_clone().map_err(|_| FileAccessError::Io)?)
+                .map_err(|_| FileAccessError::Io)?;
+        if let Some(source) = source {
+            let source_handle =
+                same_file::Handle::from_file(source.try_clone().map_err(|_| FileAccessError::Io)?)
+                    .map_err(|_| FileAccessError::Io)?;
+            if source_handle == target_handle {
+                return Err(FileAccessError::SourceIsTarget);
+            }
+        }
+        if protected(uri, Some(&target))? {
+            return Err(FileAccessError::SourceIsTarget);
+        }
+        target.set_len(0).map_err(|_| FileAccessError::Io)?;
+        std::io::Seek::seek(&mut target, std::io::SeekFrom::Start(0))
+            .map_err(|_| FileAccessError::Io)?;
+        Ok(Box::new(target))
+    }
 }
 
 #[derive(Default)]
@@ -118,7 +152,11 @@ pub(super) enum Reply {
 
 /// Streams "Hel" and "lo." when the request has a sink, then answers or
 /// waits for its job to be cancelled.
+type ResponseHook = Arc<dyn Fn(&InferenceRequest, &mut InferenceOutcome) + Send + Sync>;
+
 pub(super) struct FakeProvider {
+    pub(super) response_hook: Mutex<Option<ResponseHook>>,
+    pub(super) response_release: Mutex<Option<Arc<tokio::sync::Notify>>>,
     runtime: Arc<InferenceRuntime>,
     reply: Reply,
     pub(super) entered: tokio::sync::Notify,
@@ -194,7 +232,7 @@ impl InferencePort for FakeProvider {
             }
         }
         self.entered.notify_one();
-        match self.reply {
+        let mut outcome = match self.reply {
             Reply::LorebookTools | Reply::LorebookToolsUntil(_) => {
                 if let Reply::LorebookToolsUntil(blocked) = self.reply {
                     if request.tools.as_ref().is_some_and(|tools| {
@@ -294,7 +332,24 @@ impl InferencePort for FakeProvider {
                     warning_codes: vec![],
                 })
             }
+        }?;
+        let hook = self
+            .response_hook
+            .lock()
+            .expect("response hook lock")
+            .clone();
+        if let Some(hook) = hook {
+            hook(&request, &mut outcome);
         }
+        let release = self
+            .response_release
+            .lock()
+            .expect("response release lock")
+            .clone();
+        if let Some(release) = release {
+            release.notified().await;
+        }
+        Ok(outcome)
     }
 }
 
@@ -384,6 +439,8 @@ pub(super) fn harness_over_files(
     crate::launch::tests::set_application_default_model(database, model_id);
     let character_id = create_character(database, "Ada", CharacterDefaults::default());
     let provider = Arc::new(FakeProvider {
+        response_hook: Mutex::new(None),
+        response_release: Mutex::new(None),
         runtime: Arc::clone(backend.inference_runtime()),
         reply,
         entered: tokio::sync::Notify::new(),

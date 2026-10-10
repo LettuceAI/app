@@ -4,6 +4,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Backup format
 
+- Dispatch display snapshots preserve the names copied into legacy usage (`old-code/src-tauri/src/chat_manager/service.rs:515-538`). Backup validation rejects a completed snapshot that changes admitted names or contradicts its provider response id; older evidence without display attribution remains readable.
+
 - Provider graph version 3 retains lorebook apply receipt id and name snapshots after hard delete (slice 6 decision 14), instead of making restore depend on a surviving source. Legacy lorebook deletion removed the book row (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`).
 - Turn, run and derivation history keep a deleted lorebook's or prompt's id and name; restore no longer requires the derivation source or the used books and prompts (slice 6 decision 14).
 
@@ -162,3 +164,9 @@ Scope views derive only Supported modalities from capability statuses. Separate 
 Legacy developer mode and the lorebook generator JSON/XML preference now survive conversion (`old-code/src/core/storage/schemas.ts:3353,3374`; editor default at `old-code/src/ui/pages/settings/LorebookGeneratorPage.tsx:66-70`). The removed creation-helper enable toggle remains unsupported. An absent or NULL app sampler layer uses 2048 output tokens like `old-code/src-tauri/src/chat_manager/types.rs:944-948` and `old-code/src-tauri/src/chat_manager/persistence/storage.rs:222-229`. Locale comes from readable webview storage at frontend bootstrap, because it never existed in the legacy database (`old-code/src/core/i18n/context.tsx:14,67-82`).
 
 UI preference import no longer drops a growing preset or widget collection at 256 KiB. Legacy custom-color collections were unbounded (`old-code/src/core/storage/schemas.ts:3045`); the legacy sampler preset count cap (`schemas.ts:3344`) is deliberately omitted under the no-count-cap rule.
+
+Cleared usage now survives encrypted backup and restore as exact immutable identity proofs in conversation usage section version 2. Terminal attempts, outbox events and dispatch references still require exact event and owner resolution. Legacy clear-before directly removed rows without such proofs (`old-code/src-tauri/src/usage/repository.rs:503-518`); the proofs preserve rewrite audit integrity after an explicit local clear.
+
+Legacy media removal deleted the physical file (`old-code/src-tauri/src/storage_manager/media.rs:988-1023`). Import proof backups therefore accept a removed asset or blob while retaining the exact snapshot and sealed assignment. Validation checks proof identities, hash, size and any surviving catalog records. The proof payload retains its existing fields, so this change does not require another format version.
+
+Conversation usage section version 3 exports immutable event origin alongside the existing tombstones and exact owner validation. Origin is required on decode, including older rewrite sections containing events, so an ambiguous event cannot silently become live. Legacy 2.2.5 conversion still records reconstructed message events separately from the usage records legacy actually reported (`old-code/src-tauri/src/usage/repository.rs:270-306,483-501`).
