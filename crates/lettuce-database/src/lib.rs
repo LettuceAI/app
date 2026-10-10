@@ -264,7 +264,7 @@ pub enum DatabaseError {
     #[error("database file is unavailable")]
     File(#[from] std::io::Error),
     #[error("database operation failed")]
-    Sql(#[from] rusqlite::Error),
+    Sql(rusqlite::Error),
     #[error("database lock is unavailable")]
     Lock,
     #[error("this database file has been kept and no longer accepts writes")]
@@ -279,6 +279,16 @@ pub enum DatabaseError {
     MigrationChecksum { id: u32 },
     #[error("the database was written by a newer build (migration {id})")]
     NewerSchema { id: u32 },
+}
+
+impl From<rusqlite::Error> for DatabaseError {
+    fn from(error: rusqlite::Error) -> Self {
+        if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ReadOnly) {
+            Self::WriteFenced
+        } else {
+            Self::Sql(error)
+        }
+    }
 }
 
 mod write_fence;

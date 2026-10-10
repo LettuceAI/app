@@ -179,6 +179,19 @@ impl ConversationGenerationWorker {
                 true
             }
         };
+        if outcome.is_err() && !context.accepts_database_work()? {
+            let event = dto::GenerationEvent::Failed {
+                turn_id: turn_label.clone(),
+                code: dto::GenerationFailureCode::DatabaseWriteFenced,
+            };
+            if context.finish_stream(next.turn_id, event) {
+                context.emit(dto::ApiEvent::GenerationSettled {
+                    conversation_id: next.conversation_id.to_string(),
+                    turn_id: turn_label,
+                });
+            }
+            return Err(super::context::write_fenced_error());
+        }
         if let Some(event) = settled_event(database, next.turn_id)? {
             if matches!(&event, dto::GenerationEvent::Completed { .. }) {
                 let conversation_id = next.conversation_id;

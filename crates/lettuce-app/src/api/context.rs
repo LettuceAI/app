@@ -1019,6 +1019,40 @@ impl ApiContext {
         tokio::task::spawn_blocking(move || work(&context))
             .await
             .map_err(IntoApiError::into_api_error)?
+            .map_err(|error| self.typed_write_fence(error))
+    }
+
+    /// A storage failure on a database a cutover fenced is the fence.
+    pub(crate) fn typed_write_fence(&self, error: ApiError) -> ApiError {
+        let storage = matches!(
+            error.code,
+            ApiErrorCode::Unavailable | ApiErrorCode::Internal
+        ) && !matches!(
+            error.details,
+            Some(
+                lettuce_contracts::ApiErrorDetails::AppDataReset { .. }
+                    | lettuce_contracts::ApiErrorDetails::DatabaseWriteFenced
+            )
+        );
+        if storage
+            && self
+                .backend()
+                .database()
+                .is_file_write_fenced()
+                .unwrap_or(false)
+        {
+            write_fenced_error()
+        } else {
+            error
+        }
+    }
+}
+
+pub(crate) fn write_fenced_error() -> ApiError {
+    ApiError {
+        code: ApiErrorCode::Unavailable,
+        message: "this database was kept by a cutover and accepts no writes".into(),
+        details: Some(lettuce_contracts::ApiErrorDetails::DatabaseWriteFenced),
     }
 }
 

@@ -95,6 +95,9 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    /// The database this process opened was kept by a cutover (restore or
+    /// reset) and accepts no writes; the app must restart on the active one.
+    DatabaseWriteFenced,
     AppDataReset { stage: crate::AppDataResetStage, kept_file: Option<String> },
     Logs { reason: crate::LogFailureReason },
     AppUsageStorage,

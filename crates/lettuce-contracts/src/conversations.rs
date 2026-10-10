@@ -733,6 +733,7 @@ pub enum GenerationFailureCode {
     RecoveryUnavailable,
     EmbeddingUnavailable,
     Internal,
+    DatabaseWriteFenced,
 }
 
 /// The stream of one generation turn, delivered on the channel its send

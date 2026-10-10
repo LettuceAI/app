@@ -641,3 +641,132 @@ async fn a_reset_job_restored_into_another_database_file_never_runs() {
     drop(restored);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+fn fence(location: &AppDatabaseLocation) {
+    let fence =
+        lettuce_database::Database::lock_file_writes(&location.active_path().expect("active"))
+            .expect("fence");
+    fence.set_fenced(true).expect("freeze");
+}
+
+#[tokio::test]
+async fn api_writes_after_the_cutover_fence_fail_typed() {
+    let (root, location, h) = harness();
+    fence(&location);
+    let error = super::conversation_launch_direct(
+        &h.context,
+        dto::LaunchDirectRequest {
+            character_id: h.character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect_err("the kept database accepts no writes");
+    assert_eq!(error.code, ApiErrorCode::Unavailable);
+    assert_eq!(
+        error.details,
+        Some(dto::ApiErrorDetails::DatabaseWriteFenced)
+    );
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn a_generation_whose_settlement_hits_the_fence_ends_its_stream_typed() {
+    let (root, location, h) = harness();
+    let conversation = super::tests::launch(&h, "fenced-generation-launch").await;
+    let release = Arc::new(tokio::sync::Notify::new());
+    *h.provider.response_release.lock().expect("release") = Some(release.clone());
+    let stream = Arc::new(super::tests::RecordingStream::default());
+    let accepted = super::tests::send(
+        &h,
+        &conversation,
+        "fenced-generation-send",
+        "Hello",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let generation = tokio::spawn(async move { worker.run_once().await });
+    h.provider.entered.notified().await;
+    fence(&location);
+    release.notify_one();
+    let error = generation
+        .await
+        .expect("worker task")
+        .expect_err("settlement cannot be written");
+    assert_eq!(
+        error.details,
+        Some(dto::ApiErrorDetails::DatabaseWriteFenced)
+    );
+    assert_eq!(
+        stream.events().last(),
+        Some(&dto::GenerationEvent::Failed {
+            turn_id: accepted.turn_id,
+            code: dto::GenerationFailureCode::DatabaseWriteFenced,
+        })
+    );
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn a_reset_requested_during_a_generation_waits_and_keeps_its_reply() {
+    let (root, location, h) = harness();
+    let old = location.active_path().expect("active");
+    let conversation = super::tests::launch(&h, "reset-generation-launch").await;
+    let release = Arc::new(tokio::sync::Notify::new());
+    *h.provider.response_release.lock().expect("release") = Some(release.clone());
+    let stream = Arc::new(super::tests::RecordingStream::default());
+    super::tests::send(
+        &h,
+        &conversation,
+        "reset-generation-send",
+        "Hello",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let generation = tokio::spawn(async move { worker.run_once().await });
+    h.provider.entered.notified().await;
+    let host = Arc::new(Host::default());
+    h.context.attach_reset_host(host.clone()).expect("host");
+    super::app_data_reset(
+        &h.context,
+        dto::AppDataResetRequest {
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect("admit");
+    let context = h.context.clone();
+    let reset = tokio::spawn(async move { run(&context).await });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        host.calls.lock().expect("calls").is_empty(),
+        "the reset waits for the running generation"
+    );
+    assert_eq!(location.active_path().expect("unchanged"), old);
+    release.notify_one();
+    assert!(generation.await.expect("worker task").expect("settled"));
+    reset.await.expect("reset task");
+    assert!(
+        matches!(
+            stream.events().last(),
+            Some(dto::GenerationEvent::Completed { .. })
+        ),
+        "the reply settled in the database the reset keeps: {:?}",
+        stream.events()
+    );
+    assert_eq!(
+        host.calls.lock().expect("calls").as_slice(),
+        &["stop", "clear", "restart", "exit"]
+    );
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
