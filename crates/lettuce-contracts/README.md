@@ -112,3 +112,5 @@ Storage file contracts expose basenames, creation kind and time, size, active st
 Media library requests filter image or audio and carry an opaque cursor and page limit. Items return asset URLs, known catalog metadata, retention and reference domains with opaque identities. Removal takes a client operation id and reports InUse with the references that prevent it; no native media path or bytes enter these contracts.
 
 Storage optimization takes an operation id and returns JobAccepted. Its terminal job result is StorageOptimized; checkpoint contention, kept-file refusal and storage failure have distinct failure reasons.
+
+Library saves and mutations carry client operation ids and expected revisions. Persona drafts contain authored fields and catalog media links; views also provide asset URLs. Default persona commands compare the separate singleton revision and return its selected id and metadata. Companion creation failures list the missing required models in typed error details.

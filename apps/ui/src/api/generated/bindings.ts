@@ -111,6 +111,8 @@ export const commands = {
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
 	personaGet: (request: PersonaGetRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_get", { request })),
 	personaSave: (request: PersonaSaveRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_save", { request })),
+	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
+	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
 	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
 	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("persona_delete", { request })),
 	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("character_lorebooks_list", { request })),
@@ -4171,6 +4173,24 @@ export type ParticipationStat = {
 export type ParticipationStats = {
 	items: ParticipationStat[],
 	total_messages: number,
+};
+
+export type PersonaDefaultClearRequest = {
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type PersonaDefaultSetRequest = {
+	persona_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type PersonaDefaultView = {
+	persona_id: string | null,
+	revision: number,
+	created_at: number,
+	updated_at: number,
 };
 
 export type PersonaDeleteRequest = {

@@ -230,3 +230,5 @@ Persona lorebook bindings preserve the authored ordered list previously stored a
 Character duplicate identity and authored graph now commit with the API replay receipt. A receipt failure removes the entire attempted copy while leaving the source intact. The copy retains shared media and external bindings, including archived books, but creates no conversations.
 
 Persona saves keep the media graph and replay receipt in one transaction. A forced process exit before receipt insertion leaves the original fields and avatar intact; retry succeeds. Legacy saved authored persona data in a tracked transaction but removed design references afterward (old-code/src-tauri/src/storage_manager/personas.rs:265-356; old-code/src/ui/pages/personas/hooks/usePersonaFormController.ts:335-339).
+
+Default persona API writes reuse set_default_in and clear_default_in in the same transaction as the API receipt. The API scope checks the singleton revision before the domain journal replay path, keeping a new client operation from reusing stale CAS evidence. Legacy cleared other rows when isDefault was saved (old-code/src-tauri/src/storage_manager/personas.rs:348-354).

@@ -350,3 +350,9 @@ mod library_personas_tests;
 
 mod library_personas;
 pub use library_personas::{persona_get, persona_save};
+
+#[cfg(test)]
+mod library_persona_default_tests;
+
+mod library_persona_default;
+pub use library_persona_default::{persona_default_set, persona_default_clear};

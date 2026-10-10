@@ -911,6 +911,59 @@ fn set_default_in(
     Ok(state)
 }
 
+fn clear_default_in(
+    tx: &Transaction<'_>,
+    expected_default_revision: Revision,
+    now: TimestampMillis,
+) -> Result<PersonaDefaultState, RepositoryError> {
+    let operation = persona_clear_default_operation(expected_default_revision);
+    let operation = entity_scoped_operation(
+        tx,
+        &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+        operation,
+    )
+    .map_err(sync_error)?;
+    if let Some(state) =
+        replay_persona_default_change(tx, operation, expected_default_revision, now)?
+    {
+        return Ok(state);
+    }
+    let current = read_default(tx).map_err(db_error)?;
+    if current.revision != expected_default_revision {
+        return Err(RepositoryError::StaleRevision {
+            expected: expected_default_revision,
+            actual: current.revision,
+        });
+    }
+    let next = expected_default_revision
+        .next()
+        .map_err(|_| RepositoryError::Storage)?;
+    let changed = tx
+        .execute(
+            "UPDATE persona_defaults SET default_persona_id=NULL,revision=?1,updated_at=?2 WHERE id=1 AND revision=?3",
+            params![
+                sql_u64(next.get())?,
+                now.get(),
+                sql_u64(expected_default_revision.get())?
+            ],
+        )
+        .map_err(db_error)?;
+    if changed == 0 {
+        let actual = read_default(tx).map_err(db_error)?.revision;
+        return Err(RepositoryError::StaleRevision {
+            expected: expected_default_revision,
+            actual,
+        });
+    }
+    let state = read_default(tx).map_err(db_error)?;
+    let request = persona_default_update_change(&current, &state)?;
+    let admission = record_local_change_in(tx, operation, &request, now).map_err(sync_error)?;
+    if !admission.created {
+        return Err(RepositoryError::Storage);
+    }
+    Ok(state)
+}
+
 impl PersonaFileRepository for Database {
     fn import_persona_file(&self, import: &PersonaFileImport) -> Result<Persona, RepositoryError> {
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
@@ -1537,57 +1590,11 @@ impl PersonaRepository for Database {
         expected_default_revision: Revision,
         now: TimestampMillis,
     ) -> Result<PersonaDefaultState, RepositoryError> {
-        let operation = persona_clear_default_operation(expected_default_revision);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let operation = entity_scoped_operation(
-            &tx,
-            &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
-            operation,
-        )
-        .map_err(sync_error)?;
-        if let Some(state) =
-            replay_persona_default_change(&tx, operation, expected_default_revision, now)?
-        {
-            tx.commit().map_err(db_error)?;
-            return Ok(state);
-        }
-        let current = read_default(&tx).map_err(db_error)?;
-        if current.revision != expected_default_revision {
-            return Err(RepositoryError::StaleRevision {
-                expected: expected_default_revision,
-                actual: current.revision,
-            });
-        }
-        let next = expected_default_revision
-            .next()
-            .map_err(|_| RepositoryError::Storage)?;
-        let changed = tx
-            .execute(
-                "UPDATE persona_defaults SET default_persona_id=NULL,revision=?1,updated_at=?2 WHERE id=1 AND revision=?3",
-                params![
-                    sql_u64(next.get())?,
-                    now.get(),
-                    sql_u64(expected_default_revision.get())?
-                ],
-            )
-            .map_err(db_error)?;
-        if changed == 0 {
-            let actual = read_default(&tx).map_err(db_error)?.revision;
-            return Err(RepositoryError::StaleRevision {
-                expected: expected_default_revision,
-                actual,
-            });
-        }
-        let state = read_default(&tx).map_err(db_error)?;
-        let request = persona_default_update_change(&current, &state)?;
-        let admission =
-            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
-        if !admission.created {
-            return Err(RepositoryError::Storage);
-        }
+        let state = clear_default_in(&tx, expected_default_revision, now)?;
         tx.commit().map_err(db_error)?;
         Ok(state)
     }
@@ -1875,6 +1882,25 @@ impl PersonaDependencyReader for Database {
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn set_library_default_persona(
+        &self,
+        id: Option<PersonaId>,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<PersonaDefaultState, RepositoryError> {
+        let current = read_default(self.transaction).map_err(db_error)?;
+        if current.revision != expected_revision {
+            return Err(RepositoryError::StaleRevision {
+                expected: expected_revision,
+                actual: current.revision,
+            });
+        }
+        match id {
+            Some(id) => set_default_in(self.transaction, id, expected_revision, now),
+            None => clear_default_in(self.transaction, expected_revision, now),
+        }
+    }
+
     pub fn save_persona(
         &self,
         id: Option<PersonaId>,
@@ -4371,6 +4397,97 @@ mod tests {
         assert_eq!(
             PersonaRepository::get(&database, id).expect("get"),
             Some(winner)
+        );
+    }
+    #[test]
+    fn persona_default_and_receipt_roll_back_together() {
+        let database = Database::open_in_memory().expect("database");
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Writer".into(),
+            "Description".into(),
+            TimestampMillis::new(1),
+        )
+        .expect("persona");
+        PersonaRepository::create(&database, persona.clone()).expect("create");
+        let before = PersonaRepository::get_default_snapshot(&database)
+            .expect("default")
+            .state;
+        database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_default_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
+        let result = database
+            .commit_api_operation::<PersonaDefaultState, crate::ApiOperationError>(
+                "persona_default_set",
+                "set",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .set_library_default_persona(
+                            Some(persona.id),
+                            before.revision,
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            );
+        assert_eq!(result, Err(crate::ApiOperationError::Storage));
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&database)
+                .expect("default")
+                .state,
+            before
+        );
+        assert!(
+            database
+                .lookup_api_operation("persona_default_set", "set")
+                .expect("receipt")
+                .is_none()
+        );
+    }
+    #[test]
+    fn default_new_receipt_cannot_replay_a_stale_domain_operation() {
+        let database = Database::open_in_memory().expect("database");
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Writer".into(),
+            "Description".into(),
+            TimestampMillis::new(1),
+        )
+        .expect("persona");
+        PersonaRepository::create(&database, persona.clone()).expect("create");
+        let expected = PersonaRepository::get_default_snapshot(&database)
+            .expect("default")
+            .state
+            .revision;
+        let apply = |key| {
+            database.commit_api_operation::<PersonaDefaultState, crate::ApiOperationError>(
+                "persona_default_set",
+                key,
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .set_library_default_persona(
+                            Some(persona.id),
+                            expected,
+                            TimestampMillis::new(2),
+                        )
+                        .map_err(|error| match error {
+                            RepositoryError::StaleRevision { .. } => {
+                                crate::ApiOperationError::Conflict
+                            }
+                            _ => crate::ApiOperationError::Storage,
+                        })
+                },
+            )
+        };
+        apply("first").expect("select");
+        assert_eq!(apply("second"), Err(crate::ApiOperationError::Conflict));
+        assert!(
+            database
+                .lookup_api_operation("persona_default_set", "second")
+                .expect("receipt")
+                .is_none()
         );
     }
 }

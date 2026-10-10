@@ -295,3 +295,35 @@ pub struct PersonaView {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub updated_at: i64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDefaultSetRequest {
+    pub persona_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDefaultClearRequest {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PersonaDefaultView {
+    pub persona_id: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub created_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub updated_at: i64,
+}

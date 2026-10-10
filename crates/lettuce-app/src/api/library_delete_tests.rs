@@ -83,7 +83,7 @@ async fn group_delete_waits_for_streaming_work_and_replays_without_partial_delet
 
 #[tokio::test]
 async fn deleting_a_persona_moves_explicit_groups_to_inherit_and_replays() {
-    let harness = harness(Reply::Text("reply".into()));
+    let harness = harness(Reply::Text("reply"));
     let database = harness.context.backend().database();
     let persona = crate::launch::tests::seed_persona(database, "Deleted");
     let second = seed_named_character(database, "Second");

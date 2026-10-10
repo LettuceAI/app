@@ -181,3 +181,21 @@ pub async fn persona_save(
 ) -> Result<lettuce_contracts::PersonaView, ApiError> {
     api::persona_save(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_default_set(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::PersonaDefaultSetRequest,
+) -> Result<lettuce_contracts::PersonaDefaultView, ApiError> {
+    api::persona_default_set(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_default_clear(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::PersonaDefaultClearRequest,
+) -> Result<lettuce_contracts::PersonaDefaultView, ApiError> {
+    api::persona_default_clear(&context, request).await
+}
