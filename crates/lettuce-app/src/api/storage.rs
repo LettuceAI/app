@@ -60,6 +60,9 @@ pub async fn storage_database_files_list(
                         size: file.size,
                         active: file.active,
                         deletable: file.deletable,
+                        error: file
+                            .unreadable
+                            .then_some(dto::DatabaseFileError::Unreadable),
                     })
                 })
                 .collect()

@@ -54,6 +54,7 @@ enum FileState {
     Deleted,
     Active,
     Kept,
+    Unreadable,
     Activating {
         previous: String,
     },
@@ -82,6 +83,7 @@ pub struct AppDatabaseFile {
     pub size: u64,
     pub active: bool,
     pub deletable: bool,
+    pub unreadable: bool,
 }
 
 #[derive(Debug)]
@@ -283,22 +285,26 @@ impl DatabaseFileLifecycle {
                         } else {
                             None
                         },
-                        kept_hashes: if name == active {
-                            BTreeSet::new()
+                        kept_hashes: BTreeSet::new(),
+                        state: if name == active {
+                            FileState::Active
                         } else {
                             fence
                                 .set_fenced(true)
                                 .map_err(|_| AppDatabaseLocationError::Storage)?;
-                            self.capture(&name)?
-                        },
-                        state: if name == active {
-                            FileState::Active
-                        } else {
-                            FileState::Kept
+                            FileState::Unreadable
                         },
                     }
                 }
             };
+            let mut needs_write = needs_write;
+            if matches!(metadata.state, FileState::Unreadable)
+                && let Ok(hashes) = self.capture(&name)
+            {
+                metadata.kept_hashes = hashes;
+                metadata.state = FileState::Kept;
+                needs_write = true;
+            }
             metadata.state = match &metadata.state {
                 FileState::Writing => FileState::Abandoned,
                 FileState::Activating { .. } if name == active => FileState::Active,
@@ -732,7 +738,10 @@ impl DatabaseFileLifecycle {
                 let active = path == active;
                 let deletable = !active
                     && path != open
-                    && matches!(metadata.state, FileState::Kept | FileState::Abandoned)
+                    && matches!(
+                        metadata.state,
+                        FileState::Kept | FileState::Abandoned | FileState::Unreadable
+                    )
                     && Database::try_reserve_file_deletion(&path)
                         .map_err(|_| AppDatabaseLocationError::Storage)?
                         .is_some();
@@ -747,6 +756,7 @@ impl DatabaseFileLifecycle {
                     size: attributes.len(),
                     active,
                     deletable,
+                    unreadable: matches!(metadata.state, FileState::Unreadable),
                 })
             })
             .collect()
@@ -756,6 +766,21 @@ impl DatabaseFileLifecycle {
         Ok(self
             .read(name)?
             .is_some_and(|metadata| matches!(metadata.state, FileState::Active | FileState::Kept)))
+    }
+
+    pub fn unreadable_files(&self) -> Result<Vec<String>, AppDatabaseLocationError> {
+        let mut files = Vec::new();
+        for name in self.names()? {
+            if matches!(
+                self.read(&name)?
+                    .ok_or(AppDatabaseLocationError::Corrupt)?
+                    .state,
+                FileState::Unreadable
+            ) {
+                files.push(name);
+            }
+        }
+        Ok(files)
     }
 
     pub fn kept_media_hashes(&self) -> Result<BTreeSet<ContentHash>, AppDatabaseLocationError> {
@@ -848,7 +873,7 @@ impl DatabaseFileLifecycle {
         }
         let mut metadata = self.read(name)?.ok_or(AppDatabaseLocationError::NotFound)?;
         match metadata.state {
-            FileState::Kept | FileState::Abandoned => {}
+            FileState::Kept | FileState::Abandoned | FileState::Unreadable => {}
             FileState::Deleting { request_id } if request_id == key => {}
             FileState::Deleted if receipt.is_some() => {}
             _ => return Err(AppDatabaseLocationError::InUse),

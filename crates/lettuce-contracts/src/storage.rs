@@ -11,6 +11,15 @@ pub enum DatabaseFileKind {
     Existing,
 }
 
+/// Why a listed database file needs attention: an unreadable file blocks
+/// media collection until it is deleted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum DatabaseFileError {
+    Unreadable,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
@@ -25,6 +34,7 @@ pub struct DatabaseFileView {
     pub size: u64,
     pub active: bool,
     pub deletable: bool,
+    pub error: Option<DatabaseFileError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

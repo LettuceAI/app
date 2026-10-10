@@ -982,3 +982,84 @@ async fn workers_on_a_kept_database_idle_without_claiming_or_a_due_timer() {
     drop((memory, jobs, h));
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[tokio::test]
+async fn an_unreadable_stray_database_file_blocks_only_media_collection() {
+    let root = std::env::temp_dir().join(format!("lettuce-stray-database-{}", RequestId::new()));
+    let h = harness(&root);
+    let databases = root.join("private-persistent-v2/databases");
+    std::fs::write(databases.join("stray.sqlite3"), b"").expect("stray file");
+    let files = h.context.database_files().expect("files");
+    drop(
+        files
+            .location
+            .try_file_lifecycle()
+            .expect("a stray file never blocks startup"),
+    );
+    let listed = super::storage_database_files_list(&h.context)
+        .await
+        .expect("listing");
+    let stray = listed
+        .iter()
+        .find(|file| file.file == "stray.sqlite3")
+        .expect("stray listed");
+    assert_eq!(stray.error, Some(dto::DatabaseFileError::Unreadable));
+    assert!(stray.deletable && !stray.active);
+    let bytes = super::tests::png_bytes();
+    let object = h
+        .context
+        .media()
+        .expect("media")
+        .ingest(
+            bytes.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::OtherImage,
+                lettuce_media::AssetOrigin::Upload,
+                lettuce_media::RetentionClass::Library,
+                lettuce_media::AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("library asset");
+    let hash = object.blob.content_hash.clone();
+    let path = root
+        .join("platform-v2/media-blobs/objects")
+        .join(&hash.as_str()[..2])
+        .join(&hash.as_str()[2..4])
+        .join(hash.as_str());
+    super::media_library_remove(
+        &h.context,
+        dto::MediaLibraryRemoveRequest {
+            asset_id: object.asset.id.to_string(),
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect("catalog removal still works");
+    assert!(
+        path.exists(),
+        "an unreadable file may reference it, so the bytes stay"
+    );
+    let notices = h
+        .context
+        .backend()
+        .database()
+        .purge_notices()
+        .expect("notices");
+    assert!(notices.iter().any(|notice| {
+        notice.entity == lettuce_database::PurgeNoticeEntity::DatabaseFile
+            && notice.entity_id == "stray.sqlite3"
+            && notice.reason == lettuce_database::PurgeNoticeReason::MediaCollectionSkipped
+    }));
+    super::storage_database_file_delete(
+        &h.context,
+        dto::DatabaseFileDeleteRequest {
+            file: "stray.sqlite3".into(),
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect("delete the stray file");
+    assert!(!path.exists(), "collection resumes once the file is gone");
+    drop(h);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

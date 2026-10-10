@@ -36,17 +36,41 @@ pub struct MediaGarbageScope<'a, BR, AR> {
 }
 
 impl<BR, AR> MediaGarbageScope<'_, BR, AR> {
+    /// The media every kept database file holds, or `None` when a database
+    /// file cannot be read: collection then deletes nothing and the user
+    /// gets a notice naming the file.
     fn kept_by_other_databases(
         &self,
-    ) -> Result<(crate::DatabaseFileLifecycle, BTreeSet<ContentHash>), HardDeleteError> {
+        database: &Database,
+        now: TimestampMillis,
+    ) -> Result<Option<(crate::DatabaseFileLifecycle, BTreeSet<ContentHash>)>, HardDeleteError>
+    {
         let lifecycle = self.location.acquire_file_lifecycle(true)?;
         let active = self.location.active_path()?;
         if active != self.open_database {
             return Err(crate::AppDatabaseLocationError::Conflict.into());
         }
+        if skip_for_unreadable_files(&lifecycle, database, now)? {
+            return Ok(None);
+        }
         let kept = lifecycle.kept_media_hashes()?;
-        Ok((lifecycle, kept))
+        Ok(Some((lifecycle, kept)))
     }
+}
+
+/// Records a notice for every unreadable database file; `true` when media
+/// deletion must wait until the user deletes them.
+pub(crate) fn skip_for_unreadable_files(
+    lifecycle: &crate::DatabaseFileLifecycle,
+    database: &Database,
+    now: TimestampMillis,
+) -> Result<bool, HardDeleteError> {
+    let unreadable = lifecycle.unreadable_files()?;
+    for name in &unreadable {
+        tracing::warn!(file = %name, "media collection skipped: a database file cannot be read");
+        database.record_media_collection_skipped(name, now)?;
+    }
+    Ok(!unreadable.is_empty())
 }
 
 /// Deletes a conversation (direct or group) and everything recorded for it,
@@ -102,7 +126,9 @@ where
     AR: MediaAssetRepository,
 {
     database.run_queued_purges(now)?;
-    let (_lifecycle, kept) = media.kept_by_other_databases()?;
+    let Some((_lifecycle, kept)) = media.kept_by_other_databases(database, now)? else {
+        return Ok(MediaObjectRemoval::default());
+    };
     let mut purge_error = None;
     let removal = media
         .store
@@ -137,13 +163,15 @@ where
 pub fn sweep_orphan_media_files<BR, AR>(
     database: &Database,
     media: &MediaGarbageScope<'_, BR, AR>,
-    _now: TimestampMillis,
+    now: TimestampMillis,
 ) -> Result<MediaObjectRemoval, HardDeleteError>
 where
     BR: MediaBlobRepository,
     AR: MediaAssetRepository,
 {
-    let (_lifecycle, kept) = media.kept_by_other_databases()?;
+    let Some((_lifecycle, kept)) = media.kept_by_other_databases(database, now)? else {
+        return Ok(MediaObjectRemoval::default());
+    };
     let mut purge_error = None;
     let removal = media
         .store

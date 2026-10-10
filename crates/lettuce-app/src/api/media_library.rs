@@ -148,13 +148,23 @@ pub(super) async fn media_library_remove_with_checkpoint(
                     None,
                 ));
             }
+            let now = context.clock().now();
+            let blocked = crate::deletion::hard_delete::skip_for_unreadable_files(
+                &lifecycle,
+                context.backend().database(),
+                now,
+            )
+            .map_err(|error| ApiError {
+                code: ApiErrorCode::Unavailable,
+                message: error.to_string(),
+                details: Some(dto::ApiErrorDetails::DatabaseFiles { file: None }),
+            })?;
             let kept = lifecycle
                 .kept_media_hashes()
                 .map_err(|error| super::storage::file_error(error, None))?;
             let digest = blake3::hash(request.asset_id.as_bytes())
                 .to_hex()
                 .to_string();
-            let now = context.clock().now();
             let mut database_error = None;
             let removed = media
                 .remove_released_objects(|| {
@@ -166,7 +176,8 @@ pub(super) async fn media_library_remove_with_checkpoint(
                             after_catalog();
                             let mut removable = Vec::new();
                             for object in released {
-                                if kept.contains(&object.content_hash)
+                                if blocked
+                                    || kept.contains(&object.content_hash)
                                     || context
                                         .backend()
                                         .database()
