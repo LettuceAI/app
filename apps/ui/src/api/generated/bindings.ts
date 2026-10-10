@@ -109,9 +109,11 @@ export const commands = {
 	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
-	personaGet: (request: PersonaGetRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_get", { request })),
+	characterGet: (request: CharacterGetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_get", { request })),
+	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_save", { request })),
+	personaGet: (request: PersonaGetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_get", { request })),
 	personasList: (request: PersonasListRequest) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
-	personaSave: (request: PersonaSaveRequest) => typedError<PersonaView, ApiError>(__TAURI_INVOKE("persona_save", { request })),
+	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_save", { request })),
 	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
 	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
 	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
@@ -786,9 +788,39 @@ export type CertificatesView = {
 	revision: number,
 };
 
+export type CharacterDraft = CharacterDraft_Serialize | CharacterDraft_Deserialize;
+
+export type CharacterDraft_Deserialize = {
+	profile: LibraryCharacterProfile_Deserialize,
+	provenance: LibraryCharacterProvenance_Deserialize,
+	defaults: LibraryCharacterDefaults_Deserialize,
+	media: LibraryCharacterMediaLink[],
+	presentation: LibraryCharacterPresentationV1_Deserialize,
+	image_recommendation: LibraryImageRecommendation | null,
+	scenes: LibrarySceneDraft_Deserialize[],
+	variants: LibrarySceneVariantDraft_Deserialize[],
+	starters: LibraryStarterDraft_Deserialize[],
+};
+
+export type CharacterDraft_Serialize = {
+	profile: LibraryCharacterProfile_Serialize,
+	provenance: LibraryCharacterProvenance_Serialize,
+	defaults: LibraryCharacterDefaults_Serialize,
+	media: LibraryCharacterMediaLink[],
+	presentation: LibraryCharacterPresentationV1_Serialize,
+	image_recommendation: LibraryImageRecommendation | null,
+	scenes: LibrarySceneDraft_Serialize[],
+	variants: LibrarySceneVariantDraft_Serialize[],
+	starters: LibraryStarterDraft_Serialize[],
+};
+
 export type CharacterDuplicateRequest = {
 	character_id: string,
 	client_operation_id: string,
+};
+
+export type CharacterGetRequest = {
+	character_id: string,
 };
 
 export type CharacterLorebookBindRequest = {
@@ -836,10 +868,48 @@ export type CharacterReferenceView = {
 	name: string,
 };
 
+export type CharacterSaveRequest = CharacterSaveRequest_Serialize | CharacterSaveRequest_Deserialize;
+
+export type CharacterSaveRequest_Deserialize = {
+	character_id: string | null,
+	draft: CharacterDraft_Deserialize,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type CharacterSaveRequest_Serialize = {
+	character_id: string | null,
+	draft: CharacterDraft_Serialize,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
 export type CharacterSummary = {
 	id: string,
 	name: string,
 	avatar: AssetRef | null,
+};
+
+export type CharacterView = CharacterView_Serialize | CharacterView_Deserialize;
+
+export type CharacterView_Deserialize = {
+	id: string,
+	archived: boolean,
+	draft: CharacterDraft_Deserialize,
+	assets: AssetRef[],
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type CharacterView_Serialize = {
+	id: string,
+	archived: boolean,
+	draft: CharacterDraft_Serialize,
+	assets: AssetRef[],
+	revision: number,
+	created_at: number,
+	updated_at: number,
 };
 
 export type CharactersListRequest = {
@@ -2746,17 +2816,295 @@ export type LaunchGroupResponse = {
 	conversation_id: string,
 };
 
+export type LibraryAlignment = "left" | "center" | "right";
+
+export type LibraryAssistantBubbleColor = "neutral" | "accent" | "info" | "secondary";
+
+export type LibraryAvatarShape = "circle" | "rounded" | "hidden";
+
+export type LibraryAvatarSize = "small" | "medium" | "large";
+
+export type LibraryBoxVariant = "default" | "subtle" | "info" | "warning" | "success" | "danger";
+
+export type LibraryBubbleBlur = "none" | "light" | "medium" | "heavy";
+
+export type LibraryBubbleMaxWidth = "compact" | "normal" | "wide";
+
+export type LibraryBubblePadding = "compact" | "normal" | "spacious";
+
+export type LibraryBubbleRadius = "sharp" | "rounded" | "pill";
+
+export type LibraryBubbleStyle = "bordered" | "filled" | "minimal";
+
+export type LibraryButtonAction = "regenerate" | "swap_places" | "new_session" | "continue" | "abort" | "view_history" | "open_memories" | "open_search" | "toggle_voice_autoplay";
+
+export type LibraryCardStyle = "circle" | "banner";
+
+export type LibraryCharacterDefaults = LibraryCharacterDefaults_Serialize | LibraryCharacterDefaults_Deserialize;
+
+export type LibraryCharacterDefaults_Deserialize = {
+	interaction_mode: LibraryInteractionMode,
+	memory_policy: LibraryMemoryPolicy,
+	model_profile_id: string | null,
+	default_scene_id: string | null,
+	default_starter_id: string | null,
+	direct_prompt_id: string | null,
+	group_conversation_prompt_id: string | null,
+	group_roleplay_prompt_id: string | null,
+	voice: LibraryVoicePreference_Deserialize | null,
+	voice_autoplay: boolean,
+	companion_soul: CompanionSoulConfigView | null,
+};
+
+export type LibraryCharacterDefaults_Serialize = {
+	interaction_mode: LibraryInteractionMode,
+	memory_policy: LibraryMemoryPolicy,
+	model_profile_id: string | null,
+	default_scene_id: string | null,
+	default_starter_id: string | null,
+	direct_prompt_id: string | null,
+	group_conversation_prompt_id: string | null,
+	group_roleplay_prompt_id: string | null,
+	voice: LibraryVoicePreference_Serialize | null,
+	voice_autoplay: boolean,
+	companion_soul: CompanionSoulConfigView | null,
+};
+
+export type LibraryCharacterMediaLink = {
+	asset_id: string,
+	slot: LibraryCharacterMediaSlot,
+	ordinal: number,
+};
+
+export type LibraryCharacterMediaSlot = "avatar_original" | "banner" | "background" | "design_reference";
+
+export type LibraryCharacterPresentationV1 = LibraryCharacterPresentationV1_Serialize | LibraryCharacterPresentationV1_Deserialize;
+
+export type LibraryCharacterPresentationV1_Deserialize = {
+	format_version: number,
+	card_style: LibraryCardStyle,
+	avatar_crop: LibraryCrop | null,
+	banner_crop: LibraryCrop | null,
+	disable_gradient: boolean,
+	gradient_source: LibraryGradientSource,
+	custom_gradient_enabled: boolean,
+	custom_gradient_colors: string[],
+	primary_text_color: string | null,
+	secondary_text_color: string | null,
+	chat_appearance: LibraryChatAppearanceV1_Deserialize,
+};
+
+export type LibraryCharacterPresentationV1_Serialize = {
+	format_version: number,
+	card_style: LibraryCardStyle,
+	avatar_crop: LibraryCrop | null,
+	banner_crop: LibraryCrop | null,
+	disable_gradient: boolean,
+	gradient_source: LibraryGradientSource,
+	custom_gradient_enabled: boolean,
+	custom_gradient_colors: string[],
+	primary_text_color: string | null,
+	secondary_text_color: string | null,
+	chat_appearance: LibraryChatAppearanceV1_Serialize,
+};
+
+export type LibraryCharacterProfile = LibraryCharacterProfile_Serialize | LibraryCharacterProfile_Deserialize;
+
+export type LibraryCharacterProfile_Deserialize = {
+	name: string,
+	nickname: string | null,
+	description: string | null,
+	definition: string | null,
+	design_description: string | null,
+	scenario: string | null,
+	rules: string[],
+};
+
+export type LibraryCharacterProfile_Serialize = {
+	name: string,
+	nickname: string | null,
+	description: string | null,
+	definition: string | null,
+	design_description: string | null,
+	scenario: string | null,
+	rules: string[],
+};
+
+export type LibraryCharacterProvenance = LibraryCharacterProvenance_Serialize | LibraryCharacterProvenance_Deserialize;
+
+export type LibraryCharacterProvenance_Deserialize = {
+	creator: string | null,
+	creator_notes: string | null,
+	localized_creator_notes: { [key in string]: string },
+	sources: string[],
+	tags: string[],
+};
+
+export type LibraryCharacterProvenance_Serialize = {
+	creator: string | null,
+	creator_notes: string | null,
+	localized_creator_notes: { [key in string]: string },
+	sources: string[],
+	tags: string[],
+};
+
+export type LibraryChatAppearanceV1 = LibraryChatAppearanceV1_Serialize | LibraryChatAppearanceV1_Deserialize;
+
+export type LibraryChatAppearanceV1_Deserialize = {
+	format_version: number,
+	font_size: LibraryFontSize,
+	line_spacing: LibraryLineSpacing,
+	bubble_style: LibraryBubbleStyle,
+	bubble_radius: LibraryBubbleRadius,
+	bubble_max_width: LibraryBubbleMaxWidth,
+	bubble_padding: LibraryBubblePadding,
+	show_message_author: boolean,
+	show_message_timestamp: boolean,
+	timestamp_format: LibraryTimestampFormat,
+	message_header_placement: LibraryMessageHeaderPlacement,
+	show_message_model: boolean,
+	show_message_input_tokens: boolean,
+	show_message_output_tokens: boolean,
+	show_message_total_tokens: boolean,
+	show_message_ttft: boolean,
+	show_message_tokens_per_second: boolean,
+	show_message_mtp: boolean,
+	message_info_placement: LibraryMessageInfoPlacement,
+	message_info_size: LibraryMessageInfoSize,
+	message_gap: LibraryMessageGap,
+	avatar_shape: LibraryAvatarShape,
+	avatar_size: LibraryAvatarSize,
+	chat_column_width: LibraryChatColumnWidth,
+	chat_column_width_px: number | null,
+	chat_column_align: LibraryAlignment,
+	chat_header_moves: boolean,
+	chat_footer_moves: boolean,
+	participants_bar_enabled: boolean,
+	participants_bar_avatar_size: LibraryAvatarSize,
+	participants_bar_avatar_shape: LibraryParticipantBarAvatarShape,
+	participants_bar_background: LibraryParticipantBarBackground,
+	participants_bar_gap: LibraryMessageGap,
+	participants_bar_align: LibraryAlignment,
+	participants_bar_hint_position: LibraryParticipantBarHintPosition,
+	chat_widget_area_enabled: boolean,
+	chat_widget_center_mode: LibraryWidgetCenterMode,
+	chat_widget_slots: LibraryChatWidgetSlots_Deserialize,
+	user_bubble_color: LibraryUserBubbleColor,
+	assistant_bubble_color: LibraryAssistantBubbleColor,
+	user_bubble_color_hex: string | null,
+	assistant_bubble_color_hex: string | null,
+	footer_input_color_hex: string | null,
+	message_text_color_hex: string | null,
+	plain_text_color_hex: string | null,
+	italic_text_color_hex: string | null,
+	quoted_text_color_hex: string | null,
+	inline_code_text_color_hex: string | null,
+	transparent_header: boolean,
+	background_dim: number | null,
+	background_blur: number | null,
+	bubble_blur: LibraryBubbleBlur,
+	bubble_opacity: number | null,
+	text_mode: LibraryTextMode,
+};
+
+export type LibraryChatAppearanceV1_Serialize = {
+	format_version: number,
+	font_size: LibraryFontSize,
+	line_spacing: LibraryLineSpacing,
+	bubble_style: LibraryBubbleStyle,
+	bubble_radius: LibraryBubbleRadius,
+	bubble_max_width: LibraryBubbleMaxWidth,
+	bubble_padding: LibraryBubblePadding,
+	show_message_author: boolean,
+	show_message_timestamp: boolean,
+	timestamp_format: LibraryTimestampFormat,
+	message_header_placement: LibraryMessageHeaderPlacement,
+	show_message_model: boolean,
+	show_message_input_tokens: boolean,
+	show_message_output_tokens: boolean,
+	show_message_total_tokens: boolean,
+	show_message_ttft: boolean,
+	show_message_tokens_per_second: boolean,
+	show_message_mtp: boolean,
+	message_info_placement: LibraryMessageInfoPlacement,
+	message_info_size: LibraryMessageInfoSize,
+	message_gap: LibraryMessageGap,
+	avatar_shape: LibraryAvatarShape,
+	avatar_size: LibraryAvatarSize,
+	chat_column_width: LibraryChatColumnWidth,
+	chat_column_width_px: number | null,
+	chat_column_align: LibraryAlignment,
+	chat_header_moves: boolean,
+	chat_footer_moves: boolean,
+	participants_bar_enabled: boolean,
+	participants_bar_avatar_size: LibraryAvatarSize,
+	participants_bar_avatar_shape: LibraryParticipantBarAvatarShape,
+	participants_bar_background: LibraryParticipantBarBackground,
+	participants_bar_gap: LibraryMessageGap,
+	participants_bar_align: LibraryAlignment,
+	participants_bar_hint_position: LibraryParticipantBarHintPosition,
+	chat_widget_area_enabled: boolean,
+	chat_widget_center_mode: LibraryWidgetCenterMode,
+	chat_widget_slots: LibraryChatWidgetSlots_Serialize,
+	user_bubble_color: LibraryUserBubbleColor,
+	assistant_bubble_color: LibraryAssistantBubbleColor,
+	user_bubble_color_hex: string | null,
+	assistant_bubble_color_hex: string | null,
+	footer_input_color_hex: string | null,
+	message_text_color_hex: string | null,
+	plain_text_color_hex: string | null,
+	italic_text_color_hex: string | null,
+	quoted_text_color_hex: string | null,
+	inline_code_text_color_hex: string | null,
+	transparent_header: boolean,
+	background_dim: number | null,
+	background_blur: number | null,
+	bubble_blur: LibraryBubbleBlur,
+	bubble_opacity: number | null,
+	text_mode: LibraryTextMode,
+};
+
+export type LibraryChatColumnWidth = "narrow" | "normal" | "wide" | "xl" | "full" | "custom";
+
+export type LibraryChatWidgetSlots = LibraryChatWidgetSlots_Serialize | LibraryChatWidgetSlots_Deserialize;
+
+export type LibraryChatWidgetSlots_Deserialize = {
+	left: LibraryWidgetNode_Deserialize[],
+	right: LibraryWidgetNode_Deserialize[],
+};
+
+export type LibraryChatWidgetSlots_Serialize = {
+	left: LibraryWidgetNode_Serialize[],
+	right: LibraryWidgetNode_Serialize[],
+};
+
 export type LibraryCrop = {
 	x: number | null,
 	y: number | null,
 	scale: number | null,
 };
 
+export type LibraryDividerStyle = "line" | "space";
+
+export type LibraryFontSize = "small" | "medium" | "large" | "xlarge";
+
+export type LibraryGradientSource = "base" | "round";
+
+export type LibraryHourFormat = "h12" | "h24";
+
 export type LibraryImageRecommendation = {
 	artifact_id: string | null,
 	unresolved_legacy_name: string | null,
 	strength: number | null,
 };
+
+export type LibraryInteractionMode = "roleplay" | "companion";
+
+export type LibraryLegacyVoiceLocatorV1 = {
+	locator: string,
+};
+
+export type LibraryLineSpacing = "tight" | "normal" | "relaxed";
 
 export type LibraryLorebookBinding = {
 	lorebook_id: string,
@@ -2772,7 +3120,171 @@ export type LibraryLorebookMutationResult = {
 	owner_revision: number,
 };
 
+export type LibraryLorebookSelection = { kind: "inherit" } | { kind: "explicit"; value: string[] } | { kind: "disabled" };
+
+export type LibraryMemoryPolicy = "manual" | "dynamic";
+
+export type LibraryMessageGap = "tight" | "normal" | "relaxed";
+
+export type LibraryMessageHeaderPlacement = "inside" | "above";
+
+export type LibraryMessageInfoPlacement = "below_header" | "below_header_outside" | "inside_bubble" | "below_bubble";
+
+export type LibraryMessageInfoSize = "small" | "medium" | "large";
+
+export type LibraryParticipantBarAvatarShape = "round" | "boxed" | "rounded_box";
+
+export type LibraryParticipantBarBackground = "solid" | "fading" | "transparent";
+
+export type LibraryParticipantBarHintPosition = "top" | "bottom" | "hidden";
+
+export type LibrarySceneAssetLink = {
+	id: string,
+	asset_id: string,
+	slot: LibrarySceneAssetSlot,
+	ordinal: number,
+};
+
+export type LibrarySceneAssetSlot = "background" | "inline";
+
+export type LibrarySceneDocumentV1 = {
+	format_version: number,
+	parts: LibraryScenePart[],
+};
+
+export type LibrarySceneDraft = LibrarySceneDraft_Serialize | LibrarySceneDraft_Deserialize;
+
+export type LibrarySceneDraft_Deserialize = {
+	id: string,
+	ordinal: number,
+	content: LibrarySceneDocumentV1,
+	direction: string | null,
+	selected_variant_id: string | null,
+	assets: LibrarySceneAssetLink[],
+};
+
+export type LibrarySceneDraft_Serialize = {
+	id: string,
+	ordinal: number,
+	content: LibrarySceneDocumentV1,
+	direction: string | null,
+	selected_variant_id: string | null,
+	assets: LibrarySceneAssetLink[],
+};
+
+export type LibraryScenePart = { kind: "text"; text: string } | { kind: "inline_asset"; link_id: string };
+
+export type LibrarySceneVariantDraft = LibrarySceneVariantDraft_Serialize | LibrarySceneVariantDraft_Deserialize;
+
+export type LibrarySceneVariantDraft_Deserialize = {
+	id: string,
+	scene_id: string,
+	ordinal: number,
+	content: LibrarySceneDocumentV1,
+	direction: string | null,
+};
+
+export type LibrarySceneVariantDraft_Serialize = {
+	id: string,
+	scene_id: string,
+	ordinal: number,
+	content: LibrarySceneDocumentV1,
+	direction: string | null,
+};
+
+export type LibrarySelectorKind = "persona" | "model" | "author_note";
+
 export type LibrarySort = "created_asc" | "updated_desc" | "name";
+
+export type LibraryStarterDraft = LibraryStarterDraft_Serialize | LibraryStarterDraft_Deserialize;
+
+export type LibraryStarterDraft_Deserialize = {
+	id: string,
+	name: string,
+	ordinal: number,
+	messages: LibraryStarterMessage[],
+	scene_id: string | null,
+	prompt_id: string | null,
+	lorebooks: LibraryLorebookSelection,
+};
+
+export type LibraryStarterDraft_Serialize = {
+	id: string,
+	name: string,
+	ordinal: number,
+	messages: LibraryStarterMessage[],
+	scene_id: string | null,
+	prompt_id: string | null,
+	lorebooks: LibraryLorebookSelection,
+};
+
+export type LibraryStarterMessage = {
+	id: string,
+	role: LibraryStarterRole,
+	content: string,
+};
+
+export type LibraryStarterRole = "user" | "assistant";
+
+export type LibraryTextMode = "auto" | "light" | "dark";
+
+export type LibraryTimestampFormat = "relative" | "time" | "datetime";
+
+export type LibraryUserBubbleColor = "accent" | "info" | "secondary" | "warning";
+
+export type LibraryVoicePreference = LibraryVoicePreference_Serialize | LibraryVoicePreference_Deserialize;
+
+export type LibraryVoicePreference_Deserialize = { kind: "voice_profile"; value: string } | { kind: "provider"; value: {
+	provider_id: string,
+	voice_id: string,
+	model_id: string | null,
+	voice_name: string | null,
+} } | { kind: "unresolved_legacy"; value: LibraryLegacyVoiceLocatorV1 };
+
+export type LibraryVoicePreference_Serialize = { kind: "voice_profile"; value: string } | { kind: "provider"; value: {
+	provider_id: string,
+	voice_id: string,
+	model_id: string | null,
+	voice_name: string | null,
+} } | { kind: "unresolved_legacy"; value: LibraryLegacyVoiceLocatorV1 };
+
+export type LibraryWidgetCenterMode = "both" | "left" | "right";
+
+export type LibraryWidgetDesign = "default" | "minimal" | "solid" | "outline";
+
+export type LibraryWidgetImageShape = "auto" | "square" | "wide" | "circle";
+
+export type LibraryWidgetImageSource = { kind: "character_avatar" } | { kind: "persona_avatar" } | { kind: "logical_asset"; asset_id: string } | { kind: "unresolved_legacy"; token: string };
+
+export type LibraryWidgetNode = LibraryWidgetNode_Serialize | LibraryWidgetNode_Deserialize;
+
+export type LibraryWidgetNode_Deserialize = ({ type: "divider"; id: string; design: LibraryWidgetDesign | null; style: LibraryDividerStyle | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; title?: never; variant?: never } | ({ type: "box"; id: string; design: LibraryWidgetDesign | null; variant: LibraryBoxVariant | null; title: string | null; description: string | null; children: LibraryWidgetNode_Deserialize[] }) & { action?: never; character_id?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never } | ({ type: "character_info"; id: string; design: LibraryWidgetDesign | null; character_id: string | null }) & { action?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "persona_info"; id: string; design: LibraryWidgetDesign | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "scratch_pad"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; content: string | null }) & { action?: never; character_id?: never; children?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "image"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; source: LibraryWidgetImageSource; shape: LibraryWidgetImageShape | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; show_date?: never; show_seconds?: never; snippets?: never; stats?: never; style?: never; variant?: never } | ({ type: "selector"; id: string; design: LibraryWidgetDesign | null; kind: LibrarySelectorKind; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "button"; id: string; design: LibraryWidgetDesign | null; action: LibraryButtonAction; title: string | null; description: string | null }) & { character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "stat_tracker"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; stats: LibraryWidgetStat_Deserialize[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; style?: never; variant?: never } | ({ type: "quick_snippets"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; snippets: LibraryWidgetSnippet[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "dice"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; notation: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "memory"; id: string; design: LibraryWidgetDesign | null; title: string | null; limit: number | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "companion_state"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "session_info"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "author_note"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "time"; id: string; design: LibraryWidgetDesign | null; title: string | null; hour_format: LibraryHourFormat | null; show_seconds: boolean | null; show_date: boolean | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; kind?: never; limit?: never; notation?: never; shape?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never };
+
+export type LibraryWidgetNode_Serialize = ({ type: "divider"; id: string; design: LibraryWidgetDesign | null; style: LibraryDividerStyle | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; title?: never; variant?: never } | ({ type: "box"; id: string; design: LibraryWidgetDesign | null; variant: LibraryBoxVariant | null; title: string | null; description: string | null; children: LibraryWidgetNode_Serialize[] }) & { action?: never; character_id?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never } | ({ type: "character_info"; id: string; design: LibraryWidgetDesign | null; character_id: string | null }) & { action?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "persona_info"; id: string; design: LibraryWidgetDesign | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "scratch_pad"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; content: string | null }) & { action?: never; character_id?: never; children?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "image"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; source: LibraryWidgetImageSource; shape: LibraryWidgetImageShape | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; show_date?: never; show_seconds?: never; snippets?: never; stats?: never; style?: never; variant?: never } | ({ type: "selector"; id: string; design: LibraryWidgetDesign | null; kind: LibrarySelectorKind; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "button"; id: string; design: LibraryWidgetDesign | null; action: LibraryButtonAction; title: string | null; description: string | null }) & { character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "stat_tracker"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; stats: LibraryWidgetStat_Serialize[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; style?: never; variant?: never } | ({ type: "quick_snippets"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; snippets: LibraryWidgetSnippet[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "dice"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; notation: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "memory"; id: string; design: LibraryWidgetDesign | null; title: string | null; limit: number | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "companion_state"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "session_info"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "author_note"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "time"; id: string; design: LibraryWidgetDesign | null; title: string | null; hour_format: LibraryHourFormat | null; show_seconds: boolean | null; show_date: boolean | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; kind?: never; limit?: never; notation?: never; shape?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never };
+
+export type LibraryWidgetSnippet = {
+	id: string,
+	label: string,
+	text: string,
+};
+
+export type LibraryWidgetStat = LibraryWidgetStat_Serialize | LibraryWidgetStat_Deserialize;
+
+export type LibraryWidgetStat_Deserialize = {
+	id: string,
+	label: string,
+	value: number | null,
+	min: number | null,
+	max: number | null,
+};
+
+export type LibraryWidgetStat_Serialize = {
+	id: string,
+	label: string,
+	value: number | null,
+	min: number | null,
+	max: number | null,
+};
 
 /**
  *  Which conversations a list shows; archived ones are only hidden from the
@@ -4205,7 +4717,19 @@ export type PersonaDeleteRequest = {
 	client_operation_id: string,
 };
 
-export type PersonaDraft = {
+export type PersonaDraft = PersonaDraft_Serialize | PersonaDraft_Deserialize;
+
+export type PersonaDraft_Deserialize = {
+	title: string,
+	description: string,
+	nickname: string | null,
+	design_description: string | null,
+	avatar_crop: LibraryCrop | null,
+	image_recommendation: LibraryImageRecommendation | null,
+	media: PersonaMediaLink[],
+};
+
+export type PersonaDraft_Serialize = {
 	title: string,
 	description: string,
 	nickname: string | null,
@@ -4268,9 +4792,18 @@ export type PersonaPage = {
 	default_persona: PersonaDefaultView,
 };
 
-export type PersonaSaveRequest = {
+export type PersonaSaveRequest = PersonaSaveRequest_Serialize | PersonaSaveRequest_Deserialize;
+
+export type PersonaSaveRequest_Deserialize = {
 	persona_id: string | null,
-	draft: PersonaDraft,
+	draft: PersonaDraft_Deserialize,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type PersonaSaveRequest_Serialize = {
+	persona_id: string | null,
+	draft: PersonaDraft_Serialize,
 	expected_revision: number | null,
 	client_operation_id: string,
 };
@@ -4282,10 +4815,22 @@ export type PersonaSummary = {
 	avatar: AssetRef | null,
 };
 
-export type PersonaView = {
+export type PersonaView = PersonaView_Serialize | PersonaView_Deserialize;
+
+export type PersonaView_Deserialize = {
 	id: string,
 	archived: boolean,
-	draft: PersonaDraft,
+	draft: PersonaDraft_Deserialize,
+	assets: AssetRef[],
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type PersonaView_Serialize = {
+	id: string,
+	archived: boolean,
+	draft: PersonaDraft_Serialize,
 	assets: AssetRef[],
 	revision: number,
 	created_at: number,

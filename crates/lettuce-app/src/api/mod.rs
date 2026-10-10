@@ -359,3 +359,9 @@ pub use library_persona_default::{persona_default_set, persona_default_clear};
 
 #[cfg(test)]
 mod library_lists_tests;
+
+#[cfg(test)]
+mod library_characters_tests;
+
+mod library_characters;
+pub use library_characters::{character_get, character_save};

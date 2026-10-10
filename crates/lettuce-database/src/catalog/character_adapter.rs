@@ -2368,6 +2368,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 .as_ref()
                 .and_then(|details| details.scenes.iter().find(|value| value.id == scene.id))
             {
+                scene.status = before.status;
                 scene.created_at = before.created_at;
                 scene.updated_at = before.updated_at;
                 scene.revision = before.revision;
@@ -6104,5 +6105,27 @@ mod smoke_tests {
                 .expect("receipt")
                 .is_none()
         );
+    }
+    #[test]
+    fn character_save_preserves_existing_scene_lifecycle() {
+        let database = Database::open_in_memory().expect("database");
+        let (mut plan, _, _, _) = graph_fixture(&database);
+        plan.scenes[0].status = LifecycleStatus::Archived;
+        let before = CharacterRepository::create(&database, plan.clone()).expect("create");
+        plan.scenes[0].status = LifecycleStatus::Active;
+        let after = database
+            .commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
+                "character_save",
+                "lifecycle",
+                "digest",
+                TimestampMillis::new(2),
+                |scope| {
+                    scope
+                        .save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("save");
+        assert_eq!(after.scenes, before.scenes);
     }
 }

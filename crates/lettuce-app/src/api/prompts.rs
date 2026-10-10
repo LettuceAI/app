@@ -789,7 +789,7 @@ pub async fn prompt_validate(
     })
 }
 
-fn runtime_text_error() -> ApiError {
+pub(crate) fn runtime_text_error() -> ApiError {
     ApiError {
         code: ApiErrorCode::Unavailable,
         message: "the app's runtime text could not be read".into(),

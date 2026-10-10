@@ -256,12 +256,16 @@ pub struct PersonaDraft {
     pub title: String,
     pub description: String,
     #[serde(deserialize_with = "Option::deserialize")]
+    #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub nickname: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
+    #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub design_description: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
+    #[cfg_attr(feature = "specta", specta(type = Option<LibraryCrop>))]
     pub avatar_crop: Option<LibraryCrop>,
     #[serde(deserialize_with = "Option::deserialize")]
+    #[cfg_attr(feature = "specta", specta(type = Option<LibraryImageRecommendation>))]
     pub image_recommendation: Option<LibraryImageRecommendation>,
     pub media: Vec<PersonaMediaLink>,
 }

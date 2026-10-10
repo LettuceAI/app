@@ -208,3 +208,21 @@ pub async fn personas_list(
 ) -> Result<lettuce_contracts::PersonaPage, ApiError> {
     api::personas_list(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_get(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterGetRequest,
+) -> Result<lettuce_contracts::CharacterView, ApiError> {
+    api::character_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_save(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::CharacterSaveRequest,
+) -> Result<lettuce_contracts::CharacterView, ApiError> {
+    api::character_save(&context, request).await
+}

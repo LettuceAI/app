@@ -116,3 +116,5 @@ Storage optimization takes an operation id and returns JobAccepted. Its terminal
 Library saves and mutations carry client operation ids and expected revisions. Persona drafts contain authored fields and catalog media links; views also provide asset URLs. Default persona commands compare the separate singleton revision and return its selected id and metadata. Companion creation failures list the missing required models in typed error details.
 
 Full persona drafts require nullable fields to be present explicitly. A null clears the field; an omitted field is invalid, preventing a partial editor payload from implicitly clearing stored metadata or an image recommendation.
+
+The character editor draft describes the authored profile, provenance, defaults, presentation and recursive widgets, media links, scenes, variants and starters with concrete transport types. Nullable draft fields require an explicit null to clear them; omission is invalid input. The view carries server revision metadata and asset URLs, while save requests carry asset identities and one operation key.
