@@ -316,6 +316,12 @@ impl ChangeSignal {
 }
 
 impl Database {
+    pub fn remove_change_listeners(&self) {
+        self.changes.listeners.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+        self.changes.library_listeners.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+        self.changes.settings_listeners.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+    }
+
     /// Calls `listener` after every committed transaction that changed a
     /// job, on the committing thread; the listener must not use this
     /// database.
@@ -468,4 +474,18 @@ mod library_tests {
     }
 
 
+}
+
+#[cfg(test)]
+mod detach_tests {
+    #[test]
+    fn retiring_a_context_removes_its_database_listeners() {
+        let database = crate::Database::open_in_memory().expect("database");
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let listener = calls.clone();
+        database.on_job_change(move || { listener.fetch_add(1, std::sync::atomic::Ordering::Relaxed); });
+        database.remove_change_listeners();
+        assert!(database.changes.listeners.lock().expect("listeners").is_empty());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
 }

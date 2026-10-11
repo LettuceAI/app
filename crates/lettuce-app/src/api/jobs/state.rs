@@ -33,6 +33,7 @@ impl JobWatch {
 pub(crate) struct JobHostState {
     watches: Mutex<HashMap<JobId, Vec<Arc<JobWatch>>>>,
     running: Mutex<HashMap<JobId, CancellationToken>>,
+    backup_passwords: Mutex<HashMap<JobId, zeroize::Zeroizing<String>>>,
     installs: Mutex<HashMap<JobId, InstallWork>>,
     streamed: Mutex<HashMap<JobId, (String, String)>>,
     image: Mutex<HashMap<JobId, ImageProgress>>,
@@ -45,6 +46,7 @@ impl Default for JobHostState {
         Self {
             watches: Mutex::new(HashMap::new()),
             running: Mutex::new(HashMap::new()),
+            backup_passwords: Mutex::new(HashMap::new()),
             installs: Mutex::new(HashMap::new()),
             streamed: Mutex::new(HashMap::new()),
             image: Mutex::new(HashMap::new()),
@@ -61,6 +63,19 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl JobHostState {
+    pub(crate) fn remember_backup_password(&self, id: JobId, password: zeroize::Zeroizing<String>) {
+        lock(&self.backup_passwords).insert(id, password);
+        self.wake();
+    }
+
+    pub(crate) fn has_backup_password(&self, id: JobId) -> bool {
+        lock(&self.backup_passwords).contains_key(&id)
+    }
+
+    pub(crate) fn take_backup_password(&self, id: JobId) -> Option<zeroize::Zeroizing<String>> {
+        lock(&self.backup_passwords).remove(&id)
+    }
+
     pub(crate) fn wake(&self) {
         self.wake.notify_one();
     }
@@ -138,6 +153,7 @@ impl JobHostState {
     }
 
     pub(crate) fn deliver(&self, job_id: JobId, event: JobEvent, terminal: bool) {
+        if terminal { self.take_backup_password(job_id); }
         let watches = {
             let mut registry = lock(&self.watches);
             if terminal {

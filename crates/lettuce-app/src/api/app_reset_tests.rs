@@ -12,7 +12,7 @@ use super::{ApiContext, ApiDatabaseFiles, NoModels};
 use crate::{AppBackend, AppDatabaseLocation};
 
 #[derive(Default)]
-struct Host {
+pub(super) struct Host {
     calls: Mutex<Vec<&'static str>>,
     fail_clear: bool,
     fail_restart: bool,
@@ -143,7 +143,7 @@ async fn reset_resumes_webview_clear_and_restart_after_shutdown_after_cutover() 
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-fn harness() -> (
+pub(super) fn harness() -> (
     std::path::PathBuf,
     AppDatabaseLocation,
     super::tests::Harness,

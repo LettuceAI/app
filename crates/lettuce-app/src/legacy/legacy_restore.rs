@@ -30,6 +30,10 @@ pub struct LegacyRestoreReceipt {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LegacyRestoreError {
+    #[error("legacy restore was cancelled")]
+    Cancelled,
+    #[error("legacy restore API operation failed")]
+    Api(lettuce_contracts::ApiError),
     #[error("legacy backup could not be decoded: {0:?}")]
     Inventory(lettuce_transfer::LegacyBackupInventoryError),
     #[error("legacy backup could not be planned: {0:?}")]
@@ -86,6 +90,8 @@ impl<S: ?Sized> fmt::Debug for LegacyRestoreCoordinator<'_, S> {
     }
 }
 
+type LegacyRestoreCheck<'a> = dyn Fn(&str, Option<(&lettuce_database::Database, &Path, &[lettuce_transfer::LegacyBackupWarning])>) -> Result<(), LegacyRestoreError> + Send + Sync + 'a;
+
 impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
     #[must_use]
     pub const fn new(
@@ -110,10 +116,23 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         password: &str,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        self.restore_backup_controlled(restore_id, backup, password, restored_at, &|_, _| Ok(())).await
+    }
+
+    pub async fn restore_backup_controlled(
+        &self,
+        restore_id: OperationId,
+        backup: impl lettuce_transfer::BackupSource + 'static,
+        password: &str,
+        restored_at: TimestampMillis,
+        check: &LegacyRestoreCheck<'_>,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        check("decode", None)?;
         let inventory = lettuce_transfer::decode_legacy_backup_inventory(backup, password)
             .map_err(LegacyRestoreError::Inventory)?;
         let compatibility = lettuce_transfer::plan_legacy_backup_compatibility(inventory)
             .map_err(LegacyRestoreError::Compatibility)?;
+        check("stage", None)?;
         let staging =
             BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))
                 .and_then(|workspace| workspace.stage_legacy(&compatibility))
@@ -126,7 +145,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         )
         .map_err(LegacyRestoreError::Admission)?;
         let plan = compatibility.legacy_import_plan();
-        self.replace(
+        self.replace_controlled(
             restore_id,
             &LegacyDatabaseImportPlan {
                 compatibility,
@@ -137,6 +156,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             None,
             Some(admission),
             restored_at,
+            check,
         )
         .await
     }
@@ -148,25 +168,52 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         app_data_dir: &Path,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        self.restore_database_controlled(restore_id, app_data_dir, restored_at, &|_, _| Ok(())).await
+    }
+
+    pub async fn restore_database_controlled(
+        &self,
+        restore_id: OperationId,
+        app_data_dir: &Path,
+        restored_at: TimestampMillis,
+        check: &LegacyRestoreCheck<'_>,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        check("decode", None)?;
         let import =
             crate::plan_legacy_database_import(app_data_dir).map_err(LegacyRestoreError::Plan)?;
-        self.replace(
+        check("stage", None)?;
+        self.replace_controlled(
             restore_id,
             &import,
             Some(&app_data_dir.join("lettuce")),
             None,
             restored_at,
+            check,
         )
         .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn replace(
         &self,
-        restore_id: OperationId,
+        _restore_id: OperationId,
         import: &LegacyDatabaseImportPlan,
         storage_root: Option<&Path>,
         admission: Option<BackupRestoreAdmissionRequest>,
         restored_at: TimestampMillis,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        self.replace_controlled(_restore_id, import, storage_root, admission, restored_at, &|_, _| Ok(())).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn replace_controlled(
+        &self,
+        _restore_id: OperationId,
+        import: &LegacyDatabaseImportPlan,
+        storage_root: Option<&Path>,
+        admission: Option<BackupRestoreAdmissionRequest>,
+        restored_at: TimestampMillis,
+        check: &LegacyRestoreCheck<'_>,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
         let lifecycle = self
             .location
@@ -177,7 +224,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .location
             .active_path()
             .map_err(LegacyRestoreError::Location)?;
-        let name = format!("{restore_id}{DATABASE_EXTENSION}");
+        let name = format!("{}{DATABASE_EXTENSION}", OperationId::new());
         let database_path = self
             .location
             .database_path(&name)
@@ -194,6 +241,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 .ok_or(LegacyRestoreError::TargetDirectory)?,
         )
         .map_err(|_| LegacyRestoreError::TargetDirectory)?;
+        check("write", None)?;
         lifecycle
             .begin_file(&name, crate::DatabaseFileKind::LegacyRestore, restored_at)
             .map_err(LegacyRestoreError::Location)?;
@@ -212,6 +260,11 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 &mut written,
             )
             .await?;
+            check("verify", None)?;
+            let mut verified = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database()).map_err(stage("verify"))?;
+            lettuce_transfer::canonicalize_and_validate(&mut verified).map_err(stage("verify"))?;
+            check("switch", None)?;
+            lifecycle.prepare_cutover(&name, restored_at).map_err(LegacyRestoreError::Location)?;
             if previous_database_path
                 .try_exists()
                 .map_err(|_| LegacyRestoreError::TargetDirectory)?
@@ -225,8 +278,9 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 .map(|request| backend.database().admit_backup_restore(request))
                 .transpose()
                 .map_err(LegacyRestoreError::Admission)?;
+            check("switch", Some((backend.database(), &database_path, import.compatibility.warnings())))?;
             lifecycle
-                .activate_file(&name, restored_at)
+                .finish_cutover(&name)
                 .map_err(LegacyRestoreError::Location)?;
             Ok(admission)
         }
@@ -235,6 +289,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         let admission = match outcome {
             Ok(admission) => admission,
             Err(error) => {
+                lifecycle.recover_reset_preparation().map_err(LegacyRestoreError::Location)?;
                 if self
                     .location
                     .active_path()

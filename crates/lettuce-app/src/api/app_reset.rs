@@ -28,6 +28,10 @@ pub trait AppResetHost: Send + Sync {
     async fn clear_webview_storage(&self) -> Result<(), ApiError>;
     async fn prepare_restart(&self) -> Result<(), ApiError>;
     fn exit_for_restart(&self);
+    async fn reload_database(&self, _job: &str) -> Result<Arc<ApiContext>, ApiError> {
+        Err(super::backup::error(ApiErrorCode::Unsupported, dto::BackupFailureReason::Unsupported))
+    }
+
 }
 
 #[derive(Default)]
@@ -37,6 +41,27 @@ pub(super) struct ResetState {
 }
 
 impl ApiContext {
+    pub fn bind_reloaded_job(&self, job: &str) -> Result<(), ApiError> {
+        let id = parse_id(job, "job_id")?;
+        let path = &self.database_files().ok_or_else(|| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))?.active;
+        let database = Arc::new(Database::open(path).map_err(|_| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))?);
+        self.track_reloaded_job(id, database)
+    }
+
+    pub fn retire_database_listeners(&self) {
+        self.backend().database().remove_change_listeners();
+    }
+
+    pub fn track_reloaded_job(&self, id: JobId, database: Arc<Database>) -> Result<(), ApiError> {
+        *self.reset_state().current.lock().map_err(|_| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))? = Some((id, database));
+        Ok(())
+    }
+
+    pub fn finish_reloaded_job(&self) -> Result<(), ApiError> {
+        *self.reset_state().current.lock().map_err(|_| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))? = None;
+        Ok(())
+    }
+
     pub fn attach_reset_host(&self, host: Arc<dyn AppResetHost>) -> Result<(), ApiError> {
         *self
             .reset_state()
@@ -59,7 +84,7 @@ pub(super) fn reset_error(stage: dto::AppDataResetStage, kept: Option<String>) -
     error
 }
 
-fn host(context: &ApiContext) -> Result<Arc<dyn AppResetHost>, ApiError> {
+pub(super) fn host(context: &ApiContext) -> Result<Arc<dyn AppResetHost>, ApiError> {
     context
         .reset_state()
         .host
@@ -163,6 +188,7 @@ pub async fn app_data_reset(
             job_id: id.to_string(),
         });
     }
+    super::speech::ensure_no_active_dictation(context)?;
     host(context)?.preflight().await?;
     let files = context
         .database_files()
@@ -547,9 +573,15 @@ impl ClaimedJob for Work {
         context: ApiContext,
         _progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
+        if super::speech::refuse_active_dictation(&context, &self.claim)? {
+            return Ok(());
+        }
         let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else {
             return self.cancel(&context).await;
         };
+        if super::speech::refuse_active_dictation(&context, &self.claim)? {
+            return Ok(());
+        }
         let files = context
             .database_files()
             .ok_or_else(|| reset_error(dto::AppDataResetStage::Database, None))?;

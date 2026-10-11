@@ -64,6 +64,49 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
         workers.stop_for_reset().await
     }
 
+    async fn reload_database(&self, job: &str) -> Result<Arc<lettuce_app::api::ApiContext>, ApiError> {
+        let slot = self.0.try_state::<lettuce_app::api::ApiContextSlot>().ok_or_else(crate::reload_failure)?;
+        let result = async {
+            let context = Arc::new(crate::open_context(&self.0)?);
+            context.bind_reloaded_job(job)?;
+            let old = slot.swap(context.clone())?;
+            let workers = self.0.try_state::<crate::Workers>().ok_or_else(crate::reload_failure)?.0.lock().map_err(|_| crate::reload_failure())?.take();
+            old.retire_database_listeners();
+            if let Some(workers) = workers { workers.stop_for_restore().await?; }
+            else { old.begin_shutdown(); old.backend().shutdown().await; }
+            let workers = lettuce_app::api::startup(&context).await?;
+            if let Err(failure) = workers.started_result().await {
+                workers.stop_for_restore().await?;
+                return Err(failure);
+            }
+            let state = self.0.try_state::<crate::Workers>().ok_or_else(crate::reload_failure)?;
+            let mut pending = Some(workers);
+            let installed = match state.0.lock() {
+                Ok(mut installed) => { *installed = pending.take(); true }
+                Err(_) => false,
+            };
+            if !installed {
+                if let Some(workers) = pending { workers.stop_for_restore().await?; }
+                return Err(crate::reload_failure());
+            }
+            Ok(context)
+        }.await;
+        if result.is_err() {
+            let active = slot.snapshot().ok();
+            slot.require_recovery();
+            let workers = self.0.try_state::<crate::Workers>().and_then(|workers| workers.0.lock().ok()?.take());
+            if let Some(workers) = workers {
+                let _ = workers.stop_for_restore().await;
+            }
+            if let Some(active) = active {
+                active.retire_database_listeners();
+                active.begin_shutdown();
+                active.backend().shutdown().await;
+            }
+        }
+        result.map_err(|_| crate::reload_failure())
+    }
+
     async fn clear_webview_storage(&self) -> Result<(), ApiError> {
         let window = self
             .0

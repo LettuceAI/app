@@ -306,6 +306,8 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             .or(super::usage_billing::result_view(context, job)?)
             .or(super::maintenance_jobs::result_view(context, job)?)
             .or(super::app_reset::result_view(context, job)?)
+            .or(super::backup_jobs::result_view(context, job)?)
+            .or(super::backup_export_jobs::result_view(context, job)?)
             .or(local.result)
             .or(soul_result)
             .or(lorebook_result)
@@ -411,6 +413,14 @@ fn job_result(context: &ApiContext, result: &OutcomeRef) -> Option<dto::JobResul
 /// What a chat feature job needs changed, from the label its error carries.
 pub(super) fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
     match label {
+        "dictation-active" => return Some(dto::JobFailureReason::DictationActive),
+        "backup-authentication" => return Some(dto::JobFailureReason::BackupAuthentication),
+        "backup-invalid-envelope" => return Some(dto::JobFailureReason::BackupInvalidEnvelope),
+        "backup-unavailable" => return Some(dto::JobFailureReason::BackupUnavailable),
+        "backup-cancelled" => return Some(dto::JobFailureReason::BackupCancelled),
+        "backup-retry-required" => return Some(dto::JobFailureReason::BackupRetryRequired),
+        "backup-recovery-required" => return Some(dto::JobFailureReason::BackupRecoveryRequired),
+        "backup-verification-failed" => return Some(dto::JobFailureReason::BackupVerificationFailed),
         "reset-workers" => return Some(dto::JobFailureReason::ResetWorkers),
         "reset-database" => return Some(dto::JobFailureReason::ResetDatabase),
         "reset-webview-storage" => return Some(dto::JobFailureReason::ResetWebviewStorage),

@@ -66,12 +66,20 @@ impl std::fmt::Debug for ApiWorkers {
 }
 
 impl ApiWorkers {
-    pub async fn stop_for_reset(mut self) -> Result<(), ApiError> {
+    pub async fn stop_for_reset(self) -> Result<(), ApiError> {
+        self.stop_for_cutover(true).await
+    }
+
+    pub async fn stop_for_restore(self) -> Result<(), ApiError> {
+        self.stop_for_cutover(false).await
+    }
+
+    async fn stop_for_cutover(mut self, flush_usage: bool) -> Result<(), ApiError> {
         let current = std::thread::current().id();
         self.stop.send_replace(true);
         self.context.begin_shutdown();
         self.context.backend().shutdown().await;
-        self.context.flush_app_usage_for_reset()?;
+        if flush_usage { self.context.flush_app_usage_for_reset()?; }
         let startup = self.startup.take();
         let threads = Arc::clone(&self.threads);
         tokio::task::spawn_blocking(move || {
@@ -105,6 +113,11 @@ impl ApiWorkers {
     }
 
     /// Waits until the workers run, or startup stopped before them.
+    pub async fn started_result(&self) -> Result<(), ApiError> {
+        let mut started = self.started.clone();
+        started.wait_for(|started| *started).await.map(|_| ()).map_err(|_| super::backup::error(ApiErrorCode::Unavailable, lettuce_contracts::BackupFailureReason::RecoveryRequired))
+    }
+
     pub async fn started(&self) {
         let mut started = self.started.clone();
         if started.wait_for(|started| *started).await.is_err() {

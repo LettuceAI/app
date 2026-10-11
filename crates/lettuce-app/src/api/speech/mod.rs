@@ -3,6 +3,7 @@
 //! message playback, and Kokoro.
 
 mod dictation;
+pub(crate) use dictation::{ensure_no_active_dictation, refuse_active_dictation};
 mod errors;
 mod host;
 mod kokoro;

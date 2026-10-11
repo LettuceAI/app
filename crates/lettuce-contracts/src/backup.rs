@@ -27,6 +27,7 @@ pub enum BackupFailureReason {
     InvalidPassword,
     Authentication,
     FileUnavailable,
+    PermissionDenied,
     Storage,
     VerificationFailed,
     SecretsUnavailable,
@@ -53,5 +54,47 @@ pub struct BackupIndexView {
 #[serde(deny_unknown_fields)]
 pub struct BackupMutationRequest {
     pub id: String,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct BackupRestoreRequest {
+    pub source: FileSource,
+    pub password: String,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LegacyDatabaseImportRequest {
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BackupWarning {
+    UnknownArchiveEntry { name: String },
+    MissingSecret { owner: String, purpose: String },
+    AppSecretUnavailable { purpose: String, stage: BackupSecretStage },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum BackupSecretStage {
+    Status,
+    Store,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct BackupExportRequest {
+    pub password: String,
+    pub target: Option<crate::FileTarget>,
     pub client_operation_id: String,
 }

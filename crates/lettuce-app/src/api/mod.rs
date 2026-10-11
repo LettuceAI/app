@@ -393,3 +393,8 @@ mod context_slot;
 pub use context_slot::ApiContextSlot;
 mod backup;
 pub use backup::{backup_inspect, backups_list, backup_forget, backup_delete};
+
+mod backup_jobs;
+mod backup_export_jobs;
+pub use backup_export_jobs::backup_export;
+pub use backup_jobs::{backup_restore, legacy_backup_restore, legacy_database_import};

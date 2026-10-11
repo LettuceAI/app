@@ -18,7 +18,7 @@ pub(super) fn file_error(failure: super::FileAccessError) -> ApiError {
         super::FileAccessError::Busy => ApiErrorCode::Busy,
         super::FileAccessError::PermissionDenied | super::FileAccessError::Io => ApiErrorCode::Unavailable,
     };
-    error(code, dto::BackupFailureReason::FileUnavailable)
+    error(code, if failure == super::FileAccessError::PermissionDenied { dto::BackupFailureReason::PermissionDenied } else { dto::BackupFailureReason::FileUnavailable })
 }
 
 pub async fn backup_inspect(context: &ApiContext, request: dto::BackupInspectRequest) -> Result<dto::BackupHeaderView, ApiError> {
@@ -27,23 +27,7 @@ pub async fn backup_inspect(context: &ApiContext, request: dto::BackupInspectReq
         return Err(invalid_field("source", "file source is empty"));
     }
     context.blocking(move |context| {
-        let malformed = || error(ApiErrorCode::Malformed, dto::BackupFailureReason::InvalidEnvelope);
-        let mut input = context.files().open(&uri).map_err(file_error)?;
-        let mut prefix = [0_u8; 16];
-        input.read_exact(&mut prefix).map_err(|failure| {
-            if failure.kind() == std::io::ErrorKind::UnexpectedEof { malformed() }
-            else { file_error(super::FileAccessError::Io) }
-        })?;
-        input.seek(SeekFrom::Start(0)).map_err(|_| file_error(super::FileAccessError::Io))?;
-        let header = match lettuce_transfer::detect_backup_format(&prefix).map_err(|_| malformed())? {
-            lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|_| malformed())?,
-            lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|_| malformed())?,
-        };
-        Ok(dto::BackupHeaderView {
-            version: header.version,
-            created_at: header.created_at.get(),
-            app_version: header.app_version,
-        })
+        inspect(context.files(), &uri)
     }).await
 }
 
@@ -78,12 +62,12 @@ pub async fn backups_list(context: &ApiContext) -> Result<Vec<dto::BackupIndexVi
 }
 
 async fn mutate_index(context: &ApiContext, request: dto::BackupMutationRequest, delete: bool) -> Result<(), ApiError> {
-    let id = super::error::parse_id::<lettuce_types::JobId>(&request.id, "id")?;
     let command = if delete { "backup_delete" } else { "backup_forget" };
     super::jobs::local::operation_key(command, &request.client_operation_id)?;
     let digest = super::jobs::local::digest(&request)?;
     context.blocking(move |context| {
         context.backend().database().commit_api_operation(command, &request.client_operation_id, &digest, context.now(), |transaction| {
+            let id = super::error::parse_id::<lettuce_types::JobId>(&request.id, "id").map_err(Failure)?;
             let entry = transaction.backup_index_record(id)?.ok_or_else(|| Failure(error(ApiErrorCode::NotFound, dto::BackupFailureReason::FileUnavailable)))?;
             if delete {
                 match context.files().remove(&entry.uri) {
@@ -103,4 +87,24 @@ pub async fn backup_forget(context: &ApiContext, request: dto::BackupMutationReq
 
 pub async fn backup_delete(context: &ApiContext, request: dto::BackupMutationRequest) -> Result<(), ApiError> {
     mutate_index(context, request, true).await
+}
+
+pub(super) fn inspect(files: &dyn super::FileAccess, uri: &str) -> Result<dto::BackupHeaderView, ApiError> {
+        let malformed = || error(ApiErrorCode::Malformed, dto::BackupFailureReason::InvalidEnvelope);
+        let mut input = files.open(uri).map_err(file_error)?;
+        let mut prefix = [0_u8; 16];
+        input.read_exact(&mut prefix).map_err(|failure| {
+            if failure.kind() == std::io::ErrorKind::UnexpectedEof { malformed() }
+            else { file_error(super::FileAccessError::Io) }
+        })?;
+        input.seek(SeekFrom::Start(0)).map_err(|_| file_error(super::FileAccessError::Io))?;
+        let header = match lettuce_transfer::detect_backup_format(&prefix).map_err(|_| malformed())? {
+            lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|_| malformed())?,
+            lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|_| malformed())?,
+        };
+        Ok(dto::BackupHeaderView {
+            version: header.version,
+            created_at: header.created_at.get(),
+            app_version: header.app_version,
+        })
 }

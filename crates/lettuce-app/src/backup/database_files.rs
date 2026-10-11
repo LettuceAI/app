@@ -614,7 +614,7 @@ impl DatabaseFileLifecycle {
         self.write(&name, &metadata)
     }
 
-    pub(super) fn prepare_cutover(
+    pub(crate) fn prepare_cutover(
         &self,
         name: &str,
         at: TimestampMillis,
@@ -670,6 +670,15 @@ impl DatabaseFileLifecycle {
         Ok(())
     }
 
+    pub(crate) fn finish_cutover(&self, name: &str) -> Result<(), AppDatabaseLocationError> {
+        if let Err(error) = self.location.activate(name) {
+            self.recover()?;
+            return Err(error);
+        }
+        self.recover()
+    }
+
+    #[cfg(test)]
     pub(crate) fn activate_file(
         &self,
         name: &str,
@@ -678,6 +687,7 @@ impl DatabaseFileLifecycle {
         self.activate_file_with_switch(name, at, || self.location.activate(name))
     }
 
+    #[cfg(test)]
     fn activate_file_with_switch(
         &self,
         name: &str,

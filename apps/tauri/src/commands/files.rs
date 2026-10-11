@@ -84,3 +84,43 @@ pub async fn backup_delete(
     let context = context.snapshot()?;
     lettuce_app::api::backup_delete(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn backup_restore(
+    context: State<'_, ApiContextSlot>,
+    request: dto::BackupRestoreRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    let context = context.snapshot()?;
+    api::backup_restore(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn legacy_backup_restore(
+    context: State<'_, ApiContextSlot>,
+    request: dto::BackupRestoreRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    let context = context.snapshot()?;
+    api::legacy_backup_restore(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn legacy_database_import(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LegacyDatabaseImportRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    let context = context.snapshot()?;
+    api::legacy_database_import(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn backup_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::BackupExportRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    let context = context.snapshot()?;
+    api::backup_export(&context, request).await
+}

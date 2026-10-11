@@ -24,6 +24,29 @@ use crate::AppBackend;
 pub(crate) struct StdFiles;
 
 impl FileAccess for StdFiles {
+    fn backup_temporary_location(&self, target: Option<&str>, name: &str) -> Result<String, FileAccessError> {
+        let target = std::path::Path::new(target.ok_or(FileAccessError::Unsupported)?);
+        Ok(target.parent().unwrap_or_else(|| std::path::Path::new(".")).join(name).display().to_string())
+    }
+    fn create_backup_temporary(&self, intent: &str, protected: ExportProtection<'_>) -> Result<(String, Box<dyn std::io::Write + Send>), FileAccessError> {
+        if protected(intent, None)? { return Err(FileAccessError::SourceIsTarget); }
+        let file = std::fs::OpenOptions::new().write(true).create_new(true).open(intent).map_err(|_| FileAccessError::Io)?;
+        Ok((intent.to_owned(), Box::new(file)))
+    }
+    fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> {
+        std::fs::File::open(uri).and_then(|file| file.sync_all()).map_err(|_| FileAccessError::Io)
+    }
+    fn publish_backup(&self, temporary: &str, target: Option<&str>, _name: &str, protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
+        let target = target.ok_or(FileAccessError::Unsupported)?;
+        if protected(target, None)? { return Err(FileAccessError::SourceIsTarget); }
+        if let Ok(file) = std::fs::File::open(target) {
+            if protected(target, Some(&file))? { return Err(FileAccessError::SourceIsTarget); }
+        }
+        std::fs::rename(temporary, target).map_err(|_| FileAccessError::Io)?;
+        std::fs::File::open(std::path::Path::new(target).parent().expect("parent")).and_then(|file| file.sync_all()).map_err(|_| FileAccessError::Io)?;
+        Ok(target.to_owned())
+    }
+
     fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
         std::fs::remove_file(uri).map_err(|error| match error.kind() {
             std::io::ErrorKind::NotFound => FileAccessError::NotFound,

@@ -458,7 +458,7 @@ impl ApiContext {
             files: Arc::clone(&parts.files),
             app_folder: parts.app_folder.clone(),
             resource_dir: parts.resource_dir.clone(),
-            database_files: None,
+            database_files: parts.database_files.as_ref().map(|files| ApiDatabaseFiles { location: files.location.clone(), active: files.active.clone() }),
             asset_url_base: parts.asset_url_base.clone(),
         })
     }
@@ -530,6 +530,8 @@ impl ApiContext {
         for (turn_id, _) in &report.turns {
             self.forget_stream(*turn_id);
         }
+        super::backup_jobs::recover_at_startup(self)?;
+        super::backup_export_jobs::recover_at_startup(self)?;
         super::jobs::voice_creation::recover_queued(self)?;
         super::scenes::recover(self)?;
         super::speech::sweep_scratch(self);

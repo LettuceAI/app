@@ -65,6 +65,51 @@ fn lock(state: &DictationState) -> MutexGuard<'_, Inner> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+pub(crate) fn ensure_no_active_dictation(context: &ApiContext) -> Result<(), ApiError> {
+    let inner = lock(context.speech_state().dictation());
+    if inner.active.is_some() || inner.starting || inner.stopping {
+        return Err(ApiError {
+            code: ApiErrorCode::Busy,
+            message: "dictation active".into(),
+            details: Some(dto::ApiErrorDetails::DictationActive),
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn refuse_active_dictation(
+    context: &ApiContext,
+    claim: &lettuce_jobs::ClaimRef,
+) -> Result<bool, ApiError> {
+    if ensure_no_active_dictation(context).is_ok() {
+        return Ok(false);
+    }
+    use lettuce_jobs::JobStore;
+    let database = context.backend().database();
+    let job = database
+        .get(claim.job_id)
+        .map_err(IntoApiError::into_api_error)?
+        .ok_or_else(|| api_error(ApiErrorCode::NotFound, "cutover job is missing"))?;
+    database
+        .append_and_transition(lettuce_jobs::JobMutation::Fail {
+            claim: claim.clone(),
+            error: lettuce_jobs::JobError::new(
+                lettuce_jobs::JobErrorCode::ResourceUnavailable,
+                false,
+                "dictation-active",
+            )
+            .map_err(|_| {
+                api_error(
+                    ApiErrorCode::Internal,
+                    "dictation failure could not be encoded",
+                )
+            })?,
+            at: context.now().max(job.updated_at),
+        })
+        .map_err(IntoApiError::into_api_error)?;
+    Ok(true)
+}
+
 /// The scratch WAV a capture writes: 16-bit PCM in the capture's format,
 /// its sizes patched into the header when it ends.
 struct WavSpool {
@@ -297,6 +342,23 @@ pub async fn dictation_start(
             ApiErrorCode::Unavailable,
             "the application is shutting down",
         ));
+    }
+    let _lease = context
+        .maintenance()
+        .try_work()
+        .ok_or_else(|| api_error(ApiErrorCode::Busy, "database maintenance is active"))?;
+    if context
+        .backend()
+        .database()
+        .is_file_write_fenced()
+        .map_err(|_| {
+            api_error(
+                ApiErrorCode::Unavailable,
+                "database write fence cannot be read",
+            )
+        })?
+    {
+        return Err(crate::api::context::write_fenced_error());
     }
     if let Some(conversation_id) = &request.conversation_id {
         parse_id::<ConversationId>(conversation_id, "conversation_id")?;

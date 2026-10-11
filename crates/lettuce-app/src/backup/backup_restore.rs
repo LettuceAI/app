@@ -162,6 +162,10 @@ pub enum BackupAppSecretFailureStage {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackupRestoreError {
+    #[error("backup restore was cancelled")]
+    Cancelled,
+    #[error("backup restore API operation failed")]
+    Api(lettuce_contracts::ApiError),
     #[error("backup could not be decoded: {0}")]
     Plan(#[from] lettuce_transfer::ProviderBackupRestorePlanError),
     #[error("backup could not be staged: {0}")]
@@ -207,6 +211,8 @@ impl<S: ?Sized> fmt::Debug for BackupRestoreCoordinator<'_, S> {
     }
 }
 
+type RestoreCheck<'a> = dyn Fn(&str, Option<(&Database, &Path)>) -> Result<(), BackupRestoreError> + Send + Sync + 'a;
+
 impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
     #[must_use]
     pub const fn new(
@@ -230,7 +236,20 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         password: &str,
         restored_at: TimestampMillis,
     ) -> Result<BackupRestoreReceipt, BackupRestoreError> {
+        self.restore_controlled(restore_id, backup, password, restored_at, &|_, _| Ok(())).await
+    }
+
+    pub async fn restore_controlled(
+        &self,
+        restore_id: OperationId,
+        backup: impl lettuce_transfer::BackupSource + 'static,
+        password: &str,
+        restored_at: TimestampMillis,
+        check: &RestoreCheck<'_>,
+    ) -> Result<BackupRestoreReceipt, BackupRestoreError> {
+        check("decode", None)?;
         let plan = lettuce_transfer::decode_provider_backup_restore_plan(backup, password)?;
+        check("stage", None)?;
         let workspace =
             BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))?;
         let staging = workspace.stage(&plan)?;
@@ -242,7 +261,7 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         )?;
         let lifecycle = self.location.file_lifecycle().await?;
         let previous_database_path = self.location.active_path()?;
-        let name = format!("{restore_id}{DATABASE_EXTENSION}");
+        let name = format!("{}{DATABASE_EXTENSION}", OperationId::new());
         let database_path = self.location.database_path(&name)?;
         if database_path
             .try_exists()
@@ -256,6 +275,7 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 .ok_or(BackupRestoreError::TargetDirectory)?,
         )
         .map_err(|_| BackupRestoreError::TargetDirectory)?;
+        check("write", None)?;
         lifecycle.begin_file(&name, DatabaseFileKind::Restore, restored_at)?;
         let ((), _media_pin) = lettuce_media::pin_media_objects(|| {
             Ok::<_, std::convert::Infallible>((
@@ -291,19 +311,30 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         let outcome = self
             .write_database(
                 &database_path,
-                &previous_database_path,
                 &graph,
                 secrets,
                 &artifacts,
                 admission,
                 &mut written,
+                check,
             )
             .await
             .and_then(|admission| {
-                lifecycle
-                    .activate_file(&name, restored_at)
-                    .map(|()| admission)
-                    .map_err(BackupRestoreError::from)
+                check("switch", None)?;
+                let cutover = (|| {
+                    lifecycle.prepare_cutover(&name, restored_at)?;
+                    let database = Database::open(&database_path)?;
+                    if previous_database_path.try_exists().map_err(|_| BackupRestoreError::TargetDirectory)? {
+                        database.carry_device_local_state_from(&previous_database_path)?;
+                    }
+                    check("switch", Some((&database, &database_path)))?;
+                    lifecycle.finish_cutover(&name)?;
+                    Ok(admission)
+                })();
+                if cutover.is_err() {
+                    lifecycle.recover_reset_preparation()?;
+                }
+                cutover
             });
         let admission = match outcome {
             Ok(admission) => admission,
@@ -385,12 +416,12 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
     async fn write_database(
         &self,
         database_path: &Path,
-        previous_database_path: &Path,
         graph: &ProviderBackupGraph,
         secrets: Vec<ProviderBackupSecret>,
         artifacts: &[BackupConversationArtifact],
         admission: BackupRestoreAdmissionRequest,
         written: &mut Vec<(SecretRef, SecretPurpose)>,
+        check: &RestoreCheck<'_>,
     ) -> Result<BackupRestoreAdmission, BackupRestoreError> {
         for secret in secrets {
             self.secrets
@@ -405,16 +436,11 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         }
         let database = Database::open(database_path)?;
         database.restore_provider_backup_graph(graph, artifacts)?;
+        check("verify", None)?;
         let mut restored = database.read_provider_backup_graph()?;
         lettuce_transfer::canonicalize_and_validate(&mut restored)?;
         if restored != *graph {
             return Err(BackupRestoreError::VerificationFailed);
-        }
-        if previous_database_path
-            .try_exists()
-            .map_err(|_| BackupRestoreError::TargetDirectory)?
-        {
-            database.carry_device_local_state_from(previous_database_path)?;
         }
         Ok(database.admit_backup_restore(admission)?)
     }

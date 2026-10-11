@@ -2937,6 +2937,7 @@ mod tests {
         )
         .expect("database location");
         let target_store = InMemorySecretStore::new();
+        let restore_id = OperationId::new();
         let restored = crate::BackupRestoreCoordinator::new(
             &location,
             &root.join("restore-workspace"),
@@ -2944,7 +2945,7 @@ mod tests {
             &target_store,
         )
         .restore(
-            OperationId::new(),
+            restore_id,
             std::io::Cursor::new(export.output.clone()),
             "backup password",
             TimestampMillis::new(5),
@@ -2988,7 +2989,7 @@ mod tests {
             &local_store,
         )
         .restore(
-            OperationId::new(),
+            restore_id,
             std::io::Cursor::new(export.output.clone()),
             "backup password",
             TimestampMillis::new(6),

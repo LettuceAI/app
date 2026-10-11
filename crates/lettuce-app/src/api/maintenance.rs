@@ -9,6 +9,10 @@ pub(super) struct MaintenanceGate {
 }
 
 impl MaintenanceGate {
+    pub(super) fn try_work(&self) -> Option<OwnedRwLockReadGuard<()>> {
+        self.execution.clone().try_read_owned().ok()
+    }
+
     pub(super) async fn work(
         &self,
         cancellation: &CancellationToken,

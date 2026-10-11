@@ -108,26 +108,39 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     )?
     .ok_or("file logging is unavailable")?;
     lettuce_observability::install_panic_reports(log_directory.clone());
-    let context = ApiContext::open_desktop(
-        &app_data,
-        app.path().resource_dir().ok(),
-        Arc::new(lettuce_settings::NativeSecretStore::try_new()?),
-        Arc::new(events::TauriEventSink(app.handle().clone())),
-        files::file_access(app.handle()),
-        asset_protocol::ASSET_URL_BASE.to_owned(),
-        microphone::capture(),
-    )
-    .map_err(|error| error.message)?;
-    context.attach_logs(log_directory, output.sink.clone());
-    context
-        .attach_reset_host(Arc::new(reset::ResetHost(app.handle().clone())))
-        .map_err(|error| error.message)?;
     app.manage(output);
+    let context = open_context(app.handle()).map_err(|error| error.message)?;
     let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))
         .map_err(|error| error.message)?;
     app.manage(ApiContextSlot::new(Arc::new(context)));
     app.manage(Workers(Mutex::new(Some(workers))));
     Ok(())
+}
+
+fn reload_failure() -> lettuce_contracts::ApiError {
+    lettuce_contracts::ApiError {
+        code: lettuce_contracts::ApiErrorCode::Unavailable,
+        message: "database reload requires reopening the application".into(),
+        details: Some(lettuce_contracts::ApiErrorDetails::Backup { reason: lettuce_contracts::BackupFailureReason::RecoveryRequired }),
+    }
+}
+
+fn open_context<R: Runtime>(handle: &AppHandle<R>) -> Result<ApiContext, lettuce_contracts::ApiError> {
+    let app_data = handle.path().app_data_dir().map_err(|_| reload_failure())?;
+    let log_directory = handle.path().app_log_dir().map_err(|_| reload_failure())?;
+    let output = handle.try_state::<lettuce_observability::LocalOutput>().ok_or_else(reload_failure)?;
+    let context = ApiContext::open_desktop(
+        &app_data,
+        handle.path().resource_dir().ok(),
+        Arc::new(lettuce_settings::NativeSecretStore::try_new().map_err(|_| reload_failure())?),
+        Arc::new(events::TauriEventSink(handle.clone())),
+        files::file_access(handle),
+        asset_protocol::ASSET_URL_BASE.to_owned(),
+        microphone::capture(),
+    )?;
+    context.attach_logs(log_directory, output.sink.clone());
+    context.attach_reset_host(Arc::new(reset::ResetHost(handle.clone())))?;
+    Ok(context)
 }
 
 /// Stops the workers: cancels running work, stops the local diffusion
