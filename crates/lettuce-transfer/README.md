@@ -186,3 +186,5 @@ Legacy media completion proofs carry immutable destination asset and blob identi
 Legacy media planning discovers `avatar_banner.webp` in each character avatar directory and carries it as an independent Banner association through the authored import plan.
 
 Legacy entity identities derive from the entity kind and legacy identity in one source-independent namespace. Different restore sources map the same entity to the same destination identity; every restore still writes a fresh database. Secret-store references remain unique to an attempt so kept databases retain their credentials.
+
+The legacy backup public-header reader shares manifest validation with the decoder and reads no encrypted payload. Header inspection needs no password.

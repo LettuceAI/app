@@ -131,7 +131,6 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::library::group_lorebooks_unbind,
             commands::library::group_lorebooks_enable,
             commands::library::group_lorebooks_reorder,
-
             commands::prompts::prompts_list,
             commands::prompts::prompt_placeholders,
             commands::prompts::prompt_validate,
@@ -175,6 +174,10 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::jobs::job_cancel,
             commands::jobs::job_watch,
             commands::files::files_inspect,
+            commands::files::backup_inspect,
+            commands::files::backups_list,
+            commands::files::backup_forget,
+            commands::files::backup_delete,
             commands::files::assets_ingest,
             commands::files::files_pick_open,
             commands::files::files_pick_save,

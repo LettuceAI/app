@@ -184,6 +184,10 @@ export const commands = {
 	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("job_cancel", { request })),
 	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
 	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
+	backupInspect: (request: BackupInspectRequest) => typedError<BackupHeaderView, ApiError>(__TAURI_INVOKE("backup_inspect", { request })),
+	backupsList: () => typedError<BackupIndexView[], ApiError>(__TAURI_INVOKE("backups_list")),
+	backupForget: (request: BackupMutationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("backup_forget", { request })),
+	backupDelete: (request: BackupMutationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("backup_delete", { request })),
 	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef, ApiError>(__TAURI_INVOKE("assets_ingest", { request })),
 	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError>(__TAURI_INVOKE("files_pick_open", { request })),
 	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError>(__TAURI_INVOKE("files_pick_save", { request })),
@@ -411,7 +415,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "legacy_database"; reason: LegacyDatabaseFailure } |
+export type ApiErrorDetails = { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
 /**
  *  The database this process opened was kept by a cutover (restore or
  *  reset) and accepts no writes; the app must restart on the active one.
@@ -442,7 +446,7 @@ export type ApiErrorDetails = { type: "legacy_database"; reason: LegacyDatabaseF
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = { type: "database_reloaded" } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -766,6 +770,31 @@ export type AvatarPromptRequest = {
 };
 
 export type BackgroundChange = { type: "image"; asset_id: string } | { type: "hidden" } | { type: "reset" };
+
+export type BackupFailureReason = "invalid_envelope" | "invalid_password" | "authentication" | "file_unavailable" | "storage" | "verification_failed" | "secrets_unavailable" | "cancelled" | "retry_required" | "recovery_required" | "unsupported";
+
+export type BackupHeaderView = {
+	version: number,
+	created_at: number,
+	app_version: string,
+};
+
+export type BackupIndexView = {
+	id: string,
+	uri: string,
+	header: BackupHeaderView,
+	size: number,
+	missing: boolean,
+};
+
+export type BackupInspectRequest = {
+	source: FileSource,
+};
+
+export type BackupMutationRequest = {
+	id: string,
+	client_operation_id: string,
+};
 
 /**
  *  Why a branch cannot be deleted: it is the conversation's first branch or

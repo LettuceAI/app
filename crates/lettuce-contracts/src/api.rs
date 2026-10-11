@@ -95,6 +95,7 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    Backup { reason: crate::BackupFailureReason },
     LegacyDatabase { reason: crate::LegacyDatabaseFailure },
     /// The database this process opened was kept by a cutover (restore or
     /// reset) and accepts no writes; the app must restart on the active one.
@@ -250,6 +251,7 @@ pub struct ApiError {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiEvent {
+    DatabaseReloaded,
     CharacterChanged {
         character_id: String,
     },

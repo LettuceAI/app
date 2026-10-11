@@ -24,6 +24,14 @@ use crate::AppBackend;
 pub(crate) struct StdFiles;
 
 impl FileAccess for StdFiles {
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        std::fs::remove_file(uri).map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => FileAccessError::NotFound,
+            std::io::ErrorKind::PermissionDenied => FileAccessError::PermissionDenied,
+            _ => FileAccessError::Io,
+        })
+    }
+
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
         let path = std::path::Path::new(uri);
         let metadata = std::fs::metadata(path).map_err(|_| FileAccessError::NotFound)?;

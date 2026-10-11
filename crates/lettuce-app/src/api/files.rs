@@ -46,6 +46,10 @@ pub trait FileAccess: Send + Sync {
 
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError>;
 
+    fn remove(&self, _uri: &str) -> Result<(), FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
+
     fn create_export(
         &self,
         _uri: &str,

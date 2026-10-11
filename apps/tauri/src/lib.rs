@@ -14,7 +14,7 @@ mod reset;
 
 use std::sync::{Arc, Mutex};
 
-use lettuce_app::api::{ApiContext, ApiWorkers};
+use lettuce_app::api::{ApiContext, ApiContextSlot, ApiWorkers};
 use tauri::{App, AppHandle, Manager, RunEvent, Runtime, WindowEvent};
 
 pub use bindings::{BINDINGS_PATH, export_bindings, specta_builder};
@@ -57,7 +57,9 @@ pub fn run() {
                 event: WindowEvent::Focused(focused),
                 ..
             } => {
-                if let Some(context) = handle.try_state::<ApiContext>() {
+                if let Some(slot) = handle.try_state::<ApiContextSlot>()
+                    && let Ok(context) = slot.snapshot()
+                {
                     context.app_focus_changed(focused);
                 }
             }
@@ -66,7 +68,9 @@ pub fn run() {
                 event: WindowEvent::Suspended,
                 ..
             } => {
-                if let Some(context) = handle.try_state::<ApiContext>() {
+                if let Some(slot) = handle.try_state::<ApiContextSlot>()
+                    && let Ok(context) = slot.snapshot()
+                {
                     context.app_focus_changed(false);
                 }
             }
@@ -75,7 +79,9 @@ pub fn run() {
                 event: WindowEvent::Resumed,
                 ..
             } => {
-                if let Some(context) = handle.try_state::<ApiContext>() {
+                if let Some(slot) = handle.try_state::<ApiContextSlot>()
+                    && let Ok(context) = slot.snapshot()
+                {
                     context.app_focus_changed(true);
                 }
             }
@@ -119,7 +125,7 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     app.manage(output);
     let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))
         .map_err(|error| error.message)?;
-    app.manage(context);
+    app.manage(ApiContextSlot::new(Arc::new(context)));
     app.manage(Workers(Mutex::new(Some(workers))));
     Ok(())
 }
@@ -127,18 +133,18 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
 /// Stops the workers: cancels running work, stops the local diffusion
 /// server, records the active time and joins the worker threads.
 fn stop<R: Runtime>(handle: &AppHandle<R>) {
-    let Some(context) = handle
-        .try_state::<ApiContext>()
-        .map(|state| state.inner().clone())
-    else {
-        return;
-    };
     let workers = handle
         .try_state::<Workers>()
         .and_then(|workers| workers.0.lock().ok()?.take());
     match workers {
         Some(workers) => tauri::async_runtime::block_on(workers.stop()),
         None => {
+            let Some(context) = handle
+                .try_state::<ApiContextSlot>()
+                .and_then(|slot| slot.snapshot().ok())
+            else {
+                return;
+            };
             context.begin_shutdown();
             tauri::async_runtime::block_on(context.backend().shutdown());
             context.flush_app_usage();

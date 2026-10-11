@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use lettuce_app::api::{self, ApiContext, JobEventSink};
+use lettuce_app::api::{self, ApiContextSlot, JobEventSink};
 use lettuce_contracts::{
     ApiError, JobCancelRequest, JobEvent, JobGetRequest, JobPage, JobView, JobWatchRequest,
     JobsListRequest,
@@ -10,37 +10,41 @@ use tauri::{State, ipc::Channel};
 #[tauri::command]
 #[specta::specta]
 pub async fn jobs_list(
-    context: State<'_, ApiContext>,
+    context: State<'_, ApiContextSlot>,
     request: JobsListRequest,
 ) -> Result<JobPage, ApiError> {
+    let context = context.snapshot()?;
     api::jobs_list(&context, request).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn job_get(
-    context: State<'_, ApiContext>,
+    context: State<'_, ApiContextSlot>,
     request: JobGetRequest,
 ) -> Result<JobView, ApiError> {
+    let context = context.snapshot()?;
     api::job_get(&context, request).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn job_cancel(
-    context: State<'_, ApiContext>,
+    context: State<'_, ApiContextSlot>,
     request: JobCancelRequest,
 ) -> Result<(), ApiError> {
+    let context = context.snapshot()?;
     api::job_cancel(&context, request).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn job_watch(
-    context: State<'_, ApiContext>,
+    context: State<'_, ApiContextSlot>,
     request: JobWatchRequest,
     on_event: Channel<JobEvent>,
 ) -> Result<JobView, ApiError> {
+    let context = context.snapshot()?;
     api::job_watch(&context, request, Arc::new(ChannelSink(on_event))).await
 }
 

@@ -383,3 +383,13 @@ mod legacy_state_tests;
 
 mod legacy_state;
 pub use legacy_state::legacy_state;
+
+#[cfg(test)]
+mod context_slot_tests;
+#[cfg(test)]
+mod backup_tests;
+
+mod context_slot;
+pub use context_slot::ApiContextSlot;
+mod backup;
+pub use backup::{backup_inspect, backups_list, backup_forget, backup_delete};

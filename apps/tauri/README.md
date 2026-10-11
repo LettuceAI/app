@@ -136,3 +136,5 @@ The usage recalculation command admits a durable missing-cost job. The shell ret
 The reset host stops application workers, clears the main webview localStorage and sessionStorage with an acknowledged script, and starts the desktop executable before exiting. The database lifecycle lock holds the child at startup until the parent stores the terminal reset result. Worker shutdown joins other worker threads while allowing the current reset job to finish. Android and iOS reset run the same steps and then exit without relaunching; the user reopens the app.
 
 The legacy_state command exposes the application's typed storage detection, and AppStatus includes the same state. The shell never reads legacy bin payloads.
+
+Each shell command takes an Arc snapshot from ApiContextSlot before calling the application API. File-backed backup inspection and index list, forget and delete run through this same adapter. Desktop file removal and Android FS removal preserve errors; only a structured not-found is treated as an absent file.

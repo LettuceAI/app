@@ -1,4 +1,4 @@
-use lettuce_app::api::{self, ApiContext, AssetRange, AssetRead};
+use lettuce_app::api::{self, ApiContextSlot, AssetRange, AssetRead};
 use lettuce_contracts::{ApiError, ApiErrorCode};
 use tauri::{
     Manager, Runtime, UriSchemeContext, UriSchemeResponder,
@@ -30,8 +30,8 @@ pub(crate) fn handle<R: Runtime>(
 ) {
     let Some(api_context) = context
         .app_handle()
-        .try_state::<ApiContext>()
-        .map(|state| state.inner().clone())
+        .try_state::<ApiContextSlot>()
+        .and_then(|state| state.snapshot().ok())
     else {
         responder.respond(status(StatusCode::SERVICE_UNAVAILABLE));
         return;

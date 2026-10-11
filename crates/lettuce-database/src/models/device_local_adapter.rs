@@ -5,7 +5,7 @@ use rusqlite::{OptionalExtension, TransactionBehavior};
 
 use crate::{Database, DatabaseError};
 
-const DEVICE_LOCAL_TABLES: &[&str] = &["installed_whisper_models"];
+const DEVICE_LOCAL_TABLES: &[&str] = &["installed_whisper_models", "backups_index"];
 
 impl Database {
     /// Copies device-local state from the previous database file: installed

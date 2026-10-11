@@ -5811,6 +5811,7 @@ mod tests {
                 "asr_voice_examples",
                 "audio_providers",
                 "backup_restore_admissions",
+                "backups_index",
                 "candidate_media_refs",
                 "character_lorebook_bindings",
                 "character_media",
@@ -6119,3 +6120,7 @@ mod tests {
 
 #[cfg(test)]
 mod database_file_tests;
+
+mod backup_index;
+
+pub use backup_index::BackupIndexRecord;

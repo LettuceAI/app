@@ -318,6 +318,42 @@ struct LegacyManifest {
     nonce: Option<String>,
 }
 
+fn read_manifest(
+    archive: &mut ZipArchive<Box<dyn crate::BackupSource>>,
+) -> Result<LegacyManifest, LegacyBackupInventoryError> {
+    let manifest_bytes = read_public_entry(archive, "manifest.json", MAX_LEGACY_MANIFEST_BYTES)?;
+    let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?;
+    if manifest.version != LEGACY_MANIFEST_VERSION
+        || !manifest.encrypted
+        || manifest.app_version.is_empty()
+        || manifest.app_version.len() > 64
+        || manifest.app_version.chars().any(char::is_control)
+    {
+        return Err(LegacyBackupInventoryError::InvalidManifest);
+    }
+    Ok(manifest)
+}
+
+pub fn read_legacy_backup_header(
+    mut input: impl crate::BackupSource + 'static,
+) -> Result<crate::BackupHeader, LegacyBackupInventoryError> {
+    input
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+    let mut archive = ZipArchive::new(Box::new(input) as Box<dyn crate::BackupSource>)
+        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+    let manifest = read_manifest(&mut archive)?;
+    Ok(crate::BackupHeader {
+        version: 1,
+        created_at: lettuce_types::TimestampMillis::new(
+            i64::try_from(manifest.created_at)
+                .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?,
+        ),
+        app_version: manifest.app_version,
+    })
+}
+
 /// Decodes a version-1 backup from a seekable source. Documents are
 /// decrypted into memory; each media entry is decrypted once to record its
 /// size and hash and again only when its bytes are read. The password is
@@ -354,18 +390,7 @@ pub fn decode_legacy_backup_inventory(
         return Err(LegacyBackupInventoryError::LimitExceeded);
     }
     validate_archive_metadata(&mut archive)?;
-    let manifest_bytes =
-        read_public_entry(&mut archive, "manifest.json", MAX_LEGACY_MANIFEST_BYTES)?;
-    let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes)
-        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?;
-    if manifest.version != LEGACY_MANIFEST_VERSION
-        || !manifest.encrypted
-        || manifest.app_version.is_empty()
-        || manifest.app_version.len() > 64
-        || manifest.app_version.chars().any(char::is_control)
-    {
-        return Err(LegacyBackupInventoryError::InvalidManifest);
-    }
+    let manifest = read_manifest(&mut archive)?;
     let salt = decode_array::<16>(manifest.salt.as_deref())?;
     let nonce = decode_array::<24>(manifest.nonce.as_deref())?;
     let key = Zeroizing::new(derive_key(password, &salt));
@@ -806,6 +831,18 @@ mod tests {
             ),
             Err(LegacyBackupInventoryError::InvalidInventory)
         );
+    }
+
+    #[test]
+    fn legacy_public_header_needs_no_password_or_payload_decode() {
+        let header = read_legacy_backup_header(std::io::Cursor::new(archive(
+            LEGACY_MANIFEST_VERSION,
+            &[("data/settings.json.enc", b"invalid JSON")],
+        )))
+        .expect("public header");
+        assert_eq!(header.version, 1);
+        assert_eq!(header.created_at, lettuce_types::TimestampMillis::new(123));
+        assert_eq!(header.app_version, "0.9.0");
     }
 
     #[test]

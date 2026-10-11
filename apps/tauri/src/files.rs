@@ -145,6 +145,10 @@ fn picked_path(picked: tauri_plugin_dialog::FilePath) -> Result<String, FileAcce
 
 #[cfg(desktop)]
 impl<R: Runtime> FileAccess for DesktopFileAccess<R> {
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        remove_path(uri)
+    }
+
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
         describe_path(uri)
     }
@@ -224,6 +228,16 @@ fn platform_uri(uri: &str) -> Option<tauri_plugin_android_fs::FsUri> {
 
 #[cfg(target_os = "android")]
 impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        let Some(uri) = platform_uri(uri) else {
+            return remove_path(uri);
+        };
+        self.fs().remove_file(&uri).map_err(|failure| {
+            let failure: std::io::Error = failure.into();
+            access_error(&failure)
+        })
+    }
+
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
         let Some(uri) = platform_uri(uri) else {
             return describe_path(uri);
@@ -316,6 +330,10 @@ pub(crate) struct PathFileAccess;
 
 #[cfg(not(any(desktop, target_os = "android")))]
 impl FileAccess for PathFileAccess {
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        remove_path(uri)
+    }
+
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
         describe_path(uri)
     }
@@ -524,4 +542,8 @@ mod tests {
         );
         std::fs::remove_dir_all(root).expect("test operation succeeds");
     }
+}
+
+fn remove_path(uri: &str) -> Result<(), FileAccessError> {
+    std::fs::remove_file(uri).map_err(|failure| access_error(&failure))
 }
