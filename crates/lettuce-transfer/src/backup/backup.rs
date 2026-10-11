@@ -91,11 +91,17 @@ pub struct BackupHeader {
 }
 
 pub fn read_backup_header(input: &mut impl Read) -> Result<BackupHeader, BackupEnvelopeError> {
+    read_backup_header_bytes(input).map(|(metadata, _)| metadata)
+}
+
+pub fn read_backup_header_bytes(
+    input: &mut impl Read,
+) -> Result<(BackupHeader, Vec<u8>), BackupEnvelopeError> {
     let mut header = [0_u8; HEADER_BYTES];
     input
         .read_exact(&mut header)
         .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
-    decode_header(&header).map(|(_, metadata)| metadata)
+    decode_header(&header).map(|(_, metadata)| (metadata, header.to_vec()))
 }
 
 /// One section of an opened backup, readable through [`BackupReader`].
