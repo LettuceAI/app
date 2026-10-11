@@ -1173,3 +1173,20 @@ async fn source_io_failure(legacy: bool) {
         assert_eq!(failure.reason, Some(dto::JobFailureReason::BackupFileUnavailable));
     }
 }
+
+#[tokio::test]
+async fn fix11a_live_legacy_import_source_io_is_unavailable() {
+    use super::jobs::JobHandler;
+    use lettuce_jobs::JobStore;
+    let (_root, location, harness) = super::app_reset_tests::harness();
+    let active = location.active_path().expect("active");
+    let accepted = super::legacy_database_import(&harness.context, dto::LegacyDatabaseImportRequest { client_operation_id: "live-source-io".into() }).await.expect("admit");
+    let job = harness.context.backend().database().get(accepted.job_id.parse().expect("id")).expect("get").expect("job");
+    let work = super::backup_jobs::RestoreHandler.claim(&harness.context, &job, lettuce_jobs::WorkerId::new()).await.expect("claim").expect("work");
+    work.run(harness.context.clone(), Arc::new(Progress)).await.expect("typed settlement");
+    let failure = super::job_get(&harness.context, dto::JobGetRequest { job_id: accepted.job_id }).await.expect("job").failure.expect("typed failure");
+    assert_eq!(failure.code, dto::JobFailureCode::ResourceUnavailable);
+    assert_eq!(failure.reason, Some(dto::JobFailureReason::BackupFileUnavailable));
+    assert_eq!(location.active_path().expect("unchanged"), active);
+    assert!(!harness.events.events().iter().any(|event| matches!(event, dto::ApiEvent::DatabaseReloaded)));
+}
