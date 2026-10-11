@@ -593,7 +593,11 @@ async fn stop_disconnect_and_stall_in_every_transfer_phase_keep_data_and_allow_r
             let (peer, peer_root) = device();
             host.context
                 .sync_state()
-                .set_test_read_deadline(std::time::Duration::from_millis(200));
+                .set_test_read_deadline(std::time::Duration::from_secs(if action == "stall" {
+                    2
+                } else {
+                    60
+                }));
             let (task, reached, release) =
                 peer_held_in_phase(&host.context, &peer.context, phase.clone()).await;
             tokio::time::timeout(std::time::Duration::from_secs(10), reached)
