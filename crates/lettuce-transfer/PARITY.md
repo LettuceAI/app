@@ -4,6 +4,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Backup format
 
+- Slice 11a exposes only the format version, creation time and app version in the authenticated v2 header. Legacy password-free inspection also exposed media counts (`old-code/src-tauri/src/storage_manager/backup.rs:3572-3641`); v2 keeps counts and content metadata encrypted. The unreleased v2 header changes in place with no reader for the earlier layout.
+
 - Dispatch display snapshots preserve the names copied into legacy usage (`old-code/src-tauri/src/chat_manager/service.rs:515-538`). Backup validation rejects a completed snapshot that changes admitted names or contradicts its provider response id; older evidence without display attribution remains readable.
 
 - Provider graph version 3 retains lorebook apply receipt id and name snapshots after hard delete (slice 6 decision 14), instead of making restore depend on a surviving source. Legacy lorebook deletion removed the book row (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`).

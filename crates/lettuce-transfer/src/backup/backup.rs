@@ -34,7 +34,8 @@ const NONCE_BYTES: usize = 24;
 const ENTRY_NONCE_PREFIX_BYTES: usize = 19;
 const TAG_BYTES: usize = 16;
 const CHUNK_BYTES: usize = 1024 * 1024;
-const HEADER_BYTES: usize = MAGIC.len() + 12 + SALT_BYTES;
+const PUBLIC_METADATA_BYTES: usize = 4 + 8 + 1 + MAX_APP_VERSION_BYTES;
+const HEADER_BYTES: usize = MAGIC.len() + 12 + PUBLIC_METADATA_BYTES + SALT_BYTES;
 const FOOTER_BYTES: usize = NONCE_BYTES + 4 + FOOTER_MAGIC.len();
 const ARGON2_MEMORY_KIB: u32 = 64 * 1024;
 const ARGON2_ITERATIONS: u32 = 3;
@@ -80,6 +81,21 @@ pub struct BackupInfo {
     pub app_version: String,
     pub entry_count: usize,
     pub plaintext_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupHeader {
+    pub version: u32,
+    pub created_at: TimestampMillis,
+    pub app_version: String,
+}
+
+pub fn read_backup_header(input: &mut impl Read) -> Result<BackupHeader, BackupEnvelopeError> {
+    let mut header = [0_u8; HEADER_BYTES];
+    input
+        .read_exact(&mut header)
+        .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
+    decode_header(&header).map(|(_, metadata)| metadata)
 }
 
 /// One section of an opened backup, readable through [`BackupReader`].
@@ -196,9 +212,7 @@ mod hex_prefix {
     }
 }
 
-/// Writes a v2 backup to `out` section by section. The plaintext header
-/// holds only the KDF parameters; every entry is encrypted in chunks and the
-/// manifest (names, schemas, sizes, hashes) is an encrypted trailer.
+/// Streams encrypted sections and a private manifest with an authenticated public header.
 pub struct BackupWriter<W: Write> {
     out: W,
     cipher: XChaCha20Poly1305,
@@ -239,7 +253,7 @@ impl<W: Write> BackupWriter<W> {
             lanes: ARGON2_LANES,
             salt,
         };
-        let header = encode_header(&kdf);
+        let header = encode_header(&kdf, created_at, &app_version);
         let key = derive_key(password, &kdf)?;
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
             .map_err(|_| BackupEnvelopeError::Encryption)?;
@@ -462,6 +476,12 @@ impl<R: Read + Seek> BackupReader<R> {
         let manifest: BackupManifest = serde_json::from_slice(&manifest_bytes)
             .map_err(|_| BackupEnvelopeError::InvalidMetadata)?;
         validate_manifest(&manifest)?;
+        if manifest.version != layout.metadata.version
+            || manifest.created_at != layout.metadata.created_at
+            || manifest.app_version != layout.metadata.app_version
+        {
+            return Err(BackupEnvelopeError::InvalidMetadata);
+        }
         let mut offsets = Vec::with_capacity(manifest.entries.len());
         let mut position = HEADER_BYTES as u64;
         for entry in &manifest.entries {
@@ -627,6 +647,7 @@ pub fn verify_backup_frame(input: &mut (impl Read + Seek)) -> Result<(), BackupE
 
 struct BackupLayout {
     kdf: BackupKdf,
+    metadata: BackupHeader,
     binding: [u8; 32],
     manifest_nonce: [u8; NONCE_BYTES],
     manifest_offset: u64,
@@ -648,7 +669,7 @@ fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnv
     input
         .read_exact(&mut header)
         .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
-    let kdf = decode_header(&header)?;
+    let (kdf, metadata) = decode_header(&header)?;
     input
         .seek(SeekFrom::Start(total - FOOTER_BYTES as u64))
         .map_err(|_| BackupEnvelopeError::Io)?;
@@ -676,6 +697,7 @@ fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnv
         .ok_or(BackupEnvelopeError::InvalidEnvelope)?;
     Ok(BackupLayout {
         kdf,
+        metadata,
         binding: *blake3::hash(&header).as_bytes(),
         manifest_nonce,
         manifest_offset,
@@ -683,7 +705,11 @@ fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnv
     })
 }
 
-fn encode_header(kdf: &BackupKdf) -> [u8; HEADER_BYTES] {
+fn encode_header(
+    kdf: &BackupKdf,
+    created_at: TimestampMillis,
+    app_version: &str,
+) -> [u8; HEADER_BYTES] {
     let mut header = [0u8; HEADER_BYTES];
     header[..MAGIC.len()].copy_from_slice(&MAGIC);
     let mut position = MAGIC.len();
@@ -691,11 +717,21 @@ fn encode_header(kdf: &BackupKdf) -> [u8; HEADER_BYTES] {
         header[position..position + 4].copy_from_slice(&value.to_be_bytes());
         position += 4;
     }
+    header[position..position + 4].copy_from_slice(&BACKUP_ENVELOPE_VERSION.to_be_bytes());
+    position += 4;
+    header[position..position + 8].copy_from_slice(&created_at.get().to_be_bytes());
+    position += 8;
+    header[position] = app_version.len() as u8;
+    position += 1;
+    header[position..position + app_version.len()].copy_from_slice(app_version.as_bytes());
+    position += MAX_APP_VERSION_BYTES;
     header[position..].copy_from_slice(&kdf.salt);
     header
 }
 
-fn decode_header(header: &[u8; HEADER_BYTES]) -> Result<BackupKdf, BackupEnvelopeError> {
+fn decode_header(
+    header: &[u8; HEADER_BYTES],
+) -> Result<(BackupKdf, BackupHeader), BackupEnvelopeError> {
     if header[..MAGIC.len()] != MAGIC {
         return Err(BackupEnvelopeError::InvalidEnvelope);
     }
@@ -710,7 +746,7 @@ fn decode_header(header: &[u8; HEADER_BYTES]) -> Result<BackupKdf, BackupEnvelop
         memory_kib: value(MAGIC.len()),
         iterations: value(MAGIC.len() + 4),
         lanes: value(MAGIC.len() + 8),
-        salt: header[MAGIC.len() + 12..]
+        salt: header[HEADER_BYTES - SALT_BYTES..]
             .try_into()
             .expect("header salt length"),
     };
@@ -720,7 +756,32 @@ fn decode_header(header: &[u8; HEADER_BYTES]) -> Result<BackupKdf, BackupEnvelop
     {
         return Err(BackupEnvelopeError::InvalidMetadata);
     }
-    Ok(kdf)
+    let start = MAGIC.len() + 12;
+    let version = value(start);
+    let created_at = TimestampMillis::new(i64::from_be_bytes(
+        header[start + 4..start + 12]
+            .try_into()
+            .expect("header timestamp length"),
+    ));
+    let length = usize::from(header[start + 12]);
+    if version != BACKUP_ENVELOPE_VERSION || length == 0 || length > MAX_APP_VERSION_BYTES {
+        return Err(BackupEnvelopeError::InvalidMetadata);
+    }
+    let text = &header[start + 13..start + 13 + MAX_APP_VERSION_BYTES];
+    if text[length..].iter().any(|byte| *byte != 0) {
+        return Err(BackupEnvelopeError::InvalidMetadata);
+    }
+    let app_version =
+        std::str::from_utf8(&text[..length]).map_err(|_| BackupEnvelopeError::InvalidMetadata)?;
+    validate_app_version(app_version)?;
+    Ok((
+        kdf,
+        BackupHeader {
+            version,
+            created_at,
+            app_version: app_version.to_owned(),
+        },
+    ))
 }
 
 fn encrypted_len(plaintext_bytes: u64) -> Result<u64, BackupEnvelopeError> {
@@ -1044,6 +1105,44 @@ mod tests {
 
     fn envelope(password: &str) -> Vec<u8> {
         seal_backup("1.2.3", TimestampMillis::new(1234), password, sections()).expect("seal backup")
+    }
+
+    #[test]
+    fn plaintext_header_exposes_only_public_metadata() {
+        let bytes = envelope("password");
+        let start = MAGIC.len() + 12;
+        assert_eq!(&bytes[start..start + 4], &2_u32.to_be_bytes());
+        assert_eq!(&bytes[start + 4..start + 12], &1234_u64.to_be_bytes());
+        assert_eq!(bytes[start + 12], 5);
+        assert_eq!(&bytes[start + 13..start + 18], b"1.2.3");
+    }
+
+    #[test]
+    fn plaintext_metadata_tampering_fails_authentication() {
+        let mut bytes = envelope("password");
+        bytes[MAGIC.len() + 12 + 11] ^= 1;
+        assert_eq!(
+            open_backup(&bytes, "password"),
+            Err(BackupEnvelopeError::Authentication)
+        );
+    }
+
+    #[test]
+    fn public_header_reads_without_password_and_matches_manifest() {
+        let bytes = envelope("password");
+        let header = read_backup_header(&mut std::io::Cursor::new(&bytes)).expect("header");
+        let info = BackupReader::open(std::io::Cursor::new(&bytes), "password")
+            .expect("reader")
+            .info();
+        assert_eq!(header.version, info.version);
+        assert_eq!(header.created_at, info.created_at);
+        assert_eq!(header.app_version, info.app_version);
+        for length in [0, MAGIC.len(), HEADER_BYTES - 1] {
+            assert_eq!(
+                read_backup_header(&mut std::io::Cursor::new(&bytes[..length])),
+                Err(BackupEnvelopeError::InvalidEnvelope)
+            );
+        }
     }
 
     #[test]
