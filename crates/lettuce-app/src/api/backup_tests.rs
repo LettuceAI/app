@@ -827,3 +827,54 @@ async fn review_backup_jobs_preserve_missing_permission_busy_and_unsupported_fil
         }
     }
 }
+
+#[tokio::test]
+async fn review_backup_delete_preserves_a_replacement_awaiting_index_recovery() {
+    use lettuce_jobs::{JobMutation, JobStore, ResourceAvailability, StageSnapshot};
+    let (root, location, harness) = super::app_reset_tests::harness();
+    let target = root.join("published-before-index.lettuce");
+    let accepted = super::backup_export(&harness.context, dto::BackupExportRequest { target: Some(dto::FileTarget { uri: target.display().to_string() }), password: "password".into(), client_operation_id: "review-pending-index".into() }).await.expect("admit");
+    let id = accepted.job_id.parse().expect("id");
+    harness.context.jobs().take_backup_password(id);
+    let database = harness.context.backend().database();
+    let job = database.get(id).expect("get").expect("job");
+    let claim = database.claim(id, lettuce_jobs::WorkerId::new(), job.updated_at, std::time::Duration::from_secs(60), &ResourceAvailability::all()).expect("claim").expect("owned").claim;
+    database.append_and_transition(JobMutation::Start { claim: claim.clone(), at: job.updated_at }).expect("start");
+    let mut detail = database.job_detail(id).expect("detail").expect("stored").detail;
+    let header = detail["header"].clone();
+    let archive = || {
+        let mut writer = lettuce_transfer::BackupWriter::new(Vec::new(), header["app_version"].as_str().expect("version"), TimestampMillis::new(header["created_at"].as_i64().expect("time")), "password").expect("writer");
+        writer.append_bytes("data.json", "data.v1", b"{}").expect("section");
+        writer.finish().expect("complete archive")
+    };
+    let old = archive();
+    let replacement = archive();
+    assert_eq!(old.len(), replacement.len());
+    assert_ne!(old, replacement);
+    std::fs::write(&target, &old).expect("old backup");
+    let entry = lettuce_database::BackupIndexRecord { id: JobId::new(), uri: target.display().to_string(), version: 2, created_at: TimestampMillis::new(header["created_at"].as_i64().expect("time")), app_version: header["app_version"].as_str().expect("version").into(), size: old.len() as u64 };
+    database.record_backup(&entry).expect("old index");
+    let lifecycle = location.file_lifecycle().await.expect("publication lifecycle");
+    let temporary = detail["temporary_intent"].as_str().expect("intent").to_owned();
+    std::fs::write(&temporary, &replacement).expect("durable complete backup");
+    std::fs::File::open(&temporary).expect("temporary").sync_all().expect("durable");
+    detail["temporary_uri"] = serde_json::json!(temporary);
+    detail["size"] = serde_json::json!(replacement.len());
+    detail["publication_header"] = serde_json::json!(lettuce_transfer::read_backup_header_bytes(&mut std::io::Cursor::new(&replacement)).expect("header").1);
+    database.checkpoint_backup_job(JobMutation::StageChanged { claim, stage: StageSnapshot::new("publish", true).expect("stage"), at: job.updated_at }, &detail).expect("publication evidence");
+    std::fs::rename(&temporary, &target).expect("published");
+    drop(lifecycle);
+    let request = dto::BackupMutationRequest { id: entry.id.to_string(), client_operation_id: "delete-stale-index".into() };
+    let failure = super::backup_delete(&harness.context, request.clone()).await.expect_err("new file has no index receipt yet");
+    assert_eq!(failure.details, Some(dto::ApiErrorDetails::Backup { reason: dto::BackupFailureReason::RecoveryRequired }));
+    assert_eq!(std::fs::read(&target).expect("replacement preserved"), replacement);
+    assert_eq!(database.backup_index().expect("old index kept"), vec![entry]);
+    assert!(database.lookup_api_operation("backup_delete", "delete-stale-index").expect("receipt").is_none());
+    harness.context.recover_after_restart().expect("reopen recovery");
+    let recovered = database.backup_index().expect("recovered");
+    assert_eq!(recovered[0].id, id);
+    assert_eq!(super::backup_delete(&harness.context, request).await.expect_err("old identity no longer exists").code, ApiErrorCode::NotFound);
+    assert!(target.is_file());
+    super::backup_delete(&harness.context, dto::BackupMutationRequest { id: id.to_string(), client_operation_id: "delete-recovered".into() }).await.expect("explicit deletion of recovered identity");
+    assert!(!target.exists());
+}

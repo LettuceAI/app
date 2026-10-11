@@ -73,10 +73,17 @@ async fn mutate_index(context: &ApiContext, request: dto::BackupMutationRequest,
     } else { None };
     context.blocking(move |context| {
         let _lifecycle = lifecycle;
-        context.backend().database().commit_api_operation(command, &request.client_operation_id, &digest, context.now(), |transaction| {
+        let database = context.backend().database();
+        let pending = if delete && database.lookup_api_operation(command, &request.client_operation_id).map_err(|failure| Failure::from(failure).0)?.is_none() {
+            super::backup_export_jobs::pending_publication_targets(context)?
+        } else { Default::default() };
+        database.commit_api_operation(command, &request.client_operation_id, &digest, context.now(), |transaction| {
             let id = super::error::parse_id::<lettuce_types::JobId>(&request.id, "id").map_err(Failure)?;
             let entry = transaction.backup_index_record(id)?.ok_or_else(|| Failure(error(ApiErrorCode::NotFound, dto::BackupFailureReason::FileUnavailable)))?;
             if delete {
+                if pending.contains(&entry.uri) {
+                    return Err(Failure(error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired)));
+                }
                 match context.files().remove(&entry.uri) {
                     Ok(()) | Err(super::FileAccessError::NotFound) => {}
                     Err(failure) => return Err(Failure(file_error(failure))),

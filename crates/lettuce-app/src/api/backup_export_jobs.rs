@@ -218,6 +218,28 @@ impl ClaimedJob for Work {
     }
 }
 
+pub(super) fn pending_publication_targets(context: &ApiContext) -> Result<std::collections::BTreeSet<String>, ApiError> {
+    use lettuce_jobs::{JobCatalog, JobListFilter};
+    use lettuce_types::{PageLimit, PageRequest};
+    let database = context.backend().database();
+    let mut targets = std::collections::BTreeSet::new();
+    let mut filter = JobListFilter { kinds: vec![JobKind::BackupExport], states: vec![JobState::Queued, JobState::Claimed, JobState::Running, JobState::CancellationRequested, JobState::CleaningUp], subject: None, page: PageRequest { cursor: None, limit: PageLimit::new(200) } };
+    loop {
+        let page = database.list_jobs(&filter).map_err(IntoApiError::into_api_error)?;
+        for job in page.items {
+            if job.subject.id.as_str() != "database-export" { continue; }
+            let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
+            if detail.publication_header.is_some() && detail.size.is_some()
+                && let Some(target) = detail.target
+            {
+                targets.insert(target);
+            }
+        }
+        let Some(cursor) = page.next_cursor else { return Ok(targets); };
+        filter.page.cursor = Some(cursor);
+    }
+}
+
 pub(super) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
     use lettuce_jobs::{JobCatalog, JobListFilter};
     use lettuce_types::{PageLimit, PageRequest};

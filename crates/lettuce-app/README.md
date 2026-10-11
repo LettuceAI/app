@@ -741,3 +741,5 @@ The shell rebuilds the context with its ordinary constructor and startup functio
 Restore and reset refuse active, starting or stopping dictation with typed Busy before admission and before taking the maintenance lease, and check again after acquiring it. Recording start takes a short work lease through capture registration and refuses an active maintenance lease or a fenced database, preserving the scratch recording during cutover races.
 
 Backup jobs retain separate file failure reasons for missing files, denied permission, busy files, unsupported locations, protected targets and other unavailable file access. These reasons survive settlement and job watching.
+
+Deletion preserves a desktop target while an unfinished export has durable publication evidence for it. It reports RecoveryRequired and keeps the previous index entry until reopen recovery finishes or rejects that publication, then rechecks the requested backup identity. Successful delete receipts still replay before that guard.
