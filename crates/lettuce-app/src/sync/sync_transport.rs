@@ -148,7 +148,7 @@ impl SyncTcpListener {
         }
         let (stream, _) = tokio::select! {
             () = cancellation.cancelled() => return Err(SyncPeerTransportError::Cancelled),
-            accepted = self.listener.accept() => accepted.map_err(SyncPeerTransportError::Io)?,
+            accepted = self.listener.accept() => accepted.map_err(SyncPeerTransportError::Listener)?,
         };
         match authenticate_host(stream, self.local_device, &self.pin, media, cancellation).await {
             Ok(mut transport) => {
@@ -228,6 +228,8 @@ pub enum SyncPeerTransportError {
     PeerStalled,
     #[error("sync socket failed")]
     Io(#[source] io::Error),
+    #[error("sync listener stopped accepting connections")]
+    Listener(#[source] io::Error),
     #[error("too many wrong PINs; share again to get a new PIN")]
     PairingLocked,
     #[error("the other device declined to sync")]

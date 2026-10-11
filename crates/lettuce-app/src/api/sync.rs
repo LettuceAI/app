@@ -96,7 +96,7 @@ fn transport_error(error: SyncPeerTransportError) -> ApiError {
         ),
         E::PairingLocked => (ApiErrorCode::Unavailable, dto::SyncFailure::PairingLocked),
         E::Declined => (ApiErrorCode::Cancelled, dto::SyncFailure::Declined),
-        E::Disconnected | E::Io(_) => (ApiErrorCode::Unavailable, dto::SyncFailure::Disconnected),
+        E::Disconnected | E::Io(_) | E::Listener(_) => (ApiErrorCode::Unavailable, dto::SyncFailure::Disconnected),
         E::PeerStalled => (ApiErrorCode::Unavailable, dto::SyncFailure::PeerStalled),
         _ => (ApiErrorCode::Unsupported, dto::SyncFailure::Protocol),
     };
