@@ -186,3 +186,5 @@ Legacy live-database metrics import keeps every committed row. The 500-row reade
 Backup passwords keep internal control characters and values longer than 1024 bytes. Legacy backend required only a nonempty trimmed value (`old-code/src-tauri/src/storage_manager/backup.rs:178-189`), and its UI applied only the minimum length and confirmation checks (`old-code/src/ui/pages/settings/hooks/useBackupRestore.ts:191-198`). V1 decoding retains trim-before-key derivation; the v2 API applies the same trim before the envelope.
 
 Current and legacy backup readers distinguish source I/O from malformed or truncated envelopes. LegacyIdScope no longer accepts an ignored fingerprint; identity remains source-independent, while source hashes and compatibility seals continue to protect admissions and materialization.
+
+The read-only conflict inbox reuses the bincode StoredRow decoder for columns, primary keys and optional values rather than recovering a winner from an unpreserved table (old-code/src-tauri/src/sync/v2/conflicts.rs:26-30,145-184). Tombstone primary keys remain available; trailing bytes fail decoding.

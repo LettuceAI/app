@@ -68,7 +68,13 @@ const MEDIA_COMPLETION_COLUMNS: &[&str] = &[
     "completed_at",
 ];
 const STAGE_RESULT_COLUMNS: &[&str] = &["run_id", "stage", "record_count", "completed_at"];
-const PRESERVED_ROW_COLUMNS: &[&str] = &["run_id", "source_table", "source_key", "row_json"];
+const PRESERVED_ROW_COLUMNS: &[&str] = &[
+    "run_id",
+    "source_table",
+    "source_key",
+    "row_json",
+    "dismissed_at",
+];
 const RESULT_COLUMNS: &[&str] = &[
     "run_id",
     "plan_fingerprint",

@@ -29,6 +29,7 @@ mod catalog;
 mod media;
 mod models;
 mod sync;
+pub use sync::legacy_conflict_adapter::{LegacyConflictCurrent, LegacyConflictField, LegacySyncConflict};
 mod backup;
 mod legacy;
 mod api_operation_adapter;

@@ -4,27 +4,31 @@ use lettuce_types::{ConversationBranchId, ConversationId, OperationId, Timestamp
 use crate::{CanonicalChange, SyncChangeId, SyncDeviceId};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PersonaConflictValue {
+pub enum SyncConflictValue {
     Persona(Persona),
     Default(PersonaDefaultState),
+    Character(Box<lettuce_characters::CharacterDetails>),
+    Lorebook(Box<lettuce_context::LorebookDetails>),
+    Prompt(Box<lettuce_context::PromptDocument>),
+    Deleted,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PersonaConflictCandidate {
+pub struct SyncConflictCandidate {
     pub change_id: Option<SyncChangeId>,
     pub device_id: Option<SyncDeviceId>,
     pub timestamp: Option<TimestampMillis>,
-    pub value: PersonaConflictValue,
+    pub value: SyncConflictValue,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PersonaConflict {
+pub struct SyncConflict {
     pub id: OperationId,
     pub entity_kind: String,
     pub entity_id: String,
     pub detected_at: TimestampMillis,
-    pub current: PersonaConflictCandidate,
-    pub other: PersonaConflictCandidate,
+    pub current: SyncConflictCandidate,
+    pub other: SyncConflictCandidate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,16 +45,19 @@ pub enum ConflictRepositoryError {
     Conflict,
     #[error("sync conflict evidence is corrupt")]
     Corrupt,
+    #[error("the selected conflict candidate cannot be restored")]
+    Unsupported,
+    #[error("a required conflict reference is unavailable")]
+    Unavailable,
     #[error("sync conflict storage failed")]
     Storage,
 }
 
-pub trait PersonaConflictRepository: Send + Sync {
-    /// Every unresolved persona conflict, newest first.
-    fn unresolved_persona_conflicts(&self)
-    -> Result<Vec<PersonaConflict>, ConflictRepositoryError>;
+pub trait SyncConflictRepository: Send + Sync {
+    /// Every supported unresolved catalog conflict, newest first.
+    fn unresolved_sync_conflicts(&self) -> Result<Vec<SyncConflict>, ConflictRepositoryError>;
 
-    fn resolve_persona_conflict(
+    fn resolve_sync_conflict(
         &self,
         conflict_id: OperationId,
         expected_current_change: Option<SyncChangeId>,

@@ -9,8 +9,8 @@ use lettuce_sync::{
     MAX_INCOMING_CHANGES, MAX_INCOMING_PAYLOAD_BYTES, MAX_OUTBOUND_CHANGES,
     MAX_OUTBOUND_PAYLOAD_BYTES, MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION,
     NewCanonicalChange, OutboundChangeBatch, PERSONA_DEFAULT_SYNC_SCHEMA,
-    PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, PersonaConflict,
-    PersonaConflictCandidate, PersonaConflictRepository, PersonaConflictValue, SyncChangeId,
+    PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, SyncConflict,
+    SyncConflictCandidate, SyncConflictRepository, SyncConflictValue, SyncChangeId,
     SyncDeviceId, SyncEntity, canonical_batch_hash, canonical_persona_default_payload,
     canonical_persona_payload, persona_default_sync_entity, persona_sync_entity,
 };
@@ -4521,15 +4521,27 @@ fn conflict_value(
     entity_kind: &str,
     entity_id: &str,
     payload: &[u8],
-) -> Result<PersonaConflictValue, ConflictRepositoryError> {
+) -> Result<SyncConflictValue, ConflictRepositoryError> {
+    if payload.is_empty() {
+        return Ok(SyncConflictValue::Deleted);
+    }
     match entity_kind {
+        "character" | "lorebook" | "prompt" => {
+            let codec = snapshot_codec(entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
+            (codec.decode)(entity_id, payload).map_err(|_| ConflictRepositoryError::Corrupt)?;
+            match entity_kind {
+                "character" => serde_json::from_slice(payload).map(SyncConflictValue::Character).map_err(conflict_corrupt),
+                "lorebook" => serde_json::from_slice(payload).map(SyncConflictValue::Lorebook).map_err(conflict_corrupt),
+                _ => serde_json::from_slice(payload).map(SyncConflictValue::Prompt).map_err(conflict_corrupt),
+            }
+        }
         "persona" => {
             let persona: Persona = serde_json::from_slice(payload).map_err(conflict_corrupt)?;
             persona.validate().map_err(conflict_corrupt)?;
             if persona.id.to_string() != entity_id {
                 return Err(ConflictRepositoryError::Corrupt);
             }
-            Ok(PersonaConflictValue::Persona(persona))
+            Ok(SyncConflictValue::Persona(persona))
         }
         "persona_default" => {
             if entity_id != "application" {
@@ -4538,7 +4550,7 @@ fn conflict_value(
             let state: PersonaDefaultState =
                 serde_json::from_slice(payload).map_err(conflict_corrupt)?;
             state.validate().map_err(conflict_corrupt)?;
-            Ok(PersonaConflictValue::Default(state))
+            Ok(SyncConflictValue::Default(state))
         }
         _ => Err(ConflictRepositoryError::Corrupt),
     }
@@ -4550,7 +4562,7 @@ fn conflict_candidate(
     entity_kind: &str,
     entity_id: &str,
     payload: &[u8],
-) -> Result<PersonaConflictCandidate, ConflictRepositoryError> {
+) -> Result<SyncConflictCandidate, ConflictRepositoryError> {
     let change = change_id
         .map(|id| {
             let id = SyncChangeId::from_uuid(Uuid::parse_str(id).map_err(conflict_corrupt)?);
@@ -4562,7 +4574,7 @@ fn conflict_candidate(
                 .ok_or(ConflictRepositoryError::Corrupt)
         })
         .transpose()?;
-    Ok(PersonaConflictCandidate {
+    Ok(SyncConflictCandidate {
         change_id: change.as_ref().map(CanonicalChange::id),
         device_id: change.as_ref().map(CanonicalChange::origin_device),
         timestamp: change.as_ref().map(|value| value.timestamp().wall_time()),
@@ -4571,27 +4583,54 @@ fn conflict_candidate(
 }
 
 fn resolution_value(
-    selected: &PersonaConflictValue,
-    current: &PersonaConflictValue,
+    selected: &SyncConflictValue,
+    current: &SyncConflictValue,
     now: TimestampMillis,
-) -> Result<PersonaConflictValue, ConflictRepositoryError> {
+) -> Result<SyncConflictValue, ConflictRepositoryError> {
     match (selected, current) {
-        (PersonaConflictValue::Persona(selected), PersonaConflictValue::Persona(current)) => {
+        (SyncConflictValue::Persona(selected), SyncConflictValue::Persona(current)) => {
             let mut resolved = selected.clone();
             resolved.id = current.id;
             resolved.revision = current.revision.next().map_err(conflict_corrupt)?;
             resolved.created_at = current.created_at;
             resolved.updated_at = now;
             resolved.validate().map_err(conflict_corrupt)?;
-            Ok(PersonaConflictValue::Persona(resolved))
+            Ok(SyncConflictValue::Persona(resolved))
         }
-        (PersonaConflictValue::Default(selected), PersonaConflictValue::Default(current)) => {
+        (SyncConflictValue::Default(selected), SyncConflictValue::Default(current)) => {
             let mut resolved = selected.clone();
             resolved.revision = current.revision.next().map_err(conflict_corrupt)?;
             resolved.created_at = current.created_at;
             resolved.updated_at = now;
             resolved.validate().map_err(conflict_corrupt)?;
-            Ok(PersonaConflictValue::Default(resolved))
+            Ok(SyncConflictValue::Default(resolved))
+        }
+        (SyncConflictValue::Character(selected), SyncConflictValue::Character(current)) => {
+            let mut resolved = selected.clone();
+            resolved.character.id = current.character.id;
+            resolved.character.revision = current.character.revision.next().map_err(conflict_corrupt)?;
+            resolved.character.created_at = current.character.created_at;
+            resolved.character.updated_at = now;
+            resolved.validate().map_err(conflict_corrupt)?;
+            Ok(SyncConflictValue::Character(resolved))
+        }
+        (SyncConflictValue::Lorebook(selected), SyncConflictValue::Lorebook(current)) => {
+            let mut resolved = selected.clone();
+            resolved.book.id = current.book.id;
+            resolved.book.revision = current.book.revision.next().map_err(conflict_corrupt)?;
+            resolved.book.created_at = current.book.created_at;
+            resolved.book.updated_at = now;
+            resolved.validate().map_err(conflict_corrupt)?;
+            Ok(SyncConflictValue::Lorebook(resolved))
+        }
+        (SyncConflictValue::Prompt(selected), SyncConflictValue::Prompt(current)) => {
+            let mut resolved = selected.clone();
+            resolved.id = current.id;
+            resolved.revision = current.revision.next().map_err(conflict_corrupt)?;
+            resolved.created_at = current.created_at;
+            resolved.updated_at = now;
+            resolved.validate().map_err(conflict_corrupt)?;
+            Ok(SyncConflictValue::Prompt(resolved))
         }
         _ => Err(ConflictRepositoryError::Corrupt),
     }
@@ -4599,19 +4638,34 @@ fn resolution_value(
 
 fn resolution_request(
     entity_kind: &str,
-    current: &PersonaConflictValue,
-    resolved: &PersonaConflictValue,
+    current: &SyncConflictValue,
+    resolved: &SyncConflictValue,
 ) -> Result<NewCanonicalChange, ConflictRepositoryError> {
     let (entity, current_payload, resolved_payload) = match (current, resolved) {
-        (PersonaConflictValue::Persona(current), PersonaConflictValue::Persona(resolved)) => (
+        (SyncConflictValue::Persona(current), SyncConflictValue::Persona(resolved)) => (
             persona_sync_entity(current.id).map_err(conflict_corrupt)?,
             canonical_persona_payload(current).map_err(conflict_corrupt)?,
             canonical_persona_payload(resolved).map_err(conflict_corrupt)?,
         ),
-        (PersonaConflictValue::Default(current), PersonaConflictValue::Default(resolved)) => (
+        (SyncConflictValue::Default(current), SyncConflictValue::Default(resolved)) => (
             persona_default_sync_entity().map_err(conflict_corrupt)?,
             canonical_persona_default_payload(current).map_err(conflict_corrupt)?,
             canonical_persona_default_payload(resolved).map_err(conflict_corrupt)?,
+        ),
+        (SyncConflictValue::Character(current), SyncConflictValue::Character(resolved)) => (
+            SyncEntity::new("character", current.character.id.to_string()).map_err(conflict_corrupt)?,
+            lettuce_sync::canonical_character_payload(current).map_err(conflict_corrupt)?,
+            lettuce_sync::canonical_character_payload(resolved).map_err(conflict_corrupt)?,
+        ),
+        (SyncConflictValue::Lorebook(current), SyncConflictValue::Lorebook(resolved)) => (
+            SyncEntity::new("lorebook", current.book.id.to_string()).map_err(conflict_corrupt)?,
+            lettuce_sync::canonical_lorebook_payload(current).map_err(conflict_corrupt)?,
+            lettuce_sync::canonical_lorebook_payload(resolved).map_err(conflict_corrupt)?,
+        ),
+        (SyncConflictValue::Prompt(current), SyncConflictValue::Prompt(resolved)) => (
+            SyncEntity::new("prompt", current.id.to_string()).map_err(conflict_corrupt)?,
+            lettuce_sync::canonical_prompt_payload(current).map_err(conflict_corrupt)?,
+            lettuce_sync::canonical_prompt_payload(resolved).map_err(conflict_corrupt)?,
         ),
         _ => return Err(ConflictRepositoryError::Corrupt),
     };
@@ -4627,42 +4681,18 @@ fn resolution_request(
     .map_err(conflict_corrupt)
 }
 
-fn apply_resolution_value(
-    tx: &Transaction<'_>,
-    value: PersonaConflictValue,
-) -> Result<(), ConflictRepositoryError> {
-    let map_error = |error| match error {
-        RepositoryError::Storage => ConflictRepositoryError::Storage,
-        _ => ConflictRepositoryError::Conflict,
-    };
-    match value {
-        PersonaConflictValue::Persona(persona) => {
-            apply_synced_persona(tx, persona).map_err(map_error)?;
-        }
-        PersonaConflictValue::Default(state) => {
-            apply_synced_persona_default(tx, state).map_err(map_error)?;
-        }
-    }
-    Ok(())
-}
-
 fn materialized_conflict_value(
-    connection: &Connection,
+    connection: &Transaction<'_>,
     entity_kind: &str,
     entity_id: &str,
-) -> Result<PersonaConflictValue, ConflictRepositoryError> {
-    match entity_kind {
-        "persona" => {
-            let id = entity_id.parse::<PersonaId>().map_err(conflict_corrupt)?;
-            let persona = load_persona(connection, id)
-                .map_err(conflict_storage)?
-                .ok_or(ConflictRepositoryError::Conflict)?;
-            Ok(PersonaConflictValue::Persona(persona))
-        }
-        "persona_default" if entity_id == "application" => read_default(connection)
-            .map(PersonaConflictValue::Default)
-            .map_err(conflict_storage),
-        _ => Err(ConflictRepositoryError::Corrupt),
+) -> Result<SyncConflictValue, ConflictRepositoryError> {
+    let codec = snapshot_codec(entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
+    match (codec.current)(connection, entity_id).map_err(|error| match error {
+        ApplyOneError::Storage => ConflictRepositoryError::Storage,
+        _ => ConflictRepositoryError::Corrupt,
+    })? {
+        Some(payload) => conflict_value(entity_kind, entity_id, payload.bytes()),
+        None => Ok(SyncConflictValue::Deleted),
     }
 }
 
@@ -4715,7 +4745,7 @@ impl StoredConflictRecord {
 fn conflict_candidates(
     connection: &Connection,
     record: &StoredConflictRecord,
-) -> Result<(PersonaConflictCandidate, PersonaConflictCandidate), ConflictRepositoryError> {
+) -> Result<(SyncConflictCandidate, SyncConflictCandidate), ConflictRepositoryError> {
     let prior = conflict_candidate(
         connection,
         record.current_change_id.as_deref(),
@@ -5095,23 +5125,14 @@ impl lettuce_sync::ConversationForkRepository for Database {
         now: TimestampMillis,
     ) -> Result<(), ConflictRepositoryError> {
         let connection = self.connection().map_err(conflict_storage)?;
-        let changed = connection
-            .execute(
-                "UPDATE sync_conversation_forks SET resolved_at = ?3 WHERE conversation_id = ?1 AND branch_id = ?2 AND resolved_at IS NULL",
-                params![conversation_id.to_string(), branch_id.to_string(), now.get()],
-            )
-            .map_err(conflict_storage)?;
-        if changed == 0 {
-            return Err(ConflictRepositoryError::NotFound);
-        }
-        Ok(())
+        resolve_conversation_fork_in(&connection, conversation_id, branch_id, now)
     }
 }
 
-impl PersonaConflictRepository for Database {
-    fn unresolved_persona_conflicts(
+impl SyncConflictRepository for Database {
+    fn unresolved_sync_conflicts(
         &self,
-    ) -> Result<Vec<PersonaConflict>, ConflictRepositoryError> {
+    ) -> Result<Vec<SyncConflict>, ConflictRepositoryError> {
         let connection = self.connection().map_err(conflict_storage)?;
         let mut statement = connection
             .prepare(
@@ -5120,7 +5141,7 @@ impl PersonaConflictRepository for Database {
                         incoming_payload, detected_at, status,
                         resolution_choice, resolved_by_change_id, conflict_id
                  FROM sync_conflicts
-                 WHERE status = 'unresolved' AND entity_kind IN ('persona', 'persona_default')
+                 WHERE status = 'unresolved' AND entity_kind IN ('persona', 'persona_default', 'character', 'lorebook', 'prompt')
                  ORDER BY detected_at DESC, conflict_id",
             )
             .map_err(conflict_storage)?;
@@ -5136,7 +5157,7 @@ impl PersonaConflictRepository for Database {
         for row in rows {
             let (record, id) = row.map_err(conflict_storage)?;
             let (current, other) = conflict_candidates(&connection, &record)?;
-            conflicts.push(PersonaConflict {
+            conflicts.push(SyncConflict {
                 id: id.parse().map_err(conflict_corrupt)?,
                 entity_kind: record.entity_kind,
                 entity_id: record.entity_id,
@@ -5148,7 +5169,7 @@ impl PersonaConflictRepository for Database {
         Ok(conflicts)
     }
 
-    fn resolve_persona_conflict(
+    fn resolve_sync_conflict(
         &self,
         conflict_id: OperationId,
         expected_current_change: Option<SyncChangeId>,
@@ -5160,93 +5181,161 @@ impl PersonaConflictRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(conflict_storage)?;
-        let record = transaction
-            .query_row(
-                "SELECT entity_kind, entity_id, current_change_id,
-                        incoming_change_id, winning_side, current_payload,
-                        incoming_payload, detected_at, status,
-                        resolution_choice, resolved_by_change_id
-                 FROM sync_conflicts WHERE conflict_id = ?1",
-                [conflict_id.to_string()],
-                StoredConflictRecord::from_row,
-            )
-            .optional()
-            .map_err(conflict_storage)?
-            .ok_or(ConflictRepositoryError::NotFound)?;
-        let (current, other) = conflict_candidates(&transaction, &record)?;
-        if current.change_id != expected_current_change {
-            return Err(ConflictRepositoryError::Conflict);
-        }
-        if record.status == "resolved" {
-            let resolved_id = record
-                .resolved_by_change_id
-                .ok_or(ConflictRepositoryError::Corrupt)?;
-            if record.resolution_choice.as_deref() != Some(conflict_choice_name(choice)) {
-                return Err(ConflictRepositoryError::Conflict);
-            }
-            let change = load_local_change_in(&transaction, resolution_id)
-                .map_err(map_local_conflict_error)?
-                .ok_or(ConflictRepositoryError::Conflict)?;
-            if change.id().as_uuid().to_string() != resolved_id {
-                return Err(ConflictRepositoryError::Conflict);
-            }
-            transaction.commit().map_err(conflict_storage)?;
-            return Ok(change);
-        }
-        if record.status != "unresolved"
-            || record.resolution_choice.is_some()
-            || record.resolved_by_change_id.is_some()
-        {
-            return Err(ConflictRepositoryError::Corrupt);
-        }
-        let materialized =
-            materialized_conflict_value(&transaction, &record.entity_kind, &record.entity_id)?;
-        if materialized != current.value {
-            return Err(ConflictRepositoryError::Conflict);
-        }
-        let selected = match choice {
-            ConflictChoice::Current => &current.value,
-            ConflictChoice::Other => &other.value,
-        };
-        let resolved = resolution_value(selected, &materialized, now)?;
-        let request = resolution_request(&record.entity_kind, &materialized, &resolved)?;
-        let admission = record_local_change_in_skipping(
-            &transaction,
-            resolution_id,
-            &request,
-            now,
-            Some(conflict_id),
-            None,
-        )
-        .map_err(map_local_conflict_error)?;
-        if !admission.created {
-            return Err(ConflictRepositoryError::Conflict);
-        }
-        apply_resolution_value(&transaction, resolved)?;
-        let changed = transaction
-            .execute(
-                "UPDATE sync_conflicts SET status = 'resolved',
-                   resolution_choice = ?2, resolved_by_change_id = ?3,
-                   resolved_at = ?4 WHERE conflict_id = ?1 AND status = 'unresolved'",
-                params![
-                    conflict_id.to_string(),
-                    conflict_choice_name(choice),
-                    admission.change.id().as_uuid().to_string(),
-                    now.get()
-                ],
-            )
-            .map_err(conflict_storage)?;
-        if changed != 1 {
-            return Err(ConflictRepositoryError::Conflict);
-        }
-        resolve_dominated_conflicts(&transaction, &admission.change, now, None).map_err(
-            |error| match error {
-                ApplyOneError::Storage => ConflictRepositoryError::Storage,
-                _ => ConflictRepositoryError::Corrupt,
-            },
+        let change = resolve_sync_conflict_in(
+            &transaction, conflict_id, expected_current_change, choice, resolution_id, now,
         )?;
         transaction.commit().map_err(conflict_storage)?;
-        Ok(admission.change)
+        Ok(change)
+    }
+}
+
+fn resolve_sync_conflict_in(
+    transaction: &Transaction<'_>,
+    conflict_id: OperationId,
+    expected_current_change: Option<SyncChangeId>,
+    choice: ConflictChoice,
+    resolution_id: OperationId,
+    now: TimestampMillis,
+) -> Result<CanonicalChange, ConflictRepositoryError> {
+    let record = transaction
+        .query_row(
+            "SELECT entity_kind, entity_id, current_change_id,
+                    incoming_change_id, winning_side, current_payload,
+                    incoming_payload, detected_at, status,
+                    resolution_choice, resolved_by_change_id
+             FROM sync_conflicts WHERE conflict_id = ?1",
+            [conflict_id.to_string()],
+            StoredConflictRecord::from_row,
+        )
+        .optional()
+        .map_err(conflict_storage)?
+        .ok_or(ConflictRepositoryError::NotFound)?;
+    let (current, other) = conflict_candidates(transaction, &record)?;
+    if current.change_id != expected_current_change {
+        return Err(ConflictRepositoryError::Conflict);
+    }
+    if record.status == "resolved" {
+        let resolved_id = record
+            .resolved_by_change_id
+            .ok_or(ConflictRepositoryError::Corrupt)?;
+        if record.resolution_choice.as_deref() != Some(conflict_choice_name(choice)) {
+            return Err(ConflictRepositoryError::Conflict);
+        }
+        let change = load_local_change_in(transaction, resolution_id)
+            .map_err(map_local_conflict_error)?
+            .ok_or(ConflictRepositoryError::Conflict)?;
+        if change.id().as_uuid().to_string() != resolved_id {
+            return Err(ConflictRepositoryError::Conflict);
+        }
+        return Ok(change);
+    }
+    if record.status != "unresolved"
+        || record.resolution_choice.is_some()
+        || record.resolved_by_change_id.is_some()
+    {
+        return Err(ConflictRepositoryError::Corrupt);
+    }
+    let materialized =
+        materialized_conflict_value(transaction, &record.entity_kind, &record.entity_id)?;
+    if materialized != current.value {
+        return Err(ConflictRepositoryError::Conflict);
+    }
+    let selected = match choice {
+        ConflictChoice::Current => &current.value,
+        ConflictChoice::Other => &other.value,
+    };
+    let (resolved, request) = match (&materialized, selected) {
+        (SyncConflictValue::Deleted, SyncConflictValue::Deleted) => {
+            let base: String = transaction.query_row(
+                "SELECT base_revision FROM sync_changes WHERE entity_kind = ?1 AND entity_id = ?2 AND operation = 'delete' ORDER BY rowid DESC LIMIT 1",
+                params![record.entity_kind, record.entity_id], |row| row.get(0),
+            ).map_err(conflict_storage)?;
+            let request = NewCanonicalChange::new(
+                SyncEntity::new(&record.entity_kind, &record.entity_id).map_err(conflict_corrupt)?,
+                ChangeOperation::Delete, Some(ContentHash::parse(base).map_err(conflict_corrupt)?), None,
+            ).map_err(conflict_corrupt)?;
+            (None, request)
+        }
+        (SyncConflictValue::Deleted, _) => return Err(ConflictRepositoryError::Unsupported),
+        (_, SyncConflictValue::Deleted) => {
+            let codec = snapshot_codec(&record.entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
+            if codec.delete.is_none() { return Err(ConflictRepositoryError::Unsupported); }
+            let base = (codec.current)(transaction, &record.entity_id).map_err(|_| ConflictRepositoryError::Corrupt)?.ok_or(ConflictRepositoryError::Conflict)?;
+            let request = NewCanonicalChange::new(
+                SyncEntity::new(&record.entity_kind, &record.entity_id).map_err(conflict_corrupt)?,
+                ChangeOperation::Delete, Some(base.content_hash().clone()), None,
+            ).map_err(conflict_corrupt)?;
+            (None, request)
+        }
+        _ => {
+            let resolved = resolution_value(selected, &materialized, now)?;
+            let request = resolution_request(&record.entity_kind, &materialized, &resolved)?;
+            (Some(resolved), request)
+        }
+    };
+    let admission = record_local_change_in_skipping(
+        transaction,
+        resolution_id,
+        &request,
+        now,
+        Some(conflict_id),
+        None,
+    )
+    .map_err(map_local_conflict_error)?;
+    if !admission.created {
+        return Err(ConflictRepositoryError::Conflict);
+    }
+    if resolved.is_some() {
+        let codec = snapshot_codec(&record.entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
+        let payload = request.payload().ok_or(ConflictRepositoryError::Corrupt)?;
+        let applied = (codec.materialize)(transaction, &record.entity_id, payload.bytes()).map_err(|error| match error {
+            ApplyOneError::Storage => ConflictRepositoryError::Storage,
+            ApplyOneError::Pending => ConflictRepositoryError::Unavailable,
+            ApplyOneError::Unencodable => ConflictRepositoryError::Unsupported,
+            ApplyOneError::Corrupt => ConflictRepositoryError::Corrupt,
+        })?;
+        if !applied { return Err(ConflictRepositoryError::Conflict); }
+    } else if materialized != SyncConflictValue::Deleted {
+        let delete = snapshot_codec(&record.entity_kind).and_then(|codec| codec.delete).ok_or(ConflictRepositoryError::Unsupported)?;
+        delete(transaction, &admission.change, now).map_err(|_| ConflictRepositoryError::Storage)?;
+    }
+    let changed = transaction
+        .execute(
+            "UPDATE sync_conflicts SET status = 'resolved',
+               resolution_choice = ?2, resolved_by_change_id = ?3,
+               resolved_at = ?4 WHERE conflict_id = ?1 AND status = 'unresolved'",
+            params![
+                conflict_id.to_string(),
+                conflict_choice_name(choice),
+                admission.change.id().as_uuid().to_string(),
+                now.get()
+            ],
+        )
+        .map_err(conflict_storage)?;
+    if changed != 1 {
+        return Err(ConflictRepositoryError::Conflict);
+    }
+    resolve_dominated_conflicts(transaction, &admission.change, now, None).map_err(
+        |error| match error {
+            ApplyOneError::Storage => ConflictRepositoryError::Storage,
+            _ => ConflictRepositoryError::Corrupt,
+        },
+    )?;
+    Ok(admission.change)
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn resolve_sync_conflict(
+        &self,
+        conflict_id: OperationId,
+        expected_current_change: Option<SyncChangeId>,
+        choice: ConflictChoice,
+        resolution_id: OperationId,
+        now: TimestampMillis,
+    ) -> Result<CanonicalChange, ConflictRepositoryError> {
+        resolve_sync_conflict_in(
+            self.transaction, conflict_id, expected_current_change, choice, resolution_id, now,
+        )
     }
 }
 
@@ -6733,11 +6822,11 @@ mod tests {
         );
 
         let target_conflicts = target
-            .unresolved_persona_conflicts()
+            .unresolved_sync_conflicts()
             .expect("target conflicts");
         assert_eq!(target_conflicts.len(), 1);
         assert_eq!(
-            target.resolve_persona_conflict(
+            target.resolve_sync_conflict(
                 target_conflicts[0].id,
                 None,
                 ConflictChoice::Other,
@@ -6748,7 +6837,7 @@ mod tests {
         );
         let first_resolution_id = OperationId::new();
         let first_resolution = target
-            .resolve_persona_conflict(
+            .resolve_sync_conflict(
                 target_conflicts[0].id,
                 target_conflicts[0].current.change_id,
                 ConflictChoice::Other,
@@ -6760,7 +6849,7 @@ mod tests {
         let target = Database::open(&target_path).expect("reopen resolved target");
         assert_eq!(
             target
-                .resolve_persona_conflict(
+                .resolve_sync_conflict(
                     target_conflicts[0].id,
                     target_conflicts[0].current.change_id,
                     ConflictChoice::Other,
@@ -6771,7 +6860,7 @@ mod tests {
             first_resolution
         );
         assert_eq!(
-            target.resolve_persona_conflict(
+            target.resolve_sync_conflict(
                 target_conflicts[0].id,
                 target_conflicts[0].current.change_id,
                 ConflictChoice::Current,
@@ -6782,7 +6871,7 @@ mod tests {
         );
         assert!(
             target
-                .unresolved_persona_conflicts()
+                .unresolved_sync_conflicts()
                 .expect("resolved target conflicts")
                 .is_empty()
         );
@@ -6809,7 +6898,7 @@ mod tests {
             .expect("apply persona resolution");
         assert!(
             source
-                .unresolved_persona_conflicts()
+                .unresolved_sync_conflicts()
                 .expect("superseded source conflicts")
                 .is_empty()
         );
@@ -6869,12 +6958,12 @@ mod tests {
             .apply_incoming_batch(source_default_batch_id, TimestampMillis::new(214))
             .expect("apply source default");
         let default_conflicts = target
-            .unresolved_persona_conflicts()
+            .unresolved_sync_conflicts()
             .expect("default conflicts");
         assert_eq!(default_conflicts.len(), 1);
         let second_resolution_id = OperationId::new();
         let second_resolution = target
-            .resolve_persona_conflict(
+            .resolve_sync_conflict(
                 default_conflicts[0].id,
                 default_conflicts[0].current.change_id,
                 ConflictChoice::Current,
@@ -6905,7 +6994,7 @@ mod tests {
             .expect("apply default resolution");
         assert!(
             source
-                .unresolved_persona_conflicts()
+                .unresolved_sync_conflicts()
                 .expect("resolved source default conflict")
                 .is_empty()
         );
@@ -6993,5 +7082,36 @@ mod tests {
         drop(source);
         std::fs::remove_file(target_path).expect("remove target database");
         std::fs::remove_file(source_path).expect("remove source database");
+    }
+}
+
+#[cfg(test)]
+#[path = "conflict_tests.rs"]
+mod catalog_conflict_tests;
+
+fn resolve_conversation_fork_in(
+    connection: &Connection,
+    conversation_id: lettuce_types::ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
+    now: TimestampMillis,
+) -> Result<(), ConflictRepositoryError> {
+    let changed = connection.execute(
+        "UPDATE sync_conversation_forks SET resolved_at = ?3 WHERE conversation_id = ?1 AND branch_id = ?2 AND resolved_at IS NULL",
+        params![conversation_id.to_string(), branch_id.to_string(), now.get()],
+    ).map_err(conflict_storage)?;
+    if changed == 0 {
+        return Err(ConflictRepositoryError::NotFound);
+    }
+    Ok(())
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn resolve_conversation_fork(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        now: TimestampMillis,
+    ) -> Result<(), ConflictRepositoryError> {
+        resolve_conversation_fork_in(self.transaction, conversation_id, branch_id, now)
     }
 }

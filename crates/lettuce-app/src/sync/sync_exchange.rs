@@ -42,6 +42,8 @@ pub enum SyncTransportError {
     Cancelled,
     #[error("sync peer disconnected")]
     Disconnected,
+    #[error("sync peer stopped sending during transfer")]
+    PeerStalled,
     #[error("sync transport protocol failed")]
     Protocol,
     #[error("sync was declined on the sharing device")]
@@ -91,6 +93,22 @@ where
     ) -> Result<SyncExchangeOutcome, SyncExchangeError>
     where
         T: AuthenticatedSyncTransport + ?Sized,
+    {
+        self.run_with_progress(local_hello, transport, cancellation, now, |_| {})
+            .await
+    }
+
+    pub async fn run_with_progress<T, F>(
+        &self,
+        local_hello: SyncHello,
+        transport: &mut T,
+        cancellation: &CancellationToken,
+        now: TimestampMillis,
+        mut progress: F,
+    ) -> Result<SyncExchangeOutcome, SyncExchangeError>
+    where
+        T: AuthenticatedSyncTransport + ?Sized,
+        F: FnMut(&SyncExchangeReport) + Send,
     {
         check_cancelled(cancellation)?;
         let peer_hello = transport
@@ -175,6 +193,7 @@ where
                     }
                     report.received = report.received.saturating_add(result.applied);
                     report.conflicts = report.conflicts.saturating_add(result.conflicts);
+                    progress(&report);
                     (Some(batch_id), false)
                 }
                 SyncChangeFrame::Quiescent { .. } => (None, true),
@@ -213,6 +232,7 @@ where
             }
             report.sent = report.sent.saturating_add(sent_count);
             report.final_frontier = local_frontier;
+            progress(&report);
             if sent_batch_id.is_none() && received_quiescent {
                 return Ok(SyncExchangeOutcome::Complete(report));
             }
@@ -253,7 +273,7 @@ pub(crate) mod tests {
     use lettuce_database::Database;
     use lettuce_sync::{
         CanonicalPayload, ChangeOperation, ConflictChoice, NewCanonicalChange,
-        PersonaConflictRepository, SyncEntity, SyncSessionId, SyncTransferLimits,
+        SyncConflictRepository, SyncEntity, SyncSessionId, SyncTransferLimits,
     };
     use lettuce_types::PersonaId;
 
@@ -489,9 +509,9 @@ pub(crate) mod tests {
             conflict_exchange,
             SyncExchangeOutcome::Complete(_)
         ));
-        let conflicts = left.unresolved_persona_conflicts().expect("left conflicts");
+        let conflicts = left.unresolved_sync_conflicts().expect("left conflicts");
         assert_eq!(conflicts.len(), 1);
-        left.resolve_persona_conflict(
+        left.resolve_sync_conflict(
             conflicts[0].id,
             conflicts[0].current.change_id,
             ConflictChoice::Current,
@@ -513,7 +533,7 @@ pub(crate) mod tests {
         assert!(converged_left.revision > left_revision.revision);
         assert!(
             right
-                .unresolved_persona_conflicts()
+                .unresolved_sync_conflicts()
                 .expect("right conflicts")
                 .is_empty()
         );
