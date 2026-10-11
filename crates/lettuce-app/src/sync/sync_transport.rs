@@ -816,6 +816,33 @@ impl ExpectedFrame {
     }
 }
 
+fn configure_keepalive(stream: &TcpStream) -> Result<(), SyncPeerTransportError> {
+    let keepalive = socket2::TcpKeepalive::new().with_time(std::time::Duration::from_secs(15));
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "visionos",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "windows",
+        target_os = "cygwin",
+        all(target_os = "wasi", not(target_env = "p1")),
+    ))]
+    let keepalive = keepalive
+        .with_interval(std::time::Duration::from_secs(5))
+        .with_retries(3);
+    socket2::SockRef::from(stream)
+        .set_tcp_keepalive(&keepalive)
+        .map_err(SyncPeerTransportError::Io)
+}
+
 async fn authenticate_host<'a>(
     mut stream: TcpStream,
     local_device: SyncDeviceId,
@@ -823,9 +850,7 @@ async fn authenticate_host<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
-    socket2::SockRef::from(&stream)
-        .set_keepalive(true)
-        .map_err(SyncPeerTransportError::Io)?;
+    configure_keepalive(&stream)?;
     let mut host_challenge = [0u8; 32];
     OsRng.fill_bytes(&mut host_challenge);
     let (pake, host_message) = start_pake(pin);
@@ -905,10 +930,8 @@ async fn authenticate_client<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
+    configure_keepalive(&stream)?;
     let first = read_frame(&mut stream, MAX_PAIRING_FRAME_BYTES, cancellation).await?;
-    socket2::SockRef::from(&stream)
-        .set_keepalive(true)
-        .map_err(SyncPeerTransportError::Io)?;
     let PairingFrame::HostChallenge {
         version,
         device: peer,
@@ -2173,6 +2196,49 @@ mod tests {
 #[cfg(test)]
 mod health_tests {
     use super::*;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[tokio::test]
+    async fn both_roles_configure_keepalive_before_first_read() {
+        for host in [true, false] {
+            let (stream, _peer) = sockets().await;
+            let socket = socket2::SockRef::from(&stream)
+                .try_clone()
+                .expect("duplicate socket");
+            let cancellation = CancellationToken::new();
+            let pin = PairingPin::new("123456").expect("pin");
+            let device = SyncDeviceId::new();
+            let handshake = async {
+                if host {
+                    authenticate_host(stream, device, &pin, None, &cancellation).await
+                } else {
+                    authenticate_client(stream, device, &pin, None, &cancellation).await
+                }
+            };
+            tokio::pin!(handshake);
+            std::future::poll_fn(|cx| {
+                assert!(std::future::Future::poll(handshake.as_mut(), cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            assert!(socket.keepalive().expect("keepalive"), "host={host}");
+            assert_eq!(
+                socket.tcp_keepalive_time().expect("time"),
+                std::time::Duration::from_secs(15),
+                "host={host}"
+            );
+            assert_eq!(
+                socket.tcp_keepalive_interval().expect("interval"),
+                std::time::Duration::from_secs(5),
+                "host={host}"
+            );
+            assert_eq!(
+                socket.tcp_keepalive_retries().expect("retries"),
+                3,
+                "host={host}"
+            );
+        }
+    }
+
     use std::time::Duration;
 
     async fn sockets() -> (TcpStream, TcpStream) {

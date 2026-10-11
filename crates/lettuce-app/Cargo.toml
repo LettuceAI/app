@@ -69,7 +69,7 @@ rand.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 image.workspace = true
-socket2 = "0.6"
+socket2 = { version = "0.6", features = ["all"] }
 if-addrs = "0.14"
 whoami = { version = "1.6", default-features = false }
 

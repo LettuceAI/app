@@ -238,22 +238,18 @@ fn available(context: &ApiContext) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn hello(context: &ApiContext, id: SyncSessionId) -> Result<SyncHello, ApiError> {
+async fn hello(context: &ApiContext, id: SyncSessionId, name: String) -> Result<SyncHello, ApiError> {
     context
         .blocking(move |context| {
-            let name = whoami::fallible::devicename()
-                .or_else(|_| whoami::fallible::hostname())
-                .map_err(|_| {
-                    failure(
-                        ApiErrorCode::Unavailable,
-                        dto::SyncFailure::DeviceNameUnavailable,
-                    )
-                })?;
+            let mut name = name;
+            name.retain(|character| !character.is_control());
+            let mut end = name.len().min(128);
+            while !name.is_char_boundary(end) {
+                end -= 1;
+            }
+            name.truncate(end);
             if name.trim().is_empty() {
-                return Err(failure(
-                    ApiErrorCode::Unavailable,
-                    dto::SyncFailure::DeviceNameUnavailable,
-                ));
+                name = "Device".into();
             }
             context
                 .backend()
@@ -281,13 +277,20 @@ fn ordered_addresses(mut addresses: Vec<Ipv4Addr>) -> Vec<Ipv4Addr> {
 }
 
 pub async fn sync_share_start(context: &ApiContext) -> Result<dto::SyncSharing, ApiError> {
+    share_start_named(context, whoami::devicename()).await
+}
+
+pub(super) async fn share_start_named(
+    context: &ApiContext,
+    name: String,
+) -> Result<dto::SyncSharing, ApiError> {
     available(context)?;
     let lease = context
         .maintenance()
         .try_work()
         .ok_or_else(|| failure(ApiErrorCode::Busy, dto::SyncFailure::InvalidState))?;
     let id = SyncSessionId::new();
-    let hello = hello(context, id).await?;
+    let hello = hello(context, id, name).await?;
     let interfaces = if_addrs::get_if_addrs().map_err(|_| {
         failure(
             ApiErrorCode::Unavailable,
@@ -356,7 +359,7 @@ pub async fn sync_connect(
     }
     let pin = PairingPin::new(request.pin).map_err(transport_error)?;
     let id = SyncSessionId::new();
-    let hello = hello(context, id).await?;
+    let hello = hello(context, id, whoami::devicename()).await?;
     start(
         context,
         id,
@@ -700,7 +703,12 @@ async fn run(
         Endpoint::Host(listener) => {
             let transport = loop {
                 match listener.accept(Some(&media), &approver, cancellation).await {
-                    Err(SyncPeerTransportError::AuthenticationFailed) => continue,
+                    Err(
+                        SyncPeerTransportError::AuthenticationFailed
+                        | SyncPeerTransportError::Disconnected
+                        | SyncPeerTransportError::Io(_)
+                        | SyncPeerTransportError::Protocol,
+                    ) => continue,
                     result => break result.map_err(transport_error)?,
                 }
             };

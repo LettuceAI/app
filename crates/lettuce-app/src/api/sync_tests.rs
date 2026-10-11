@@ -1176,3 +1176,31 @@ async fn canceled_pending_start_rejects_begin_without_granting_the_gate() {
     std::fs::remove_dir_all(host_root).expect("host cleanup");
     std::fs::remove_dir_all(peer_root).expect("peer cleanup");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unusual_device_names_allow_sharing() {
+    for name in ["界".repeat(43), "Phone\n\t\0".into(), "\n\t".into(), "   ".into()] {
+        let (host, root) = device();
+        let sharing = super::sync::share_start_named(&host.context, name).await.expect("share starts");
+        assert!(matches!(sync_status(&host.context).await.expect("status"), dto::SyncStatus::Sharing { .. }));
+        assert!(!sharing.pin.is_empty());
+        sync_stop(&host.context).await.expect("stop");
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unauthenticated_disconnect_keeps_sharing_and_pin() {
+    let (host, root) = device();
+    let sharing = sync_share_start(&host.context).await.expect("share");
+    let mut socket = tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, sharing.port)).await.expect("connect");
+    let mut byte = [0];
+    tokio::io::AsyncReadExt::read_exact(&mut socket, &mut byte).await.expect("host challenge started");
+    drop(socket);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(sync_status(&host.context).await.expect("status"), dto::SyncStatus::Sharing {
+        addresses: sharing.addresses, port: sharing.port, pin: sharing.pin,
+    });
+    sync_stop(&host.context).await.expect("stop");
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

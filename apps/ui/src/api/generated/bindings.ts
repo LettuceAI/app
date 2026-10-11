@@ -6911,7 +6911,7 @@ export type SyncCounts = {
 	skipped_secrets: number,
 };
 
-export type SyncFailure = { type: "invalid_state" } | { type: "device_name_unavailable" } | { type: "addresses_unavailable" } | { type: "media_unavailable" } | { type: "authentication_failed" } | { type: "pairing_locked" } | { type: "declined" } | { type: "disconnected" } | { type: "peer_stalled" } | { type: "protocol" } | { type: "storage" } | { type: "pending_batch"; batch_id: string } | { type: "required_reference_unavailable" };
+export type SyncFailure = { type: "invalid_state" } | { type: "addresses_unavailable" } | { type: "media_unavailable" } | { type: "authentication_failed" } | { type: "pairing_locked" } | { type: "declined" } | { type: "disconnected" } | { type: "peer_stalled" } | { type: "protocol" } | { type: "storage" } | { type: "pending_batch"; batch_id: string } | { type: "required_reference_unavailable" };
 
 export type SyncForkResolveRequest = {
 	client_operation_id: string,
