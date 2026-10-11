@@ -5,6 +5,16 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
+	syncShareStart: () => typedError<SyncSharing, ApiError>(__TAURI_INVOKE("sync_share_start")),
+	syncShareApprove: (request: SyncShareApproveRequest) => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_share_approve", { request })),
+	syncShareBegin: () => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_share_begin")),
+	syncConnect: (request: SyncConnectRequest) => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_connect", { request })),
+	syncStop: () => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_stop")),
+	syncStatus: () => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_status")),
+	syncConflictsList: () => typedError<SyncConflictsList_Serialize, ApiError>(__TAURI_INVOKE("sync_conflicts_list")),
+	syncConflictResolve: (request: SyncConflictResolveRequest) => typedError<SyncConflictResolution, ApiError>(__TAURI_INVOKE("sync_conflict_resolve", { request })),
+	syncForkResolve: (request: SyncForkResolveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("sync_fork_resolve", { request })),
+	legacyConflictDismiss: (request: LegacyConflictDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("legacy_conflict_dismiss", { request })),
 	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError>(__TAURI_INVOKE("llm_metrics_list", { request })),
 	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<{
 	id: string,
@@ -419,7 +429,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "dictation_active" } | { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
+export type ApiErrorDetails = { type: "dictation_active" } | { type: "sync"; reason: SyncFailure } | { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
 /**
  *  The database this process opened was kept by a cutover (restore or
  *  reset) and accepts no writes; the app must restart on the active one.
@@ -450,7 +460,7 @@ export type ApiErrorDetails = { type: "dictation_active" } | { type: "backup"; r
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "database_reloaded" } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -3001,6 +3011,30 @@ export type LaunchGroupRequest = {
 
 export type LaunchGroupResponse = {
 	conversation_id: string,
+};
+
+export type LegacyConflictCurrent = { type: "value"; value: unknown } | { type: "not_mapped" };
+
+export type LegacyConflictDismissRequest = {
+	client_operation_id: string,
+	run_id: string,
+	source_key: string,
+};
+
+export type LegacyConflictField = {
+	key: string,
+	current: LegacyConflictCurrent,
+	local: unknown,
+	incoming: unknown,
+};
+
+export type LegacyConflictView = {
+	run_id: string,
+	source_key: string,
+	entity_kind: string,
+	entity_id: string,
+	detected_at: number,
+	fields: LegacyConflictField[],
 };
 
 export type LegacyDatabaseFailure = { type: "unavailable" } | { type: "invalid_schema" } | { type: "unsupported_schema"; found: number };
@@ -6790,6 +6824,128 @@ export type StorageSummary = {
 	missing_model_files: number,
 	logs_bytes: number,
 };
+
+export type SyncConflictCandidate = SyncConflictCandidate_Serialize | SyncConflictCandidate_Deserialize;
+
+export type SyncConflictCandidate_Deserialize = {
+	change_id: string | null,
+	device_id: string | null,
+	timestamp: number,
+	value: SyncConflictValue_Deserialize,
+};
+
+export type SyncConflictCandidate_Serialize = {
+	change_id: string | null,
+	device_id: string | null,
+	timestamp: number,
+	value: SyncConflictValue_Serialize,
+};
+
+export type SyncConflictChoice = "current" | "other";
+
+export type SyncConflictResolution = {
+	change_id: string,
+};
+
+export type SyncConflictResolveRequest = {
+	client_operation_id: string,
+	conflict_id: string,
+	expected_current_change: string | null,
+	choice: SyncConflictChoice,
+};
+
+export type SyncConflictValue = SyncConflictValue_Serialize | SyncConflictValue_Deserialize;
+
+export type SyncConflictValue_Deserialize = { type: "character"; value: CharacterView_Deserialize } | { type: "persona"; value: PersonaView_Deserialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | ({ type: "deleted" }) & { value?: never };
+
+export type SyncConflictValue_Serialize = { type: "character"; value: CharacterView_Serialize } | { type: "persona"; value: PersonaView_Serialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | ({ type: "deleted" }) & { value?: never };
+
+export type SyncConflictView = SyncConflictView_Serialize | SyncConflictView_Deserialize;
+
+export type SyncConflictView_Deserialize = {
+	conflict_id: string,
+	entity_kind: string,
+	entity_id: string,
+	detected_at: number,
+	current: SyncConflictCandidate_Deserialize,
+	other: SyncConflictCandidate_Deserialize,
+};
+
+export type SyncConflictView_Serialize = {
+	conflict_id: string,
+	entity_kind: string,
+	entity_id: string,
+	detected_at: number,
+	current: SyncConflictCandidate_Serialize,
+	other: SyncConflictCandidate_Serialize,
+};
+
+export type SyncConflictsList = SyncConflictsList_Serialize | SyncConflictsList_Deserialize;
+
+export type SyncConflictsList_Deserialize = {
+	conflicts: SyncConflictView_Deserialize[],
+	legacy_conflicts: LegacyConflictView[],
+	forks: SyncForkView[],
+};
+
+export type SyncConflictsList_Serialize = {
+	conflicts: SyncConflictView_Serialize[],
+	legacy_conflicts: LegacyConflictView[],
+	forks: SyncForkView[],
+};
+
+export type SyncConnectRequest = {
+	address: string,
+	port: number,
+	pin: string,
+};
+
+export type SyncCounts = {
+	sent_changes: number,
+	received_changes: number,
+	received_assets: number,
+	received_blobs: number,
+	received_bytes: number,
+	unavailable_assets: number,
+	received_secrets: number,
+	skipped_secrets: number,
+};
+
+export type SyncFailure = { type: "invalid_state" } | { type: "addresses_unavailable" } | { type: "media_unavailable" } | { type: "authentication_failed" } | { type: "pairing_locked" } | { type: "declined" } | { type: "disconnected" } | { type: "peer_stalled" } | { type: "protocol" } | { type: "storage" } | { type: "pending_batch"; batch_id: string } | { type: "required_reference_unavailable" };
+
+export type SyncForkResolveRequest = {
+	client_operation_id: string,
+	conversation_id: string,
+	branch_id: string,
+};
+
+export type SyncForkView = {
+	conversation_id: string,
+	branch_id: string,
+	holds_local: boolean,
+	detected_at: number,
+};
+
+export type SyncPhase = "changes" | "media" | "secrets";
+
+export type SyncProgress = {
+	items_done: number,
+	items_total: number,
+	bytes_done: number,
+	bytes_total: number,
+};
+
+export type SyncShareApproveRequest = {
+	approve: boolean,
+};
+
+export type SyncSharing = {
+	addresses: string[],
+	port: number,
+	pin: string,
+};
+
+export type SyncStatus = { type: "idle" } | { type: "sharing"; addresses: string[]; port: number; pin: string } | { type: "pending_approval"; device_name: string } | { type: "pending_start"; device_name: string } | { type: "connecting" } | { type: "syncing"; phase: SyncPhase; progress: SyncProgress } | { type: "completed"; counts: SyncCounts; conflicts: number; forks: number } | { type: "failed"; reason: ApiError };
 
 export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
 

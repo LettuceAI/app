@@ -140,22 +140,44 @@ fn decode_hex(hex: &str) -> Option<Vec<u8>> {
 /// lengths, where `StoredValue` is `Null`, `Integer(i64)`, `Real(f64)`,
 /// `Text(String)` or `Blob(String)`. Returns the columns with their values.
 fn stored_row(bytes: &[u8]) -> Option<BTreeMap<String, Value>> {
+    decode_snapshot(bytes).map(|snapshot| snapshot.values.unwrap_or_default())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyConflictSnapshot {
+    pub primary_key: Vec<Value>,
+    pub values: Option<BTreeMap<String, Value>>,
+}
+
+pub fn decode_legacy_conflict_snapshot(hex: &str) -> Option<LegacyConflictSnapshot> {
+    decode_snapshot(&decode_hex(hex)?)
+}
+
+fn decode_snapshot(bytes: &[u8]) -> Option<LegacyConflictSnapshot> {
     let mut reader = Reader { bytes, offset: 0 };
     let columns = (0..reader.length()?)
         .map(|_| reader.string())
         .collect::<Option<Vec<_>>>()?;
-    for _ in 0..reader.length()? {
-        reader.value()?;
-    }
+    let primary_key = (0..reader.length()?)
+        .map(|_| reader.value())
+        .collect::<Option<Vec<_>>>()?;
     let values = match reader.byte()? {
-        0 => return Some(BTreeMap::new()),
-        1 => (0..reader.length()?)
-            .map(|_| reader.value())
-            .collect::<Option<Vec<_>>>()?,
+        0 => None,
+        1 => {
+            let values = (0..reader.length()?)
+                .map(|_| reader.value())
+                .collect::<Option<Vec<_>>>()?;
+            if values.len() != columns.len() {
+                return None;
+            }
+            Some(columns.into_iter().zip(values).collect())
+        }
         _ => return None,
     };
-    (reader.offset == bytes.len() && values.len() == columns.len())
-        .then(|| columns.into_iter().zip(values).collect())
+    (reader.offset == bytes.len()).then_some(LegacyConflictSnapshot {
+        primary_key,
+        values,
+    })
 }
 
 struct Reader<'a> {
@@ -250,5 +272,31 @@ mod tests {
         assert_eq!(columns["created_at"], 5);
         assert_eq!(columns["reasoning"], Value::Null);
         assert!(stored_row(&decode_hex(&hex[..hex.len() - 2]).expect("hex")).is_none());
+    }
+}
+
+#[cfg(test)]
+mod inbox_tests {
+    use super::*;
+
+    #[test]
+    fn deleted_legacy_snapshot_retains_its_primary_key() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1_u64.to_le_bytes());
+        bytes.extend_from_slice(&2_u64.to_le_bytes());
+        bytes.extend_from_slice(b"id");
+        bytes.extend_from_slice(&1_u64.to_le_bytes());
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&9_u64.to_le_bytes());
+        bytes.extend_from_slice(b"character");
+        bytes.push(0);
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let snapshot = decode_legacy_conflict_snapshot(&hex).expect("snapshot");
+        assert_eq!(snapshot.primary_key, vec![Value::from("character")]);
+        assert!(snapshot.values.is_none());
+        assert!(decode_legacy_conflict_snapshot(&format!("{hex}00")).is_none());
     }
 }

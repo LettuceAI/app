@@ -398,3 +398,11 @@ mod backup_jobs;
 mod backup_export_jobs;
 pub use backup_export_jobs::backup_export;
 pub use backup_jobs::{backup_restore, legacy_backup_restore, legacy_database_import};
+
+#[cfg(test)]
+mod sync_tests;
+
+mod sync;
+pub use sync::{sync_share_start, sync_share_approve, sync_share_begin, sync_connect, sync_stop, sync_status};
+mod sync_conflicts;
+pub use sync_conflicts::{sync_conflicts_list, sync_conflict_resolve, sync_fork_resolve, legacy_conflict_dismiss};

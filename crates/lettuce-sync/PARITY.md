@@ -104,3 +104,9 @@ The character and protected-snapshot schema versions advance for the independent
 Library group and persona hard deletes propagate through canonical delete changes and the existing purge queue. The group purge includes source conversations; historical persona apply receipts remain replay evidence after their persona is removed.
 
 The handshake fingerprint assertion includes character payload version 3 for Banner media, so synchronized peers must agree on the complete authored media schema.
+
+Application conflict notifications now follow commits to canonical conflict and fork evidence, whereas legacy emitted sync-conflicts-changed only after explicit resolution (old-code/src-tauri/src/sync/commands.rs:67). This event wiring does not change the existing persona resolution or session coordinators.
+
+The 256-item pending-media bound is a page size instead of a session limit. Unavailable media continues to defer its asset and dependent snapshots, with an explicit unavailable_assets count; the existing RejournalDropped notice limit is retained.
+
+Canonical conflict resolution now covers the complete character, lorebook and prompt aggregates next to personas and the default persona. Legacy resolved individual rows (old-code/src-tauri/src/sync/v2/conflicts.rs:9-15,221-244); the rewrite records a fresh aggregate revision through the existing journal. Current acknowledges deleted candidates, while Other that would recreate a purged entity fails Unsupported. Missing media stays deferred and unavailable_assets makes the skip visible in completion, preserving the existing engine retry rule.

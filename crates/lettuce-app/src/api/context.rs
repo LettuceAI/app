@@ -85,6 +85,7 @@ pub struct ApiContext {
 struct ApiContextInner {
     usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
     maintenance: super::maintenance::MaintenanceGate,
+    sync: super::sync::SyncState,
     parts: ApiContextParts,
     models: ModelSlots,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
@@ -139,6 +140,8 @@ impl ApiContext {
         }
         Ok(Arc::new(super::ollama::remote_providers(self)?))
     }
+    pub(super) fn sync_state(&self) -> &super::sync::SyncState { &self.inner.sync }
+
     pub(super) fn maintenance(&self) -> &super::maintenance::MaintenanceGate {
         &self.inner.maintenance
     }
@@ -176,6 +179,18 @@ impl ApiContext {
                 lettuce_database::LibraryKind::Group => lettuce_contracts::ApiEvent::GroupChanged { group_id: id.to_owned() },
             };
             library_events.emit(event);
+        });
+        let lorebook_events = parts.events.clone();
+        parts.backend.database().on_lorebook_change(move || {
+            lorebook_events.emit(lettuce_contracts::ApiEvent::LorebooksChanged);
+        });
+        let prompt_events = parts.events.clone();
+        parts.backend.database().on_prompt_change(move || {
+            prompt_events.emit(lettuce_contracts::ApiEvent::PromptsChanged);
+        });
+        let conflict_events = parts.events.clone();
+        parts.backend.database().on_sync_conflict_change(move || {
+            conflict_events.emit(lettuce_contracts::ApiEvent::SyncConflictsChanged);
         });
         let now = parts.clock.now();
         let jobs = JobHostState::default();
@@ -236,6 +251,7 @@ impl ApiContext {
             inner: Arc::new(ApiContextInner {
                 usage_billing: Mutex::new(None),
                 maintenance: super::maintenance::MaintenanceGate::default(),
+                sync: super::sync::SyncState::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
                 streams: Mutex::new(HashMap::new()),
@@ -567,6 +583,7 @@ impl ApiContext {
     /// Cancels every running generation and any job a worker starts from
     /// now on; workers stop through their own shutdown signal.
     pub fn begin_shutdown(&self) {
+        self.inner.sync.cancel();
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.backend().local_runtime_events().shutdown();
         self.inner.shutdown.cancel();

@@ -32,6 +32,8 @@ pub enum MediaSyncTransportError {
     Cancelled,
     #[error("media sync peer disconnected")]
     Disconnected,
+    #[error("sync peer stopped sending during transfer")]
+    PeerStalled,
     #[error("media sync transport protocol failed")]
     Protocol,
 }
@@ -41,6 +43,7 @@ pub struct MediaSyncReport {
     pub received_assets: usize,
     pub received_blobs: usize,
     pub received_bytes: u64,
+    pub unavailable_assets: usize,
 }
 
 #[derive(Debug)]
@@ -71,69 +74,105 @@ where
     where
         T: AuthenticatedMediaSyncTransport + ?Sized,
     {
+        self.run_with_progress(transport, cancellation, now, |_| {})
+            .await
+    }
+
+    pub async fn run_with_progress<T, F>(
+        &self,
+        transport: &mut T,
+        cancellation: &CancellationToken,
+        now: TimestampMillis,
+        mut progress: F,
+    ) -> Result<MediaSyncReport, SyncMediaExchangeError>
+    where
+        T: AuthenticatedMediaSyncTransport + ?Sized,
+        F: FnMut(&MediaSyncReport) + Send,
+    {
         check_cancelled(cancellation)?;
-        let pending = self
-            .repository
-            .pending_media()
-            .map_err(SyncMediaExchangeError::Catalog)?;
         let mut report = MediaSyncReport {
             received_assets: 0,
             received_blobs: 0,
             received_bytes: 0,
+            unavailable_assets: 0,
         };
         let mut completed_hashes = Vec::<ContentHash>::new();
-        'assets: for asset in &pending {
+        let mut after = None;
+        let mut attempted_hashes = std::collections::BTreeSet::new();
+        loop {
             check_cancelled(cancellation)?;
-            let mut offset = self
-                .media
-                .receive_offset(asset)
-                .map_err(SyncMediaExchangeError::Media)?;
-            let transferred = offset < asset.blob.byte_size;
-            while offset < asset.blob.byte_size {
-                check_cancelled(cancellation)?;
-                let chunk = transport
-                    .fetch_blob_chunk(
-                        &asset.blob.content_hash,
-                        offset,
-                        MAX_SYNC_BLOB_CHUNK_BYTES,
-                        cancellation,
-                    )
-                    .await
-                    .map_err(SyncMediaExchangeError::Transport)?;
-                let Some(chunk) = chunk else {
-                    continue 'assets;
-                };
-                chunk
-                    .validate(&asset.blob.content_hash, offset)
-                    .map_err(SyncMediaExchangeError::Catalog)?;
-                let next = offset
-                    .checked_add(u64::try_from(chunk.bytes.len()).map_err(|_| {
-                        SyncMediaExchangeError::Catalog(MediaSyncError::InvalidChunk)
-                    })?)
-                    .ok_or(SyncMediaExchangeError::Catalog(
-                        MediaSyncError::InvalidChunk,
-                    ))?;
-                if next > asset.blob.byte_size || chunk.complete != (next == asset.blob.byte_size) {
-                    return Err(SyncMediaExchangeError::Catalog(
-                        MediaSyncError::InvalidChunk,
-                    ));
-                }
-                offset = self
-                    .media
-                    .append_sync_chunk(asset, offset, &chunk.bytes)
-                    .map_err(SyncMediaExchangeError::Media)?;
-                report.received_bytes = report
-                    .received_bytes
-                    .saturating_add(u64::try_from(chunk.bytes.len()).unwrap_or(u64::MAX));
+            let pending = self
+                .repository
+                .pending_media(after)
+                .map_err(SyncMediaExchangeError::Catalog)?;
+            if pending.is_empty() {
+                break;
             }
-            check_cancelled(cancellation)?;
-            self.media
-                .finish_sync_asset(asset, now)
-                .map_err(SyncMediaExchangeError::Media)?;
-            report.received_assets = report.received_assets.saturating_add(1);
-            if transferred && !completed_hashes.contains(&asset.blob.content_hash) {
-                completed_hashes.push(asset.blob.content_hash.clone());
-                report.received_blobs = report.received_blobs.saturating_add(1);
+            'assets: for asset in &pending {
+                after = Some(asset.asset.id);
+                check_cancelled(cancellation)?;
+                let mut offset = self
+                    .media
+                    .receive_offset(asset)
+                    .map_err(SyncMediaExchangeError::Media)?;
+                let transferred = offset < asset.blob.byte_size;
+                if transferred && !attempted_hashes.insert(asset.blob.content_hash.to_string()) {
+                    report.unavailable_assets += 1;
+                    progress(&report);
+                    continue 'assets;
+                }
+                while offset < asset.blob.byte_size {
+                    check_cancelled(cancellation)?;
+                    let chunk = transport
+                        .fetch_blob_chunk(
+                            &asset.blob.content_hash,
+                            offset,
+                            MAX_SYNC_BLOB_CHUNK_BYTES,
+                            cancellation,
+                        )
+                        .await
+                        .map_err(SyncMediaExchangeError::Transport)?;
+                    let Some(chunk) = chunk else {
+                        report.unavailable_assets += 1;
+                        progress(&report);
+                        continue 'assets;
+                    };
+                    chunk
+                        .validate(&asset.blob.content_hash, offset)
+                        .map_err(SyncMediaExchangeError::Catalog)?;
+                    let next = offset
+                        .checked_add(u64::try_from(chunk.bytes.len()).map_err(|_| {
+                            SyncMediaExchangeError::Catalog(MediaSyncError::InvalidChunk)
+                        })?)
+                        .ok_or(SyncMediaExchangeError::Catalog(
+                            MediaSyncError::InvalidChunk,
+                        ))?;
+                    if next > asset.blob.byte_size
+                        || chunk.complete != (next == asset.blob.byte_size)
+                    {
+                        return Err(SyncMediaExchangeError::Catalog(
+                            MediaSyncError::InvalidChunk,
+                        ));
+                    }
+                    offset = self
+                        .media
+                        .append_sync_chunk(asset, offset, &chunk.bytes)
+                        .map_err(SyncMediaExchangeError::Media)?;
+                    report.received_bytes = report
+                        .received_bytes
+                        .saturating_add(u64::try_from(chunk.bytes.len()).unwrap_or(u64::MAX));
+                    progress(&report);
+                }
+                check_cancelled(cancellation)?;
+                self.media
+                    .finish_sync_asset(asset, now)
+                    .map_err(SyncMediaExchangeError::Media)?;
+                report.received_assets = report.received_assets.saturating_add(1);
+                if transferred && !completed_hashes.contains(&asset.blob.content_hash) {
+                    completed_hashes.push(asset.blob.content_hash.clone());
+                    report.received_blobs = report.received_blobs.saturating_add(1);
+                }
+                progress(&report);
             }
         }
         check_cancelled(cancellation)?;
@@ -282,6 +321,112 @@ mod tests {
             Database::open(database).expect("asset database"),
         )
         .expect("sync media store")
+    }
+
+    struct PagedMedia {
+        assets: Vec<CanonicalMediaAsset>,
+        pages: std::sync::atomic::AtomicUsize,
+    }
+
+    impl MediaSyncRepository for PagedMedia {
+        fn pending_media(
+            &self,
+            after: Option<lettuce_types::AssetId>,
+        ) -> Result<Vec<CanonicalMediaAsset>, MediaSyncError> {
+            self.pages
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(self
+                .assets
+                .iter()
+                .filter(|asset| {
+                    after.is_none_or(|after| asset.asset.id.to_string() > after.to_string())
+                })
+                .take(lettuce_sync::MAX_SYNC_MEDIA_ASSETS)
+                .cloned()
+                .collect())
+        }
+
+        fn retry_deferred_changes(&self, _: TimestampMillis) -> Result<usize, MediaSyncError> {
+            Ok(0)
+        }
+    }
+
+    struct UnavailableMedia {
+        requests: Vec<ContentHash>,
+    }
+
+    #[async_trait]
+    impl AuthenticatedMediaSyncTransport for UnavailableMedia {
+        async fn fetch_blob_chunk(
+            &mut self,
+            hash: &ContentHash,
+            _: u64,
+            _: usize,
+            _: &CancellationToken,
+        ) -> Result<Option<SyncBlobChunk>, MediaSyncTransportError> {
+            self.requests.push(hash.clone());
+            Ok(None)
+        }
+
+        async fn finish_media(
+            &mut self,
+            _: &CancellationToken,
+        ) -> Result<(), MediaSyncTransportError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn unavailable_media_visits_every_page_without_repeating_a_hash() {
+        let (source_root, source_path) = media_paths("paged-source");
+        let (target_root, target_path) = media_paths("paged-target");
+        let source = ingest_store(&source_root, &source_path);
+        let bytes = png_fixture();
+        let image = source
+            .ingest(
+                bytes.as_slice(),
+                IngestRequest::new(
+                    AssetKind::AvatarOriginal,
+                    AssetOrigin::Upload,
+                    RetentionClass::Persistent,
+                    AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("image");
+        let source_sync = sync_store(&source_root, &source_path);
+        let original = source_sync.snapshot(image.asset.id).expect("snapshot");
+        let mut assets = (0..300)
+            .map(|_| {
+                let mut asset = original.clone();
+                asset.asset.id = lettuce_types::AssetId::new();
+                asset
+            })
+            .collect::<Vec<_>>();
+        assets.sort_by_key(|asset| asset.asset.id.to_string());
+        let repository = PagedMedia {
+            assets,
+            pages: Default::default(),
+        };
+        let target_sync = sync_store(&target_root, &target_path);
+        let mut transport = UnavailableMedia {
+            requests: Vec::new(),
+        };
+        let report = SyncMediaCoordinator::new(&repository, &target_sync)
+            .run(
+                &mut transport,
+                &CancellationToken::new(),
+                TimestampMillis::new(1),
+            )
+            .await
+            .expect("completed with unavailable media");
+        assert_eq!(report.unavailable_assets, 300);
+        assert!(repository.pages.load(std::sync::atomic::Ordering::Relaxed) > 1);
+        assert_eq!(transport.requests.len(), 1);
+        drop(target_sync);
+        drop(source_sync);
+        drop(source);
+        std::fs::remove_dir_all(target_root).expect("target cleanup");
+        std::fs::remove_dir_all(source_root).expect("source cleanup");
     }
 
     #[tokio::test]

@@ -57,6 +57,60 @@ pub(super) async fn create(
     .expect("create lorebook")
 }
 
+#[tokio::test]
+async fn catalog_feed_lorebook_create_delete_and_replay_emit_only_commits() {
+    let harness = harness(Reply::Text("unused"));
+    let before = harness
+        .events
+        .events()
+        .iter()
+        .filter(|event| **event == dto::ApiEvent::LorebooksChanged)
+        .count();
+    let book = create(
+        &harness,
+        "feed-book",
+        "Book",
+        vec![entry("Entry", "Content", None)],
+    )
+    .await;
+    create(
+        &harness,
+        "feed-book",
+        "Book",
+        vec![entry("Entry", "Content", None)],
+    )
+    .await;
+    assert_eq!(
+        harness
+            .events
+            .events()
+            .iter()
+            .filter(|event| **event == dto::ApiEvent::LorebooksChanged)
+            .count(),
+        before + 1
+    );
+    let request = dto::LorebookRevisionRequest {
+        client_operation_id: "feed-delete".into(),
+        lorebook_id: book.lorebook.id,
+        expected_revision: book.lorebook.revision,
+    };
+    lorebook_delete(&harness.context, request.clone())
+        .await
+        .expect("delete");
+    lorebook_delete(&harness.context, request)
+        .await
+        .expect("replay delete");
+    assert_eq!(
+        harness
+            .events
+            .events()
+            .iter()
+            .filter(|event| **event == dto::ApiEvent::LorebooksChanged)
+            .count(),
+        before + 2
+    );
+}
+
 pub(super) fn bind_character(harness: &Harness, character: CharacterId, book: &str) {
     let database = harness.context.backend().database();
     let revision = CharacterRepository::get(database, character)

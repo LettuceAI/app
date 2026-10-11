@@ -414,7 +414,6 @@ pub async fn lorebook_delete(
         })
         .await?;
     emit_deletion(context, &result);
-    context.emit(dto::ApiEvent::LorebooksChanged);
     Ok(result)
 }
 

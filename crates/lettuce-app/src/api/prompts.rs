@@ -655,7 +655,6 @@ pub async fn prompt_delete(
         })
         .await?;
     super::lorebooks::emit_deletion(context, &result);
-    context.emit(dto::ApiEvent::PromptsChanged);
     Ok(result)
 }
 

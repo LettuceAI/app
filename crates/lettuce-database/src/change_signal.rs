@@ -16,14 +16,20 @@ pub(crate) enum ChangeFeed {
     Conversations,
     Models,
     Settings,
+    Lorebooks,
+    Prompts,
+    SyncConflicts,
 }
 
 impl ChangeFeed {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 7] = [
         Self::Jobs,
         Self::Conversations,
         Self::Models,
         Self::Settings,
+        Self::Lorebooks,
+        Self::Prompts,
+        Self::SyncConflicts,
     ];
 
     const fn bit(self) -> u8 {
@@ -32,6 +38,9 @@ impl ChangeFeed {
             Self::Conversations => 2,
             Self::Models => 4,
             Self::Settings => 8,
+            Self::Lorebooks => 16,
+            Self::Prompts => 32,
+            Self::SyncConflicts => 64,
         }
     }
 
@@ -40,6 +49,11 @@ impl ChangeFeed {
             "app_settings" | "device_settings" | "device_ui_state" => Some(Self::Settings),
             "job_changes" => Some(Self::Jobs),
             "model_changes" => Some(Self::Models),
+            "lorebooks" | "lorebook_entries" => Some(Self::Lorebooks),
+            "prompt_documents" | "prompt_entries" => Some(Self::Prompts),
+            "sync_conflicts" | "sync_conversation_forks" | "legacy_import_preserved_rows" => {
+                Some(Self::SyncConflicts)
+            }
             "conversation_changes" | "message_signals" | "memory_changes" => {
                 Some(Self::Conversations)
             }
@@ -145,7 +159,16 @@ impl ChangeSignal {
                     | "scene_assets"
                     | "conversation_starters"
                     | "starter_messages"
-                    | "character_lorebook_bindings" => LibraryKind::Character,
+                    | "character_lorebook_bindings"
+                    | "companion_soul_states"
+                    | "companion_soul_facts"
+                    | "companion_soul_fact_sources"
+                    | "companion_soul_fact_supersedes"
+                    | "companion_relationship_states"
+                    | "companion_scheduled_notes"
+                    | "companion_session_states"
+                    | "companion_conversation_relationship_states"
+                    | "companion_continuity_episodes" => LibraryKind::Character,
                     "personas" | "persona_media" | "persona_lorebook_bindings" => {
                         LibraryKind::Persona
                     }
@@ -158,15 +181,26 @@ impl ChangeSignal {
                     | "group_lorebook_bindings" => LibraryKind::Group,
                     _ => return,
                 };
+                let identity_column = if matches!(
+                    table,
+                    "companion_scheduled_notes"
+                        | "companion_session_states"
+                        | "companion_conversation_relationship_states"
+                        | "companion_continuity_episodes"
+                ) {
+                    1
+                } else {
+                    0
+                };
                 let value = match case {
                     rusqlite::hooks::PreUpdateCase::Insert(accessor) => {
-                        accessor.get_new_column_value(0)
+                        accessor.get_new_column_value(identity_column)
                     }
                     rusqlite::hooks::PreUpdateCase::Update {
                         new_value_accessor, ..
-                    } => new_value_accessor.get_new_column_value(0),
+                    } => new_value_accessor.get_new_column_value(identity_column),
                     rusqlite::hooks::PreUpdateCase::Delete(accessor) => {
-                        accessor.get_old_column_value(0)
+                        accessor.get_old_column_value(identity_column)
                     }
                     rusqlite::hooks::PreUpdateCase::Unknown => return,
                 };
@@ -339,6 +373,18 @@ impl Database {
 }
 
 impl Database {
+    pub fn on_lorebook_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::Lorebooks, Arc::new(listener));
+    }
+
+    pub fn on_prompt_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::Prompts, Arc::new(listener));
+    }
+
+    pub fn on_sync_conflict_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::SyncConflicts, Arc::new(listener));
+    }
+
     pub fn on_model_change(&self, listener: impl Fn() + Send + Sync + 'static) {
         self.changes.listen(ChangeFeed::Models, Arc::new(listener));
     }
@@ -368,6 +414,113 @@ impl Database {
     pub fn on_library_change(&self, listener: impl Fn(LibraryKind, &str) + Send + Sync + 'static) {
         self.changes.listen_library(Arc::new(listener));
     }
+}
+
+#[cfg(test)]
+mod sync_feed_tests {
+    use super::*;
+
+    fn assert_feed(tables: &[&str]) {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        for table in tables {
+            connection.execute_batch(&format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, value INTEGER);")).expect("schema");
+        }
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let feed = ChangeFeed::of_table(tables[0]).expect("registered feed");
+        let calls = Arc::new(AtomicU64::new(0));
+        let observed = calls.clone();
+        signal.listen(feed, Arc::new(move || {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }));
+        connection.execute_batch("BEGIN").expect("begin");
+        for table in tables {
+            assert_eq!(ChangeFeed::of_table(table), Some(feed));
+            connection.execute_batch(&format!("INSERT INTO {table} VALUES (1, 1); UPDATE {table} SET value = 2;")).expect("write");
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        connection.execute_batch("COMMIT").expect("commit");
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        connection.execute_batch("BEGIN").expect("begin rollback");
+        for table in tables {
+            connection.execute_batch(&format!("DELETE FROM {table};")).expect("delete");
+        }
+        connection.execute_batch("ROLLBACK").expect("rollback");
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        connection.execute_batch("BEGIN").expect("begin delete");
+        for table in tables {
+            connection.execute_batch(&format!("DELETE FROM {table};")).expect("delete");
+        }
+        connection.execute_batch("COMMIT").expect("commit delete");
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn lorebook_commits_refresh_once_and_rollback_is_silent() {
+        assert_feed(&["lorebooks", "lorebook_entries"]);
+    }
+
+    #[test]
+    fn prompt_commits_refresh_once_and_rollback_is_silent() {
+        assert_feed(&["prompt_documents", "prompt_entries"]);
+    }
+
+    #[test]
+    fn conflict_fork_and_legacy_commits_refresh_once_and_rollback_is_silent() {
+        assert_feed(&["sync_conflicts", "sync_conversation_forks", "legacy_import_preserved_rows"]);
+    }
+
+    #[test]
+    fn companion_catalog_commits_refresh_the_character_once() {
+        for (table, character_column) in [
+            ("companion_soul_states", 0),
+            ("companion_soul_facts", 0),
+            ("companion_soul_fact_sources", 0),
+            ("companion_soul_fact_supersedes", 0),
+            ("companion_relationship_states", 0),
+            ("companion_scheduled_notes", 1),
+            ("companion_session_states", 1),
+            ("companion_conversation_relationship_states", 1),
+            ("companion_continuity_episodes", 1),
+        ] {
+            let connection = rusqlite::Connection::open_in_memory().expect("connection");
+            connection
+                .execute_batch(&format!("CREATE TABLE {table} (first TEXT, second TEXT);"))
+                .expect("schema");
+            let signal = ChangeSignal::install(&connection).expect("hooks");
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let observed = events.clone();
+            signal.listen_library(Arc::new(move |kind, id| {
+                observed.lock().expect("events").push((kind, id.to_owned()));
+            }));
+            let values = if character_column == 0 {
+                "('character', 'child')"
+            } else {
+                "('child', 'character')"
+            };
+            connection
+                .execute_batch(&format!("BEGIN; INSERT INTO {table} VALUES {values}; UPDATE {table} SET second = second; COMMIT;"))
+                .expect("commit");
+            assert_eq!(
+                *events.lock().expect("events"),
+                vec![(LibraryKind::Character, "character".into())],
+                "{table}"
+            );
+            events.lock().expect("events").clear();
+            connection
+                .execute_batch(&format!("BEGIN; DELETE FROM {table}; ROLLBACK;"))
+                .expect("rollback");
+            assert!(events.lock().expect("events").is_empty(), "{table}");
+            connection
+                .execute_batch(&format!("BEGIN; DELETE FROM {table}; COMMIT;"))
+                .expect("delete");
+            assert_eq!(
+                *events.lock().expect("events"),
+                vec![(LibraryKind::Character, "character".into())],
+                "{table}"
+            );
+        }
+    }
+
 }
 
 #[cfg(test)]

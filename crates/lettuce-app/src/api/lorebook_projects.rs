@@ -1226,6 +1226,5 @@ pub async fn lorebook_project_commit(
             Ok(receipt)
         })
         .await?;
-    context.emit(dto::ApiEvent::LorebooksChanged);
     Ok(receipt)
 }

@@ -70,7 +70,7 @@ impl PairingPin {
         Self(value)
     }
 
-    fn expose(&self) -> &str {
+    pub(crate) fn expose(&self) -> &str {
         &self.0
     }
 }
@@ -148,7 +148,7 @@ impl SyncTcpListener {
         }
         let (stream, _) = tokio::select! {
             () = cancellation.cancelled() => return Err(SyncPeerTransportError::Cancelled),
-            accepted = self.listener.accept() => accepted.map_err(SyncPeerTransportError::Io)?,
+            accepted = self.listener.accept() => accepted.map_err(SyncPeerTransportError::Listener)?,
         };
         match authenticate_host(stream, self.local_device, &self.pin, media, cancellation).await {
             Ok(mut transport) => {
@@ -224,8 +224,12 @@ pub enum SyncPeerTransportError {
     Protocol,
     #[error("sync peer disconnected")]
     Disconnected,
+    #[error("sync peer stopped sending during transfer")]
+    PeerStalled,
     #[error("sync socket failed")]
     Io(#[source] io::Error),
+    #[error("sync listener stopped accepting connections")]
+    Listener(#[source] io::Error),
     #[error("too many wrong PINs; share again to get a new PIN")]
     PairingLocked,
     #[error("the other device declined to sync")]
@@ -256,6 +260,8 @@ pub struct AuthenticatedTcpSyncTransport<'a> {
     served_secrets: BTreeMap<SecretRef, SecretPurpose>,
     pending: VecDeque<SyncWireFrame>,
     approver: Option<&'a dyn SyncPeerApprover>,
+    receive_buffer: Vec<u8>,
+    read_idle: Option<std::time::Duration>,
 }
 
 impl fmt::Debug for AuthenticatedTcpSyncTransport<'_> {
@@ -276,6 +282,23 @@ impl<'a> AuthenticatedTcpSyncTransport<'a> {
 }
 
 impl AuthenticatedTcpSyncTransport<'_> {
+    pub(crate) fn enable_read_deadline(&mut self, deadline: std::time::Duration) {
+        self.read_idle = Some(deadline);
+    }
+
+    pub(crate) async fn wait_for_disconnect(
+        &mut self,
+        cancellation: &CancellationToken,
+    ) -> Result<(), SyncPeerTransportError> {
+        loop {
+            let frame = self.receive(cancellation).await?;
+            if !matches!(frame, SyncWireFrame::Frontier(_)) || !self.pending.is_empty() {
+                return Err(SyncPeerTransportError::Protocol);
+            }
+            self.pending.push_back(frame);
+        }
+    }
+
     pub async fn close(&mut self) -> Result<(), SyncPeerTransportError> {
         self.stream
             .shutdown()
@@ -424,7 +447,14 @@ impl AuthenticatedTcpSyncTransport<'_> {
         &mut self,
         cancellation: &CancellationToken,
     ) -> Result<SyncWireFrame, SyncPeerTransportError> {
-        let encrypted = read_frame(&mut self.stream, MAX_SYNC_FRAME_BYTES, cancellation).await?;
+        let encrypted = read_buffered_frame(
+            &mut self.stream,
+            &mut self.receive_buffer,
+            MAX_SYNC_FRAME_BYTES,
+            cancellation,
+            self.read_idle,
+        )
+        .await?;
         let nonce = frame_nonce(self.receive_prefix, self.receive_counter);
         self.receive_counter = self
             .receive_counter
@@ -466,9 +496,12 @@ impl AuthenticatedSyncTransport for AuthenticatedTcpSyncTransport<'_> {
         };
         if self.role == ConnectionRole::Host {
             let approver = self.approver.ok_or(SyncTransportError::Declined)?;
+            let approval = approver.approve(peer.device_id(), peer.device_name());
+            tokio::pin!(approval);
             let approved = tokio::select! {
                 () = cancellation.cancelled() => return Err(SyncTransportError::Cancelled),
-                approved = approver.approve(peer.device_id(), peer.device_name()) => approved,
+                approved = &mut approval => approved,
+                disconnected = self.wait_for_disconnect(cancellation) => return Err(map_sync_error(disconnected.expect_err("disconnect wait"))),
             };
             if !approved {
                 let _ = self.send(SyncWireFrame::Declined, cancellation).await;
@@ -672,6 +705,7 @@ fn map_secret_error(error: SyncPeerTransportError) -> SecretSyncTransportError {
     match error {
         SyncPeerTransportError::Cancelled => SecretSyncTransportError::Cancelled,
         SyncPeerTransportError::Disconnected => SecretSyncTransportError::Disconnected,
+        SyncPeerTransportError::PeerStalled => SecretSyncTransportError::PeerStalled,
         _ => SecretSyncTransportError::Protocol,
     }
 }
@@ -784,6 +818,33 @@ impl ExpectedFrame {
     }
 }
 
+fn configure_keepalive(stream: &TcpStream) -> Result<(), SyncPeerTransportError> {
+    let keepalive = socket2::TcpKeepalive::new().with_time(std::time::Duration::from_secs(15));
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "visionos",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "windows",
+        target_os = "cygwin",
+        all(target_os = "wasi", not(target_env = "p1")),
+    ))]
+    let keepalive = keepalive
+        .with_interval(std::time::Duration::from_secs(5))
+        .with_retries(3);
+    socket2::SockRef::from(stream)
+        .set_tcp_keepalive(&keepalive)
+        .map_err(SyncPeerTransportError::Io)
+}
+
 async fn authenticate_host<'a>(
     mut stream: TcpStream,
     local_device: SyncDeviceId,
@@ -791,6 +852,7 @@ async fn authenticate_host<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
+    configure_keepalive(&stream)?;
     let mut host_challenge = [0u8; 32];
     OsRng.fill_bytes(&mut host_challenge);
     let (pake, host_message) = start_pake(pin);
@@ -870,6 +932,7 @@ async fn authenticate_client<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
+    configure_keepalive(&stream)?;
     let first = read_frame(&mut stream, MAX_PAIRING_FRAME_BYTES, cancellation).await?;
     let PairingFrame::HostChallenge {
         version,
@@ -994,6 +1057,8 @@ fn authenticated_transport<'a>(
         served_secrets: BTreeMap::new(),
         pending: VecDeque::new(),
         approver: None,
+        receive_buffer: Vec::new(),
+        read_idle: None,
     }
 }
 
@@ -1139,6 +1204,55 @@ async fn read_frame(
     }
 }
 
+async fn read_buffered_frame(
+    stream: &mut TcpStream,
+    buffered: &mut Vec<u8>,
+    limit: usize,
+    cancellation: &CancellationToken,
+    idle: Option<std::time::Duration>,
+) -> Result<Vec<u8>, SyncPeerTransportError> {
+    loop {
+        let needed = if buffered.len() < 4 {
+            4
+        } else {
+            let length = u32::from_be_bytes(
+                buffered[..4]
+                    .try_into()
+                    .map_err(|_| SyncPeerTransportError::Protocol)?,
+            ) as usize;
+            if length > limit {
+                return Err(SyncPeerTransportError::FrameTooLarge);
+            }
+            let needed = 4 + length;
+            if buffered.len() == needed {
+                let mut frame = std::mem::take(buffered);
+                frame.drain(..4);
+                return Ok(frame);
+            }
+            needed
+        };
+        let mut chunk = [0u8; 8192];
+        let capacity = (needed - buffered.len()).min(chunk.len());
+        let read = async {
+            match idle {
+                Some(idle) => tokio::time::timeout(idle, stream.read(&mut chunk[..capacity]))
+                    .await
+                    .map_err(|_| SyncPeerTransportError::PeerStalled)?
+                    .map_err(map_io),
+                None => stream.read(&mut chunk[..capacity]).await.map_err(map_io),
+            }
+        };
+        let count = tokio::select! {
+            () = cancellation.cancelled() => return Err(SyncPeerTransportError::Cancelled),
+            count = read => count?,
+        };
+        if count == 0 {
+            return Err(SyncPeerTransportError::Disconnected);
+        }
+        buffered.extend_from_slice(&chunk[..count]);
+    }
+}
+
 fn map_io(error: io::Error) -> SyncPeerTransportError {
     match error.kind() {
         io::ErrorKind::UnexpectedEof
@@ -1153,6 +1267,7 @@ fn map_sync_error(error: SyncPeerTransportError) -> SyncTransportError {
     match error {
         SyncPeerTransportError::Cancelled => SyncTransportError::Cancelled,
         SyncPeerTransportError::Disconnected => SyncTransportError::Disconnected,
+        SyncPeerTransportError::PeerStalled => SyncTransportError::PeerStalled,
         SyncPeerTransportError::Declined => SyncTransportError::Declined,
         _ => SyncTransportError::Protocol,
     }
@@ -1162,6 +1277,7 @@ fn map_media_error(error: SyncPeerTransportError) -> MediaSyncTransportError {
     match error {
         SyncPeerTransportError::Cancelled => MediaSyncTransportError::Cancelled,
         SyncPeerTransportError::Disconnected => MediaSyncTransportError::Disconnected,
+        SyncPeerTransportError::PeerStalled => MediaSyncTransportError::PeerStalled,
         _ => MediaSyncTransportError::Protocol,
     }
 }
@@ -2076,5 +2192,133 @@ mod tests {
                 .len(),
             0
         );
+    }
+}
+
+#[cfg(test)]
+mod health_tests {
+    use super::*;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[tokio::test]
+    async fn both_roles_configure_keepalive_before_first_read() {
+        for host in [true, false] {
+            let (stream, _peer) = sockets().await;
+            let socket = socket2::SockRef::from(&stream)
+                .try_clone()
+                .expect("duplicate socket");
+            let cancellation = CancellationToken::new();
+            let pin = PairingPin::new("123456").expect("pin");
+            let device = SyncDeviceId::new();
+            let handshake = async {
+                if host {
+                    authenticate_host(stream, device, &pin, None, &cancellation).await
+                } else {
+                    authenticate_client(stream, device, &pin, None, &cancellation).await
+                }
+            };
+            tokio::pin!(handshake);
+            std::future::poll_fn(|cx| {
+                assert!(std::future::Future::poll(handshake.as_mut(), cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            assert!(socket.keepalive().expect("keepalive"), "host={host}");
+            assert_eq!(
+                socket.tcp_keepalive_time().expect("time"),
+                std::time::Duration::from_secs(15),
+                "host={host}"
+            );
+            assert_eq!(
+                socket.tcp_keepalive_interval().expect("interval"),
+                std::time::Duration::from_secs(5),
+                "host={host}"
+            );
+            assert_eq!(
+                socket.tcp_keepalive_retries().expect("retries"),
+                3,
+                "host={host}"
+            );
+        }
+    }
+
+    use std::time::Duration;
+
+    async fn sockets() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let connect = TcpStream::connect(listener.local_addr().expect("address"));
+        let (client, host) = tokio::join!(connect, listener.accept());
+        (client.expect("client"), host.expect("host").0)
+    }
+
+    #[tokio::test]
+    async fn stalled_transfer_has_a_typed_read_deadline() {
+        let (_peer, mut socket) = sockets().await;
+        let mut buffered = Vec::new();
+        let error = read_buffered_frame(
+            &mut socket,
+            &mut buffered,
+            1024,
+            &CancellationToken::new(),
+            Some(Duration::from_millis(20)),
+        )
+        .await
+        .expect_err("stalled");
+        assert!(matches!(error, SyncPeerTransportError::PeerStalled));
+    }
+
+    #[tokio::test]
+    async fn approval_wait_has_no_deadline_and_partial_frame_survives_start() {
+        let (mut peer, mut socket) = sockets().await;
+        peer.write_all(&[0, 0]).await.expect("partial prefix");
+        let mut buffered = Vec::new();
+        let cancellation = CancellationToken::new();
+        let read = read_buffered_frame(&mut socket, &mut buffered, 1024, &cancellation, None);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), read)
+                .await
+                .is_err()
+        );
+        assert_eq!(buffered, vec![0, 0]);
+        peer.write_all(&[0, 3, 1, 2, 3])
+            .await
+            .expect("remaining frame");
+        assert_eq!(
+            read_buffered_frame(
+                &mut socket,
+                &mut buffered,
+                1024,
+                &cancellation,
+                Some(Duration::from_millis(20))
+            )
+            .await
+            .expect("resume frame"),
+            vec![1, 2, 3]
+        );
+        assert!(buffered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn every_read_byte_resets_the_idle_deadline() {
+        let (mut peer, mut socket) = sockets().await;
+        let sender = tokio::spawn(async move {
+            for byte in [0, 0, 0, 3, 1, 2, 3] {
+                peer.write_all(&[byte]).await.expect("byte");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        let mut buffered = Vec::new();
+        assert_eq!(
+            read_buffered_frame(
+                &mut socket,
+                &mut buffered,
+                1024,
+                &CancellationToken::new(),
+                Some(Duration::from_millis(50))
+            )
+            .await
+            .expect("active transfer"),
+            vec![1, 2, 3]
+        );
+        sender.await.expect("sender");
     }
 }

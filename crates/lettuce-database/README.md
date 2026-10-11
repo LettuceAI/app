@@ -405,11 +405,11 @@ Library media association deletion and replacement queue the prior asset for col
 
 Character duplication writes the copied authored graph, lorebook bindings and scheduled notes together. Notes receive fresh identities and retain their schedule; the companion Soul starts from the copied authored configuration. The resulting reference report includes bound lorebooks even when archived.
 
-Library changes use the SQLite pre-update hook to read the entity identity from the new row on insert or update and from the old row on delete. Character, persona and group child tables refresh their parent. The signal deduplicates identities in memory and marks them at the commit hook. SQLite statement completion publishes them only after the transaction has committed, and rollback discards them, including a failed disk commit. Default persona changes refresh both the old and new selections. SQLite connection client data retains the callback state until connection close. Listeners run on the committing thread and must not access the database.
+Library changes use the SQLite pre-update hook to collect parent identities and publish deduplicated changes from the existing commit hook. Full rollback discards pending changes. A savepoint rollback inside a transaction that commits, or a disk commit failure, may cause an extra harmless refresh. Default persona changes refresh both selections. Listeners run on the committing thread and must not access the database.
 
 Group hard deletion purges every conversation launched from that group in the same immediate transaction as its catalog graph and API replay receipt. Busy conversations prevent the whole purge. Persona hard deletion clears the default selection, makes explicitly selected groups inherit, clears explicit conversation overrides, nulls nullable helper run references and removes media and bindings; immutable helper receipts retain historical persona identities without a live foreign key. Both entities participate in the existing queued sync-delete and unseen-change protection.
 
-Library feeds collect identities with the preupdate hook and publish once from the same commit hook as settings, jobs and conversations. A full rollback clears pending identities. A savepoint rollback followed by commit, or a failed disk commit, can cause an extra refresh; listeners re-read current state.
+Lorebook, prompt and sync conflict tables use the same commit hook as the library feeds. Companion changes refresh the owning character. No statement callbacks or savepoint snapshots are kept.
 
 Character, persona and group lorebook binding commands compose the existing typed binding mutation in the API receipt transaction. The relationship list and owner revision change together; an aborted receipt insertion rolls both back.
 
@@ -436,3 +436,11 @@ Legacy preflight checks an available settings schema version before requiring mo
 The backup index stores one device-local record per destination URI, ordered by creation time. It is copied with device-local state during restore and excluded from backup documents and media-reference probes. Index removal and its API replay receipt share a transaction.
 
 Backup export and restore checkpoints validate that the job remains Running and that its claim still belongs to the caller, then update the stage and existing job detail in one transaction. Accepted cancellation prevents an irreversible checkpoint, and a failed detail write rolls back the stage change.
+
+Lorebook and prompt feeds watch their root and entry tables and publish once per committing transaction. The sync conflict feed watches canonical conflicts, conversation fork notices and preserved legacy rows. Companion Soul facts and their links, scheduled notes, shared and private relationships, session state and continuity changes refresh the owning character through the library feed. Context retirement detaches these listeners with the other database feeds.
+
+Sync conflict resolution reuses the canonical codecs for full character, lorebook and prompt snapshots inside the receipt transaction. The database serializes resolution and incoming apply, verifies the observed current change and materialized snapshot, and commits the entity, resolution journal entry, conflict status and API replay receipt together. Conversation fork acknowledgment uses the same receipt boundary.
+
+The legacy conflict reader maps supported preserved snapshots to their imported identities and returns differing current, local and incoming fields. Fields with no current authority have an explicit NotMapped value. Rows without either snapshot remain provenance. Dismissal sets dismissed_at once without modifying the preserved row JSON or the entity; the foundation trigger rejects every other update and deletion. Backup carries the marker with the evidence.
+
+Legacy conflict fields use NotMapped for every current value when the entity is missing; actual null fields on existing entities remain JSON null.

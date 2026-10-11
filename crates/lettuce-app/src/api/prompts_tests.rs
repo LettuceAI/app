@@ -53,6 +53,96 @@ async fn create(harness: &Harness, key: &str, name: &str) -> dto::PromptView {
     .expect("create prompt")
 }
 
+#[tokio::test]
+async fn catalog_feed_prompt_create_delete_and_replay_emit_only_commits() {
+    let harness = harness(Reply::Text("unused"));
+    let before = harness
+        .events
+        .events()
+        .iter()
+        .filter(|event| **event == dto::ApiEvent::PromptsChanged)
+        .count();
+    let prompt = create(&harness, "feed-prompt", "Prompt").await;
+    create(&harness, "feed-prompt", "Prompt").await;
+    assert_eq!(
+        harness
+            .events
+            .events()
+            .iter()
+            .filter(|event| **event == dto::ApiEvent::PromptsChanged)
+            .count(),
+        before + 1
+    );
+    let request = dto::PromptDeleteRequest {
+        client_operation_id: "feed-delete".into(),
+        prompt_id: prompt.prompt.id,
+        expected_revision: prompt.prompt.revision,
+    };
+    prompt_delete(&harness.context, request.clone())
+        .await
+        .expect("delete");
+    prompt_delete(&harness.context, request)
+        .await
+        .expect("replay delete");
+    assert_eq!(
+        harness
+            .events
+            .events()
+            .iter()
+            .filter(|event| **event == dto::ApiEvent::PromptsChanged)
+            .count(),
+        before + 2
+    );
+}
+
+#[tokio::test]
+async fn catalog_feed_sync_apply_refreshes_lorebooks_and_prompts_once() {
+    let source = harness(Reply::Text("unused"));
+    let target = harness(Reply::Text("unused"));
+    create(&source, "sync-prompt", "Shared prompt").await;
+    super::lorebooks_tests::create(
+        &source,
+        "sync-book",
+        "Shared book",
+        vec![super::lorebooks_tests::entry("Entry", "Content", None)],
+    )
+    .await;
+    let count = |kind: dto::ApiEvent| {
+        target
+            .events
+            .events()
+            .iter()
+            .filter(|event| **event == kind)
+            .count()
+    };
+    let before = (
+        count(dto::ApiEvent::LorebooksChanged),
+        count(dto::ApiEvent::PromptsChanged),
+    );
+    crate::launch::tests::sync_prompts(
+        source.context.backend().database(),
+        target.context.backend().database(),
+        10_000,
+    );
+    let after = (
+        count(dto::ApiEvent::LorebooksChanged),
+        count(dto::ApiEvent::PromptsChanged),
+    );
+    assert_eq!(after, (before.0 + 1, before.1 + 1));
+    crate::launch::tests::sync_prompts(
+        source.context.backend().database(),
+        target.context.backend().database(),
+        10_001,
+    );
+    assert_eq!(
+        (
+            count(dto::ApiEvent::LorebooksChanged),
+            count(dto::ApiEvent::PromptsChanged)
+        ),
+        after
+    );
+}
+
 fn turn_prompts(
     database: &lettuce_database::Database,
     chat: &str,

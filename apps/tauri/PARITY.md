@@ -55,3 +55,7 @@ Slice 11a review fixes delay context publication until restart recovery and work
 Desktop backup temporary locations and publication resolve parent-directory aliases while preserving the final filename. Atomic replacement replaces a selected final symlink and leaves its referent intact; the returned index path matches the admission target.
 
 Desktop publication uses std::fs::rename on Windows as on other desktop platforms. The synchronized complete file and approved full-header publication recovery protect the index boundary. Reload teardown shares context retirement with ApiContextSlot, and the shell integration test exercises the real ResetHost and stop_for_restore path.
+
+The shared typed event channel forwards SyncConflictsChanged from the application commit feed. Legacy emitted sync-conflicts-changed directly in the shell resolve command (old-code/src-tauri/src/sync/commands.rs:67); the shell now owns no conflict notification policy.
+
+Sync wrappers retain legacy's separate approve_connection and start_sync_session gates (old-code/src-tauri/src/sync/manager.rs:492-541; old-code/src/ui/pages/sync/SyncPage.tsx:690-709) while typed session state and conflict policy stay in lettuce-app. Local stop is Idle and peer disconnection is typed Failed, matching legacy (old-code/src-tauri/src/sync/manager.rs:559-570,1333,1446). Addresses and PIN are returned for the deferred frontend pairing screen and QR rendering.

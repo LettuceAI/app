@@ -192,3 +192,5 @@ Legacy entity identities derive from the entity kind and legacy identity in one 
 The legacy backup public-header reader shares manifest validation with the decoder and reads no encrypted payload. Header inspection needs no password.
 
 LegacyIdScope derives identities from the entity kind and canonical legacy ID without a source fingerprint. Plan and source fingerprints remain part of import admission and materialization proofs. Backup source I/O errors remain distinct from malformed envelopes in both current and legacy readers.
+
+The shared legacy conflict snapshot decoder returns the recorded primary key and optional column values, including tombstone snapshots, and rejects trailing bytes. Database adapters select the supported user-visible fields; the decoder does not choose a winner.
