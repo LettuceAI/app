@@ -177,6 +177,18 @@ impl ApiContext {
             };
             library_events.emit(event);
         });
+        let lorebook_events = parts.events.clone();
+        parts.backend.database().on_lorebook_change(move || {
+            lorebook_events.emit(lettuce_contracts::ApiEvent::LorebooksChanged);
+        });
+        let prompt_events = parts.events.clone();
+        parts.backend.database().on_prompt_change(move || {
+            prompt_events.emit(lettuce_contracts::ApiEvent::PromptsChanged);
+        });
+        let conflict_events = parts.events.clone();
+        parts.backend.database().on_sync_conflict_change(move || {
+            conflict_events.emit(lettuce_contracts::ApiEvent::SyncConflictsChanged);
+        });
         let now = parts.clock.now();
         let jobs = JobHostState::default();
         let changed = jobs.change_signal();

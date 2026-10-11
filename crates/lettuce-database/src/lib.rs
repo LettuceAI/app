@@ -2409,6 +2409,7 @@ impl MediaAssetRepository for Database {
 impl MediaSyncRepository for Database {
     fn pending_media(
         &self,
+        after: Option<AssetId>,
     ) -> Result<Vec<lettuce_sync::CanonicalMediaAsset>, MediaSyncError> {
         let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
         let mut statement = connection
@@ -2418,7 +2419,8 @@ impl MediaSyncRepository for Database {
                  JOIN sync_changes change ON change.change_id = deferred.change_id
                  WHERE deferred.entity_kind = 'media_asset'
                    AND change.payload_schema = ?1 AND change.payload_version = ?2
-                 ORDER BY RANDOM() LIMIT ?3",
+                   AND (?3 IS NULL OR deferred.entity_id > ?3)
+                 ORDER BY deferred.entity_id LIMIT ?4",
             )
             .map_err(|_| MediaSyncError::Storage)?;
         let rows = statement
@@ -2426,6 +2428,7 @@ impl MediaSyncRepository for Database {
                 params![
                     lettuce_sync::MEDIA_ASSET_SYNC_SCHEMA,
                     i64::from(lettuce_sync::MEDIA_ASSET_SYNC_VERSION),
+                    after.map(|id| id.to_string()),
                     i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS)
                         .map_err(|_| MediaSyncError::Storage)?
                 ],

@@ -260,3 +260,7 @@ Slice 11a identifies a recorded schema below 92 before requiring modern root tab
 Slice 11a keeps backup records when deleting a file fails, and treats only a genuine not-found as already deleted. Legacy Android pruned the record even after a failed file removal (`old-code/src-tauri/src/storage_manager/backup.rs:4564-4584`). The new device-local index replaces metadata when an export replaces the same path.
 
 Legacy usage-report identities use the source-independent LegacyIdScope without loading a fingerprint that no longer participates in identity generation. Source fingerprints remain required by import admission and materialization.
+
+Sync conflict, lorebook and prompt refresh signals come from the existing commit feed, including incoming apply and fork resolution. Legacy emitted sync-conflicts-changed only from its resolve command (old-code/src-tauri/src/sync/commands.rs:47-69); its inbox refreshed on mount, status changes and that event (old-code/src/ui/components/SyncConflictInbox.tsx:126-154). Companion state writes refresh the owning character without a new event type.
+
+Feed accumulation restores the pending event set on savepoint rollback and on a statement that left no writes. Commit completion publishes after the transaction succeeds, so rolled-back evidence does not refresh the inbox.

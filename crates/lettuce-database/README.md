@@ -409,7 +409,7 @@ Library changes use the SQLite pre-update hook to read the entity identity from 
 
 Group hard deletion purges every conversation launched from that group in the same immediate transaction as its catalog graph and API replay receipt. Busy conversations prevent the whole purge. Persona hard deletion clears the default selection, makes explicitly selected groups inherit, clears explicit conversation overrides, nulls nullable helper run references and removes media and bindings; immutable helper receipts retain historical persona identities without a live foreign key. Both entities participate in the existing queued sync-delete and unseen-change protection.
 
-Library feeds collect identities with the preupdate hook and publish once from the same commit hook as settings, jobs and conversations. A full rollback clears pending identities. A savepoint rollback followed by commit, or a failed disk commit, can cause an extra refresh; listeners re-read current state.
+Library feeds collect identities with the preupdate hook. The commit hook marks completion and the SQLite statement completion callback publishes after a successful commit. Rollback clears pending identities, including a failed commit. Internal savepoint statements snapshot the pending feeds and identities in memory; rollback to a savepoint restores that snapshot, so discarded writes do not cause a refresh. The connection owns the callback state until it closes.
 
 Character, persona and group lorebook binding commands compose the existing typed binding mutation in the API receipt transaction. The relationship list and owner revision change together; an aborted receipt insertion rolls both back.
 
@@ -436,3 +436,5 @@ Legacy preflight checks an available settings schema version before requiring mo
 The backup index stores one device-local record per destination URI, ordered by creation time. It is copied with device-local state during restore and excluded from backup documents and media-reference probes. Index removal and its API replay receipt share a transaction.
 
 Backup export and restore checkpoints validate that the job remains Running and that its claim still belongs to the caller, then update the stage and existing job detail in one transaction. Accepted cancellation prevents an irreversible checkpoint, and a failed detail write rolls back the stage change.
+
+Lorebook and prompt feeds watch their root and entry tables and publish once per committing transaction. The sync conflict feed watches canonical conflicts, conversation fork notices and preserved legacy rows. Companion Soul facts and their links, scheduled notes, shared and private relationships, session state and continuity changes refresh the owning character through the library feed. Context retirement detaches these listeners with the other database feeds.

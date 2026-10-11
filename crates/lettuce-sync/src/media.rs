@@ -52,10 +52,12 @@ pub enum MediaSyncError {
 }
 
 /// Media assets deferred incoming changes wait for; their blobs are fetched
-/// from the connected peer by content hash, at most `MAX_SYNC_MEDIA_ASSETS`
-/// per media phase.
+/// from the connected peer by content hash, in stable asset-id pages.
 pub trait MediaSyncRepository: Send + Sync {
-    fn pending_media(&self) -> Result<Vec<CanonicalMediaAsset>, MediaSyncError>;
+    fn pending_media(
+        &self,
+        after: Option<AssetId>,
+    ) -> Result<Vec<CanonicalMediaAsset>, MediaSyncError>;
 
     /// Settles deferred changes again once media arrived.
     fn retry_deferred_changes(

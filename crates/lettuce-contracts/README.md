@@ -132,3 +132,5 @@ Backup inspection and indexed entries expose version, creation time, app version
 Backup job failure reasons distinguish missing files, permission denial, busy files, unsupported locations, protected targets and other unavailable file access.
 
 BackupIndexView reports each entry as available, missing, unavailable or permission_denied. One inaccessible file does not hide the remaining entries. Backup job failures distinguish malformed envelopes, format limits and existing targets from source or destination I/O; disk-full uses the existing unavailable category.
+
+SyncConflictsChanged tells the conflict inbox to re-read canonical conflicts, conversation fork notices and preserved legacy evidence after a database commit. It carries no media or snapshot bytes.

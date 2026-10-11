@@ -253,6 +253,7 @@ pub struct ApiError {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiEvent {
     DatabaseReloaded,
+    SyncConflictsChanged,
     CharacterChanged {
         character_id: String,
     },

@@ -273,3 +273,7 @@ Job usage payload version 2 carries the frozen attribution snapshot of each job 
 Character snapshots use schema version 3 and protected conversation snapshots use version 2 to carry the independent banner media slot. The schema fingerprint changes with these versions.
 
 Persona and group deletes use the queued purge path and its unseen local or remote change protection. Group ownership includes its launched conversations; persona deletion repairs live references without deleting conversations.
+
+The application broadcasts SyncConflictsChanged through the database commit feed for conflict and fork evidence changes. Incoming lorebook and prompt snapshots also use the database catalog feeds for LorebooksChanged and PromptsChanged; notification wiring does not alter journal or resolution rules.
+
+Pending media is returned in stable asset-id pages. The coordinator visits every page, attempts each unavailable hash once per session, and reports how many assets remain unavailable while leaving their dependent changes deferred for the next session.

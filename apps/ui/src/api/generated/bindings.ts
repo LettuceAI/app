@@ -450,7 +450,7 @@ export type ApiErrorDetails = { type: "dictation_active" } | { type: "backup"; r
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "database_reloaded" } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**

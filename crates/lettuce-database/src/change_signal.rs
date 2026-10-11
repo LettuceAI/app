@@ -1,6 +1,5 @@
 //! Tells listeners which change feeds a committed transaction wrote: the
-//! update hook marks writes to a feed table, the commit hook reports the
-//! marked feeds, and a rollback discards them.
+//! hooks accumulate writes and statement completion publishes committed feeds.
 
 use std::sync::{
     Arc, Mutex,
@@ -16,14 +15,20 @@ pub(crate) enum ChangeFeed {
     Conversations,
     Models,
     Settings,
+    Lorebooks,
+    Prompts,
+    SyncConflicts,
 }
 
 impl ChangeFeed {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 7] = [
         Self::Jobs,
         Self::Conversations,
         Self::Models,
         Self::Settings,
+        Self::Lorebooks,
+        Self::Prompts,
+        Self::SyncConflicts,
     ];
 
     const fn bit(self) -> u8 {
@@ -32,6 +37,9 @@ impl ChangeFeed {
             Self::Conversations => 2,
             Self::Models => 4,
             Self::Settings => 8,
+            Self::Lorebooks => 16,
+            Self::Prompts => 32,
+            Self::SyncConflicts => 64,
         }
     }
 
@@ -40,6 +48,11 @@ impl ChangeFeed {
             "app_settings" | "device_settings" | "device_ui_state" => Some(Self::Settings),
             "job_changes" => Some(Self::Jobs),
             "model_changes" => Some(Self::Models),
+            "lorebooks" | "lorebook_entries" => Some(Self::Lorebooks),
+            "prompt_documents" | "prompt_entries" => Some(Self::Prompts),
+            "sync_conflicts" | "sync_conversation_forks" | "legacy_import_preserved_rows" => {
+                Some(Self::SyncConflicts)
+            }
             "conversation_changes" | "message_signals" | "memory_changes" => {
                 Some(Self::Conversations)
             }
@@ -63,6 +76,16 @@ type SettingsChangeListener = Arc<dyn Fn(&'static str) + Send + Sync>;
 #[derive(Default)]
 struct LibraryChanges {
     ids: std::collections::BTreeSet<(LibraryKind, String)>,
+    savepoints: Vec<(String, PendingFeedState)>,
+    statement: Option<PendingFeedState>,
+}
+
+#[derive(Clone)]
+struct PendingFeedState {
+    feeds: u8,
+    ids: std::collections::BTreeSet<(LibraryKind, String)>,
+    sections: std::collections::BTreeSet<&'static str>,
+    section: Option<&'static str>,
 }
 
 pub(crate) struct ChangeSignal {
@@ -145,7 +168,16 @@ impl ChangeSignal {
                     | "scene_assets"
                     | "conversation_starters"
                     | "starter_messages"
-                    | "character_lorebook_bindings" => LibraryKind::Character,
+                    | "character_lorebook_bindings"
+                    | "companion_soul_states"
+                    | "companion_soul_facts"
+                    | "companion_soul_fact_sources"
+                    | "companion_soul_fact_supersedes"
+                    | "companion_relationship_states"
+                    | "companion_scheduled_notes"
+                    | "companion_session_states"
+                    | "companion_conversation_relationship_states"
+                    | "companion_continuity_episodes" => LibraryKind::Character,
                     "personas" | "persona_media" | "persona_lorebook_bindings" => {
                         LibraryKind::Persona
                     }
@@ -158,15 +190,26 @@ impl ChangeSignal {
                     | "group_lorebook_bindings" => LibraryKind::Group,
                     _ => return,
                 };
+                let identity_column = if matches!(
+                    table,
+                    "companion_scheduled_notes"
+                        | "companion_session_states"
+                        | "companion_conversation_relationship_states"
+                        | "companion_continuity_episodes"
+                ) {
+                    1
+                } else {
+                    0
+                };
                 let value = match case {
                     rusqlite::hooks::PreUpdateCase::Insert(accessor) => {
-                        accessor.get_new_column_value(0)
+                        accessor.get_new_column_value(identity_column)
                     }
                     rusqlite::hooks::PreUpdateCase::Update {
                         new_value_accessor, ..
-                    } => new_value_accessor.get_new_column_value(0),
+                    } => new_value_accessor.get_new_column_value(identity_column),
                     rusqlite::hooks::PreUpdateCase::Delete(accessor) => {
-                        accessor.get_old_column_value(0)
+                        accessor.get_old_column_value(identity_column)
                     }
                     rusqlite::hooks::PreUpdateCase::Unknown => return,
                 };
@@ -211,31 +254,7 @@ impl ChangeSignal {
         ))?;
         let committed = Arc::clone(&signal);
         connection.commit_hook(Some(move || {
-            let changed = committed.pending.swap(0, Ordering::AcqRel);
-            committed.publish_library_changes();
-            if changed & ChangeFeed::Settings.bit() != 0 {
-                committed.settings_generation.fetch_add(1, Ordering::AcqRel);
-                let sections = std::mem::take(
-                    &mut *committed
-                        .settings_sections
-                        .lock()
-                        .expect("settings sections"),
-                );
-                let listeners = committed
-                    .settings_listeners
-                    .lock()
-                    .expect("settings listeners")
-                    .clone();
-                for section in sections {
-                    for listener in &listeners {
-                        listener(section);
-                    }
-                }
-            }
-            if changed != 0 {
-                committed.notify(changed);
-            }
-            *committed.settings_section.lock().expect("settings section") = None;
+            committed.pending.fetch_or(128, Ordering::AcqRel);
             false
         }))?;
         let rolled_back = Arc::clone(&signal);
@@ -244,6 +263,8 @@ impl ChangeSignal {
             {
                 let mut pending = rolled_back.library_changes.lock().expect("library changes");
                 pending.ids.clear();
+                pending.savepoints.clear();
+                pending.statement = None;
             }
             rolled_back
                 .settings_sections
@@ -255,12 +276,90 @@ impl ChangeSignal {
                 .lock()
                 .expect("settings section") = None;
         }))?;
+        install_completion_hook(connection, &signal)?;
         Ok(signal)
+    }
+
+    fn publish_commit(&self) {
+        let changed = self.pending.swap(0, Ordering::AcqRel) & 127;
+        self.publish_library_changes();
+        if changed & ChangeFeed::Settings.bit() != 0 {
+            self.settings_generation.fetch_add(1, Ordering::AcqRel);
+            let sections = std::mem::take(
+                &mut *self.settings_sections.lock().expect("settings sections"),
+            );
+            let listeners = self.settings_listeners.lock().expect("settings listeners").clone();
+            for section in sections {
+                for listener in &listeners {
+                    listener(section);
+                }
+            }
+        }
+        if changed != 0 {
+            self.notify(changed);
+        }
+        *self.settings_section.lock().expect("settings section") = None;
+    }
+
+    fn savepoint(&self, sql: &str) {
+        let mut words = sql.split_whitespace();
+        let Some(command) = words.next() else { return; };
+        if !["savepoint", "release", "rollback"].iter().any(|name| command.eq_ignore_ascii_case(name)) {
+            return;
+        }
+        let Some(name) = words.next_back().or_else(|| words.next()) else { return; };
+        let name = name.trim_end_matches(';').trim_matches(['\'', '"', '`', '[', ']']).to_ascii_lowercase();
+        let mut pending = self.library_changes.lock().expect("library changes");
+        if command.eq_ignore_ascii_case("savepoint") {
+            let state = PendingFeedState {
+                feeds: self.pending.load(Ordering::Acquire),
+                ids: pending.ids.clone(),
+                sections: self.settings_sections.lock().expect("settings sections").clone(),
+                section: *self.settings_section.lock().expect("settings section"),
+            };
+            pending.savepoints.push((name, state));
+        } else if command.eq_ignore_ascii_case("release") {
+            if let Some(index) = pending.savepoints.iter().rposition(|(saved, _)| *saved == name) {
+                pending.savepoints.truncate(index);
+            }
+        } else if command.eq_ignore_ascii_case("rollback") {
+            if let Some(index) = pending.savepoints.iter().rposition(|(saved, _)| *saved == name) {
+                let state = pending.savepoints[index].1.clone();
+                self.pending.store(state.feeds, Ordering::Release);
+                pending.ids = state.ids;
+                *self.settings_sections.lock().expect("settings sections") = state.sections;
+                *self.settings_section.lock().expect("settings section") = state.section;
+                pending.savepoints.truncate(index + 1);
+            }
+        }
+    }
+
+    fn begin_statement(&self) {
+        let mut pending = self.library_changes.lock().expect("library changes");
+        pending.statement = Some(PendingFeedState {
+            feeds: self.pending.load(Ordering::Acquire),
+            ids: pending.ids.clone(),
+            sections: self.settings_sections.lock().expect("settings sections").clone(),
+            section: *self.settings_section.lock().expect("settings section"),
+        });
+    }
+
+    fn finish_statement(&self, changed: bool) {
+        let mut pending = self.library_changes.lock().expect("library changes");
+        if let Some(state) = pending.statement.take()
+            && !changed
+        {
+            self.pending.store(state.feeds, Ordering::Release);
+            pending.ids = state.ids;
+            *self.settings_sections.lock().expect("settings sections") = state.sections;
+            *self.settings_section.lock().expect("settings section") = state.section;
+        }
     }
 
     fn publish_library_changes(&self) {
         let changes = {
             let mut pending = self.library_changes.lock().expect("library changes");
+            pending.savepoints.clear();
             std::mem::take(&mut pending.ids)
         };
         let listeners = self
@@ -315,6 +414,61 @@ impl ChangeSignal {
     }
 }
 
+fn install_completion_hook(connection: &rusqlite::Connection, signal: &Arc<ChangeSignal>) -> rusqlite::Result<()> {
+    unsafe extern "C" fn release(data: *mut std::ffi::c_void) {
+        unsafe { drop(Arc::from_raw(data.cast::<ChangeSignal>())); }
+    }
+
+    unsafe extern "C" fn trace(
+        event: u32,
+        data: *mut std::ffi::c_void,
+        statement: *mut std::ffi::c_void,
+        sql: *mut std::ffi::c_void,
+    ) -> i32 {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let signal = unsafe { &*data.cast::<ChangeSignal>() };
+            if event == rusqlite::ffi::SQLITE_TRACE_STMT {
+                let sql = unsafe { std::ffi::CStr::from_ptr(sql.cast()) }.to_string_lossy();
+                if sql.split_whitespace().next().is_some_and(|word| ["insert", "update", "delete", "replace"].iter().any(|verb| word.eq_ignore_ascii_case(verb))) {
+                    signal.begin_statement();
+                }
+                signal.savepoint(&sql);
+            } else if event == rusqlite::ffi::SQLITE_TRACE_PROFILE {
+                let database = unsafe { rusqlite::ffi::sqlite3_db_handle(statement.cast()) };
+                signal.finish_statement(unsafe { rusqlite::ffi::sqlite3_changes64(database) } != 0);
+                if signal.pending.load(Ordering::Acquire) & 128 != 0
+                    && unsafe { rusqlite::ffi::sqlite3_get_autocommit(database) } != 0
+                {
+                    signal.publish_commit();
+                }
+            }
+        }));
+        if result.is_err() { std::process::abort(); }
+        rusqlite::ffi::SQLITE_OK
+    }
+
+    let data = Arc::into_raw(signal.clone()).cast_mut().cast();
+    let database = unsafe { connection.handle() };
+    let code = unsafe {
+        rusqlite::ffi::sqlite3_set_clientdata(database, c"lettuce-change-signal".as_ptr(), data, Some(release))
+    };
+    if code != rusqlite::ffi::SQLITE_OK {
+        return Err(rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None));
+    }
+    let code = unsafe {
+        rusqlite::ffi::sqlite3_trace_v2(
+            database,
+            rusqlite::ffi::SQLITE_TRACE_STMT | rusqlite::ffi::SQLITE_TRACE_PROFILE,
+            Some(trace),
+            data,
+        )
+    };
+    if code != rusqlite::ffi::SQLITE_OK {
+        return Err(rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None));
+    }
+    Ok(())
+}
+
 impl Database {
     pub fn remove_change_listeners(&self) {
         self.changes.listeners.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
@@ -339,6 +493,18 @@ impl Database {
 }
 
 impl Database {
+    pub fn on_lorebook_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::Lorebooks, Arc::new(listener));
+    }
+
+    pub fn on_prompt_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::Prompts, Arc::new(listener));
+    }
+
+    pub fn on_sync_conflict_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::SyncConflicts, Arc::new(listener));
+    }
+
     pub fn on_model_change(&self, listener: impl Fn() + Send + Sync + 'static) {
         self.changes.listen(ChangeFeed::Models, Arc::new(listener));
     }
@@ -368,6 +534,148 @@ impl Database {
     pub fn on_library_change(&self, listener: impl Fn(LibraryKind, &str) + Send + Sync + 'static) {
         self.changes.listen_library(Arc::new(listener));
     }
+}
+
+#[cfg(test)]
+mod sync_feed_tests {
+    use super::*;
+
+    fn assert_feed(tables: &[&str]) {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        for table in tables {
+            connection.execute_batch(&format!("CREATE TABLE {table} (id INTEGER PRIMARY KEY, value INTEGER);")).expect("schema");
+        }
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let feed = ChangeFeed::of_table(tables[0]).expect("registered feed");
+        let calls = Arc::new(AtomicU64::new(0));
+        let observed = calls.clone();
+        signal.listen(feed, Arc::new(move || {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }));
+        connection.execute_batch("BEGIN").expect("begin");
+        for table in tables {
+            assert_eq!(ChangeFeed::of_table(table), Some(feed));
+            connection.execute_batch(&format!("INSERT INTO {table} VALUES (1, 1); UPDATE {table} SET value = 2;")).expect("write");
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        connection.execute_batch("COMMIT").expect("commit");
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        connection.execute_batch("BEGIN").expect("begin rollback");
+        for table in tables {
+            connection.execute_batch(&format!("DELETE FROM {table};")).expect("delete");
+        }
+        connection.execute_batch("ROLLBACK").expect("rollback");
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        connection.execute_batch("BEGIN").expect("begin delete");
+        for table in tables {
+            connection.execute_batch(&format!("DELETE FROM {table};")).expect("delete");
+        }
+        connection.execute_batch("COMMIT").expect("commit delete");
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn lorebook_commits_refresh_once_and_rollback_is_silent() {
+        assert_feed(&["lorebooks", "lorebook_entries"]);
+    }
+
+    #[test]
+    fn prompt_commits_refresh_once_and_rollback_is_silent() {
+        assert_feed(&["prompt_documents", "prompt_entries"]);
+    }
+
+    #[test]
+    fn rolled_back_savepoint_does_not_refresh_the_conflict_inbox() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE sync_conflicts (id INTEGER PRIMARY KEY);")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let feed = ChangeFeed::of_table("sync_conflicts").expect("registered feed");
+        let calls = Arc::new(AtomicU64::new(0));
+        let observed = calls.clone();
+        signal.listen(feed, Arc::new(move || {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }));
+        connection
+            .execute_batch("BEGIN; SAVEPOINT discarded; INSERT INTO sync_conflicts VALUES (1); ROLLBACK TO discarded; RELEASE discarded; COMMIT;")
+            .expect("commit after savepoint rollback");
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn failed_statement_does_not_refresh_the_conflict_inbox() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection.execute_batch("CREATE TABLE sync_conflicts (id INTEGER PRIMARY KEY, value INTEGER CHECK (value > 0));").expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let calls = Arc::new(AtomicU64::new(0));
+        let observed = calls.clone();
+        signal.listen(ChangeFeed::SyncConflicts, Arc::new(move || {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }));
+        connection.execute_batch("BEGIN").expect("begin");
+        assert!(connection.execute_batch("INSERT INTO sync_conflicts VALUES (1, 1), (2, -1)").is_err());
+        connection.execute_batch("COMMIT").expect("commit");
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn conflict_fork_and_legacy_commits_refresh_once_and_rollback_is_silent() {
+        assert_feed(&["sync_conflicts", "sync_conversation_forks", "legacy_import_preserved_rows"]);
+    }
+
+    #[test]
+    fn companion_catalog_commits_refresh_the_character_once() {
+        for (table, character_column) in [
+            ("companion_soul_states", 0),
+            ("companion_soul_facts", 0),
+            ("companion_soul_fact_sources", 0),
+            ("companion_soul_fact_supersedes", 0),
+            ("companion_relationship_states", 0),
+            ("companion_scheduled_notes", 1),
+            ("companion_session_states", 1),
+            ("companion_conversation_relationship_states", 1),
+            ("companion_continuity_episodes", 1),
+        ] {
+            let connection = rusqlite::Connection::open_in_memory().expect("connection");
+            connection
+                .execute_batch(&format!("CREATE TABLE {table} (first TEXT, second TEXT);"))
+                .expect("schema");
+            let signal = ChangeSignal::install(&connection).expect("hooks");
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let observed = events.clone();
+            signal.listen_library(Arc::new(move |kind, id| {
+                observed.lock().expect("events").push((kind, id.to_owned()));
+            }));
+            let values = if character_column == 0 {
+                "('character', 'child')"
+            } else {
+                "('child', 'character')"
+            };
+            connection
+                .execute_batch(&format!("BEGIN; INSERT INTO {table} VALUES {values}; UPDATE {table} SET second = second; COMMIT;"))
+                .expect("commit");
+            assert_eq!(
+                *events.lock().expect("events"),
+                vec![(LibraryKind::Character, "character".into())],
+                "{table}"
+            );
+            events.lock().expect("events").clear();
+            connection
+                .execute_batch(&format!("BEGIN; DELETE FROM {table}; ROLLBACK;"))
+                .expect("rollback");
+            assert!(events.lock().expect("events").is_empty(), "{table}");
+            connection
+                .execute_batch(&format!("BEGIN; DELETE FROM {table}; COMMIT;"))
+                .expect("delete");
+            assert_eq!(
+                *events.lock().expect("events"),
+                vec![(LibraryKind::Character, "character".into())],
+                "{table}"
+            );
+        }
+    }
+
 }
 
 #[cfg(test)]

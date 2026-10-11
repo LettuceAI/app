@@ -146,3 +146,5 @@ Restore calls the same open_context constructor used during initial setup, runs 
 Restore rebuilds through the launch constructor and the application context slot runs ordinary startup before publishing the replacement context. The shell retires old listeners and workers after publication. Backup replacement uses the application lifecycle lock and protected-file identity checks without requiring an advisory lease on the previous target.
 
 Context retirement uses one shared routine for listeners, workers and backend shutdown. The shell reload integration test runs the real ResetHost, constructor, startup and old-worker shutdown with a mock Tauri runtime, isolated application directories and the existing in-memory secret store. Reload keeps the device-local secret store passed to the ordinary constructor.
+
+The shared application event channel forwards SyncConflictsChanged alongside LorebooksChanged and PromptsChanged. Their source is the application database commit feed, including incoming sync writes.
