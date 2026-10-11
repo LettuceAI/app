@@ -16,7 +16,6 @@ async fn character_editor_get_save_preserves_full_draft_and_replays() {
     .expect("get");
     let mut draft = before.draft.clone();
     draft.profile.name = "Edited character".into();
-    draft.profile.rules = vec!["authored-rule".into()];
     draft.profile.scenario = Some("authored-scenario".into());
     draft.provenance.sources = vec!["authored-source".into()];
     draft.image_recommendation = Some(dto::LibraryImageRecommendation {
@@ -210,64 +209,6 @@ async fn character_editor_draft_requires_nullable_fields_and_preserves_companion
     .await
     .expect("edit without creation gate");
     assert_eq!(after.draft, draft);
-}
-
-#[tokio::test]
-async fn character_editor_new_character_uses_pure_rules_only_at_creation() {
-    let harness = harness(Reply::Text("reply"));
-    let template = character_get(
-        &harness.context,
-        dto::CharacterGetRequest {
-            character_id: harness.character_id.to_string(),
-        },
-    )
-    .await
-    .expect("get");
-    let mut draft = template.draft;
-    draft.profile.rules.clear();
-    draft.scenes.clear();
-    draft.variants.clear();
-    draft.starters.clear();
-    draft.defaults.default_scene_id = None;
-    draft.defaults.default_starter_id = None;
-    let rules = default_character_rules(
-        &harness.context,
-        dto::DefaultCharacterRulesRequest { pure_mode: None },
-    )
-    .await
-    .expect("rules")
-    .rules;
-    assert!(!rules.is_empty());
-    let request = dto::CharacterSaveRequest {
-        character_id: None,
-        draft,
-        expected_revision: None,
-        client_operation_id: "new-character".into(),
-    };
-    let created = character_save(&harness.context, request.clone())
-        .await
-        .expect("create");
-    assert_eq!(created.draft.profile.rules, rules);
-    assert_eq!(
-        character_save(&harness.context, request)
-            .await
-            .expect("replay"),
-        created
-    );
-    let mut draft = created.draft;
-    draft.profile.rules.clear();
-    let edited = character_save(
-        &harness.context,
-        dto::CharacterSaveRequest {
-            character_id: Some(created.id),
-            draft,
-            expected_revision: Some(created.revision),
-            client_operation_id: "empty-rules-edit".into(),
-        },
-    )
-    .await
-    .expect("edit");
-    assert!(edited.draft.profile.rules.is_empty());
 }
 
 #[tokio::test]

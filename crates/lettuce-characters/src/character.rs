@@ -27,8 +27,6 @@ pub struct CharacterProfile {
     pub design_description: Option<String>,
     #[serde(default)]
     pub scenario: Option<String>,
-    #[serde(default)]
-    pub rules: Vec<String>,
 }
 
 impl CharacterProfile {
@@ -45,9 +43,6 @@ impl CharacterProfile {
         .flatten()
         {
             validate_text("character.profile", value)?;
-        }
-        for rule in &self.rules {
-            validate_text("character.rules", rule)?;
         }
         Ok(())
     }
@@ -394,15 +389,11 @@ mod tests {
             definition: None,
             design_description: None,
             scenario: None,
-            rules: Vec::new(),
         }
     }
 
     #[test]
-    fn rules_tags_sources_and_gradient_colors_have_no_count_limit_like_legacy() {
-        let mut profile = profile();
-        profile.rules = vec!["Stay kind".into(); 10_001];
-        assert_eq!(profile.validate(), Ok(()));
+    fn tags_sources_and_gradient_colors_have_no_count_limit_like_legacy() {
         let provenance = CharacterProvenance {
             tags: (0..300).map(|index| format!("tag {index}")).collect(),
             sources: (0..300)

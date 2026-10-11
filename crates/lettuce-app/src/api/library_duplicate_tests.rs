@@ -47,7 +47,6 @@ async fn character_duplicate_is_an_authored_copy_with_a_stable_replay_result() {
         copy.character.profile.name,
         format!("{} (Copy)", source.character.profile.name)
     );
-    assert_eq!(copy.character.profile.rules, source.character.profile.rules);
     assert_eq!(
         copy.character.image_recommendation,
         source.character.image_recommendation

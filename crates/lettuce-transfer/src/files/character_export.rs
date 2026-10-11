@@ -143,7 +143,6 @@ pub fn character_package(source: &CharacterExportSource, exported_at: i64) -> Ch
             source: non_empty(&provenance.sources),
             tags: non_empty(&provenance.tags),
             character_book: None,
-            rules: profile.rules.clone(),
             scenes,
             default_scene_id,
             default_model_id: defaults.model_profile_id.map(|id| id.to_string()),

@@ -674,7 +674,6 @@ pub struct LibraryCharacterProfile {
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub scenario: Option<String>,
-    pub rules: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

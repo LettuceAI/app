@@ -743,13 +743,4 @@ async fn runtime_rules_stay_loadable_because_the_runtime_text_is_protected() {
         ),
         Err(lettuce_context::PromptRepositoryError::Protected)
     );
-    let rules = default_character_rules(
-        &harness.context,
-        dto::DefaultCharacterRulesRequest {
-            pure_mode: Some(dto::PureModeLevel::Standard),
-        },
-    )
-    .await
-    .expect("rules");
-    assert_eq!(rules.rules.len(), 10);
 }

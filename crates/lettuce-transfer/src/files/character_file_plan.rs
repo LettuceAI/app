@@ -336,7 +336,6 @@ pub fn plan_character_file(
             .default_chat_template_id
             .as_ref()
             .and_then(|id| template_ids.get(id)),
-        "rules": character.rules,
         "scenes": scenes,
         "created_at": now,
         "updated_at": now,
@@ -876,7 +875,6 @@ mod tests {
         let plan = plan_character_file(&package, &references, 50, ids()).expect("plan");
         let character = &plan.character;
         assert_eq!(character.profile.name, "Ada");
-        assert_eq!(character.profile.rules, vec!["Be kind".to_owned()]);
         assert_eq!(character.scenes.len(), 2);
         assert_eq!(
             character.defaults.default_scene_id,

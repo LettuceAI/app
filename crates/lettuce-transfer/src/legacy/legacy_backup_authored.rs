@@ -285,8 +285,6 @@ pub(crate) struct CharacterRow {
     chat_appearance: Option<String>,
     default_chat_template_id: Option<String>,
     #[serde(default)]
-    rules: Vec<Value>,
-    #[serde(default)]
     scenes: Vec<SceneRow>,
     created_at: i64,
     updated_at: i64,
@@ -839,15 +837,6 @@ pub(crate) fn map_character_row(
         row.updated_at,
         LegacyBackupDocumentKind::Characters,
     )?;
-    let rules = row
-        .rules
-        .into_iter()
-        .map(|rule| {
-            rule.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| malformed(LegacyBackupDocumentKind::Characters, "rules"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let profile = CharacterProfile {
         name: row.name,
         nickname: normalize(row.nickname),
@@ -855,7 +844,6 @@ pub(crate) fn map_character_row(
         definition: normalize(row.definition.or(row.description)),
         design_description: normalize(row.design_description),
         scenario: normalize(row.scenario),
-        rules,
     };
     profile
         .validate()
@@ -2515,7 +2503,6 @@ mod tests {
         let character = &plan.characters[0];
         assert_eq!(character.profile.definition.as_deref(), Some("Navigator"));
         assert_eq!(character.profile.scenario.as_deref(), Some("At the harbor"));
-        assert_eq!(character.profile.rules, ["Stay in character"]);
         assert_eq!(
             character
                 .media

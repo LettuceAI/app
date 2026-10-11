@@ -151,7 +151,6 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::prompts::prompt_builtin_reset,
             commands::prompts::prompt_app_default_set,
             commands::prompts::prompt_preview,
-            commands::prompts::default_character_rules,
             commands::lorebooks::lorebooks_list,
             commands::lorebooks::lorebook_get,
             commands::lorebooks::lorebook_create,
