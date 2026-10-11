@@ -65,7 +65,14 @@ async fn mutate_index(context: &ApiContext, request: dto::BackupMutationRequest,
     let command = if delete { "backup_delete" } else { "backup_forget" };
     super::jobs::local::operation_key(command, &request.client_operation_id)?;
     let digest = super::jobs::local::digest(&request)?;
+    let lifecycle = if delete {
+        match context.database_files() {
+            Some(files) => Some(files.location.file_lifecycle().await.map_err(|failure| super::storage::file_error(failure, None))?),
+            None => None,
+        }
+    } else { None };
     context.blocking(move |context| {
+        let _lifecycle = lifecycle;
         context.backend().database().commit_api_operation(command, &request.client_operation_id, &digest, context.now(), |transaction| {
             let id = super::error::parse_id::<lettuce_types::JobId>(&request.id, "id").map_err(Failure)?;
             let entry = transaction.backup_index_record(id)?.ok_or_else(|| Failure(error(ApiErrorCode::NotFound, dto::BackupFailureReason::FileUnavailable)))?;

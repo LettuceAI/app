@@ -38,7 +38,28 @@ impl ApiContextSlot {
         Ok(Arc::clone(&current))
     }
 
-    pub fn swap(&self, context: Arc<ApiContext>) -> Result<Arc<ApiContext>, ApiError> {
+    pub async fn start_reloaded(&self, context: Arc<ApiContext>, job: &str) -> Result<(Arc<ApiContext>, super::ApiWorkers), ApiError> {
+        let mut pending = None;
+        let result: Result<_, ApiError> = async {
+            context.bind_reloaded_job(job)?;
+            pending = Some(super::startup(&context).await?);
+            pending.as_ref().ok_or_else(recovery_error)?.started_result().await?;
+            let old = self.swap(context.clone())?;
+            Ok((old, pending.take().ok_or_else(recovery_error)?))
+        }.await;
+        if result.is_err() {
+            self.require_recovery();
+            if let Some(workers) = pending {
+                let _ = workers.stop_for_restore().await;
+            }
+            context.retire_database_listeners();
+            context.begin_shutdown();
+            context.backend().shutdown().await;
+        }
+        result.map_err(|_| recovery_error())
+    }
+
+    pub(super) fn swap(&self, context: Arc<ApiContext>) -> Result<Arc<ApiContext>, ApiError> {
         let mut current = self.current.write().map_err(|_| recovery_error())?;
         if self.recovery_required.load(Ordering::Acquire) {
             return Err(recovery_error());

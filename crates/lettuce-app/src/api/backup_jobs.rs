@@ -82,7 +82,7 @@ pub async fn legacy_database_import(context: &ApiContext, request: dto::LegacyDa
     admit(context, RestoreKind::LegacyDatabase, source, Zeroizing::new(String::new()), key, digest).await
 }
 
-fn already_applied(context: &ApiContext, id: JobId) -> Result<bool, ApiError> {
+pub(super) fn already_applied(context: &ApiContext, id: JobId) -> Result<bool, ApiError> {
     if super::app_reset::database_for_job(context, id)?.is_some() { return Ok(true); }
     let Some(record) = context.backend().database().job_detail(id).map_err(|_| unavailable())? else { return Ok(false); };
     let detail: Detail = serde_json::from_value(record.detail).map_err(|_| unavailable())?;
@@ -129,12 +129,37 @@ pub(super) fn claim_started(database: &Database, id: JobId, at: lettuce_types::T
     Ok(claim.claim)
 }
 
+pub(super) fn file_failure_label(failure: &ApiError) -> &'static str {
+    if matches!(failure.details, Some(dto::ApiErrorDetails::Backup { reason: dto::BackupFailureReason::PermissionDenied })) {
+        return "backup-permission-denied";
+    }
+    if matches!(failure.details, Some(dto::ApiErrorDetails::Backup { reason: dto::BackupFailureReason::FileUnavailable })) {
+        return match failure.code {
+            ApiErrorCode::NotFound => "backup-file-not-found",
+            ApiErrorCode::Busy => "backup-file-busy",
+            ApiErrorCode::Unsupported => "backup-file-unsupported",
+            ApiErrorCode::Conflict => "backup-source-is-target",
+            _ => "backup-file-unavailable",
+        };
+    }
+    "backup-unavailable"
+}
+
 pub(super) fn settle(database: &Database, claim: &ClaimRef, context: &ApiContext, result: Result<dto::JobResultDto, &'static str>) -> Result<JobSnapshot, ApiError> {
     let job = database.get(claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
     let at = context.now().max(job.updated_at);
     match result {
         Ok(result) => database.settle_job_with_detail(JobMutation::Succeed { claim: claim.clone(), outcome: JobOutcome::Success { result_ref: OutcomeRef::Request(RequestId::new()) }, at }, Some(&encode(&result)?), None),
-        Err(label) => database.settle_job_with_detail(JobMutation::Fail { claim: claim.clone(), error: JobError::new(if label == "backup-authentication" { JobErrorCode::Authentication } else { JobErrorCode::StorageFailure }, false, label).map_err(|_| unavailable())?, at }, None, None),
+        Err(label) => {
+            let code = match label {
+                "backup-authentication" => JobErrorCode::Authentication,
+                "backup-file-not-found" | "backup-permission-denied" | "backup-file-busy" | "backup-file-unavailable" => JobErrorCode::ResourceUnavailable,
+                "backup-file-unsupported" => JobErrorCode::CapabilityUnavailable,
+                "backup-source-is-target" => JobErrorCode::InvalidInput,
+                _ => JobErrorCode::StorageFailure,
+            };
+            database.settle_job_with_detail(JobMutation::Fail { claim: claim.clone(), error: JobError::new(code, false, label).map_err(|_| unavailable())?, at }, None, None)
+        }
     }.map_err(IntoApiError::into_api_error)
 }
 
@@ -206,7 +231,7 @@ impl ClaimedJob for Work {
                             crate::BackupRestoreError::Api(failure) if failure.code == ApiErrorCode::Cancelled => "backup-cancelled",
                             _ => "backup-unavailable",
                         }),
-                    Err(_) => Err("backup-unavailable"),
+                    Err(failure) => Err(file_failure_label(&failure)),
                 }
             }
             kind => {
@@ -215,7 +240,7 @@ impl ClaimedJob for Work {
                 let receipt = if kind == RestoreKind::LegacyBackup {
                     match context.files().open(&self.detail.source) {
                         Ok(source) => coordinator.restore_backup_controlled(restore_id, source, &self.password, context.now(), &check).await,
-                        Err(_) => return settle(context.backend().database(), &self.claim, &context, Err("backup-unavailable")).map(|_| ()),
+                        Err(failure) => return settle(context.backend().database(), &self.claim, &context, Err(file_failure_label(&file_error(failure)))).map(|_| ()),
                     }
                 } else {
                     coordinator.restore_database_controlled(restore_id, Path::new(&self.detail.source), context.now(), &check).await

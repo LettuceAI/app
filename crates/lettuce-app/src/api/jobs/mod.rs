@@ -155,6 +155,12 @@ pub async fn job_cancel(
             if job.state.is_terminal() {
                 return Ok(());
             }
+            if job.kind == JobKind::BackupRestore
+                && job.subject.id.as_str() == "database-restore"
+                && super::backup_jobs::already_applied(context, job_id)?
+            {
+                return Err(lettuce_jobs::StoreError::TooLate.into_api_error());
+            }
             let at = context.now().max(job.updated_at);
             let requested = database
                 .append_and_transition(JobMutation::RequestCancellation {
@@ -416,6 +422,12 @@ pub(super) fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
         "dictation-active" => return Some(dto::JobFailureReason::DictationActive),
         "backup-authentication" => return Some(dto::JobFailureReason::BackupAuthentication),
         "backup-invalid-envelope" => return Some(dto::JobFailureReason::BackupInvalidEnvelope),
+        "backup-file-not-found" => return Some(dto::JobFailureReason::BackupFileNotFound),
+        "backup-permission-denied" => return Some(dto::JobFailureReason::BackupPermissionDenied),
+        "backup-file-busy" => return Some(dto::JobFailureReason::BackupFileBusy),
+        "backup-file-unavailable" => return Some(dto::JobFailureReason::BackupFileUnavailable),
+        "backup-file-unsupported" => return Some(dto::JobFailureReason::BackupFileUnsupported),
+        "backup-source-is-target" => return Some(dto::JobFailureReason::BackupSourceIsTarget),
         "backup-unavailable" => return Some(dto::JobFailureReason::BackupUnavailable),
         "backup-cancelled" => return Some(dto::JobFailureReason::BackupCancelled),
         "backup-retry-required" => return Some(dto::JobFailureReason::BackupRetryRequired),

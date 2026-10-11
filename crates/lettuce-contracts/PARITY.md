@@ -64,3 +64,5 @@ Group editor contracts preserve the legacy authored name, chat type, member orde
 The typed legacy startup state replaces direct bin import from `old-code/src-tauri/src/storage_manager/importer.rs:12-34,407-431` with the slice 11a requirement to open 2.2.5 once. Native legacy paths and payloads stay outside the contract.
 
 Slice 11a represents explicit backup deletion with an operation key and typed failures; the legacy UI refreshed the list only after a successful delete (`old-code/src/ui/pages/settings/hooks/useBackupRestore.ts:282-293`). Public metadata follows the approved restricted v2 header.
+
+Slice 11a review fixes preserve actionable file failure distinctions in durable backup job results and watch events.

@@ -140,7 +140,6 @@ fn publish_backup_path(temporary: &str, target: Option<&str>, protected: ExportP
     };
     if let Some(file) = &existing {
         if protected(target, Some(file))? { return Err(FileAccessError::SourceIsTarget); }
-        if !fs4::fs_std::FileExt::try_lock_exclusive(file).map_err(|failure| access_error(&failure))? { return Err(FileAccessError::Busy); }
     }
     publish_backup_durable(path(temporary)?, path(target)?)?;
     Ok(target.to_owned())
@@ -730,6 +729,23 @@ mod backup_publication_tests {
         assert_eq!(publish_backup_path(&uri, Some(target.to_str().expect("path")), &|_, _| Ok(false)).expect("publish"), target.display().to_string());
         assert_eq!(std::fs::read(&target).expect("new"), b"complete new backup");
         assert!(!Path::new(&uri).exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn review_backup_replacement_does_not_require_an_advisory_target_lease() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-target-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let target = root.join("backup.lettuce");
+        let temporary = root.join("backup.partial");
+        std::fs::write(&target, b"old").expect("old");
+        std::fs::write(&temporary, b"new complete backup").expect("new");
+        let reader = std::fs::File::open(&target).expect("reader");
+        fs4::fs_std::FileExt::lock_shared(&reader).expect("external reader");
+        publish_backup_path(temporary.to_str().expect("temporary"), Some(target.to_str().expect("target")), &|_, _| Ok(false)).expect("atomic replacement permits readers");
+        assert_eq!(std::fs::read(&target).expect("new file"), b"new complete backup");
+        assert!(!temporary.exists());
+        drop(reader);
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 

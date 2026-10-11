@@ -211,7 +211,9 @@ impl ClaimedJob for Work {
             crate::models::artifact_install::finish_claimed_cancellation(context.backend().database(), &self.claim, at).map_err(IntoApiError::into_api_error)?;
             return Ok(());
         }
-        super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err("backup-unavailable"))?;
+        if let Err(failure) = result {
+            super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err(super::backup_jobs::file_failure_label(&failure)))?;
+        }
         Ok(())
     }
 }
