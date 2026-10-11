@@ -46,6 +46,7 @@ export const mockAppStatus: AppStatus = {
   platform: "other",
   ui_state: {},
   legacy_database_detected: false,
+  legacy_state: { type: "absent" },
   unresolved_sync_conflicts: 0,
   purge_notices: 0,
 };
