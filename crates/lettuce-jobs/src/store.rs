@@ -932,6 +932,21 @@ impl InMemoryJobStore {
                 Self::append_event(record, JobEvent::CleanupStarted, at)?;
                 Self::finish_terminal(record, JobState::Cancelled, JobEvent::Cancelled, at)?;
             }
+            JobMutation::FinishInterruptedBackupCleanup { id, at } => {
+                let record = inner.jobs.get_mut(&id).ok_or(StoreError::NotFound)?;
+                Self::check_timestamp(record, at)?;
+                if !matches!(record.snapshot.kind, JobKind::BackupExport | JobKind::BackupRestore)
+                    || record.spec.cancellation_policy == CancellationPolicy::NotCancellable
+                    || record.snapshot.state != JobState::Interrupted
+                    || record.snapshot.claim.is_some()
+                    || record.snapshot.lease_expires_at.is_some()
+                {
+                    return Err(StoreError::IllegalTransition);
+                }
+                record.snapshot.state = JobState::CleaningUp;
+                Self::append_event(record, JobEvent::CleanupStarted, at)?;
+                Self::finish_terminal(record, JobState::Cancelled, JobEvent::Cancelled, at)?;
+            }
             JobMutation::Interrupt { claim, at } => {
                 let record = inner
                     .jobs
@@ -1349,6 +1364,10 @@ pub enum JobMutation {
         id: JobId,
         at: Timestamp,
     },
+    FinishInterruptedBackupCleanup {
+        id: JobId,
+        at: Timestamp,
+    },
     AttachChild {
         parent_id: JobId,
         child: ChildLink,
@@ -1362,6 +1381,7 @@ impl JobMutation {
         match self {
             Self::RequestCancellation { id, .. }
             | Self::FinishQueuedCancellation { id, .. }
+            | Self::FinishInterruptedBackupCleanup { id, .. }
             | Self::AttachChild { parent_id: id, .. } => *id,
             Self::Start { claim, .. }
             | Self::StageChanged { claim, .. }
@@ -1516,6 +1536,37 @@ mod tests {
 
     fn test_store() -> InMemoryJobStore {
         InMemoryJobStore::with_clock(Arc::new(FakeClock::new(Timestamp::new(0))))
+    }
+
+    #[test]
+    fn interrupted_backup_cleanup_preserves_other_transition_guards() {
+        for (kind, policy) in [
+            (JobKind::BackupExport, CancellationPolicy::UntilIrreversibleStage),
+            (JobKind::BackupRestore, CancellationPolicy::UntilIrreversibleStage),
+            (JobKind::BackupExport, CancellationPolicy::NotCancellable),
+            (JobKind::ArtifactInstall, CancellationPolicy::Cooperative),
+        ] {
+            let store = test_store();
+            let job = store.create_or_get(JobSpec::new(kind, JobSubject::new(SubjectKind::Backup, "cleanup").expect("subject"), OutcomeRef::Request(lettuce_types::RequestId::new())).with_resources(vec![ResourceClass::DiskWrite]).with_policies(RecoveryPolicy::MarkInterrupted, policy)).expect("job").job;
+            let mutation = |at| JobMutation::FinishInterruptedBackupCleanup { id: job.id, at: Timestamp::new(at) };
+            assert_eq!(store.append_and_transition(mutation(10)), Err(StoreError::IllegalTransition));
+            let claim = store.claim(job.id, WorkerId::new(), Timestamp::new(10), Duration::from_secs(30), &ResourceAvailability::all()).expect("claim").expect("claimed");
+            store.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at: Timestamp::new(11) }).expect("start");
+            assert_eq!(store.append_and_transition(mutation(12)), Err(StoreError::IllegalTransition));
+            store.append_and_transition(JobMutation::Interrupt { claim: claim.claim, at: Timestamp::new(12) }).expect("interrupt");
+            assert_eq!(store.append_and_transition(mutation(11)), Err(StoreError::TimestampRegression));
+            if matches!(kind, JobKind::BackupExport | JobKind::BackupRestore) && policy != CancellationPolicy::NotCancellable {
+                let settled = store.append_and_transition(mutation(13)).expect("cleanup");
+                assert_eq!(settled.state, JobState::Cancelled);
+                assert!(settled.claim.is_none());
+                assert!(settled.lease_expires_at.is_none());
+                assert_eq!(store.append_and_transition(mutation(14)), Err(StoreError::IllegalTransition));
+            } else {
+                assert_eq!(store.append_and_transition(mutation(13)), Err(StoreError::IllegalTransition));
+                assert_eq!(store.get(job.id).expect("get").expect("job").state, JobState::Interrupted);
+            }
+        }
+        assert!(JobState::Interrupted.can_transition_to(JobState::Cancelled).is_err());
     }
 
     #[test]

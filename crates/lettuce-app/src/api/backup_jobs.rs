@@ -349,20 +349,35 @@ pub(super) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
     let database = context.backend().database();
     let mut filter = JobListFilter { kinds: vec![JobKind::BackupRestore], states: vec![JobState::Queued, JobState::Interrupted], subject: None, page: PageRequest { cursor: None, limit: PageLimit::new(200) } };
     loop {
-        let page = database.list_jobs(&filter).map_err(IntoApiError::into_api_error)?;
+        let page = match database.list_jobs(&filter) {
+            Ok(page) => page,
+            Err(failure) => { tracing::warn!(%failure, "backup restore recovery could not list jobs"); return Ok(()); }
+        };
         for job in page.items {
-            if job.subject.id.as_str() != "database-restore" || context.jobs().has_backup_password(job.id) || super::app_reset::database_for_job(context, job.id)?.is_some() { continue; }
-            let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
-            remove_workspace(context, job.id)?;
-            if job.state == JobState::Interrupted { continue; }
-            let switched = detail.target.as_ref().is_some_and(|target| context.database_files().is_some_and(|files| &files.active == target));
-            let claim = claim_started(database, job.id, context.now().max(job.updated_at))?;
-            let result = if switched { Ok(dto::JobResultDto::BackupRestored { kept_file: detail.kept_file, warnings: detail.warnings }) } else { Err("backup-retry-required") };
-            settle(database, &claim, context, result)?;
+            if job.subject.id.as_str() != "database-restore" || context.jobs().has_backup_password(job.id) { continue; }
+            if let Err(failure) = recover_job(context, &job) {
+                tracing::warn!(job_id = %job.id, ?failure, "backup restore recovery will retry on next startup");
+            }
         }
         let Some(cursor) = page.next_cursor else { return Ok(()); };
         filter.page.cursor = Some(cursor);
     }
+}
+
+fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> {
+    if super::app_reset::database_for_job(context, job.id)?.is_some() { return Ok(()); }
+    let database = context.backend().database();
+    let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
+    remove_workspace(context, job.id)?;
+    if job.state == JobState::Interrupted {
+        database.append_and_transition(JobMutation::FinishInterruptedBackupCleanup { id: job.id, at: context.now().max(job.updated_at) }).map_err(IntoApiError::into_api_error)?;
+        return Ok(());
+    }
+    let switched = detail.target.as_ref().is_some_and(|target| context.database_files().is_some_and(|files| &files.active == target));
+    let claim = claim_started(database, job.id, context.now().max(job.updated_at))?;
+    let result = if switched { Ok(dto::JobResultDto::BackupRestored { kept_file: detail.kept_file, warnings: detail.warnings }) } else { Err("backup-retry-required") };
+    settle(database, &claim, context, result)?;
+    Ok(())
 }
 
 #[cfg(test)]

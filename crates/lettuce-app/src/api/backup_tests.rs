@@ -1030,7 +1030,7 @@ async fn cancelled_backup_recovery(restore: bool) {
         database.append_and_transition(JobMutation::RequestCancellation { id, reason: lettuce_jobs::CancellationReason::User, at: now }).expect("cancel before crash");
         drop(work);
         harness.context.recover_after_restart().expect("reopen");
-        assert_eq!(database.get(id).expect("get").expect("job").state, lettuce_jobs::JobState::Interrupted);
+        assert_eq!(database.get(id).expect("get").expect("job").state, lettuce_jobs::JobState::Cancelled);
         assert!(!temporary.exists(), "interrupted cancellation removes its partial data");
         assert!(!harness.events.events().iter().any(|event| matches!(event, dto::ApiEvent::DatabaseReloaded)));
     }
@@ -1189,4 +1189,127 @@ async fn fix11a_live_legacy_import_source_io_is_unavailable() {
     assert_eq!(failure.reason, Some(dto::JobFailureReason::BackupFileUnavailable));
     assert_eq!(location.active_path().expect("unchanged"), active);
     assert!(!harness.events.events().iter().any(|event| matches!(event, dto::ApiEvent::DatabaseReloaded)));
+}
+
+struct RecoveryFiles {
+    denied: std::sync::Mutex<Option<String>>,
+    descriptions: std::sync::atomic::AtomicUsize,
+}
+
+impl super::FileAccess for RecoveryFiles {
+    fn describe(&self, uri: &str) -> Result<super::FileDescription, super::FileAccessError> {
+        self.descriptions.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.denied.lock().expect("denied").as_deref() == Some(uri) { return Err(super::FileAccessError::PermissionDenied); }
+        super::tests::StdFiles.describe(uri)
+    }
+    fn open(&self, uri: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> { super::tests::StdFiles.open(uri) }
+    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> { super::tests::StdFiles.create(uri) }
+    fn remove(&self, uri: &str) -> Result<(), super::FileAccessError> { super::tests::StdFiles.remove(uri) }
+    fn backup_temporary_location(&self, target: Option<&str>, name: &str) -> Result<String, super::FileAccessError> { super::tests::StdFiles.backup_temporary_location(target, name) }
+}
+
+fn recovery_context() -> (std::path::PathBuf, super::ApiContext, Arc<RecoveryFiles>) {
+    let (root, location, harness) = super::app_reset_tests::harness();
+    let active = location.active_path().expect("active");
+    let files = Arc::new(RecoveryFiles { denied: std::sync::Mutex::new(None), descriptions: std::sync::atomic::AtomicUsize::new(0) });
+    let backend = Arc::new(crate::AppBackend::open(&active, TimestampMillis::new(100)).expect("backend"));
+    let context = file_test_context(&root, location, &harness, backend, files.clone());
+    (root, context, files)
+}
+
+async fn recovery_job(context: &super::ApiContext, root: &std::path::Path, restore: bool, key: &str, corrupt: bool) -> JobId {
+    use lettuce_jobs::{CancellationReason, JobMutation, JobStore, StageSnapshot};
+    let accepted = if restore {
+        super::backup_restore(context, dto::BackupRestoreRequest { source: dto::FileSource { uri: "/source.lettuce".into() }, password: "password".into(), client_operation_id: key.into() }).await.expect("restore")
+    } else {
+        super::backup_export(context, dto::BackupExportRequest { target: Some(dto::FileTarget { uri: root.join(format!("{key}.lettuce")).display().to_string() }), password: "password".into(), client_operation_id: key.into() }).await.expect("export")
+    };
+    let id = accepted.job_id.parse().expect("id");
+    context.jobs().take_backup_password(id);
+    let database = context.backend().database();
+    let claim = super::backup_jobs::claim_started(database, id, context.now()).expect("claim");
+    if corrupt {
+        database.checkpoint_backup_job(JobMutation::StageChanged { claim: claim.clone(), stage: StageSnapshot::new("write", false).expect("stage"), at: context.now() }, &serde_json::json!({})).expect("corrupt detail");
+    }
+    database.append_and_transition(JobMutation::RequestCancellation { id, reason: CancellationReason::User, at: context.now() }).expect("cancel");
+    database.append_and_transition(JobMutation::Interrupt { claim, at: context.now() }).expect("interrupt");
+    id
+}
+
+#[tokio::test]
+async fn fix11a_recovery_permission_denied_does_not_block_startup_or_other_exports() {
+    use lettuce_jobs::{JobState, JobStore};
+    let (root, context, files) = recovery_context();
+    let denied = recovery_job(&context, &root, false, "denied", false).await;
+    let detail = context.backend().database().job_detail(denied).expect("detail").expect("record").detail;
+    *files.denied.lock().expect("denied") = Some(detail["temporary_intent"].as_str().expect("uri").into());
+    let other = recovery_job(&context, &root, false, "other", false).await;
+    context.recover_after_restart().expect("startup despite denied permission");
+    assert_eq!(context.backend().database().get(denied).expect("job").expect("exists").state, JobState::Interrupted);
+    assert_eq!(context.backend().database().get(other).expect("job").expect("exists").state, JobState::Cancelled);
+    *files.denied.lock().expect("repair") = None;
+    context.recover_after_restart().expect("retry cleanup");
+    assert_eq!(context.backend().database().get(denied).expect("job").expect("exists").state, JobState::Cancelled);
+}
+
+#[tokio::test]
+async fn fix11a_recovery_corrupt_details_do_not_block_startup_or_other_backups() {
+    use lettuce_jobs::{JobState, JobStore};
+    for restore in [false, true] {
+        let (root, context, _) = recovery_context();
+        let corrupt = recovery_job(&context, &root, restore, "corrupt", true).await;
+        let other = recovery_job(&context, &root, restore, "other", false).await;
+        context.recover_after_restart().expect("startup despite corrupt detail");
+        assert_eq!(context.backend().database().get(corrupt).expect("job").expect("exists").state, JobState::Interrupted);
+        assert_eq!(context.backend().database().get(other).expect("job").expect("exists").state, JobState::Cancelled);
+    }
+}
+
+#[tokio::test]
+async fn fix11a_recovery_cleaned_interrupted_backups_are_not_cleaned_twice() {
+    use lettuce_jobs::{JobState, JobStore};
+    let (root, context, files) = recovery_context();
+    let export = recovery_job(&context, &root, false, "export", false).await;
+    let restore = recovery_job(&context, &root, true, "restore", false).await;
+    let detail = context.backend().database().job_detail(export).expect("detail").expect("record").detail;
+    let partial = detail["temporary_intent"].as_str().expect("partial");
+    std::fs::write(partial, b"partial").expect("partial file");
+    let workspace = root.join("platform-v2/backup-restore-workspace").join(restore.to_string());
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    context.recover_after_restart().expect("cleanup");
+    for id in [export, restore] { assert_eq!(context.backend().database().get(id).expect("job").expect("exists").state, JobState::Cancelled); }
+    assert!(!std::path::Path::new(partial).exists());
+    assert!(!workspace.exists());
+    let descriptions = files.descriptions.load(std::sync::atomic::Ordering::SeqCst);
+    std::fs::create_dir_all(&workspace).expect("sentinel");
+    context.recover_after_restart().expect("next startup");
+    assert_eq!(files.descriptions.load(std::sync::atomic::Ordering::SeqCst), descriptions);
+    assert!(workspace.exists());
+}
+
+#[tokio::test]
+async fn fix11a_recovery_list_failure_is_best_effort() {
+    let (_, context, _) = recovery_context();
+    lettuce_database::Database::lock_file_writes(&context.database_files().expect("files").active).expect("lock writes").set_fenced(true).expect("fence writes");
+    context.backend().database().close_for_reset().expect("close database");
+    super::backup_jobs::recover_at_startup(&context).expect("restore list failure");
+    super::backup_export_jobs::recover_at_startup(&context).expect("export list failure");
+}
+
+#[tokio::test]
+async fn fix11a_recovery_restore_cleanup_failure_does_not_block_other_jobs() {
+    use lettuce_jobs::{JobState, JobStore};
+    let (root, context, _) = recovery_context();
+    let blocked = recovery_job(&context, &root, true, "blocked", false).await;
+    let other = recovery_job(&context, &root, true, "other", false).await;
+    let export = recovery_job(&context, &root, false, "export", false).await;
+    let workspace = root.join("platform-v2/backup-restore-workspace").join(blocked.to_string());
+    std::fs::create_dir_all(workspace.parent().expect("parent")).expect("parent folder");
+    std::fs::write(&workspace, b"unreadable workspace").expect("cleanup fault");
+    context.recover_after_restart().expect("startup despite cleanup failure");
+    assert_eq!(context.backend().database().get(blocked).expect("job").expect("exists").state, JobState::Interrupted);
+    for id in [other, export] { assert_eq!(context.backend().database().get(id).expect("job").expect("exists").state, JobState::Cancelled); }
+    std::fs::remove_file(workspace).expect("repair");
+    context.recover_after_restart().expect("retry cleanup");
+    assert_eq!(context.backend().database().get(blocked).expect("job").expect("exists").state, JobState::Cancelled);
 }

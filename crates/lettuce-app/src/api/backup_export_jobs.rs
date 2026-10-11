@@ -257,36 +257,53 @@ pub(super) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
     let database = context.backend().database();
     let mut filter = JobListFilter { kinds: vec![JobKind::BackupExport], states: vec![JobState::Queued, JobState::Interrupted], subject: None, page: PageRequest { cursor: None, limit: PageLimit::new(200) } };
     loop {
-        let page = database.list_jobs(&filter).map_err(IntoApiError::into_api_error)?;
+        let page = match database.list_jobs(&filter) {
+            Ok(page) => page,
+            Err(failure) => { tracing::warn!(%failure, "backup export recovery could not list jobs"); return Ok(()); }
+        };
         for job in page.items {
             if job.subject.id.as_str() != "database-export" || context.jobs().has_backup_password(job.id) { continue; }
-            let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
-            if job.state == JobState::Interrupted { cleanup(context, &detail)?; continue; }
-            let record = published(context, &detail);
-            let claim = super::backup_jobs::claim_started(database, job.id, context.now().max(job.updated_at))?;
-            let record = match record {
-                Ok(record) => record,
-                Err(_) => { report_recovery(context, &claim)?; continue; }
-            };
-            if let Some(mut record) = record {
-                if detail.target.is_none() {
-                    let protection = FileExportProtection::new(context)?;
-                    let protected = |uri: &str, file: Option<&std::fs::File>| protection.protects(uri, file);
-                    match context.files().publish_backup(&record.uri, None, &detail.final_name, &protected) {
-                        Ok(uri) => record.uri = uri,
-                        Err(_) => { report_recovery(context, &claim)?; continue; }
-                    }
-                }
-                if finish(context, &claim, record, detail.warnings).is_err() { report_recovery(context, &claim)?; }
-            }
-            else {
-                let cleaned = cleanup(context, &detail).is_ok();
-                super::backup_jobs::settle(database, &claim, context, Err(if cleaned { "backup-retry-required" } else { "backup-unavailable" }))?;
+            if let Err(failure) = recover_job(context, &job) {
+                tracing::warn!(job_id = %job.id, ?failure, "backup export recovery will retry on next startup");
             }
         }
         let Some(cursor) = page.next_cursor else { return Ok(()); };
         filter.page.cursor = Some(cursor);
     }
+}
+
+fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
+    if job.state == JobState::Interrupted {
+        cleanup(context, &detail)?;
+        database.append_and_transition(JobMutation::FinishInterruptedBackupCleanup { id: job.id, at: context.now().max(job.updated_at) }).map_err(IntoApiError::into_api_error)?;
+        return Ok(());
+    }
+    let record = published(context, &detail);
+    if matches!(record, Ok(None)) { cleanup(context, &detail)?; }
+    let claim = super::backup_jobs::claim_started(database, job.id, context.now().max(job.updated_at))?;
+    let record = match record {
+        Ok(record) => record,
+        Err(failure) => { report_recovery(context, &claim)?; return Err(failure); }
+    };
+    if let Some(mut record) = record {
+        if detail.target.is_none() {
+            let protection = FileExportProtection::new(context)?;
+            let protected = |uri: &str, file: Option<&std::fs::File>| protection.protects(uri, file);
+            match context.files().publish_backup(&record.uri, None, &detail.final_name, &protected) {
+                Ok(uri) => record.uri = uri,
+                Err(failure) => { report_recovery(context, &claim)?; return Err(file_error(failure)); }
+            }
+        }
+        if let Err(failure) = finish(context, &claim, record, detail.warnings) {
+            report_recovery(context, &claim)?;
+            return Err(failure);
+        }
+    } else {
+        super::backup_jobs::settle(database, &claim, context, Err("backup-retry-required"))?;
+    }
+    Ok(())
 }
 
 pub(super) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Option<dto::JobResultDto>, ApiError> {
