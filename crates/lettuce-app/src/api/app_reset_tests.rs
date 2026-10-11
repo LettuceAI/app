@@ -597,8 +597,9 @@ async fn a_reset_job_restored_into_another_database_file_never_runs() {
         .expect("restore target");
     std::fs::copy(&source, &target).expect("restored copy holding the queued reset");
     lifecycle
-        .activate_file(&copy, TimestampMillis::new(30))
-        .expect("restore cutover");
+        .prepare_cutover(&copy, TimestampMillis::new(30))
+        .expect("prepare cutover");
+    lifecycle.finish_cutover(&copy).expect("restore cutover");
     drop(lifecycle);
     let backend =
         Arc::new(AppBackend::open(&target, TimestampMillis::new(40)).expect("restored backend"));

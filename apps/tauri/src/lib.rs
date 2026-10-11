@@ -109,7 +109,8 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     .ok_or("file logging is unavailable")?;
     lettuce_observability::install_panic_reports(log_directory.clone());
     app.manage(output);
-    let context = open_context(app.handle()).map_err(|error| error.message)?;
+    let secrets = Arc::new(lettuce_settings::NativeSecretStore::try_new()?);
+    let context = open_context(app.handle(), secrets).map_err(|error| error.message)?;
     let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))
         .map_err(|error| error.message)?;
     app.manage(ApiContextSlot::new(Arc::new(context)));
@@ -125,14 +126,14 @@ fn reload_failure() -> lettuce_contracts::ApiError {
     }
 }
 
-fn open_context<R: Runtime>(handle: &AppHandle<R>) -> Result<ApiContext, lettuce_contracts::ApiError> {
+fn open_context<R: Runtime>(handle: &AppHandle<R>, secrets: Arc<dyn lettuce_settings::SecretStore>) -> Result<ApiContext, lettuce_contracts::ApiError> {
     let app_data = handle.path().app_data_dir().map_err(|_| reload_failure())?;
     let log_directory = handle.path().app_log_dir().map_err(|_| reload_failure())?;
     let output = handle.try_state::<lettuce_observability::LocalOutput>().ok_or_else(reload_failure)?;
     let context = ApiContext::open_desktop(
         &app_data,
         handle.path().resource_dir().ok(),
-        Arc::new(lettuce_settings::NativeSecretStore::try_new().map_err(|_| reload_failure())?),
+        secrets,
         Arc::new(events::TauriEventSink(handle.clone())),
         files::file_access(handle),
         asset_protocol::ASSET_URL_BASE.to_owned(),

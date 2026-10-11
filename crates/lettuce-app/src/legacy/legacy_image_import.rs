@@ -40,7 +40,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImageImportCoordinator<'a, R>
             admission,
             plan,
             images,
-            &lettuce_transfer::LegacyIdScope::new(&source_fingerprint),
+            &lettuce_transfer::LegacyIdScope::new(),
         );
         self.repository
             .materialize_images(LegacyImageMaterializationRequest {

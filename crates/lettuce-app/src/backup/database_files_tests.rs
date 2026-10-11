@@ -305,8 +305,9 @@ async fn cutover_captures_retained_hashes_and_never_exposes_a_writer_for_deletio
         Err(AppDatabaseLocationError::Busy)
     ));
     guard
-        .activate_file(&name, TimestampMillis::new(30))
-        .expect("cutover");
+        .prepare_cutover(&name, TimestampMillis::new(30))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("cutover");
     assert_eq!(
         guard.kept_media_hashes().expect("kept hashes"),
         std::collections::BTreeSet::from([kept])
@@ -476,8 +477,9 @@ async fn explicit_deletion_refuses_active_and_open_files_and_replays_the_exact_r
         Err(AppDatabaseLocationError::InUse)
     ));
     guard
-        .activate_file(&name, TimestampMillis::new(30))
-        .expect("cutover");
+        .prepare_cutover(&name, TimestampMillis::new(30))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("cutover");
     assert!(matches!(
         guard.delete_file(&name, &active, key),
         Err(AppDatabaseLocationError::InUse)
@@ -525,8 +527,9 @@ async fn interrupted_explicit_file_deletion_replays_without_touching_the_active_
             .expect("begin");
         drop(Database::open(&active).expect("new database"));
         guard
-            .activate_file(&name, TimestampMillis::new(20))
-            .expect("activate");
+            .prepare_cutover(&name, TimestampMillis::new(20))
+            .expect("prepare cutover");
+        guard.finish_cutover(&name).expect("activate");
         drop(guard);
         let key = lettuce_types::RequestId::new();
         let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
@@ -604,8 +607,9 @@ async fn bad_sidecar_refuses_deletion_before_touching_the_kept_database() {
         .expect("begin");
     drop(Database::open(&active).expect("fresh database"));
     guard
-        .activate_file(&name, TimestampMillis::new(20))
-        .expect("cutover");
+        .prepare_cutover(&name, TimestampMillis::new(20))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("cutover");
     let before = std::fs::read(&old).expect("old bytes");
     let sentinel = root.join("sentinel");
     std::fs::write(&sentinel, b"preserve").expect("sentinel");

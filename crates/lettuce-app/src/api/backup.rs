@@ -47,15 +47,16 @@ pub async fn backups_list(context: &ApiContext) -> Result<Vec<dto::BackupIndexVi
     context.blocking(|context| {
         context.backend().database().backup_index().map_err(|failure| Failure::from(failure).0)?
             .into_iter().map(|entry| {
-                let missing = match context.files().describe(&entry.uri) {
-                    Ok(_) => false,
-                    Err(super::FileAccessError::NotFound) => true,
-                    Err(failure) => return Err(file_error(failure)),
+                let availability = match context.files().describe(&entry.uri) {
+                    Ok(_) => dto::BackupAvailability::Available,
+                    Err(super::FileAccessError::NotFound) => dto::BackupAvailability::Missing,
+                    Err(super::FileAccessError::PermissionDenied) => dto::BackupAvailability::PermissionDenied,
+                    Err(_) => dto::BackupAvailability::Unavailable,
                 };
                 Ok(dto::BackupIndexView {
                     id: entry.id.to_string(), uri: entry.uri,
                     header: dto::BackupHeaderView { version: entry.version, created_at: entry.created_at.get(), app_version: entry.app_version },
-                    size: entry.size, missing,
+                    size: entry.size, availability,
                 })
             }).collect()
     }).await
@@ -65,24 +66,22 @@ async fn mutate_index(context: &ApiContext, request: dto::BackupMutationRequest,
     let command = if delete { "backup_delete" } else { "backup_forget" };
     super::jobs::local::operation_key(command, &request.client_operation_id)?;
     let digest = super::jobs::local::digest(&request)?;
-    let lifecycle = if delete {
-        match context.database_files() {
-            Some(files) => Some(files.location.file_lifecycle().await.map_err(|failure| super::storage::file_error(failure, None))?),
-            None => None,
-        }
-    } else { None };
     context.blocking(move |context| {
-        let _lifecycle = lifecycle;
         let database = context.backend().database();
-        let pending = if delete && database.lookup_api_operation(command, &request.client_operation_id).map_err(|failure| Failure::from(failure).0)?.is_none() {
-            super::backup_export_jobs::pending_publication_targets(context)?
-        } else { Default::default() };
+        let fresh = delete && database.lookup_api_operation(command, &request.client_operation_id).map_err(|failure| Failure::from(failure).0)?.is_none();
+        let pending = if fresh { super::backup_export_jobs::pending_export_targets(context)? } else { Default::default() };
+        let _lifecycle = if fresh {
+            context.database_files().map(|files| files.location.try_file_lifecycle().map_err(|failure| match failure {
+                crate::AppDatabaseLocationError::Busy => file_error(super::FileAccessError::Busy),
+                _ => super::storage::file_error(failure, None),
+            })).transpose()?
+        } else { None };
         database.commit_api_operation(command, &request.client_operation_id, &digest, context.now(), |transaction| {
             let id = super::error::parse_id::<lettuce_types::JobId>(&request.id, "id").map_err(Failure)?;
             let entry = transaction.backup_index_record(id)?.ok_or_else(|| Failure(error(ApiErrorCode::NotFound, dto::BackupFailureReason::FileUnavailable)))?;
             if delete {
-                if pending.contains(&entry.uri) {
-                    return Err(Failure(error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired)));
+                if let Some(published) = pending.get(&entry.uri) {
+                    return Err(Failure(if *published { error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired) } else { file_error(super::FileAccessError::Busy) }));
                 }
                 match context.files().remove(&entry.uri) {
                     Ok(()) | Err(super::FileAccessError::NotFound) => {}
@@ -113,8 +112,8 @@ pub(super) fn inspect(files: &dyn super::FileAccess, uri: &str) -> Result<dto::B
         })?;
         input.seek(SeekFrom::Start(0)).map_err(|_| file_error(super::FileAccessError::Io))?;
         let header = match lettuce_transfer::detect_backup_format(&prefix).map_err(|_| malformed())? {
-            lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|_| malformed())?,
-            lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|_| malformed())?,
+            lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|failure| if failure == lettuce_transfer::BackupEnvelopeError::Io { file_error(super::FileAccessError::Io) } else { malformed() })?,
+            lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|failure| if failure == lettuce_transfer::LegacyBackupInventoryError::Io { file_error(super::FileAccessError::Io) } else { malformed() })?,
         };
         Ok(dto::BackupHeaderView {
             version: header.version,

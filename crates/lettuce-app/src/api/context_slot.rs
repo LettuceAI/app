@@ -49,14 +49,19 @@ impl ApiContextSlot {
         }.await;
         if result.is_err() {
             self.require_recovery();
-            if let Some(workers) = pending {
-                let _ = workers.stop_for_restore().await;
-            }
+            let _ = Self::retire(&context, pending).await;
+        }
+        result.map_err(|_| recovery_error())
+    }
+
+    pub async fn retire(context: &ApiContext, workers: Option<super::ApiWorkers>) -> Result<(), ApiError> {
+        if let Some(workers) = workers { workers.stop_for_restore().await }
+        else {
             context.retire_database_listeners();
             context.begin_shutdown();
             context.backend().shutdown().await;
+            Ok(())
         }
-        result.map_err(|_| recovery_error())
     }
 
     pub(super) fn swap(&self, context: Arc<ApiContext>) -> Result<Arc<ApiContext>, ApiError> {

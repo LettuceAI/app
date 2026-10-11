@@ -111,6 +111,18 @@ where
         created_at: TimestampMillis,
         password: &str,
     ) -> Result<ProviderBackupExport<W>, ProviderBackupError> {
+        self.export_to_controlled(out, app_version, created_at, password, &|| Ok(())).await
+    }
+
+    pub async fn export_to_controlled<W: std::io::Write>(
+        &self,
+        out: W,
+        app_version: impl Into<String>,
+        created_at: TimestampMillis,
+        password: &str,
+        check: &(dyn Fn() -> Result<(), ProviderBackupError> + Send + Sync),
+    ) -> Result<ProviderBackupExport<W>, ProviderBackupError> {
+        check()?;
         let (graph, _media_pin) = lettuce_media::pin_media_objects(|| {
             let graph = self.source.read_provider_backup_graph()?;
             let hashes = graph
@@ -171,9 +183,11 @@ where
         }
         let mut writer = BackupWriter::new(out, app_version, created_at, password)?;
         for section in plan.data_sections {
+            check()?;
             writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
         }
         for (content_hash, byte_size) in &plan.media {
+            check()?;
             let bytes = self.read_media(content_hash, *byte_size)?;
             verify_backup_media(content_hash, *byte_size, &bytes)?;
             writer.append_bytes(
@@ -183,6 +197,7 @@ where
             )?;
         }
         for descriptor in &plan.artifacts {
+            check()?;
             let mut sink = BackupArtifactSink::new(descriptor.clone());
             match descriptor {
                 TrustedArtifactDescriptor::Snapshot(reference) => self
@@ -196,6 +211,7 @@ where
             let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes)?;
             writer.append_bytes(&name, &schema, &artifact.bytes)?;
         }
+        check()?;
         Ok(ProviderBackupExport {
             output: writer.finish()?,
             missing_secrets,
@@ -337,6 +353,8 @@ impl TrustedArtifactSink for BackupArtifactSink {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProviderBackupError {
+    #[error("backup export was cancelled")]
+    Cancelled,
     #[error("provider backup source failed: {0}")]
     Source(#[from] ProviderBackupSourceError),
     #[error("provider backup graph failed validation: {0}")]

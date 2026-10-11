@@ -66,3 +66,5 @@ The typed legacy startup state replaces direct bin import from `old-code/src-tau
 Slice 11a represents explicit backup deletion with an operation key and typed failures; the legacy UI refreshed the list only after a successful delete (`old-code/src/ui/pages/settings/hooks/useBackupRestore.ts:282-293`). Public metadata follows the approved restricted v2 header.
 
 Slice 11a review fixes preserve actionable file failure distinctions in durable backup job results and watch events.
+
+LegacyState carries failed detection as a typed ApiError state, so startup and AppStatus remain available when a legacy source cannot be opened. BackupIndexView reports availability per entry instead of failing the list. Backup job reasons distinguish format limits and existing restore targets without introducing a new disk-full error code.

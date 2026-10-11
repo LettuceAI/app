@@ -69,13 +69,11 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
         let original = slot.snapshot()?;
         let mut pending = None;
         let result = async {
-            let context = Arc::new(crate::open_context(&self.0)?);
+            let context = Arc::new(crate::open_context(&self.0, original.secret_store().clone())?);
             let (old, replacement) = slot.start_reloaded(context.clone(), job).await?;
             pending = Some(replacement);
             let workers = self.0.try_state::<crate::Workers>().ok_or_else(crate::reload_failure)?.0.lock().map_err(|_| crate::reload_failure())?.take();
-            old.retire_database_listeners();
-            if let Some(workers) = workers { workers.stop_for_restore().await?; }
-            else { old.begin_shutdown(); old.backend().shutdown().await; }
+            lettuce_app::api::ApiContextSlot::retire(&old, workers).await?;
             let state = self.0.try_state::<crate::Workers>().ok_or_else(crate::reload_failure)?;
             let installed = match state.0.lock() {
                 Ok(mut installed) => { *installed = pending.take(); true }
@@ -85,17 +83,13 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
             Ok(context)
         }.await;
         if result.is_err() {
-            if let Some(workers) = pending { let _ = workers.stop_for_restore().await; }
-            let active = slot.snapshot().ok().or(Some(original));
+            let active = slot.snapshot().unwrap_or_else(|_| original.clone());
             slot.require_recovery();
-            let workers = self.0.try_state::<crate::Workers>().and_then(|workers| workers.0.lock().ok()?.take());
-            if let Some(workers) = workers {
-                let _ = workers.stop_for_restore().await;
-            }
-            if let Some(active) = active {
-                active.retire_database_listeners();
-                active.begin_shutdown();
-                active.backend().shutdown().await;
+            let mut workers = self.0.try_state::<crate::Workers>().and_then(|workers| workers.0.lock().ok()?.take());
+            let active_workers = pending.or_else(|| if Arc::ptr_eq(&active, &original) { workers.take() } else { None });
+            let _ = lettuce_app::api::ApiContextSlot::retire(&active, active_workers).await;
+            if !Arc::ptr_eq(&active, &original) || workers.is_some() {
+                let _ = lettuce_app::api::ApiContextSlot::retire(&original, workers).await;
             }
         }
         result.map_err(|_| crate::reload_failure())
@@ -163,5 +157,76 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
 
     fn exit_for_restart(&self) {
         self.0.exit(0);
+    }
+}
+
+#[cfg(all(test, desktop))]
+mod tests {
+    use super::*;
+    use lettuce_app::api::{ApiContextSlot, JobEventSink};
+    use lettuce_contracts::{self as dto, JobEvent};
+    use tauri_specta::Event;
+
+    struct JobEvents(tokio::sync::mpsc::UnboundedSender<JobEvent>);
+    impl JobEventSink for JobEvents {
+        fn emit(&self, event: JobEvent) -> bool { self.0.send(event).is_ok() }
+    }
+
+    async fn completed(context: &lettuce_app::api::ApiContext, id: String) {
+        let (sent, mut received) = tokio::sync::mpsc::unbounded_channel();
+        lettuce_app::api::job_watch(context, dto::JobWatchRequest { job_id: id }, Arc::new(JobEvents(sent))).await.expect("watch");
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            while let Some(event) = received.recv().await {
+                match event {
+                    JobEvent::Completed { .. } => return,
+                    JobEvent::Failed { job } | JobEvent::Cancelled { job } => panic!("backup failed: {:?}", job.failure),
+                    _ => {}
+                }
+            }
+            panic!("job stream closed before completion");
+        }).await.expect("completion");
+    }
+
+    #[tokio::test]
+    async fn fix11a_real_reset_host_restores_rebinds_and_stops_old_workers() {
+        let root = std::env::temp_dir().join(format!("lettuce-real-reload-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("logs")).expect("logs");
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(root.clone()));
+        let builder = crate::specta_builder::<tauri::test::MockRuntime>();
+        let app = tauri::test::mock_builder().build(context).expect("mock shell");
+        builder.mount_events(&app);
+        tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default()).build().expect("main webview");
+        let output = lettuce_observability::install(lettuce_observability::ObservabilityConfig::default().with_local_output(lettuce_observability::LocalOutputConfig::new(root.join("logs")))).expect("logging").expect("local output");
+        app.manage(output);
+        let original = Arc::new(crate::open_context(app.handle(), Arc::new(lettuce_settings::InMemorySecretStore::new())).expect("ordinary context construction"));
+        let old_file = lettuce_app::api::storage_database_files_list(&original).await.expect("original inventory").into_iter().find(|file| file.active).expect("active file").file;
+        let workers = lettuce_app::api::startup(&original).await.expect("startup");
+        workers.started_result().await.expect("old workers running");
+        app.manage(ApiContextSlot::new(original.clone()));
+        app.manage(crate::Workers(Mutex::new(Some(workers))));
+        let target = root.join("backup.lettuce");
+        let exported = lettuce_app::api::backup_export(&original, dto::BackupExportRequest { target: Some(dto::FileTarget { uri: target.display().to_string() }), password: "password".into(), client_operation_id: "native-export".into() }).await.expect("export");
+        completed(&original, exported.job_id).await;
+        let (sent, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let listener = app.listen(crate::events::AppEvent::NAME, move |event| {
+            if let Ok(crate::events::AppEvent(dto::ApiEvent::DatabaseReloaded)) = serde_json::from_str(event.payload()) { let _ = sent.send(()); }
+        });
+        let restored = lettuce_app::api::backup_restore(&original, dto::BackupRestoreRequest { source: dto::FileSource { uri: target.display().to_string() }, password: "password".into(), client_operation_id: "native-restore".into() }).await.expect("restore");
+        completed(&original, restored.job_id).await;
+        tokio::time::timeout(std::time::Duration::from_secs(30), received.recv()).await.expect("reload notification").expect("event");
+        assert!(received.try_recv().is_err(), "one reload event");
+        let fresh = app.state::<ApiContextSlot>().snapshot().expect("fresh context");
+        assert!(!Arc::ptr_eq(&original, &fresh));
+        assert_ne!(lettuce_app::api::storage_database_files_list(&fresh).await.expect("restored inventory").into_iter().find(|file| file.active).expect("active file").file, old_file);
+        assert!(original.backend().database().is_file_write_fenced().expect("old context fenced"));
+        assert!(app.state::<crate::Workers>().0.lock().expect("worker state").as_ref().expect("replacement workers").steps().contains(&lettuce_app::api::StartupStep::StartWorkers));
+        app.unlisten(listener);
+        let workers = app.state::<crate::Workers>().0.lock().expect("workers").take().expect("new workers");
+        workers.stop_for_restore().await.expect("stop replacement workers");
+        drop(fresh);
+        drop(original);
+        drop(app);
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

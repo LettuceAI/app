@@ -77,6 +77,7 @@ impl ApiWorkers {
     async fn stop_for_cutover(mut self, flush_usage: bool) -> Result<(), ApiError> {
         let current = std::thread::current().id();
         self.stop.send_replace(true);
+        if !flush_usage { self.context.retire_database_listeners(); }
         self.context.begin_shutdown();
         self.context.backend().shutdown().await;
         if flush_usage { self.context.flush_app_usage_for_reset()?; }
@@ -186,8 +187,7 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
     record(&steps, StartupStep::CompletePendingRewinds);
     let detected = context
         .blocking(|context| {
-            super::legacy_state::detect(context)
-                .map(|state| matches!(state, lettuce_contracts::LegacyState::Ready { .. }))
+            Ok(matches!(super::legacy_state::detect(context), Ok(lettuce_contracts::LegacyState::Ready { .. })))
         })
         .await?;
     context.set_legacy_database_detected(detected);

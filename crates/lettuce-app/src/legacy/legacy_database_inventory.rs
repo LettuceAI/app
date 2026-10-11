@@ -256,11 +256,11 @@ pub fn plan_legacy_database_import(
     merge_media(&mut plan.media, voice_audio)?;
     let preserved = lettuce_database::read_legacy_preserved_rows(storage_root.join("app.db"))?;
     let message_conflicts = match &plan.source_fingerprint {
-        Some(fingerprint) => {
+        Some(_) => {
             let (conflicts, skipped) = lettuce_transfer::legacy_message_conflicts(
                 &compatibility,
                 &preserved,
-                lettuce_transfer::LegacyIdScope::new(fingerprint),
+                lettuce_transfer::LegacyIdScope::new(),
             );
             plan.later_skips.extend(skipped);
             plan.later_skips.sort();

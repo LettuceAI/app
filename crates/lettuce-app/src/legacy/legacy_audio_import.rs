@@ -57,7 +57,7 @@ where
             .source_fingerprint
             .clone()
             .ok_or(LegacyAudioImportError::InvalidAdmission)?;
-        let scope = lettuce_transfer::LegacyIdScope::new(&source_fingerprint);
+        let scope = lettuce_transfer::LegacyIdScope::new();
         let scoped_providers = audio_providers
             .iter()
             .map(|provider| AudioProvider {
@@ -337,11 +337,7 @@ mod tests {
 
         assert_eq!(receipt.record_count, 2);
         assert!(!receipt.replayed);
-        let scope = lettuce_transfer::LegacyIdScope::new(
-            plan.source_fingerprint
-                .as_ref()
-                .expect("source fingerprint"),
-        );
+        let scope = lettuce_transfer::LegacyIdScope::new();
         let scoped_reference = super::legacy_audio_secret_ref(run_id, scope, reference);
         let scoped_owner = SecretOwnerId::from_uuid(scope.uuid("secret_owner", owner.as_uuid()));
         assert_eq!(

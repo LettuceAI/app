@@ -24,6 +24,7 @@ pub struct BackupInspectRequest {
 #[serde(rename_all = "snake_case")]
 pub enum BackupFailureReason {
     InvalidEnvelope,
+    LimitExceeded,
     InvalidPassword,
     Authentication,
     FileUnavailable,
@@ -37,6 +38,16 @@ pub enum BackupFailureReason {
     Unsupported,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum BackupAvailability {
+    Available,
+    Missing,
+    Unavailable,
+    PermissionDenied,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
@@ -46,7 +57,7 @@ pub struct BackupIndexView {
     pub header: BackupHeaderView,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub size: u64,
-    pub missing: bool,
+    pub availability: BackupAvailability,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

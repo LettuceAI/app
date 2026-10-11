@@ -258,3 +258,5 @@ Slice 11a replaces fingerprint-scoped and randomly assigned legacy entity IDs wi
 Slice 11a identifies a recorded schema below 92 before requiring modern root tables, without relaxing validation for accepted versions. Legacy performed its own bin import (`old-code/src-tauri/src/storage_manager/importer.rs:12-34`); unsupported storage remains a read-only source for opening 2.2.5 once.
 
 Slice 11a keeps backup records when deleting a file fails, and treats only a genuine not-found as already deleted. Legacy Android pruned the record even after a failed file removal (`old-code/src-tauri/src/storage_manager/backup.rs:4564-4584`). The new device-local index replaces metadata when an export replaces the same path.
+
+Legacy usage-report identities use the source-independent LegacyIdScope without loading a fingerprint that no longer participates in identity generation. Source fingerprints remain required by import admission and materialization.

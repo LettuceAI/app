@@ -100,7 +100,7 @@ pub fn read_backup_header_bytes(
     let mut header = [0_u8; HEADER_BYTES];
     input
         .read_exact(&mut header)
-        .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
+        .map_err(read_error)?;
     decode_header(&header).map(|(_, metadata)| (metadata, header.to_vec()))
 }
 
@@ -467,7 +467,7 @@ impl<R: Read + Seek> BackupReader<R> {
         let mut encrypted = vec![0u8; layout.manifest_len];
         input
             .read_exact(&mut encrypted)
-            .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
+            .map_err(read_error)?;
         let manifest_bytes = Zeroizing::new(
             cipher
                 .decrypt(
@@ -584,7 +584,7 @@ impl<R: Read + Seek> BackupReader<R> {
             let buffer = &mut encrypted[..chunk + TAG_BYTES];
             self.input
                 .read_exact(buffer)
-                .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
+                .map_err(read_error)?;
             let plaintext = Zeroizing::new(
                 self.cipher
                     .decrypt(
@@ -660,6 +660,11 @@ struct BackupLayout {
     manifest_len: usize,
 }
 
+fn read_error(failure: std::io::Error) -> BackupEnvelopeError {
+    if failure.kind() == std::io::ErrorKind::UnexpectedEof { BackupEnvelopeError::InvalidEnvelope }
+    else { BackupEnvelopeError::Io }
+}
+
 fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnvelopeError> {
     let total = input
         .seek(SeekFrom::End(0))
@@ -674,7 +679,7 @@ fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnv
     let mut header = [0u8; HEADER_BYTES];
     input
         .read_exact(&mut header)
-        .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
+        .map_err(read_error)?;
     let (kdf, metadata) = decode_header(&header)?;
     input
         .seek(SeekFrom::Start(total - FOOTER_BYTES as u64))
@@ -682,7 +687,7 @@ fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnv
     let mut footer = [0u8; FOOTER_BYTES];
     input
         .read_exact(&mut footer)
-        .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
+        .map_err(read_error)?;
     if footer[NONCE_BYTES + 4..] != FOOTER_MAGIC {
         return Err(BackupEnvelopeError::InvalidEnvelope);
     }

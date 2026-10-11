@@ -33,6 +33,10 @@ fn is_file(path: &Path) -> Result<bool, ApiError> {
 }
 
 pub(super) fn detect(context: &ApiContext) -> Result<dto::LegacyState, ApiError> {
+    Ok(detect_storage(context).unwrap_or_else(|error| dto::LegacyState::Failed { error }))
+}
+
+fn detect_storage(context: &ApiContext) -> Result<dto::LegacyState, ApiError> {
     let Some(folder) = context.app_folder() else { return Ok(dto::LegacyState::Absent); };
     let root = folder.join("lettuce");
     let path = root.join("app.db");

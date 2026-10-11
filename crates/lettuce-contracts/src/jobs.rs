@@ -170,6 +170,8 @@ pub enum JobFailureReason {
     DictationActive,
     BackupAuthentication,
     BackupInvalidEnvelope,
+    BackupLimitExceeded,
+    BackupTargetExists,
     BackupUnavailable,
     BackupFileNotFound,
     BackupPermissionDenied,

@@ -802,7 +802,7 @@ impl LegacyImportRepository for Database {
         let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use =
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
-        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
+        let scope = lettuce_transfer::LegacyIdScope::new();
         for candidate in &request.characters {
             let plan = lettuce_transfer::character_plan_from_candidate(
                 candidate,
@@ -970,7 +970,7 @@ impl LegacyImportRepository for Database {
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
             return Ok(receipt);
         }
-        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
+        let scope = lettuce_transfer::LegacyIdScope::new();
         let derived = |kind: &str, source: &str, suffix: &str| scope.derived(kind, source, suffix);
         for session in &request.sessions {
             if session.materialization != LegacyBackupCreationMaterialization::InitialDraftSeed {
@@ -1644,7 +1644,7 @@ impl LegacyImportRepository for Database {
         let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use =
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
-        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
+        let scope = lettuce_transfer::LegacyIdScope::new();
         for candidate in &request.groups {
             let plan = legacy_group_plan(candidate, &assignments, &media_by_use, scope)?;
             crate::catalog::group_adapter::insert_group_plan(&transaction, &plan)

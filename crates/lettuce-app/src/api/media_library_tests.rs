@@ -212,8 +212,9 @@ fn gc_racing_a_new_reference_keeps_the_object_in_a_kept_set() {
         .expect("new file");
     drop(lettuce_database::Database::open(&active).expect("new database"));
     guard
-        .activate_file(&name, TimestampMillis::new(20))
-        .expect("keep old file");
+        .prepare_cutover(&name, TimestampMillis::new(20))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("keep old file");
     assert!(
         guard
             .kept_media_hashes()
@@ -749,8 +750,9 @@ fn a_writer_remaining_open_after_restore_cannot_lose_its_new_media_to_active_swe
         .expect("new file");
     drop(lettuce_database::Database::open(&next).expect("fresh database"));
     guard
-        .activate_file(&name, TimestampMillis::new(20))
-        .expect("cutover while prior writer remains open");
+        .prepare_cutover(&name, TimestampMillis::new(20))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("cutover while prior writer remains open");
     drop(guard);
     let mut bytes = super::tests::png_bytes();
     bytes.extend_from_slice(b"late-media-after-cutover");
@@ -812,8 +814,9 @@ fn a_stale_database_scope_cannot_sweep_new_active_catalog_media() {
         .expect("new file");
     drop(lettuce_database::Database::open(&next).expect("fresh database"));
     guard
-        .activate_file(&name, TimestampMillis::new(20))
-        .expect("cutover");
+        .prepare_cutover(&name, TimestampMillis::new(20))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("cutover");
     drop(guard);
     let current = harness(&root);
     let bytes = super::tests::png_bytes();
@@ -957,8 +960,9 @@ async fn workers_on_a_kept_database_idle_without_claiming_or_a_due_timer() {
         .expect("new file");
     drop(lettuce_database::Database::open(&next).expect("fresh database"));
     guard
-        .activate_file(&name, TimestampMillis::new(20))
-        .expect("cutover");
+        .prepare_cutover(&name, TimestampMillis::new(20))
+        .expect("prepare cutover");
+    guard.finish_cutover(&name).expect("cutover");
     drop(guard);
     due.store(1, Ordering::SeqCst);
     assert!(

@@ -74,7 +74,7 @@ where
         )? {
             return Ok(receipt);
         }
-        let context = import_context(admission, plan, &source_fingerprint);
+        let context = import_context(admission, plan);
         let conversations = sessions
             .iter()
             .map(|session| {

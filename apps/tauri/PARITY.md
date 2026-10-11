@@ -53,3 +53,5 @@ The restore adapter rebuilds through the same constructor and startup used at la
 Slice 11a review fixes delay context publication until restart recovery and worker startup finish. Desktop atomic backup replacement preserves protected-file checks and permits existing readers without an additional target lease.
 
 Desktop backup temporary locations and publication resolve parent-directory aliases while preserving the final filename. Atomic replacement replaces a selected final symlink and leaves its referent intact; the returned index path matches the admission target.
+
+Desktop publication uses std::fs::rename on Windows as on other desktop platforms. The synchronized complete file and approved full-header publication recovery protect the index boundary. Reload teardown shares context retirement with ApiContextSlot, and the shell integration test exercises the real ResetHost and stop_for_restore path.

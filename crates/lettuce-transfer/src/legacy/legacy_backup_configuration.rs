@@ -38,12 +38,12 @@ use crate::{
 
 pub const LEGACY_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LegacyIdScope;
 
 impl LegacyIdScope {
     #[must_use]
-    pub fn new(_source_fingerprint: &lettuce_types::ContentHash) -> Self {
+    pub fn new() -> Self {
         Self
     }
 
@@ -5281,10 +5281,8 @@ mod tests {
 }
 #[test]
 fn legacy_entity_identity_is_independent_of_the_source() {
-    let first =
-        LegacyIdScope::new(&lettuce_types::ContentHash::parse("11".repeat(32)).expect("source"));
-    let second =
-        LegacyIdScope::new(&lettuce_types::ContentHash::parse("22".repeat(32)).expect("source"));
+    let first = LegacyIdScope::new();
+    let second = LegacyIdScope::new();
     let legacy = Uuid::from_u128(17);
     assert_ne!(first.uuid("character", legacy), first.uuid("group", legacy));
     assert_eq!(

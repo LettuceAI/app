@@ -586,11 +586,7 @@ mod tests {
                 TimestampMillis::new(50),
             )
             .expect("materialize characters");
-        let scope = lettuce_transfer::LegacyIdScope::new(
-            plan.source_fingerprint
-                .as_ref()
-                .expect("source fingerprint"),
-        );
+        let scope = lettuce_transfer::LegacyIdScope::new();
         let conv = |id: lettuce_types::ConversationId| {
             lettuce_types::ConversationId::from_uuid(scope.uuid("conversation", id.as_uuid()))
         };
@@ -1814,12 +1810,7 @@ mod tests {
                 TimestampMillis::new(106),
             )
             .expect("group conversations of a second source import into a fresh database");
-        let second_scope = lettuce_transfer::LegacyIdScope::new(
-            second_plan
-                .source_fingerprint
-                .as_ref()
-                .expect("second source fingerprint"),
-        );
+        let second_scope = lettuce_transfer::LegacyIdScope::new();
         assert_eq!(
             character(character_id),
             CharacterId::from_uuid(second_scope.uuid("character", character_id.as_uuid()))

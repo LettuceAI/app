@@ -190,3 +190,5 @@ Legacy media planning discovers `avatar_banner.webp` in each character avatar di
 Legacy entity identities derive from the entity kind and legacy identity in one source-independent namespace. Different restore sources map the same entity to the same destination identity; every restore still writes a fresh database. Secret-store references remain unique to an attempt so kept databases retain their credentials.
 
 The legacy backup public-header reader shares manifest validation with the decoder and reads no encrypted payload. Header inspection needs no password.
+
+LegacyIdScope derives identities from the entity kind and canonical legacy ID without a source fingerprint. Plan and source fingerprints remain part of import admission and materialization proofs. Backup source I/O errors remain distinct from malformed envelopes in both current and legacy readers.

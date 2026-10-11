@@ -146,6 +146,9 @@ pub struct AppUsageDaysView {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyState {
     Absent,
+    Failed {
+        error: crate::ApiError,
+    },
     Ready {
         schema_version: u32,
     },

@@ -678,29 +678,6 @@ impl DatabaseFileLifecycle {
         self.recover()
     }
 
-    #[cfg(test)]
-    pub(crate) fn activate_file(
-        &self,
-        name: &str,
-        at: TimestampMillis,
-    ) -> Result<(), AppDatabaseLocationError> {
-        self.activate_file_with_switch(name, at, || self.location.activate(name))
-    }
-
-    #[cfg(test)]
-    fn activate_file_with_switch(
-        &self,
-        name: &str,
-        at: TimestampMillis,
-        switch: impl FnOnce() -> Result<(), AppDatabaseLocationError>,
-    ) -> Result<(), AppDatabaseLocationError> {
-        if let Err(error) = self.prepare_cutover(name, at).and_then(|()| switch()) {
-            self.recover()?;
-            return Err(error);
-        }
-        self.recover()
-    }
-
     pub(crate) fn protects_export_location(
         &self,
         uri: &str,
@@ -964,7 +941,7 @@ mod timestamp_tests {
     use super::*;
 
     #[test]
-    fn failed_pointer_switch_restores_old_writes_before_returning() {
+    fn invalid_pointer_switch_restores_old_writes_before_returning() {
         let root = std::env::temp_dir().join(format!(
             "lettuce-cutover-failed-switch-{}",
             OperationId::new()
@@ -978,12 +955,8 @@ mod timestamp_tests {
             .begin_file(&name, DatabaseFileKind::Reset, TimestampMillis::new(20))
             .expect("new intent");
         drop(Database::open(&new_path).expect("new database"));
-        assert_eq!(
-            guard.activate_file_with_switch(&name, TimestampMillis::new(30), || {
-                Err(AppDatabaseLocationError::Storage)
-            }),
-            Err(AppDatabaseLocationError::Storage)
-        );
+        guard.prepare_cutover(&name, TimestampMillis::new(30)).expect("prepare cutover");
+        assert_eq!(guard.finish_cutover("invalid"), Err(AppDatabaseLocationError::Corrupt));
         assert_eq!(location.active_path().expect("pointer"), active);
         assert!(
             !database
@@ -1054,8 +1027,9 @@ mod timestamp_tests {
             .expect("new file");
         drop(Database::open(&path).expect("new database"));
         guard
-            .activate_file(&name, TimestampMillis::new(30))
-            .expect("cutover");
+            .prepare_cutover(&name, TimestampMillis::new(30))
+            .expect("prepare cutover");
+        guard.finish_cutover(&name).expect("cutover");
         drop(guard);
         let guard = location.try_file_lifecycle().expect("reopen");
         let files = guard.inventory(&path).expect("inventory");

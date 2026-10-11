@@ -64,3 +64,6 @@ cpal = "0.16.0"
 tauri-plugin-android-fs.workspace = true
 jni = "0.21.1"
 ndk-context = "0.1.1"
+
+[dev-dependencies]
+tauri = { workspace = true, features = ["test"] }

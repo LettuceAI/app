@@ -775,13 +775,15 @@ export type AvatarPromptRequest = {
 
 export type BackgroundChange = { type: "image"; asset_id: string } | { type: "hidden" } | { type: "reset" };
 
+export type BackupAvailability = "available" | "missing" | "unavailable" | "permission_denied";
+
 export type BackupExportRequest = {
 	password: string,
 	target: FileTarget | null,
 	client_operation_id: string,
 };
 
-export type BackupFailureReason = "invalid_envelope" | "invalid_password" | "authentication" | "file_unavailable" | "permission_denied" | "storage" | "verification_failed" | "secrets_unavailable" | "cancelled" | "retry_required" | "recovery_required" | "unsupported";
+export type BackupFailureReason = "invalid_envelope" | "limit_exceeded" | "invalid_password" | "authentication" | "file_unavailable" | "permission_denied" | "storage" | "verification_failed" | "secrets_unavailable" | "cancelled" | "retry_required" | "recovery_required" | "unsupported";
 
 export type BackupHeaderView = {
 	version: number,
@@ -794,7 +796,7 @@ export type BackupIndexView = {
 	uri: string,
 	header: BackupHeaderView,
 	size: number,
-	missing: boolean,
+	availability: BackupAvailability,
 };
 
 export type BackupInspectRequest = {
@@ -2746,7 +2748,7 @@ export type JobFailureDto = {
 };
 
 /**  Why a chat feature job failed, where the user can act on it. */
-export type JobFailureReason = "dictation_active" | "backup_authentication" | "backup_invalid_envelope" | "backup_unavailable" | "backup_file_not_found" | "backup_permission_denied" | "backup_file_busy" | "backup_file_unavailable" | "backup_file_unsupported" | "backup_source_is_target" | "backup_cancelled" | "backup_retry_required" | "backup_recovery_required" | "backup_verification_failed" | "reset_workers" | "reset_database" | "reset_webview_storage" | "reset_restart" | "usage_billing_unavailable" | "usage_billing_malformed" | "usage_account_missing" | "usage_cost_conflict" | "usage_cost_storage" | "usage_billing_credentials" | "usage_billing_rejected" | "usage_billing_unsupported" | "usage_cost_invalid" | "storage_checkpoint_busy" | "storage_unavailable" | "database_kept_read_only" | "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
+export type JobFailureReason = "dictation_active" | "backup_authentication" | "backup_invalid_envelope" | "backup_limit_exceeded" | "backup_target_exists" | "backup_unavailable" | "backup_file_not_found" | "backup_permission_denied" | "backup_file_busy" | "backup_file_unavailable" | "backup_file_unsupported" | "backup_source_is_target" | "backup_cancelled" | "backup_retry_required" | "backup_recovery_required" | "backup_verification_failed" | "reset_workers" | "reset_database" | "reset_webview_storage" | "reset_restart" | "usage_billing_unavailable" | "usage_billing_malformed" | "usage_account_missing" | "usage_cost_conflict" | "usage_cost_storage" | "usage_billing_credentials" | "usage_billing_rejected" | "usage_billing_unsupported" | "usage_cost_invalid" | "storage_checkpoint_busy" | "storage_unavailable" | "database_kept_read_only" | "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
 
 export type JobGetRequest = {
 	job_id: string,
@@ -3007,7 +3009,7 @@ export type LegacyDatabaseImportRequest = {
 	client_operation_id: string,
 };
 
-export type LegacyState = { type: "absent" } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
+export type LegacyState = { type: "absent" } | { type: "failed"; error: ApiError } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
 
 export type LegacyUpgradeReason = { type: "bin_storage" } | { type: "schema"; found: number };
 

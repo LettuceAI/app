@@ -152,27 +152,12 @@ fn publish_backup_path(temporary: &str, target: Option<&str>, protected: ExportP
     Ok(target.to_owned())
 }
 
-#[cfg(not(target_os = "windows"))]
 fn publish_backup_durable(temporary: &Path, target: &Path) -> Result<(), FileAccessError> {
     std::fs::rename(temporary, target).map_err(|failure| access_error(&failure))?;
-    let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-    std::fs::File::open(parent).and_then(|directory| directory.sync_all()).map_err(|failure| access_error(&failure))
-}
-
-#[cfg(target_os = "windows")]
-fn publish_backup_durable(temporary: &Path, target: &Path) -> Result<(), FileAccessError> {
-    use std::os::windows::ffi::OsStrExt;
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-    }
-    let temporary = temporary.canonicalize().map_err(|failure| access_error(&failure))?;
-    let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-    let target = parent.canonicalize().map_err(|failure| access_error(&failure))?.join(target.file_name().ok_or(FileAccessError::Unsupported)?);
-    let source: Vec<u16> = temporary.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    let target: Vec<u16> = target.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), 1 | 8) } == 0 {
-        return Err(access_error(&std::io::Error::last_os_error()));
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+        std::fs::File::open(parent).and_then(|directory| directory.sync_all()).map_err(|failure| access_error(&failure))?;
     }
     Ok(())
 }

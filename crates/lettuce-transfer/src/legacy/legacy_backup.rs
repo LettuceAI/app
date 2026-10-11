@@ -79,7 +79,7 @@ impl LegacyArchive {
             .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
         let mut file = zip
             .by_index(index)
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+            .map_err(archive_error)?;
         let encrypted = read_bounded(&mut file, MAX_LEGACY_BACKUP_ENTRY_BYTES as u64 + 16)?;
         let decrypted = Zeroizing::new(decrypt(&encrypted, &self.key, &self.nonce)?);
         if decrypted.len() > MAX_LEGACY_BACKUP_ENTRY_BYTES {
@@ -294,6 +294,8 @@ impl LegacyBackupMediaRoot {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LegacyBackupInventoryError {
+    #[error("legacy backup source could not be read")]
+    Io,
     #[error("legacy backup password is invalid")]
     InvalidPassword,
     #[error("legacy backup archive is malformed")]
@@ -306,6 +308,15 @@ pub enum LegacyBackupInventoryError {
     LimitExceeded,
     #[error("legacy backup authentication failed")]
     Authentication,
+}
+
+fn read_error(failure: std::io::Error) -> LegacyBackupInventoryError {
+    if matches!(failure.kind(), std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::InvalidData) { LegacyBackupInventoryError::InvalidArchive }
+    else { LegacyBackupInventoryError::Io }
+}
+
+fn archive_error(failure: zip::result::ZipError) -> LegacyBackupInventoryError {
+    match failure { zip::result::ZipError::Io(failure) => read_error(failure), _ => LegacyBackupInventoryError::InvalidArchive }
 }
 
 #[derive(Deserialize)]
@@ -340,9 +351,9 @@ pub fn read_legacy_backup_header(
 ) -> Result<crate::BackupHeader, LegacyBackupInventoryError> {
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let mut archive = ZipArchive::new(Box::new(input) as Box<dyn crate::BackupSource>)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(archive_error)?;
     let manifest = read_manifest(&mut archive)?;
     Ok(crate::BackupHeader {
         version: 1,
@@ -367,25 +378,25 @@ pub fn decode_legacy_backup_inventory(
     validate_password(password)?;
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let mut prefix = [0u8; 4];
     input
         .read_exact(&mut prefix)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     if prefix != *b"PK\x03\x04" {
         return Err(LegacyBackupInventoryError::InvalidArchive);
     }
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let mut hasher = blake3::Hasher::new();
     hasher
         .update_reader(&mut input)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let source_hash = ContentHash::parse(hasher.finalize().to_hex().to_string())
         .expect("BLAKE3 produces a valid content hash");
     let mut archive = ZipArchive::new(Box::new(input) as Box<dyn crate::BackupSource>)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(archive_error)?;
     if archive.is_empty() || archive.len() > MAX_BACKUP_ENTRIES {
         return Err(LegacyBackupInventoryError::LimitExceeded);
     }
@@ -405,7 +416,7 @@ pub fn decode_legacy_backup_inventory(
     for index in 0..archive.len() {
         let file = archive
             .by_index(index)
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+            .map_err(archive_error)?;
         if file.is_dir() {
             let name = normalize_archive_name(file.name())?;
             if !known_directory(&name) {
@@ -481,7 +492,7 @@ fn validate_archive_metadata(
     for index in 0..archive.len() {
         let file = archive
             .by_index(index)
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+            .map_err(archive_error)?;
         let name = normalize_archive_name(file.name())?;
         if !names.insert(name.clone()) {
             return Err(LegacyBackupInventoryError::InvalidInventory);
@@ -510,7 +521,7 @@ fn read_public_entry(
 ) -> Result<Vec<u8>, LegacyBackupInventoryError> {
     let mut file = archive
         .by_name(name)
-        .map_err(|_| LegacyBackupInventoryError::InvalidInventory)?;
+        .map_err(|failure| match failure { zip::result::ZipError::Io(failure) => read_error(failure), _ => LegacyBackupInventoryError::InvalidInventory })?;
     if file.is_dir() || file.size() > max_bytes {
         return Err(LegacyBackupInventoryError::LimitExceeded);
     }
@@ -525,7 +536,7 @@ fn read_bounded(
     reader
         .take(max_bytes.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     if u64::try_from(bytes.len()).map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
         > max_bytes
     {

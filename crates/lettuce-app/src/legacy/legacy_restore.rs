@@ -146,7 +146,6 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         .map_err(LegacyRestoreError::Admission)?;
         let plan = compatibility.legacy_import_plan();
         self.replace_controlled(
-            restore_id,
             &LegacyDatabaseImportPlan {
                 compatibility,
                 plan,
@@ -164,16 +163,14 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
     /// Replaces the app data with a live legacy app data directory.
     pub async fn restore_database(
         &self,
-        restore_id: OperationId,
         app_data_dir: &Path,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
-        self.restore_database_controlled(restore_id, app_data_dir, restored_at, &|_, _| Ok(())).await
+        self.restore_database_controlled(app_data_dir, restored_at, &|_, _| Ok(())).await
     }
 
     pub async fn restore_database_controlled(
         &self,
-        restore_id: OperationId,
         app_data_dir: &Path,
         restored_at: TimestampMillis,
         check: &LegacyRestoreCheck<'_>,
@@ -183,7 +180,6 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             crate::plan_legacy_database_import(app_data_dir).map_err(LegacyRestoreError::Plan)?;
         check("stage", None)?;
         self.replace_controlled(
-            restore_id,
             &import,
             Some(&app_data_dir.join("lettuce")),
             None,
@@ -196,19 +192,16 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
     #[cfg(test)]
     pub(crate) async fn replace(
         &self,
-        _restore_id: OperationId,
         import: &LegacyDatabaseImportPlan,
         storage_root: Option<&Path>,
         admission: Option<BackupRestoreAdmissionRequest>,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
-        self.replace_controlled(_restore_id, import, storage_root, admission, restored_at, &|_, _| Ok(())).await
+        self.replace_controlled(import, storage_root, admission, restored_at, &|_, _| Ok(())).await
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn replace_controlled(
         &self,
-        _restore_id: OperationId,
         import: &LegacyDatabaseImportPlan,
         storage_root: Option<&Path>,
         admission: Option<BackupRestoreAdmissionRequest>,
@@ -359,8 +352,8 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                     _ => None,
                 }),
         );
-        if let Some(fingerprint) = &plan.source_fingerprint {
-            let scope = lettuce_transfer::LegacyIdScope::new(fingerprint);
+        if plan.source_fingerprint.is_some() {
+            let scope = lettuce_transfer::LegacyIdScope::new();
             written.extend(
                 source
                     .authored_plan()
@@ -527,7 +520,6 @@ mod tests {
         let plan = compatibility.legacy_import_plan();
         let receipt = coordinator
             .replace(
-                OperationId::new(),
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
@@ -784,7 +776,6 @@ mod tests {
         assert_eq!(plan.media.media.len(), 5);
         let receipt = coordinator
             .replace(
-                OperationId::new(),
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
@@ -1163,11 +1154,7 @@ mod tests {
             let compatibility = source(title);
             assert_eq!(compatibility.llm_metrics.metrics.len(), 6);
             let plan = compatibility.legacy_import_plan();
-            let scope = lettuce_transfer::LegacyIdScope::new(
-                plan.source_fingerprint
-                    .as_ref()
-                    .expect("source fingerprint"),
-            );
+            let scope = lettuce_transfer::LegacyIdScope::new();
             let preserved = vec![
                 lettuce_transfer::LegacyPreservedRow {
                     source_table: "companion_turn_effects".into(),
@@ -1349,7 +1336,6 @@ mod tests {
         };
         let first = coordinator
             .replace(
-                OperationId::new(),
                 &import,
                 None,
                 None,
@@ -1451,7 +1437,6 @@ mod tests {
         drop(restored);
         let second = coordinator
             .replace(
-                OperationId::new(),
                 &import,
                 None,
                 None,
@@ -1466,7 +1451,6 @@ mod tests {
         );
         let third = coordinator
             .replace(
-                OperationId::new(),
                 &changed,
                 None,
                 None,
@@ -1507,7 +1491,6 @@ mod tests {
         let plan = compatibility.legacy_import_plan();
         let receipt = coordinator
             .replace(
-                OperationId::new(),
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,

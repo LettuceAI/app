@@ -307,7 +307,7 @@ where
         )? {
             return Ok(receipt);
         }
-        let mut context = import_context(admission, plan, &source_fingerprint);
+        let mut context = import_context(admission, plan);
         context.dynamic_memory_enabled = lettuce_settings::GlobalSettingsStore::load(self.sources)
             .map_err(|_| Error::Storage)?
             .settings
@@ -2390,7 +2390,6 @@ fn active_variant_index(legacy: &TimelineMessage<'_>) -> usize {
 pub(crate) fn import_context(
     admission: &LegacyImportAdmission,
     plan: &LegacyImportPlan,
-    source_fingerprint: &lettuce_types::ContentHash,
 ) -> ImportContext {
     let mut providers = BTreeMap::new();
     let mut models = BTreeMap::new();
@@ -2482,7 +2481,7 @@ pub(crate) fn import_context(
         lorebooks,
         media,
         backgrounds,
-        scope: LegacyIdScope::new(source_fingerprint),
+        scope: LegacyIdScope::new(),
         dynamic_memory_enabled: false,
     }
 }

@@ -205,11 +205,7 @@ mod tests {
             .expect("materialize creation workflows");
         assert_eq!(receipt.record_count, 1);
         let workflow_id = CreationWorkflowId::from_uuid(
-            lettuce_transfer::LegacyIdScope::new(
-                plan.source_fingerprint
-                    .as_ref()
-                    .expect("source fingerprint"),
-            )
+            lettuce_transfer::LegacyIdScope::new()
             .derived("creation_workflow", "creation-1", "creation-workflow"),
         );
         let workflow = CreationWorkflowRepository::load_workflow(backend.database(), workflow_id)

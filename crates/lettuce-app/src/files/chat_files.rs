@@ -3,7 +3,7 @@ use lettuce_transfer::{
     ChatImportRepository, ChatImportRepositoryError, ChatJsonlError, ChatJsonlRole, LegacyIdScope,
     LegacyImportRepositoryError,
 };
-use lettuce_types::{CharacterId, ContentHash, ConversationId, TimestampMillis};
+use lettuce_types::{CharacterId, ConversationId, TimestampMillis};
 use uuid::Uuid;
 
 use crate::legacy::legacy_direct_conversation_import::{
@@ -101,10 +101,7 @@ where
         let character_id = character_id.ok_or(ChatFileError::TargetCharacterRequired)?;
         let chat = lettuce_transfer::parse_chat_jsonl(raw, now.get())?;
         let source_id = Uuid::new_v4().to_string();
-        let scope = LegacyIdScope::new(
-            &ContentHash::parse(blake3::hash(source_id.as_bytes()).to_hex().to_string())
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-        );
+        let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
         let millis = |value: i64| u64::try_from(value).unwrap_or(0);
         let lines = imported_lines(&chat, millis);
@@ -317,10 +314,7 @@ where
         )
         .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         let source_id = Uuid::new_v4().to_string();
-        let scope = LegacyIdScope::new(
-            &ContentHash::parse(blake3::hash(source_id.as_bytes()).to_hex().to_string())
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-        );
+        let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
         let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
             .prepare_group(

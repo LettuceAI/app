@@ -64,7 +64,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl JobHostState {
     pub(crate) fn remember_backup_password(&self, id: JobId, password: zeroize::Zeroizing<String>) {
-        lock(&self.backup_passwords).insert(id, password);
+        lock(&self.backup_passwords).entry(id).or_insert(password);
         self.wake();
     }
 

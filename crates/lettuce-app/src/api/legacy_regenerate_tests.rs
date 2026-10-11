@@ -184,7 +184,6 @@ async fn restored_harness() -> (super::tests::Harness, Database) {
     let plan = compatibility.legacy_import_plan();
     let receipt = coordinator
         .replace(
-            OperationId::new(),
             &crate::legacy::LegacyDatabaseImportPlan {
                 compatibility,
                 plan,

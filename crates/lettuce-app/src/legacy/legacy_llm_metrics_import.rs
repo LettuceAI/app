@@ -35,7 +35,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyLlmMetricsImportCoordinator<'
             .source_fingerprint
             .clone()
             .ok_or(LegacyImportRepositoryError::InvalidInput)?;
-        let scope = LegacyIdScope::new(&source_fingerprint);
+        let scope = LegacyIdScope::new();
         self.repository
             .materialize_llm_metrics(LegacyLlmMetricsMaterializationRequest {
                 run_id: admission.run_id,
