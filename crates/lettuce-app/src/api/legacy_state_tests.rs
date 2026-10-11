@@ -59,7 +59,7 @@ async fn invalid_legacy_startup(bytes: &[u8], code: &str, unreadable: bool) {
     #[cfg(unix)]
     if unreadable {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0)).expect("unreadable");
+        std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o0)).expect("unreadable");
     }
     let result = super::startup(&harness.context).await;
     #[cfg(unix)]
