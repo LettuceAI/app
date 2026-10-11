@@ -1,7 +1,7 @@
 use super::*;
 use lettuce_characters::{
     Character, CharacterDefaults, CharacterDetails, CharacterMedia, CharacterPresentationV1,
-    CharacterProfile, CharacterProvenance,
+    CharacterProfile, CharacterProvenance, Scene, SceneDocumentV1, SceneOwner, ScenePart,
 };
 use lettuce_context::{
     LorebookMetadataDraft, LorebookRepository, PromptMetadataDraft, PromptPurpose, PromptRepository,
@@ -32,8 +32,16 @@ fn fixture(database: &Database, kind: &str) -> (String, CanonicalPayload) {
             .expect("character");
             let id = character.id.to_string();
             let details = CharacterDetails {
-                character,
-                scenes: Vec::new(),
+                character: character.clone(),
+                scenes: vec![Scene::new(
+                    lettuce_types::SceneId::new(),
+                    SceneOwner::Character(character.id),
+                    0,
+                    SceneDocumentV1::new(vec![ScenePart::Text {
+                        text: "Initial child".into(),
+                    }]).expect("document"),
+                    TimestampMillis::new(1),
+                ).expect("scene")],
                 variants: Vec::new(),
                 starters: Vec::new(),
             };
@@ -51,7 +59,16 @@ fn fixture(database: &Database, kind: &str) -> (String, CanonicalPayload) {
                     icon_asset_id: None,
                     behavior_version: Default::default(),
                 },
-                Vec::new(),
+                vec![lettuce_context::LorebookEntryDraft {
+                    title: "Initial child".into(),
+                    enabled: true,
+                    always_active: false,
+                    keywords: vec!["initial".into()],
+                    case_sensitive: false,
+                    match_mode: lettuce_context::KeywordMatchMode::Literal,
+                    content: "Initial content".into(),
+                    priority: 0,
+                }],
                 TimestampMillis::new(1),
             )
             .expect("lorebook");
@@ -69,7 +86,20 @@ fn fixture(database: &Database, kind: &str) -> (String, CanonicalPayload) {
                     condense: false,
                     behavior_version: Default::default(),
                 },
-                Vec::new(),
+                vec![lettuce_context::PromptEntryDraft {
+                    built_in_entry_key: None,
+                    name: "Initial child".into(),
+                    role: lettuce_context::PromptEntryRole::System,
+                    content: "Initial content".into(),
+                    enabled: true,
+                    injection_position: lettuce_context::PromptEntryPosition::Relative,
+                    depth: 0,
+                    conditional_min_messages: None,
+                    interval_turns: None,
+                    system_prompt: false,
+                    conditions: None,
+                    payload: None,
+                }],
                 TimestampMillis::new(1),
             )
             .expect("prompt");
@@ -105,6 +135,21 @@ fn edit(database: &Database, kind: &str, id: &str, name: &str, at: i64) {
     root["revision"] =
         serde_json::to_value(revision.next().expect("next revision")).expect("revision");
     root["updated_at"] = serde_json::to_value(TimestampMillis::new(at)).expect("timestamp");
+    let key = if kind == "character" { "scenes" } else { "entries" };
+    let template = value[key][0].clone();
+    value[key] = serde_json::Value::Array((0..if name == "Source" { 2 } else { 1 }).map(|ordinal| {
+        let mut child = template.clone();
+        child["id"] = lettuce_types::OperationId::new().to_string().into();
+        if kind == "character" {
+            child["content"]["parts"][0]["text"] = format!("{name} child {ordinal}").into();
+        } else {
+            child["content"] = format!("{name} child {ordinal}").into();
+        }
+        if kind != "prompt" {
+            child["ordinal"] = ordinal.into();
+        }
+        child
+    }).collect());
     (codec.materialize)(&tx, id, &serde_json::to_vec(&value).expect("payload"))
         .ok()
         .expect("edit");
@@ -464,6 +509,10 @@ fn legacy_dismiss_marker_is_the_only_mutable_evidence_field() {
 }
 
 fn legacy_snapshot(id: &str, name: &str) -> String {
+    legacy_snapshot_field(id, "name", name)
+}
+
+fn legacy_snapshot_field(id: &str, key: &str, name: &str) -> String {
     let mut bytes = Vec::new();
     let text = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
@@ -471,7 +520,7 @@ fn legacy_snapshot(id: &str, name: &str) -> String {
     };
     bytes.extend_from_slice(&2_u64.to_le_bytes());
     text(&mut bytes, "id");
-    text(&mut bytes, "name");
+    text(&mut bytes, key);
     bytes.extend_from_slice(&1_u64.to_le_bytes());
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     text(&mut bytes, id);
@@ -494,6 +543,9 @@ fn legacy_inbox_has_three_values_and_dismiss_only_changes_the_marker() {
     let (_, payload) = fixture(&database, "character");
     let mut details: CharacterDetails = serde_json::from_slice(payload.bytes()).expect("details");
     details.character.id = destination;
+    for scene in &mut details.scenes {
+        scene.owner = SceneOwner::Character(destination);
+    }
     let run_id = lettuce_types::LegacyImportRunId::new();
     let row_json = serde_json::json!({
         "conflict_id": "legacy-conflict", "status": "unresolved", "table_name": "characters", "detected_at": 10,
@@ -759,4 +811,73 @@ fn fork_acknowledgment_is_atomic_with_its_receipt_and_keeps_the_branch() {
             .expect("kept branch"),
         "active"
     );
+}
+
+#[test]
+fn missing_legacy_entity_fields_are_not_mapped() {
+    let database = Database::open_in_memory().expect("database");
+    for table in ["characters", "personas", "lorebooks", "lorebook_entries", "prompt_templates"] {
+        let run = lettuce_types::LegacyImportRunId::new();
+        let source = CharacterId::new().to_string();
+        let kind = match table {
+            "personas" => "persona",
+            "lorebooks" => "lorebook",
+            "lorebook_entries" => "lorebook_entry",
+            "prompt_templates" => "prompt",
+            _ => "character",
+        };
+        let key = if matches!(table, "personas" | "lorebook_entries") { "title" } else { "name" };
+        let row = serde_json::json!({"status":"unresolved","table_name":table,"detected_at":10,
+            "local_row":{"hex":legacy_snapshot_field(&source,key,"Local")},
+            "incoming_row":{"hex":legacy_snapshot_field(&source,key,"Incoming")}}).to_string();
+        let connection = database.connection().expect("connection");
+        connection.execute("INSERT INTO legacy_import_runs(id,source_schema_version,inventory_fingerprint,plan_fingerprint,status,admitted_at,updated_at) VALUES (?1,1,?2,?2,'admitting',1,1)", params![run.to_string(), "a".repeat(64)]).expect("run");
+        if kind != "character" {
+            connection.execute("INSERT INTO legacy_import_assignments(run_id,source_kind,source_key,destination_id) VALUES (?1,?2,?3,?4)", params![run.to_string(), kind, source, lettuce_types::OperationId::new().to_string()]).expect("imported identity of missing entity");
+        }
+        connection.execute("INSERT INTO legacy_import_preserved_rows(run_id,source_table,source_key,row_json) VALUES (?1,'sync_v2_conflicts',?2,?3)", params![run.to_string(), table, row]).expect("evidence");
+    }
+    let conflicts = database.unresolved_legacy_conflicts().expect("inbox");
+    assert_eq!(conflicts.len(), 5);
+    for conflict in conflicts {
+        assert!(!conflict.fields.is_empty());
+        assert!(conflict.fields.iter().all(|field| field.current == crate::LegacyConflictCurrent::NotMapped), "{}", conflict.entity_kind);
+    }
+}
+
+#[test]
+fn aggregate_resolutions_replace_or_keep_the_chosen_children() {
+    for kind in ["character", "lorebook", "prompt"] {
+        for choice in [ConflictChoice::Current, ConflictChoice::Other] {
+            let source = Database::open_in_memory().expect("source");
+            let target = Database::open_in_memory().expect("target");
+            let (id, payload) = fixture(&source, kind);
+            {
+                let mut connection = source.connection().expect("connection");
+                let tx = connection.transaction().expect("transaction");
+                (snapshot_codec(kind).expect("codec").materialize)(&tx, &id, payload.bytes()).ok().expect("initial");
+                tx.commit().expect("commit");
+            }
+            replicate(&source, &target, 2);
+            edit(&source, kind, &id, "Source", 3);
+            edit(&target, kind, &id, "Target", 4);
+            target.journal_current_state(TimestampMillis::new(4)).expect("journal");
+            replicate(&source, &target, 5);
+            let conflict = target.unresolved_sync_conflicts().expect("inbox").remove(0);
+            let children = |database: &Database| {
+                let mut connection = database.connection().expect("connection");
+                let tx = connection.transaction().expect("transaction");
+                let payload = (snapshot_codec(kind).expect("codec").current)(&tx, &id).ok().expect("current").expect("present");
+                let value: serde_json::Value = serde_json::from_slice(payload.bytes()).expect("snapshot");
+                value[if kind == "character" { "scenes" } else { "entries" }].clone()
+            };
+            let source_children = children(&source);
+            let current_children = children(&target);
+            assert_ne!(source_children, current_children, "{kind}");
+            assert_eq!(source_children.as_array().expect("children").len(), 2);
+            assert_eq!(current_children.as_array().expect("children").len(), 1);
+            target.resolve_sync_conflict(conflict.id, conflict.current.change_id, choice, OperationId::new(), TimestampMillis::new(6)).expect("resolve");
+            assert_eq!(children(&target), if choice == ConflictChoice::Other { source_children } else { current_children }, "{kind} {choice:?}");
+        }
+    }
 }

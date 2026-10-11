@@ -275,7 +275,7 @@ impl Database {
                 let current = current
                     .get(*key)
                     .cloned()
-                    .unwrap_or(LegacyConflictCurrent::Value(Value::Null));
+                    .unwrap_or(LegacyConflictCurrent::NotMapped);
                 if current != LegacyConflictCurrent::Value(local.clone()) || local != incoming {
                     diff.push(LegacyConflictField {
                         key: (*key).into(),

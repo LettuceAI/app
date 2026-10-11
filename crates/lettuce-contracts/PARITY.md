@@ -72,3 +72,5 @@ LegacyState carries failed detection as a typed ApiError state, so startup and A
 SyncConflictsChanged is the typed application event for committed conflict evidence changes. Legacy used a string-named event only after explicit resolution (old-code/src-tauri/src/sync/commands.rs:67); the inbox subscribed to it (old-code/src/ui/components/SyncConflictInbox.tsx:143-154).
 
 Sync statuses replace legacy string Error messages with ApiErrorCode and SyncFailure details (old-code/src-tauri/src/sync/manager.rs:137-177). Host approval and start remain separate, and completion preserves the model-refresh flow (old-code/src/ui/pages/sync/SyncPage.tsx:572-597,690-709). Read-only legacy differences retain both stored snapshots instead of choosing a winner from an unpreserved entity-state table (old-code/src-tauri/src/sync/v2/conflicts.rs:145-184). Canonical candidates expose catalog AssetRef values rather than media bytes.
+
+Legacy conflict fields use NotMapped for every current value when the entity is missing; actual null fields on existing entities remain JSON null.

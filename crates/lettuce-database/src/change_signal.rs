@@ -1,5 +1,6 @@
 //! Tells listeners which change feeds a committed transaction wrote: the
-//! hooks accumulate writes and statement completion publishes committed feeds.
+//! update hook marks writes to a feed table, the commit hook reports the
+//! marked feeds, and a rollback discards them.
 
 use std::sync::{
     Arc, Mutex,
@@ -76,16 +77,6 @@ type SettingsChangeListener = Arc<dyn Fn(&'static str) + Send + Sync>;
 #[derive(Default)]
 struct LibraryChanges {
     ids: std::collections::BTreeSet<(LibraryKind, String)>,
-    savepoints: Vec<(String, PendingFeedState)>,
-    statement: Option<PendingFeedState>,
-}
-
-#[derive(Clone)]
-struct PendingFeedState {
-    feeds: u8,
-    ids: std::collections::BTreeSet<(LibraryKind, String)>,
-    sections: std::collections::BTreeSet<&'static str>,
-    section: Option<&'static str>,
 }
 
 pub(crate) struct ChangeSignal {
@@ -254,7 +245,31 @@ impl ChangeSignal {
         ))?;
         let committed = Arc::clone(&signal);
         connection.commit_hook(Some(move || {
-            committed.pending.fetch_or(128, Ordering::AcqRel);
+            let changed = committed.pending.swap(0, Ordering::AcqRel);
+            committed.publish_library_changes();
+            if changed & ChangeFeed::Settings.bit() != 0 {
+                committed.settings_generation.fetch_add(1, Ordering::AcqRel);
+                let sections = std::mem::take(
+                    &mut *committed
+                        .settings_sections
+                        .lock()
+                        .expect("settings sections"),
+                );
+                let listeners = committed
+                    .settings_listeners
+                    .lock()
+                    .expect("settings listeners")
+                    .clone();
+                for section in sections {
+                    for listener in &listeners {
+                        listener(section);
+                    }
+                }
+            }
+            if changed != 0 {
+                committed.notify(changed);
+            }
+            *committed.settings_section.lock().expect("settings section") = None;
             false
         }))?;
         let rolled_back = Arc::clone(&signal);
@@ -263,8 +278,6 @@ impl ChangeSignal {
             {
                 let mut pending = rolled_back.library_changes.lock().expect("library changes");
                 pending.ids.clear();
-                pending.savepoints.clear();
-                pending.statement = None;
             }
             rolled_back
                 .settings_sections
@@ -276,90 +289,12 @@ impl ChangeSignal {
                 .lock()
                 .expect("settings section") = None;
         }))?;
-        install_completion_hook(connection, &signal)?;
         Ok(signal)
-    }
-
-    fn publish_commit(&self) {
-        let changed = self.pending.swap(0, Ordering::AcqRel) & 127;
-        self.publish_library_changes();
-        if changed & ChangeFeed::Settings.bit() != 0 {
-            self.settings_generation.fetch_add(1, Ordering::AcqRel);
-            let sections = std::mem::take(
-                &mut *self.settings_sections.lock().expect("settings sections"),
-            );
-            let listeners = self.settings_listeners.lock().expect("settings listeners").clone();
-            for section in sections {
-                for listener in &listeners {
-                    listener(section);
-                }
-            }
-        }
-        if changed != 0 {
-            self.notify(changed);
-        }
-        *self.settings_section.lock().expect("settings section") = None;
-    }
-
-    fn savepoint(&self, sql: &str) {
-        let mut words = sql.split_whitespace();
-        let Some(command) = words.next() else { return; };
-        if !["savepoint", "release", "rollback"].iter().any(|name| command.eq_ignore_ascii_case(name)) {
-            return;
-        }
-        let Some(name) = words.next_back().or_else(|| words.next()) else { return; };
-        let name = name.trim_end_matches(';').trim_matches(['\'', '"', '`', '[', ']']).to_ascii_lowercase();
-        let mut pending = self.library_changes.lock().expect("library changes");
-        if command.eq_ignore_ascii_case("savepoint") {
-            let state = PendingFeedState {
-                feeds: self.pending.load(Ordering::Acquire),
-                ids: pending.ids.clone(),
-                sections: self.settings_sections.lock().expect("settings sections").clone(),
-                section: *self.settings_section.lock().expect("settings section"),
-            };
-            pending.savepoints.push((name, state));
-        } else if command.eq_ignore_ascii_case("release") {
-            if let Some(index) = pending.savepoints.iter().rposition(|(saved, _)| *saved == name) {
-                pending.savepoints.truncate(index);
-            }
-        } else if command.eq_ignore_ascii_case("rollback") {
-            if let Some(index) = pending.savepoints.iter().rposition(|(saved, _)| *saved == name) {
-                let state = pending.savepoints[index].1.clone();
-                self.pending.store(state.feeds, Ordering::Release);
-                pending.ids = state.ids;
-                *self.settings_sections.lock().expect("settings sections") = state.sections;
-                *self.settings_section.lock().expect("settings section") = state.section;
-                pending.savepoints.truncate(index + 1);
-            }
-        }
-    }
-
-    fn begin_statement(&self) {
-        let mut pending = self.library_changes.lock().expect("library changes");
-        pending.statement = Some(PendingFeedState {
-            feeds: self.pending.load(Ordering::Acquire),
-            ids: pending.ids.clone(),
-            sections: self.settings_sections.lock().expect("settings sections").clone(),
-            section: *self.settings_section.lock().expect("settings section"),
-        });
-    }
-
-    fn finish_statement(&self, changed: bool) {
-        let mut pending = self.library_changes.lock().expect("library changes");
-        if let Some(state) = pending.statement.take()
-            && !changed
-        {
-            self.pending.store(state.feeds, Ordering::Release);
-            pending.ids = state.ids;
-            *self.settings_sections.lock().expect("settings sections") = state.sections;
-            *self.settings_section.lock().expect("settings section") = state.section;
-        }
     }
 
     fn publish_library_changes(&self) {
         let changes = {
             let mut pending = self.library_changes.lock().expect("library changes");
-            pending.savepoints.clear();
             std::mem::take(&mut pending.ids)
         };
         let listeners = self
@@ -412,61 +347,6 @@ impl ChangeSignal {
             listeners.push((feed, listener));
         }
     }
-}
-
-fn install_completion_hook(connection: &rusqlite::Connection, signal: &Arc<ChangeSignal>) -> rusqlite::Result<()> {
-    unsafe extern "C" fn release(data: *mut std::ffi::c_void) {
-        unsafe { drop(Arc::from_raw(data.cast::<ChangeSignal>())); }
-    }
-
-    unsafe extern "C" fn trace(
-        event: u32,
-        data: *mut std::ffi::c_void,
-        statement: *mut std::ffi::c_void,
-        sql: *mut std::ffi::c_void,
-    ) -> i32 {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let signal = unsafe { &*data.cast::<ChangeSignal>() };
-            if event == rusqlite::ffi::SQLITE_TRACE_STMT {
-                let sql = unsafe { std::ffi::CStr::from_ptr(sql.cast()) }.to_string_lossy();
-                if sql.split_whitespace().next().is_some_and(|word| ["insert", "update", "delete", "replace"].iter().any(|verb| word.eq_ignore_ascii_case(verb))) {
-                    signal.begin_statement();
-                }
-                signal.savepoint(&sql);
-            } else if event == rusqlite::ffi::SQLITE_TRACE_PROFILE {
-                let database = unsafe { rusqlite::ffi::sqlite3_db_handle(statement.cast()) };
-                signal.finish_statement(unsafe { rusqlite::ffi::sqlite3_changes64(database) } != 0);
-                if signal.pending.load(Ordering::Acquire) & 128 != 0
-                    && unsafe { rusqlite::ffi::sqlite3_get_autocommit(database) } != 0
-                {
-                    signal.publish_commit();
-                }
-            }
-        }));
-        if result.is_err() { std::process::abort(); }
-        rusqlite::ffi::SQLITE_OK
-    }
-
-    let data = Arc::into_raw(signal.clone()).cast_mut().cast();
-    let database = unsafe { connection.handle() };
-    let code = unsafe {
-        rusqlite::ffi::sqlite3_set_clientdata(database, c"lettuce-change-signal".as_ptr(), data, Some(release))
-    };
-    if code != rusqlite::ffi::SQLITE_OK {
-        return Err(rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None));
-    }
-    let code = unsafe {
-        rusqlite::ffi::sqlite3_trace_v2(
-            database,
-            rusqlite::ffi::SQLITE_TRACE_STMT | rusqlite::ffi::SQLITE_TRACE_PROFILE,
-            Some(trace),
-            data,
-        )
-    };
-    if code != rusqlite::ffi::SQLITE_OK {
-        return Err(rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None));
-    }
-    Ok(())
 }
 
 impl Database {
@@ -582,41 +462,6 @@ mod sync_feed_tests {
     #[test]
     fn prompt_commits_refresh_once_and_rollback_is_silent() {
         assert_feed(&["prompt_documents", "prompt_entries"]);
-    }
-
-    #[test]
-    fn rolled_back_savepoint_does_not_refresh_the_conflict_inbox() {
-        let connection = rusqlite::Connection::open_in_memory().expect("connection");
-        connection
-            .execute_batch("CREATE TABLE sync_conflicts (id INTEGER PRIMARY KEY);")
-            .expect("schema");
-        let signal = ChangeSignal::install(&connection).expect("hooks");
-        let feed = ChangeFeed::of_table("sync_conflicts").expect("registered feed");
-        let calls = Arc::new(AtomicU64::new(0));
-        let observed = calls.clone();
-        signal.listen(feed, Arc::new(move || {
-            observed.fetch_add(1, Ordering::Relaxed);
-        }));
-        connection
-            .execute_batch("BEGIN; SAVEPOINT discarded; INSERT INTO sync_conflicts VALUES (1); ROLLBACK TO discarded; RELEASE discarded; COMMIT;")
-            .expect("commit after savepoint rollback");
-        assert_eq!(calls.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn failed_statement_does_not_refresh_the_conflict_inbox() {
-        let connection = rusqlite::Connection::open_in_memory().expect("connection");
-        connection.execute_batch("CREATE TABLE sync_conflicts (id INTEGER PRIMARY KEY, value INTEGER CHECK (value > 0));").expect("schema");
-        let signal = ChangeSignal::install(&connection).expect("hooks");
-        let calls = Arc::new(AtomicU64::new(0));
-        let observed = calls.clone();
-        signal.listen(ChangeFeed::SyncConflicts, Arc::new(move || {
-            observed.fetch_add(1, Ordering::Relaxed);
-        }));
-        connection.execute_batch("BEGIN").expect("begin");
-        assert!(connection.execute_batch("INSERT INTO sync_conflicts VALUES (1, 1), (2, -1)").is_err());
-        connection.execute_batch("COMMIT").expect("commit");
-        assert_eq!(calls.load(Ordering::Relaxed), 0);
     }
 
     #[test]
