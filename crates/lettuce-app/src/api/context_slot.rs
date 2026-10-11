@@ -59,6 +59,7 @@ impl ApiContextSlot {
         else {
             context.retire_database_listeners();
             context.begin_shutdown();
+            context.stop_sync_session().await;
             context.backend().shutdown().await;
             Ok(())
         }

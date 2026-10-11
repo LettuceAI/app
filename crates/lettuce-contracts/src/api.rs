@@ -96,6 +96,7 @@ pub enum ProviderVerificationReason {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
     DictationActive,
+    Sync { reason: crate::SyncFailure },
     Backup { reason: crate::BackupFailureReason },
     LegacyDatabase { reason: crate::LegacyDatabaseFailure },
     /// The database this process opened was kept by a cutover (restore or
@@ -254,6 +255,7 @@ pub struct ApiError {
 pub enum ApiEvent {
     DatabaseReloaded,
     SyncConflictsChanged,
+    SyncStatusChanged { status: crate::SyncStatus },
     CharacterChanged {
         character_id: String,
     },

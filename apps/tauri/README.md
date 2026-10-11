@@ -148,3 +148,5 @@ Restore rebuilds through the launch constructor and the application context slot
 Context retirement uses one shared routine for listeners, workers and backend shutdown. The shell reload integration test runs the real ResetHost, constructor, startup and old-worker shutdown with a mock Tauri runtime, isolated application directories and the existing in-memory secret store. Reload keeps the device-local secret store passed to the ordinary constructor.
 
 The shared application event channel forwards SyncConflictsChanged alongside LorebooksChanged and PromptsChanged. Their source is the application database commit feed, including incoming sync writes.
+
+The sync command module delegates sharing, approval, begin, connect, stop, status, conflict listing, conflict resolution, fork acknowledgment and legacy dismissal to the active application context. The shared event channel carries SyncStatusChanged and SyncConflictsChanged. Exit joins the sync session before backend shutdown even when no worker handle was installed.

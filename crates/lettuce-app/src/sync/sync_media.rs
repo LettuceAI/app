@@ -32,6 +32,8 @@ pub enum MediaSyncTransportError {
     Cancelled,
     #[error("media sync peer disconnected")]
     Disconnected,
+    #[error("sync peer stopped sending during transfer")]
+    PeerStalled,
     #[error("media sync transport protocol failed")]
     Protocol,
 }
@@ -72,6 +74,21 @@ where
     where
         T: AuthenticatedMediaSyncTransport + ?Sized,
     {
+        self.run_with_progress(transport, cancellation, now, |_| {})
+            .await
+    }
+
+    pub async fn run_with_progress<T, F>(
+        &self,
+        transport: &mut T,
+        cancellation: &CancellationToken,
+        now: TimestampMillis,
+        mut progress: F,
+    ) -> Result<MediaSyncReport, SyncMediaExchangeError>
+    where
+        T: AuthenticatedMediaSyncTransport + ?Sized,
+        F: FnMut(&MediaSyncReport) + Send,
+    {
         check_cancelled(cancellation)?;
         let mut report = MediaSyncReport {
             received_assets: 0,
@@ -101,6 +118,7 @@ where
                 let transferred = offset < asset.blob.byte_size;
                 if transferred && !attempted_hashes.insert(asset.blob.content_hash.to_string()) {
                     report.unavailable_assets += 1;
+                    progress(&report);
                     continue 'assets;
                 }
                 while offset < asset.blob.byte_size {
@@ -116,6 +134,7 @@ where
                         .map_err(SyncMediaExchangeError::Transport)?;
                     let Some(chunk) = chunk else {
                         report.unavailable_assets += 1;
+                        progress(&report);
                         continue 'assets;
                     };
                     chunk
@@ -142,6 +161,7 @@ where
                     report.received_bytes = report
                         .received_bytes
                         .saturating_add(u64::try_from(chunk.bytes.len()).unwrap_or(u64::MAX));
+                    progress(&report);
                 }
                 check_cancelled(cancellation)?;
                 self.media
@@ -152,6 +172,7 @@ where
                     completed_hashes.push(asset.blob.content_hash.clone());
                     report.received_blobs = report.received_blobs.saturating_add(1);
                 }
+                progress(&report);
             }
         }
         check_cancelled(cancellation)?;

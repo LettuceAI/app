@@ -41,6 +41,8 @@ pub enum SecretSyncTransportError {
     Cancelled,
     #[error("secret sync peer disconnected")]
     Disconnected,
+    #[error("sync peer stopped sending during transfer")]
+    PeerStalled,
     #[error("secret sync transport protocol failed")]
     Protocol,
 }
@@ -110,20 +112,40 @@ where
     where
         T: AuthenticatedSecretSyncTransport + ?Sized,
     {
-        let result = self.exchange(transport, device, cancellation, now).await;
-        transport.stop_serving_secrets();
-        result
+        self.run_with_progress(transport, device, cancellation, now, |_| {})
+            .await
     }
 
-    async fn exchange<T>(
+    pub async fn run_with_progress<T, F>(
         &self,
         transport: &mut T,
         device: SyncDeviceId,
         cancellation: &CancellationToken,
         now: TimestampMillis,
+        progress: F,
     ) -> Result<SecretSyncReport, SyncSecretExchangeError>
     where
         T: AuthenticatedSecretSyncTransport + ?Sized,
+        F: FnMut(&SecretSyncReport) + Send,
+    {
+        let result = self
+            .exchange(transport, device, cancellation, now, progress)
+            .await;
+        transport.stop_serving_secrets();
+        result
+    }
+
+    async fn exchange<T, F>(
+        &self,
+        transport: &mut T,
+        device: SyncDeviceId,
+        cancellation: &CancellationToken,
+        now: TimestampMillis,
+        mut progress: F,
+    ) -> Result<SecretSyncReport, SyncSecretExchangeError>
+    where
+        T: AuthenticatedSecretSyncTransport + ?Sized,
+        F: FnMut(&SecretSyncReport) + Send,
     {
         check_cancelled(cancellation)?;
         let records = self
@@ -163,6 +185,7 @@ where
             }
             if !secret.writable || offered.set_at.get() > newest_allowed {
                 report.skipped += 1;
+                progress(&report);
                 continue;
             }
             let Some(value) = transport
@@ -171,11 +194,13 @@ where
                 .map_err(SyncSecretExchangeError::Transport)?
             else {
                 report.skipped += 1;
+                progress(&report);
                 continue;
             };
             let record = SecretRecord::new(entry.reference, entry.purpose.clone());
             let Ok(status) = self.secrets.put(record, value, secret.generation).await else {
                 report.skipped += 1;
+                progress(&report);
                 continue;
             };
             self.repository
@@ -189,6 +214,7 @@ where
                 )
                 .map_err(SyncSecretExchangeError::Repository)?;
             report.received += 1;
+            progress(&report);
         }
         transport
             .finish_secrets(cancellation)

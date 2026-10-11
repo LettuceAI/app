@@ -160,6 +160,7 @@ fn stop<R: Runtime>(handle: &AppHandle<R>) {
                 return;
             };
             context.begin_shutdown();
+            tauri::async_runtime::block_on(context.stop_sync_session());
             tauri::async_runtime::block_on(context.backend().shutdown());
             context.flush_app_usage();
         }

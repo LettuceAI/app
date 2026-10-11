@@ -85,6 +85,7 @@ pub struct ApiContext {
 struct ApiContextInner {
     usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
     maintenance: super::maintenance::MaintenanceGate,
+    sync: super::sync::SyncState,
     parts: ApiContextParts,
     models: ModelSlots,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
@@ -139,6 +140,8 @@ impl ApiContext {
         }
         Ok(Arc::new(super::ollama::remote_providers(self)?))
     }
+    pub(super) fn sync_state(&self) -> &super::sync::SyncState { &self.inner.sync }
+
     pub(super) fn maintenance(&self) -> &super::maintenance::MaintenanceGate {
         &self.inner.maintenance
     }
@@ -248,6 +251,7 @@ impl ApiContext {
             inner: Arc::new(ApiContextInner {
                 usage_billing: Mutex::new(None),
                 maintenance: super::maintenance::MaintenanceGate::default(),
+                sync: super::sync::SyncState::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
                 streams: Mutex::new(HashMap::new()),
@@ -579,6 +583,7 @@ impl ApiContext {
     /// Cancels every running generation and any job a worker starts from
     /// now on; workers stop through their own shutdown signal.
     pub fn begin_shutdown(&self) {
+        self.inner.sync.cancel();
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.backend().local_runtime_events().shutdown();
         self.inner.shutdown.cancel();

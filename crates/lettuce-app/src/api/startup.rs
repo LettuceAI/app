@@ -79,6 +79,7 @@ impl ApiWorkers {
         self.stop.send_replace(true);
         if !flush_usage { self.context.retire_database_listeners(); }
         self.context.begin_shutdown();
+        self.context.stop_sync_session().await;
         self.context.backend().shutdown().await;
         if flush_usage { self.context.flush_app_usage_for_reset()?; }
         let startup = self.startup.take();
@@ -132,6 +133,7 @@ impl ApiWorkers {
     pub async fn stop(mut self) {
         self.stop.send_replace(true);
         self.context.begin_shutdown();
+        self.context.stop_sync_session().await;
         self.context.backend().shutdown().await;
         self.context.flush_app_usage();
         let startup = self.startup.take();

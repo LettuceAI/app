@@ -216,3 +216,6 @@ pub use storage::*;
 
 mod backup;
 pub use backup::*;
+
+mod sync;
+pub use sync::*;

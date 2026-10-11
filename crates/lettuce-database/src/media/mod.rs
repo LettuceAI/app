@@ -8,3 +8,4 @@ pub(crate) mod tts_synthesis_adapter;
 pub(crate) mod whisper_model_adapter;
 
 pub(crate) mod library_upload;
+mod sync_repository_refs;
