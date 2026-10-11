@@ -1,9 +1,4 @@
-//! Legacy local generation metrics (`llm_generation_metrics`), which only the
-//! live legacy database holds: archives never carried them. Rows keep their
-//! legacy ids and timestamps; a summary that is not a JSON object reads back
-//! as `{}` and samples that are not a JSON array as `[]`, the way the legacy
-//! reader treated them, and only the newest 500 rows are kept, as both apps
-//! retain.
+//! Legacy generation metrics retained by the live database.
 
 use std::collections::BTreeSet;
 
@@ -13,9 +8,6 @@ use crate::{
     LegacyBackupConversionNotice, LegacyBackupConversionNoticeKind, LegacyBackupDocumentKind,
     LegacyBackupInventory, LegacyImportSkip, LegacyImportSkipReason, legacy_value_skip,
 };
-
-/// How many metrics rows legacy and the new app keep.
-pub const LEGACY_LLM_METRICS_RETENTION: usize = 500;
 
 /// One legacy metrics row as the new table stores it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,14 +124,6 @@ pub fn plan_legacy_backup_llm_metrics(
     }
     plan.metrics
         .sort_by(|left, right| (right.created_at, &right.id).cmp(&(left.created_at, &left.id)));
-    if plan.metrics.len() > LEGACY_LLM_METRICS_RETENTION {
-        plan.metrics.truncate(LEGACY_LLM_METRICS_RETENTION);
-        plan.notices.push(LegacyBackupConversionNotice {
-            kind: LegacyBackupConversionNoticeKind::Lossy,
-            document: LegacyBackupDocumentKind::LlmGenerationMetrics,
-            field: "retention".to_owned(),
-        });
-    }
     plan.notices.sort();
     plan.notices.dedup();
     plan.skipped.sort();
@@ -290,22 +274,15 @@ mod tests {
     }
 
     #[test]
-    fn only_the_newest_500_rows_are_kept() {
+    fn interrupted_legacy_retention_keeps_every_committed_row() {
         let rows = (0..520)
             .map(|index| row(&format!("gen-{index:03}"), index / 2))
             .collect::<Vec<_>>();
         let plan = plan_legacy_backup_llm_metrics(&inventory(&Value::Array(rows))).expect("plan");
-        assert_eq!(plan.metrics.len(), LEGACY_LLM_METRICS_RETENTION);
+        assert_eq!(plan.metrics.len(), 520);
         assert_eq!(plan.metrics[0].id, "gen-519");
-        assert_eq!(plan.metrics[499].id, "gen-020");
-        assert_eq!(
-            plan.notices,
-            vec![LegacyBackupConversionNotice {
-                kind: LegacyBackupConversionNoticeKind::Lossy,
-                document: LegacyBackupDocumentKind::LlmGenerationMetrics,
-                field: "retention".into(),
-            }]
-        );
+        assert_eq!(plan.metrics[519].id, "gen-000");
+        assert!(plan.notices.is_empty());
     }
 
     #[test]
