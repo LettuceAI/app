@@ -84,16 +84,6 @@ pub async fn prompt_preview(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn default_character_rules(
-    context: State<'_, ApiContextSlot>,
-    request: dto::DefaultCharacterRulesRequest,
-) -> Result<dto::DefaultCharacterRules, ApiError> {
-    let context = context.snapshot()?;
-    api::default_character_rules(&context, request).await
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn prompt_placeholders(
     context: State<'_, ApiContextSlot>,
     request: dto::PromptPlaceholdersRequest,

@@ -412,7 +412,6 @@ fn character_with(
             definition: None,
             design_description: None,
             scenario: None,
-            rules: Vec::new(),
         },
         CharacterProvenance::default(),
         defaults,
@@ -11255,7 +11254,6 @@ fn reusing_a_key_after_a_source_edit_conflicts() {
             definition: None,
             design_description: None,
             scenario: None,
-            rules: Vec::new(),
         },
         NOW,
     )
@@ -12459,7 +12457,6 @@ pub(crate) fn seed_named_character_with(
             definition: None,
             design_description: None,
             scenario: None,
-            rules: Vec::new(),
         },
         CharacterProvenance::default(),
         defaults,

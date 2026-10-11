@@ -197,7 +197,7 @@ pub use messages::{
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
 pub use prompts::{
-    default_character_rules, prompt_app_default_set, prompt_builtin_reset, prompt_create,
+    prompt_app_default_set, prompt_builtin_reset, prompt_create,
     prompt_delete, prompt_get, prompt_placeholders, prompt_preview, prompt_update, prompt_validate,
     prompts_list,
 };

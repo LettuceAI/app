@@ -398,29 +398,3 @@ pub struct PromptPreview {
     /// Entries left out by their conditions, enabled flag or position.
     pub skipped_entry_ids: Vec<String>,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct DefaultCharacterRules {
-    pub rules: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "snake_case")]
-pub enum PureModeLevel {
-    Off,
-    Low,
-    Standard,
-    Strict,
-}
-
-/// The rules a new character starts with at `pure_mode`, or at the current
-/// Pure mode setting when it is unset.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct DefaultCharacterRulesRequest {
-    pub pure_mode: Option<PureModeLevel>,
-}

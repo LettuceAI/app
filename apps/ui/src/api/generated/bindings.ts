@@ -161,7 +161,6 @@ export const commands = {
 	promptBuiltinReset: (request: PromptBuiltinResetRequest) => typedError<PromptBuiltinResetResult, ApiError>(__TAURI_INVOKE("prompt_builtin_reset", { request })),
 	promptAppDefaultSet: (request: PromptAppDefaultSetRequest) => typedError<PromptAppDefault, ApiError>(__TAURI_INVOKE("prompt_app_default_set", { request })),
 	promptPreview: (request: PromptPreviewRequest) => typedError<PromptPreview, ApiError>(__TAURI_INVOKE("prompt_preview", { request })),
-	defaultCharacterRules: (request: DefaultCharacterRulesRequest) => typedError<DefaultCharacterRules, ApiError>(__TAURI_INVOKE("default_character_rules", { request })),
 	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage, ApiError>(__TAURI_INVOKE("lorebooks_list", { request })),
 	lorebookGet: (request: LorebookGetRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_get", { request })),
 	lorebookCreate: (request: LorebookCreateRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_create", { request })),
@@ -1707,18 +1706,6 @@ export type DatabaseFileView = {
 	error: DatabaseFileError | null,
 };
 
-export type DefaultCharacterRules = {
-	rules: string[],
-};
-
-/**
- *  The rules a new character starts with at `pure_mode`, or at the current
- *  Pure mode setting when it is unset.
- */
-export type DefaultCharacterRulesRequest = {
-	pure_mode: PureModeLevel | null,
-};
-
 export type DictationCancelRequest = {
 	capture_id: string,
 };
@@ -3148,7 +3135,6 @@ export type LibraryCharacterProfile_Deserialize = {
 	definition: string | null,
 	design_description: string | null,
 	scenario: string | null,
-	rules: string[],
 };
 
 export type LibraryCharacterProfile_Serialize = {
@@ -3158,7 +3144,6 @@ export type LibraryCharacterProfile_Serialize = {
 	definition: string | null,
 	design_description: string | null,
 	scenario: string | null,
-	rules: string[],
 };
 
 export type LibraryCharacterProvenance = LibraryCharacterProvenance_Serialize | LibraryCharacterProvenance_Deserialize;
@@ -5576,8 +5561,6 @@ export type ProviderVerifyDraft = {
 };
 
 export type ProviderVerifyRequest = { type: "saved"; account_id: string } | { type: "draft"; draft: ProviderVerifyDraft };
-
-export type PureModeLevel = "off" | "low" | "standard" | "strict";
 
 export type PurgeNoticeDismissRequest = {
 	id: string,

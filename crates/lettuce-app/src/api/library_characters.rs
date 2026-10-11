@@ -186,7 +186,7 @@ pub async fn character_save(
         ));
     }
     let digest = super::jobs::local::digest(&request)?;
-    let mut plan = plan_from(request.draft, id.unwrap_or_default(), context.now())?;
+    let plan = plan_from(request.draft, id.unwrap_or_default(), context.now())?;
     let installed = context
         .blocking(|context| Ok(super::models::installed_models(context)))
         .await?;
@@ -202,21 +202,6 @@ pub async fn character_save(
                     "shutdown interrupted character save",
                 ));
             }
-            let default_rules = if id.is_none() && plan.character.profile.rules.is_empty() {
-                let level =
-                    lettuce_settings::GlobalSettingsStore::load(context.backend().database())
-                        .map(|snapshot| snapshot.settings.pure_mode)
-                        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()));
-                level.and_then(|level| {
-                    crate::generation::pure_mode_rules::default_character_rules(
-                        context.backend().database(),
-                        level,
-                    )
-                    .map_err(|_| super::prompts::runtime_text_error())
-                })
-            } else {
-                Ok(Vec::new())
-            };
             context
                 .backend()
                 .database()
@@ -247,9 +232,6 @@ pub async fn character_save(
                             error.details =
                                 Some(dto::ApiErrorDetails::MissingModels { missing_models });
                             return Err(Failure(error));
-                        }
-                        if id.is_none() && plan.character.profile.rules.is_empty() {
-                            plan.character.profile.rules = default_rules.map_err(Failure)?;
                         }
                         let details = scope
                             .save_character(plan, expected, context.now())

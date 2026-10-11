@@ -650,12 +650,6 @@ fn characters(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePrefl
     )?;
     for character in &mut characters {
         let id = string_field(character, "id")?;
-        let rules = rows(
-            connection,
-            "SELECT rule FROM character_rules WHERE character_id = ?1 ORDER BY idx",
-            params![id],
-            |r| Ok(json!(r.get::<_, String>(0)?)),
-        )?;
         let mut scenes = rows(
             connection,
             "SELECT id, content, direction, background_image_path, created_at, selected_variant_id FROM scenes WHERE character_id = ?1",
@@ -688,7 +682,6 @@ fn characters(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePrefl
             )?;
             scene["variants"] = Value::Array(variants);
         }
-        character["rules"] = Value::Array(rules);
         character["scenes"] = Value::Array(scenes);
     }
     Ok(characters)
@@ -1889,7 +1882,7 @@ mod tests {
         let lorebooks = document_value(&documents, LegacyBackupDocumentKind::Lorebooks);
         assert_eq!(lorebooks[0]["entries"][0]["display_order"], 1);
         let characters = document_value(&documents, LegacyBackupDocumentKind::Characters);
-        assert_eq!(characters[0]["rules"], json!(["First", "Second"]));
+        assert!(characters[0].get("rules").is_none());
         assert_eq!(characters[0]["voice_autoplay"], false);
         assert_eq!(characters[0]["card_type"], "circle");
         let sessions = document_value(&documents, LegacyBackupDocumentKind::Sessions);

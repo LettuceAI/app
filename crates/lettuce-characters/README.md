@@ -19,7 +19,7 @@ The crate is pure. Persistence and migrations (`lettuce-database`), media ingest
 | `selection.rs` | `LifecycleStatus`, `Selection<T>`, chat mode, speaker selection, memory policy |
 | `ports.rs` | create plans, details aggregates, draft updates, the repository and reader traits |
 
-A character carries its authored text and metadata: creator provenance, localized notes, sources, tags, the scenario and the ordered rules list (both inside `profile_json` with serde defaults, so older rows and backups decode unchanged), defaults (prompt, lorebooks, model, voice, interaction and memory settings), image recommendations, media, presentation, multiple ordered scenes with per-scene and per-variant directions and a selected variant, and ordered starters.
+A character carries its authored text and metadata: creator provenance, localized notes, sources, tags, the scenario (inside `profile_json` with a serde default, so older rows and backups decode unchanged), defaults (prompt, lorebooks, model, voice, interaction and memory settings), image recommendations, media, presentation, multiple ordered scenes with per-scene and per-variant directions and a selected variant, and ordered starters.
 
 A group is a reusable profile of at least two members with at least one active: member order, mute and model overrides, persona, chat mode, speaker selection, memory policy, prompt defaults, presentation, background, whether character lorebooks are disabled, and an optional starting scene.
 

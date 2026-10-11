@@ -221,7 +221,6 @@ mod tests {
                         definition: None,
                         design_description: None,
                         scenario: None,
-                        rules: Vec::new(),
                     },
                     CharacterProvenance::default(),
                     CharacterDefaults::default(),
