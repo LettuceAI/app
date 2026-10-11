@@ -245,6 +245,10 @@ impl fmt::Debug for ArtifactDownloadStream {
 
 impl ArtifactDownloadClient {
     pub fn new() -> Result<Self, ArtifactDownloadError> {
+        Self::with_tls(&TlsPolicy::default())
+    }
+
+    pub fn with_tls(policy: &TlsPolicy) -> Result<Self, ArtifactDownloadError> {
         let redirect = redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= MAX_ARTIFACT_REDIRECTS
                 || attempt.url().scheme() != "https"
@@ -254,11 +258,14 @@ impl ArtifactDownloadClient {
                 attempt.follow()
             }
         });
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .redirect(redirect)
             .referer(false)
-            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT)
-            .build()
+            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
+        for root in trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)? {
+            builder = builder.add_root_certificate(root);
+        }
+        let client = builder.build()
             .map_err(|_| ArtifactDownloadError::Transport)?;
         Ok(Self {
             client,
