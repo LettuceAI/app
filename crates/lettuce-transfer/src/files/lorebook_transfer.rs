@@ -1,5 +1,5 @@
 //! Lorebooks as SillyTavern World Info JSON (read and write) and as a USC
-//! lorebook card (write).
+//! lorebook card (read and write).
 
 use std::collections::BTreeMap;
 

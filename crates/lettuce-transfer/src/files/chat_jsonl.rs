@@ -359,6 +359,7 @@ pub enum ChatImportRepositoryError {
 pub trait ChatImportRepository: Send + Sync {
     fn import_chat(
         &self,
+        group: Option<lettuce_characters::CreateGroupPlan>,
         record: crate::LegacyConversationRecord,
         companion: Option<(
             lettuce_companions::CompanionStateOwner,

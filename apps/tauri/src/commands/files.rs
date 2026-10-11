@@ -124,3 +124,93 @@ pub async fn backup_export(
     let context = context.snapshot()?;
     api::backup_export(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn import_preview(
+    context: State<'_, ApiContextSlot>,
+    request: dto::ImportPreviewRequest,
+) -> Result<dto::ImportPreview, ApiError> {
+    let context = context.snapshot()?;
+    api::import_preview(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn import_commit(
+    context: State<'_, ApiContextSlot>,
+    request: dto::ImportCommitRequest,
+) -> Result<dto::ImportCommitResult, ApiError> {
+    let context = context.snapshot()?;
+    api::import_commit(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn character_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::CharacterExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::character_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::EntityExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::persona_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn lorebook_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LorebookExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::lorebook_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn prompt_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::EntityExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::prompt_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_template_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::ChatTemplateExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::chat_template_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn model_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::ModelExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::model_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_export(
+    context: State<'_, ApiContextSlot>,
+    request: dto::ChatExportRequest,
+) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::chat_export(&context, request).await
+}

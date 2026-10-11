@@ -29,73 +29,13 @@ impl CharacterFileRepository for Database {
         &self,
         import: &CharacterFileImport,
     ) -> Result<CharacterDetails, CharacterFileRepositoryError> {
-        lettuce_context::validate_bindings(&import.lorebook_bindings)
-            .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
         let mut connection = self
             .connection()
             .map_err(|_| CharacterFileRepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| CharacterFileRepositoryError::Storage)?;
-        for lorebook in &import.lorebooks {
-            crate::lorebook::lorebook_adapter::insert_lorebook_details(&tx, lorebook).map_err(
-                |error| match error {
-                    LorebookRepositoryError::Invalid(_) => {
-                        CharacterFileRepositoryError::InvalidInput
-                    }
-                    LorebookRepositoryError::Failure(_) => CharacterFileRepositoryError::Storage,
-                    _ => CharacterFileRepositoryError::Conflict,
-                },
-            )?;
-        }
-        crate::catalog::character_adapter::insert_character_plan(&tx, &import.character).map_err(
-            |error| match error {
-                RepositoryError::Storage => CharacterFileRepositoryError::Storage,
-                RepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput,
-                _ => CharacterFileRepositoryError::Conflict,
-            },
-        )?;
-        let character_id = import.character.character.id.to_string();
-        for binding in &import.lorebook_bindings {
-            let revision = i64::try_from(binding.revision.get())
-                .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
-            tx.execute(
-                "INSERT INTO character_lorebook_bindings (character_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![
-                    character_id,
-                    binding.lorebook_id.to_string(),
-                    binding.enabled,
-                    i64::from(binding.ordinal),
-                    revision,
-                    binding.created_at.get(),
-                    binding.updated_at.get()
-                ],
-            )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => {
-                    CharacterFileRepositoryError::Conflict
-                }
-                _ => CharacterFileRepositoryError::Storage,
-            })?;
-        }
-        for note in &import.scheduled_notes {
-            crate::memory::scheduled_note_adapter::insert_note_in(&tx, note).map_err(|error| {
-                match error {
-                    CompanionScheduledNoteError::Failure | CompanionScheduledNoteError::Corrupt => {
-                        CharacterFileRepositoryError::Storage
-                    }
-                    CompanionScheduledNoteError::Conflict => CharacterFileRepositoryError::Conflict,
-                    _ => CharacterFileRepositoryError::InvalidInput,
-                }
-            })?;
-        }
-        if let Some(memory) = &import.companion_memory {
-            insert_companion_memory(&tx, import.character.character.id, memory)?;
-        }
-        let details =
-            crate::catalog::character_adapter::load_details(&tx, import.character.character.id)
-                .map_err(|_| CharacterFileRepositoryError::Storage)?
-                .ok_or(CharacterFileRepositoryError::Storage)?;
+        let details = import_character_file_in(&tx, import)?;
         tx.commit()
             .map_err(|_| CharacterFileRepositoryError::Storage)?;
         Ok(details)
@@ -117,6 +57,87 @@ impl CharacterFileRepository for Database {
             .map_err(|_| CharacterFileRepositoryError::Storage)?;
         Ok(record)
     }
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn character_file_references(
+        &self,
+    ) -> Result<CharacterFileReferences, CharacterFileRepositoryError> {
+        load_references(self.transaction).map_err(|_| CharacterFileRepositoryError::Storage)
+    }
+
+    pub fn import_character_file(
+        &self,
+        import: &CharacterFileImport,
+    ) -> Result<CharacterDetails, CharacterFileRepositoryError> {
+        import_character_file_in(self.transaction, import)
+    }
+}
+
+fn import_character_file_in(
+    tx: &rusqlite::Transaction<'_>,
+    import: &CharacterFileImport,
+) -> Result<CharacterDetails, CharacterFileRepositoryError> {
+    lettuce_context::validate_bindings(&import.lorebook_bindings)
+        .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+    for lorebook in &import.lorebooks {
+        crate::lorebook::lorebook_adapter::insert_lorebook_details(tx, lorebook).map_err(
+            |error| match error {
+                LorebookRepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput,
+                LorebookRepositoryError::Failure(_) => CharacterFileRepositoryError::Storage,
+                _ => CharacterFileRepositoryError::Conflict,
+            },
+        )?;
+    }
+    crate::catalog::character_adapter::insert_character_plan(tx, &import.character).map_err(
+        |error| match error {
+            RepositoryError::Storage => CharacterFileRepositoryError::Storage,
+            RepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput,
+            _ => CharacterFileRepositoryError::Conflict,
+        },
+    )?;
+    let character_id = import.character.character.id.to_string();
+    for binding in &import.lorebook_bindings {
+        let revision = i64::try_from(binding.revision.get())
+            .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+        tx.execute(
+                "INSERT INTO character_lorebook_bindings (character_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    character_id,
+                    binding.lorebook_id.to_string(),
+                    binding.enabled,
+                    i64::from(binding.ordinal),
+                    revision,
+                    binding.created_at.get(),
+                    binding.updated_at.get()
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => {
+                    CharacterFileRepositoryError::Conflict
+                }
+                _ => CharacterFileRepositoryError::Storage,
+            })?;
+    }
+    for note in &import.scheduled_notes {
+        crate::memory::scheduled_note_adapter::insert_note_in(tx, note).map_err(
+            |error| match error {
+                CompanionScheduledNoteError::Failure | CompanionScheduledNoteError::Corrupt => {
+                    CharacterFileRepositoryError::Storage
+                }
+                CompanionScheduledNoteError::Conflict => CharacterFileRepositoryError::Conflict,
+                _ => CharacterFileRepositoryError::InvalidInput,
+            },
+        )?;
+    }
+    if let Some(memory) = &import.companion_memory {
+        insert_companion_memory(tx, import.character.character.id, memory)?;
+    }
+    let details =
+        crate::catalog::character_adapter::load_details(tx, import.character.character.id)
+            .map_err(|_| CharacterFileRepositoryError::Storage)?
+            .ok_or(CharacterFileRepositoryError::Storage)?;
+    Ok(details)
 }
 
 fn insert_companion_memory(

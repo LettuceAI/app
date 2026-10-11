@@ -7,7 +7,7 @@ use lettuce_models::{
 use lettuce_types::{ModelProfileId, Revision};
 use serde::{Serialize, de::DeserializeOwned};
 
-fn model_error(error: lettuce_models::ModelRepositoryError) -> ApiError {
+pub(super) fn model_error(error: lettuce_models::ModelRepositoryError) -> ApiError {
     if error == lettuce_models::ModelRepositoryError::AccountMissing {
         api_error(ApiErrorCode::NotFound, "provider account does not exist")
     } else {

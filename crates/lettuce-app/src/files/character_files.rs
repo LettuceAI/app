@@ -37,7 +37,15 @@ pub struct ImportedCharacterFile {
     pub character: CharacterDetails,
     pub skipped: Vec<LegacyImportSkip>,
     pub notices: Vec<LegacyBackupConversionNotice>,
+    pub warnings: Vec<lettuce_contracts::FileWarning>,
 }
+
+type PreparedCharacterFile = (
+    lettuce_transfer::CharacterFileImport,
+    Vec<LegacyImportSkip>,
+    Vec<LegacyBackupConversionNotice>,
+    Vec<lettuce_contracts::FileWarning>,
+);
 
 /// Character files read into new characters and written from stored ones.
 #[derive(Debug)]
@@ -97,47 +105,84 @@ where
         Ok(package)
     }
 
-    /// Writes the package as a new character with its bundled lorebooks;
-    /// an image that cannot be stored is left off.
+    /// Writes a new character with bundled data and reports skipped images.
     pub fn import(
         &self,
         package: &CharacterPackage,
         now: TimestampMillis,
     ) -> Result<ImportedCharacterFile, CharacterFileError> {
+        let (import, mut skipped, mut notices, warnings) = self.prepare(package, now)?;
+        let character = self.repository.import_character_file(&import)?;
+        skipped.extend(import.skipped);
+        notices.extend(import.notices);
+        Ok(ImportedCharacterFile {
+            character,
+            skipped,
+            notices,
+            warnings,
+        })
+    }
+
+    pub fn plan(
+        &self,
+        package: &CharacterPackage,
+        now: TimestampMillis,
+    ) -> Result<lettuce_transfer::CharacterFilePlan, CharacterFileError> {
         let references = self.repository.character_file_references()?;
-        let plan =
-            lettuce_transfer::plan_character_file(package, &references, now.get(), Uuid::new_v4)?;
+        Ok(lettuce_transfer::plan_character_file(
+            package,
+            &references,
+            now.get(),
+            Uuid::new_v4,
+        )?)
+    }
+
+    fn prepare(
+        &self,
+        package: &CharacterPackage,
+        now: TimestampMillis,
+    ) -> Result<PreparedCharacterFile, CharacterFileError> {
+        let references = self.repository.character_file_references()?;
+        let plan = self.plan(package, now)?;
+        let mut warnings = Vec::new();
         let assets = CharacterFileAssets {
-            avatar: plan
-                .avatar_data
-                .as_deref()
-                .and_then(|data| self.store_image(data, AssetKind::AvatarOriginal)),
-            background: plan
-                .background_image_data
-                .as_deref()
-                .and_then(|data| self.store_image(data, AssetKind::BackgroundImage)),
+            avatar: plan.avatar_data.as_deref().and_then(|data| {
+                store_image_warning(
+                    self.media_store,
+                    data,
+                    AssetKind::AvatarOriginal,
+                    "avatar",
+                    &mut warnings,
+                )
+            }),
+            background: plan.background_image_data.as_deref().and_then(|data| {
+                store_image_warning(
+                    self.media_store,
+                    data,
+                    AssetKind::BackgroundImage,
+                    "background",
+                    &mut warnings,
+                )
+            }),
             scene_backgrounds: plan
                 .scene_backgrounds
                 .iter()
                 .filter_map(|(scene_id, data)| {
                     Some((
                         *scene_id,
-                        self.store_image(data, AssetKind::BackgroundImage)?,
+                        store_image_warning(
+                            self.media_store,
+                            data,
+                            AssetKind::BackgroundImage,
+                            &format!("scenes:{scene_id}.background"),
+                            &mut warnings,
+                        )?,
                     ))
                 })
                 .collect(),
         };
         let import = plan.import(&references, &assets, now.get(), Uuid::new_v4)?;
-        let character = self.repository.import_character_file(&import)?;
-        let mut skipped = plan.skipped;
-        skipped.extend(import.skipped);
-        let mut notices = plan.notices;
-        notices.extend(import.notices);
-        Ok(ImportedCharacterFile {
-            character,
-            skipped,
-            notices,
-        })
+        Ok((import, plan.skipped, plan.notices, warnings))
     }
 
     /// The character written as a file of `format`, its images inlined as
@@ -148,22 +193,34 @@ where
         format: CharacterFileFormat,
         now: TimestampMillis,
     ) -> Result<String, CharacterFileError> {
+        Ok(self.export_with_warnings(character_id, format, now)?.0)
+    }
+
+    pub fn export_with_warnings(
+        &self,
+        character_id: CharacterId,
+        format: CharacterFileFormat,
+        now: TimestampMillis,
+    ) -> Result<(String, Vec<lettuce_contracts::FileWarning>), CharacterFileError> {
         let record = self
             .repository
             .character_export_record(character_id)?
             .ok_or(CharacterFileError::NotFound)?;
         let character = &record.details.character;
-        let linked = |slot: CharacterMediaSlot| {
+        let mut warnings = Vec::new();
+        let mut linked = |slot: CharacterMediaSlot, field: &str| {
             character
                 .media
                 .links
                 .iter()
                 .find(|link| link.slot == slot)
-                .and_then(|link| self.data_url(link.asset_id))
+                .and_then(|link| {
+                    inline_image_warning(self.media_store, link.asset_id, field, &mut warnings)
+                })
         };
         let source = CharacterExportSource {
-            avatar_data: linked(CharacterMediaSlot::AvatarOriginal),
-            background_image_data: linked(CharacterMediaSlot::Background),
+            avatar_data: linked(CharacterMediaSlot::AvatarOriginal, "avatar"),
+            background_image_data: linked(CharacterMediaSlot::Background, "background"),
             scene_backgrounds: record
                 .details
                 .scenes
@@ -173,7 +230,15 @@ where
                         .assets
                         .iter()
                         .find(|link| link.slot == SceneAssetSlot::Background)?;
-                    Some((scene.id, self.data_url(link.asset_id)?))
+                    Some((
+                        scene.id,
+                        inline_image_warning(
+                            self.media_store,
+                            link.asset_id,
+                            &format!("scenes:{}.background", scene.id),
+                            &mut warnings,
+                        )?,
+                    ))
                 })
                 .collect(),
             lorebooks: record.lorebooks,
@@ -183,22 +248,59 @@ where
         };
         let package = lettuce_transfer::character_package(&source, now.get());
         let character = &source.details.character;
-        Ok(lettuce_transfer::export_character_file(
-            &package,
-            format,
-            &character.id.to_string(),
-            character.created_at.get(),
-            character.updated_at.get(),
-        )?)
+        Ok((
+            lettuce_transfer::export_character_file(
+                &package,
+                format,
+                &character.id.to_string(),
+                character.created_at.get(),
+                character.updated_at.get(),
+            )?,
+            warnings,
+        ))
     }
+}
 
-    fn data_url(&self, asset_id: AssetId) -> Option<String> {
-        inline_image(self.media_store, asset_id)
+pub(crate) fn inline_image_warning<BR: MediaBlobRepository, AR: MediaAssetRepository>(
+    store: &LocalMediaBlobStore<BR, AR>,
+    id: AssetId,
+    field: &str,
+    warnings: &mut Vec<lettuce_contracts::FileWarning>,
+) -> Option<String> {
+    let result = inline_image(store, id);
+    if result.is_none() {
+        warnings.push(lettuce_contracts::FileWarning {
+            code: lettuce_contracts::FileWarningCode::ImageReadFailed,
+            field: field.into(),
+        });
     }
+    result
+}
 
-    fn store_image(&self, data: &str, kind: AssetKind) -> Option<AssetId> {
-        store_file_image(self.media_store, data, kind, "lettuceai-character-file")
+pub(crate) fn store_image_warning<BR: MediaBlobRepository, AR: MediaAssetRepository>(
+    store: &LocalMediaBlobStore<BR, AR>,
+    data: &str,
+    kind: AssetKind,
+    field: &str,
+    warnings: &mut Vec<lettuce_contracts::FileWarning>,
+) -> Option<AssetId> {
+    let remote = data.starts_with("http://") || data.starts_with("https://");
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(data.split_once(',').map_or(data, |(_, encoded)| encoded));
+    let result = store_file_image(store, data, kind, "lettuceai-entity-file");
+    if result.is_none() {
+        warnings.push(lettuce_contracts::FileWarning {
+            code: if remote {
+                lettuce_contracts::FileWarningCode::RemoteAvatarNotDownloaded
+            } else if decoded.is_err() {
+                lettuce_contracts::FileWarningCode::ImageDecodeFailed
+            } else {
+                lettuce_contracts::FileWarningCode::ImageStoreFailed
+            },
+            field: field.into(),
+        });
     }
+    result
 }
 
 /// A stored image as a data URL with its stored mime type.

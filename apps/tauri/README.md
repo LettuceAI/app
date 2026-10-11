@@ -152,3 +152,5 @@ The shared application event channel forwards SyncConflictsChanged alongside Lor
 The sync command module delegates sharing, approval, begin, connect, stop, status, conflict listing, conflict resolution, fork acknowledgment and legacy dismissal to the active application context. The shared event channel carries SyncStatusChanged and SyncConflictsChanged. Exit joins the sync session before backend shutdown even when no worker handle was installed.
 
 files_inspect returns ChatTemplate and ModelFile for entity files, Lorebook for World Info and USC, and Other for ZIPs without a supported v1 public manifest. Classification belongs to the application layer.
+
+The file command adapter exposes import_preview, import_commit and the seven entity export commands through one context snapshot each. It forwards FileSource and FileTarget DTOs, including format choices and typed warnings; the application owns parsing, replay, jobs, media and protected publication. Export commands take no operation IDs.

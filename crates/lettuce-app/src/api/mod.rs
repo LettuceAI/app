@@ -406,3 +406,9 @@ mod sync;
 pub use sync::{sync_share_start, sync_share_approve, sync_share_begin, sync_connect, sync_stop, sync_status};
 mod sync_conflicts;
 pub use sync_conflicts::{sync_conflicts_list, sync_conflict_resolve, sync_fork_resolve, legacy_conflict_dismiss};
+
+mod entity_files;
+mod entity_import_jobs;
+pub use entity_files::{import_preview, import_commit, character_export, persona_export, lorebook_export, prompt_export, chat_template_export, model_export, chat_export};
+#[cfg(test)]
+mod entity_files_tests;

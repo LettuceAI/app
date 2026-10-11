@@ -66,6 +66,18 @@ where
         json: &str,
         now: TimestampMillis,
     ) -> Result<ConversationStarter, ChatTemplateFileError> {
+        let (revision, starter) = self.prepare(character_id, json, now)?;
+        Ok(self
+            .repository
+            .add_starter(character_id, revision, starter, now)?)
+    }
+
+    pub fn prepare(
+        &self,
+        character_id: CharacterId,
+        json: &str,
+        now: TimestampMillis,
+    ) -> Result<(Revision, ConversationStarter), ChatTemplateFileError> {
         let imported = lettuce_transfer::parse_chat_template_import(json)?;
         let details = CharacterRepository::get(self.repository, character_id)?
             .ok_or(ChatTemplateFileError::CharacterNotFound)?;
@@ -79,24 +91,26 @@ where
         } else {
             PromptPurpose::DirectChat
         };
-        let prompt_id = imported
+        let prompt_id = match imported
             .prompt_template_id
             .as_deref()
             .and_then(|id| id.parse::<PromptDocumentId>().ok())
-            .filter(|id| {
-                PromptRepository::get(self.repository, *id)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|document| document.purpose == purpose)
-            });
+        {
+            Some(id) => PromptRepository::get(self.repository, id)
+                .map_err(|_| ChatTemplateFileError::Repository(RepositoryError::Storage))?
+                .filter(|document| {
+                    document.purpose == purpose && document.status == LibraryStatus::Active
+                })
+                .map(|document| document.id),
+            None => None,
+        };
         let lorebooks = match &imported.lorebook_ids_override {
             None => Selection::Inherit,
             Some(ids) => {
                 let mut kept = Vec::new();
                 for id in ids.iter().filter_map(|id| id.parse::<LorebookId>().ok()) {
                     let active = LorebookRepository::get(self.repository, id)
-                        .ok()
-                        .flatten()
+                        .map_err(|_| ChatTemplateFileError::Repository(RepositoryError::Storage))?
                         .is_some_and(|lorebook| lorebook.book.status == LibraryStatus::Active);
                     if active && !kept.contains(&id) {
                         kept.push(id);
@@ -130,9 +144,7 @@ where
             created_at: now,
             updated_at: now,
         };
-        Ok(self
-            .repository
-            .add_starter(character_id, details.character.revision, starter, now)?)
+        Ok((details.character.revision, starter))
     }
 
     /// The starter as a file of `format`, named like the old app named it.

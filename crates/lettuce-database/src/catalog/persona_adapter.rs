@@ -871,40 +871,49 @@ fn clear_default_in(
     Ok(state)
 }
 
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn import_persona_file(&self, import: &PersonaFileImport) -> Result<Persona, RepositoryError> {
+        import_persona_file_in(self.transaction, import)
+    }
+}
+
+fn import_persona_file_in(tx: &rusqlite::Transaction<'_>, import: &PersonaFileImport) -> Result<Persona, RepositoryError> {
+    let persona = create_persona_in(tx, import.persona.clone())?;
+    let mut revision = persona.revision;
+    for lorebook_id in &import.lorebook_ids {
+        revision = crate::lorebook::lorebook_adapter::bind_persona_lorebook_in(
+            tx,
+            persona.id,
+            revision,
+            *lorebook_id,
+            import.persona.created_at,
+        )
+        .map_err(|error| match error {
+            BindingRepositoryError::NotFound => RepositoryError::NotFound,
+            BindingRepositoryError::Conflict => RepositoryError::AlreadyExists,
+            BindingRepositoryError::Invalid(_) => RepositoryError::Invalid(
+                lettuce_characters::ValidationError::InvalidReference {
+                    field: "persona.lorebooks",
+                },
+            ),
+            BindingRepositoryError::Failure(_) => RepositoryError::Storage,
+        })?;
+    }
+    if import.make_default {
+        let current = read_default(tx).map_err(db_error)?.revision;
+        set_default_in(tx, persona.id, current, import.persona.created_at)?;
+    }
+    let persona = load_persona(tx, persona.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)?;
+    Ok(persona)
+}
+
 impl PersonaFileRepository for Database {
     fn import_persona_file(&self, import: &PersonaFileImport) -> Result<Persona, RepositoryError> {
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_error)?;
-        let persona = create_persona_in(&tx, import.persona.clone())?;
-        let mut revision = persona.revision;
-        for lorebook_id in &import.lorebook_ids {
-            revision = crate::lorebook::lorebook_adapter::bind_persona_lorebook_in(
-                &tx,
-                persona.id,
-                revision,
-                *lorebook_id,
-                import.persona.created_at,
-            )
-            .map_err(|error| match error {
-                BindingRepositoryError::NotFound => RepositoryError::NotFound,
-                BindingRepositoryError::Conflict => RepositoryError::AlreadyExists,
-                BindingRepositoryError::Invalid(_) => RepositoryError::Invalid(
-                    lettuce_characters::ValidationError::InvalidReference {
-                        field: "persona.lorebooks",
-                    },
-                ),
-                BindingRepositoryError::Failure(_) => RepositoryError::Storage,
-            })?;
-        }
-        if import.make_default {
-            let current = read_default(&tx).map_err(db_error)?.revision;
-            set_default_in(&tx, persona.id, current, import.persona.created_at)?;
-        }
-        let persona = load_persona(&tx, persona.id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
+        let persona = import_persona_file_in(&tx, import)?;
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }

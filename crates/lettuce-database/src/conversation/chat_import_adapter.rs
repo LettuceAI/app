@@ -15,6 +15,7 @@ fn storage<E>(_: E) -> ChatImportRepositoryError {
 impl ChatImportRepository for Database {
     fn import_chat(
         &self,
+        group: Option<lettuce_characters::CreateGroupPlan>,
         record: LegacyConversationRecord,
         companion: Option<(CompanionStateOwner, CompanionRuntimeState)>,
         now: TimestampMillis,
@@ -23,59 +24,87 @@ impl ChatImportRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let companion = companion
-            .map(|(owner, initial)| {
-                Ok::<_, ChatImportRepositoryError>(LegacyCompanionConversation {
-                    episode: next_episode(&tx, owner, now)?,
-                    owner,
-                    initial,
-                })
-            })
-            .transpose()?;
-        let conversation_id = record.history.aggregate.conversation.id;
-        let operation = lettuce_conversations::OperationToken {
-            key: lettuce_conversations::IdempotencyKey::new(format!(
-                "chat-import.{conversation_id}"
-            ))
-            .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
-            request_digest: ContentHash::parse(
-                blake3::hash(conversation_id.to_string().as_bytes())
-                    .to_hex()
-                    .to_string(),
-            )
-            .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
-        };
-        crate::conversation::conversation_history_writer::insert_historical_conversation(
-            &tx,
-            crate::conversation::conversation_history_writer::HistoricalConversation {
-                history: &record.history,
-                turns: &record.turns,
-                usage: &record.usage,
-                snapshots: record.snapshots,
-                creation:
-                    crate::conversation::conversation_history_writer::HistoricalCreation::Generated(
-                        operation,
-                    ),
-                memory: record.memory.as_ref(),
-                pool: record.pool.as_ref(),
-                memory_projections: &record.memory_projections,
-                runtime: &[],
-                companion: companion.as_ref(),
-            },
-        )
-        .map_err(|error| match error {
-            lettuce_conversations::ConversationRepositoryError::Conflict => {
-                ChatImportRepositoryError::Conflict
-            }
-            lettuce_conversations::ConversationRepositoryError::Invalid(_)
-            | lettuce_conversations::ConversationRepositoryError::ArtifactReference(_) => {
-                ChatImportRepositoryError::InvalidInput
-            }
-            _ => ChatImportRepositoryError::Storage,
-        })?;
+        if let Some(group) = group {
+            crate::catalog::group_adapter::insert_group_plan(&tx, &group)
+                .map_err(|_| ChatImportRepositoryError::InvalidInput)?;
+        }
+        import_chat_in(&tx, record, companion, now)?;
         tx.commit().map_err(storage)?;
         Ok(())
     }
+}
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn import_chat(
+        &self,
+        group: Option<lettuce_characters::CreateGroupPlan>,
+        record: LegacyConversationRecord,
+        companion: Option<(CompanionStateOwner, CompanionRuntimeState)>,
+        now: TimestampMillis,
+    ) -> Result<(), ChatImportRepositoryError> {
+        if let Some(group) = group {
+            self.save_group(group, None, now)
+                .map_err(|_| ChatImportRepositoryError::InvalidInput)?;
+        }
+        import_chat_in(self.transaction, record, companion, now)
+    }
+}
+
+pub(crate) fn import_chat_in(
+    tx: &Transaction<'_>,
+    record: LegacyConversationRecord,
+    companion: Option<(CompanionStateOwner, CompanionRuntimeState)>,
+    now: TimestampMillis,
+) -> Result<(), ChatImportRepositoryError> {
+    let companion = companion
+        .map(|(owner, initial)| {
+            Ok::<_, ChatImportRepositoryError>(LegacyCompanionConversation {
+                episode: next_episode(tx, owner, now)?,
+                owner,
+                initial,
+            })
+        })
+        .transpose()?;
+    let conversation_id = record.history.aggregate.conversation.id;
+    let operation = lettuce_conversations::OperationToken {
+        key: lettuce_conversations::IdempotencyKey::new(format!("chat-import.{conversation_id}"))
+            .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
+        request_digest: ContentHash::parse(
+            blake3::hash(conversation_id.to_string().as_bytes())
+                .to_hex()
+                .to_string(),
+        )
+        .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
+    };
+    crate::conversation::conversation_history_writer::insert_historical_conversation(
+        tx,
+        crate::conversation::conversation_history_writer::HistoricalConversation {
+            history: &record.history,
+            turns: &record.turns,
+            usage: &record.usage,
+            snapshots: record.snapshots,
+            creation:
+                crate::conversation::conversation_history_writer::HistoricalCreation::Generated(
+                    operation,
+                ),
+            memory: record.memory.as_ref(),
+            pool: record.pool.as_ref(),
+            memory_projections: &record.memory_projections,
+            runtime: &[],
+            companion: companion.as_ref(),
+        },
+    )
+    .map_err(|error| match error {
+        lettuce_conversations::ConversationRepositoryError::Conflict => {
+            ChatImportRepositoryError::Conflict
+        }
+        lettuce_conversations::ConversationRepositoryError::Invalid(_)
+        | lettuce_conversations::ConversationRepositoryError::ArtifactReference(_) => {
+            ChatImportRepositoryError::InvalidInput
+        }
+        _ => ChatImportRepositoryError::Storage,
+    })?;
+    Ok(())
 }
 
 /// The episode after the companion's latest one for this persona, ending

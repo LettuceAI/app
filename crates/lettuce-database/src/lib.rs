@@ -6128,3 +6128,6 @@ mod database_file_tests;
 mod backup_index;
 
 pub use backup_index::BackupIndexRecord;
+
+#[cfg(test)]
+mod entity_import_tests;

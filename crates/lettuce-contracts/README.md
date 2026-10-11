@@ -140,3 +140,5 @@ Sync contracts describe the sharing address list and PIN, the two host decisions
 Legacy conflict fields use NotMapped for every current value when the entity is missing; actual null fields on existing entities remain JSON null.
 
 FileKind includes ChatTemplate and ModelFile alongside Lorebook, which covers World Info and USC lorebooks. BackupV1 requires a supported public ZIP manifest; other archives report Other.
+
+Entity file DTOs describe stateless import previews, source digests, target options and import replay keys. Preview content covers every supported entity kind with typed nested character data and image descriptors that carry no encoded media. FileWarning names decode, download, storage, read and reference conversion outcomes. Import commit returns a new entity or an admitted chat job. Export DTOs carry an entity reference, the supported format and FileTarget, without operation IDs. Entity import jobs expose their persisted ApiError through JobFailureDto.entity_import.

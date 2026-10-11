@@ -38,30 +38,8 @@ impl<R: LorebookRepository + ?Sized> LorebookFileCoordinator<'_, R> {
         json: &str,
         now: TimestampMillis,
     ) -> Result<LorebookDetails, LorebookFileError> {
-        let imported = lettuce_transfer::parse_lorebook_import(json)?;
-        Ok(self.repository.create(
-            LorebookMetadataDraft {
-                name: imported.name,
-                detection_policy: detection_policy(imported.keyword_detection_mode),
-                icon_asset_id: None,
-                behavior_version: LorebookBehaviorVersion::LegacyV1,
-            },
-            imported
-                .entries
-                .into_iter()
-                .map(|entry| LorebookEntryDraft {
-                    title: entry.title,
-                    enabled: entry.enabled,
-                    always_active: entry.always_active,
-                    keywords: entry.keywords,
-                    case_sensitive: entry.case_sensitive,
-                    match_mode: KeywordMatchMode::Literal,
-                    content: entry.content,
-                    priority: entry.priority,
-                })
-                .collect(),
-            now,
-        )?)
+        let (metadata, entries) = prepare_import(json)?;
+        Ok(self.repository.create(metadata, entries, now)?)
     }
 
     pub fn export_world_info(&self, id: LorebookId) -> Result<String, LorebookFileError> {
@@ -79,6 +57,34 @@ impl<R: LorebookRepository + ?Sized> LorebookFileCoordinator<'_, R> {
             .ok_or(LorebookFileError::NotFound)?;
         Ok(lorebook_transfer(&details))
     }
+}
+
+pub(crate) fn prepare_import(
+    json: &str,
+) -> Result<(LorebookMetadataDraft, Vec<LorebookEntryDraft>), LorebookFileError> {
+    let imported = lettuce_transfer::parse_lorebook_import(json)?;
+    Ok((
+        LorebookMetadataDraft {
+            name: imported.name,
+            detection_policy: detection_policy(imported.keyword_detection_mode),
+            icon_asset_id: None,
+            behavior_version: LorebookBehaviorVersion::LegacyV1,
+        },
+        imported
+            .entries
+            .into_iter()
+            .map(|entry| LorebookEntryDraft {
+                title: entry.title,
+                enabled: entry.enabled,
+                always_active: entry.always_active,
+                keywords: entry.keywords,
+                case_sensitive: entry.case_sensitive,
+                match_mode: KeywordMatchMode::Literal,
+                content: entry.content,
+                priority: entry.priority,
+            })
+            .collect(),
+    ))
 }
 
 pub(crate) fn lorebook_transfer(details: &LorebookDetails) -> LorebookTransfer {

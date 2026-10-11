@@ -85,6 +85,16 @@ struct ImportedLine {
     selected: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct PreparedChatFile {
+    pub group: Option<lettuce_characters::CreateGroupPlan>,
+    pub record: lettuce_transfer::LegacyConversationRecord,
+    pub companion: Option<(
+        lettuce_companions::CompanionStateOwner,
+        lettuce_companions::CompanionRuntimeState,
+    )>,
+}
+
 impl<S> ChatFileCoordinator<'_, S>
 where
     S: DirectLaunchSources + ChatImportRepository,
@@ -98,6 +108,20 @@ where
         character_id: Option<CharacterId>,
         now: TimestampMillis,
     ) -> Result<ConversationId, ChatFileError> {
+        let prepared = self.prepare_direct(raw, file_stem, character_id, now)?;
+        let id = prepared.record.history.aggregate.conversation.id;
+        self.sources
+            .import_chat(prepared.group, prepared.record, prepared.companion, now)?;
+        Ok(id)
+    }
+
+    pub fn prepare_direct(
+        &self,
+        raw: &str,
+        file_stem: Option<&str>,
+        character_id: Option<CharacterId>,
+        now: TimestampMillis,
+    ) -> Result<PreparedChatFile, ChatFileError> {
         let character_id = character_id.ok_or(ChatFileError::TargetCharacterRequired)?;
         let chat = lettuce_transfer::parse_chat_jsonl(raw, now.get())?;
         let source_id = Uuid::new_v4().to_string();
@@ -230,8 +254,11 @@ where
                 initial,
             )
         });
-        self.sources.import_chat(record, companion, now)?;
-        Ok(conversation_id)
+        Ok(PreparedChatFile {
+            group: None,
+            record,
+            companion,
+        })
     }
 }
 
@@ -247,19 +274,33 @@ where
         participants: &std::collections::BTreeMap<String, CharacterId>,
         now: TimestampMillis,
     ) -> Result<ConversationId, ChatFileError> {
-        use lettuce_characters::{CharacterRepository, GroupMember, GroupProfile, GroupRepository};
+        let prepared = self.prepare_group(raw, participants, now)?;
+        let id = prepared.record.history.aggregate.conversation.id;
+        self.sources
+            .import_chat(prepared.group, prepared.record, prepared.companion, now)?;
+        Ok(id)
+    }
+
+    pub fn prepare_group(
+        &self,
+        raw: &str,
+        participants: &std::collections::BTreeMap<String, CharacterId>,
+        now: TimestampMillis,
+    ) -> Result<PreparedChatFile, ChatFileError> {
+        use lettuce_characters::{CharacterRepository, GroupMember, GroupProfile};
         let chat = lettuce_transfer::parse_chat_jsonl(raw, now.get())?;
         let mut unresolved = Vec::new();
         let mut speakers = std::collections::BTreeMap::new();
         for speaker in chat.speakers() {
-            let character = participants.get(&speaker).copied().filter(|id| {
-                CharacterRepository::get(self.sources, *id)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|details| {
+            let character = match participants.get(&speaker).copied() {
+                Some(id) => CharacterRepository::get(self.sources, id)
+                    .map_err(|_| ChatFileError::Repository(ChatImportRepositoryError::Storage))?
+                    .filter(|details| {
                         details.character.status == lettuce_characters::LifecycleStatus::Active
                     })
-            });
+                    .map(|details| details.character.id),
+                None => None,
+            };
             match character {
                 Some(id) => {
                     speakers.insert(speaker, id);
@@ -278,7 +319,7 @@ where
         }
         match members.as_slice() {
             [] => return Err(ChatFileError::GroupNeedsCharacters),
-            [only] => return self.import_direct(raw, None, Some(*only), now),
+            [only] => return self.prepare_direct(raw, None, Some(*only), now),
             _ => {}
         }
         let title = chat
@@ -290,34 +331,30 @@ where
             .filter(|title| !title.is_empty())
             .unwrap_or("Imported Group Chat")
             .to_owned();
-        let group = GroupRepository::create(
-            self.sources,
-            lettuce_characters::CreateGroupPlan {
-                group: GroupProfile::new(
-                    lettuce_types::GroupId::new(),
-                    title.clone(),
-                    members
-                        .iter()
-                        .enumerate()
-                        .map(|(ordinal, character_id)| GroupMember {
-                            character_id: *character_id,
-                            ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
-                            muted: false,
-                            model_profile_override: None,
-                        })
-                        .collect(),
-                    now,
-                )
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-                starting_scene: None,
-            },
-        )
-        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let group = lettuce_characters::CreateGroupPlan {
+            group: GroupProfile::new(
+                lettuce_types::GroupId::new(),
+                title.clone(),
+                members
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, character_id)| GroupMember {
+                        character_id: *character_id,
+                        ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                        muted: false,
+                        model_profile_override: None,
+                    })
+                    .collect(),
+                now,
+            )
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+            starting_scene: None,
+        };
         let source_id = Uuid::new_v4().to_string();
         let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
         let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
-            .prepare_group(
+            .prepare_new_group(
                 &crate::GroupConversationLaunchRequest {
                     format_version: crate::GROUP_LAUNCH_REQUEST_FORMAT_V1,
                     title,
@@ -329,6 +366,10 @@ where
                         scope.source("conversation", &source_id)
                     ))
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                },
+                lettuce_characters::GroupDetails {
+                    group: group.group.clone(),
+                    starting_scene: None,
                 },
                 now,
             )?
@@ -449,9 +490,11 @@ where
             },
             &context,
         )?;
-        let conversation_id = record.history.aggregate.conversation.id;
-        self.sources.import_chat(record, None, now)?;
-        Ok(conversation_id)
+        Ok(PreparedChatFile {
+            group: Some(group),
+            record,
+            companion: None,
+        })
     }
 }
 
@@ -708,6 +751,14 @@ mod tests {
     }
 
     fn named(backend: &crate::AppBackend, name: &str, companion: bool) -> CharacterId {
+        named_database(backend.database(), name, companion)
+    }
+
+    fn named_database(
+        database: &lettuce_database::Database,
+        name: &str,
+        companion: bool,
+    ) -> CharacterId {
         let id = CharacterId::new();
         let mut defaults = CharacterDefaults::default();
         if companion {
@@ -734,7 +785,7 @@ mod tests {
         )
         .expect("character");
         CharacterRepository::create(
-            backend.database(),
+            database,
             CreateCharacterPlan {
                 character,
                 scenes: Vec::new(),
@@ -860,6 +911,40 @@ mod tests {
             .map(|episode| (episode.episode_index, episode.previous_conversation_id))
         });
         assert_eq!(episodes, [Some((1, None)), Some((2, Some(first)))]);
+    }
+
+    #[test]
+    fn a_group_import_that_cannot_prepare_leaves_no_empty_group() {
+        use lettuce_characters::{GroupRepository, GroupSearch, LibrarySort};
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let ada = named_database(&database, "Ada", false);
+        let ben = named_database(&database, "Ben", false);
+        let raw = [
+            r#"{"user_name":"You","character_name":"Crew","chat_metadata":{"group":true}}"#,
+            r#"{"name":"Ada","is_user":false,"mes":"Hi"}"#,
+            r#"{"name":"Ben","is_user":false,"mes":"Hey"}"#,
+        ]
+        .join("\n");
+        let speakers = std::collections::BTreeMap::from([("Ada".into(), ada), ("Ben".into(), ben)]);
+        assert!(
+            ChatFileCoordinator::new(&database)
+                .import_group(&raw, &speakers, TimestampMillis::new(50))
+                .is_err()
+        );
+        let groups = GroupRepository::search(
+            &database,
+            GroupSearch {
+                text: String::new(),
+                include_archived: true,
+                sort: LibrarySort::Name,
+            },
+            lettuce_types::PageRequest::default(),
+        )
+        .expect("groups");
+        assert!(
+            groups.items.is_empty(),
+            "failed preparation must not leave a group"
+        );
     }
 
     #[test]
