@@ -182,3 +182,5 @@ Slice 11a replaces fingerprint-scoped and randomly assigned legacy entity IDs wi
 Slice 11a reads v1 public manifest metadata without decrypting payloads, retaining the legacy manifest-based inspection boundary (`old-code/src-tauri/src/storage_manager/backup.rs:3572-3641`).
 
 Legacy live-database metrics import keeps every committed row. The 500-row reader truncation is removed: legacy commits an insert before its separate retention delete (`old-code/src-tauri/src/storage_manager/llm_metrics.rs:21`, `old-code/src-tauri/src/storage_manager/llm_metrics.rs:29`), so interruption can leave more than 500 rows. The archive entry and total-size malformed-input guards remain.
+
+Backup passwords keep internal control characters and values longer than 1024 bytes. Legacy backend required only a nonempty trimmed value (`old-code/src-tauri/src/storage_manager/backup.rs:178-189`), and its UI applied only the minimum length and confirmation checks (`old-code/src/ui/pages/settings/hooks/useBackupRestore.ts:191-198`). V1 decoding retains trim-before-key derivation; the v2 API applies the same trim before the envelope.

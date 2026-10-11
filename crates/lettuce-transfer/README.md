@@ -41,6 +41,8 @@ Only the public header is visible without the password; section names, which for
 
 Limits: 2 GiB per section and 1 TiB in total. A data document larger than `BACKUP_DATA_PART_BYTES` (1 GiB) continues in `<name>.part<N>` sections that restore joins before decoding, so the per-section limit never limits the library. The envelope refuses more than 2 097 152 entries (media blobs plus artifacts) or a manifest over 1 GiB. The whole graph is still built in memory during export and restore.
 
+The envelope accepts any nonempty UTF-8 password without character-class or length restrictions. API export and restore trim passwords before this boundary, and the v1 decoder trims its password before deriving the key.
+
 `BackupArchiveStore` receives a backup into confined resumable partial files and commits it to a new path only after the expected hash (computed by streaming) and the frame verify. An identical existing backup is reused and never replaced. The format has no compression and no archive paths, so there is no traversal or decompression bomb to defend against.
 
 ## What a backup contains

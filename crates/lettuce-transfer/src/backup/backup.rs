@@ -853,7 +853,7 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), BackupEnvelopeErro
 }
 
 fn validate_password(password: &str) -> Result<(), BackupEnvelopeError> {
-    if password.is_empty() || password.len() > 1024 || password.chars().any(char::is_control) {
+    if password.is_empty() {
         Err(BackupEnvelopeError::InvalidPassword)
     } else {
         Ok(())
@@ -1107,6 +1107,15 @@ mod tests {
             ),
             BackupSection::new("data/empty.json", "empty.v1", Vec::new()),
         ]
+    }
+
+    #[test]
+    fn review_nonempty_passwords_preserve_legacy_bytes() {
+        for password in ["foo\tbar".to_owned(), "a".repeat(1025)] {
+            let bytes = envelope(&password);
+            let reader = BackupReader::open(std::io::Cursor::new(bytes), &password).expect("password accepted");
+            assert_eq!(reader.sections().len(), sections().len());
+        }
     }
 
     fn envelope(password: &str) -> Vec<u8> {

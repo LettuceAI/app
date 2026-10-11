@@ -629,7 +629,7 @@ fn decode_array<const N: usize>(
 }
 
 fn validate_password(password: &str) -> Result<(), LegacyBackupInventoryError> {
-    if password.is_empty() || password.len() > 1024 || password.chars().any(char::is_control) {
+    if password.is_empty() {
         return Err(LegacyBackupInventoryError::InvalidPassword);
     }
     Ok(())
@@ -669,7 +669,11 @@ mod tests {
     const NONCE: [u8; 24] = [9; 24];
 
     fn archive(version: u32, entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let key = derive_key(PASSWORD, &SALT);
+        archive_with_password(version, entries, PASSWORD)
+    }
+
+    fn archive_with_password(version: u32, entries: &[(&str, &[u8])], password: &str) -> Vec<u8> {
+        let key = derive_key(password, &SALT);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for (name, bytes) in entries {
@@ -757,6 +761,15 @@ mod tests {
         password: &str,
     ) -> Result<LegacyBackupInventory, LegacyBackupInventoryError> {
         decode_legacy_backup_inventory(Cursor::new(bytes), password)
+    }
+
+    #[test]
+    fn review_nonempty_passwords_preserve_legacy_bytes() {
+        for password in ["foo\tbar".to_owned(), "a".repeat(1025)] {
+            let bytes = archive_with_password(LEGACY_MANIFEST_VERSION, &[("data/settings.json.enc", b"{}")], &password);
+            let inventory = decode(bytes, &password).expect("legacy password accepted");
+            assert_eq!(inventory.documents.len(), 1);
+        }
     }
 
     #[test]
