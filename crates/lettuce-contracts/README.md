@@ -138,3 +138,5 @@ SyncConflictsChanged tells the conflict inbox to re-read canonical conflicts, co
 Sync contracts describe the sharing address list and PIN, the two host decisions, typed in-memory statuses and phase progress, completion counts and typed failure details. Persistent conflict decisions alone carry client_operation_id. Canonical conflict candidates reuse the catalog views and asset references; legacy fields retain current, local and incoming JSON values, with NotMapped marking a field without a current authority. No sync contract carries media bytes or native media paths.
 
 Legacy conflict fields use NotMapped for every current value when the entity is missing; actual null fields on existing entities remain JSON null.
+
+FileKind includes ChatTemplate and ModelFile alongside Lorebook, which covers World Info and USC lorebooks. BackupV1 requires a supported public ZIP manifest; other archives report Other.

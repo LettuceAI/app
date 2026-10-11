@@ -150,3 +150,5 @@ Context retirement uses one shared routine for listeners, workers and backend sh
 The shared application event channel forwards SyncConflictsChanged alongside LorebooksChanged and PromptsChanged. Their source is the application database commit feed, including incoming sync writes.
 
 The sync command module delegates sharing, approval, begin, connect, stop, status, conflict listing, conflict resolution, fork acknowledgment and legacy dismissal to the active application context. The shared event channel carries SyncStatusChanged and SyncConflictsChanged. Exit joins the sync session before backend shutdown even when no worker handle was installed.
+
+files_inspect returns ChatTemplate and ModelFile for entity files, Lorebook for World Info and USC, and Other for ZIPs without a supported v1 public manifest. Classification belongs to the application layer.

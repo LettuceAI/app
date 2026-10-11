@@ -92,7 +92,7 @@ async fn files_inspect_detects_what_a_file_holds() {
         ("backup.lettuce", backup, dto::FileKind::BackupV2),
         (
             "old.zip",
-            b"PK\x03\x04rest of a zip".to_vec(),
+            include_bytes!("fixtures/legacy-unknown.lettuce").to_vec(),
             dto::FileKind::BackupV1,
         ),
         (

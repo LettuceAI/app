@@ -38,7 +38,7 @@ impl<R: LorebookRepository + ?Sized> LorebookFileCoordinator<'_, R> {
         json: &str,
         now: TimestampMillis,
     ) -> Result<LorebookDetails, LorebookFileError> {
-        let imported = lettuce_transfer::parse_world_info(json)?;
+        let imported = lettuce_transfer::parse_lorebook_import(json)?;
         Ok(self.repository.create(
             LorebookMetadataDraft {
                 name: imported.name,
@@ -128,6 +128,37 @@ const fn detection_policy(mode: PackagedKeywordDetectionMode) -> DetectionPolicy
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_legacy_usc_lorebook_import_keeps_every_entry_field() {
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let value = serde_json::json!({
+            "schema": {"name": "USC", "version": "1.0"}, "kind": "lorebook",
+            "payload": {"id": "old-book", "name": "Harbour", "keywordDetectionMode": "latestUserMessage",
+                "createdAt": 10, "updatedAt": 20,
+                "entries": [{"id": "old-entry", "title": " A title ", "enabled": false,
+                    "alwaysActive": true, "keywords": [" Ship ", "sea"], "caseSensitive": true,
+                    "content": "", "priority": -7, "displayOrder": 0, "createdAt": 11, "updatedAt": 12}]}
+        });
+        let imported = backend
+            .lorebook_files()
+            .import_world_info(&value.to_string(), TimestampMillis::new(30))
+            .expect("USC import");
+        assert_eq!(imported.book.name, "Harbour");
+        assert_eq!(
+            imported.book.detection_policy,
+            DetectionPolicy::LatestUserMessage
+        );
+        assert_eq!(imported.entries.len(), 1);
+        let entry = &imported.entries[0];
+        assert_eq!(entry.title, " A title ");
+        assert!(!entry.enabled && entry.always_active && entry.case_sensitive);
+        assert_eq!(entry.keywords, [" Ship ", "sea"]);
+        assert_eq!(entry.content, "");
+        assert_eq!(entry.priority, -7);
+        assert_eq!(entry.match_mode, KeywordMatchMode::Literal);
+        assert_eq!(entry.created_at, TimestampMillis::new(30));
+    }
 
     #[test]
     fn world_info_with_long_keywords_and_titles_imports_like_legacy() {
