@@ -48,7 +48,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyLlmMetricsImportCoordinator<'
                         message_id: metric
                             .message_source_id
                             .as_deref()
-                            .map(|source| MessageId::from_uuid(scope.source(source))),
+                            .map(|source| MessageId::from_uuid(scope.source("message", source))),
                         metric: metric.clone(),
                     })
                     .collect(),

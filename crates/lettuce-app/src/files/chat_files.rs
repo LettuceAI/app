@@ -118,14 +118,14 @@ where
             persona: persona_selection(false, None, &context)?,
             operation_key: lettuce_conversations::IdempotencyKey::new(format!(
                 "chat-import.{}",
-                scope.source(&source_id)
+                scope.source("conversation", &source_id)
             ))
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
         };
         let (prepared, launch_companion) =
             ConversationLaunchPlanner::new(self.sources).prepare_direct_parts(&request)?;
         let (plan, mut snapshots) = prepared.into_parts();
-        let conversation_id = ConversationId::from_uuid(scope.source(&source_id));
+        let conversation_id = ConversationId::from_uuid(scope.source("conversation", &source_id));
         let character = plan
             .participants
             .iter()
@@ -332,7 +332,7 @@ where
                     persona: persona_selection(false, None, &context)?,
                     operation_key: lettuce_conversations::IdempotencyKey::new(format!(
                         "chat-import.{}",
-                        scope.source(&source_id)
+                        scope.source("conversation", &source_id)
                     ))
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
                 },

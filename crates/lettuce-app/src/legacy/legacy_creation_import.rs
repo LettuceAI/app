@@ -210,7 +210,7 @@ mod tests {
                     .as_ref()
                     .expect("source fingerprint"),
             )
-            .derived("creation-1", "creation-workflow"),
+            .derived("creation_workflow", "creation-1", "creation-workflow"),
         );
         let workflow = CreationWorkflowRepository::load_workflow(backend.database(), workflow_id)
             .expect("seeded workflow");

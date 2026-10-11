@@ -106,7 +106,11 @@ fn playground_imports(
         .iter()
         .map(|generation| LegacyPlaygroundImport {
             id: scope
-                .derived(&generation.source_id, "playground-history")
+                .derived(
+                    "image_playground_history",
+                    &generation.source_id,
+                    "playground-history",
+                )
                 .to_string(),
             assets: (0..generation.images.len())
                 .map(|ordinal| {

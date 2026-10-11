@@ -38,40 +38,32 @@ use crate::{
 
 pub const LEGACY_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
 
-/// Destination ids of one legacy source. Legacy ids and ids derived from legacy
-/// strings are bound to the source fingerprint, so a different legacy source
-/// that reuses the same ids imports next to the existing data while a replay of
-/// the same source derives the same ids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LegacyIdScope(Uuid);
+pub struct LegacyIdScope;
 
 impl LegacyIdScope {
     #[must_use]
-    pub fn new(source_fingerprint: &lettuce_types::ContentHash) -> Self {
-        Self(Uuid::new_v5(
-            &LEGACY_ID_NAMESPACE,
-            source_fingerprint.as_str().as_bytes(),
-        ))
+    pub fn new(_source_fingerprint: &lettuce_types::ContentHash) -> Self {
+        Self
     }
 
     #[must_use]
-    pub fn uuid(self, legacy: Uuid) -> Uuid {
-        Uuid::new_v5(&self.0, legacy.as_bytes())
-    }
-
-    /// A legacy string id: a UUID keeps its identity within the scope, any
-    /// other string is hashed first.
-    #[must_use]
-    pub fn source(self, value: &str) -> Uuid {
-        self.uuid(
-            Uuid::parse_str(value)
-                .unwrap_or_else(|_| Uuid::new_v5(&LEGACY_ID_NAMESPACE, value.as_bytes())),
-        )
+    pub fn uuid(self, kind: &str, legacy: Uuid) -> Uuid {
+        self.source(kind, &legacy.to_string())
     }
 
     #[must_use]
-    pub fn derived(self, value: &str, suffix: &str) -> Uuid {
-        Uuid::new_v5(&self.0, format!("{value}:{suffix}").as_bytes())
+    pub fn source(self, kind: &str, value: &str) -> Uuid {
+        let canonical =
+            Uuid::parse_str(value).map_or_else(|_| value.to_owned(), |id| id.to_string());
+        let name = serde_json::to_vec(&(kind, canonical)).expect("string identity");
+        Uuid::new_v5(&LEGACY_ID_NAMESPACE, &name)
+    }
+
+    #[must_use]
+    pub fn derived(self, kind: &str, value: &str, suffix: &str) -> Uuid {
+        let name = serde_json::to_vec(&(value, suffix)).expect("string identity");
+        self.source(kind, std::str::from_utf8(&name).expect("JSON is UTF-8"))
     }
 }
 
@@ -5286,4 +5278,25 @@ mod tests {
             }
         ));
     }
+}
+#[test]
+fn legacy_entity_identity_is_independent_of_the_source() {
+    let first =
+        LegacyIdScope::new(&lettuce_types::ContentHash::parse("11".repeat(32)).expect("source"));
+    let second =
+        LegacyIdScope::new(&lettuce_types::ContentHash::parse("22".repeat(32)).expect("source"));
+    let legacy = Uuid::from_u128(17);
+    assert_ne!(first.uuid("character", legacy), first.uuid("group", legacy));
+    assert_eq!(
+        first.uuid("character", legacy),
+        second.uuid("character", legacy)
+    );
+    assert_eq!(
+        first.source("message", "legacy-id"),
+        second.source("message", "legacy-id")
+    );
+    assert_eq!(
+        first.derived("generation_attempt", "legacy-id", "attempt"),
+        second.derived("generation_attempt", "legacy-id", "attempt")
+    );
 }

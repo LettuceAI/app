@@ -61,9 +61,11 @@ where
         let scoped_providers = audio_providers
             .iter()
             .map(|provider| AudioProvider {
-                id: lettuce_types::AudioProviderId::from_uuid(scope.uuid(provider.id.as_uuid())),
+                id: lettuce_types::AudioProviderId::from_uuid(
+                    scope.uuid("audio_provider", provider.id.as_uuid()),
+                ),
                 secret_owner_id: SecretOwnerId::from_uuid(
-                    scope.uuid(provider.secret_owner_id.as_uuid()),
+                    scope.uuid("secret_owner", provider.secret_owner_id.as_uuid()),
                 ),
                 api_key_ref: provider
                     .api_key_ref
@@ -74,9 +76,11 @@ where
         let scoped_voices = user_voices
             .iter()
             .map(|voice| UserVoice {
-                id: lettuce_types::VoiceProfileId::from_uuid(scope.uuid(voice.id.as_uuid())),
+                id: lettuce_types::VoiceProfileId::from_uuid(
+                    scope.uuid("voice_profile", voice.id.as_uuid()),
+                ),
                 provider_id: lettuce_types::AudioProviderId::from_uuid(
-                    scope.uuid(voice.provider_id.as_uuid()),
+                    scope.uuid("audio_provider", voice.provider_id.as_uuid()),
                 ),
                 ..voice.clone()
             })
@@ -174,7 +178,9 @@ pub(crate) fn legacy_audio_secret_ref(
 ) -> SecretRef {
     SecretRef::from_uuid(uuid::Uuid::new_v5(
         &run_id.as_uuid(),
-        scope.uuid(reference.as_uuid()).as_bytes(),
+        scope
+            .uuid("secret_reference", reference.as_uuid())
+            .as_bytes(),
     ))
 }
 
@@ -189,7 +195,9 @@ pub(crate) fn legacy_audio_secret(
         (
             legacy_audio_secret_ref(run_id, scope, reference),
             SecretPurpose::AudioApiKey {
-                owner: SecretOwnerId::from_uuid(scope.uuid(provider.secret_owner_id.as_uuid())),
+                owner: SecretOwnerId::from_uuid(
+                    scope.uuid("secret_owner", provider.secret_owner_id.as_uuid()),
+                ),
             },
         )
     })
@@ -335,11 +343,11 @@ mod tests {
                 .expect("source fingerprint"),
         );
         let scoped_reference = super::legacy_audio_secret_ref(run_id, scope, reference);
-        let scoped_owner = SecretOwnerId::from_uuid(scope.uuid(owner.as_uuid()));
+        let scoped_owner = SecretOwnerId::from_uuid(scope.uuid("secret_owner", owner.as_uuid()));
         assert_eq!(
             TtsConfigurationRepository::get_audio_provider(
                 backend.database(),
-                AudioProviderId::from_uuid(scope.uuid(provider.id.as_uuid())),
+                AudioProviderId::from_uuid(scope.uuid("audio_provider", provider.id.as_uuid())),
             )
             .expect("read provider")
             .map(|stored| stored.api_key_ref),
@@ -348,7 +356,7 @@ mod tests {
         assert!(
             TtsConfigurationRepository::get_user_voice(
                 backend.database(),
-                VoiceProfileId::from_uuid(scope.uuid(voice.id.as_uuid())),
+                VoiceProfileId::from_uuid(scope.uuid("voice_profile", voice.id.as_uuid())),
             )
             .expect("read voice")
             .is_some()

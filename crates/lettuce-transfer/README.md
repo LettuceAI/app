@@ -184,3 +184,5 @@ Conversation usage section version 2 includes immutable cleared-usage proofs. Ex
 Legacy media completion proofs carry immutable destination asset and blob identities, content hashes, sizes and completion times. Backup validation resolves each proof to its sealed assignment and checks any surviving catalog records. Removed media stays removed when the proof is restored.
 
 Legacy media planning discovers `avatar_banner.webp` in each character avatar directory and carries it as an independent Banner association through the authored import plan.
+
+Legacy entity identities derive from the entity kind and legacy identity in one source-independent namespace. Different restore sources map the same entity to the same destination identity; every restore still writes a fresh database. Secret-store references remain unique to an attempt so kept databases retain their credentials.

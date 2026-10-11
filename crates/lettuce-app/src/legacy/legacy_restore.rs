@@ -1208,13 +1208,18 @@ mod tests {
         };
         let (import, scope) = import_of("Conversation");
         let (changed, changed_scope) = import_of("Renamed conversation");
-        assert_ne!(scope, changed_scope);
+        assert_ne!(
+            import.plan.source_fingerprint,
+            changed.plan.source_fingerprint
+        );
+        assert_eq!(scope, changed_scope);
         let check = |database: &Database, scope: lettuce_transfer::LegacyIdScope| {
             let graph = database
                 .read_provider_backup_graph()
                 .expect("restored graph");
             let found = |legacy: &str| {
-                let message_id = lettuce_types::MessageId::from_uuid(scope.source(legacy));
+                let message_id =
+                    lettuce_types::MessageId::from_uuid(scope.source("message", legacy));
                 let conversation = graph
                     .conversation_history
                     .conversations
@@ -1258,9 +1263,11 @@ mod tests {
             );
             assert_eq!(
                 reply_metric.id,
-                lettuce_types::GenerationAttemptId::from_uuid(
-                    scope.derived("variant-a", "attempt")
-                )
+                lettuce_types::GenerationAttemptId::from_uuid(scope.derived(
+                    "generation_attempt",
+                    "variant-a",
+                    "attempt"
+                ))
                 .to_string()
             );
             let group_metric = found(&group_reply).expect("the group reply's metric");
@@ -1306,7 +1313,7 @@ mod tests {
             lettuce_transfer::backup_sql_text(skip, "source_key") == Some("conflict-01")
                 && lettuce_transfer::backup_sql_text(skip, "reason") == Some("no_fork_point")
         }));
-        let reply_id = lettuce_types::MessageId::from_uuid(scope.source(&reply));
+        let reply_id = lettuce_types::MessageId::from_uuid(scope.source("message", &reply));
         let forked = graph
             .conversation_history
             .conversations
@@ -1351,7 +1358,7 @@ mod tests {
         assert_eq!(graph.companion_effects.effects.len(), 1);
         assert_eq!(
             effect.assistant_message_id,
-            lettuce_types::MessageId::from_uuid(scope.source(&reply))
+            lettuce_types::MessageId::from_uuid(scope.source("message", &reply))
         );
         assert_eq!(effect.seed.relationship_delta.trust, 0.1);
         assert_eq!(effect.seed.signal_changes.added, vec!["curious".to_owned()]);
