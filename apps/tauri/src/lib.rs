@@ -14,7 +14,7 @@ mod reset;
 
 use std::sync::{Arc, Mutex};
 
-use lettuce_app::api::{ApiContext, ApiWorkers};
+use lettuce_app::api::{ApiContext, ApiContextSlot, ApiWorkers};
 use tauri::{App, AppHandle, Manager, RunEvent, Runtime, WindowEvent};
 
 pub use bindings::{BINDINGS_PATH, export_bindings, specta_builder};
@@ -57,7 +57,9 @@ pub fn run() {
                 event: WindowEvent::Focused(focused),
                 ..
             } => {
-                if let Some(context) = handle.try_state::<ApiContext>() {
+                if let Some(slot) = handle.try_state::<ApiContextSlot>()
+                    && let Ok(context) = slot.snapshot()
+                {
                     context.app_focus_changed(focused);
                 }
             }
@@ -66,7 +68,9 @@ pub fn run() {
                 event: WindowEvent::Suspended,
                 ..
             } => {
-                if let Some(context) = handle.try_state::<ApiContext>() {
+                if let Some(slot) = handle.try_state::<ApiContextSlot>()
+                    && let Ok(context) = slot.snapshot()
+                {
                     context.app_focus_changed(false);
                 }
             }
@@ -75,7 +79,9 @@ pub fn run() {
                 event: WindowEvent::Resumed,
                 ..
             } => {
-                if let Some(context) = handle.try_state::<ApiContext>() {
+                if let Some(slot) = handle.try_state::<ApiContextSlot>()
+                    && let Ok(context) = slot.snapshot()
+                {
                     context.app_focus_changed(true);
                 }
             }
@@ -102,43 +108,57 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     )?
     .ok_or("file logging is unavailable")?;
     lettuce_observability::install_panic_reports(log_directory.clone());
-    let context = ApiContext::open_desktop(
-        &app_data,
-        app.path().resource_dir().ok(),
-        Arc::new(lettuce_settings::NativeSecretStore::try_new()?),
-        Arc::new(events::TauriEventSink(app.handle().clone())),
-        files::file_access(app.handle()),
-        asset_protocol::ASSET_URL_BASE.to_owned(),
-        microphone::capture(),
-    )
-    .map_err(|error| error.message)?;
-    context.attach_logs(log_directory, output.sink.clone());
-    context
-        .attach_reset_host(Arc::new(reset::ResetHost(app.handle().clone())))
-        .map_err(|error| error.message)?;
     app.manage(output);
+    let secrets = Arc::new(lettuce_settings::NativeSecretStore::try_new()?);
+    let context = open_context(app.handle(), secrets).map_err(|error| error.message)?;
     let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))
         .map_err(|error| error.message)?;
-    app.manage(context);
+    app.manage(ApiContextSlot::new(Arc::new(context)));
     app.manage(Workers(Mutex::new(Some(workers))));
     Ok(())
+}
+
+fn reload_failure() -> lettuce_contracts::ApiError {
+    lettuce_contracts::ApiError {
+        code: lettuce_contracts::ApiErrorCode::Unavailable,
+        message: "database reload requires reopening the application".into(),
+        details: Some(lettuce_contracts::ApiErrorDetails::Backup { reason: lettuce_contracts::BackupFailureReason::RecoveryRequired }),
+    }
+}
+
+fn open_context<R: Runtime>(handle: &AppHandle<R>, secrets: Arc<dyn lettuce_settings::SecretStore>) -> Result<ApiContext, lettuce_contracts::ApiError> {
+    let app_data = handle.path().app_data_dir().map_err(|_| reload_failure())?;
+    let log_directory = handle.path().app_log_dir().map_err(|_| reload_failure())?;
+    let output = handle.try_state::<lettuce_observability::LocalOutput>().ok_or_else(reload_failure)?;
+    let context = ApiContext::open_desktop(
+        &app_data,
+        handle.path().resource_dir().ok(),
+        secrets,
+        Arc::new(events::TauriEventSink(handle.clone())),
+        files::file_access(handle),
+        asset_protocol::ASSET_URL_BASE.to_owned(),
+        microphone::capture(),
+    )?;
+    context.attach_logs(log_directory, output.sink.clone());
+    context.attach_reset_host(Arc::new(reset::ResetHost(handle.clone())))?;
+    Ok(context)
 }
 
 /// Stops the workers: cancels running work, stops the local diffusion
 /// server, records the active time and joins the worker threads.
 fn stop<R: Runtime>(handle: &AppHandle<R>) {
-    let Some(context) = handle
-        .try_state::<ApiContext>()
-        .map(|state| state.inner().clone())
-    else {
-        return;
-    };
     let workers = handle
         .try_state::<Workers>()
         .and_then(|workers| workers.0.lock().ok()?.take());
     match workers {
         Some(workers) => tauri::async_runtime::block_on(workers.stop()),
         None => {
+            let Some(context) = handle
+                .try_state::<ApiContextSlot>()
+                .and_then(|slot| slot.snapshot().ok())
+            else {
+                return;
+            };
             context.begin_shutdown();
             tauri::async_runtime::block_on(context.backend().shutdown());
             context.flush_app_usage();

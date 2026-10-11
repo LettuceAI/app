@@ -285,7 +285,7 @@ mod tests {
                 uses: vec![lettuce_transfer::LegacyMediaUse::CharacterBanner { character_id }],
             });
         plan.media.total_bytes = bytes.len() as u64;
-        let media_store = || {
+        let media_store = |database_path: &std::path::Path| {
             use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
             let snapshot = DirectorySnapshot::new(&media_root).expect("snapshot");
             let authority = FilesystemAuthority::new(&snapshot).expect("authority");
@@ -297,8 +297,8 @@ mod tests {
                 authority
                     .write_capability(ManagedRoot::MediaBlobs)
                     .expect("write"),
-                lettuce_database::Database::open(&path).expect("blobs"),
-                lettuce_database::Database::open(&path).expect("assets"),
+                lettuce_database::Database::open(database_path).expect("blobs"),
+                lettuce_database::Database::open(database_path).expect("assets"),
             )
         };
         let scene_id = SceneId::new();
@@ -529,7 +529,7 @@ mod tests {
                 _ => None,
             })
             .expect("lorebook assignment");
-        let store = media_store();
+        let store = media_store(&path);
         let imported_banner = backend
             .legacy_media_importer(&store)
             .execute(
@@ -586,15 +586,12 @@ mod tests {
                 TimestampMillis::new(50),
             )
             .expect("materialize characters");
-        let scope = lettuce_transfer::LegacyIdScope::new(
-            plan.source_fingerprint
-                .as_ref()
-                .expect("source fingerprint"),
-        );
+        let scope = lettuce_transfer::LegacyIdScope::new();
         let conv = |id: lettuce_types::ConversationId| {
-            lettuce_types::ConversationId::from_uuid(scope.uuid(id.as_uuid()))
+            lettuce_types::ConversationId::from_uuid(scope.uuid("conversation", id.as_uuid()))
         };
-        let character = |id: CharacterId| CharacterId::from_uuid(scope.uuid(id.as_uuid()));
+        let character =
+            |id: CharacterId| CharacterId::from_uuid(scope.uuid("character", id.as_uuid()));
 
         assert_eq!(receipt.record_count, 4);
         assert!(!receipt.replayed);
@@ -626,12 +623,12 @@ mod tests {
         assert_eq!(defaults.group_conversation_prompt_id, None);
         assert_eq!(
             defaults.default_scene_id,
-            Some(SceneId::from_uuid(scope.uuid(scene_id.as_uuid())))
+            Some(SceneId::from_uuid(scope.uuid("scene", scene_id.as_uuid())))
         );
         assert_eq!(
             defaults.default_starter_id,
             Some(ConversationStarterId::from_uuid(
-                scope.uuid(starter_id.as_uuid())
+                scope.uuid("conversation_starter", starter_id.as_uuid())
             ))
         );
         assert_eq!(
@@ -667,7 +664,7 @@ mod tests {
         assert_eq!(group_receipt.record_count, 1);
         let group_details = GroupRepository::get(
             backend.database(),
-            GroupId::from_uuid(scope.uuid(group_id.as_uuid())),
+            GroupId::from_uuid(scope.uuid("group", group_id.as_uuid())),
         )
         .expect("read group")
         .expect("group exists");
@@ -683,7 +680,7 @@ mod tests {
         );
         let group_bound = GroupLorebookBindingRepository::list_group_bindings(
             backend.database(),
-            GroupId::from_uuid(scope.uuid(group_id.as_uuid())),
+            GroupId::from_uuid(scope.uuid("group", group_id.as_uuid())),
         )
         .expect("group bindings");
         assert_eq!(group_bound.len(), 1);
@@ -1201,7 +1198,9 @@ mod tests {
         assert_eq!(
             reply.message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(
-                lettuce_types::MessageCandidateId::from_uuid(scope.source(&second_variant))
+                lettuce_types::MessageCandidateId::from_uuid(
+                    scope.source("message_candidate", &second_variant)
+                )
             )
         );
         assert_eq!(
@@ -1241,7 +1240,9 @@ mod tests {
                 .expect("effective settings")
                 .scene
                 .map(|scene| scene.source_id),
-            Some(SceneId::from_uuid(scope.uuid(second_scene_id.as_uuid()))),
+            Some(SceneId::from_uuid(
+                scope.uuid("scene", second_scene_id.as_uuid())
+            )),
             "a selected scene survives when the chat does not open with it"
         );
         let episodes = [companion_first_id, companion_second_id, companion_third_id]
@@ -1555,7 +1556,7 @@ mod tests {
             Some(assigned("legacy-group-play")),
             "the roleplay prompt the session set itself stays its own"
         );
-        let imported_group = GroupId::from_uuid(scope.uuid(group_id.as_uuid()));
+        let imported_group = GroupId::from_uuid(scope.uuid("group", group_id.as_uuid()));
         let revision = GroupRepository::get(backend.database(), imported_group)
             .expect("read group")
             .expect("group exists")
@@ -1655,7 +1656,9 @@ mod tests {
         assert_eq!(
             group_history.messages[1].message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(
-                lettuce_types::MessageCandidateId::from_uuid(scope.source(&group_first))
+                lettuce_types::MessageCandidateId::from_uuid(
+                    scope.source("message_candidate", &group_first)
+                )
             )
         );
         assert_eq!(
@@ -1722,6 +1725,13 @@ mod tests {
             reopened.complete_legacy_import(run_id, TimestampMillis::new(97)),
             Err(LegacyImportRepositoryError::Conflict)
         );
+        let second_path = std::env::temp_dir().join(format!(
+            "lettuce-legacy-second-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        drop(reopened);
+        let reopened = AppBackend::open(&second_path, TimestampMillis::new(100))
+            .expect("fresh restore database");
         let second_plan = LegacyImportPlan {
             source_fingerprint: Some(
                 ContentHash::parse("56".repeat(32)).expect("second source hash"),
@@ -1738,7 +1748,7 @@ mod tests {
             )
             .expect("admit a second legacy source");
         assert!(!second.replayed);
-        let store = media_store();
+        let store = media_store(&second_path);
         reopened
             .legacy_media_importer(&store)
             .execute(
@@ -1757,7 +1767,7 @@ mod tests {
             .legacy_provider_model_importer(&InMemorySecretStore::new())
             .execute(&second, &second_plan, TimestampMillis::new(102))
             .await
-            .expect("materialize the second providers next to the first defaults");
+            .expect("materialize providers in the fresh restore database");
         reopened
             .legacy_character_importer()
             .execute(
@@ -1767,7 +1777,7 @@ mod tests {
                 &bindings,
                 TimestampMillis::new(103),
             )
-            .expect("characters of a second source import alongside");
+            .expect("characters of a second source import into a fresh database");
         reopened
             .legacy_group_importer()
             .execute(
@@ -1777,7 +1787,7 @@ mod tests {
                 &group_bindings,
                 TimestampMillis::new(104),
             )
-            .expect("groups of a second source import alongside");
+            .expect("groups of a second source import into a fresh database");
         reopened
             .legacy_direct_conversation_importer()
             .execute(
@@ -1789,7 +1799,7 @@ mod tests {
                 &[],
                 TimestampMillis::new(105),
             )
-            .expect("direct conversations of a second source import alongside");
+            .expect("direct conversations of a second source import into a fresh database");
         reopened
             .legacy_group_conversation_importer()
             .execute(
@@ -1799,16 +1809,15 @@ mod tests {
                 &[],
                 TimestampMillis::new(106),
             )
-            .expect("group conversations of a second source import alongside");
-        let second_scope = lettuce_transfer::LegacyIdScope::new(
-            second_plan
-                .source_fingerprint
-                .as_ref()
-                .expect("second source fingerprint"),
+            .expect("group conversations of a second source import into a fresh database");
+        let second_scope = lettuce_transfer::LegacyIdScope::new();
+        assert_eq!(
+            character(character_id),
+            CharacterId::from_uuid(second_scope.uuid("character", character_id.as_uuid()))
         );
         for id in [
             character(character_id),
-            CharacterId::from_uuid(second_scope.uuid(character_id.as_uuid())),
+            CharacterId::from_uuid(second_scope.uuid("character", character_id.as_uuid())),
         ] {
             assert!(
                 CharacterRepository::get(reopened.database(), id)
@@ -1820,5 +1829,6 @@ mod tests {
         fs::remove_dir_all(legacy_root).expect("remove legacy files");
         fs::remove_dir_all(media_root).expect("remove media files");
         fs::remove_file(path).expect("remove database");
+        fs::remove_file(second_path).expect("remove second database");
     }
 }

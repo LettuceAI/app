@@ -23,3 +23,12 @@ BEFORE DELETE ON backup_restore_admissions
 BEGIN
     SELECT RAISE(ABORT, 'backup restore admission is immutable');
 END;
+
+CREATE TABLE backups_index (
+    id TEXT PRIMARY KEY NOT NULL,
+    uri TEXT NOT NULL UNIQUE CHECK (length(trim(uri)) > 0),
+    version INTEGER NOT NULL CHECK (version = 2),
+    created_at INTEGER NOT NULL,
+    app_version TEXT NOT NULL CHECK (length(app_version) BETWEEN 1 AND 64),
+    size INTEGER NOT NULL CHECK (size >= 0)
+);

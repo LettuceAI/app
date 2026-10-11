@@ -74,7 +74,7 @@ where
         )? {
             return Ok(receipt);
         }
-        let context = import_context(admission, plan, &source_fingerprint);
+        let context = import_context(admission, plan);
         let conversations = sessions
             .iter()
             .map(|session| {
@@ -127,7 +127,7 @@ where
                 .as_deref()
                 .ok_or(Error::InvalidInput)?,
         )?;
-        let group_id = GroupId::from_uuid(context.scope.uuid(legacy_group.as_uuid()));
+        let group_id = GroupId::from_uuid(context.scope.uuid("group", legacy_group.as_uuid()));
         let request = GroupConversationLaunchRequest {
             format_version: GROUP_LAUNCH_REQUEST_FORMAT_V1,
             title: session.name.clone(),
@@ -483,11 +483,13 @@ fn session_scene(
     group_id: GroupId,
     scene: &lettuce_transfer::LegacyBackupSceneCandidate,
 ) -> GroupStartingScene {
-    let scene_id = SceneId::from_uuid(scope.derived(&session.source_id, "starting_scene"));
+    let scene_id = SceneId::from_uuid(scope.derived("scene", &session.source_id, "starting_scene"));
     let variant_id = |id: SceneVariantId| {
-        SceneVariantId::from_uuid(
-            scope.derived(&session.source_id, &format!("starting_scene_variant:{id}")),
-        )
+        SceneVariantId::from_uuid(scope.derived(
+            "scene_variant",
+            &session.source_id,
+            &format!("starting_scene_variant:{id}"),
+        ))
     };
     GroupStartingScene {
         scene: Scene {
@@ -548,9 +550,11 @@ fn new_member<S: DirectLaunchSources>(
         ),
     };
     let draft = documents::draft(
-        SnapshotArtifactId::from_uuid(
-            scope.derived(&session.source_id, &format!("member:{character_id}")),
-        ),
+        SnapshotArtifactId::from_uuid(scope.derived(
+            "snapshot_artifact",
+            &session.source_id,
+            &format!("member:{character_id}"),
+        )),
         revision,
         body,
     )
@@ -571,9 +575,11 @@ fn new_member<S: DirectLaunchSources>(
         prompt: SnapshotSelection::Disabled,
     };
     let participant = ConversationParticipantDraft {
-        id: ConversationParticipantId::from_uuid(
-            scope.derived(&session.source_id, &format!("participant:{character_id}")),
-        ),
+        id: ConversationParticipantId::from_uuid(scope.derived(
+            "conversation_participant",
+            &session.source_id,
+            &format!("participant:{character_id}"),
+        )),
         role: ParticipantRole::Character,
         ordinal: 0,
         source: ParticipantSource::Character(character_id),
@@ -594,7 +600,7 @@ fn unknown_speaker(
     scope: lettuce_transfer::LegacyIdScope,
     session: &LegacyBackupGroupSession,
 ) -> CharacterId {
-    CharacterId::from_uuid(scope.derived(&session.source_id, "unknown-speaker"))
+    CharacterId::from_uuid(scope.derived("character", &session.source_id, "unknown-speaker"))
 }
 
 fn has_speakerless_reply(session: &LegacyBackupGroupSession) -> bool {
@@ -655,7 +661,8 @@ fn parse_character(
     scope: lettuce_transfer::LegacyIdScope,
     value: &str,
 ) -> Result<CharacterId, Error> {
-    parse::<CharacterId>(value).map(|legacy| CharacterId::from_uuid(scope.uuid(legacy.as_uuid())))
+    parse::<CharacterId>(value)
+        .map(|legacy| CharacterId::from_uuid(scope.uuid("character", legacy.as_uuid())))
 }
 
 /// Whether a legacy group session overrode `key` in its `config_overrides`

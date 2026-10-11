@@ -802,7 +802,7 @@ impl LegacyImportRepository for Database {
         let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use =
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
-        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
+        let scope = lettuce_transfer::LegacyIdScope::new();
         for candidate in &request.characters {
             let plan = lettuce_transfer::character_plan_from_candidate(
                 candidate,
@@ -827,7 +827,7 @@ impl LegacyImportRepository for Database {
             insert_owner_lorebook_bindings(
                 &transaction,
                 "INSERT INTO character_lorebook_bindings (character_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                &scope.uuid(owner.owner_id.as_uuid()).to_string(),
+                &scope.uuid("character", owner.owner_id.as_uuid()).to_string(),
                 &owner.bindings,
                 &assignments.lorebooks,
             )?;
@@ -970,8 +970,8 @@ impl LegacyImportRepository for Database {
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
             return Ok(receipt);
         }
-        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
-        let derived = |source: &str, suffix: &str| scope.derived(source, suffix);
+        let scope = lettuce_transfer::LegacyIdScope::new();
+        let derived = |kind: &str, source: &str, suffix: &str| scope.derived(kind, source, suffix);
         for session in &request.sessions {
             if session.materialization != LegacyBackupCreationMaterialization::InitialDraftSeed {
                 return Err(LegacyImportRepositoryError::InvalidInput);
@@ -989,8 +989,8 @@ impl LegacyImportRepository for Database {
                             .map(|scene| CreationScene {
                                 id: lettuce_types::SceneId::from_uuid(
                                     uuid::Uuid::parse_str(&scene.source_id).map_or_else(
-                                        |_| derived(&session.source_id, &scene.source_id),
-                                        |legacy| scope.uuid(legacy),
+                                        |_| derived("scene", &session.source_id, &scene.source_id),
+                                        |legacy| scope.uuid("scene", legacy),
                                     ),
                                 ),
                                 content: scene.content.clone(),
@@ -1017,10 +1017,12 @@ impl LegacyImportRepository for Database {
             };
             let input = NewCreationWorkflow {
                 id: lettuce_types::CreationWorkflowId::from_uuid(derived(
+                    "creation_workflow",
                     &session.source_id,
                     "creation-workflow",
                 )),
                 initial_proposal_id: lettuce_types::CreationProposalId::from_uuid(derived(
+                    "creation_proposal",
                     &session.source_id,
                     "creation-proposal",
                 )),
@@ -1642,7 +1644,7 @@ impl LegacyImportRepository for Database {
         let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use =
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
-        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
+        let scope = lettuce_transfer::LegacyIdScope::new();
         for candidate in &request.groups {
             let plan = legacy_group_plan(candidate, &assignments, &media_by_use, scope)?;
             crate::catalog::group_adapter::insert_group_plan(&transaction, &plan)
@@ -1652,7 +1654,7 @@ impl LegacyImportRepository for Database {
             insert_owner_lorebook_bindings(
                 &transaction,
                 "INSERT INTO group_lorebook_bindings (group_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                &scope.uuid(owner.owner_id.as_uuid()).to_string(),
+                &scope.uuid("group", owner.owner_id.as_uuid()).to_string(),
                 &owner.bindings,
                 &assignments.lorebooks,
             )?;
@@ -2317,40 +2319,40 @@ struct LegacyCharacterResolver<'a> {
 
 impl lettuce_transfer::CharacterPlanResolver for LegacyCharacterResolver<'_> {
     fn character(&self, planned: lettuce_types::CharacterId) -> lettuce_types::CharacterId {
-        lettuce_types::CharacterId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::CharacterId::from_uuid(self.scope.uuid("character", planned.as_uuid()))
     }
 
     fn scene(&self, planned: lettuce_types::SceneId) -> lettuce_types::SceneId {
-        lettuce_types::SceneId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::SceneId::from_uuid(self.scope.uuid("scene", planned.as_uuid()))
     }
 
     fn variant(&self, planned: lettuce_types::SceneVariantId) -> lettuce_types::SceneVariantId {
-        lettuce_types::SceneVariantId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::SceneVariantId::from_uuid(self.scope.uuid("scene_variant", planned.as_uuid()))
     }
 
     fn starter(
         &self,
         planned: lettuce_types::ConversationStarterId,
     ) -> lettuce_types::ConversationStarterId {
-        lettuce_types::ConversationStarterId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::ConversationStarterId::from_uuid(self.scope.uuid("conversation_starter", planned.as_uuid()))
     }
 
     fn starter_message(
         &self,
         planned: lettuce_types::StarterMessageId,
     ) -> lettuce_types::StarterMessageId {
-        lettuce_types::StarterMessageId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::StarterMessageId::from_uuid(self.scope.uuid("starter_message", planned.as_uuid()))
     }
 
     fn voice_profile(
         &self,
         planned: lettuce_types::VoiceProfileId,
     ) -> lettuce_types::VoiceProfileId {
-        lettuce_types::VoiceProfileId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::VoiceProfileId::from_uuid(self.scope.uuid("voice_profile", planned.as_uuid()))
     }
 
     fn audio_provider(&self, planned: lettuce_types::AudioProviderId) -> lettuce_types::AudioProviderId {
-        lettuce_types::AudioProviderId::from_uuid(self.scope.uuid(planned.as_uuid()))
+        lettuce_types::AudioProviderId::from_uuid(self.scope.uuid("audio_provider", planned.as_uuid()))
     }
 
     fn model(
@@ -2509,9 +2511,9 @@ fn legacy_group_plan(
     scope: lettuce_transfer::LegacyIdScope,
 ) -> Result<lettuce_characters::CreateGroupPlan, LegacyImportRepositoryError> {
     let group_id = candidate.id;
-    let destination_group = lettuce_types::GroupId::from_uuid(scope.uuid(group_id.as_uuid()));
+    let destination_group = lettuce_types::GroupId::from_uuid(scope.uuid("group", group_id.as_uuid()));
     let scene_id =
-        |id: lettuce_types::SceneId| lettuce_types::SceneId::from_uuid(scope.uuid(id.as_uuid()));
+        |id: lettuce_types::SceneId| lettuce_types::SceneId::from_uuid(scope.uuid("scene", id.as_uuid()));
     let asset = |media_use: LegacyMediaUse| {
         media_by_use
             .get(&media_use)
@@ -2540,7 +2542,7 @@ fn legacy_group_plan(
         .map(|member| {
             Ok(lettuce_characters::GroupMember {
                 character_id: lettuce_types::CharacterId::from_uuid(
-                    scope.uuid(member.character_id.as_uuid()),
+                    scope.uuid("character", member.character_id.as_uuid()),
                 ),
                 model_profile_override: member
                     .model_profile_override
@@ -2576,7 +2578,7 @@ fn legacy_group_plan(
                 });
             }
             let variant_id = |id: lettuce_types::SceneVariantId| {
-                lettuce_types::SceneVariantId::from_uuid(scope.uuid(id.as_uuid()))
+                lettuce_types::SceneVariantId::from_uuid(scope.uuid("scene_variant", id.as_uuid()))
             };
             Ok(lettuce_characters::GroupStartingScene {
                 scene: Scene {
@@ -3283,8 +3285,8 @@ fn insert_assignments(
             "provider_account",
             &source_id.to_string(),
             "",
-            ProviderAccountId::new().to_string(),
-            Some(SecretOwnerId::new().as_uuid().to_string()),
+            lettuce_transfer::LegacyIdScope.source("provider_account", &source_id.to_string()).to_string(),
+            Some(lettuce_transfer::LegacyIdScope.source("secret_owner", &source_id.to_string()).to_string()),
         )?;
     }
     for source_id in &sources.model_profile_ids {
@@ -3294,7 +3296,7 @@ fn insert_assignments(
             "model_profile",
             &source_id.to_string(),
             "",
-            ModelProfileId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("model_profile", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3305,7 +3307,7 @@ fn insert_assignments(
             "prompt",
             source_id,
             "",
-            PromptDocumentId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("prompt", source_id).to_string(),
             None,
         )?;
     }
@@ -3334,7 +3336,7 @@ fn insert_assignments(
             "persona",
             &source_id.to_string(),
             "",
-            PersonaId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("persona", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3345,7 +3347,7 @@ fn insert_assignments(
             "lorebook",
             &source_id.to_string(),
             "",
-            LorebookId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("lorebook", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3356,7 +3358,7 @@ fn insert_assignments(
             "lorebook_entry",
             &source_id.to_string(),
             "",
-            LorebookEntryId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("lorebook_entry", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3367,7 +3369,7 @@ fn insert_assignments(
             "asr_vocabulary",
             &source_id.to_string(),
             "",
-            AsrVocabularyTermId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("asr_vocabulary", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3378,7 +3380,7 @@ fn insert_assignments(
             "asr_correction",
             &source_id.to_string(),
             "",
-            AsrCorrectionId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("asr_correction", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3389,7 +3391,7 @@ fn insert_assignments(
             "asr_ignored_suggestion",
             &source_id.to_string(),
             "",
-            AsrIgnoredSuggestionId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("asr_ignored_suggestion", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3400,7 +3402,7 @@ fn insert_assignments(
             "asr_voice_example",
             &source_id.to_string(),
             "",
-            AsrVoiceExampleId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("asr_voice_example", &source_id.to_string()).to_string(),
             None,
         )?;
     }
@@ -3409,7 +3411,7 @@ fn insert_assignments(
             transaction,
             run_id,
             &source.relative_path,
-            AssetId::new().to_string(),
+            lettuce_transfer::LegacyIdScope.source("media", &source.relative_path).to_string(),
             source.byte_len,
             &source.content_hash,
         )?;
@@ -4084,6 +4086,27 @@ mod tests {
             },
             admitted_at: TimestampMillis::new(100),
         }
+    }
+
+    #[test]
+    fn entity_assignments_do_not_depend_on_source_fingerprint() {
+        let path = database_path("source-independent");
+        let database = Database::open(&path).expect("open database");
+        let first_request = request(LegacyImportRunId::new());
+        let mut second_request = first_request.clone();
+        second_request.run_id = LegacyImportRunId::new();
+        second_request.source_fingerprint = Some(ContentHash::parse("12".repeat(32)).expect("fingerprint"));
+        database.admit(first_request.clone()).expect("first source");
+        database.admit(second_request.clone()).expect("second source");
+        let connection = database.connection().expect("database lock");
+        let ids = |run: LegacyImportRunId| {
+            let mut statement = connection.prepare("SELECT source_kind,source_key,destination_id FROM legacy_import_assignments WHERE run_id=?1 AND source_kind NOT IN ('provider_api_key','provider_secret_header','provider_sprout_api_key') ORDER BY source_kind,source_key").expect("statement");
+            statement.query_map([run.to_string()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))).expect("rows").collect::<Result<Vec<_>, _>>().expect("ids")
+        };
+        assert_eq!(ids(first_request.run_id), ids(second_request.run_id));
+        drop(connection);
+        drop(database);
+        fs::remove_file(path).expect("remove database");
     }
 
     #[test]

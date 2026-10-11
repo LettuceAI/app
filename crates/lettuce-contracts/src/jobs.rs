@@ -167,6 +167,21 @@ pub enum JobFailureCode {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum JobFailureReason {
+    DictationActive,
+    BackupAuthentication,
+    BackupInvalidEnvelope,
+    BackupLimitExceeded,
+    BackupUnavailable,
+    BackupFileNotFound,
+    BackupPermissionDenied,
+    BackupFileBusy,
+    BackupFileUnavailable,
+    BackupFileUnsupported,
+    BackupSourceIsTarget,
+    BackupCancelled,
+    BackupRetryRequired,
+    BackupRecoveryRequired,
+    BackupVerificationFailed,
     ResetWorkers,
     ResetDatabase,
     ResetWebviewStorage,
@@ -224,6 +239,14 @@ pub struct JobFailureDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobResultDto {
+    BackupExported {
+        backup: crate::BackupIndexView,
+        warnings: Vec<crate::BackupWarning>,
+    },
+    BackupRestored {
+        kept_file: String,
+        warnings: Vec<crate::BackupWarning>,
+    },
     UsageCostsUpdated {
         #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
         priced: u64,

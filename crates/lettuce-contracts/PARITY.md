@@ -60,3 +60,11 @@ Full persona draft validation distinguishes an explicit null from an omitted nul
 Character editor drafts make the complete authored graph explicit, including provider voice choices and image recommendations. Legacy used a partial save payload and replaced source, scenario and default rules in the repository (old-code/src/core/storage/repo.ts:1087-1090,1106-1130); the full typed draft keeps those fields under the caller's control on edits.
 
 Group editor contracts preserve the legacy authored name, chat type, member order, persona, speaker selection, background and starting scene (old-code/src-tauri/src/storage_manager/group_characters.rs:499-575,638-709). Persona inheritance and explicit disabling use the rewrite's existing tri-state domain selection instead of overloading a nullable id.
+
+The typed legacy startup state replaces direct bin import from `old-code/src-tauri/src/storage_manager/importer.rs:12-34,407-431` with the slice 11a requirement to open 2.2.5 once. Native legacy paths and payloads stay outside the contract.
+
+Slice 11a represents explicit backup deletion with an operation key and typed failures; the legacy UI refreshed the list only after a successful delete (`old-code/src/ui/pages/settings/hooks/useBackupRestore.ts:282-293`). Public metadata follows the approved restricted v2 header.
+
+Slice 11a review fixes preserve actionable file failure distinctions in durable backup job results and watch events.
+
+LegacyState carries failed detection as a typed ApiError state, so startup and AppStatus remain available when a legacy source cannot be opened. BackupIndexView reports availability per entry instead of failing the list. Backup job reasons distinguish format limits and existing restore targets without introducing a new disk-full error code.

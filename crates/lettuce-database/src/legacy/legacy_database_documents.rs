@@ -744,8 +744,37 @@ fn companion_shared_memory(
         },
     )?;
     let episodes_exist = table_exists(connection, "companion_episodes")?;
-    if episodes_exist {
+    let soul_facts_exist = table_exists(connection, "companion_soul_facts")?;
+    if soul_facts_exist {
         states.extend(rows(
+            connection,
+            "SELECT fact.character_id, MIN(fact.created_at), MAX(fact.updated_at) FROM companion_soul_facts fact JOIN characters character ON character.id = fact.character_id AND character.mode = 'companion' WHERE fact.character_id NOT IN (SELECT character_id FROM companion_shared_memory_state) GROUP BY fact.character_id",
+            [],
+            |r| {
+                let created_at = r.get::<_, i64>(1)?.max(0);
+                Ok(json!({
+                    "character_id": r.get::<_, String>(0)?,
+                    "memories": "[]",
+                    "memory_summary": null,
+                    "memory_summary_token_count": 0,
+                    "memory_tool_events": "[]",
+                    "memory_status": null,
+                    "memory_error": null,
+                    "memory_progress_step": null,
+                    "soul_growth": "[]",
+                    "relationship_states": "{}",
+                    "created_at": created_at,
+                    "updated_at": r.get::<_, i64>(2)?.max(created_at),
+                }))
+            },
+        )?);
+    }
+    if episodes_exist {
+        let owners = states
+            .iter()
+            .map(|state| string_field(state, "character_id"))
+            .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+        let episode_states = rows(
             connection,
             "SELECT episode.character_id, MIN(episode.started_at), MAX(episode.updated_at) FROM companion_episodes episode JOIN characters character ON character.id = episode.character_id AND character.mode = 'companion' WHERE episode.character_id NOT IN (SELECT character_id FROM companion_shared_memory_state) GROUP BY episode.character_id",
             [],
@@ -766,15 +795,29 @@ fn companion_shared_memory(
                     "updated_at": r.get::<_, i64>(2)?.max(created_at),
                 }))
             },
-        )?);
-        states.sort_by(|left, right| {
-            left["character_id"]
-                .as_str()
-                .cmp(&right["character_id"].as_str())
-        });
+        )?;
+        for state in episode_states {
+            if !owners.contains(&string_field(&state, "character_id")?) {
+                states.push(state);
+            }
+        }
     }
+    states.sort_by(|left, right| {
+        left["character_id"]
+            .as_str()
+            .cmp(&right["character_id"].as_str())
+    });
     for state in &mut states {
         let character_id = string_field(state, "character_id")?;
+        if soul_facts_exist {
+            let facts = normalized_soul_facts(connection, &character_id)?;
+            if !facts.is_empty() {
+                state["soul_growth"] = Value::String(
+                    serde_json::to_string(&facts)
+                        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?,
+                );
+            }
+        }
         if episodes_exist {
             let episodes = rows(
                 connection,
@@ -798,6 +841,50 @@ fn companion_shared_memory(
         state["memory_embeddings"] = Value::String(embeddings);
     }
     Ok(states)
+}
+
+fn normalized_soul_facts(
+    connection: &Connection,
+    character_id: &str,
+) -> Result<Vec<Value>, LegacyDatabasePreflightError> {
+    rows(
+        connection,
+        "SELECT fact_id, category, value, kind, policy, slot, confidence, evidence_count, weight, valid_from, valid_until, locked, source_memory_ids, created_at, supersedes, superseded_by, superseded_at FROM companion_soul_facts WHERE character_id = ?1 ORDER BY created_at ASC, fact_id ASC",
+        params![character_id],
+        |r| {
+            let strings = |index| -> rusqlite::Result<Vec<String>> {
+                serde_json::from_str(&r.get::<_, String>(index)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)
+            };
+            let finite = |index| -> rusqlite::Result<f64> {
+                let value = r.get::<_, f64>(index)?;
+                if value.is_finite() {
+                    Ok(value)
+                } else {
+                    Err(rusqlite::Error::InvalidQuery)
+                }
+            };
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "category": r.get::<_, String>(1)?,
+                "value": r.get::<_, String>(2)?,
+                "kind": r.get::<_, String>(3)?,
+                "policy": r.get::<_, String>(4)?,
+                "slot": r.get::<_, String>(5)?,
+                "confidence": finite(6)?,
+                "evidenceCount": r.get::<_, i64>(7)?.max(0),
+                "weight": finite(8)?,
+                "validFrom": r.get::<_, i64>(9)?.max(0),
+                "validUntil": r.get::<_, Option<i64>>(10)?.map(|value| value.max(0)),
+                "locked": r.get::<_, i64>(11)? != 0,
+                "sourceMemoryIds": strings(12)?,
+                "createdAt": r.get::<_, i64>(13)?.max(0),
+                "supersedes": strings(14)?,
+                "supersededBy": r.get::<_, Option<String>>(15)?,
+                "supersededAt": r.get::<_, Option<i64>>(16)?.map(|value| value.max(0)),
+            }))
+        },
+    )
 }
 
 fn memory_embedding_owners(
@@ -1835,6 +1922,7 @@ mod tests {
         assert_eq!(group_sessions[0]["character_model_overrides"], "{}");
 
         let plan = plan_legacy_backup_compatibility(LegacyBackupInventory {
+            warnings: Vec::new(),
             version: 1,
             created_at: 1,
             app_version: "legacy-database".into(),
@@ -1896,6 +1984,77 @@ mod tests {
         assert_eq!(variants, vec!["variant-early", "variant-late"]);
         assert_eq!(message["variants"][0]["tokens_per_second"], Value::Null);
         std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn soul_table_overrides_diverged_column_and_empty_table_falls_back() {
+        let connection = Connection::open_in_memory().expect("source");
+        connection.execute_batch(SCHEMA).expect("schema");
+        connection.execute_batch(
+            "INSERT INTO companion_shared_memory_state VALUES ('owner', '[]', NULL, 0, '[]', NULL, NULL, NULL, '[{\"id\":\"column\",\"value\":\"stale\"}]', '{}', 1, 2);
+             CREATE TABLE companion_soul_facts (
+                fact_id TEXT, character_id TEXT, category TEXT, value TEXT, kind TEXT,
+                policy TEXT, slot TEXT, confidence REAL, evidence_count INTEGER, weight REAL,
+                valid_from INTEGER, valid_until INTEGER, locked INTEGER, source_memory_ids TEXT,
+                created_at INTEGER, supersedes TEXT, superseded_by TEXT, superseded_at INTEGER,
+                updated_at INTEGER
+             );
+             INSERT INTO companion_soul_facts VALUES (
+                'fact', 'owner', 'preference', 'current', 'add', 'adaptive', 'preference',
+                0.8, 2, 0.7, 3, NULL, 1, '[\"memory\"]', 4, '[]', NULL, NULL, 5
+             );",
+        ).expect("diverged source");
+        let states = companion_shared_memory(&connection).expect("states");
+        let growth: Value =
+            serde_json::from_str(states[0]["soul_growth"].as_str().expect("growth"))
+                .expect("facts");
+        assert_eq!(growth[0]["id"], "fact");
+        assert_eq!(growth[0]["value"], "current");
+        assert_eq!(growth[0]["sourceMemoryIds"], json!(["memory"]));
+        assert_eq!(growth[0]["evidenceCount"], 2);
+        assert_eq!(growth[0]["locked"], true);
+        connection
+            .execute(
+                "UPDATE companion_soul_facts SET source_memory_ids = 'broken'",
+                [],
+            )
+            .expect("malformed evidence");
+        assert_eq!(
+            companion_shared_memory(&connection),
+            Err(LegacyDatabasePreflightError::InvalidSchema)
+        );
+        connection
+            .execute(
+                "UPDATE companion_soul_facts SET source_memory_ids = '[\"memory\"]'",
+                [],
+            )
+            .expect("restore evidence");
+        connection
+            .execute("DELETE FROM companion_shared_memory_state", [])
+            .expect("missing column owner");
+        connection.execute(
+            "INSERT INTO characters (id, name, mode, memory_type, disable_avatar_gradient, custom_gradient_enabled, created_at, updated_at) VALUES ('owner', 'Owner', 'companion', 'manual', 0, 0, 1, 2)",
+            [],
+        ).expect("companion owner");
+        let states = companion_shared_memory(&connection).expect("table-only state");
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0]["character_id"], "owner");
+        connection.execute("INSERT INTO companion_shared_memory_state VALUES ('owner', '[]', NULL, 0, '[]', NULL, NULL, NULL, '[{\"id\":\"column\",\"value\":\"stale\"}]', '{}', 1, 2)", []).expect("restore column");
+        connection
+            .execute("DELETE FROM companion_soul_facts", [])
+            .expect("empty table");
+        let states = companion_shared_memory(&connection).expect("fallback");
+        assert_eq!(
+            states[0]["soul_growth"],
+            "[{\"id\":\"column\",\"value\":\"stale\"}]"
+        );
+        connection
+            .execute_batch("DROP TABLE companion_soul_facts")
+            .expect("old schema");
+        assert_eq!(
+            companion_shared_memory(&connection).expect("old source"),
+            states
+        );
     }
 
     #[test]
@@ -2018,6 +2177,7 @@ mod tests {
         let path = legacy_database();
         let documents = read_legacy_database_documents(&path).expect("legacy documents");
         let plan = plan_legacy_backup_compatibility(LegacyBackupInventory {
+            warnings: Vec::new(),
             version: 1,
             created_at: 1,
             app_version: "legacy-database".into(),

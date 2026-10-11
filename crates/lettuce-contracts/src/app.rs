@@ -38,6 +38,7 @@ pub struct AppStatus {
     pub ui_state: UiState,
     /// A database from the previous app version was found on this device.
     pub legacy_database_detected: bool,
+    pub legacy_state: LegacyState,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub unresolved_sync_conflicts: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -138,4 +139,44 @@ pub struct AppUsageDayView {
 #[serde(deny_unknown_fields)]
 pub struct AppUsageDaysView {
     pub days: Vec<AppUsageDayView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LegacyState {
+    Absent,
+    Failed {
+        error: crate::ApiError,
+    },
+    Ready {
+        schema_version: u32,
+    },
+    RequiresLegacyUpgrade {
+        reason: LegacyUpgradeReason,
+        required_app_version: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LegacyUpgradeReason {
+    BinStorage,
+    Schema {
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        found: i64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LegacyDatabaseFailure {
+    Unavailable,
+    InvalidSchema,
+    UnsupportedSchema {
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        found: i64,
+    },
 }

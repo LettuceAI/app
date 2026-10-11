@@ -544,8 +544,9 @@ async fn storage_summary_counts_database_sidecars_and_panic_reports() {
         .expect("begin new database");
     drop(lettuce_database::Database::open(&next).expect("new database"));
     lifecycle
-        .activate_file(&name, TimestampMillis::new(30))
-        .expect("activate");
+        .prepare_cutover(&name, TimestampMillis::new(30))
+        .expect("prepare cutover");
+    lifecycle.finish_cutover(&name).expect("activate");
     drop(lifecycle);
     let after = super::storage_summary(&h.context)
         .await

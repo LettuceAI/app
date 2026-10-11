@@ -1218,6 +1218,13 @@ pub(crate) fn open_validated(
 ) -> Result<Connection, LegacyDatabasePreflightError> {
     let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|_| LegacyDatabasePreflightError::Unavailable)?;
+    match require_table(&connection, "settings") {
+        Ok(()) => {
+            validated_version(&connection)?;
+        }
+        Err(LegacyDatabasePreflightError::MissingTable { .. }) => {}
+        Err(error) => return Err(error),
+    }
     for (table, _) in ROOT_TABLES {
         require_table(&connection, table)?;
     }
@@ -2350,6 +2357,23 @@ mod tests {
         assert_eq!(inventory.direct_conversations, 1);
         assert_eq!(inventory.group_conversations, 0);
         std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn schema_91_is_reported_before_modern_table_requirements() {
+        let path = std::env::temp_dir().join(format!("lettuce-pre92-{}.db", MediaBlobId::new()));
+        let connection = Connection::open(&path).expect("database");
+        connection.execute_batch("CREATE TABLE settings (id INTEGER PRIMARY KEY, migration_version INTEGER); INSERT INTO settings VALUES (1,91);").expect("old schema");
+        drop(connection);
+        assert_eq!(
+            preflight_legacy_database(&path),
+            Err(LegacyDatabasePreflightError::UnsupportedVersion {
+                found: 91,
+                minimum: 92,
+                maximum: 96
+            })
+        );
+        std::fs::remove_file(path).expect("remove database");
     }
 
     #[test]

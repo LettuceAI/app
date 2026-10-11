@@ -3,7 +3,7 @@ use lettuce_transfer::{
     ChatImportRepository, ChatImportRepositoryError, ChatJsonlError, ChatJsonlRole, LegacyIdScope,
     LegacyImportRepositoryError,
 };
-use lettuce_types::{CharacterId, ContentHash, ConversationId, TimestampMillis};
+use lettuce_types::{CharacterId, ConversationId, TimestampMillis};
 use uuid::Uuid;
 
 use crate::legacy::legacy_direct_conversation_import::{
@@ -101,10 +101,7 @@ where
         let character_id = character_id.ok_or(ChatFileError::TargetCharacterRequired)?;
         let chat = lettuce_transfer::parse_chat_jsonl(raw, now.get())?;
         let source_id = Uuid::new_v4().to_string();
-        let scope = LegacyIdScope::new(
-            &ContentHash::parse(blake3::hash(source_id.as_bytes()).to_hex().to_string())
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-        );
+        let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
         let millis = |value: i64| u64::try_from(value).unwrap_or(0);
         let lines = imported_lines(&chat, millis);
@@ -118,14 +115,14 @@ where
             persona: persona_selection(false, None, &context)?,
             operation_key: lettuce_conversations::IdempotencyKey::new(format!(
                 "chat-import.{}",
-                scope.source(&source_id)
+                scope.source("conversation", &source_id)
             ))
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
         };
         let (prepared, launch_companion) =
             ConversationLaunchPlanner::new(self.sources).prepare_direct_parts(&request)?;
         let (plan, mut snapshots) = prepared.into_parts();
-        let conversation_id = ConversationId::from_uuid(scope.source(&source_id));
+        let conversation_id = ConversationId::from_uuid(scope.source("conversation", &source_id));
         let character = plan
             .participants
             .iter()
@@ -317,10 +314,7 @@ where
         )
         .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         let source_id = Uuid::new_v4().to_string();
-        let scope = LegacyIdScope::new(
-            &ContentHash::parse(blake3::hash(source_id.as_bytes()).to_hex().to_string())
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-        );
+        let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
         let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
             .prepare_group(
@@ -332,7 +326,7 @@ where
                     persona: persona_selection(false, None, &context)?,
                     operation_key: lettuce_conversations::IdempotencyKey::new(format!(
                         "chat-import.{}",
-                        scope.source(&source_id)
+                        scope.source("conversation", &source_id)
                     ))
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
                 },

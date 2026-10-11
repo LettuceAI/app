@@ -121,6 +121,8 @@ impl JobHandlers {
             Arc::new(super::voice_creation::VoiceCreationHandler),
             Arc::new(crate::api::maintenance_jobs::MaintenanceHandler),
             Arc::new(crate::api::app_reset::AppResetHandler),
+            Arc::new(crate::api::backup_jobs::RestoreHandler),
+            Arc::new(crate::api::backup_export_jobs::ExportHandler),
             Arc::new(crate::api::usage_billing::UsageBillingHandler),
         ])
     }

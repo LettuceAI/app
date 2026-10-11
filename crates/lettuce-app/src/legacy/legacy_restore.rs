@@ -21,6 +21,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct LegacyRestoreReceipt {
+    pub warnings: Vec<lettuce_transfer::LegacyBackupWarning>,
     pub database_path: PathBuf,
     pub previous_database_path: PathBuf,
     pub run_id: LegacyImportRunId,
@@ -29,6 +30,10 @@ pub struct LegacyRestoreReceipt {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LegacyRestoreError {
+    #[error("legacy restore was cancelled")]
+    Cancelled,
+    #[error("legacy restore API operation failed")]
+    Api(lettuce_contracts::ApiError),
     #[error("legacy backup could not be decoded: {0:?}")]
     Inventory(lettuce_transfer::LegacyBackupInventoryError),
     #[error("legacy backup could not be planned: {0:?}")]
@@ -85,6 +90,8 @@ impl<S: ?Sized> fmt::Debug for LegacyRestoreCoordinator<'_, S> {
     }
 }
 
+type LegacyRestoreCheck<'a> = dyn Fn(&str, Option<(&lettuce_database::Database, &Path, &[lettuce_transfer::LegacyBackupWarning])>) -> Result<(), LegacyRestoreError> + Send + Sync + 'a;
+
 impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
     #[must_use]
     pub const fn new(
@@ -109,10 +116,23 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         password: &str,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        self.restore_backup_controlled(restore_id, backup, password, restored_at, &|_, _| Ok(())).await
+    }
+
+    pub async fn restore_backup_controlled(
+        &self,
+        restore_id: OperationId,
+        backup: impl lettuce_transfer::BackupSource + 'static,
+        password: &str,
+        restored_at: TimestampMillis,
+        check: &LegacyRestoreCheck<'_>,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        check("decode", None)?;
         let inventory = lettuce_transfer::decode_legacy_backup_inventory(backup, password)
             .map_err(LegacyRestoreError::Inventory)?;
         let compatibility = lettuce_transfer::plan_legacy_backup_compatibility(inventory)
             .map_err(LegacyRestoreError::Compatibility)?;
+        check("stage", None)?;
         let staging =
             BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))
                 .and_then(|workspace| workspace.stage_legacy(&compatibility))
@@ -125,8 +145,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         )
         .map_err(LegacyRestoreError::Admission)?;
         let plan = compatibility.legacy_import_plan();
-        self.replace(
-            restore_id,
+        self.replace_controlled(
             &LegacyDatabaseImportPlan {
                 compatibility,
                 plan,
@@ -136,6 +155,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             None,
             Some(admission),
             restored_at,
+            check,
         )
         .await
     }
@@ -143,29 +163,50 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
     /// Replaces the app data with a live legacy app data directory.
     pub async fn restore_database(
         &self,
-        restore_id: OperationId,
         app_data_dir: &Path,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        self.restore_database_controlled(app_data_dir, restored_at, &|_, _| Ok(())).await
+    }
+
+    pub async fn restore_database_controlled(
+        &self,
+        app_data_dir: &Path,
+        restored_at: TimestampMillis,
+        check: &LegacyRestoreCheck<'_>,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        check("decode", None)?;
         let import =
             crate::plan_legacy_database_import(app_data_dir).map_err(LegacyRestoreError::Plan)?;
-        self.replace(
-            restore_id,
+        check("stage", None)?;
+        self.replace_controlled(
             &import,
             Some(&app_data_dir.join("lettuce")),
             None,
             restored_at,
+            check,
         )
         .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn replace(
         &self,
-        restore_id: OperationId,
         import: &LegacyDatabaseImportPlan,
         storage_root: Option<&Path>,
         admission: Option<BackupRestoreAdmissionRequest>,
         restored_at: TimestampMillis,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        self.replace_controlled(import, storage_root, admission, restored_at, &|_, _| Ok(())).await
+    }
+
+    async fn replace_controlled(
+        &self,
+        import: &LegacyDatabaseImportPlan,
+        storage_root: Option<&Path>,
+        admission: Option<BackupRestoreAdmissionRequest>,
+        restored_at: TimestampMillis,
+        check: &LegacyRestoreCheck<'_>,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
         let lifecycle = self
             .location
@@ -176,7 +217,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .location
             .active_path()
             .map_err(LegacyRestoreError::Location)?;
-        let name = format!("{restore_id}{DATABASE_EXTENSION}");
+        let name = format!("{}{DATABASE_EXTENSION}", OperationId::new());
         let database_path = self
             .location
             .database_path(&name)
@@ -193,6 +234,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 .ok_or(LegacyRestoreError::TargetDirectory)?,
         )
         .map_err(|_| LegacyRestoreError::TargetDirectory)?;
+        check("write", None)?;
         lifecycle
             .begin_file(&name, crate::DatabaseFileKind::LegacyRestore, restored_at)
             .map_err(LegacyRestoreError::Location)?;
@@ -211,6 +253,11 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 &mut written,
             )
             .await?;
+            check("verify", None)?;
+            let mut verified = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database()).map_err(stage("verify"))?;
+            lettuce_transfer::canonicalize_and_validate(&mut verified).map_err(stage("verify"))?;
+            check("switch", None)?;
+            lifecycle.prepare_cutover(&name, restored_at).map_err(LegacyRestoreError::Location)?;
             if previous_database_path
                 .try_exists()
                 .map_err(|_| LegacyRestoreError::TargetDirectory)?
@@ -224,8 +271,9 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 .map(|request| backend.database().admit_backup_restore(request))
                 .transpose()
                 .map_err(LegacyRestoreError::Admission)?;
+            check("switch", Some((backend.database(), &database_path, import.compatibility.warnings())))?;
             lifecycle
-                .activate_file(&name, restored_at)
+                .finish_cutover(&name)
                 .map_err(LegacyRestoreError::Location)?;
             Ok(admission)
         }
@@ -234,6 +282,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         let admission = match outcome {
             Ok(admission) => admission,
             Err(error) => {
+                lifecycle.recover_reset_preparation().map_err(LegacyRestoreError::Location)?;
                 if self
                     .location
                     .active_path()
@@ -247,6 +296,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             }
         };
         Ok(LegacyRestoreReceipt {
+            warnings: import.compatibility.warnings().to_vec(),
             database_path,
             previous_database_path,
             run_id,
@@ -302,8 +352,8 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                     _ => None,
                 }),
         );
-        if let Some(fingerprint) = &plan.source_fingerprint {
-            let scope = lettuce_transfer::LegacyIdScope::new(fingerprint);
+        if plan.source_fingerprint.is_some() {
+            let scope = lettuce_transfer::LegacyIdScope::new();
             written.extend(
                 source
                     .authored_plan()
@@ -453,6 +503,7 @@ mod tests {
         }]);
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 2,
                 created_at: 1_700_000_000_000,
                 app_version: "1.0.0".into(),
@@ -469,7 +520,6 @@ mod tests {
         let plan = compatibility.legacy_import_plan();
         let receipt = coordinator
             .replace(
-                OperationId::new(),
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
@@ -617,6 +667,7 @@ mod tests {
         greeting["attachments"] = reply["attachments"].clone();
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 1,
                 created_at: 1,
                 app_version: "legacy".into(),
@@ -725,7 +776,6 @@ mod tests {
         assert_eq!(plan.media.media.len(), 5);
         let receipt = coordinator
             .replace(
-                OperationId::new(),
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
@@ -953,6 +1003,7 @@ mod tests {
         };
         let source = |title: &str| {
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 1,
                 created_at: 1,
                 app_version: "legacy".into(),
@@ -1103,11 +1154,7 @@ mod tests {
             let compatibility = source(title);
             assert_eq!(compatibility.llm_metrics.metrics.len(), 6);
             let plan = compatibility.legacy_import_plan();
-            let scope = lettuce_transfer::LegacyIdScope::new(
-                plan.source_fingerprint
-                    .as_ref()
-                    .expect("source fingerprint"),
-            );
+            let scope = lettuce_transfer::LegacyIdScope::new();
             let preserved = vec![
                 lettuce_transfer::LegacyPreservedRow {
                     source_table: "companion_turn_effects".into(),
@@ -1203,13 +1250,18 @@ mod tests {
         };
         let (import, scope) = import_of("Conversation");
         let (changed, changed_scope) = import_of("Renamed conversation");
-        assert_ne!(scope, changed_scope);
+        assert_ne!(
+            import.plan.source_fingerprint,
+            changed.plan.source_fingerprint
+        );
+        assert_eq!(scope, changed_scope);
         let check = |database: &Database, scope: lettuce_transfer::LegacyIdScope| {
             let graph = database
                 .read_provider_backup_graph()
                 .expect("restored graph");
             let found = |legacy: &str| {
-                let message_id = lettuce_types::MessageId::from_uuid(scope.source(legacy));
+                let message_id =
+                    lettuce_types::MessageId::from_uuid(scope.source("message", legacy));
                 let conversation = graph
                     .conversation_history
                     .conversations
@@ -1253,9 +1305,11 @@ mod tests {
             );
             assert_eq!(
                 reply_metric.id,
-                lettuce_types::GenerationAttemptId::from_uuid(
-                    scope.derived("variant-a", "attempt")
-                )
+                lettuce_types::GenerationAttemptId::from_uuid(scope.derived(
+                    "generation_attempt",
+                    "variant-a",
+                    "attempt"
+                ))
                 .to_string()
             );
             let group_metric = found(&group_reply).expect("the group reply's metric");
@@ -1282,7 +1336,6 @@ mod tests {
         };
         let first = coordinator
             .replace(
-                OperationId::new(),
                 &import,
                 None,
                 None,
@@ -1301,7 +1354,7 @@ mod tests {
             lettuce_transfer::backup_sql_text(skip, "source_key") == Some("conflict-01")
                 && lettuce_transfer::backup_sql_text(skip, "reason") == Some("no_fork_point")
         }));
-        let reply_id = lettuce_types::MessageId::from_uuid(scope.source(&reply));
+        let reply_id = lettuce_types::MessageId::from_uuid(scope.source("message", &reply));
         let forked = graph
             .conversation_history
             .conversations
@@ -1346,7 +1399,7 @@ mod tests {
         assert_eq!(graph.companion_effects.effects.len(), 1);
         assert_eq!(
             effect.assistant_message_id,
-            lettuce_types::MessageId::from_uuid(scope.source(&reply))
+            lettuce_types::MessageId::from_uuid(scope.source("message", &reply))
         );
         assert_eq!(effect.seed.relationship_delta.trust, 0.1);
         assert_eq!(effect.seed.signal_changes.added, vec!["curious".to_owned()]);
@@ -1384,7 +1437,6 @@ mod tests {
         drop(restored);
         let second = coordinator
             .replace(
-                OperationId::new(),
                 &import,
                 None,
                 None,
@@ -1399,7 +1451,6 @@ mod tests {
         );
         let third = coordinator
             .replace(
-                OperationId::new(),
                 &changed,
                 None,
                 None,
@@ -1428,6 +1479,7 @@ mod tests {
             LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 2,
                 created_at: 1_700_000_000_000,
                 app_version: "1.0.0".into(),
@@ -1439,7 +1491,6 @@ mod tests {
         let plan = compatibility.legacy_import_plan();
         let receipt = coordinator
             .replace(
-                OperationId::new(),
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,

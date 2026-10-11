@@ -179,6 +179,22 @@ impl Database {
         Ok(CreateJobResult { job, created })
     }
 
+    pub fn checkpoint_backup_job(&self, mutation: JobMutation, detail: &serde_json::Value) -> Result<JobSnapshot, StoreError> {
+        if !matches!(mutation, JobMutation::StageChanged { .. }) || !detail.is_object() { return Err(StoreError::InvalidData); }
+        let id = mutation.job_id();
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
+        let before = load_with_children(&transaction, [id])?;
+        let current = before.get(&id).ok_or(StoreError::NotFound)?;
+        if current.snapshot.state != lettuce_jobs::JobState::Running { return Err(StoreError::IllegalTransition); }
+        if !matches!(current.snapshot.kind, lettuce_jobs::JobKind::BackupExport | lettuce_jobs::JobKind::BackupRestore) { return Err(StoreError::InvalidData); }
+        let job = apply_to_job_set(&transaction, before, |store| store.append_and_transition(mutation))?;
+        let changed = transaction.execute("UPDATE job_details SET detail_json=?2 WHERE job_id=?1", params![id.to_string(), detail.to_string()]).map_err(|_| StoreError::Storage)?;
+        if changed != 1 { return Err(StoreError::InvalidData); }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
     /// Publishes a terminal job and its result together. A crash cannot leave
     /// a known external result attached to a still-running job.
     pub fn settle_job_with_detail(
@@ -2588,4 +2604,29 @@ mod tests {
             .expect("corrupt projection");
         assert_eq!(database.get(created.job.id), Err(StoreError::InvalidData));
     }
+    #[test]
+    fn backup_publication_checkpoint_keeps_claim_cancel_and_rollback_guards() {
+        let database = Database::open_in_memory().expect("database");
+        let spec = JobSpec::new(lettuce_jobs::JobKind::BackupExport, JobSubject::new(lettuce_jobs::SubjectKind::Backup, "checkpoint").expect("subject"), OutcomeRef::Request(lettuce_types::RequestId::new())).with_resources(vec![ResourceClass::DiskWrite]);
+        let original = serde_json::json!({"temporary":"owned.partial","size":null});
+        let job = database.admit_job_with_detail(spec, "backup-checkpoint", "digest", &original).expect("admit");
+        let at = job.updated_at;
+        let claim = database.claim(job.id, WorkerId::new(), at, Duration::from_secs(60), &availability()).expect("claim").expect("owned").claim;
+        database.append_and_transition(JobMutation::Start { claim: claim.clone(), at }).expect("start");
+        let updated = serde_json::json!({"temporary":"owned.partial","size":123});
+        let mutation = JobMutation::StageChanged { claim: claim.clone(), stage: lettuce_jobs::StageSnapshot::new("publish", true).expect("stage"), at };
+        let mut foreign = claim.clone();
+        foreign.worker_id = WorkerId::new();
+        assert!(database.checkpoint_backup_job(JobMutation::StageChanged { claim: foreign, stage: lettuce_jobs::StageSnapshot::new("publish", true).expect("stage"), at }, &updated).is_err());
+        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").detail, original);
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_backup_checkpoint BEFORE UPDATE ON job_details BEGIN SELECT RAISE(ABORT,'injected'); END;").expect("inject");
+        assert_eq!(database.checkpoint_backup_job(mutation.clone(), &updated), Err(StoreError::Storage));
+        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").detail, original);
+        assert_ne!(database.get(job.id).expect("job").expect("exists").stage.name.as_str(), "publish");
+        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_backup_checkpoint;").expect("remove injection");
+        database.append_and_transition(JobMutation::RequestCancellation { id: job.id, reason: lettuce_jobs::CancellationReason::User, at }).expect("cancel");
+        assert!(database.checkpoint_backup_job(mutation, &updated).is_err());
+        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").detail, original);
+    }
+
 }

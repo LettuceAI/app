@@ -46,12 +46,36 @@ pub trait FileAccess: Send + Sync {
 
     fn create(&self, uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError>;
 
+    fn remove(&self, _uri: &str) -> Result<(), FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
+
     fn create_export(
         &self,
         _uri: &str,
         _source: Option<&std::fs::File>,
         _protected: ExportProtection<'_>,
     ) -> Result<Box<dyn Write + Send>, FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
+
+    fn backup_temporary_location(&self, _target: Option<&str>, _name: &str) -> Result<String, FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
+
+    fn create_backup_temporary(&self, _intent: &str, _protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
+
+    fn sync_backup(&self, _uri: &str) -> Result<(), FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
+
+    fn backup_publication_candidates(&self, temporary: &str, _name: &str) -> Result<Vec<String>, FileAccessError> {
+        Ok(vec![temporary.to_owned()])
+    }
+
+    fn publish_backup(&self, _temporary: &str, _target: Option<&str>, _name: &str, _protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
         Err(FileAccessError::Unsupported)
     }
 

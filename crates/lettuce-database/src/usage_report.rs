@@ -121,7 +121,7 @@ fn read_dispatches(
 fn read_legacy(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<Vec<UsageReportRow>, UsageReportError> {
-    let mut statement = transaction.prepare("SELECT u.source_id,u.metadata_json,r.source_fingerprint,
+    let mut statement = transaction.prepare("SELECT u.source_id,u.metadata_json,
         json_object('timestamp',u.recorded_at,'status',CASE u.success WHEN 1 THEN 'succeeded' ELSE 'failed' END,
         'session_id',u.session_source_id,'character_id',u.character_source_id,'character_name',u.character_name,
         'model_id',u.model_profile_id,'model_name',u.model_name,'provider_kind',u.provider_source_id,
@@ -129,41 +129,32 @@ fn read_legacy(
         'prompt_tokens',u.prompt_tokens,'completion_tokens',u.completion_tokens,'total_tokens',u.total_tokens,
         'memory_tokens',u.memory_tokens,'summary_tokens',u.summary_tokens,'reasoning_tokens',u.reasoning_tokens,
         'image_tokens',u.image_tokens,'audio_tokens',u.audio_tokens,'prompt_cost',u.prompt_cost,
-        'completion_cost',u.completion_cost,'total_cost',u.total_cost,'error_message',u.error_message),u.run_id
-        FROM legacy_usage_records u LEFT JOIN legacy_import_runs r ON r.id=u.run_id")
+        'completion_cost',u.completion_cost,'total_cost',u.total_cost,'error_message',u.error_message)
+        FROM legacy_usage_records u")
         .map_err(|_| UsageReportError::Storage)?;
     statement
         .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
+                row.get::<_, String>(2)?,
             ))
         })
         .map_err(|_| UsageReportError::Storage)?
         .map(|raw| {
-            let (source, metadata, fingerprint, fields, run) =
-                raw.map_err(|_| UsageReportError::Storage)?;
-            let fingerprint = fingerprint
-                .ok_or(UsageReportError::InvalidData)?
-                .parse()
-                .map_err(|_| UsageReportError::InvalidData)?;
-            let scope = lettuce_transfer::LegacyIdScope::new(&fingerprint);
+            let (source, metadata, fields) = raw.map_err(|_| UsageReportError::Storage)?;
+            let scope = lettuce_transfer::LegacyIdScope::new();
             let mut row: UsageReportRow =
                 serde_json::from_str(&fields).map_err(|_| UsageReportError::InvalidData)?;
-            let identity =
-                serde_json::to_string(&(run, source)).map_err(|_| UsageReportError::InvalidData)?;
-            row.id = scope.derived(&identity, "usage-report").to_string();
+            row.id = scope.source("usage_report", &source).to_string();
             row.session_id = row
                 .session_id
                 .filter(|id| !id.is_empty())
-                .map(|id| scope.source(&id).to_string());
+                .map(|id| scope.source("conversation", &id).to_string());
             row.character_id = row
                 .character_id
                 .filter(|id| !id.is_empty())
-                .map(|id| scope.source(&id).to_string());
+                .map(|id| scope.source("character", &id).to_string());
             let metadata: BTreeMap<String, String> =
                 serde_json::from_str(&metadata).map_err(|_| UsageReportError::InvalidData)?;
             let count = |keys: &[&str]| {

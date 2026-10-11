@@ -32,14 +32,16 @@ The conversation usage section exports version 3 with a required origin on every
 
 A version 2 backup is one streamed file:
 
-1. A plaintext header with only the magic and the Argon2id parameters and salt. New backups use RFC 9106's second recommended setting (64 MiB, t=3, p=4); readers accept a bounded range so later increases stay readable.
+1. A plaintext header with the magic, Argon2id parameters and salt, format version, creation time and app version. The app version occupies a length-prefixed 64-byte field with zero padding. New backups use RFC 9106's second recommended setting (64 MiB, t=3, p=4); readers accept a bounded range so later increases stay readable.
 2. Every section encrypted with XChaCha20-Poly1305 in 1 MiB chunks: a random 19-byte nonce prefix per section, then a chunk counter and a last-chunk flag. The associated data binds the header hash and the section index.
 3. The encrypted manifest: section names, schemas, sizes and BLAKE3 hashes.
 4. A plaintext footer with the manifest's nonce and length.
 
-Nothing about the content is visible without the password, including section names, which for media contain content hashes. Reordered, swapped, truncated or extended data, duplicate or unsafe names and a repeated nonce prefix all reject the backup. `BackupWriter` appends sections from any reader, and `BackupReader` opens a seekable source and decrypts one section at a time into memory or a sink, so no section has to be held whole. `verify_backup_frame` checks the plaintext frame without the password, and `detect_backup_format` tells a version 2 file from a legacy ZIP (version 1); anything else is rejected rather than guessed.
+Only the public header is visible without the password; section names, which for media contain content hashes, remain encrypted. `read_backup_header` reads the format version, creation time and app version without a password; `read_backup_header_bytes` also returns the complete validated header, including the random salt, for publication recovery; these values are authenticated when the backup is opened and must match its encrypted manifest. Reordered, swapped, truncated or extended data, duplicate or unsafe names and a repeated nonce prefix all reject the backup. `BackupWriter` appends sections from any reader, and `BackupReader` opens a seekable source and decrypts one section at a time into memory or a sink, so no section has to be held whole. `verify_backup_frame` checks the plaintext frame without the password, and `detect_backup_format` tells a version 2 file from a legacy ZIP (version 1); anything else is rejected rather than guessed.
 
 Limits: 2 GiB per section and 1 TiB in total. A data document larger than `BACKUP_DATA_PART_BYTES` (1 GiB) continues in `<name>.part<N>` sections that restore joins before decoding, so the per-section limit never limits the library. The envelope refuses more than 2 097 152 entries (media blobs plus artifacts) or a manifest over 1 GiB. The whole graph is still built in memory during export and restore.
+
+The envelope accepts any nonempty UTF-8 password without character-class or length restrictions. API export and restore trim passwords before this boundary, and the v1 decoder trims its password before deriving the key.
 
 `BackupArchiveStore` receives a backup into confined resumable partial files and commits it to a new path only after the expected hash (computed by streaming) and the frame verify. An identical existing backup is reused and never replaced. The format has no compression and no archive paths, so there is no traversal or decompression bomb to defend against.
 
@@ -101,7 +103,7 @@ The legacy app's data arrives from two sources that share one pipeline: a live l
 ### Reading the sources
 
 - Database. `lettuce-database` runs a read-only preflight that reports the schema version and counts of importable roots, and inventories media files by path. `LegacyBackupMedia::from_file` hashes a file by streaming; its bytes are read on demand and re-checked against size and hash, and a file that changed after the inventory fails with `SourceChanged`.
-- Archive. `decode_legacy_backup_inventory` opens a version 1 archive from a seekable source. It reproduces the legacy password KDF and XChaCha usage only to authenticate existing archives (new output never uses them), checks entry names before decrypting anything, and returns bounded zeroizing bytes for the known JSON documents and media roots. Each media entry is decrypted once for its size and hash and again when read. Duplicate or unsafe names, plaintext payloads, unknown entries, unsupported manifest versions, bad parameters, wrong passwords and oversized archives reject before anything is converted. It works on bytes, so desktop files and Android `content://` streams share one path.
+- Archive. `decode_legacy_backup_inventory` opens a version 1 archive from a seekable source. It reproduces the legacy password KDF and XChaCha usage only to authenticate existing archives (new output never uses them), checks entry names before decrypting anything, and returns bounded zeroizing bytes for the known JSON documents and media roots. Each media entry is decrypted once for its size and hash and again when read. Unknown entries are ignored and retained as typed warnings in the inventory and compatibility plan. Duplicate or unsafe names, plaintext known payloads, unsupported manifest versions, bad parameters, wrong passwords and oversized archives reject before anything is converted. It works on bytes, so desktop files and Android `content://` streams share one path.
 
 ### Planning
 
@@ -184,3 +186,9 @@ Conversation usage section version 2 includes immutable cleared-usage proofs. Ex
 Legacy media completion proofs carry immutable destination asset and blob identities, content hashes, sizes and completion times. Backup validation resolves each proof to its sealed assignment and checks any surviving catalog records. Removed media stays removed when the proof is restored.
 
 Legacy media planning discovers `avatar_banner.webp` in each character avatar directory and carries it as an independent Banner association through the authored import plan.
+
+Legacy entity identities derive from the entity kind and legacy identity in one source-independent namespace. Different restore sources map the same entity to the same destination identity; every restore still writes a fresh database. Secret-store references remain unique to an attempt so kept databases retain their credentials.
+
+The legacy backup public-header reader shares manifest validation with the decoder and reads no encrypted payload. Header inspection needs no password.
+
+LegacyIdScope derives identities from the entity kind and canonical legacy ID without a source fingerprint. Plan and source fingerprints remain part of import admission and materialization proofs. Backup source I/O errors remain distinct from malformed envelopes in both current and legacy readers.

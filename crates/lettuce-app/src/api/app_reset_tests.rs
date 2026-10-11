@@ -12,7 +12,7 @@ use super::{ApiContext, ApiDatabaseFiles, NoModels};
 use crate::{AppBackend, AppDatabaseLocation};
 
 #[derive(Default)]
-struct Host {
+pub(super) struct Host {
     calls: Mutex<Vec<&'static str>>,
     fail_clear: bool,
     fail_restart: bool,
@@ -143,7 +143,7 @@ async fn reset_resumes_webview_clear_and_restart_after_shutdown_after_cutover() 
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-fn harness() -> (
+pub(super) fn harness() -> (
     std::path::PathBuf,
     AppDatabaseLocation,
     super::tests::Harness,
@@ -597,8 +597,9 @@ async fn a_reset_job_restored_into_another_database_file_never_runs() {
         .expect("restore target");
     std::fs::copy(&source, &target).expect("restored copy holding the queued reset");
     lifecycle
-        .activate_file(&copy, TimestampMillis::new(30))
-        .expect("restore cutover");
+        .prepare_cutover(&copy, TimestampMillis::new(30))
+        .expect("prepare cutover");
+    lifecycle.finish_cutover(&copy).expect("restore cutover");
     drop(lifecycle);
     let backend =
         Arc::new(AppBackend::open(&target, TimestampMillis::new(40)).expect("restored backend"));

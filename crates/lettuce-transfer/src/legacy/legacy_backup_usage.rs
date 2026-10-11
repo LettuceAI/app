@@ -351,6 +351,7 @@ mod tests {
 
     fn source(documents: Vec<LegacyBackupDocument>) -> LegacyBackupAsrPlan {
         let inventory = LegacyBackupInventory {
+            warnings: Vec::new(),
             version: 1,
             created_at: 1,
             app_version: "legacy".into(),

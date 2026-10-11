@@ -113,7 +113,7 @@ pub fn legacy_message_conflicts(
         for (side, id, content) in versions {
             conflicts.push(LegacyMessageConflict {
                 conflict_key: format!("{conflict_key}:{side}"),
-                message_id: lettuce_types::MessageId::from_uuid(scope.source(&id)),
+                message_id: lettuce_types::MessageId::from_uuid(scope.source("message", &id)),
                 content,
                 detected_at: lettuce_types::TimestampMillis::new(detected_at),
             });

@@ -117,6 +117,51 @@ fn create_export_path(
     prepare_export(uri, target, source, protected)
 }
 
+fn backup_target_path(target: &str) -> Result<std::path::PathBuf, FileAccessError> {
+    let target = path(target)?;
+    let name = target.file_name().ok_or(FileAccessError::Unsupported)?;
+    let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    Ok(parent.canonicalize().map_err(|failure| access_error(&failure))?.join(name))
+}
+
+fn backup_temporary_location_path(target: Option<&str>, name: &str) -> Result<String, FileAccessError> {
+    let target = backup_target_path(target.ok_or(FileAccessError::Unsupported)?)?;
+    if Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) { return Err(FileAccessError::Unsupported); }
+    target.with_file_name(name).into_os_string().into_string().map_err(|_| FileAccessError::Unsupported)
+}
+
+fn create_backup_temporary_path(intent: &str, protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
+    if protected(intent, None)? { return Err(FileAccessError::SourceIsTarget); }
+    let file = std::fs::OpenOptions::new().create_new(true).write(true).open(path(intent)?).map_err(|failure| access_error(&failure))?;
+    Ok((intent.to_owned(), Box::new(file)))
+}
+
+fn publish_backup_path(temporary: &str, target: Option<&str>, protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
+    let target_path = backup_target_path(target.ok_or(FileAccessError::Unsupported)?)?;
+    let target = target_path.to_str().ok_or(FileAccessError::Unsupported)?;
+    if protected(target, None)? { return Err(FileAccessError::SourceIsTarget); }
+    let existing = match std::fs::File::open(path(target)?) {
+        Ok(file) => Some(file),
+        Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => None,
+        Err(failure) => return Err(access_error(&failure)),
+    };
+    if let Some(file) = &existing {
+        if protected(target, Some(file))? { return Err(FileAccessError::SourceIsTarget); }
+    }
+    publish_backup_durable(path(temporary)?, path(target)?)?;
+    Ok(target.to_owned())
+}
+
+fn publish_backup_durable(temporary: &Path, target: &Path) -> Result<(), FileAccessError> {
+    std::fs::rename(temporary, target).map_err(|failure| access_error(&failure))?;
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+        std::fs::File::open(parent).and_then(|directory| directory.sync_all()).map_err(|failure| access_error(&failure))?;
+    }
+    Ok(())
+}
+
 /// Files the desktop dialogs return: filesystem paths, opened with `std::fs`.
 #[cfg(desktop)]
 pub(crate) struct DesktopFileAccess<R: Runtime>(pub(crate) AppHandle<R>);
@@ -145,6 +190,15 @@ fn picked_path(picked: tauri_plugin_dialog::FilePath) -> Result<String, FileAcce
 
 #[cfg(desktop)]
 impl<R: Runtime> FileAccess for DesktopFileAccess<R> {
+    fn backup_temporary_location(&self, target: Option<&str>, name: &str) -> Result<String, FileAccessError> { backup_temporary_location_path(target, name) }
+    fn create_backup_temporary(&self, intent: &str, protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> { create_backup_temporary_path(intent, protected) }
+    fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> { std::fs::File::open(path(uri)?).and_then(|file| file.sync_all()).map_err(|failure| access_error(&failure)) }
+    fn publish_backup(&self, temporary: &str, target: Option<&str>, _name: &str, protected: ExportProtection<'_>) -> Result<String, FileAccessError> { publish_backup_path(temporary, target, protected) }
+
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        remove_path(uri)
+    }
+
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
         describe_path(uri)
     }
@@ -209,11 +263,32 @@ impl<R: Runtime> AndroidFileAccess<R> {
         use tauri_plugin_android_fs::AndroidFsExt;
         self.0.android_fs()
     }
+
+    fn metadata_error(&self) -> FileAccessError {
+        let public = self.fs().public_storage();
+        let permission = match public.check_permission() { Ok(permission) => permission, Err(_) => return FileAccessError::Io };
+        if !permission { return FileAccessError::PermissionDenied; }
+        let available = match public.get_primary_volume() { Ok(volume) => volume.is_some_and(|volume| volume.is_available_for_public_storage), Err(_) => return FileAccessError::Io };
+        classify_backup_metadata_error(permission, available)
+    }
+
+    fn pending_backup_uri(&self, intent: &str) -> Result<tauri_plugin_android_fs::FsUri, FileAccessError> {
+        use tauri_plugin_android_fs::PublicGeneralPurposeDir;
+        let public = self.fs().public_storage();
+        if !public.check_permission().map_err(platform_error)? { return Err(FileAccessError::PermissionDenied); }
+        if !public.get_primary_volume().map_err(platform_error)?.is_some_and(|volume| volume.is_available_for_public_storage) { return Err(FileAccessError::Io); }
+        let directory = public.resolve_path(None, PublicGeneralPurposeDir::Download).map_err(platform_error)?.join("LettuceAI");
+        let intent = path(intent)?;
+        if intent.parent() != Some(directory.as_path()) || !intent.file_name().is_some_and(|name| name.to_string_lossy().starts_with("lettuce-backup-") && name.to_string_lossy().ends_with(".partial")) { return Err(FileAccessError::Unsupported); }
+        self.fs().get_info(&tauri_plugin_android_fs::FsUri::from_path(&intent)).map_err(|_| self.metadata_error())?;
+        public.scan_by_path(intent, Some("application/octet-stream")).map_err(platform_error)
+    }
+
 }
 
 #[cfg(target_os = "android")]
-fn platform_error(_error: tauri_plugin_android_fs::Error) -> FileAccessError {
-    FileAccessError::Io
+fn platform_error(error: tauri_plugin_android_fs::Error) -> FileAccessError {
+    access_error(&std::io::Error::from(error))
 }
 
 #[cfg(target_os = "android")]
@@ -224,14 +299,93 @@ fn platform_uri(uri: &str) -> Option<tauri_plugin_android_fs::FsUri> {
 
 #[cfg(target_os = "android")]
 impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
-    fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
-        let Some(uri) = platform_uri(uri) else {
-            return describe_path(uri);
+    fn backup_temporary_location(&self, target: Option<&str>, name: &str) -> Result<String, FileAccessError> {
+        use tauri_plugin_android_fs::PublicGeneralPurposeDir;
+        if target.is_some() || Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) { return Err(FileAccessError::Unsupported); }
+        Ok(self.fs().public_storage().resolve_path(None, PublicGeneralPurposeDir::Download).map_err(platform_error)?.join("LettuceAI").join(name).to_string_lossy().into_owned())
+    }
+
+    fn create_backup_temporary(&self, intent: &str, _protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
+        use tauri_plugin_android_fs::PublicGeneralPurposeDir;
+        let public = self.fs().public_storage();
+        if !public.check_permission().map_err(platform_error)? { return Err(FileAccessError::PermissionDenied); }
+        if !public.get_primary_volume().map_err(platform_error)?.is_some_and(|volume| volume.is_available_for_public_storage) { return Err(FileAccessError::Io); }
+        let directory = public.resolve_path(None, PublicGeneralPurposeDir::Download).map_err(platform_error)?.join("LettuceAI");
+        let intent = path(intent)?;
+        if intent.parent() != Some(directory.as_path()) { return Err(FileAccessError::Unsupported); }
+        if self.fs().get_info(&tauri_plugin_android_fs::FsUri::from_path(&intent)).is_ok() { return Err(FileAccessError::Busy); }
+        match self.metadata_error() {
+            FileAccessError::NotFound => {},
+            failure => return Err(failure),
+        }
+        let name = intent.file_name().ok_or(FileAccessError::Unsupported)?;
+        let uri = public.create_new_file_with_pending(None, PublicGeneralPurposeDir::Download, Path::new("LettuceAI").join(name), Some("application/octet-stream")).map_err(platform_error)?;
+        let writer = match self.fs().open_file_writable(&uri) {
+            Ok(writer) => writer,
+            Err(failure) => {
+                self.fs().remove_file(&uri).map_err(platform_error)?;
+                return Err(platform_error(failure));
+            }
         };
-        Ok(FileDescription {
-            name: self.fs().get_name(&uri).map_err(platform_error)?,
-            size: self.fs().get_len(&uri).map_err(platform_error)?,
+        Ok((uri.uri.clone(), Box::new(writer)))
+    }
+
+    fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> {
+        let uri = platform_uri(uri).ok_or(FileAccessError::Unsupported)?;
+        self.fs().open_file_readable(&uri).map_err(platform_error)?.sync_all().map_err(|failure| access_error(&failure))
+    }
+
+    fn backup_publication_candidates(&self, temporary: &str, name: &str) -> Result<Vec<String>, FileAccessError> {
+        use tauri_plugin_android_fs::{FsUri, PublicGeneralPurposeDir};
+        let uri = platform_uri(temporary).ok_or(FileAccessError::Unsupported)?;
+        if self.fs().open_file_readable(&uri).is_ok() { return Ok(vec![temporary.to_owned()]); }
+        match self.metadata_error() { FileAccessError::NotFound => {}, failure => return Err(failure) }
+        let public = self.fs().public_storage();
+        let directory = public.resolve_path(None, PublicGeneralPurposeDir::Download).map_err(platform_error)?.join("LettuceAI");
+        let entries = match self.fs().read_dir(&FsUri::from_path(&directory)) {
+            Ok(entries) => entries,
+            Err(_) => return match self.metadata_error() { FileAccessError::NotFound => Ok(Vec::new()), failure => Err(failure) },
+        };
+        let stem = Path::new(name).file_stem().and_then(|stem| stem.to_str()).ok_or(FileAccessError::Unsupported)?;
+        let mut candidates = Vec::new();
+        for entry in entries {
+            if entry.is_file() && entry.name().starts_with(stem) && entry.name().ends_with(".lettuce") {
+                candidates.push(public.scan_by_path(directory.join(entry.name()), Some("application/octet-stream")).map_err(platform_error)?.uri);
+            }
+        }
+        Ok(candidates)
+    }
+
+    fn publish_backup(&self, temporary: &str, target: Option<&str>, name: &str, _protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
+        if target.is_some() { return Err(FileAccessError::Unsupported); }
+        let uri = platform_uri(temporary).ok_or(FileAccessError::Unsupported)?;
+        let published = if self.fs().get_name(&uri).map_err(platform_error)?.ends_with(".partial") {
+            self.fs().rename(&uri, name).map_err(platform_error)?
+        } else { uri };
+        self.fs().public_storage().set_pending(&published, false).map_err(platform_error)?;
+        Ok(published.uri)
+    }
+
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        let uri = match platform_uri(uri) {
+            Some(uri) => uri,
+            None if Path::new(uri).file_name().is_some_and(|name| name.to_string_lossy().starts_with("lettuce-backup-") && name.to_string_lossy().ends_with(".partial")) => self.pending_backup_uri(uri)?,
+            None => return remove_path(uri),
+        };
+        self.fs().remove_file(&uri).map_err(|failure| {
+            if self.fs().get_info(&uri).is_err() { self.metadata_error() }
+            else { platform_error(failure) }
         })
+    }
+
+    fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
+        let uri = match platform_uri(uri) {
+            Some(uri) => uri,
+            None if Path::new(uri).file_name().is_some_and(|name| name.to_string_lossy().starts_with("lettuce-backup-") && name.to_string_lossy().ends_with(".partial")) => self.pending_backup_uri(uri)?,
+            None => return describe_path(uri),
+        };
+        let entry = self.fs().get_info(&uri).map_err(|_| self.metadata_error())?;
+        Ok(FileDescription { name: entry.name().to_owned(), size: entry.file_len_or_err().map_err(platform_error)? })
     }
 
     fn open(&self, uri: &str) -> Result<Box<dyn FileReader>, FileAccessError> {
@@ -316,6 +470,15 @@ pub(crate) struct PathFileAccess;
 
 #[cfg(not(any(desktop, target_os = "android")))]
 impl FileAccess for PathFileAccess {
+    fn backup_temporary_location(&self, target: Option<&str>, name: &str) -> Result<String, FileAccessError> { backup_temporary_location_path(target, name) }
+    fn create_backup_temporary(&self, intent: &str, protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> { create_backup_temporary_path(intent, protected) }
+    fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> { std::fs::File::open(path(uri)?).and_then(|file| file.sync_all()).map_err(|failure| access_error(&failure)) }
+    fn publish_backup(&self, temporary: &str, target: Option<&str>, _name: &str, protected: ExportProtection<'_>) -> Result<String, FileAccessError> { publish_backup_path(temporary, target, protected) }
+
+    fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        remove_path(uri)
+    }
+
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
         describe_path(uri)
     }
@@ -524,4 +687,111 @@ mod tests {
         );
         std::fs::remove_dir_all(root).expect("test operation succeeds");
     }
+}
+
+fn remove_path(uri: &str) -> Result<(), FileAccessError> {
+    std::fs::remove_file(uri).map_err(|failure| access_error(&failure))
+}
+
+#[cfg(test)]
+mod backup_publication_tests {
+    use super::*;
+
+    #[test]
+    fn missing_backup_classification_preserves_permission_and_volume_failures() {
+        assert_eq!(classify_backup_metadata_error(false, false), FileAccessError::PermissionDenied);
+        assert_eq!(classify_backup_metadata_error(false, true), FileAccessError::PermissionDenied);
+        assert_eq!(classify_backup_metadata_error(true, false), FileAccessError::Io);
+        assert_eq!(classify_backup_metadata_error(true, true), FileAccessError::NotFound);
+    }
+
+    #[test]
+    fn review_backup_paths_resolve_parent_aliases() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-paths-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("sub")).expect("folder");
+        let root = root.canonicalize().expect("root");
+        let target = root.join("backup.lettuce");
+        let mut aliases = vec![root.join("sub/../backup.lettuce")];
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&root, root.join("alias")).expect("parent alias");
+            aliases.push(root.join("alias/backup.lettuce"));
+        }
+        for alias in aliases {
+            let intent = backup_temporary_location_path(Some(alias.to_str().expect("alias")), "backup.partial").expect("intent");
+            assert_eq!(intent, root.join("backup.partial").display().to_string());
+            std::fs::write(&intent, b"complete archive").expect("temporary");
+            assert_eq!(publish_backup_path(&intent, Some(alias.to_str().expect("alias")), &|_, _| Ok(false)).expect("publish"), target.display().to_string());
+        }
+        #[cfg(unix)]
+        {
+            let referent = root.join("referent.lettuce");
+            std::fs::write(&referent, b"kept referent").expect("referent");
+            std::fs::remove_file(&target).expect("old target");
+            std::os::unix::fs::symlink(&referent, &target).expect("target symlink");
+            let intent = backup_temporary_location_path(Some(target.to_str().expect("target")), "backup.partial").expect("intent");
+            std::fs::write(&intent, b"replacement").expect("temporary");
+            assert_eq!(publish_backup_path(&intent, Some(target.to_str().expect("target")), &|_, _| Ok(false)).expect("publish"), target.display().to_string());
+            assert_eq!(std::fs::read(&referent).expect("kept"), b"kept referent");
+            assert!(!target.symlink_metadata().expect("target").is_symlink());
+        }
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn backup_publication_replaces_the_path_after_complete_file_sync() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-publish-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let target = root.join("backup.lettuce");
+        std::fs::write(&target, b"old backup").expect("old backup");
+        let intent = backup_temporary_location_path(Some(target.to_str().expect("path")), "backup.partial").expect("intent");
+        let (uri, mut writer) = create_backup_temporary_path(&intent, &|_, _| Ok(false)).expect("temporary");
+        writer.write_all(b"complete new backup").expect("write");
+        writer.flush().expect("flush");
+        drop(writer);
+        std::fs::File::open(&uri).expect("temporary").sync_all().expect("durable");
+        assert_eq!(std::fs::read(&target).expect("old still active"), b"old backup");
+        assert_eq!(publish_backup_path(&uri, Some(target.to_str().expect("path")), &|_, _| Ok(false)).expect("publish"), target.display().to_string());
+        assert_eq!(std::fs::read(&target).expect("new"), b"complete new backup");
+        assert!(!Path::new(&uri).exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn review_backup_replacement_does_not_require_an_advisory_target_lease() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-target-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let target = root.join("backup.lettuce");
+        let temporary = root.join("backup.partial");
+        std::fs::write(&target, b"old").expect("old");
+        std::fs::write(&temporary, b"new complete backup").expect("new");
+        let reader = std::fs::File::open(&target).expect("reader");
+        fs4::fs_std::FileExt::lock_shared(&reader).expect("external reader");
+        publish_backup_path(temporary.to_str().expect("temporary"), Some(target.to_str().expect("target")), &|_, _| Ok(false)).expect("atomic replacement permits readers");
+        assert_eq!(std::fs::read(&target).expect("new file"), b"new complete backup");
+        assert!(!temporary.exists());
+        drop(reader);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn backup_publication_never_overwrites_a_protected_target() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-protected-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let target = root.join("app.db");
+        let temporary = root.join("backup.partial");
+        std::fs::write(&target, b"user database").expect("database");
+        std::fs::write(&temporary, b"backup").expect("backup");
+        assert_eq!(publish_backup_path(temporary.to_str().expect("temp"), Some(target.to_str().expect("target")), &|_, _| Ok(true)), Err(FileAccessError::SourceIsTarget));
+        assert_eq!(std::fs::read(&target).expect("kept"), b"user database");
+        assert!(temporary.is_file());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+}
+
+#[cfg(any(target_os = "android", test))]
+fn classify_backup_metadata_error(permission: bool, volume_available: bool) -> FileAccessError {
+    if !permission { FileAccessError::PermissionDenied }
+    else if !volume_available { FileAccessError::Io }
+    else { FileAccessError::NotFound }
 }

@@ -60,6 +60,11 @@ pub struct LegacyBackupCompatibilityPlan {
 
 impl LegacyBackupCompatibilityPlan {
     #[must_use]
+    pub fn warnings(&self) -> &[crate::LegacyBackupWarning] {
+        &self.inventory().warnings
+    }
+
+    #[must_use]
     pub fn legacy_import_plan(&self) -> crate::LegacyImportPlan {
         let asr = &self
             .creation_helpers
@@ -350,21 +355,33 @@ struct MetaEntry {
 fn validate_meta(
     inventory: &LegacyBackupInventory,
 ) -> Result<Vec<LegacyBackupConversionNotice>, LegacyBackupCompatibilityError> {
+    let mut notices = inventory
+        .warnings
+        .iter()
+        .map(|warning| {
+            let crate::LegacyBackupWarning::UnknownEntry { name } = warning;
+            LegacyBackupConversionNotice {
+                kind: crate::LegacyBackupConversionNoticeKind::Unsupported,
+                document: LegacyBackupDocumentKind::Meta,
+                field: format!("archive:{name}"),
+            }
+        })
+        .collect::<Vec<_>>();
     let Some(document) = inventory
         .documents
         .iter()
         .find(|document| document.kind == LegacyBackupDocumentKind::Meta)
     else {
-        return Ok(vec![LegacyBackupConversionNotice {
+        notices.push(LegacyBackupConversionNotice {
             kind: crate::LegacyBackupConversionNoticeKind::Absent,
             document: LegacyBackupDocumentKind::Meta,
             field: "$".into(),
-        }]);
+        });
+        return Ok(notices);
     };
     let rows: Vec<MetaEntry> = serde_json::from_slice(&document.bytes)
         .map_err(|_| LegacyBackupCompatibilityError::InvalidMeta)?;
     let mut keys = BTreeSet::new();
-    let mut notices = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
         if row.key.is_empty()
             || row.key.len() > META_TEXT_LIMIT
@@ -596,6 +613,7 @@ mod tests {
 
     fn inventory() -> LegacyBackupInventory {
         LegacyBackupInventory {
+            warnings: Vec::new(),
             version: 2,
             created_at: 1_700_000_000_000,
             app_version: "1.0.0".into(),
@@ -702,6 +720,24 @@ mod tests {
         assert!(matches!(
             plan_legacy_backup_compatibility(duplicate_media),
             Err(LegacyBackupCompatibilityError::DuplicateInventory)
+        ));
+    }
+
+    #[test]
+    fn ignored_archive_warnings_are_bound_to_the_seal() {
+        let mut source = inventory();
+        let warning = crate::LegacyBackupWarning::UnknownEntry {
+            name: "future/data.json".into(),
+        };
+        source.warnings.push(warning.clone());
+        let mut plan = plan_legacy_backup_compatibility(source).expect("plan");
+        assert_eq!(plan.warnings(), &[warning]);
+        plan.verify_seal().expect("sealed warnings");
+        plan.notices
+            .retain(|notice| notice.field != "archive:future/data.json");
+        assert!(matches!(
+            plan.verify_seal(),
+            Err(LegacyBackupCompatibilityError::InvalidSeal)
         ));
     }
 

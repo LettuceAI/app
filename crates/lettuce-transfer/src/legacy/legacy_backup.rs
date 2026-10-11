@@ -27,12 +27,18 @@ const MAX_LEGACY_MANIFEST_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyBackupInventory {
+    pub warnings: Vec<LegacyBackupWarning>,
     pub version: u32,
     pub created_at: u64,
     pub app_version: String,
     pub source_hash: ContentHash,
     pub documents: Vec<LegacyBackupDocument>,
     pub media: Vec<LegacyBackupMedia>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LegacyBackupWarning {
+    UnknownEntry { name: String },
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -73,7 +79,7 @@ impl LegacyArchive {
             .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
         let mut file = zip
             .by_index(index)
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+            .map_err(archive_error)?;
         let encrypted = read_bounded(&mut file, MAX_LEGACY_BACKUP_ENTRY_BYTES as u64 + 16)?;
         let decrypted = Zeroizing::new(decrypt(&encrypted, &self.key, &self.nonce)?);
         if decrypted.len() > MAX_LEGACY_BACKUP_ENTRY_BYTES {
@@ -288,6 +294,8 @@ impl LegacyBackupMediaRoot {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LegacyBackupInventoryError {
+    #[error("legacy backup source could not be read")]
+    Io,
     #[error("legacy backup password is invalid")]
     InvalidPassword,
     #[error("legacy backup archive is malformed")]
@@ -302,6 +310,15 @@ pub enum LegacyBackupInventoryError {
     Authentication,
 }
 
+fn read_error(failure: std::io::Error) -> LegacyBackupInventoryError {
+    if matches!(failure.kind(), std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::InvalidData) { LegacyBackupInventoryError::InvalidArchive }
+    else { LegacyBackupInventoryError::Io }
+}
+
+fn archive_error(failure: zip::result::ZipError) -> LegacyBackupInventoryError {
+    match failure { zip::result::ZipError::Io(failure) => read_error(failure), _ => LegacyBackupInventoryError::InvalidArchive }
+}
+
 #[derive(Deserialize)]
 struct LegacyManifest {
     version: u32,
@@ -310,6 +327,42 @@ struct LegacyManifest {
     encrypted: bool,
     salt: Option<String>,
     nonce: Option<String>,
+}
+
+fn read_manifest(
+    archive: &mut ZipArchive<Box<dyn crate::BackupSource>>,
+) -> Result<LegacyManifest, LegacyBackupInventoryError> {
+    let manifest_bytes = read_public_entry(archive, "manifest.json", MAX_LEGACY_MANIFEST_BYTES)?;
+    let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?;
+    if manifest.version != LEGACY_MANIFEST_VERSION
+        || !manifest.encrypted
+        || manifest.app_version.is_empty()
+        || manifest.app_version.len() > 64
+        || manifest.app_version.chars().any(char::is_control)
+    {
+        return Err(LegacyBackupInventoryError::InvalidManifest);
+    }
+    Ok(manifest)
+}
+
+pub fn read_legacy_backup_header(
+    mut input: impl crate::BackupSource + 'static,
+) -> Result<crate::BackupHeader, LegacyBackupInventoryError> {
+    input
+        .seek(SeekFrom::Start(0))
+        .map_err(read_error)?;
+    let mut archive = ZipArchive::new(Box::new(input) as Box<dyn crate::BackupSource>)
+        .map_err(archive_error)?;
+    let manifest = read_manifest(&mut archive)?;
+    Ok(crate::BackupHeader {
+        version: 1,
+        created_at: lettuce_types::TimestampMillis::new(
+            i64::try_from(manifest.created_at)
+                .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?,
+        ),
+        app_version: manifest.app_version,
+    })
 }
 
 /// Decodes a version-1 backup from a seekable source. Documents are
@@ -325,41 +378,30 @@ pub fn decode_legacy_backup_inventory(
     validate_password(password)?;
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let mut prefix = [0u8; 4];
     input
         .read_exact(&mut prefix)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     if prefix != *b"PK\x03\x04" {
         return Err(LegacyBackupInventoryError::InvalidArchive);
     }
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let mut hasher = blake3::Hasher::new();
     hasher
         .update_reader(&mut input)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     let source_hash = ContentHash::parse(hasher.finalize().to_hex().to_string())
         .expect("BLAKE3 produces a valid content hash");
     let mut archive = ZipArchive::new(Box::new(input) as Box<dyn crate::BackupSource>)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(archive_error)?;
     if archive.is_empty() || archive.len() > MAX_BACKUP_ENTRIES {
         return Err(LegacyBackupInventoryError::LimitExceeded);
     }
     validate_archive_metadata(&mut archive)?;
-    let manifest_bytes =
-        read_public_entry(&mut archive, "manifest.json", MAX_LEGACY_MANIFEST_BYTES)?;
-    let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes)
-        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?;
-    if manifest.version != LEGACY_MANIFEST_VERSION
-        || !manifest.encrypted
-        || manifest.app_version.is_empty()
-        || manifest.app_version.len() > 64
-        || manifest.app_version.chars().any(char::is_control)
-    {
-        return Err(LegacyBackupInventoryError::InvalidManifest);
-    }
+    let manifest = read_manifest(&mut archive)?;
     let salt = decode_array::<16>(manifest.salt.as_deref())?;
     let nonce = decode_array::<24>(manifest.nonce.as_deref())?;
     let key = Zeroizing::new(derive_key(password, &salt));
@@ -370,11 +412,16 @@ pub fn decode_legacy_backup_inventory(
     }
 
     let mut entries = Vec::new();
+    let mut warnings = Vec::new();
     for index in 0..archive.len() {
         let file = archive
             .by_index(index)
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+            .map_err(archive_error)?;
         if file.is_dir() {
+            let name = normalize_archive_name(file.name())?;
+            if !known_directory(&name) {
+                warnings.push(LegacyBackupWarning::UnknownEntry { name });
+            }
             continue;
         }
         let name = normalize_archive_name(file.name())?;
@@ -383,7 +430,17 @@ pub fn decode_legacy_backup_inventory(
         }
         let entry = match document_kind(&name) {
             Some(kind) => Ok(kind),
-            None => Err(media_name(&name)?),
+            None if known_directory(&name) && !name.starts_with("data/") => Err(media_name(&name)?),
+            None if name.starts_with("data/")
+                && name.ends_with(".json")
+                && document_kind(&format!("{name}.enc")).is_some() =>
+            {
+                return Err(LegacyBackupInventoryError::InvalidInventory);
+            }
+            None => {
+                warnings.push(LegacyBackupWarning::UnknownEntry { name });
+                continue;
+            }
         };
         entries.push((index, entry));
     }
@@ -417,6 +474,7 @@ pub fn decode_legacy_backup_inventory(
         (&left.root, &left.relative_segments).cmp(&(&right.root, &right.relative_segments))
     });
     Ok(LegacyBackupInventory {
+        warnings,
         version: 1,
         created_at: manifest.created_at,
         app_version: manifest.app_version,
@@ -434,15 +492,12 @@ fn validate_archive_metadata(
     for index in 0..archive.len() {
         let file = archive
             .by_index(index)
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+            .map_err(archive_error)?;
         let name = normalize_archive_name(file.name())?;
         if !names.insert(name.clone()) {
             return Err(LegacyBackupInventoryError::InvalidInventory);
         }
         if file.is_dir() {
-            if !known_directory(&name) {
-                return Err(LegacyBackupInventoryError::InvalidInventory);
-            }
             continue;
         }
         let max_entry = u64::try_from(MAX_LEGACY_BACKUP_ENTRY_BYTES)
@@ -466,7 +521,7 @@ fn read_public_entry(
 ) -> Result<Vec<u8>, LegacyBackupInventoryError> {
     let mut file = archive
         .by_name(name)
-        .map_err(|_| LegacyBackupInventoryError::InvalidInventory)?;
+        .map_err(|failure| match failure { zip::result::ZipError::Io(failure) => read_error(failure), _ => LegacyBackupInventoryError::InvalidInventory })?;
     if file.is_dir() || file.size() > max_bytes {
         return Err(LegacyBackupInventoryError::LimitExceeded);
     }
@@ -481,7 +536,7 @@ fn read_bounded(
     reader
         .take(max_bytes.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
+        .map_err(read_error)?;
     if u64::try_from(bytes.len()).map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
         > max_bytes
     {
@@ -546,6 +601,10 @@ fn safe_archive_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 4096
         && !name.starts_with('/')
+        && !name
+            .split('/')
+            .next()
+            .is_some_and(|segment| segment.contains(':'))
         && !name.chars().any(char::is_control)
         && name
             .trim_end_matches('/')
@@ -581,7 +640,7 @@ fn decode_array<const N: usize>(
 }
 
 fn validate_password(password: &str) -> Result<(), LegacyBackupInventoryError> {
-    if password.is_empty() || password.len() > 1024 || password.chars().any(char::is_control) {
+    if password.is_empty() {
         return Err(LegacyBackupInventoryError::InvalidPassword);
     }
     Ok(())
@@ -621,7 +680,11 @@ mod tests {
     const NONCE: [u8; 24] = [9; 24];
 
     fn archive(version: u32, entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let key = derive_key(PASSWORD, &SALT);
+        archive_with_password(version, entries, PASSWORD)
+    }
+
+    fn archive_with_password(version: u32, entries: &[(&str, &[u8])], password: &str) -> Vec<u8> {
+        let key = derive_key(password, &SALT);
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for (name, bytes) in entries {
@@ -712,6 +775,15 @@ mod tests {
     }
 
     #[test]
+    fn review_nonempty_passwords_preserve_legacy_bytes() {
+        for password in ["foo\tbar".to_owned(), "a".repeat(1025)] {
+            let bytes = archive_with_password(LEGACY_MANIFEST_VERSION, &[("data/settings.json.enc", b"{}")], &password);
+            let inventory = decode(bytes, &password).expect("legacy password accepted");
+            assert_eq!(inventory.documents.len(), 1);
+        }
+    }
+
+    #[test]
     fn legacy_inventory_trims_the_password_like_the_legacy_exporter() {
         let padded = format!("  {PASSWORD}\t\n");
         assert!(decode(archive(LEGACY_MANIFEST_VERSION, &[]), &padded).is_ok());
@@ -745,7 +817,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_inventory_rejects_unknown_and_traversing_entries() {
+    fn legacy_inventory_rejects_duplicate_and_traversing_entries() {
         assert_eq!(
             decode(
                 archive(
@@ -761,13 +833,6 @@ mod tests {
         );
         assert_eq!(
             decode(
-                archive(LEGACY_MANIFEST_VERSION, &[("data/unknown.json.enc", b"{}")]),
-                PASSWORD,
-            ),
-            Err(LegacyBackupInventoryError::InvalidInventory)
-        );
-        assert_eq!(
-            decode(
                 archive(
                     LEGACY_MANIFEST_VERSION,
                     &[("images/../secrets.txt.enc", b"secret")]
@@ -775,6 +840,56 @@ mod tests {
                 PASSWORD,
             ),
             Err(LegacyBackupInventoryError::InvalidInventory)
+        );
+    }
+
+    #[test]
+    fn legacy_inventory_rejects_absolute_windows_paths() {
+        assert_eq!(
+            decode(
+                archive(
+                    LEGACY_MANIFEST_VERSION,
+                    &[("C:\\users\\backup.txt", b"extra")]
+                ),
+                PASSWORD
+            ),
+            Err(LegacyBackupInventoryError::InvalidInventory)
+        );
+    }
+
+    #[test]
+    fn legacy_public_header_needs_no_password_or_payload_decode() {
+        let header = read_legacy_backup_header(std::io::Cursor::new(archive(
+            LEGACY_MANIFEST_VERSION,
+            &[("data/settings.json.enc", b"invalid JSON")],
+        )))
+        .expect("public header");
+        assert_eq!(header.version, 1);
+        assert_eq!(header.created_at, lettuce_types::TimestampMillis::new(123));
+        assert_eq!(header.app_version, "0.9.0");
+    }
+
+    #[test]
+    fn legacy_inventory_ignores_unknown_entries() {
+        let inventory = decode(
+            archive(
+                LEGACY_MANIFEST_VERSION,
+                &[
+                    ("data/unknown.json.enc", b"{}"),
+                    ("future/plain.txt", b"extra"),
+                ],
+            ),
+            PASSWORD,
+        )
+        .expect("unknown entries do not prevent restore");
+        assert!(inventory.documents.is_empty());
+        assert!(inventory.media.is_empty());
+        assert_eq!(inventory.warnings.len(), 2);
+        assert_eq!(
+            inventory.warnings[0],
+            LegacyBackupWarning::UnknownEntry {
+                name: "data/unknown.json.enc".into()
+            }
         );
     }
 }

@@ -184,10 +184,19 @@ export const commands = {
 	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("job_cancel", { request })),
 	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
 	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
+	backupInspect: (request: BackupInspectRequest) => typedError<BackupHeaderView, ApiError>(__TAURI_INVOKE("backup_inspect", { request })),
+	backupExport: (request: BackupExportRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("backup_export", { request })),
+	backupsList: () => typedError<BackupIndexView[], ApiError>(__TAURI_INVOKE("backups_list")),
+	backupForget: (request: BackupMutationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("backup_forget", { request })),
+	backupDelete: (request: BackupMutationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("backup_delete", { request })),
+	backupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("backup_restore", { request })),
+	legacyBackupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("legacy_backup_restore", { request })),
+	legacyDatabaseImport: (request: LegacyDatabaseImportRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("legacy_database_import", { request })),
 	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef, ApiError>(__TAURI_INVOKE("assets_ingest", { request })),
 	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError>(__TAURI_INVOKE("files_pick_open", { request })),
 	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError>(__TAURI_INVOKE("files_pick_save", { request })),
 	appStatus: () => typedError<AppStatus, ApiError>(__TAURI_INVOKE("app_status")),
+	legacyState: () => typedError<LegacyState, ApiError>(__TAURI_INVOKE("legacy_state")),
 	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError>(__TAURI_INVOKE("app_ui_state_update", { request })),
 	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError>(__TAURI_INVOKE("purge_notices_list")),
 	purgeNoticeDismiss: (request: PurgeNoticeDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("purge_notice_dismiss", { request })),
@@ -410,7 +419,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails =
+export type ApiErrorDetails = { type: "dictation_active" } | { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
 /**
  *  The database this process opened was kept by a cutover (restore or
  *  reset) and accepts no writes; the app must restart on the active one.
@@ -441,7 +450,7 @@ export type ApiErrorDetails =
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = { type: "database_reloaded" } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -483,6 +492,7 @@ export type AppStatus = {
 	ui_state: { [key in string]: unknown },
 	/**  A database from the previous app version was found on this device. */
 	legacy_database_detected: boolean,
+	legacy_state: LegacyState,
 	unresolved_sync_conflicts: number,
 	purge_notices: number,
 };
@@ -764,6 +774,49 @@ export type AvatarPromptRequest = {
 };
 
 export type BackgroundChange = { type: "image"; asset_id: string } | { type: "hidden" } | { type: "reset" };
+
+export type BackupAvailability = "available" | "missing" | "unavailable" | "permission_denied";
+
+export type BackupExportRequest = {
+	password: string,
+	target: FileTarget | null,
+	client_operation_id: string,
+};
+
+export type BackupFailureReason = "invalid_envelope" | "limit_exceeded" | "invalid_password" | "authentication" | "file_unavailable" | "permission_denied" | "storage" | "verification_failed" | "secrets_unavailable" | "cancelled" | "retry_required" | "recovery_required" | "unsupported";
+
+export type BackupHeaderView = {
+	version: number,
+	created_at: number,
+	app_version: string,
+};
+
+export type BackupIndexView = {
+	id: string,
+	uri: string,
+	header: BackupHeaderView,
+	size: number,
+	availability: BackupAvailability,
+};
+
+export type BackupInspectRequest = {
+	source: FileSource,
+};
+
+export type BackupMutationRequest = {
+	id: string,
+	client_operation_id: string,
+};
+
+export type BackupRestoreRequest = {
+	source: FileSource,
+	password: string,
+	client_operation_id: string,
+};
+
+export type BackupSecretStage = "status" | "store";
+
+export type BackupWarning = { type: "unknown_archive_entry"; name: string } | { type: "missing_secret"; owner: string; purpose: string } | { type: "app_secret_unavailable"; purpose: string; stage: BackupSecretStage };
 
 /**
  *  Why a branch cannot be deleted: it is the conversation's first branch or
@@ -2695,7 +2748,7 @@ export type JobFailureDto = {
 };
 
 /**  Why a chat feature job failed, where the user can act on it. */
-export type JobFailureReason = "reset_workers" | "reset_database" | "reset_webview_storage" | "reset_restart" | "usage_billing_unavailable" | "usage_billing_malformed" | "usage_account_missing" | "usage_cost_conflict" | "usage_cost_storage" | "usage_billing_credentials" | "usage_billing_rejected" | "usage_billing_unsupported" | "usage_cost_invalid" | "storage_checkpoint_busy" | "storage_unavailable" | "database_kept_read_only" | "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
+export type JobFailureReason = "dictation_active" | "backup_authentication" | "backup_invalid_envelope" | "backup_limit_exceeded" | "backup_unavailable" | "backup_file_not_found" | "backup_permission_denied" | "backup_file_busy" | "backup_file_unavailable" | "backup_file_unsupported" | "backup_source_is_target" | "backup_cancelled" | "backup_retry_required" | "backup_recovery_required" | "backup_verification_failed" | "reset_workers" | "reset_database" | "reset_webview_storage" | "reset_restart" | "usage_billing_unavailable" | "usage_billing_malformed" | "usage_account_missing" | "usage_cost_conflict" | "usage_cost_storage" | "usage_billing_credentials" | "usage_billing_rejected" | "usage_billing_unsupported" | "usage_cost_invalid" | "storage_checkpoint_busy" | "storage_unavailable" | "database_kept_read_only" | "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
 
 export type JobGetRequest = {
 	job_id: string,
@@ -2732,7 +2785,7 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "usage_costs_updated"; priced: number; cleared: number } | { type: "storage_optimized" } | { type: "app_data_reset"; kept_file: string } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
+export type JobResultDto = { type: "backup_exported"; backup: BackupIndexView; warnings: BackupWarning[] } | { type: "backup_restored"; kept_file: string; warnings: BackupWarning[] } | { type: "usage_costs_updated"; priced: number; cleared: number } | { type: "storage_optimized" } | { type: "app_data_reset"; kept_file: string } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
 /**
  *  The Soul draft a Soul writer job produced, which the caller merges
  *  into its unsaved draft.
@@ -2949,6 +3002,16 @@ export type LaunchGroupRequest = {
 export type LaunchGroupResponse = {
 	conversation_id: string,
 };
+
+export type LegacyDatabaseFailure = { type: "unavailable" } | { type: "invalid_schema" } | { type: "unsupported_schema"; found: number };
+
+export type LegacyDatabaseImportRequest = {
+	client_operation_id: string,
+};
+
+export type LegacyState = { type: "absent" } | { type: "failed"; error: ApiError } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
+
+export type LegacyUpgradeReason = { type: "bin_storage" } | { type: "schema"; found: number };
 
 export type LibraryAlignment = "left" | "center" | "right";
 

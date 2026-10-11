@@ -35,7 +35,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyLlmMetricsImportCoordinator<'
             .source_fingerprint
             .clone()
             .ok_or(LegacyImportRepositoryError::InvalidInput)?;
-        let scope = LegacyIdScope::new(&source_fingerprint);
+        let scope = LegacyIdScope::new();
         self.repository
             .materialize_llm_metrics(LegacyLlmMetricsMaterializationRequest {
                 run_id: admission.run_id,
@@ -48,7 +48,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyLlmMetricsImportCoordinator<'
                         message_id: metric
                             .message_source_id
                             .as_deref()
-                            .map(|source| MessageId::from_uuid(scope.source(source))),
+                            .map(|source| MessageId::from_uuid(scope.source("message", source))),
                         metric: metric.clone(),
                     })
                     .collect(),

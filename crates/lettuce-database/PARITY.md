@@ -33,6 +33,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy import details
 
+- Slice 11a reads normalized Soul facts before the shared-memory column, following `old-code/src-tauri/src/storage_manager/companion_shared_memory.rs:184-233,561-566`. A missing table or empty per-character result keeps the column fallback. Table-only companion owners keep their facts. Malformed normalized array evidence now fails typed instead of becoming legacy's empty arrays (`companion_shared_memory.rs:220,222`).
+
 - Accepted source versions are `LEGACY_DATABASE_SCHEMA_VERSIONS`, 92 to 96: the released 2.2.0 stored 92 or 94, 2.2.1 stored 95 and 2.2.2 to 2.2.5 stored 96. 93 and 94 only repaired group columns, 95 rewrote group session override encodings (the importer reads both forms) and 96 reordered columns and renamed leftover tables. Older databases are refused (the old app migrates them when opened once), and pre-SQLite `.bin` stores are not read (legacy imported them itself on startup).
 - Memory embedding copies in the legacy documents use one canonicalization for session, group, companion and owner documents: normalized rows in the legacy `MemoryEmbedding` field order and f32 text, falling back to the legacy column only when no rows exist.
 - Legacy model rows always carry `model_type = 'chat'` once saved by the modern editor, so a model whose output scopes are image-only plans as an image model; text-and-image outputs stay chat models with image output in their capabilities, and the old `imagegeneration` type still maps to image.
@@ -250,3 +252,11 @@ Savepoint owners use SQLite directly; library notifications keep no savepoint sn
 Character deletion checks enabled conversation participants for unresolved group turns, including local participant overrides. Persona purge increments dependent revisions without changing authored timestamps, so replicated purges retain identical dependent rows. Failed persona purges use sync-entity notices. Catalog saves retain unchanged media and scene asset links; only detached references enter the GC queue.
 
 Scene asset saves compare link identity, scene, asset, slot and ordinal across the entire character before per-scene inserts. Moving a link to an earlier scene and swapping link ordinals preserve their identities; unchanged tuples remain attached without entering the GC queue. Inserts skip only exact tuples, so adding a different scene with an existing link identity still fails with `AlreadyExists` and rolls back.
+
+Slice 11a replaces fingerprint-scoped and randomly assigned legacy entity IDs with one source-independent mapping keyed by entity kind and legacy identity, including chat files and usage-report links. Legacy restore kept the source character and session IDs (`old-code/src-tauri/src/storage_manager/backup.rs:2224-2232,2530-2536`); the normalized rewrite keeps stable translated identities across sources instead. Different sources are tested in separate fresh databases rather than imported alongside one another. Secret references retain per-attempt isolation.
+
+Slice 11a identifies a recorded schema below 92 before requiring modern root tables, without relaxing validation for accepted versions. Legacy performed its own bin import (`old-code/src-tauri/src/storage_manager/importer.rs:12-34`); unsupported storage remains a read-only source for opening 2.2.5 once.
+
+Slice 11a keeps backup records when deleting a file fails, and treats only a genuine not-found as already deleted. Legacy Android pruned the record even after a failed file removal (`old-code/src-tauri/src/storage_manager/backup.rs:4564-4584`). The new device-local index replaces metadata when an export replaces the same path.
+
+Legacy usage-report identities use the source-independent LegacyIdScope without loading a fingerprint that no longer participates in identity generation. Source fingerprints remain required by import admission and materialization.

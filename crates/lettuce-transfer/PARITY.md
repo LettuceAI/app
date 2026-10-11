@@ -4,6 +4,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Backup format
 
+- Slice 11a exposes only the format version, creation time and app version in the authenticated v2 header. Legacy password-free inspection also exposed media counts (`old-code/src-tauri/src/storage_manager/backup.rs:3572-3641`); v2 keeps counts and content metadata encrypted. The unreleased v2 header changes in place with no reader for the earlier layout.
+
 - Dispatch display snapshots preserve the names copied into legacy usage (`old-code/src-tauri/src/chat_manager/service.rs:515-538`). Backup validation rejects a completed snapshot that changes admitted names or contradicts its provider response id; older evidence without display attribution remains readable.
 
 - Provider graph version 3 retains lorebook apply receipt id and name snapshots after hard delete (slice 6 decision 14), instead of making restore depend on a surviving source. Legacy lorebook deletion removed the book row (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`).
@@ -19,6 +21,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 - The live legacy database inventory used to reject large or unreferenced files and libraries over 512 MiB. The media plan now limits each referenced object only by the media store guard (2 GiB, the backup entry size), and the legacy media total is the backup total. The live inventory's source hash binds each file's size and content hash instead of its bytes.
 
 ## Legacy sources
+
+- Slice 11a ignores unknown safe v1 entries, returning `LegacyBackupWarning::UnknownEntry` and binding each warning into the compatibility seal. Legacy read its known documents by name (`old-code/src-tauri/src/storage_manager/backup.rs:3760-3792`) and skipped entries outside its media roots (`backup.rs:4300-4302`). Traversal and duplicate names remain typed failures; plaintext known payloads remain unsupported.
 
 - The importer reads legacy schema 92, which releases up to 2.2.5 kept: 93 and 94 only repaired group columns 2.2.0 already created, 95 rewrote group session override encodings (read in both forms), 96 reordered columns and renamed tables outside the schema. 2.2.0 stored 92 or 94, 2.2.1 stored 95, 2.2.2 to 2.2.5 stored 96.
 - The legacy database and storage tree are read-only migration sources. A completed import keeps them until migration verification succeeds and the user explicitly approves deletion.
@@ -172,3 +176,13 @@ Legacy media removal deleted the physical file (`old-code/src-tauri/src/storage_
 Conversation usage section version 3 exports immutable event origin alongside the existing tombstones and exact owner validation. Origin is required on decode, including older rewrite sections containing events, so an ambiguous event cannot silently become live. Legacy 2.2.5 conversion still records reconstructed message events separately from the usage records legacy actually reported (`old-code/src-tauri/src/usage/repository.rs:270-306,483-501`).
 
 Legacy import retains `avatar_banner.webp` independently from the base avatar, matching `old-code/src-tauri/src/storage_manager/media.rs:1032-1038`. Discovery checks the exact character directory and canonical filename, including characters without a base avatar.
+
+Slice 11a replaces fingerprint-scoped and randomly assigned legacy entity IDs with one source-independent mapping keyed by entity kind and legacy identity, including chat files and usage-report links. Legacy restore kept the source character and session IDs (`old-code/src-tauri/src/storage_manager/backup.rs:2224-2232,2530-2536`); the normalized rewrite keeps stable translated identities across sources instead. Different sources are tested in separate fresh databases rather than imported alongside one another. Secret references retain per-attempt isolation.
+
+Slice 11a reads v1 public manifest metadata without decrypting payloads, retaining the legacy manifest-based inspection boundary (`old-code/src-tauri/src/storage_manager/backup.rs:3572-3641`).
+
+Legacy live-database metrics import keeps every committed row. The 500-row reader truncation is removed: legacy commits an insert before its separate retention delete (`old-code/src-tauri/src/storage_manager/llm_metrics.rs:21`, `old-code/src-tauri/src/storage_manager/llm_metrics.rs:29`), so interruption can leave more than 500 rows. The archive entry and total-size malformed-input guards remain.
+
+Backup passwords keep internal control characters and values longer than 1024 bytes. Legacy backend required only a nonempty trimmed value (`old-code/src-tauri/src/storage_manager/backup.rs:178-189`), and its UI applied only the minimum length and confirmation checks (`old-code/src/ui/pages/settings/hooks/useBackupRestore.ts:191-198`). V1 decoding retains trim-before-key derivation; the v2 API applies the same trim before the envelope.
+
+Current and legacy backup readers distinguish source I/O from malformed or truncated envelopes. LegacyIdScope no longer accepts an ignored fingerprint; identity remains source-independent, while source hashes and compatibility seals continue to protect admissions and materialization.

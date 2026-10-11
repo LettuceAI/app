@@ -307,7 +307,7 @@ where
         )? {
             return Ok(receipt);
         }
-        let mut context = import_context(admission, plan, &source_fingerprint);
+        let mut context = import_context(admission, plan);
         context.dynamic_memory_enabled = lettuce_settings::GlobalSettingsStore::load(self.sources)
             .map_err(|_| Error::Storage)?
             .settings
@@ -360,7 +360,8 @@ where
             .map(|companion| companion.owner.character_id)
             .collect::<std::collections::BTreeSet<_>>();
         let mut companion_souls = Vec::new();
-        let character = |id: CharacterId| CharacterId::from_uuid(context.scope.uuid(id.as_uuid()));
+        let character =
+            |id: CharacterId| CharacterId::from_uuid(context.scope.uuid("character", id.as_uuid()));
         for state in companions {
             if state.soul_materialization
                 == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
@@ -385,7 +386,7 @@ where
         let mut notes = Vec::new();
         for note in scheduled_notes {
             let note = lettuce_companions::CompanionScheduledNote {
-                id: context.scope.uuid(note.note.id),
+                id: context.scope.uuid("scheduled_note", note.note.id),
                 character_id: character(note.note.character_id),
                 ..note.note.clone()
             };
@@ -486,12 +487,13 @@ where
         )?;
         let scene = match &session.selected_scene_source_id {
             Some(id) => LaunchSelection::Explicit(SceneId::from_uuid(
-                context.scope.uuid(parse::<SceneId>(id)?.as_uuid()),
+                context.scope.uuid("scene", parse::<SceneId>(id)?.as_uuid()),
             )),
             None => LaunchSelection::Disabled,
         };
         let legacy_character = parse::<CharacterId>(&session.character_source_id)?;
-        let character_id = CharacterId::from_uuid(context.scope.uuid(legacy_character.as_uuid()));
+        let character_id =
+            CharacterId::from_uuid(context.scope.uuid("character", legacy_character.as_uuid()));
         let title = if session.title.trim().is_empty() {
             lettuce_characters::CharacterRepository::get(self.sources, character_id)
                 .map_err(|_| Error::Storage)?
@@ -519,7 +521,8 @@ where
             .prepare_direct_parts(&request)
             .map_err(|_| Error::Conflict)?;
         let (plan, mut snapshots) = prepared.into_parts();
-        let conversation_id = ConversationId::from_uuid(context.scope.source(&session.source_id));
+        let conversation_id =
+            ConversationId::from_uuid(context.scope.source("conversation", &session.source_id));
         let companion_time_awareness = launch_companion
             .as_ref()
             .is_some_and(|(_, _, time_awareness)| *time_awareness);
@@ -1148,7 +1151,11 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
                     .map_err(|_| Error::Storage)?
             {
                 let draft = crate::launch::documents::draft(
-                    SnapshotArtifactId::from_uuid(context.scope.derived(source_id, slot)),
+                    SnapshotArtifactId::from_uuid(context.scope.derived(
+                        "snapshot_artifact",
+                        source_id,
+                        slot,
+                    )),
                     document.revision,
                     crate::launch::documents::prompt_body(&document),
                 )
@@ -1205,11 +1212,11 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
                     continue;
                 }
                 let draft = crate::launch::documents::draft(
-                    SnapshotArtifactId::from_uuid(
-                        context
-                            .scope
-                            .derived(source_id, &format!("settings:lorebook:{}", details.book.id)),
-                    ),
+                    SnapshotArtifactId::from_uuid(context.scope.derived(
+                        "snapshot_artifact",
+                        source_id,
+                        &format!("settings:lorebook:{}", details.book.id),
+                    )),
                     details.book.revision,
                     crate::launch::documents::lorebook_body(&details),
                 )
@@ -1314,7 +1321,7 @@ fn memory_space(
     messages: &[BackupMessage],
     updated_at: TimestampMillis,
 ) -> Result<(Option<BackupMemorySpace>, Vec<BackupMemoryProjection>), Error> {
-    let space_id = MemorySpaceId::from_uuid(scope.derived(source_id, "memory"));
+    let space_id = MemorySpaceId::from_uuid(scope.derived("memory_space", source_id, "memory"));
     let mut items: Vec<MemoryItem> = Vec::new();
     let mut projections = Vec::new();
     for memory in owner.into_iter().flat_map(|owner| &owner.memories) {
@@ -1348,7 +1355,7 @@ fn memory_space(
             source_message_id: memory
                 .source_message_id
                 .as_deref()
-                .map(|value| MessageId::from_uuid(scope.source(value))),
+                .map(|value| MessageId::from_uuid(scope.source("message", value))),
             source_role: match memory.source_role.as_deref() {
                 Some("user") => Some(MessageRole::User),
                 Some("assistant") => Some(MessageRole::Assistant),
@@ -1487,6 +1494,7 @@ fn legacy_summary_anchor(
         }
         let anchor = MessageId::from_uuid(
             scope.source(
+                "message",
                 event
                     .get("windowMessageIds")?
                     .as_array()?
@@ -1572,7 +1580,8 @@ fn attach_companion_effects(
         else {
             continue;
         };
-        let conversation_id = ConversationId::from_uuid(scope.source(&session.source_id));
+        let conversation_id =
+            ConversationId::from_uuid(scope.source("conversation", &session.source_id));
         let Some(record) = conversations
             .iter_mut()
             .find(|record| record.history.aggregate.conversation.id == conversation_id)
@@ -1603,7 +1612,7 @@ fn legacy_companion_effect(
     let integer = |column: &str| row.get(column).and_then(serde_json::Value::as_i64);
     let conversation_id = record.history.aggregate.conversation.id;
     let imported = |legacy: &str| {
-        let id = MessageId::from_uuid(scope.source(legacy));
+        let id = MessageId::from_uuid(scope.source("message", legacy));
         record
             .history
             .messages
@@ -1687,7 +1696,9 @@ fn legacy_companion_effect(
     let created_at = integer("created_at")?;
     let updated_at = integer("updated_at")?.max(created_at);
     Some(CompanionTurnEffect {
-        id: lettuce_types::CompanionEffectId::from_uuid(scope.source(text("id")?)),
+        id: lettuce_types::CompanionEffectId::from_uuid(
+            scope.source("companion_effect", text("id")?),
+        ),
         conversation_id,
         turn_id: turn.id,
         user_message_id: text("user_message_id").and_then(imported),
@@ -1709,7 +1720,7 @@ fn legacy_companion_effect(
 /// Legacy branch sessions copied their parent's memories with the same ids,
 /// and memory ids are unique across spaces, so each owner derives its own.
 fn memory_item_id(scope: LegacyIdScope, source_id: &str, legacy_id: &str) -> MemoryId {
-    MemoryId::from_uuid(scope.derived(source_id, &format!("memory-item:{legacy_id}")))
+    MemoryId::from_uuid(scope.derived("memory", source_id, &format!("memory-item:{legacy_id}")))
 }
 
 pub(crate) fn committed_stage<S: LegacyImportRepository>(
@@ -1734,8 +1745,11 @@ pub(crate) fn committed_stage<S: LegacyImportRepository>(
 }
 
 pub(crate) fn launch_key(scope: LegacyIdScope, source_id: &str) -> Result<IdempotencyKey, Error> {
-    IdempotencyKey::new(format!("legacy-import.{}", scope.source(source_id)))
-        .map_err(|_| Error::InvalidInput)
+    IdempotencyKey::new(format!(
+        "legacy-import.{}",
+        scope.source("conversation", source_id)
+    ))
+    .map_err(|_| Error::InvalidInput)
 }
 
 pub(crate) fn opens_with_scene(first: Option<(&str, &str)>) -> bool {
@@ -1782,9 +1796,13 @@ pub(crate) fn conversation_record(
     source: LegacyConversationSource<'_>,
     context: &ImportContext,
 ) -> Result<LegacyConversationRecord, Error> {
-    let conversation_id = ConversationId::from_uuid(context.scope.source(source.source_id));
-    let branch_id =
-        ConversationBranchId::from_uuid(context.scope.derived(source.source_id, "branch"));
+    let conversation_id =
+        ConversationId::from_uuid(context.scope.source("conversation", source.source_id));
+    let branch_id = ConversationBranchId::from_uuid(context.scope.derived(
+        "conversation_branch",
+        source.source_id,
+        "branch",
+    ));
     let created_at = timestamp(source.created_at)?;
     let updated_at = timestamp(source.updated_at)?.max(created_at);
     let user = source
@@ -1950,7 +1968,8 @@ impl SessionWriter<'_> {
         parent: Option<(MessageId, MessageRole)>,
         origin: Option<InitialMessageOrigin>,
     ) -> Result<(MessageId, MessageRole), Error> {
-        let message_id = MessageId::from_uuid(self.context.scope.source(legacy.source_id));
+        let message_id =
+            MessageId::from_uuid(self.context.scope.source("message", legacy.source_id));
         let created_at = timestamp(legacy.created_at)?;
         let effective_time = legacy
             .effective_at
@@ -1999,9 +2018,11 @@ impl SessionWriter<'_> {
             self.push_candidates(legacy, message_id, parent, &mut candidates)?
         } else if legacy.variants.is_empty() {
             let revision = MessageRevision {
-                id: MessageRevisionId::from_uuid(
-                    self.context.scope.derived(legacy.source_id, "revision"),
-                ),
+                id: MessageRevisionId::from_uuid(self.context.scope.derived(
+                    "message_revision",
+                    legacy.source_id,
+                    "revision",
+                )),
                 message_id,
                 sequence: Revision::INITIAL,
                 parts: parts(
@@ -2021,9 +2042,11 @@ impl SessionWriter<'_> {
             let mut active = None;
             for (index, variant) in legacy.variants.iter().enumerate() {
                 let revision = MessageRevision {
-                    id: MessageRevisionId::from_uuid(
-                        self.context.scope.derived(variant.source_id, "revision"),
-                    ),
+                    id: MessageRevisionId::from_uuid(self.context.scope.derived(
+                        "message_revision",
+                        variant.source_id,
+                        "revision",
+                    )),
                     message_id,
                     sequence: Revision::new(
                         u64::try_from(index + 1).map_err(|_| Error::InvalidInput)?,
@@ -2163,11 +2186,20 @@ impl SessionWriter<'_> {
             } else {
                 variant.source_id.to_owned()
             };
-            let candidate_id = MessageCandidateId::from_uuid(self.context.scope.source(&key));
-            let turn_id = GenerationTurnId::from_uuid(self.context.scope.derived(&key, "turn"));
-            let attempt_id =
-                GenerationAttemptId::from_uuid(self.context.scope.derived(&key, "attempt"));
-            let usage_event_id = UsageEventId::from_uuid(self.context.scope.derived(&key, "usage"));
+            let candidate_id =
+                MessageCandidateId::from_uuid(self.context.scope.source("message_candidate", &key));
+            let turn_id = GenerationTurnId::from_uuid(self.context.scope.derived(
+                "generation_turn",
+                &key,
+                "turn",
+            ));
+            let attempt_id = GenerationAttemptId::from_uuid(self.context.scope.derived(
+                "generation_attempt",
+                &key,
+                "attempt",
+            ));
+            let usage_event_id =
+                UsageEventId::from_uuid(self.context.scope.derived("usage_event", &key, "usage"));
             let at = timestamp(variant.created_at)?;
             let (operation, input, target) = match previous {
                 None if parent_role == MessageRole::User => (
@@ -2358,7 +2390,6 @@ fn active_variant_index(legacy: &TimelineMessage<'_>) -> usize {
 pub(crate) fn import_context(
     admission: &LegacyImportAdmission,
     plan: &LegacyImportPlan,
-    source_fingerprint: &lettuce_types::ContentHash,
 ) -> ImportContext {
     let mut providers = BTreeMap::new();
     let mut models = BTreeMap::new();
@@ -2450,7 +2481,7 @@ pub(crate) fn import_context(
         lorebooks,
         media,
         backgrounds,
-        scope: LegacyIdScope::new(source_fingerprint),
+        scope: LegacyIdScope::new(),
         dynamic_memory_enabled: false,
     }
 }
