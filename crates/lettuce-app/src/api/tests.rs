@@ -26,7 +26,8 @@ pub(crate) struct StdFiles;
 impl FileAccess for StdFiles {
     fn backup_temporary_location(&self, target: Option<&str>, name: &str) -> Result<String, FileAccessError> {
         let target = std::path::Path::new(target.ok_or(FileAccessError::Unsupported)?);
-        Ok(target.parent().unwrap_or_else(|| std::path::Path::new(".")).join(name).display().to_string())
+        let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| std::path::Path::new("."));
+        Ok(parent.canonicalize().map_err(|_| FileAccessError::Io)?.join(name).display().to_string())
     }
     fn create_backup_temporary(&self, intent: &str, protected: ExportProtection<'_>) -> Result<(String, Box<dyn std::io::Write + Send>), FileAccessError> {
         if protected(intent, None)? { return Err(FileAccessError::SourceIsTarget); }

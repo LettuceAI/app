@@ -51,3 +51,5 @@ Slice 11a keeps the shell as the filesystem and lifecycle adapter for backup job
 The restore adapter rebuilds through the same constructor and startup used at launch, then the application emits DatabaseReloaded. This retains the legacy completion notification (`old-code/src-tauri/src/storage_manager/backup.rs:4427`) and settings refresh (`old-code/src/App.tsx:695-708`) while making failure after pointer switch a typed reopen requirement. No backup or media bytes cross command IPC, unlike legacy byte-based import (`old-code/src-tauri/src/storage_manager/backup.rs:4780-4785`).
 
 Slice 11a review fixes delay context publication until restart recovery and worker startup finish. Desktop atomic backup replacement preserves protected-file checks and permits existing readers without an additional target lease.
+
+Desktop backup temporary locations and publication resolve parent-directory aliases while preserving the final filename. Atomic replacement replaces a selected final symlink and leaves its referent intact; the returned index path matches the admission target.

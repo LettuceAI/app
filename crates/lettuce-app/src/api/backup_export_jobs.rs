@@ -42,8 +42,13 @@ pub async fn backup_export(context: &ApiContext, request: dto::BackupExportReque
         if target.as_ref().is_some_and(|uri| uri.trim().is_empty()) { return Err(super::error::invalid_field("target", "backup target is empty")); }
         let created_at = context.now();
         let date = chrono::DateTime::from_timestamp_millis(created_at.get()).ok_or_else(unavailable)?;
+        let temporary_intent = context.files().backup_temporary_location(target.as_deref(), &format!("lettuce-backup-{}.partial", OperationId::new())).map_err(file_error)?;
+        let target = target.map(|target| {
+            let name = std::path::Path::new(&target).file_name().ok_or_else(|| file_error(super::FileAccessError::Unsupported))?;
+            std::path::Path::new(&temporary_intent).with_file_name(name).into_os_string().into_string().map_err(|_| file_error(super::FileAccessError::Unsupported))
+        }).transpose()?;
         let detail = Detail {
-            temporary_intent: context.files().backup_temporary_location(target.as_deref(), &format!("lettuce-backup-{}.partial", OperationId::new())).map_err(file_error)?,
+            temporary_intent,
             target,
             temporary_uri: None,
             final_name: format!("lettuce_backup_{}.lettuce", date.format("%Y%m%d_%H%M%S")),
@@ -162,7 +167,7 @@ impl ClaimedJob for Work {
     async fn run(mut self: Box<Self>, context: ApiContext, _progress: Arc<dyn JobProgressSink>) -> Result<(), ApiError> {
         let protection = match FileExportProtection::new(&context) {
             Ok(protection) => protection,
-            Err(_) => return super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err("backup-unavailable")).map(|_| ()),
+            Err(failure) => return super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err(if failure.code == ApiErrorCode::Busy { "backup-file-busy" } else { super::backup_jobs::file_failure_label(&failure) })).map(|_| ()),
         };
         let protected = |uri: &str, file: Option<&std::fs::File>| protection.protects(uri, file);
         let mut created = false;

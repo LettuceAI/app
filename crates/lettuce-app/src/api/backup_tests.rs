@@ -737,7 +737,9 @@ async fn export_lifecycle_contention_settles_typed_without_creating_a_file_or_in
     let work = super::backup_export_jobs::ExportHandler.claim(&harness.context, &job, lettuce_jobs::WorkerId::new()).await.expect("claim").expect("work");
     let hold = location.file_lifecycle().await.expect("other file operation");
     work.run(harness.context.clone(), Arc::new(Progress)).await.expect("typed job settlement");
-    assert_eq!(super::job_get(&harness.context, dto::JobGetRequest { job_id: accepted.job_id }).await.expect("job").failure.expect("typed failure").reason, Some(dto::JobFailureReason::BackupUnavailable));
+    let failure = super::job_get(&harness.context, dto::JobGetRequest { job_id: accepted.job_id }).await.expect("job").failure.expect("typed failure");
+    assert_eq!(failure.code, dto::JobFailureCode::ResourceUnavailable);
+    assert_eq!(failure.reason, Some(dto::JobFailureReason::BackupFileBusy));
     assert!(!target.exists());
     assert!(harness.context.backend().database().backup_index().expect("index").is_empty());
     drop(hold);
@@ -830,10 +832,21 @@ async fn review_backup_jobs_preserve_missing_permission_busy_and_unsupported_fil
 
 #[tokio::test]
 async fn review_backup_delete_preserves_a_replacement_awaiting_index_recovery() {
+    pending_replacement_deletion(false).await;
+}
+
+#[tokio::test]
+async fn review_parent_alias_pending_replacement_is_kept_until_index_recovery() {
+    pending_replacement_deletion(true).await;
+}
+
+async fn pending_replacement_deletion(alias: bool) {
     use lettuce_jobs::{JobMutation, JobStore, ResourceAvailability, StageSnapshot};
     let (root, location, harness) = super::app_reset_tests::harness();
     let target = root.join("published-before-index.lettuce");
-    let accepted = super::backup_export(&harness.context, dto::BackupExportRequest { target: Some(dto::FileTarget { uri: target.display().to_string() }), password: "password".into(), client_operation_id: "review-pending-index".into() }).await.expect("admit");
+    std::fs::create_dir_all(root.join("sub")).expect("folder");
+    let export_target = if alias { root.join("sub/../published-before-index.lettuce") } else { target.clone() };
+    let accepted = super::backup_export(&harness.context, dto::BackupExportRequest { target: Some(dto::FileTarget { uri: export_target.display().to_string() }), password: "password".into(), client_operation_id: "review-pending-index".into() }).await.expect("admit");
     let id = accepted.job_id.parse().expect("id");
     harness.context.jobs().take_backup_password(id);
     let database = harness.context.backend().database();
@@ -877,4 +890,66 @@ async fn review_backup_delete_preserves_a_replacement_awaiting_index_recovery() 
     assert!(target.is_file());
     super::backup_delete(&harness.context, dto::BackupMutationRequest { id: id.to_string(), client_operation_id: "delete-recovered".into() }).await.expect("explicit deletion of recovered identity");
     assert!(!target.exists());
+}
+
+#[tokio::test]
+async fn review_parent_alias_exports_replace_one_index_identity() {
+    use super::jobs::JobHandler;
+    use lettuce_jobs::JobStore;
+    let (root, _location, harness) = super::app_reset_tests::harness();
+    std::fs::create_dir_all(root.join("sub")).expect("folder");
+    let target = root.join("aliases.lettuce");
+    let mut targets = vec![target.clone(), root.join("sub/../aliases.lettuce")];
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&root, root.join("alias")).expect("parent alias");
+        targets.push(root.join("alias/aliases.lettuce"));
+    }
+    let mut old = None;
+    for (ordinal, path) in targets.into_iter().enumerate() {
+        let request = dto::BackupExportRequest { password: "password".into(), target: Some(dto::FileTarget { uri: path.display().to_string() }), client_operation_id: format!("alias-export-{ordinal}") };
+        let accepted = super::backup_export(&harness.context, request.clone()).await.expect("admit");
+        assert_eq!(super::backup_export(&harness.context, request.clone()).await.expect("replay"), accepted);
+        assert_eq!(super::backup_export(&harness.context, dto::BackupExportRequest { password: "changed".into(), ..request }).await.expect_err("conflict").code, ApiErrorCode::Conflict);
+        let id = accepted.job_id.parse().expect("id");
+        let job = harness.context.backend().database().get(id).expect("get").expect("job");
+        let work = super::backup_export_jobs::ExportHandler.claim(&harness.context, &job, lettuce_jobs::WorkerId::new()).await.expect("claim").expect("work");
+        work.run(harness.context.clone(), Arc::new(Progress)).await.expect("export");
+        let entries = super::backups_list(&harness.context).await.expect("index");
+        assert_eq!(entries.len(), 1, "one entry per directory entry");
+        assert_eq!(entries[0].id, accepted.job_id);
+        assert_eq!(entries[0].uri, target.display().to_string());
+        let detail = harness.context.backend().database().job_detail(id).expect("detail").expect("stored");
+        assert_eq!(detail.detail["target"], serde_json::json!(target.display().to_string()));
+        if let Some(id) = old {
+            assert_eq!(super::backup_delete(&harness.context, dto::BackupMutationRequest { id, client_operation_id: format!("delete-old-{ordinal}") }).await.expect_err("replaced identity").code, ApiErrorCode::NotFound);
+            assert!(target.is_file());
+        }
+        old = Some(accepted.job_id);
+    }
+}
+
+#[tokio::test]
+async fn review_backup_commands_accept_legacy_password_bytes() {
+    use super::jobs::JobHandler;
+    use lettuce_jobs::JobStore;
+    for password in ["foo\tbar".to_owned(), "a".repeat(1025)] {
+        let (root, location, harness) = super::app_reset_tests::harness();
+        let target = root.join("password.lettuce");
+        let accepted = super::backup_export(&harness.context, dto::BackupExportRequest { password: password.clone(), target: Some(dto::FileTarget { uri: target.display().to_string() }), client_operation_id: "password-export".into() }).await.expect("admit");
+        let job = harness.context.backend().database().get(accepted.job_id.parse().expect("id")).expect("get").expect("job");
+        let work = super::backup_export_jobs::ExportHandler.claim(&harness.context, &job, lettuce_jobs::WorkerId::new()).await.expect("claim").expect("work");
+        work.run(harness.context.clone(), Arc::new(Progress)).await.expect("export");
+        assert_eq!(super::job_get(&harness.context, dto::JobGetRequest { job_id: accepted.job_id }).await.expect("job").state, dto::JobStateDto::Succeeded);
+        let host = Arc::new(ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(super::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: std::sync::Mutex::new(None), fail: false, fail_settlement: false });
+        harness.context.attach_reset_host(host.clone()).expect("host");
+        let accepted = super::backup_restore(&harness.context, dto::BackupRestoreRequest { password, source: dto::FileSource { uri: target.display().to_string() }, client_operation_id: "password-restore".into() }).await.expect("admit restore");
+        let job = harness.context.backend().database().get(accepted.job_id.parse().expect("id")).expect("get").expect("job");
+        let work = super::backup_jobs::RestoreHandler.claim(&harness.context, &job, lettuce_jobs::WorkerId::new()).await.expect("claim").expect("work");
+        work.run(harness.context.clone(), Arc::new(Progress)).await.expect("restore");
+        let current = host.slot.snapshot().expect("current");
+        assert_eq!(super::job_get(&current, dto::JobGetRequest { job_id: accepted.job_id }).await.expect("job").state, dto::JobStateDto::Succeeded);
+        let workers = host.workers.lock().expect("workers").take().expect("running");
+        workers.stop_for_restore().await.expect("stop");
+    }
 }

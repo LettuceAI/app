@@ -117,11 +117,17 @@ fn create_export_path(
     prepare_export(uri, target, source, protected)
 }
 
-fn backup_temporary_location_path(target: Option<&str>, name: &str) -> Result<String, FileAccessError> {
-    let target = path(target.ok_or(FileAccessError::Unsupported)?)?;
-    if Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) { return Err(FileAccessError::Unsupported); }
+fn backup_target_path(target: &str) -> Result<std::path::PathBuf, FileAccessError> {
+    let target = path(target)?;
+    let name = target.file_name().ok_or(FileAccessError::Unsupported)?;
     let parent = target.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-    Ok(parent.join(name).to_string_lossy().into_owned())
+    Ok(parent.canonicalize().map_err(|failure| access_error(&failure))?.join(name))
+}
+
+fn backup_temporary_location_path(target: Option<&str>, name: &str) -> Result<String, FileAccessError> {
+    let target = backup_target_path(target.ok_or(FileAccessError::Unsupported)?)?;
+    if Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) { return Err(FileAccessError::Unsupported); }
+    target.with_file_name(name).into_os_string().into_string().map_err(|_| FileAccessError::Unsupported)
 }
 
 fn create_backup_temporary_path(intent: &str, protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
@@ -131,7 +137,8 @@ fn create_backup_temporary_path(intent: &str, protected: ExportProtection<'_>) -
 }
 
 fn publish_backup_path(temporary: &str, target: Option<&str>, protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
-    let target = target.ok_or(FileAccessError::Unsupported)?;
+    let target_path = backup_target_path(target.ok_or(FileAccessError::Unsupported)?)?;
+    let target = target_path.to_str().ok_or(FileAccessError::Unsupported)?;
     if protected(target, None)? { return Err(FileAccessError::SourceIsTarget); }
     let existing = match std::fs::File::open(path(target)?) {
         Ok(file) => Some(file),
@@ -711,6 +718,39 @@ mod backup_publication_tests {
         assert_eq!(classify_backup_metadata_error(false, true), FileAccessError::PermissionDenied);
         assert_eq!(classify_backup_metadata_error(true, false), FileAccessError::Io);
         assert_eq!(classify_backup_metadata_error(true, true), FileAccessError::NotFound);
+    }
+
+    #[test]
+    fn review_backup_paths_resolve_parent_aliases() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-paths-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("sub")).expect("folder");
+        let root = root.canonicalize().expect("root");
+        let target = root.join("backup.lettuce");
+        let mut aliases = vec![root.join("sub/../backup.lettuce")];
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&root, root.join("alias")).expect("parent alias");
+            aliases.push(root.join("alias/backup.lettuce"));
+        }
+        for alias in aliases {
+            let intent = backup_temporary_location_path(Some(alias.to_str().expect("alias")), "backup.partial").expect("intent");
+            assert_eq!(intent, root.join("backup.partial").display().to_string());
+            std::fs::write(&intent, b"complete archive").expect("temporary");
+            assert_eq!(publish_backup_path(&intent, Some(alias.to_str().expect("alias")), &|_, _| Ok(false)).expect("publish"), target.display().to_string());
+        }
+        #[cfg(unix)]
+        {
+            let referent = root.join("referent.lettuce");
+            std::fs::write(&referent, b"kept referent").expect("referent");
+            std::fs::remove_file(&target).expect("old target");
+            std::os::unix::fs::symlink(&referent, &target).expect("target symlink");
+            let intent = backup_temporary_location_path(Some(target.to_str().expect("target")), "backup.partial").expect("intent");
+            std::fs::write(&intent, b"replacement").expect("temporary");
+            assert_eq!(publish_backup_path(&intent, Some(target.to_str().expect("target")), &|_, _| Ok(false)).expect("publish"), target.display().to_string());
+            assert_eq!(std::fs::read(&referent).expect("kept"), b"kept referent");
+            assert!(!target.symlink_metadata().expect("target").is_symlink());
+        }
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
