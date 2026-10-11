@@ -172,7 +172,10 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
     complete_pending_rewinds(context).await?;
     record(&steps, StartupStep::CompletePendingRewinds);
     let detected = context
-        .blocking(|context| Ok(legacy_database_present(context)))
+        .blocking(|context| {
+            super::legacy_state::detect(context)
+                .map(|state| matches!(state, lettuce_contracts::LegacyState::Ready { .. }))
+        })
         .await?;
     context.set_legacy_database_detected(detected);
     record(&steps, StartupStep::DetectLegacyDatabase);
@@ -327,13 +330,6 @@ pub(super) async fn complete_pending_rewinds(context: &ApiContext) -> Result<(),
         );
     }
     Ok(())
-}
-
-fn legacy_database_present(context: &ApiContext) -> bool {
-    context.app_folder().is_some_and(|folder| {
-        let path = folder.join(LEGACY_FOLDER).join("app.db");
-        path.is_file() && context.backend().preflight_legacy_database(&path).is_ok()
-    })
 }
 
 async fn adopt_legacy_embedding(context: &ApiContext) {

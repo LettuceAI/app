@@ -44,3 +44,11 @@ pub async fn app_usage_days(
 ) -> Result<lettuce_contracts::AppUsageDaysView, ApiError> {
     api::app_usage_days(&context).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn legacy_state(
+    context: State<'_, ApiContext>,
+) -> Result<lettuce_contracts::LegacyState, ApiError> {
+    api::legacy_state(&context).await
+}

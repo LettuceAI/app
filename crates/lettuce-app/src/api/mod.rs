@@ -377,3 +377,9 @@ mod library_media_tests;
 
 mod library_media;
 pub use library_media::{character_media_set, persona_media_set};
+
+#[cfg(test)]
+mod legacy_state_tests;
+
+mod legacy_state;
+pub use legacy_state::legacy_state;

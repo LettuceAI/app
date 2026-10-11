@@ -65,6 +65,7 @@ pub async fn app_status(context: &ApiContext) -> Result<dto::AppStatus, ApiError
                 platform: platform(),
                 ui_state: database.load_device_ui_state().map_err(settings_error)?,
                 legacy_database_detected: context.legacy_database_detected(),
+                legacy_state: super::legacy_state::detect(context)?,
                 unresolved_sync_conflicts: database
                     .unresolved_sync_conflict_count()
                     .map_err(purge_error)?,

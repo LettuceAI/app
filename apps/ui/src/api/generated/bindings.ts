@@ -188,6 +188,7 @@ export const commands = {
 	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError>(__TAURI_INVOKE("files_pick_open", { request })),
 	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError>(__TAURI_INVOKE("files_pick_save", { request })),
 	appStatus: () => typedError<AppStatus, ApiError>(__TAURI_INVOKE("app_status")),
+	legacyState: () => typedError<LegacyState, ApiError>(__TAURI_INVOKE("legacy_state")),
 	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError>(__TAURI_INVOKE("app_ui_state_update", { request })),
 	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError>(__TAURI_INVOKE("purge_notices_list")),
 	purgeNoticeDismiss: (request: PurgeNoticeDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("purge_notice_dismiss", { request })),
@@ -410,7 +411,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails =
+export type ApiErrorDetails = { type: "legacy_database"; reason: LegacyDatabaseFailure } |
 /**
  *  The database this process opened was kept by a cutover (restore or
  *  reset) and accepts no writes; the app must restart on the active one.
@@ -483,6 +484,7 @@ export type AppStatus = {
 	ui_state: { [key in string]: unknown },
 	/**  A database from the previous app version was found on this device. */
 	legacy_database_detected: boolean,
+	legacy_state: LegacyState,
 	unresolved_sync_conflicts: number,
 	purge_notices: number,
 };
@@ -2949,6 +2951,12 @@ export type LaunchGroupRequest = {
 export type LaunchGroupResponse = {
 	conversation_id: string,
 };
+
+export type LegacyDatabaseFailure = { type: "unavailable" } | { type: "invalid_schema" } | { type: "unsupported_schema"; found: number };
+
+export type LegacyState = { type: "absent" } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
+
+export type LegacyUpgradeReason = { type: "bin_storage" } | { type: "schema"; found: number };
 
 export type LibraryAlignment = "left" | "center" | "right";
 

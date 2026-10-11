@@ -124,3 +124,5 @@ Group editor drafts reuse the character editor's typed scene, variant and chat a
 Character archive and restore take one root revision and operation key and return the committed CharacterView.
 
 Group pages carry the full authored view and its latest activity timestamp. Media replacement accepts a FileSource, an existing asset id or an explicit none, alongside a slot ordinal, root revision and operation key. A design-reference ordinal at the list length appends, removal closes the gap and an ordinal above the length fails validation.
+
+LegacyState distinguishes absent storage, a ready database and storage requiring an older app upgrade. AppStatus includes this state; legacy_state reads it explicitly. Upgrade reasons distinguish bin files from an old recorded schema, and legacy failures distinguish unavailable, invalid and unsupported sources.

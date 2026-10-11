@@ -430,3 +430,5 @@ Library deletion uses one kind-parameterized purge operation and revision check.
 Character and persona media saves share a diff writer that retains unchanged links. Character scene assets are compared across the whole character before per-scene inserts, so link identities can move between scenes. Group scene assets remain scoped to the single starting scene and require image assets.
 
 Legacy entity identities derive from the entity kind and legacy identity in one source-independent namespace. Different restore sources map the same entity to the same destination identity; every restore still writes a fresh database. Secret-store references remain unique to an attempt so kept databases retain their credentials.
+
+Legacy preflight checks an available settings schema version before requiring modern root tables. An older database can therefore report its upgrade requirement without satisfying the modern schema; accepted versions still require every root table.
