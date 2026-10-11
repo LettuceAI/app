@@ -75,6 +75,7 @@ async fn restored_harness() -> (super::tests::Harness, Database) {
     let (session, group, group_session) = (id(5), id(6), id(7));
     let members = serde_json::to_string(&[&ada, &grace]).expect("members");
     let compatibility = lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+        warnings: Vec::new(),
         version: 1,
         created_at: 1,
         app_version: "legacy".into(),

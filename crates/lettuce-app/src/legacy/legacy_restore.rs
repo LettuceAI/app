@@ -21,6 +21,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct LegacyRestoreReceipt {
+    pub warnings: Vec<lettuce_transfer::LegacyBackupWarning>,
     pub database_path: PathBuf,
     pub previous_database_path: PathBuf,
     pub run_id: LegacyImportRunId,
@@ -247,6 +248,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             }
         };
         Ok(LegacyRestoreReceipt {
+            warnings: import.compatibility.warnings().to_vec(),
             database_path,
             previous_database_path,
             run_id,
@@ -453,6 +455,7 @@ mod tests {
         }]);
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 2,
                 created_at: 1_700_000_000_000,
                 app_version: "1.0.0".into(),
@@ -617,6 +620,7 @@ mod tests {
         greeting["attachments"] = reply["attachments"].clone();
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 1,
                 created_at: 1,
                 app_version: "legacy".into(),
@@ -953,6 +957,7 @@ mod tests {
         };
         let source = |title: &str| {
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 1,
                 created_at: 1,
                 app_version: "legacy".into(),
@@ -1428,6 +1433,7 @@ mod tests {
             LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
                 version: 2,
                 created_at: 1_700_000_000_000,
                 app_version: "1.0.0".into(),

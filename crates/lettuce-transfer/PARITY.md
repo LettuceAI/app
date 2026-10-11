@@ -22,6 +22,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Legacy sources
 
+- Slice 11a ignores unknown safe v1 entries, returning `LegacyBackupWarning::UnknownEntry` and binding each warning into the compatibility seal. Legacy read its known documents by name (`old-code/src-tauri/src/storage_manager/backup.rs:3760-3792`) and skipped entries outside its media roots (`backup.rs:4300-4302`). Traversal and duplicate names remain typed failures; plaintext known payloads remain unsupported.
+
 - The importer reads legacy schema 92, which releases up to 2.2.5 kept: 93 and 94 only repaired group columns 2.2.0 already created, 95 rewrote group session override encodings (read in both forms), 96 reordered columns and renamed tables outside the schema. 2.2.0 stored 92 or 94, 2.2.1 stored 95, 2.2.2 to 2.2.5 stored 96.
 - The legacy database and storage tree are read-only migration sources. A completed import keeps them until migration verification succeeds and the user explicitly approves deletion.
 

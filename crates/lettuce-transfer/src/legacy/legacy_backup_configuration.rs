@@ -3915,6 +3915,7 @@ mod tests {
 
     fn inventory(documents: Vec<LegacyBackupDocument>) -> LegacyBackupInventory {
         LegacyBackupInventory {
+            warnings: Vec::new(),
             version: 1,
             created_at: 50,
             app_version: "0.9.0".into(),

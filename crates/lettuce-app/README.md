@@ -472,6 +472,8 @@ The legacy import reads the old app's database and storage read-only and writes 
 
 ### Legacy restore
 
+The legacy restore receipt carries typed warnings for ignored unknown archive entries. These warnings remain bound to the compatibility seal through staging and materialization.
+
 `LegacyRestoreCoordinator` loads a version-1 backup (decoded, planned, staged and admitted) or a live legacy data directory (planned in place) into a new database file, running the whole chain in stage order: admission against the derived source counts, media from the planned source's retained bytes, provider secrets, the authored graph, ASR learning, providers, models and prompts, then every stage. Only a completed run carries device-local state from the previous database, records the backup admission and switches the active database; the previous file is never deleted. Each restore stages into its own `<workspace>/<restore_id>` directory. Provider secrets get fresh references at admission and audio keys references derived from the source and run, so a replacement never shares a secret record with the database it replaces, and a failed attempt deletes the secrets it wrote.
 
 Version-2 ASR JSON import validates every identity, value, timestamp and link before opening audio; relative voice paths are confined to the document's directory, absolute paths are allowed (the old file-picker flow), symlinks and non-files are rejected, each distinct file is ingested once as library audio, and the converted graph uses the same atomic learning import. Source JSON and audio are never modified.

@@ -33,6 +33,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy import details
 
+- Slice 11a reads normalized Soul facts before the shared-memory column, following `old-code/src-tauri/src/storage_manager/companion_shared_memory.rs:184-233,561-566`. A missing table or empty per-character result keeps the column fallback. Table-only companion owners keep their facts. Malformed normalized array evidence now fails typed instead of becoming legacy's empty arrays (`companion_shared_memory.rs:220,222`).
+
 - Accepted source versions are `LEGACY_DATABASE_SCHEMA_VERSIONS`, 92 to 96: the released 2.2.0 stored 92 or 94, 2.2.1 stored 95 and 2.2.2 to 2.2.5 stored 96. 93 and 94 only repaired group columns, 95 rewrote group session override encodings (the importer reads both forms) and 96 reordered columns and renamed leftover tables. Older databases are refused (the old app migrates them when opened once), and pre-SQLite `.bin` stores are not read (legacy imported them itself on startup).
 - Memory embedding copies in the legacy documents use one canonicalization for session, group, companion and owner documents: normalized rows in the legacy `MemoryEmbedding` field order and f32 text, falling back to the legacy column only when no rows exist.
 - Legacy model rows always carry `model_type = 'chat'` once saved by the modern editor, so a model whose output scopes are image-only plans as an image model; text-and-image outputs stay chat models with image output in their capabilities, and the old `imagegeneration` type still maps to image.

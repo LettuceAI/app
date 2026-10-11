@@ -31,6 +31,7 @@ pub fn read_legacy_database_inventory(
     let created_at = settings_updated_at(&documents);
     let source_hash = source_hash(created_at, &documents, &media)?;
     Ok(LegacyBackupInventory {
+        warnings: Vec::new(),
         version: 1,
         created_at,
         app_version: LEGACY_DATABASE_APP_VERSION.into(),

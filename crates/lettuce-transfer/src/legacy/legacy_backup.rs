@@ -27,12 +27,18 @@ const MAX_LEGACY_MANIFEST_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyBackupInventory {
+    pub warnings: Vec<LegacyBackupWarning>,
     pub version: u32,
     pub created_at: u64,
     pub app_version: String,
     pub source_hash: ContentHash,
     pub documents: Vec<LegacyBackupDocument>,
     pub media: Vec<LegacyBackupMedia>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LegacyBackupWarning {
+    UnknownEntry { name: String },
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -370,11 +376,16 @@ pub fn decode_legacy_backup_inventory(
     }
 
     let mut entries = Vec::new();
+    let mut warnings = Vec::new();
     for index in 0..archive.len() {
         let file = archive
             .by_index(index)
             .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
         if file.is_dir() {
+            let name = normalize_archive_name(file.name())?;
+            if !known_directory(&name) {
+                warnings.push(LegacyBackupWarning::UnknownEntry { name });
+            }
             continue;
         }
         let name = normalize_archive_name(file.name())?;
@@ -383,7 +394,17 @@ pub fn decode_legacy_backup_inventory(
         }
         let entry = match document_kind(&name) {
             Some(kind) => Ok(kind),
-            None => Err(media_name(&name)?),
+            None if known_directory(&name) && !name.starts_with("data/") => Err(media_name(&name)?),
+            None if name.starts_with("data/")
+                && name.ends_with(".json")
+                && document_kind(&format!("{name}.enc")).is_some() =>
+            {
+                return Err(LegacyBackupInventoryError::InvalidInventory);
+            }
+            None => {
+                warnings.push(LegacyBackupWarning::UnknownEntry { name });
+                continue;
+            }
         };
         entries.push((index, entry));
     }
@@ -417,6 +438,7 @@ pub fn decode_legacy_backup_inventory(
         (&left.root, &left.relative_segments).cmp(&(&right.root, &right.relative_segments))
     });
     Ok(LegacyBackupInventory {
+        warnings,
         version: 1,
         created_at: manifest.created_at,
         app_version: manifest.app_version,
@@ -440,9 +462,6 @@ fn validate_archive_metadata(
             return Err(LegacyBackupInventoryError::InvalidInventory);
         }
         if file.is_dir() {
-            if !known_directory(&name) {
-                return Err(LegacyBackupInventoryError::InvalidInventory);
-            }
             continue;
         }
         let max_entry = u64::try_from(MAX_LEGACY_BACKUP_ENTRY_BYTES)
@@ -546,6 +565,10 @@ fn safe_archive_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 4096
         && !name.starts_with('/')
+        && !name
+            .split('/')
+            .next()
+            .is_some_and(|segment| segment.contains(':'))
         && !name.chars().any(char::is_control)
         && name
             .trim_end_matches('/')
@@ -745,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_inventory_rejects_unknown_and_traversing_entries() {
+    fn legacy_inventory_rejects_duplicate_and_traversing_entries() {
         assert_eq!(
             decode(
                 archive(
@@ -761,13 +784,6 @@ mod tests {
         );
         assert_eq!(
             decode(
-                archive(LEGACY_MANIFEST_VERSION, &[("data/unknown.json.enc", b"{}")]),
-                PASSWORD,
-            ),
-            Err(LegacyBackupInventoryError::InvalidInventory)
-        );
-        assert_eq!(
-            decode(
                 archive(
                     LEGACY_MANIFEST_VERSION,
                     &[("images/../secrets.txt.enc", b"secret")]
@@ -775,6 +791,44 @@ mod tests {
                 PASSWORD,
             ),
             Err(LegacyBackupInventoryError::InvalidInventory)
+        );
+    }
+
+    #[test]
+    fn legacy_inventory_rejects_absolute_windows_paths() {
+        assert_eq!(
+            decode(
+                archive(
+                    LEGACY_MANIFEST_VERSION,
+                    &[("C:\\users\\backup.txt", b"extra")]
+                ),
+                PASSWORD
+            ),
+            Err(LegacyBackupInventoryError::InvalidInventory)
+        );
+    }
+
+    #[test]
+    fn legacy_inventory_ignores_unknown_entries() {
+        let inventory = decode(
+            archive(
+                LEGACY_MANIFEST_VERSION,
+                &[
+                    ("data/unknown.json.enc", b"{}"),
+                    ("future/plain.txt", b"extra"),
+                ],
+            ),
+            PASSWORD,
+        )
+        .expect("unknown entries do not prevent restore");
+        assert!(inventory.documents.is_empty());
+        assert!(inventory.media.is_empty());
+        assert_eq!(inventory.warnings.len(), 2);
+        assert_eq!(
+            inventory.warnings[0],
+            LegacyBackupWarning::UnknownEntry {
+                name: "data/unknown.json.enc".into()
+            }
         );
     }
 }

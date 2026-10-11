@@ -431,6 +431,7 @@ mod tests {
 
     fn plan(source_hash: &str, bytes: &[u8]) -> crate::LegacyBackupCompatibilityPlan {
         plan_legacy_backup_compatibility(LegacyBackupInventory {
+            warnings: Vec::new(),
             version: 1,
             created_at: 1_700_000_000_000,
             app_version: "1.0.0".into(),
