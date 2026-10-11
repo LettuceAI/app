@@ -154,7 +154,7 @@ pub(super) fn settle(database: &Database, claim: &ClaimRef, context: &ApiContext
                 "backup-authentication" => JobErrorCode::Authentication,
                 "backup-file-not-found" | "backup-permission-denied" | "backup-file-busy" | "backup-file-unavailable" => JobErrorCode::ResourceUnavailable,
                 "backup-file-unsupported" => JobErrorCode::CapabilityUnavailable,
-                "backup-source-is-target" | "backup-target-exists" | "backup-limit-exceeded" | "backup-invalid-envelope" => JobErrorCode::InvalidInput,
+                "backup-source-is-target" | "backup-limit-exceeded" | "backup-invalid-envelope" => JobErrorCode::InvalidInput,
                 "backup-verification-failed" => JobErrorCode::IntegrityFailure,
                 _ => JobErrorCode::StorageFailure,
             };
@@ -171,7 +171,6 @@ fn restore_failure_label(failure: crate::BackupRestoreError) -> &'static str {
         Failure::Plan(Plan::Io | Plan::Envelope(Envelope::Io)) => "backup-file-unavailable",
         Failure::Plan(Plan::Envelope(Envelope::LimitExceeded) | Plan::InvalidGraph(Graph::LimitExceeded)) | Failure::Graph(Graph::LimitExceeded) => "backup-limit-exceeded",
         Failure::Plan(_) | Failure::Graph(_) => "backup-invalid-envelope",
-        Failure::TargetExists | Failure::Location(crate::AppDatabaseLocationError::Exists) => "backup-target-exists",
         Failure::Location(crate::AppDatabaseLocationError::Busy) => "backup-file-busy",
         Failure::TargetDirectory | Failure::Location(_) | Failure::Workspace(_) | Failure::Database(_) | Failure::Restore(_) | Failure::Media(_) | Failure::ReadBack(_) => "backup-file-unavailable",
         Failure::VerificationFailed => "backup-verification-failed",
@@ -193,7 +192,6 @@ fn legacy_restore_failure_label(failure: crate::LegacyRestoreError) -> &'static 
         Failure::Inventory(_) => "backup-invalid-envelope",
         Failure::Plan(Plan::Database(DatabaseFailure::Unavailable)) => "backup-file-unavailable",
         Failure::Compatibility(_) | Failure::Plan(Plan::Compatibility(_)) => "backup-invalid-envelope",
-        Failure::TargetExists | Failure::Location(crate::AppDatabaseLocationError::Exists) => "backup-target-exists",
         Failure::Location(crate::AppDatabaseLocationError::Busy) => "backup-file-busy",
         Failure::TargetDirectory | Failure::Location(_) | Failure::Workspace(_) | Failure::Database(_) | Failure::Open(_) | Failure::MediaStore(_) | Failure::Stage { .. } => "backup-file-unavailable",
         Failure::Cancelled => "backup-cancelled",
@@ -400,12 +398,6 @@ mod fix_tests {
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::LimitExceeded))), "backup-limit-exceeded");
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Database(lettuce_transfer::LegacyDatabasePreflightError::LimitExceeded { table: "messages", limit: u32::MAX }))), "backup-limit-exceeded");
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Database(lettuce_transfer::LegacyDatabasePreflightError::MediaReferenceLimitExceeded { limit: u32::MAX }))), "backup-limit-exceeded");
-    }
-
-    #[test]
-    fn fix11a_existing_target_keeps_its_reason() {
-        assert_eq!(restore_failure_label(crate::BackupRestoreError::TargetExists), "backup-target-exists");
-        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::TargetExists), "backup-target-exists");
     }
 
     #[test]

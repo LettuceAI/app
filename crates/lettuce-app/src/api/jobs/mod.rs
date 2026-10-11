@@ -423,7 +423,6 @@ pub(super) fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
         "backup-authentication" => return Some(dto::JobFailureReason::BackupAuthentication),
         "backup-invalid-envelope" => return Some(dto::JobFailureReason::BackupInvalidEnvelope),
         "backup-limit-exceeded" => return Some(dto::JobFailureReason::BackupLimitExceeded),
-        "backup-target-exists" => return Some(dto::JobFailureReason::BackupTargetExists),
         "backup-file-not-found" => return Some(dto::JobFailureReason::BackupFileNotFound),
         "backup-permission-denied" => return Some(dto::JobFailureReason::BackupPermissionDenied),
         "backup-file-busy" => return Some(dto::JobFailureReason::BackupFileBusy),
