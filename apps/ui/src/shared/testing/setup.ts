@@ -14,3 +14,12 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => false,
   }),
 });
+Object.defineProperty(Element.prototype, "scrollTo", { value: () => {}, writable: true, configurable: true });
+
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+Object.defineProperty(window, "ResizeObserver", { value: ResizeObserverStub, writable: true, configurable: true });
+Object.defineProperty(globalThis, "ResizeObserver", { value: ResizeObserverStub, writable: true, configurable: true });
