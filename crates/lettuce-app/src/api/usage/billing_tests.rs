@@ -13,7 +13,7 @@ use lettuce_usage::{
     JobUsageLedger, OpenRouterEndpointPricing, OpenRouterGenerationDetails, UsageCostLedger,
 };
 
-use super::tests::{Harness, RecordingStream, Reply, harness, launch, send};
+use crate::api::tests::{Harness, RecordingStream, Reply, harness, launch, send};
 
 struct Billing {
     missing: AtomicBool,
@@ -141,7 +141,7 @@ async fn chat(billing: Arc<Billing>) -> (Harness, lettuce_usage::JobInferenceUsa
     send(&h, &conversation, "billing-send", "Hello", stream.clone())
         .await
         .expect("send");
-    let ran = super::ConversationGenerationWorker::new(h.context.clone())
+    let ran = crate::api::ConversationGenerationWorker::new(h.context.clone())
         .run_once()
         .await
         .expect("reply");
@@ -168,7 +168,7 @@ async fn chat(billing: Arc<Billing>) -> (Harness, lettuce_usage::JobInferenceUsa
 }
 
 async fn run(h: &Harness) {
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("run"));
     runner.wait_idle().await;
 }
@@ -207,10 +207,10 @@ async fn automatic_capture_uses_the_stored_response_id_and_is_not_repeated() {
         .expect("cost")
         .expect("recorded");
     assert_eq!(cost.cost.total_cost, 0.3);
-    super::usage_billing::recover_automatic(&h.context)
+    super::billing::recover_automatic(&h.context)
         .await
         .expect("recover missing intent");
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(!runner.run_once().await.expect("idle"));
     assert_eq!(billing.calls.load(Ordering::SeqCst), 2);
 }
@@ -221,7 +221,7 @@ async fn missing_generation_fails_the_automatic_job_with_a_typed_reason() {
     billing.missing.store(true, Ordering::SeqCst);
     let (h, dispatch) = chat(billing).await;
     run(&h).await;
-    let job = super::job_get(
+    let job = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: automatic_job(&h).to_string(),
@@ -251,11 +251,11 @@ async fn recalculation_replays_and_keeps_a_cost_captured_by_another_job_immutabl
     let request = dto::UsageRecalculateCostsRequest {
         client_operation_id: RequestId::new().to_string(),
     };
-    let first = super::usage_recalculate_costs(&h.context, request.clone())
+    let first = crate::api::usage_recalculate_costs(&h.context, request.clone())
         .await
         .expect("admit recalculation");
     assert_eq!(
-        super::usage_recalculate_costs(&h.context, request.clone())
+        crate::api::usage_recalculate_costs(&h.context, request.clone())
             .await
             .expect("replay"),
         first
@@ -270,7 +270,7 @@ async fn recalculation_replays_and_keeps_a_cost_captured_by_another_job_immutabl
         .expect("cost")
         .expect("recorded");
     assert_eq!(billing.calls.load(Ordering::SeqCst), 2);
-    let job = super::job_get(
+    let job = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: first.job_id.clone(),
@@ -287,12 +287,12 @@ async fn recalculation_replays_and_keeps_a_cost_captured_by_another_job_immutabl
         })
     );
     assert_eq!(
-        super::usage_recalculate_costs(&h.context, request)
+        crate::api::usage_recalculate_costs(&h.context, request)
             .await
             .expect("completed replay"),
         first
     );
-    let empty = super::usage_recalculate_costs(
+    let empty = crate::api::usage_recalculate_costs(
         &h.context,
         dto::UsageRecalculateCostsRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -302,7 +302,7 @@ async fn recalculation_replays_and_keeps_a_cost_captured_by_another_job_immutabl
     .expect("no missing costs");
     run(&h).await;
     assert_eq!(
-        super::job_get(
+        crate::api::job_get(
             &h.context,
             dto::JobGetRequest {
                 job_id: empty.job_id
@@ -336,10 +336,10 @@ async fn clear_during_capture_consumes_the_exact_tombstone_without_resurrection(
     let billing = Arc::new(Billing::default());
     billing.blocked.store(true, Ordering::SeqCst);
     let (h, dispatch) = chat(billing.clone()).await;
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("started capture"));
     billing.entered.notified().await;
-    super::usage_clear_before(
+    crate::api::usage_clear_before(
         &h.context,
         dto::UsageClearBeforeRequest {
             before: h.context.now().get().saturating_add(1),
@@ -358,7 +358,7 @@ async fn clear_during_capture_consumes_the_exact_tombstone_without_resurrection(
             .expect("cost")
             .is_none()
     );
-    let job = super::job_get(
+    let job = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: automatic_job(&h).to_string(),
@@ -381,10 +381,10 @@ async fn cancelling_network_capture_writes_no_cost_and_shutdown_drains_it() {
     let billing = Arc::new(Billing::default());
     billing.blocked.store(true, Ordering::SeqCst);
     let (h, dispatch) = chat(billing.clone()).await;
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("started capture"));
     billing.entered.notified().await;
-    super::job_cancel(
+    crate::api::job_cancel(
         &h.context,
         dto::JobCancelRequest {
             job_id: automatic_job(&h).to_string(),
@@ -402,7 +402,7 @@ async fn cancelling_network_capture_writes_no_cost_and_shutdown_drains_it() {
             .is_none()
     );
     assert_eq!(
-        super::job_get(
+        crate::api::job_get(
             &h.context,
             dto::JobGetRequest {
                 job_id: automatic_job(&h).to_string()
@@ -413,7 +413,7 @@ async fn cancelling_network_capture_writes_no_cost_and_shutdown_drains_it() {
         .state,
         dto::JobStateDto::Cancelled
     );
-    let pending = super::usage_recalculate_costs(
+    let pending = crate::api::usage_recalculate_costs(
         &h.context,
         dto::UsageRecalculateCostsRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -426,7 +426,7 @@ async fn cancelling_network_capture_writes_no_cost_and_shutdown_drains_it() {
     h.context.begin_shutdown();
     runner.wait_idle().await;
     assert_eq!(
-        super::job_get(
+        crate::api::job_get(
             &h.context,
             dto::JobGetRequest {
                 job_id: pending.job_id
@@ -452,8 +452,8 @@ async fn a_second_runner_cannot_claim_the_active_billing_job() {
     let billing = Arc::new(Billing::default());
     billing.blocked.store(true, Ordering::SeqCst);
     let (h, _) = chat(billing.clone()).await;
-    let first = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
-    let second = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let first = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
+    let second = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(first.run_once().await.expect("first claim"));
     billing.entered.notified().await;
     assert!(!second.run_once().await.expect("already claimed"));
@@ -536,7 +536,7 @@ async fn recalculation_rejects_an_operation_key_with_a_different_digest() {
             &serde_json::json!({"targets": []}),
         )
         .expect("existing operation");
-    let error = super::usage_recalculate_costs(
+    let error = crate::api::usage_recalculate_costs(
         &h.context,
         dto::UsageRecalculateCostsRequest {
             client_operation_id: id.to_string(),
@@ -556,9 +556,9 @@ async fn a_failed_startup_reconciliation_leaves_one_notice_and_startup_continues
         details: Some(dto::ApiErrorDetails::UsageStorage),
     };
     for _ in 0..2 {
-        super::usage_billing::skipped_at_startup(&h.context, &failure);
+        super::billing::skipped_at_startup(&h.context, &failure);
     }
-    let notices = super::purge_notices_list(&h.context)
+    let notices = crate::api::purge_notices_list(&h.context)
         .await
         .expect("notices");
     assert_eq!(
@@ -572,6 +572,6 @@ async fn a_failed_startup_reconciliation_leaves_one_notice_and_startup_continues
             .count(),
         1
     );
-    let workers = super::startup(&h.context).await.expect("startup");
+    let workers = crate::api::startup(&h.context).await.expect("startup");
     workers.stop().await;
 }

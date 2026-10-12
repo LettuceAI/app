@@ -13,7 +13,7 @@ use lettuce_usage::{
     UsageCostTargetReader, UsageLedgerError,
 };
 
-use super::{
+use crate::api::{
     ApiContext,
     error::{IntoApiError, api_error, parse_id},
     jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink},
@@ -79,7 +79,7 @@ fn admit(
     )
     .with_resources(vec![ResourceClass::Network])
     .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
-    let digest = super::jobs::local::digest(&subject)?;
+    let digest = crate::api::jobs::local::digest(&subject)?;
     let detail = serde_json::to_value(BillingDetail { targets }).map_err(storage)?;
     Ok(context
         .backend()
@@ -89,7 +89,10 @@ fn admit(
         .id)
 }
 
-pub(super) async fn admit_automatic(context: &ApiContext, job_id: JobId) -> Result<(), ApiError> {
+pub(in crate::api) async fn admit_automatic(
+    context: &ApiContext,
+    job_id: JobId,
+) -> Result<(), ApiError> {
     recover(context, Some(job_id)).await
 }
 
@@ -99,7 +102,7 @@ pub(super) async fn recover_automatic(context: &ApiContext) -> Result<(), ApiErr
 
 /// Startup reconciliation is optional: a failure leaves a notice and
 /// startup continues.
-pub(super) async fn recover_at_startup(context: &ApiContext) {
+pub(in crate::api) async fn recover_at_startup(context: &ApiContext) {
     if let Err(error) = recover_automatic(context).await {
         skipped_at_startup(context, &error);
     }
@@ -127,7 +130,7 @@ async fn recover(context: &ApiContext, job_id: Option<JobId>) -> Result<(), ApiE
             let created = !targets.is_empty();
             for target in targets {
                 let key = format!("{USAGE_AUTO_COST_KEY_PREFIX}{}", target.event_id);
-                let request = RequestId::from_uuid(super::jobs::local::stable_uuid(&[
+                let request = RequestId::from_uuid(crate::api::jobs::local::stable_uuid(&[
                     AUTOMATIC,
                     &target.event_id.to_string(),
                 ]));
@@ -142,7 +145,7 @@ async fn recover(context: &ApiContext, job_id: Option<JobId>) -> Result<(), ApiE
     Ok(())
 }
 
-pub(super) fn result_view(
+pub(in crate::api) fn result_view(
     context: &ApiContext,
     job: &JobSnapshot,
 ) -> Result<Option<dto::JobResultDto>, ApiError> {
@@ -173,7 +176,7 @@ pub(super) fn result_view(
     }))
 }
 
-pub(super) struct UsageBillingHandler;
+pub(in crate::api) struct UsageBillingHandler;
 
 #[async_trait]
 impl JobHandler for UsageBillingHandler {

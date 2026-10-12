@@ -312,7 +312,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
                 })
             }),
         result: feature
-            .or(super::usage_billing::result_view(context, job)?)
+            .or(super::usage::billing::result_view(context, job)?)
             .or(super::maintenance_jobs::result_view(context, job)?)
             .or(super::app_reset::result_view(context, job)?)
             .or(super::backup_jobs::result_view(context, job)?)

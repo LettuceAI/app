@@ -225,7 +225,7 @@ impl ConversationGenerationWorker {
                 });
             }
         }
-        super::usage_billing::admit_automatic(context, next.job_id).await?;
+        super::usage::billing::admit_automatic(context, next.job_id).await?;
         outcome.map_err(|error| {
             api_error(
                 lettuce_contracts::ApiErrorCode::Internal,

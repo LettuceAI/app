@@ -1,3 +1,9 @@
+pub(super) mod billing;
+#[cfg(test)]
+mod billing_tests;
+#[cfg(test)]
+mod tests;
+
 use super::{ApiContext, error::parse_id};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_database::ApiOperationError;

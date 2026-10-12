@@ -307,15 +307,9 @@ mod metrics_tests;
 mod metrics;
 pub use metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list};
 
-#[cfg(test)]
-mod usage_billing_tests;
-#[cfg(test)]
-mod usage_tests;
-
 mod usage;
-mod usage_billing;
+pub use usage::billing::usage_recalculate_costs;
 pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
-pub use usage_billing::usage_recalculate_costs;
 
 mod app_reset;
 mod storage;

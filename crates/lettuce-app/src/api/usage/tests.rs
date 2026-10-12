@@ -1,4 +1,4 @@
-use super::tests::{RecordingStream, Reply, harness, launch, send};
+use crate::api::tests::{RecordingStream, Reply, harness, launch, send};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_types::RequestId;
 use lettuce_usage::JobUsageLedger;
@@ -9,7 +9,7 @@ async fn openrouter_chat_admits_a_durable_automatic_cost_job_after_the_reply() {
     use lettuce_jobs::{JobKind, JobQuery, JobState, JobStore};
     use lettuce_types::PageRequest;
     let h = harness(Reply::Text("Priced reply."));
-    super::usage_billing_tests::ready_openrouter(&h);
+    super::billing_tests::ready_openrouter(&h);
     *h.provider.response_hook.lock().expect("response hook") = Some(Arc::new(|_, response| {
         response.usage = Some(lettuce_conversations::InferenceUsage {
             input_tokens: 120,
@@ -35,7 +35,7 @@ async fn openrouter_chat_admits_a_durable_automatic_cost_job_after_the_reply() {
     )
     .await
     .expect("send");
-    super::ConversationGenerationWorker::new(h.context.clone())
+    crate::api::ConversationGenerationWorker::new(h.context.clone())
         .run_once()
         .await
         .expect("reply");
@@ -117,7 +117,7 @@ async fn chat_usage_keeps_dispatch_names_after_in_flight_catalog_edits() {
     .await
     .expect("send");
     assert!(
-        super::ConversationGenerationWorker::new(h.context.clone())
+        crate::api::ConversationGenerationWorker::new(h.context.clone())
             .run_once()
             .await
             .expect("run chat")
@@ -186,14 +186,14 @@ async fn usage_clear_preserves_a_live_chat_then_clears_once_after_completion() {
         client_operation_id: RequestId::new().to_string(),
     };
     assert_eq!(
-        super::usage_clear_before(&h.context, request.clone())
+        crate::api::usage_clear_before(&h.context, request.clone())
             .await
             .expect("test operation succeeds")
             .removed,
         0
     );
     assert!(
-        super::ConversationGenerationWorker::new(h.context.clone())
+        crate::api::ConversationGenerationWorker::new(h.context.clone())
             .run_once()
             .await
             .expect("test operation succeeds")
@@ -222,7 +222,7 @@ async fn usage_clear_preserves_a_live_chat_then_clears_once_after_completion() {
         ..request.clone()
     };
     assert_eq!(
-        super::usage_clear_before(&h.context, next.clone())
+        crate::api::usage_clear_before(&h.context, next.clone())
             .await
             .expect("test operation succeeds")
             .removed,
@@ -237,7 +237,7 @@ async fn usage_clear_preserves_a_live_chat_then_clears_once_after_completion() {
             .is_empty()
     );
     assert_eq!(
-        super::usage_clear_before(&h.context, next.clone())
+        crate::api::usage_clear_before(&h.context, next.clone())
             .await
             .expect("test operation succeeds")
             .removed,
@@ -248,13 +248,13 @@ async fn usage_clear_preserves_a_live_chat_then_clears_once_after_completion() {
         ..next
     };
     assert_eq!(
-        super::usage_clear_before(&h.context, changed)
+        crate::api::usage_clear_before(&h.context, changed)
             .await
             .expect_err("test operation fails")
             .code,
         ApiErrorCode::Conflict
     );
-    super::conversation_open(
+    crate::api::conversation_open(
         &h.context,
         dto::ConversationOpenRequest {
             conversation_id: conversation,
@@ -337,7 +337,7 @@ async fn usage_clear_keeps_a_settled_dispatch_while_its_chat_attempt_is_running(
             .expect("test operation succeeds");
         notify.notify_one();
     }));
-    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let worker = crate::api::ConversationGenerationWorker::new(h.context.clone());
     let running = tokio::spawn(async move { worker.run_once().await });
     tokio::time::timeout(std::time::Duration::from_secs(10), settled.notified())
         .await
@@ -356,7 +356,7 @@ async fn usage_clear_keeps_a_settled_dispatch_while_its_chat_attempt_is_running(
         client_operation_id: RequestId::new().to_string(),
     };
     assert_eq!(
-        super::usage_clear_before(&h.context, cut)
+        crate::api::usage_clear_before(&h.context, cut)
             .await
             .expect("test operation succeeds")
             .removed,
@@ -407,7 +407,7 @@ async fn cleared_chat_usage_exports_and_restores_with_exact_tombstone_proofs() {
     )
     .await
     .expect("test operation succeeds");
-    super::ConversationGenerationWorker::new(h.context.clone())
+    crate::api::ConversationGenerationWorker::new(h.context.clone())
         .run_once()
         .await
         .expect("test operation succeeds");
@@ -423,7 +423,7 @@ async fn cleared_chat_usage_exports_and_restores_with_exact_tombstone_proofs() {
         client_operation_id: RequestId::new().to_string(),
     };
     assert_eq!(
-        super::usage_clear_before(&h.context, cut)
+        crate::api::usage_clear_before(&h.context, cut)
             .await
             .expect("test operation succeeds")
             .removed,
