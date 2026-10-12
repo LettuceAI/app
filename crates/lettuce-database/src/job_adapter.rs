@@ -120,8 +120,8 @@ impl Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
-        if let Some((command, key, digest, _)) = receipt {
-            if let Some(prior) = crate::api_operation_adapter::lookup_in(&transaction, command, key)
+        if let Some((command, key, digest, _)) = receipt
+            && let Some(prior) = crate::api_operation_adapter::lookup_in(&transaction, command, key)
                 .map_err(|_| StoreError::Storage)?
             {
                 if prior.request_digest != digest {
@@ -133,7 +133,6 @@ impl Database {
                     .ok_or(StoreError::InvalidData)?.snapshot;
                 return Ok(CreateJobResult { job, created: false });
             }
-        }
         let present: bool = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM conversation_branches branch

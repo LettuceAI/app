@@ -146,14 +146,14 @@ pub fn blend_kokoro_voices(
 fn load_voice(
     bytes: &[u8],
 ) -> Result<Vec<[f32; KOKORO_STYLE_DIMENSIONS]>, KokoroVoiceError> {
-    if bytes.is_empty() || bytes.len() % STYLE_ROW_BYTES != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(STYLE_ROW_BYTES) {
         return Err(KokoroVoiceError::InvalidVoiceData);
     }
     let mut styles = Vec::with_capacity(bytes.len() / STYLE_ROW_BYTES);
-    for row in bytes.chunks_exact(STYLE_ROW_BYTES) {
+    for row in bytes.as_chunks::<STYLE_ROW_BYTES>().0 {
         let mut style = [0.0_f32; KOKORO_STYLE_DIMENSIONS];
-        for (slot, encoded) in style.iter_mut().zip(row.chunks_exact(size_of::<f32>())) {
-            *slot = f32::from_le_bytes(encoded.try_into().expect("four-byte float"));
+        for (slot, encoded) in style.iter_mut().zip(row.as_chunks::<4>().0) {
+            *slot = f32::from_le_bytes(*encoded);
             if !slot.is_finite() {
                 return Err(KokoroVoiceError::InvalidVoiceData);
             }

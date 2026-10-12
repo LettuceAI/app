@@ -315,8 +315,8 @@ fn validate_attempt_runtime(
         }
         previous = Some(&checkpoint.envelope);
     }
-    if let Some(record) = &runtime.initial_inference {
-        if record.binding.conversation_id != turn.conversation_id
+    if let Some(record) = &runtime.initial_inference
+        && (record.binding.conversation_id != turn.conversation_id
             || record.binding.turn_id != turn.id
             || record.binding.attempt_id != runtime.attempt_id
             || Some(record.binding.job_id) != job_id
@@ -334,13 +334,12 @@ fn validate_attempt_runtime(
             || record.result.is_some() != record.settled_at.is_some()
             || record
                 .settled_at
-                .is_some_and(|settled| settled < record.admitted_at)
-        {
-            return Err(ConversationRuntimeBackupError::InvalidData);
-        }
+                .is_some_and(|settled| settled < record.admitted_at))
+    {
+        return Err(ConversationRuntimeBackupError::InvalidData);
     }
-    if let Some(record) = &runtime.speaker_inference {
-        if record.binding.conversation_id != turn.conversation_id
+    if let Some(record) = &runtime.speaker_inference
+        && (record.binding.conversation_id != turn.conversation_id
             || record.binding.turn_id != turn.id
             || record.binding.attempt_id != runtime.attempt_id
             || Some(record.binding.job_id) != job_id
@@ -351,10 +350,9 @@ fn validate_attempt_runtime(
             || record
                 .decision
                 .as_ref()
-                .is_some_and(|decision| decision.validate_for_persistence().is_err())
-        {
-            return Err(ConversationRuntimeBackupError::InvalidData);
-        }
+                .is_some_and(|decision| decision.validate_for_persistence().is_err()))
+    {
+        return Err(ConversationRuntimeBackupError::InvalidData);
     }
     runtime.tools.sort_by_key(|tool| (tool.ordinal, tool.id));
     for (ordinal, tool) in runtime.tools.iter().enumerate() {

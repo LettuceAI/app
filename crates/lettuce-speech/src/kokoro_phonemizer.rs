@@ -283,13 +283,13 @@ pub fn split_text_parts(text: &str) -> Vec<TextPart> {
             continue;
         }
 
-        if let Some(punct) = map_boundary_punctuation(ch) {
-            if !is_numeric_connector_between_digits(text, idx, ch_len, ch) {
-                flush_text_part(&mut parts, &mut current);
-                parts.push(TextPart::Punct(punct));
-                idx += ch_len;
-                continue;
-            }
+        if let Some(punct) = map_boundary_punctuation(ch)
+            && !is_numeric_connector_between_digits(text, idx, ch_len, ch)
+        {
+            flush_text_part(&mut parts, &mut current);
+            parts.push(TextPart::Punct(punct));
+            idx += ch_len;
+            continue;
         }
 
         if ch.is_whitespace() {
@@ -574,16 +574,16 @@ fn try_parse_inline_annotation(text: &str, start: usize) -> Option<(usize, TextP
         return Some((target_end + 1, TextPart::Phonemes(ipa.to_string())));
     }
 
-    if let Ok(delta) = target.parse::<i8>() {
-        if matches!(delta, -2 | -1 | 1 | 2) {
-            return Some((
-                target_end + 1,
-                TextPart::StressText {
-                    text: label.to_string(),
-                    delta,
-                },
-            ));
-        }
+    if let Ok(delta) = target.parse::<i8>()
+        && matches!(delta, -2 | -1 | 1 | 2)
+    {
+        return Some((
+            target_end + 1,
+            TextPart::StressText {
+                text: label.to_string(),
+                delta,
+            },
+        ));
     }
 
     None

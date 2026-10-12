@@ -258,12 +258,12 @@ fn completed(signal: &OnceLock<WeakApiContext>, kind: &str, id: ProviderAccountI
     if kind != "nanogpt" {
         return;
     }
-    if let Some(context) = signal.get().and_then(WeakApiContext::upgrade) {
-        if !context.shutdown_token().is_cancelled() {
-            let (claim, _) = context.quota().begin(id, false, false);
-            if let Some(claim) = claim {
-                spawn(&context, claim);
-            }
+    if let Some(context) = signal.get().and_then(WeakApiContext::upgrade)
+        && !context.shutdown_token().is_cancelled()
+    {
+        let (claim, _) = context.quota().begin(id, false, false);
+        if let Some(claim) = claim {
+            spawn(&context, claim);
         }
     }
 }

@@ -316,26 +316,26 @@ impl RuntimeEventRouter {
         };
         if let Some(id) = request_id.and_then(|id| id.parse().ok()) {
             let flow = lock(&self.attempts).get(&id).cloned();
-            if let Some(flow) = flow {
-                if flow.is_active() {
-                    if let LlamaHostEvent::ModelLoadProgress(progress) = &event {
-                        let next = LoadProgress::from(progress);
-                        let mut previous = lock(&flow.load_progress);
-                        if previous.as_ref() == Some(&next) {
-                            return;
-                        }
-                        *previous = Some(next.clone());
-                        if let Some(parent) = &flow.parent {
-                            let mut snapshot = lock(&parent.snapshot);
-                            if let Some((_, current, value)) = snapshot.as_mut()
-                                && current.ptr_eq(&Arc::downgrade(&flow))
-                            {
-                                *value = Some(next);
-                            }
+            if let Some(flow) = flow
+                && flow.is_active()
+            {
+                if let LlamaHostEvent::ModelLoadProgress(progress) = &event {
+                    let next = LoadProgress::from(progress);
+                    let mut previous = lock(&flow.load_progress);
+                    if previous.as_ref() == Some(&next) {
+                        return;
+                    }
+                    *previous = Some(next.clone());
+                    if let Some(parent) = &flow.parent {
+                        let mut snapshot = lock(&parent.snapshot);
+                        if let Some((_, current, value)) = snapshot.as_mut()
+                            && current.ptr_eq(&Arc::downgrade(&flow))
+                        {
+                            *value = Some(next);
                         }
                     }
-                    self.enqueue(Dispatch::Flow(Arc::downgrade(&flow), event));
                 }
+                self.enqueue(Dispatch::Flow(Arc::downgrade(&flow), event));
             }
             return;
         }

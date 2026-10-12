@@ -33,9 +33,11 @@ fn encode(values: &[f32]) -> Vec<u8> {
 
 fn decode(bytes: &[u8]) -> Result<Vec<f32>, EmbeddingProjectionError> {
     bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| {
-            let raw: [u8; 4] = chunk.try_into().map_err(storage)?;
+            let raw: [u8; 4] = *chunk;
             let value = f32::from_le_bytes(raw);
             value
                 .is_finite()

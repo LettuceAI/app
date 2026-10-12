@@ -145,9 +145,8 @@ fn publish_backup_path(temporary: &str, target: Option<&str>, protected: ExportP
         Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => None,
         Err(failure) => return Err(access_error(&failure)),
     };
-    if let Some(file) = &existing {
-        if protected(target, Some(file))? { return Err(FileAccessError::SourceIsTarget); }
-    }
+    if let Some(file) = &existing
+        && protected(target, Some(file))? { return Err(FileAccessError::SourceIsTarget); }
     publish_backup_durable(path(temporary)?, path(target)?)?;
     Ok(target.to_owned())
 }

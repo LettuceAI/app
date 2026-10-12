@@ -442,8 +442,8 @@ impl InMemoryJobStore {
                 created: false,
             });
         }
-        if let Some(key) = &spec.idempotency_key {
-            if let Some(existing_id) = inner.idempotency.get(key).copied() {
+        if let Some(key) = &spec.idempotency_key
+            && let Some(existing_id) = inner.idempotency.get(key).copied() {
                 let existing = inner.jobs.get(&existing_id).ok_or(StoreError::NotFound)?;
                 if identity.is_some_and(|id| id != existing_id)
                     || !same_submission(&existing.spec, &spec)
@@ -455,7 +455,6 @@ impl InMemoryJobStore {
                     created: false,
                 });
             }
-        }
 
         let parent_id = spec.parent_id;
         if let Some(parent_id) = parent_id {

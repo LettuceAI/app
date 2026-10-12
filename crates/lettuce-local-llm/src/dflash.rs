@@ -1211,7 +1211,7 @@ mod tests {
             out.extend(0_u32.to_le_bytes());
             out.extend((index as u64 * 32).to_le_bytes());
         }
-        while out.len() % 32 != 0 {
+        while !out.len().is_multiple_of(32) {
             out.push(0);
         }
         out.extend(vec![0_u8; tensors.len() * 32]);

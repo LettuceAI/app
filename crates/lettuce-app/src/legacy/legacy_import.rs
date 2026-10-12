@@ -400,13 +400,12 @@ fn valid_asr_media_plan(asr: &LegacyAsrPlan, media: &LegacyMediaPlan) -> bool {
     let mut found = std::collections::BTreeSet::new();
     for candidate in &media.media {
         for media_use in &candidate.uses {
-            if let LegacyMediaUse::AsrVoiceExample { source_id } = media_use {
-                if examples.get(source_id).copied() != Some(candidate.source_locator.as_str())
-                    || !found.insert(*source_id)
+            if let LegacyMediaUse::AsrVoiceExample { source_id } = media_use
+                && (examples.get(source_id).copied() != Some(candidate.source_locator.as_str())
+                    || !found.insert(*source_id))
                 {
                     return false;
                 }
-            }
         }
     }
     found.len() == examples.len()

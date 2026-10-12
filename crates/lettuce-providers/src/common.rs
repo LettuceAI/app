@@ -1113,10 +1113,8 @@ pub(crate) fn parse_custom_listing_with(
                     .is_some()
             })
         });
-    if configured_valid {
-        if let Some(models) = parse_custom_model_list(list, payload) {
-            return Ok(models);
-        }
+    if configured_valid && let Some(models) = parse_custom_model_list(list, payload) {
+        return Ok(models);
     }
     if !generic.is_empty() {
         return Ok(generic);

@@ -311,25 +311,25 @@ impl CreateConversationPlan {
                         field: "conversation_plan.group.starter_origin",
                     });
                 }
-                if let Some(entry) = self.initial_timeline.entries.first() {
-                    if let InitialMessageOrigin::SelectedScene { snapshot_ref } = &entry.origin {
-                        let selected = match &details.group.scene {
-                            crate::snapshot::SnapshotSelection::Inherited(value)
-                            | crate::snapshot::SnapshotSelection::Explicit(value) => {
-                                Some(&value.snapshot_ref)
-                            }
-                            crate::snapshot::SnapshotSelection::Disabled => None,
-                        };
-                        if selected != Some(snapshot_ref)
-                            || !matches!(
-                                details.group.chat_mode,
-                                crate::snapshot::GroupChatModeSnapshot::Roleplay
-                            )
-                        {
-                            return Err(ValidationError::InvalidReference {
-                                field: "conversation_plan.group.scene_origin",
-                            });
+                if let Some(entry) = self.initial_timeline.entries.first()
+                    && let InitialMessageOrigin::SelectedScene { snapshot_ref } = &entry.origin
+                {
+                    let selected = match &details.group.scene {
+                        crate::snapshot::SnapshotSelection::Inherited(value)
+                        | crate::snapshot::SnapshotSelection::Explicit(value) => {
+                            Some(&value.snapshot_ref)
                         }
+                        crate::snapshot::SnapshotSelection::Disabled => None,
+                    };
+                    if selected != Some(snapshot_ref)
+                        || !matches!(
+                            details.group.chat_mode,
+                            crate::snapshot::GroupChatModeSnapshot::Roleplay
+                        )
+                    {
+                        return Err(ValidationError::InvalidReference {
+                            field: "conversation_plan.group.scene_origin",
+                        });
                     }
                 }
             }

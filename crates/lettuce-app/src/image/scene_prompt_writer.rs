@@ -1036,7 +1036,7 @@ fn inserts_in_chat(entry: &FeatureEntry, turn_count: usize) -> bool {
         }
         PromptEntryPosition::Interval => {
             let interval = entry.interval_turns.unwrap_or_default() as usize;
-            interval > 0 && turn_count > 0 && turn_count % interval == 0
+            interval > 0 && turn_count > 0 && turn_count.is_multiple_of(interval)
         }
         PromptEntryPosition::Relative => false,
     }

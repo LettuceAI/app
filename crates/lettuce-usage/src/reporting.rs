@@ -181,8 +181,8 @@ impl UsageReportEvidence {
                 }
                 None => row.apply_snapshot(event.snapshot.as_ref()),
             }
-            if let Some((owner, _)) = terminal {
-                if let Some(snapshot) = &owner.snapshot {
+            if let Some((owner, _)) = terminal
+                && let Some(snapshot) = &owner.snapshot {
                     if row.character_id.is_none() && row.character_name.is_none() {
                         row.character_id = snapshot.character_id.map(|id| id.to_string());
                         row.character_name = snapshot.character_name.clone();
@@ -193,7 +193,6 @@ impl UsageReportEvidence {
                         row.error_message = snapshot.error_message.clone();
                     }
                 }
-            }
             if let Some(basis) = basis {
                 row.apply_cost(
                     basis

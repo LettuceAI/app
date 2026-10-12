@@ -1254,12 +1254,11 @@ mod tests {
                 if artifact_id == group_lorebook_ref.artifact_id
         ));
 
-        if let ConversationKind::Group(details) = &mut group.kind {
-            if let SnapshotSelection::Explicit(books) = &mut details.group.members[0].lorebooks {
+        if let ConversationKind::Group(details) = &mut group.kind
+            && let SnapshotSelection::Explicit(books) = &mut details.group.members[0].lorebooks {
                 books[0].snapshot_ref.source =
                     SnapshotSource::Lorebook(lettuce_types::LorebookId::new());
             }
-        }
         assert!(
             group.validate().is_err(),
             "nested lorebook refs are validated"

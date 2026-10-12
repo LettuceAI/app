@@ -216,12 +216,12 @@ impl TimelinePage {
                 }
             }
         }
-        if let Some(cursor) = &self.next_cursor {
-            if cursor.trim().is_empty() || cursor.len() > 4096 {
-                return Err(crate::ValidationError::InvalidValue {
-                    field: "timeline_page.cursor",
-                });
-            }
+        if let Some(cursor) = &self.next_cursor
+            && (cursor.trim().is_empty() || cursor.len() > 4096)
+        {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "timeline_page.cursor",
+            });
         }
         Ok(())
     }
@@ -777,12 +777,11 @@ impl ConversationOutboxRecord {
             initial_message_count,
             ..
         } = &self.event
+            && (*initial_message_count == 0) != head_message_id.is_none()
         {
-            if (*initial_message_count == 0) != head_message_id.is_none() {
-                return Err(crate::ValidationError::InvalidValue {
-                    field: "outbox.conversation_created.initial_timeline",
-                });
-            }
+            return Err(crate::ValidationError::InvalidValue {
+                field: "outbox.conversation_created.initial_timeline",
+            });
         }
         if let ConversationOutboxEvent::ConversationLifecycleChanged { lifecycle, .. } = &self.event
             && *lifecycle == crate::model::ConversationLifecycle::Tombstoned

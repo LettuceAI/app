@@ -965,12 +965,11 @@ impl crate::SyncBlobSource for BlockAfterFirstChunk<'_> {
         offset: u64,
         max_bytes: usize,
     ) -> Result<Vec<u8>, crate::SyncBlobSourceError> {
-        if offset >= lettuce_sync::MAX_SYNC_BLOB_CHUNK_BYTES as u64 && max_bytes > 1 {
-            if let Some(sender) = self.entered.lock().expect("observer").take() {
+        if offset >= lettuce_sync::MAX_SYNC_BLOB_CHUNK_BYTES as u64 && max_bytes > 1
+            && let Some(sender) = self.entered.lock().expect("observer").take() {
                 let _ = sender.send(());
                 let _ = self.release.lock().expect("release").recv();
             }
-        }
         self.media
             .read_sync_chunk(hash, offset, max_bytes)
             .map_err(|_| crate::SyncBlobSourceError)

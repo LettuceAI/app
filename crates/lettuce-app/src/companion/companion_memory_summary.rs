@@ -562,17 +562,14 @@ fn summary_from_outcome(
     let candidate = &outcome.candidates[0];
     if allow_tool {
         for call in &candidate.tool_calls {
-            if call.name == "write_summary" {
-                if let Some(summary) = call
+            if call.name == "write_summary"
+                && let Some(summary) = call
                     .arguments
                     .get("summary")
                     .and_then(|value| value.as_str())
-                {
-                    if let Ok(summary) = validate_summary_text(summary) {
+                    && let Ok(summary) = validate_summary_text(summary) {
                         return Ok(summary);
                     }
-                }
-            }
         }
     } else if !candidate.tool_calls.is_empty() {
         return Err(CompanionMemoryInferenceError::NoToolCalls);

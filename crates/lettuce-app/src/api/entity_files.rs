@@ -2480,12 +2480,11 @@ fn bundle_uec3_prompt(
         authored_digest,
         ..
     } = &document.provenance
+        && seed_digest == authored_digest
     {
-        if seed_digest == authored_digest {
-            let reference = format!("builtin:{key}");
-            references.insert(id, reference.clone());
-            return Ok(reference);
-        }
+        let reference = format!("builtin:{key}");
+        references.insert(id, reference.clone());
+        return Ok(reference);
     }
     let built_in = match &document.provenance {
         lettuce_context::PromptProvenance::BuiltIn { key, .. } => Some(key.clone()),

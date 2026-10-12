@@ -60,10 +60,10 @@ impl StreamFramer {
             }
             self.record.push(byte);
             self.line.push(byte);
-            if byte == b'\n' {
-                if let Some(record) = self.complete_line()? {
-                    records.push(record);
-                }
+            if byte == b'\n'
+                && let Some(record) = self.complete_line()?
+            {
+                records.push(record);
             }
         }
         Ok(records)

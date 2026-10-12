@@ -263,15 +263,15 @@ fn parse_window_value(payload: &Value, aliases: &[&str]) -> Option<QuotaWindow> 
             return None;
         }
     }
-    if window.remaining.is_none() {
-        if let (Some(limit), Some(used)) = (window.limit, window.used) {
-            window.remaining = Some((limit - used).max(0.0));
-        }
+    if window.remaining.is_none()
+        && let (Some(limit), Some(used)) = (window.limit, window.used)
+    {
+        window.remaining = Some((limit - used).max(0.0));
     }
-    if window.used.is_none() {
-        if let (Some(limit), Some(remaining)) = (window.limit, window.remaining) {
-            window.used = Some((limit - remaining).max(0.0));
-        }
+    if window.used.is_none()
+        && let (Some(limit), Some(remaining)) = (window.limit, window.remaining)
+    {
+        window.used = Some((limit - remaining).max(0.0));
     }
     window.percent_used = match (window.used, window.limit) {
         (Some(used), Some(limit)) if limit > 0.0 => Some((used / limit).clamp(0.0, 1.0)),

@@ -484,10 +484,9 @@ pub fn reserve_device_vram(
         selected_device_ids
             .iter()
             .position(|selected| *selected == device_id)
-    }) {
-        if let Some(free) = adjusted.get_mut(position) {
-            *free = free.saturating_sub(reserve_bytes);
-        }
+    }) && let Some(free) = adjusted.get_mut(position)
+    {
+        *free = free.saturating_sub(reserve_bytes);
     }
     adjusted
 }
@@ -1024,10 +1023,10 @@ pub fn plan_multi_gpu_distribution(
                 per_device[i] = assigned;
                 remaining -= assigned;
             }
-            if remaining > 0 {
-                if let Some(last) = per_device.last_mut() {
-                    *last += remaining;
-                }
+            if remaining > 0
+                && let Some(last) = per_device.last_mut()
+            {
+                *last += remaining;
             }
             let total: u32 = per_device.iter().copied().sum::<u32>().min(total_layers);
             let weights: Vec<f32> = per_device.iter().map(|c| *c as f32).collect();

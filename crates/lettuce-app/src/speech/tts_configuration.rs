@@ -126,14 +126,14 @@ where
         match self.repository.upsert_audio_provider(provider, None) {
             Ok(provider) => Ok(provider),
             Err(repository) => {
-                if let Some(cleanup) = cleanup {
-                    if let Err(source) = self.delete_secret(cleanup).await {
-                        return Err(TtsConfigurationCoordinatorError::CompensationFailed {
-                            repository,
-                            cleanup,
-                            source,
-                        });
-                    }
+                if let Some(cleanup) = cleanup
+                    && let Err(source) = self.delete_secret(cleanup).await
+                {
+                    return Err(TtsConfigurationCoordinatorError::CompensationFailed {
+                        repository,
+                        cleanup,
+                        source,
+                    });
                 }
                 Err(TtsConfigurationCoordinatorError::Repository(repository))
             }
@@ -243,10 +243,10 @@ where
                 TtsConfigurationRepositoryError::InvalidData,
             ));
         }
-        if let Some(cleanup) = cleanup {
-            if let Err(source) = self.delete_secret(cleanup).await {
-                return Err(TtsConfigurationCoordinatorError::CleanupPending { cleanup, source });
-            }
+        if let Some(cleanup) = cleanup
+            && let Err(source) = self.delete_secret(cleanup).await
+        {
+            return Err(TtsConfigurationCoordinatorError::CleanupPending { cleanup, source });
         }
         Ok(removed)
     }

@@ -1529,13 +1529,13 @@ impl LorebookDependencyReader for Database {
                     "invalid starter lorebook payload version".into(),
                 ));
             }
-            if let Selection::Explicit(ids) = envelope.value {
-                if ids.contains(&lorebook_id) {
-                    references.push(LorebookReference::Starter {
-                        character_id,
-                        starter_id,
-                    });
-                }
+            if let Selection::Explicit(ids) = envelope.value
+                && ids.contains(&lorebook_id)
+            {
+                references.push(LorebookReference::Starter {
+                    character_id,
+                    starter_id,
+                });
             }
         }
         drop(rows);

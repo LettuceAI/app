@@ -116,13 +116,13 @@ impl fmt::Debug for StagedWrite {
 
 impl Write for StagedWrite {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        if let Some(limit) = self.max_bytes {
-            if self.bytes_written.saturating_add(buffer.len() as u64) > limit {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "write limit exceeded",
-                ));
-            }
+        if let Some(limit) = self.max_bytes
+            && self.bytes_written.saturating_add(buffer.len() as u64) > limit
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "write limit exceeded",
+            ));
         }
         let file = self
             .file

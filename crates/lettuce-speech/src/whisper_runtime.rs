@@ -114,20 +114,19 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
         key: &WhisperContextKey,
         retain: bool,
     ) -> Result<Arc<WhisperContext>, AsrRuntimeError> {
-        if retain {
-            if let Some(context) = self
+        if retain
+            && let Some(context) = self
                 .contexts
                 .lock()
                 .map_err(|_| AsrRuntimeError::Unavailable)?
                 .get(key)
                 .cloned()
-            {
-                debug!(
-                    model_id = artifacts.model_id,
-                    "reusing Whisper model context"
-                );
-                return Ok(context);
-            }
+        {
+            debug!(
+                model_id = artifacts.model_id,
+                "reusing Whisper model context"
+            );
+            return Ok(context);
         }
         let mut parameters = WhisperContextParameters::new();
         parameters

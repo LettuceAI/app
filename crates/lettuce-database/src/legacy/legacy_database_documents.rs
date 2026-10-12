@@ -928,8 +928,10 @@ fn canonical_embeddings(
         .query_map(params![session_id, session_kind], |r| {
             let blob: Vec<u8> = r.get(1)?;
             let embedding = blob
-                .chunks_exact(4)
-                .map(|bytes| f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
                 .collect::<Vec<_>>();
             let embedding_dimensions = (!embedding.is_empty()).then_some(embedding.len());
             Ok(LegacyMemoryEmbedding {

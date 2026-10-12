@@ -904,11 +904,10 @@ fn read_ingest<R: Read>(
     if sniffed.kind != request.asset_kind.blob_kind() {
         return Err(MediaStoreError::KindMismatch);
     }
-    if let Some(declared) = &request.declared_mime_type {
-        if !mime_matches(declared, sniffed.mime_type) {
+    if let Some(declared) = &request.declared_mime_type
+        && !mime_matches(declared, sniffed.mime_type) {
             return Err(MediaStoreError::MimeMismatch);
         }
-    }
     Ok((bytes, sniffed))
 }
 

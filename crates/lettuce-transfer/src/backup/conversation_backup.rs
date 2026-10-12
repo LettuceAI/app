@@ -400,8 +400,8 @@ fn validate_initial_origin(
     starter_ids: &mut BTreeSet<lettuce_types::StarterMessageId>,
     scene_origins: &mut usize,
 ) -> Result<(), ConversationHistoryBackupError> {
-    if let Some(reference) = &entry.copied_scene_source {
-        if entry.initial_origin.is_some()
+    if let Some(reference) = &entry.copied_scene_source
+        && (entry.initial_origin.is_some()
             || entry.message.role != MessageRole::Scene
             || entry.message.author_participant_id.is_some()
             || !matches!(reference.source, SnapshotSource::Scene(_))
@@ -410,10 +410,9 @@ fn validate_initial_origin(
                 revision.parts.iter().any(
                     |part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()),
                 )
-            })
-        {
-            return Err(ConversationHistoryBackupError::InvalidData);
-        }
+            }))
+    {
+        return Err(ConversationHistoryBackupError::InvalidData);
     }
     let Some(origin) = &entry.initial_origin else {
         return Ok(());

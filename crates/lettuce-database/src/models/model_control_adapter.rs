@@ -75,10 +75,10 @@ impl ApiOperationTransaction<'_, '_> {
         expected: Revision,
         at: TimestampMillis,
     ) -> Result<Revision, ModelRepositoryError> {
-        if let Some(id) = id {
-            if self.model_profile(id)?.is_none() {
-                return Err(ModelRepositoryError::NotFound);
-            }
+        if let Some(id) = id
+            && self.model_profile(id)?.is_none()
+        {
+            return Err(ModelRepositoryError::NotFound);
         }
         let next = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
         self.changes.settings_section("models");

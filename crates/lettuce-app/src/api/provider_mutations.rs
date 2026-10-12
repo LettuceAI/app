@@ -206,8 +206,8 @@ pub async fn provider_account_save(
             "provider account revision is stale",
         ));
     }
-    if let ProviderConfig::Ollama(config) = &config {
-        if config
+    if let ProviderConfig::Ollama(config) = &config
+        && config
             .sprout
             .as_ref()
             .is_some_and(|sprout| sprout.api_key_ref.is_some())
@@ -217,7 +217,6 @@ pub async fn provider_account_save(
                 "secret references cannot be supplied",
             ));
         }
-    }
     let key = request.api_key.filter(|key| !key.trim().is_empty());
     if key.is_some() && request.clear_api_key {
         return Err(invalid_field(
@@ -264,15 +263,14 @@ pub async fn provider_account_save(
         created_at: context.now(),
         updated_at: context.now(),
     };
-    if let (ProviderConfig::Ollama(config), Some(old)) = (&mut account.config, &old) {
-        if let (Some(sprout), ProviderConfig::Ollama(previous)) = (&mut config.sprout, &old.config)
+    if let (ProviderConfig::Ollama(config), Some(old)) = (&mut account.config, &old)
+        && let (Some(sprout), ProviderConfig::Ollama(previous)) = (&mut config.sprout, &old.config)
         {
             sprout.api_key_ref = previous
                 .sprout
                 .as_ref()
                 .and_then(|sprout| sprout.api_key_ref);
         }
-    }
     lettuce_models::validate_provider_connection(&account)
         .map_err(|_| invalid_field("account", "invalid provider connection"))?;
     if let (Some(reference), Some(key)) = (reference, key) {

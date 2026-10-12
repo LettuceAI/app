@@ -119,8 +119,8 @@ pub fn account_secret_records(account: &ProviderAccount) -> Vec<SecretRecord> {
             },
         ));
     }
-    if let lettuce_models::ProviderConfig::Ollama(config) = &account.config {
-        if let Some(reference) = config.sprout.as_ref().and_then(|sprout| sprout.api_key_ref) {
+    if let lettuce_models::ProviderConfig::Ollama(config) = &account.config
+        && let Some(reference) = config.sprout.as_ref().and_then(|sprout| sprout.api_key_ref) {
             result.push(SecretRecord::new(
                 reference,
                 SecretPurpose::SproutApiKey {
@@ -128,7 +128,6 @@ pub fn account_secret_records(account: &ProviderAccount) -> Vec<SecretRecord> {
                 },
             ));
         }
-    }
     result
 }
 

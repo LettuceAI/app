@@ -795,10 +795,9 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &details.memory
+                && let Some(reference) = &value.policy_ref
             {
-                if let Some(reference) = &value.policy_ref {
-                    refs.push(reference);
-                }
+                refs.push(reference);
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &details.voice
@@ -814,10 +813,9 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &group.memory
+                && let Some(reference) = &value.policy_ref
             {
-                if let Some(reference) = &value.policy_ref {
-                    refs.push(reference);
-                }
+                refs.push(reference);
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &group.persona
@@ -861,10 +859,10 @@ pub fn conversation_settings_snapshot_references(
     settings: &CurrentConversationSettings,
 ) -> Vec<&ProtectedSnapshotRef> {
     let mut refs = Vec::new();
-    if let Some(memory) = &settings.memory {
-        if let Some(reference) = &memory.policy_ref {
-            refs.push(reference);
-        }
+    if let Some(memory) = &settings.memory
+        && let Some(reference) = &memory.policy_ref
+    {
+        refs.push(reference);
     }
     if let Some(model) = &settings.model_override {
         refs.push(&model.snapshot_ref);
@@ -899,10 +897,10 @@ fn conversation_settings_patch_snapshot_references(
     patch: &CurrentConversationSettingsPatch,
 ) -> Vec<&ProtectedSnapshotRef> {
     let mut refs = Vec::new();
-    if let PatchValue::Set(memory) = &patch.memory {
-        if let Some(reference) = &memory.policy_ref {
-            refs.push(reference);
-        }
+    if let PatchValue::Set(memory) = &patch.memory
+        && let Some(reference) = &memory.policy_ref
+    {
+        refs.push(reference);
     }
     if let PatchValue::Set(model) = &patch.model_override {
         refs.push(&model.snapshot_ref);

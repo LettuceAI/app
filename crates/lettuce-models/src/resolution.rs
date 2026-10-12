@@ -764,35 +764,32 @@ fn validate_limits(
     parameters: &ResolvedChatParameters,
     warnings: &mut Vec<ChatProfileWarning>,
 ) -> Result<(), ChatProfileResolutionError> {
-    if let Some(requested) = parameters.context_length {
-        if let Some(available) = capabilities.context_length {
-            if requested > available {
-                return Err(ChatProfileResolutionError::ContextLimitExceeded {
-                    requested,
-                    available,
-                });
-            }
-        }
+    if let Some(requested) = parameters.context_length
+        && let Some(available) = capabilities.context_length
+        && requested > available
+    {
+        return Err(ChatProfileResolutionError::ContextLimitExceeded {
+            requested,
+            available,
+        });
     }
-    if let Some(requested) = parameters.visible_max_output_tokens {
-        if let Some(available) = capabilities.max_visible_output_tokens {
-            if requested > available {
-                return Err(ChatProfileResolutionError::VisibleOutputLimitExceeded {
-                    requested,
-                    available,
-                });
-            }
-        }
+    if let Some(requested) = parameters.visible_max_output_tokens
+        && let Some(available) = capabilities.max_visible_output_tokens
+        && requested > available
+    {
+        return Err(ChatProfileResolutionError::VisibleOutputLimitExceeded {
+            requested,
+            available,
+        });
     }
-    if let Some(requested) = parameters.total_completion_allowance {
-        if let Some(available) = capabilities.max_total_completion_tokens {
-            if requested > available {
-                return Err(ChatProfileResolutionError::TotalOutputLimitExceeded {
-                    requested,
-                    available,
-                });
-            }
-        }
+    if let Some(requested) = parameters.total_completion_allowance
+        && let Some(available) = capabilities.max_total_completion_tokens
+        && requested > available
+    {
+        return Err(ChatProfileResolutionError::TotalOutputLimitExceeded {
+            requested,
+            available,
+        });
     }
     if parameters.context_length.is_some() && capabilities.context_length.is_none() {
         warnings.push(ChatProfileWarning::ContextLimitUnverified);

@@ -34,10 +34,10 @@ impl ChatParameterProfile {
         validate_positive("context_length", self.context_length)?;
         validate_penalty("frequency_penalty", self.frequency_penalty)?;
         validate_penalty("presence_penalty", self.presence_penalty)?;
-        if let Some(value) = self.repetition_penalty {
-            if !value.is_finite() || value <= 0.0 {
-                return Err(ParameterValidationError::InvalidValue("repetition_penalty"));
-            }
+        if let Some(value) = self.repetition_penalty
+            && (!value.is_finite() || value <= 0.0)
+        {
+            return Err(ParameterValidationError::InvalidValue("repetition_penalty"));
         }
         validate_positive("reasoning_budget_tokens", self.reasoning_budget_tokens)?;
         self.ollama.validate()?;

@@ -770,8 +770,7 @@ impl<
             .iter()
             .rev()
             .find(|(_, role)| *role == MessageRole::Assistant)
-        {
-            if !companion
+            && !companion
                 && self
                     .effects
                     .get_for_message(conversation_id, last_assistant)
@@ -780,7 +779,6 @@ impl<
             {
                 return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
             }
-        }
         let space = lettuce_memory::MemoryRepository::get_for_branch(
             self.effects,
             conversation_id,

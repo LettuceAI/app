@@ -373,10 +373,10 @@ fn source_ids<T: Copy>(
 ) -> Result<BTreeMap<i64, T>, LegacyAsrLearningTransferError> {
     let mut ids = BTreeMap::new();
     for (source_id, destination_id) in values {
-        if let Some(source_id) = source_id {
-            if source_id <= 0 || ids.insert(source_id, destination_id).is_some() {
-                return Err(LegacyAsrLearningTransferError::InvalidDocument);
-            }
+        if let Some(source_id) = source_id
+            && (source_id <= 0 || ids.insert(source_id, destination_id).is_some())
+        {
+            return Err(LegacyAsrLearningTransferError::InvalidDocument);
         }
     }
     Ok(ids)

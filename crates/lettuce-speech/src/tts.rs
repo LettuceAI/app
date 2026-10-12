@@ -134,10 +134,10 @@ impl UserVoice {
         validate_required(&self.name, MAX_LABEL_BYTES)?;
         validate_required(&self.model_id, MAX_VALUE_BYTES)?;
         validate_required(&self.voice_id, MAX_VALUE_BYTES)?;
-        if let Some(prompt) = &self.prompt {
-            if prompt.len() > MAX_PROMPT_BYTES || prompt.contains('\0') {
-                return Err(TtsConfigurationError::InvalidData);
-            }
+        if let Some(prompt) = &self.prompt
+            && (prompt.len() > MAX_PROMPT_BYTES || prompt.contains('\0'))
+        {
+            return Err(TtsConfigurationError::InvalidData);
         }
         if self.created_at > self.updated_at {
             return Err(TtsConfigurationError::InvalidData);

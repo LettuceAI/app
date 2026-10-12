@@ -206,9 +206,10 @@ pub fn build_sampler(
         };
 
     let mut grammar_sampler = None;
-    if let Some(template_result) = chat_template_result {
-        if let Some(grammar) = template_result.grammar.as_deref() {
-            grammar_sampler = Some(if template_result.grammar_lazy {
+    if let Some(template_result) = chat_template_result
+        && let Some(grammar) = template_result.grammar.as_deref()
+    {
+        grammar_sampler = Some(if template_result.grammar_lazy {
                 let mut preserved = std::collections::HashSet::new();
                 for token_str in &template_result.preserved_tokens {
                     let tokens = model.str_to_token(token_str, AddBos::Never).map_err(|e| {
@@ -278,15 +279,14 @@ pub fn build_sampler(
                 SamplerError(format!("Failed to initialize llama.cpp grammar sampler: {e}"),
                 )
             })?);
-            active_params.insert(
-                "grammar".to_string(),
-                json!({
-                    "lazy": template_result.grammar_lazy,
-                    "trigger_count": template_result.grammar_triggers.len(),
-                    "preserved_token_count": template_result.preserved_tokens.len(),
-                }),
-            );
-        }
+        active_params.insert(
+            "grammar".to_string(),
+            json!({
+                "lazy": template_result.grammar_lazy,
+                "trigger_count": template_result.grammar_triggers.len(),
+                "preserved_token_count": template_result.preserved_tokens.len(),
+            }),
+        );
     }
 
     let k = config.top_k.unwrap_or(40) as i32;
@@ -299,10 +299,10 @@ pub fn build_sampler(
         1.0
     };
     let mut top_p_sampler = Some(LlamaSampler::top_p(p as f32, 1));
-    if let Some(mp) = config.min_p {
-        if mp > 0.0 {
-            active_params.insert("min_p".to_string(), json!(mp));
-        }
+    if let Some(mp) = config.min_p
+        && mp > 0.0
+    {
+        active_params.insert("min_p".to_string(), json!(mp));
     }
     let mut min_p_sampler = config
         .min_p
@@ -340,10 +340,11 @@ pub fn build_sampler(
                 seq_breakers,
             )
         });
-    if let Some(tp) = config.typical_p {
-        if tp > 0.0 && tp < 1.0 {
-            active_params.insert("typical_p".to_string(), json!(tp));
-        }
+    if let Some(tp) = config.typical_p
+        && tp > 0.0
+        && tp < 1.0
+    {
+        active_params.insert("typical_p".to_string(), json!(tp));
     }
     let mut typical_sampler = config
         .typical_p

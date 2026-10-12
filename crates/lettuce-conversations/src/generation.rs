@@ -842,16 +842,15 @@ pub enum GenerationStreamEvent {
 
 impl GenerationStreamEventEnvelope {
     pub fn validate_after(&self, previous: Option<&Self>) -> Result<(), ValidationError> {
-        if let Some(previous) = previous {
-            if self.operation != previous.operation
+        if let Some(previous) = previous
+            && (self.operation != previous.operation
                 || self.turn_id != previous.turn_id
                 || self.attempt_id != previous.attempt_id
-                || self.sequence != previous.sequence.saturating_add(1)
-            {
-                return Err(ValidationError::Invariant {
-                    field: "generation_stream.sequence",
-                });
-            }
+                || self.sequence != previous.sequence.saturating_add(1))
+        {
+            return Err(ValidationError::Invariant {
+                field: "generation_stream.sequence",
+            });
         }
         self.validate()
     }

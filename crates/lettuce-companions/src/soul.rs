@@ -791,13 +791,15 @@ fn prepare_change_set(
     retire_ids.sort();
     retire_ids.dedup();
     for id in retire_ids {
-        if let Some(fact) = existing.get(id.as_str()) {
-            if fact.is_active() && !fact.locked && superseded.insert(id.clone()) {
-                supersessions.push(SoulSupersession {
-                    fact_id: id,
-                    superseded_by: "consolidation".into(),
-                });
-            }
+        if let Some(fact) = existing.get(id.as_str())
+            && fact.is_active()
+            && !fact.locked
+            && superseded.insert(id.clone())
+        {
+            supersessions.push(SoulSupersession {
+                fact_id: id,
+                superseded_by: "consolidation".into(),
+            });
         }
     }
     supersessions.sort_by(|left, right| left.fact_id.cmp(&right.fact_id));

@@ -2423,11 +2423,10 @@ fn remap_document(
 ) -> SceneDocumentV1 {
     let mut document = document.clone();
     for part in &mut document.parts {
-        if let ScenePart::InlineAsset { link_id } = part {
-            if let Some(mapped) = links.get(link_id) {
+        if let ScenePart::InlineAsset { link_id } = part
+            && let Some(mapped) = links.get(link_id) {
                 *link_id = *mapped;
             }
-        }
     }
     document
 }
@@ -3045,8 +3044,8 @@ impl SceneRepository for Database {
         let details = ensure_root(&tx, character_id, expected_character_revision, false)?;
         let scene = find_scene(&details, scene_id)?;
         ensure_scene_active(&scene)?;
-        if let Some(value) = variant_id {
-            if !details
+        if let Some(value) = variant_id
+            && !details
                 .variants
                 .iter()
                 .any(|variant| variant.id == value && variant.scene_id == scene_id)
@@ -3057,7 +3056,6 @@ impl SceneRepository for Database {
                     },
                 ));
             }
-        }
         tx.execute("UPDATE scenes SET selected_variant_id=?3,revision=revision+1,updated_at=?4 WHERE character_id=?1 AND id=?2", params![character_id.to_string(), scene_id.to_string(), id_text(variant_id), now.get()]).map_err(db_error)?;
         bump_root(&tx, character_id, expected_character_revision, now)?;
         tx.commit().map_err(db_error)
@@ -3125,15 +3123,14 @@ fn add_starter_in(tx: &rusqlite::Transaction<'_>, character_id: CharacterId, exp
     if details.starters.iter().any(|value| value.id == starter.id) {
         return Err(RepositoryError::AlreadyExists);
     }
-    if let Some(scene_id) = starter.scene_id {
-        if !details.scenes.iter().any(|scene| scene.id == scene_id) {
+    if let Some(scene_id) = starter.scene_id
+        && !details.scenes.iter().any(|scene| scene.id == scene_id) {
             return Err(RepositoryError::Invalid(
                 lettuce_characters::ValidationError::InvalidReference {
                     field: "starter.scene_id",
                 },
             ));
         }
-    }
     if starter.ordinal as usize > details.starters.len() {
         return Err(RepositoryError::Invalid(
             lettuce_characters::ValidationError::InvalidValue {
@@ -3185,15 +3182,14 @@ impl StarterRepository for Database {
             .map_err(db_error)?;
         let details = ensure_root(&tx, character_id, expected_character_revision, false)?;
         let current = find_starter(&details, starter_id)?;
-        if let Some(scene_id) = draft.scene_id {
-            if !details.scenes.iter().any(|scene| scene.id == scene_id) {
+        if let Some(scene_id) = draft.scene_id
+            && !details.scenes.iter().any(|scene| scene.id == scene_id) {
                 return Err(RepositoryError::Invalid(
                     lettuce_characters::ValidationError::InvalidReference {
                         field: "starter.scene_id",
                     },
                 ));
             }
-        }
         let replacement = ConversationStarter {
             name: draft.name.clone(),
             scene_id: draft.scene_id,
@@ -3524,15 +3520,14 @@ impl StarterRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let details = ensure_root(&tx, character_id, expected_character_revision, false)?;
-        if let Some(value) = starter_id {
-            if !details.starters.iter().any(|starter| starter.id == value) {
+        if let Some(value) = starter_id
+            && !details.starters.iter().any(|starter| starter.id == value) {
                 return Err(RepositoryError::Invalid(
                     lettuce_characters::ValidationError::InvalidReference {
                         field: "character.default_starter_id",
                     },
                 ));
             }
-        }
         let mut defaults = details.character.defaults;
         defaults.default_starter_id = starter_id;
         tx.execute(
@@ -3568,15 +3563,14 @@ impl Database {
         let details = ensure_root(&tx, character_id, expected_character_revision, false)?;
         let current = find_starter(&details, starter_id)?;
         let new_scene = scene_id.unwrap_or(current.scene_id);
-        if let Some(value) = new_scene {
-            if !details.scenes.iter().any(|scene| scene.id == value) {
+        if let Some(value) = new_scene
+            && !details.scenes.iter().any(|scene| scene.id == value) {
                 return Err(RepositoryError::Invalid(
                     lettuce_characters::ValidationError::InvalidReference {
                         field: "starter.scene_id",
                     },
                 ));
             }
-        }
         let new_prompt = prompt_id.unwrap_or(current.prompt_id);
         let new_lorebooks = lorebooks.unwrap_or(current.lorebooks);
         let draft = ConversationStarterDraftUpdate {

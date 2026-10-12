@@ -1000,12 +1000,12 @@ impl ConversationHistory {
                     });
                 }
             }
-            if let Some(author) = item.message.author_participant_id {
-                if !participant_ids.contains(&author) {
-                    return Err(ValidationError::InvalidReference {
-                        field: "conversation_history.author",
-                    });
-                }
+            if let Some(author) = item.message.author_participant_id
+                && !participant_ids.contains(&author)
+            {
+                return Err(ValidationError::InvalidReference {
+                    field: "conversation_history.author",
+                });
             }
             match item.message.active_render_source {
                 crate::content::MessageRenderSource::Revision(id) => {
@@ -1024,12 +1024,12 @@ impl ConversationHistory {
                         });
                     }
                     revision.validate()?;
-                    if let Some(turn_id) = revision.source_turn_id {
-                        if !turn_ids.contains_key(&turn_id) {
-                            return Err(ValidationError::InvalidReference {
-                                field: "conversation_history.revision_turn",
-                            });
-                        }
+                    if let Some(turn_id) = revision.source_turn_id
+                        && !turn_ids.contains_key(&turn_id)
+                    {
+                        return Err(ValidationError::InvalidReference {
+                            field: "conversation_history.revision_turn",
+                        });
                     }
                 }
                 crate::content::MessageRenderSource::Candidate(id) => {

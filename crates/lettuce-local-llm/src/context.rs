@@ -94,19 +94,20 @@ pub fn context_error_detail(
     }
 
     if raw_error.contains("null reference from llama.cpp") {
-        if let Some(recommended) = recommended_ctx {
-            if recommended > 0 && ctx_size > recommended {
-                return format!(
-                    "Likely memory allocation failure for context {}. Recommended <= {} tokens for current {} budget.",
-                    ctx_size,
-                    recommended,
-                    if llama_offload_kqv == Some(true) {
-                        "VRAM"
-                    } else {
-                        "RAM"
-                    }
-                );
-            }
+        if let Some(recommended) = recommended_ctx
+            && recommended > 0
+            && ctx_size > recommended
+        {
+            return format!(
+                "Likely memory allocation failure for context {}. Recommended <= {} tokens for current {} budget.",
+                ctx_size,
+                recommended,
+                if llama_offload_kqv == Some(true) {
+                    "VRAM"
+                } else {
+                    "RAM"
+                }
+            );
         }
         return "Likely memory allocation failure (OOM) in llama.cpp. Try lower context length, lower llamaBatchSize, or a denser KV type (q8_0/q4_0).".to_string();
     }

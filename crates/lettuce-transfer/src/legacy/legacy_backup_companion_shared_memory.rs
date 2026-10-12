@@ -518,10 +518,10 @@ fn validate_soul_shape(
             }
         }
         for key in ["sourceMemoryIds", "supersedes"] {
-            if let Some(value) = object.get(key) {
-                if serde_json::from_value::<Vec<String>>(value.clone()).is_err() {
-                    return Err(malformed(format!("{field}.{key}")));
-                }
+            if let Some(value) = object.get(key)
+                && serde_json::from_value::<Vec<String>>(value.clone()).is_err()
+            {
+                return Err(malformed(format!("{field}.{key}")));
             }
         }
         if object

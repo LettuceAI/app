@@ -279,7 +279,10 @@ impl DecodedAudio {
             || self.sample_rate_hz == 0
             || self.channels == 0
             || self.samples.len() < usize::from(self.channels)
-            || self.samples.len() % usize::from(self.channels) != 0
+            || !self
+                .samples
+                .len()
+                .is_multiple_of(usize::from(self.channels))
             || self.samples.iter().any(|sample| !sample.is_finite())
         {
             return Err(AsrAudioError::InvalidAudio);
@@ -469,11 +472,15 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
     }
     let samples = match (codec, bits) {
         (1, 16) => data
-            .chunks_exact(2)
-            .map(|chunk| f32::from(i16::from_le_bytes([chunk[0], chunk[1]])) / f32::from(i16::MAX))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|chunk| f32::from(i16::from_le_bytes(*chunk)) / f32::from(i16::MAX))
             .collect(),
         (1, 24) => data
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|chunk| {
                 let value = i32::from_le_bytes([
                     chunk[0],
@@ -485,15 +492,16 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
             })
             .collect(),
         (1, 32) => data
-            .chunks_exact(4)
-            .map(|chunk| {
-                i32::from_le_bytes(chunk.try_into().expect("four-byte chunk")) as f32
-                    / i32::MAX as f32
-            })
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| i32::from_le_bytes(*chunk) as f32 / i32::MAX as f32)
             .collect(),
         (3, 32) => data
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect(),
         _ => return Err(AsrAudioError::UnsupportedFormat),
     };

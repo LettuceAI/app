@@ -826,12 +826,12 @@ pub(crate) fn folder_busy(
             }
         }
     }
-    if let Some((job_id, path)) = super::jobs::speech::active_local_files(context, root)? {
-        if Path::new(&path).starts_with(root) {
-            return Ok(Some(dto::LocalModelsBusyReason::SpeechWorkActive {
-                job_id: job_id.to_string(),
-            }));
-        }
+    if let Some((job_id, path)) = super::jobs::speech::active_local_files(context, root)?
+        && Path::new(&path).starts_with(root)
+    {
+        return Ok(Some(dto::LocalModelsBusyReason::SpeechWorkActive {
+            job_id: job_id.to_string(),
+        }));
     }
     Ok(context
         .local_models()

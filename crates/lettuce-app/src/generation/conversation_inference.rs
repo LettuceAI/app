@@ -144,10 +144,10 @@ impl<
         let saved = self
             .repository
             .settle_initial_inference(&binding, &result, now);
-        if saved.is_err() {
-            if let InitialInferenceResult::Response(outcome) = &result {
-                cleanup_provider_replays(self.repository, outcome)?;
-            }
+        if saved.is_err()
+            && let InitialInferenceResult::Response(outcome) = &result
+        {
+            cleanup_provider_replays(self.repository, outcome)?;
         }
         replay(saved?.result)
     }

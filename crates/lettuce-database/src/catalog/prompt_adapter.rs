@@ -1169,12 +1169,10 @@ impl PromptRepository for Database {
         if let PromptProvenance::BuiltIn {
             protected: true, ..
         } = current.provenance
+            && (metadata.purpose != current.purpose
+                || metadata.behavior_version != current.behavior_version)
         {
-            if metadata.purpose != current.purpose
-                || metadata.behavior_version != current.behavior_version
-            {
-                return Err(PromptRepositoryError::Protected);
-            }
+            return Err(PromptRepositoryError::Protected);
         }
         let mut proposed = current.clone();
         proposed.name = metadata.name;
@@ -1594,13 +1592,12 @@ pub(crate) fn reconcile_built_ins_in(
             } => current_key != &key,
             _ => false,
         };
-        if alias_only || current_authored != current_seed {
-            if let PromptProvenance::BuiltIn {
+        if (alias_only || current_authored != current_seed)
+            && let PromptProvenance::BuiltIn {
                 authored_digest, ..
             } = &mut canonical_provenance
-            {
-                *authored_digest = current_authored.clone();
-            }
+        {
+            *authored_digest = current_authored.clone();
         }
         if current.provenance != canonical_provenance {
             let (kind, canonical_key, source) = provenance_kind(&canonical_provenance);

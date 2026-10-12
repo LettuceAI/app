@@ -459,10 +459,10 @@ impl PromptSnapshot {
             if !ids.insert(entry.id) {
                 return Err(PromptValidationError::DuplicateEntry(entry.id));
             }
-            if let Some(key) = &entry.built_in_entry_key {
-                if !built_in_keys.insert(key.clone()) {
-                    return Err(PromptValidationError::DuplicateBuiltInEntryKey(key.clone()));
-                }
+            if let Some(key) = &entry.built_in_entry_key
+                && !built_in_keys.insert(key.clone())
+            {
+                return Err(PromptValidationError::DuplicateBuiltInEntryKey(key.clone()));
             }
             entry.validate()?;
         }
@@ -672,10 +672,10 @@ impl PromptDocument {
             if !ids.insert(entry.id) {
                 return Err(PromptValidationError::DuplicateEntry(entry.id));
             }
-            if let Some(key) = &entry.built_in_entry_key {
-                if !built_in_keys.insert(key.clone()) {
-                    return Err(PromptValidationError::DuplicateBuiltInEntryKey(key.clone()));
-                }
+            if let Some(key) = &entry.built_in_entry_key
+                && !built_in_keys.insert(key.clone())
+            {
+                return Err(PromptValidationError::DuplicateBuiltInEntryKey(key.clone()));
             }
             entry.validate()?;
         }
@@ -1920,7 +1920,7 @@ fn render_prompt_input(
             PromptEntryPosition::Interval => {
                 let interval = entry.interval_turns.unwrap_or_default() as usize;
                 let turns = context.conditions.message_count;
-                if interval > 0 && turns > 0 && turns % interval == 0 {
+                if interval > 0 && turns > 0 && turns.is_multiple_of(interval) {
                     rendered.in_chat.push(message);
                 }
             }
@@ -1988,7 +1988,7 @@ pub fn explain_prompt(
                     let interval = entry.interval_turns.unwrap_or_default() as usize;
                     interval > 0
                         && context.conditions.message_count > 0
-                        && context.conditions.message_count % interval == 0
+                        && context.conditions.message_count.is_multiple_of(interval)
                 }
             };
             let (selected, reason) = if !enabled {

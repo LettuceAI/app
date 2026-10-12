@@ -240,12 +240,11 @@ pub(crate) fn direct_app_default_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
     app_default: Option<PromptDocumentId>,
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
-    if let Some(prompt_id) = app_default {
-        if let PromptLookupResult::Available { document } =
+    if let Some(prompt_id) = app_default
+        && let PromptLookupResult::Available { document } =
             sources.lookup_exact(prompt_id, PromptPurpose::DirectChat)?
-        {
-            return Ok(Some(document));
-        }
+    {
+        return Ok(Some(document));
     }
     crate::generation::built_in_prompts::active_built_in_prompt(
         sources,

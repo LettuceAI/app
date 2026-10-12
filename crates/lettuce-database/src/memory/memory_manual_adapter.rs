@@ -80,11 +80,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
             .summary
             .as_ref()
             .and_then(|summary| summary.as_ref())
-        {
-            if summary.space_id != edit.space_id || summary.branch_id != edit.branch_id {
+            && (summary.space_id != edit.space_id || summary.branch_id != edit.branch_id) {
                 return Err(MemoryRepositoryError::Conflict);
             }
-        }
         let updated = super::memory_adapter::compare_and_apply_in(
             tx,
             &MemoryChangeSet {

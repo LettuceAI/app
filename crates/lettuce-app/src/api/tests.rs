@@ -40,9 +40,8 @@ impl FileAccess for StdFiles {
     fn publish_backup(&self, temporary: &str, target: Option<&str>, _name: &str, protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
         let target = target.ok_or(FileAccessError::Unsupported)?;
         if protected(target, None)? { return Err(FileAccessError::SourceIsTarget); }
-        if let Ok(file) = std::fs::File::open(target) {
-            if protected(target, Some(&file))? { return Err(FileAccessError::SourceIsTarget); }
-        }
+        if let Ok(file) = std::fs::File::open(target)
+            && protected(target, Some(&file))? { return Err(FileAccessError::SourceIsTarget); }
         std::fs::rename(temporary, target).map_err(|_| FileAccessError::Io)?;
         std::fs::File::open(std::path::Path::new(target).parent().expect("parent")).and_then(|file| file.sync_all()).map_err(|_| FileAccessError::Io)?;
         Ok(target.to_owned())
@@ -266,8 +265,8 @@ impl InferencePort for FakeProvider {
         self.entered.notify_one();
         let mut outcome = match self.reply {
             Reply::LorebookTools | Reply::LorebookToolsUntil(_) => {
-                if let Reply::LorebookToolsUntil(blocked) = self.reply {
-                    if request.tools.as_ref().is_some_and(|tools| {
+                if let Reply::LorebookToolsUntil(blocked) = self.reply
+                    && request.tools.as_ref().is_some_and(|tools| {
                         tools.definitions.iter().any(|tool| tool.name == blocked)
                     }) {
                         let job = request.cancellation.ok_or(PortError::Unavailable)?;
@@ -277,7 +276,6 @@ impl InferencePort for FakeProvider {
                             .map_err(|_| PortError::Unavailable)?;
                         return Err(PortError::Cancelled);
                     }
-                }
                 let name = request
                     .tools
                     .as_ref()

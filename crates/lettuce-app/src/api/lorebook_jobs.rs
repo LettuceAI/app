@@ -58,24 +58,24 @@ pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
                 error.to_string(),
             );
         }
-        if let Some(error) = cause.downcast_ref::<crate::LorebookEntryPreparationError>() {
-            if matches!(
+        if let Some(error) = cause.downcast_ref::<crate::LorebookEntryPreparationError>()
+            && matches!(
                 error,
                 crate::LorebookEntryPreparationError::InvalidInput
                     | crate::LorebookEntryPreparationError::SourceUnavailable
-            ) {
-                return api_error(
-                    if matches!(
-                        error,
-                        crate::LorebookEntryPreparationError::SourceUnavailable
-                    ) {
-                        ApiErrorCode::Unavailable
-                    } else {
-                        ApiErrorCode::InvalidInput
-                    },
-                    error.to_string(),
-                );
-            }
+            )
+        {
+            return api_error(
+                if matches!(
+                    error,
+                    crate::LorebookEntryPreparationError::SourceUnavailable
+                ) {
+                    ApiErrorCode::Unavailable
+                } else {
+                    ApiErrorCode::InvalidInput
+                },
+                error.to_string(),
+            );
         }
         let invalid = cause
             .downcast_ref::<crate::StagedLorebookAdmissionError>()

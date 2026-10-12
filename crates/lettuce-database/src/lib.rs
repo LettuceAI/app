@@ -1890,11 +1890,10 @@ pub(crate) fn register_media_blob_in(
         {
             return Err(MediaBlobRepositoryError::InvalidData);
         }
-        if let Some(existing_by_id) = by_id {
-            if existing_by_id.content_hash != existing.content_hash {
+        if let Some(existing_by_id) = by_id
+            && existing_by_id.content_hash != existing.content_hash {
                 return Err(MediaBlobRepositoryError::InvalidData);
             }
-        }
         return Ok(existing);
     }
 
@@ -2175,12 +2174,14 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 pub(crate) fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
-    if value.is_empty() || value.len() % 2 != 0 {
+    if value.is_empty() || !value.len().is_multiple_of(2) {
         return Err(());
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let high = (pair[0] as char).to_digit(16).ok_or(())?;
             let low = (pair[1] as char).to_digit(16).ok_or(())?;

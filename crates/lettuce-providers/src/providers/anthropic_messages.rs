@@ -591,11 +591,10 @@ fn encode_request(
             .iter_mut()
             .rev()
             .find(|message| message.role == user_role),
-    ) {
-        if let Some(last_text) = last_user.content.final_text_mut() {
+    )
+        && let Some(last_text) = last_user.content.final_text_mut() {
             last_text.1.replace(control);
         }
-    }
     let system = (!system_parts.is_empty()).then(|| {
         let text = system_parts.join("\n\n");
         cache_control.map_or(WireSystem::Text(text.clone()), |control| {

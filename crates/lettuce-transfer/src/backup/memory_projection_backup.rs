@@ -87,15 +87,20 @@ fn valid_state(projection: &BackupMemoryProjection) -> bool {
     match &projection.state {
         BackupMemoryProjectionState::Ready { vector_le_hex } => {
             vector_le_hex.len() == usize::from(projection.dimensions) * 8
-                && vector_le_hex.as_bytes().chunks_exact(8).all(|chunk| {
-                    let Ok(chunk) = std::str::from_utf8(chunk) else {
-                        return false;
-                    };
-                    let Ok(bits) = u32::from_str_radix(chunk, 16) else {
-                        return false;
-                    };
-                    f32::from_le_bytes(bits.to_be_bytes()).is_finite()
-                })
+                && vector_le_hex
+                    .as_bytes()
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .all(|chunk| {
+                        let Ok(chunk) = std::str::from_utf8(chunk) else {
+                            return false;
+                        };
+                        let Ok(bits) = u32::from_str_radix(chunk, 16) else {
+                            return false;
+                        };
+                        f32::from_le_bytes(bits.to_be_bytes()).is_finite()
+                    })
         }
         BackupMemoryProjectionState::RepairNeeded => true,
     }

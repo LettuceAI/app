@@ -636,11 +636,10 @@ where
             && request.operation == GenerationOperation::Send
             && !request.prompt_runtime.dynamic_memory_enabled
             && !key_lines.is_empty()
+            && let Some(section) = runtime.section("runtime_relevant_memories")
         {
-            if let Some(section) = runtime.section("runtime_relevant_memories") {
-                sections.extend(section.sources);
-                in_chat.insert(0, (section.depth.unwrap_or_default(), section.message));
-            }
+            sections.extend(section.sources);
+            in_chat.insert(0, (section.depth.unwrap_or_default(), section.message));
         }
         messages.append(&mut runtime_relative);
 
@@ -1688,22 +1687,22 @@ fn select_timeline<'a>(
         GenerationOperation::Continue => branch.head_message_id.or(Some(request.source_message_id)),
         GenerationOperation::Regenerate => None,
     };
-    if let Some(required_id) = required_id {
-        if !selected.iter().any(|item| item.message.id == required_id) {
-            let required = request
-                .timeline
-                .iter()
-                .find(|item| item.message.id == required_id)
-                .ok_or(ContextAssemblyError::InvalidTimeline)?;
-            if omitted_messages > 0
-                && !required.message.pinned
-                && required.message.role != MessageRole::Scene
-            {
-                omitted_messages -= 1;
-            }
-            selected.push(required);
-            selected.sort_by_key(message_order);
+    if let Some(required_id) = required_id
+        && !selected.iter().any(|item| item.message.id == required_id)
+    {
+        let required = request
+            .timeline
+            .iter()
+            .find(|item| item.message.id == required_id)
+            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        if omitted_messages > 0
+            && !required.message.pinned
+            && required.message.role != MessageRole::Scene
+        {
+            omitted_messages -= 1;
         }
+        selected.push(required);
+        selected.sort_by_key(message_order);
     }
     Ok(TimelineSelection {
         window: selected,
@@ -2017,10 +2016,9 @@ impl SnapshotBundle {
                                 scene_id,
                                 direction,
                             } = annotation.payload
+                                && scene_id == Some(*source_id)
                             {
-                                if scene_id == Some(*source_id) {
-                                    override_direction = direction;
-                                }
+                                override_direction = direction;
                             }
                         }
                         MessagePart::MediaAsset { .. } => {}

@@ -540,12 +540,11 @@ impl DirectConversationDetails {
         self.prompt.validate("direct.prompt")?;
         if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
             &self.prompt
+            && prompt.purpose != PromptPurposeSnapshot::Direct
         {
-            if prompt.purpose != PromptPurposeSnapshot::Direct {
-                return Err(ValidationError::InvalidReference {
-                    field: "direct.prompt.purpose",
-                });
-            }
+            return Err(ValidationError::InvalidReference {
+                field: "direct.prompt.purpose",
+            });
         }
         self.model.validate("direct.model")?;
         self.memory.validate("direct.memory")?;
