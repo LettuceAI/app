@@ -1,0 +1,1126 @@
+{
+  "chat": {
+    "context_length": 8192,
+    "frequency_penalty": 0.2,
+    "max_output_tokens": 1024,
+    "ollama": {
+      "min_p": 0.05,
+      "mirostat": 2,
+      "mirostat_eta": 0.1,
+      "mirostat_tau": 5.0,
+      "num_batch": 512,
+      "num_ctx": null,
+      "num_gpu": 20,
+      "num_keep": 4,
+      "num_predict": null,
+      "num_thread": 8,
+      "seed": 7,
+      "stop": [
+        "</s>"
+      ],
+      "tfs_z": 0.9,
+      "typical_p": 0.8
+    },
+    "openrouter": {
+      "pinned_provider": "Together"
+    },
+    "presence_penalty": -0.1,
+    "prompt_caching": {
+      "enabled": {
+        "retention": "in_memory"
+      }
+    },
+    "reasoning_budget_tokens": 2048,
+    "reasoning_effort": "high",
+    "reasoning_mode": "enabled",
+    "repetition_penalty": 1.1,
+    "send_thinking_state": false,
+    "temperature": 0.7,
+    "top_k": 40,
+    "top_p": 0.9
+  },
+  "features": {
+    "companion_memory": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "companion_soul_writer": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "creation_helper": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.5
+        }
+      }
+    },
+    "dynamic_memory": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": 0.2,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "x"
+            ]
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "set",
+          "value": 0.4
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "group_speaker_selection": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "help_me_reply": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "lorebook_entry_generator": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "lorebook_generator": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    },
+    "scene_writer": {
+      "llama_sampler": {
+        "adaptive_decay": null,
+        "adaptive_target": null,
+        "dry_allowed_length": null,
+        "dry_base": null,
+        "dry_multiplier": null,
+        "dry_penalty_last_n": null,
+        "dry_sequence_breakers": null,
+        "min_p": null,
+        "n_pen_range": null,
+        "order": null,
+        "profile": null,
+        "repeat_penalty": null,
+        "seed": null,
+        "typical_p": null,
+        "xtc_probability": null,
+        "xtc_threshold": null
+      },
+      "parameters": {
+        "context_length": {
+          "kind": "inherit"
+        },
+        "frequency_penalty": {
+          "kind": "inherit"
+        },
+        "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "ollama": {
+          "min_p": {
+            "kind": "inherit"
+          },
+          "mirostat": {
+            "kind": "inherit"
+          },
+          "mirostat_eta": {
+            "kind": "inherit"
+          },
+          "mirostat_tau": {
+            "kind": "inherit"
+          },
+          "num_batch": {
+            "kind": "inherit"
+          },
+          "num_ctx": {
+            "kind": "inherit"
+          },
+          "num_gpu": {
+            "kind": "inherit"
+          },
+          "num_keep": {
+            "kind": "inherit"
+          },
+          "num_predict": {
+            "kind": "inherit"
+          },
+          "num_thread": {
+            "kind": "inherit"
+          },
+          "seed": {
+            "kind": "inherit"
+          },
+          "stop": {
+            "kind": "inherit"
+          },
+          "tfs_z": {
+            "kind": "inherit"
+          },
+          "typical_p": {
+            "kind": "inherit"
+          }
+        },
+        "presence_penalty": {
+          "kind": "inherit"
+        },
+        "prompt_caching": {
+          "kind": "inherit"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "inherit"
+        },
+        "reasoning_effort": {
+          "kind": "inherit"
+        },
+        "reasoning_mode": {
+          "kind": "inherit"
+        },
+        "repetition_penalty": {
+          "kind": "inherit"
+        },
+        "send_thinking_state": {
+          "kind": "inherit"
+        },
+        "temperature": {
+          "kind": "inherit"
+        },
+        "top_k": {
+          "kind": "inherit"
+        },
+        "top_p": {
+          "kind": "inherit"
+        }
+      }
+    }
+  },
+  "llamaCpp": {
+    "batch_size": 512,
+    "chat_template_override": "{{x}}",
+    "chat_template_preset": "chatml",
+    "cpu_layers": 2,
+    "dflash_draft_tokens": 6,
+    "dflash_enabled": true,
+    "dflash_min_probability": 0.7,
+    "dflash_model_path": "/d-dflash.gguf",
+    "flash_attention": "auto",
+    "force_gemma4_reasoning": null,
+    "gpu_device_ids": [
+      0,
+      1
+    ],
+    "gpu_distribution_mode": "manual",
+    "gpu_layers": 33,
+    "gpu_manual_layers": [
+      {
+        "device_id": 0,
+        "layers": 20
+      }
+    ],
+    "kv_placement": "split",
+    "kv_type": "q8_0",
+    "kv_type_k": null,
+    "kv_type_v": null,
+    "main_gpu": 0,
+    "mmproj_path": "/m.gguf",
+    "mtp_draft_tokens": 3,
+    "mtp_enabled": true,
+    "mtp_model_path": "/mtp.gguf",
+    "mtp_placement": "gpu",
+    "multi_gpu_enabled": true,
+    "offload_kqv": true,
+    "priority_vram_limit_bytes": 1000,
+    "raw_completion_fallback": true,
+    "rope_freq_base": 10000.0,
+    "rope_freq_scale": 1.0,
+    "sampler": {
+      "adaptive_decay": null,
+      "adaptive_target": null,
+      "dry_allowed_length": null,
+      "dry_base": null,
+      "dry_multiplier": 0.8,
+      "dry_penalty_last_n": null,
+      "dry_sequence_breakers": [
+        "\\n"
+      ],
+      "min_p": 0.1,
+      "n_pen_range": null,
+      "order": [
+        "top_k",
+        "temp"
+      ],
+      "profile": "creative",
+      "repeat_penalty": null,
+      "seed": 42,
+      "typical_p": null,
+      "xtc_probability": null,
+      "xtc_threshold": null
+    },
+    "single_gpu_device_id": 1,
+    "streaming_enabled": true,
+    "strict_mode": false,
+    "swa_full": false,
+    "threads": 8,
+    "threads_batch": 8,
+    "ubatch_size": 256
+  },
+  "stableDiffusion": {
+    "auto_resize_reference_images": null,
+    "base_loras": [
+      {
+        "is_high_noise": false,
+        "keywords": [
+          "x"
+        ],
+        "multiplier": 0.8,
+        "path": "/l.safetensors"
+      }
+    ],
+    "cache_mode": "cache_dit",
+    "cache_option": null,
+    "cfg_scale": 7.0,
+    "cpp": {
+      "max_reference_images": null,
+      "profile_id": "flux",
+      "recommended_for_scenes": null,
+      "requires_reference_image": null,
+      "runtime_asset": null,
+      "runtime_backend": null,
+      "runtime_release": null,
+      "supports_image_edit": null,
+      "supports_lora": true,
+      "supports_text_to_image": null,
+      "text_encoder_path": null,
+      "vae_path": null,
+      "variant_id": null,
+      "vision_encoder_path": null
+    },
+    "denoising_strength": null,
+    "distilled_guidance": null,
+    "eta": null,
+    "extra_prompt": null,
+    "flow_shift": null,
+    "hires_denoising_strength": null,
+    "hires_enabled": null,
+    "hires_height": null,
+    "hires_scale": null,
+    "hires_steps": null,
+    "hires_upscaler": null,
+    "hires_width": null,
+    "image_cfg_scale": null,
+    "increase_reference_index": null,
+    "negative_prompt": null,
+    "offload_mode": "mixed",
+    "prompt_writer_instructions": null,
+    "sampler": "euler",
+    "scheduler": null,
+    "seed": 3,
+    "size": "512x512",
+    "slg_layer_end": null,
+    "slg_layer_start": null,
+    "slg_layers": null,
+    "slg_scale": null,
+    "steps": 20,
+    "vae_tile_overlap": null,
+    "vae_tile_size_x": null,
+    "vae_tile_size_y": null,
+    "vae_tiling_enabled": null
+  }
+}

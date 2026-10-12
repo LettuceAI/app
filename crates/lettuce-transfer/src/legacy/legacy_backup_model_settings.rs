@@ -774,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn written_settings_read_back_as_the_same_settings() {
+    fn every_legacy_setting_reads_into_its_exact_value() {
         let legacy: Value = serde_json::from_str(
             r#"{
             "temperature": 0.7, "topP": 0.9, "topK": 40, "maxOutputTokens": 1024,
@@ -829,6 +829,19 @@ mod tests {
             first.unknown_fields.is_empty(),
             "{:?}",
             first.unknown_fields
+        );
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/legacy-model-settings-expected.json"
+        ))
+        .expect("expected settings");
+        assert_eq!(
+            serde_json::json!({
+                "chat": first.chat_parameters,
+                "features": first.feature_parameters,
+                "llamaCpp": first.llama_cpp,
+                "stableDiffusion": first.stable_diffusion,
+            }),
+            expected
         );
     }
 
