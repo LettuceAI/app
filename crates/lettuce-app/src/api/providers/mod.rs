@@ -271,6 +271,7 @@ pub async fn provider_models(
                     output_modalities: model.output_modalities,
                     supported_endpoints: model.supported_endpoints,
                     input_price: model.input_price,
+                    cache_read_price: model.cache_read_price,
                     output_price: model.output_price,
                 })
                 .collect()

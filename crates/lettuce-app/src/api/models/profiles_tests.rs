@@ -430,6 +430,7 @@ async fn remote_evidence_fills_missing_metadata_from_declarations_and_replay_sur
         output_modalities: None,
         supported_endpoints: None,
         input_price: None,
+        cache_read_price: None,
         output_price: None,
     });
     let saved = crate::api::model_save(&h.context, request.clone())

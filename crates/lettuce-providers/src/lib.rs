@@ -2853,7 +2853,7 @@ mod integration_tests {
                 ProviderConfig::Standard,
                 "/v1",
                 "GET /v1/models HTTP/1.1",
-                r#"{"data":[{"id":"a/b","name":"A B","context_length":8000,"pricing":{"prompt":"0.1","completion":0.2},"architecture":{"input_modalities":["text","image"]}}]}"#,
+                r#"{"data":[{"id":"a/b","name":"A B","context_length":8000,"pricing":{"prompt":"0.1","completion":0.2,"input_cache_read":"0.025"},"architecture":{"input_modalities":["text","image"]}}]}"#,
             ),
             (
                 "groq",
@@ -2937,6 +2937,7 @@ mod integration_tests {
             }
             if kind == "openrouter" {
                 assert_eq!(models[0].input_price, Some(0.1));
+                assert_eq!(models[0].cache_read_price, Some(0.025));
                 assert_eq!(models[0].output_price, Some(0.2));
                 assert_eq!(
                     models[0].input_modalities.as_deref(),

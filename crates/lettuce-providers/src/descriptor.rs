@@ -175,6 +175,7 @@ pub struct RemoteModel {
     pub output_modalities: Option<Vec<String>>,
     pub supported_endpoints: Option<Vec<String>>,
     pub input_price: Option<f64>,
+    pub cache_read_price: Option<f64>,
     pub output_price: Option<f64>,
 }
 

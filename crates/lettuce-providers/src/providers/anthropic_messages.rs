@@ -113,6 +113,7 @@ pub(crate) trait AnthropicWireProvider: Sync {
                             output_modalities: None,
                             supported_endpoints: None,
                             input_price: None,
+                            cache_read_price: None,
                             output_price: None,
                         })
                     })

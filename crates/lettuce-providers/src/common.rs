@@ -661,6 +661,10 @@ pub(crate) fn parse_openai_model_list(payload: &serde_json::Value) -> Vec<Remote
                     .get("pricing")
                     .and_then(|pricing| pricing.get("prompt"))
                     .and_then(value_to_f64),
+                cache_read_price: item
+                    .get("pricing")
+                    .and_then(|pricing| pricing.get("input_cache_read"))
+                    .and_then(value_to_f64),
                 output_price: item
                     .get("pricing")
                     .and_then(|pricing| pricing.get("completion"))
@@ -752,6 +756,7 @@ pub(crate) fn parse_custom_model_list(
                 output_modalities: None,
                 supported_endpoints: None,
                 input_price: None,
+                cache_read_price: None,
                 output_price: None,
             })
         })
