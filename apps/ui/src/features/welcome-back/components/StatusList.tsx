@@ -11,6 +11,7 @@ export interface StatusRow {
   detail?: ReactNode;
   status: RowStatus;
   trailing?: ReactNode;
+  completion?: string;
 }
 
 const spinner = 2 * Math.PI * 9;
@@ -50,7 +51,10 @@ export function StatusList({ rows }: { rows: readonly StatusRow[] }) {
             <span className={cn("block text-base transition-colors motion-slow", row.status === "active" ? "font-medium text-fg" : row.status === "waiting" ? "text-fg-3" : "text-fg")}>{row.title}</span>
             {row.detail && <span className="block text-sm tabular-nums text-fg-3">{row.detail}</span>}
           </span>
-          <span className="flex h-6 min-w-6 shrink-0 items-center justify-end">{row.trailing ?? <Indicator status={row.status} />}</span>
+          <span className="flex h-6 shrink-0 items-center justify-end gap-3">
+            {row.completion !== undefined && <span className="min-w-10 text-right text-sm tabular-nums text-fg-3">{row.completion}</span>}
+            <span className="flex w-6 items-center justify-end">{row.trailing ?? <Indicator status={row.status} />}</span>
+          </span>
         </div>
       ))}
     </div>

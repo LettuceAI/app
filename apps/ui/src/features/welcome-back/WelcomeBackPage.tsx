@@ -11,7 +11,7 @@ import type { RequiredModel } from "@/api/generated/bindings";
 import { lettuce } from "./assets";
 import { Backdrop } from "./components/Backdrop";
 import { StatusList, type StatusRow } from "./components/StatusList";
-import { finishedStages, migrationStages, useLegacyMigration } from "./data/migration";
+import { finishedStages, migrationStages, stageCompletion, useLegacyMigration } from "./data/migration";
 import { modelsNeededAfterMove, useModelInstalls, type ModelInstall } from "./data/models";
 
 type Step = "welcome" | "migrate" | "models" | "done" | "upgrade";
@@ -110,6 +110,7 @@ export function WelcomeBackPage() {
   const stageRows: StatusRow[] = migrationStages.map((stage, index) => ({
     id: stage,
     title: t(`migrate.stages.${stage}`),
+    completion: new Intl.NumberFormat(i18n.language, { style: "percent", maximumFractionDigits: 0 }).format(stageCompletion(migration.state.job, index)),
     status: index < finished ? "done" : index === finished && !failed ? "active" : "waiting",
   }));
 
@@ -182,7 +183,7 @@ export function WelcomeBackPage() {
               strokeLinecap="round"
               strokeDasharray={ring}
               initial={false}
-              animate={{ strokeDashoffset: ring * (1 - Math.min(finished + (failed ? 0 : 0.5), migrationStages.length) / migrationStages.length) }}
+              animate={{ strokeDashoffset: ring * (1 - migrationStages.reduce((total, _, index) => total + stageCompletion(migration.state.job, index), 0) / migrationStages.length) }}
               transition={{ duration: 1.2, ease }}
             />
           </svg>

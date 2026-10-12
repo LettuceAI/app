@@ -80,6 +80,7 @@ pub struct LegacyRestoreCoordinator<'a, S: ?Sized> {
     authority: &'a FilesystemAuthority,
     workspace_root: &'a Path,
     secrets: &'a S,
+    progress: Option<&'a (dyn Fn(u64, u64) -> Result<(), LegacyRestoreError> + Send + Sync)>,
 }
 
 impl<S: ?Sized> fmt::Debug for LegacyRestoreCoordinator<'_, S> {
@@ -105,7 +106,18 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             authority,
             workspace_root,
             secrets,
+            progress: None,
         }
+    }
+
+    pub(crate) fn with_progress(mut self, progress: &'a (dyn Fn(u64, u64) -> Result<(), LegacyRestoreError> + Send + Sync)) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+
+    fn report_progress(&self, completed: u64) -> Result<(), LegacyRestoreError> {
+        if let Some(progress) = self.progress { progress(completed, 20)?; }
+        Ok(())
     }
 
     /// Replaces the app data with a version-1 legacy backup archive.
@@ -321,10 +333,12 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_import_admission()
             .admit(run_id, &source.database_inventory(), plan, at)
             .map_err(stage("admission"))?;
+        self.report_progress(1)?;
         backend
             .database()
             .record_legacy_preserved_rows(run_id, &import.preserved)
             .map_err(stage("preserved legacy rows"))?;
+        self.report_progress(2)?;
         let owners = admission
             .assignments
             .iter()
@@ -382,37 +396,45 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_media_importer(&media_store)
             .execute_from_source(source, storage_root, &admission, &plan.media, at)
             .map_err(stage("media"))?;
+        self.report_progress(3)?;
         backend
             .legacy_provider_secret_importer(&source.authored_plan().configuration, self.secrets)
             .execute(&admission, at)
             .await
             .map_err(stage("provider secrets"))?;
+        self.report_progress(4)?;
         backend
             .legacy_import_executor()
             .execute(&admission, plan, at)
             .map_err(stage("authored graph"))?;
+        self.report_progress(5)?;
         backend
             .legacy_asr_importer()
             .execute(&admission, plan, at)
             .map_err(stage("speech learning"))?;
+        self.report_progress(6)?;
         backend
             .legacy_provider_model_importer(self.secrets)
             .execute(&admission, plan, at)
             .await
             .map_err(stage("provider models"))?;
+        self.report_progress(7)?;
         backend
             .legacy_audio_importer(self.secrets)
             .execute_database_import(&admission, import, at)
             .await
             .map_err(stage("audio"))?;
+        self.report_progress(8)?;
         backend
             .legacy_character_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("characters"))?;
+        self.report_progress(9)?;
         backend
             .legacy_group_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("groups"))?;
+        self.report_progress(10)?;
         crate::legacy::legacy_app_secret_import::store_legacy_app_secrets(
             self.secrets,
             &source.authored_plan().configuration.secrets,
@@ -420,38 +442,47 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         )
         .await
         .map_err(stage("app secrets"))?;
+        self.report_progress(11)?;
         backend
             .legacy_settings_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("settings"))?;
+        self.report_progress(12)?;
         backend
             .legacy_direct_conversation_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("direct conversations"))?;
+        self.report_progress(13)?;
         backend
             .legacy_group_conversation_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("group conversations"))?;
+        self.report_progress(14)?;
         backend
             .legacy_usage_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("usage records"))?;
+        self.report_progress(15)?;
         backend
             .legacy_creation_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("creation helper"))?;
+        self.report_progress(16)?;
         backend
             .legacy_image_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("images"))?;
+        self.report_progress(17)?;
         backend
             .legacy_llm_metrics_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("local generation metrics"))?;
+        self.report_progress(18)?;
         let forks = backend
             .database()
             .fork_legacy_message_conflicts(&import.message_conflicts)
             .map_err(stage("message conflicts"))?;
+        self.report_progress(19)?;
         if forks.failed > 0 {
             tracing::warn!(
                 failed = forks.failed,
@@ -462,7 +493,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .complete_legacy_import(run_id, at)
             .map_err(stage("completion"))?
         {
-            LegacyImportRunStatus::Completed => Ok(()),
+            LegacyImportRunStatus::Completed => { self.report_progress(20)?; Ok(()) },
             _ => Err(LegacyRestoreError::Incomplete),
         }
     }
@@ -1550,8 +1581,10 @@ mod tests {
             .expect("database location");
         let secrets = InMemorySecretStore::new();
         let workspace = root.join("legacy-restore-workspace");
+        let measured = std::sync::Mutex::new(Vec::new());
+        let progress = |completed, total| { measured.lock().expect("progress").push((completed, total)); Ok(()) };
         let coordinator =
-            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
+            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets).with_progress(&progress);
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
                 warnings: Vec::new(),
@@ -1582,6 +1615,7 @@ mod tests {
             location.active_path().expect("active database"),
             receipt.database_path
         );
+        assert_eq!(*measured.lock().expect("progress"), (1..=20).map(|completed| (completed, 20)).collect::<Vec<_>>());
         let restored = Database::open(&receipt.database_path).expect("restored database");
         let graph = restored
             .read_provider_backup_graph()

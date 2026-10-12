@@ -16,6 +16,14 @@ export function finishedStages(job: JobView | null): number {
   return label === null ? 0 : (stageOfLabel[label] ?? 0);
 }
 
+/** Completed stages are 100%; the active stage uses measured job units only. */
+export function stageCompletion(job: JobView | null, index: number): number {
+  const finished = finishedStages(job);
+  if (index < finished) return 1;
+  if (index !== finished || !job?.progress.total) return 0;
+  return Math.max(0, Math.min(job.progress.current / job.progress.total, 1));
+}
+
 export interface MigrationState {
   phase: "idle" | "running" | "done" | "failed";
   job: JobView | null;
@@ -48,7 +56,12 @@ export function useLegacyMigration(api: ApiClient, onDone: () => Promise<void>) 
         accepted.job_id,
         (job) => {
           if (!terminalJobStates.has(job.state)) {
-            setState((current) => finishedStages(job) < finishedStages(current.job) ? current : { phase: "running", job, error: null });
+            setState((current) => {
+              const incomingStage = finishedStages(job);
+              const currentStage = finishedStages(current.job);
+              const delayed = incomingStage < currentStage || (incomingStage === currentStage && stageCompletion(job, incomingStage) < stageCompletion(current.job, currentStage));
+              return delayed ? current : { phase: "running", job, error: null };
+            });
           }
         },
         controller.signal,

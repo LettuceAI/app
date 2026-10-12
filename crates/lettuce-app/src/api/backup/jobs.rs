@@ -3,7 +3,7 @@ use std::{path::{Path, PathBuf}, sync::{Arc, Mutex}, time::Duration};
 use async_trait::async_trait;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_database::Database;
-use lettuce_jobs::{CancellationPolicy, CancellationReason, ClaimRef, JobError, JobErrorCode, JobKind, JobMutation, JobOutcome, JobSnapshot, JobSpec, JobState, JobStore, JobSubject, OutcomeRef, RecoveryPolicy, ResourceAvailability, ResourceClass, StageSnapshot, SubjectKind, WorkerId, handle::CancellationToken};
+use lettuce_jobs::{CancellationPolicy, CancellationReason, ClaimRef, JobError, JobErrorCode, JobKind, JobMutation, JobOutcome, JobSnapshot, JobSpec, JobState, JobStore, JobSubject, OutcomeRef, ProgressSnapshot, UnitsProgress, RecoveryPolicy, ResourceAvailability, ResourceClass, StageSnapshot, SubjectKind, WorkerId, handle::CancellationToken};
 use lettuce_types::{JobId, OperationId, RequestId};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -118,6 +118,8 @@ impl JobHandler for RestoreHandler {
         }).await
     }
 }
+
+type RestoreOutcome = Result<Vec<dto::BackupWarning>, &'static str>;
 
 struct Work { claim: ClaimRef, cancellation: CancellationToken, password: Zeroizing<String>, detail: Detail }
 
@@ -244,6 +246,19 @@ impl Work {
         Ok(())
     }
 
+    fn report_progress(&self, context: &ApiContext, completed: u64, total: u64) -> Result<(), ApiError> {
+        if self.cancellation.is_cancelled() { return Err(error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled)); }
+        let job = context.backend().database().append_and_transition(JobMutation::Progress {
+            claim: self.claim.clone(),
+            progress: ProgressSnapshot { units: Some(UnitsProgress::new(completed, Some(total)).map_err(|_| unavailable())?), ..ProgressSnapshot::default() },
+            at: context.now(),
+        }).map_err(IntoApiError::into_api_error)?;
+        let view = crate::api::jobs::job_view(context, &job)?;
+        let (event, terminal) = crate::api::jobs::job_event(&job, view);
+        context.jobs().deliver(job.id, event, terminal);
+        Ok(())
+    }
+
     fn checkpoint(&self, context: &ApiContext, stage: &str, target: Option<(&Database, &Path, &[lettuce_transfer::LegacyBackupWarning])>, current: &Mutex<Option<Arc<Database>>>) -> Result<(), ApiError> {
         if self.cancellation.is_cancelled() { return Err(error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled)); }
         if let Some((database, path, warnings)) = target {
@@ -278,19 +293,26 @@ impl Work {
 impl ClaimedJob for Work {
     fn cancellation(&self) -> CancellationToken { self.cancellation.clone() }
     async fn run(self: Box<Self>, context: ApiContext, _progress: Arc<dyn JobProgressSink>) -> Result<(), ApiError> {
-        // Decoding, SQLite imports and media copies are synchronous. Keep the
-        // async runtime free to forward events and service the shell meanwhile.
+        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
+        let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else { return self.cancel(&context); };
+        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
+        // Keep synchronous import work off the jobs runtime, but retire workers
+        // on that runtime's thread so shutdown never joins its own waiting job.
+        let work: Arc<Self> = self.into();
+        let blocking_work = work.clone();
+        let blocking_context = context.clone();
         let runtime = tokio::runtime::Handle::current();
-        tokio::task::spawn_blocking(move || runtime.block_on(self.execute(context)))
-            .await.map_err(IntoApiError::into_api_error)?
+        let switched = tokio::task::spawn_blocking(move || runtime.block_on(blocking_work.execute(&blocking_context)))
+            .await.map_err(IntoApiError::into_api_error)??;
+        if let Some((database, outcome)) = switched {
+            work.finish_switched(context, database, outcome).await?;
+        }
+        Ok(())
     }
 }
 
 impl Work {
-    async fn execute(self: Box<Self>, context: ApiContext) -> Result<(), ApiError> {
-        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
-        let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else { return self.cancel(&context); };
-        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
+    async fn execute(&self, context: &ApiContext) -> Result<Option<(Arc<Database>, RestoreOutcome)>, ApiError> {
         let files = context.database_files().ok_or_else(unavailable)?;
         if files.location.active_path().map_err(|_| unavailable())? != files.active { return Err(unavailable()); }
         let root = context.app_folder().ok_or_else(unavailable)?;
@@ -304,19 +326,20 @@ impl Work {
                 let source = context.files().open(&self.detail.source).map_err(file_error);
                 match source {
                     Ok(source) => crate::BackupRestoreCoordinator::new(&files.location, &workspace, &media, context.secret_store().as_ref())
-                        .restore_controlled(restore_id, source, &self.password, context.now(), &|stage, database| self.checkpoint(&context, stage, database.map(|(database, path)| (database, path, &[][..])), &current).map_err(crate::BackupRestoreError::Api)).await
+                        .restore_controlled(restore_id, source, &self.password, context.now(), &|stage, database| self.checkpoint(context, stage, database.map(|(database, path)| (database, path, &[][..])), &current).map_err(crate::BackupRestoreError::Api)).await
                         .map(|receipt| receipt.app_secret_failures.into_iter().map(|failure| dto::BackupWarning::AppSecretUnavailable { purpose: format!("{:?}", failure.purpose), stage: match failure.stage { crate::BackupAppSecretFailureStage::Status => dto::BackupSecretStage::Status, crate::BackupAppSecretFailureStage::Store => dto::BackupSecretStage::Store } }).collect())
                         .map_err(|failure| { tracing::warn!(job_id = %self.claim.job_id, error = ?failure, "the backup restore failed"); restore_failure_label(failure) }),
                     Err(failure) => Err(file_failure_label(&failure)),
                 }
             }
             kind => {
-                let coordinator = crate::LegacyRestoreCoordinator::new(&files.location, &authority, &workspace, context.secret_store().as_ref());
-                let check = |stage: &str, database: Option<(&Database, &Path, &[lettuce_transfer::LegacyBackupWarning])>| self.checkpoint(&context, stage, database, &current).map_err(crate::LegacyRestoreError::Api);
+                let progress = |completed, total| self.report_progress(context, completed, total).map_err(crate::LegacyRestoreError::Api);
+                let coordinator = crate::LegacyRestoreCoordinator::new(&files.location, &authority, &workspace, context.secret_store().as_ref()).with_progress(&progress);
+                let check = |stage: &str, database: Option<(&Database, &Path, &[lettuce_transfer::LegacyBackupWarning])>| self.checkpoint(context, stage, database, &current).map_err(crate::LegacyRestoreError::Api);
                 let receipt = if kind == RestoreKind::LegacyBackup {
                     match context.files().open(&self.detail.source) {
                         Ok(source) => coordinator.restore_backup_controlled(restore_id, source, &self.password, context.now(), &check).await,
-                        Err(failure) => return settle(context.backend().database(), &self.claim, &context, Err(file_failure_label(&file_error(failure)))).map(|_| ()),
+                        Err(failure) => return settle(context.backend().database(), &self.claim, context, Err(file_failure_label(&file_error(failure)))).map(|_| None),
                     }
                 } else {
                     coordinator.restore_database_controlled(Path::new(&self.detail.source), context.now(), &check).await
@@ -327,15 +350,15 @@ impl Work {
         };
         let switched = files.location.active_path().map_err(|_| unavailable())? != files.active;
         if !switched {
-            let cleaned = remove_workspace(&context, self.claim.job_id).is_ok();
+            let cleaned = remove_workspace(context, self.claim.job_id).is_ok();
             context.finish_reloaded_job()?;
             let outcome = if cleaned { outcome } else { Err("backup-unavailable") };
-            if cleaned && (self.cancellation.is_cancelled() || outcome.as_ref().is_err_and(|label| *label == "backup-cancelled")) { return self.cancel(&context); }
-            settle(context.backend().database(), &self.claim, &context, outcome.map(|warnings| dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings }))?;
-            return Ok(());
+            if cleaned && (self.cancellation.is_cancelled() || outcome.as_ref().is_err_and(|label| *label == "backup-cancelled")) { return self.cancel(context).map(|()| None); }
+            settle(context.backend().database(), &self.claim, context, outcome.map(|warnings| dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings }))?;
+            return Ok(None);
         }
         let database = current.into_inner().map_err(|_| unavailable())?.ok_or_else(unavailable)?;
-        self.finish_switched(context, database, outcome).await
+        Ok(Some((database, outcome)))
     }
 }
 

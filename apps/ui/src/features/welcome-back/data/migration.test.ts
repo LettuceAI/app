@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "@/api/client";
 import type { JobEvent, JobView } from "@/api/generated/bindings";
-import { finishedStages, migrationStages, useLegacyMigration } from "./migration";
+import { finishedStages, migrationStages, stageCompletion, useLegacyMigration } from "./migration";
 
 function job(state: JobView["state"], label: string | null): JobView {
   return {
@@ -55,6 +55,13 @@ it("keeps the current stage when a delayed watch snapshot arrives", async () => 
     reply(job("running", "decode"));
   });
   expect(finishedStages(result.current.state.job)).toBe(1);
+  const measured = job("running", "write");
+  measured.progress = { ...measured.progress, current: 7, total: 20, unit: "items" };
+  await act(async () => {
+    receive({ type: "progress", job: measured });
+    receive({ type: "progress", job: job("running", "write") });
+  });
+  expect(stageCompletion(result.current.state.job, 1)).toBe(0.35);
   expect(done).not.toHaveBeenCalled();
   await act(async () => {
     receive({ type: "completed", job: job("succeeded", "switch") });
@@ -62,4 +69,14 @@ it("keeps the current stage when a delayed watch snapshot arrives", async () => 
   });
   expect(result.current.state.phase).toBe("done");
   expect(done).toHaveBeenCalledOnce();
+});
+
+it("shows measured progress and completes the final stage only on success", () => {
+  const writing = job("running", "write");
+  writing.progress = { ...writing.progress, current: 7, total: 20, unit: "items" };
+  expect(migrationStages.map((_, index) => stageCompletion(writing, index))).toEqual([1, 0.35, 0, 0]);
+  expect(stageCompletion(job("running", "switch"), 3)).toBe(0);
+  expect(stageCompletion(job("failed", "switch"), 3)).toBe(0);
+  expect(stageCompletion(job("succeeded", "switch"), 3)).toBe(1);
+  expect(stageCompletion(null, 0)).toBe(0);
 });
