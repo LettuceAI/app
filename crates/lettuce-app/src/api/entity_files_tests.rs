@@ -349,9 +349,9 @@ async fn lorebook_export_replaces_a_target_only_with_a_complete_current_file() {
     let request = dto::LorebookExportRequest {
         id,
         format: dto::LorebookExportFormat::Usc,
-        target: dto::FileTarget {
+        target: Some(dto::FileTarget {
             uri: target.display().to_string(),
-        },
+        }),
     };
     super::lorebook_export(&harness.context, request.clone())
         .await
@@ -858,6 +858,13 @@ impl std::io::Write for RefuseWrite {
     }
 }
 fn failing_exports(harness: &Harness, root: &std::path::Path) -> super::ApiContext {
+    export_context(harness, root, Arc::new(RefuseExport))
+}
+fn export_context(
+    harness: &Harness,
+    root: &std::path::Path,
+    files: Arc<dyn super::FileAccess>,
+) -> super::ApiContext {
     super::ApiContext::new(super::ApiContextParts {
         backend: harness.context.shared_backend(),
         secret_store: harness.context.secret_store().clone(),
@@ -868,7 +875,7 @@ fn failing_exports(harness: &Harness, root: &std::path::Path) -> super::ApiConte
         media: Some(entity_media_store(root)),
         events: harness.events.clone(),
         clock: Arc::new(SystemClock),
-        files: Arc::new(RefuseExport),
+        files,
         app_folder: Some(root.into()),
         resource_dir: None,
         database_files: None,
@@ -931,11 +938,16 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
         .expect("chat")
         .to_string();
     let fail = failing_exports(&harness, &root);
+    let android = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
     for kind in 0..7 {
         let target = root.join(format!("export-{kind}"));
-        let export = async |context: &super::ApiContext| {
-            let target = dto::FileTarget {
-                uri: target.display().to_string(),
+        let export = async |context: &super::ApiContext, downloads: bool| {
+            let target = if downloads {
+                None
+            } else {
+                Some(dto::FileTarget {
+                    uri: target.display().to_string(),
+                })
             };
             match kind {
                 0 => {
@@ -1016,27 +1028,38 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
             }
         };
         std::fs::write(&target, "old content").expect("old");
-        assert!(export(&fail).await.is_err());
+        assert!(export(&fail, false).await.is_err());
         assert_eq!(
             std::fs::read_to_string(&target).expect("target"),
             "old content"
         );
         std::fs::remove_file(&target).expect("remove old");
-        assert!(export(&fail).await.is_err());
+        assert!(export(&fail, false).await.is_err());
         assert!(!target.exists());
-        export(&harness.context).await.expect("complete export");
+        export(&harness.context, false)
+            .await
+            .expect("complete export");
         let content = std::fs::read_to_string(&target).expect("export");
         if kind == 6 {
             assert!(lettuce_transfer::parse_chat_jsonl(&content, 1).is_ok());
         } else {
             assert!(serde_json::from_str::<Value>(&content).is_ok());
         }
+        let published = export(&android, true).await.expect("Downloads export");
+        assert_eq!(
+            std::fs::read_to_string(&published.uri).expect("published"),
+            content
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join(&published.suggested_name)).expect("existing"),
+            "existing download"
+        );
         assert!(!std::fs::read_dir(&root).expect("folder").any(|entry| {
             entry
                 .expect("entry")
                 .file_name()
                 .to_string_lossy()
-                .starts_with("entity-")
+                .ends_with(".partial")
         }));
     }
     std::fs::remove_dir_all(root).expect("folder");
@@ -1276,9 +1299,9 @@ async fn a_missing_export_avatar_is_a_named_warning_and_keeps_authored_content()
         &harness.context,
         dto::EntityExportRequest {
             id,
-            target: dto::FileTarget {
+            target: Some(dto::FileTarget {
                 uri: target.display().to_string(),
-            },
+            }),
         },
     )
     .await
@@ -1332,9 +1355,9 @@ async fn active_database_maintenance_refuses_import_and_export_before_writing() 
         dto::LorebookExportRequest {
             id,
             format: dto::LorebookExportFormat::Usc,
-            target: dto::FileTarget {
+            target: Some(dto::FileTarget {
                 uri: target.display().to_string(),
-            },
+            }),
         },
     )
     .await;
@@ -1528,4 +1551,96 @@ async fn an_http_avatar_without_a_declared_size_downloads_and_is_checked_as_an_i
     }
     server.await.expect("server");
     std::fs::remove_dir_all(root).expect("folder");
+}
+
+#[tokio::test]
+async fn android_exports_accept_no_target_and_return_the_published_uri() {
+    let (root, harness) = setup();
+    let request: dto::CharacterExportRequest = serde_json::from_value(json!({
+        "id": harness.character_id.to_string(), "format": "uec"
+    }))
+    .expect("Android target is optional");
+    let desktop_error = super::character_export(&harness.context, request.clone())
+        .await
+        .expect_err("desktop requires a target");
+    assert_eq!(desktop_error.code, ApiErrorCode::Unsupported);
+    let context = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
+    let result = super::character_export(&context, request)
+        .await
+        .expect("Android export");
+    let value = serde_json::to_value(&result).expect("result");
+    let uri = value["uri"].as_str().expect("published URI");
+    assert!(uri.ends_with(" (1).uec"));
+    assert!(
+        serde_json::from_str::<Value>(&std::fs::read_to_string(uri).expect("published")).is_ok()
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(&result.suggested_name)).expect("existing"),
+        "existing download"
+    );
+    assert!(!std::fs::read_dir(&root).expect("folder").any(|entry| {
+        entry
+            .expect("entry")
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".partial")
+    }));
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+struct AndroidDownloads(std::path::PathBuf);
+impl super::FileAccess for AndroidDownloads {
+    fn describe(&self, uri: &str) -> Result<super::FileDescription, super::FileAccessError> {
+        super::tests::StdFiles.describe(uri)
+    }
+    fn open(&self, uri: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
+        super::tests::StdFiles.open(uri)
+    }
+    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
+        super::tests::StdFiles.create(uri)
+    }
+    fn remove(&self, uri: &str) -> Result<(), super::FileAccessError> {
+        super::tests::StdFiles.remove(uri)
+    }
+    fn backup_temporary_location(
+        &self,
+        target: Option<&str>,
+        name: &str,
+    ) -> Result<String, super::FileAccessError> {
+        assert!(target.is_none());
+        assert!(name.ends_with(".partial"));
+        Ok(self.0.join(name).display().to_string())
+    }
+    fn create_backup_temporary(
+        &self,
+        intent: &str,
+        protected: super::ExportProtection<'_>,
+    ) -> Result<(String, Box<dyn std::io::Write + Send>), super::FileAccessError> {
+        super::tests::StdFiles.create_backup_temporary(intent, protected)
+    }
+    fn sync_backup(&self, uri: &str) -> Result<(), super::FileAccessError> {
+        super::tests::StdFiles.sync_backup(uri)
+    }
+    fn publish_backup(
+        &self,
+        temporary: &str,
+        target: Option<&str>,
+        name: &str,
+        protected: super::ExportProtection<'_>,
+    ) -> Result<String, super::FileAccessError> {
+        assert!(target.is_none());
+        std::fs::write(self.0.join(name), "existing download").expect("existing download");
+        let path = std::path::Path::new(name);
+        let published = self.0.join(format!(
+            "{} (1).{}",
+            path.file_stem().expect("stem").to_string_lossy(),
+            path.extension().expect("extension").to_string_lossy()
+        ));
+        super::tests::StdFiles.publish_backup(
+            temporary,
+            Some(&published.display().to_string()),
+            name,
+            protected,
+        )
+    }
 }

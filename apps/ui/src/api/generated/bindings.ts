@@ -910,7 +910,7 @@ export type CharacterExportFormat = "uec" | "v3" | "v2";
 export type CharacterExportRequest = {
 	id: string,
 	format: CharacterExportFormat,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type CharacterGetRequest = {
@@ -1031,7 +1031,7 @@ export type CharactersListRequest = {
 
 export type ChatExportRequest = {
 	conversation_id: string,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "reset" };
@@ -1040,7 +1040,7 @@ export type ChatTemplateExportRequest = {
 	character_id: string,
 	starter_id: string,
 	format: EntityExportFormat,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 /**
@@ -1837,10 +1837,11 @@ export type EntityExportFormat = "json" | "usc";
 
 export type EntityExportRequest = {
 	id: string,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type EntityExportResult = {
+	uri: string,
 	suggested_name: string,
 	warnings: FileWarning[],
 };
@@ -4355,7 +4356,7 @@ export type LorebookExportFormat = "world_info" | "usc";
 export type LorebookExportRequest = {
 	id: string,
 	format: LorebookExportFormat,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type LorebookGeneratorDefaults = {
@@ -5134,7 +5135,7 @@ export type ModelDuplicateRequest = {
 export type ModelExportRequest = {
 	id: string,
 	format: EntityExportFormat,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type ModelGetRequest = {

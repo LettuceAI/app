@@ -969,13 +969,16 @@ pub async fn import_commit(
 
 fn publish(
     context: &ApiContext,
-    target: dto::FileTarget,
+    target: Option<dto::FileTarget>,
     name: String,
     content: String,
     warnings: Vec<dto::FileWarning>,
 ) -> Result<dto::EntityExportResult, ApiError> {
     cancelled(context)?;
-    if target.uri.trim().is_empty() {
+    if target
+        .as_ref()
+        .is_some_and(|target| target.uri.trim().is_empty())
+    {
         return Err(invalid_field("target", "target is empty"));
     }
     let _work = context
@@ -987,8 +990,8 @@ fn publish(
     let files = context.files();
     let temporary_location = files
         .backup_temporary_location(
-            Some(&target.uri),
-            &format!("entity-{}", uuid::Uuid::new_v4()),
+            target.as_ref().map(|target| target.uri.as_str()),
+            &format!("lettuce-backup-{}.partial", uuid::Uuid::new_v4()),
         )
         .map_err(IntoApiError::into_api_error)?;
     let (temporary, mut writer) = files
@@ -1006,10 +1009,16 @@ fn publish(
             .sync_backup(&temporary)
             .map_err(IntoApiError::into_api_error)?;
         cancelled(context)?;
-        files
-            .publish_backup(&temporary, Some(&target.uri), &name, &protected)
+        let uri = files
+            .publish_backup(
+                &temporary,
+                target.as_ref().map(|target| target.uri.as_str()),
+                &name,
+                &protected,
+            )
             .map_err(IntoApiError::into_api_error)?;
         Ok(dto::EntityExportResult {
+            uri,
             suggested_name: name,
             warnings,
         })

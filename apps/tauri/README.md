@@ -154,3 +154,5 @@ The sync command module delegates sharing, approval, begin, connect, stop, statu
 files_inspect returns ChatTemplate and ModelFile for entity files, Lorebook for World Info and USC, and Other for ZIPs without a supported v1 public manifest. Classification belongs to the application layer.
 
 The file command adapter exposes import_preview, import_commit and the seven entity export commands through one context snapshot each. It forwards FileSource and FileTarget DTOs, including format choices and typed warnings; the application owns parsing, replay, jobs, media and protected publication. Export commands take no operation IDs.
+
+Entity export targets are required on desktop and absent on Android. Android uses the existing pending-file writer in Download/LettuceAI, and the application returns its published URI without changing the plugin collision suffix.

@@ -419,7 +419,7 @@ pub enum EntityExportFormat {
 pub struct CharacterExportRequest {
     pub id: String,
     pub format: CharacterExportFormat,
-    pub target: FileTarget,
+    pub target: Option<FileTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -428,7 +428,7 @@ pub struct CharacterExportRequest {
 pub struct LorebookExportRequest {
     pub id: String,
     pub format: LorebookExportFormat,
-    pub target: FileTarget,
+    pub target: Option<FileTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -436,7 +436,7 @@ pub struct LorebookExportRequest {
 #[serde(deny_unknown_fields)]
 pub struct EntityExportRequest {
     pub id: String,
-    pub target: FileTarget,
+    pub target: Option<FileTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -445,7 +445,7 @@ pub struct EntityExportRequest {
 pub struct ModelExportRequest {
     pub id: String,
     pub format: EntityExportFormat,
-    pub target: FileTarget,
+    pub target: Option<FileTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -455,7 +455,7 @@ pub struct ChatTemplateExportRequest {
     pub character_id: String,
     pub starter_id: String,
     pub format: EntityExportFormat,
-    pub target: FileTarget,
+    pub target: Option<FileTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -463,12 +463,13 @@ pub struct ChatTemplateExportRequest {
 #[serde(deny_unknown_fields)]
 pub struct ChatExportRequest {
     pub conversation_id: String,
-    pub target: FileTarget,
+    pub target: Option<FileTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct EntityExportResult {
+    pub uri: String,
     pub suggested_name: String,
     pub warnings: Vec<FileWarning>,
 }
