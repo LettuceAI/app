@@ -1,8 +1,6 @@
-use super::lorebook_jobs::{
-    failure, prompt, request_id, text_profile, with_api_replay, with_job_replay,
-};
-use super::lorebooks::revision;
-use super::{
+use super::jobs::{failure, prompt, request_id, text_profile, with_api_replay, with_job_replay};
+use super::revision;
+use crate::api::{
     ApiContext,
     error::{api_error, parse_id},
 };
@@ -83,9 +81,9 @@ fn render_project_view(
         .then(|| {
             planner.error.as_ref().map(|error| dto::JobFailureDto {
                 entity_import: None,
-                code: super::jobs::failure_code(error.code),
+                code: crate::api::jobs::failure_code(error.code),
                 retryable: error.retryable,
-                reason: super::jobs::failure_reason(error.message.as_str()),
+                reason: crate::api::jobs::failure_reason(error.message.as_str()),
                 model: None,
                 hugging_face: None,
                 ollama: None,
@@ -263,7 +261,7 @@ pub async fn lorebook_project_create(
     context: &ApiContext,
     request: dto::LorebookProjectCreateRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let id = request_id(
         "lorebook_project_create",
         &request.client_operation_id,
@@ -343,7 +341,7 @@ pub async fn lorebook_project_create(
                                 scope
                                     .create_lorebook_project(project)
                                     .map(|project| pending_view(context, &project))
-                                    .map_err(|error| super::lorebooks::Failure(failure(error)))
+                                    .map_err(|error| super::Failure(failure(error)))
                             },
                         )
                         .map_err(|error| error.0)?;
@@ -425,7 +423,7 @@ pub async fn lorebook_projects_list(
                 .database()
                 .lorebook_project_page(PageRequest {
                     cursor: request.cursor,
-                    limit: super::mapping::page_limit(request.limit),
+                    limit: crate::api::mapping::page_limit(request.limit),
                 })
                 .map_err(failure)?;
             let items = page
@@ -453,7 +451,7 @@ pub async fn lorebook_project_plan(
     context: &ApiContext,
     request: dto::LorebookProjectJobRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let retry = request_id(
         "lorebook_project_plan",
         &request.client_operation_id,
@@ -565,7 +563,7 @@ pub async fn lorebook_project_plan(
                                 |scope| {
                                     scope
                                         .plan_pending_lorebook_project(expected, spec, run)
-                                        .map_err(|error| super::lorebooks::Failure(failure(error)))
+                                        .map_err(|error| super::Failure(failure(error)))
                                 },
                             )
                             .map_err(|error| error.0);
@@ -594,8 +592,8 @@ pub async fn lorebook_project_plan(
                                         context.now(),
                                     )
                                 }
-                                .map_err(|error| super::lorebooks::Failure(failure(error)))?;
-                                Ok::<_, super::lorebooks::Failure>(next.job_id)
+                                .map_err(|error| super::Failure(failure(error)))?;
+                                Ok::<_, super::Failure>(next.job_id)
                             },
                         )
                         .map_err(|error| error.0)
@@ -613,7 +611,7 @@ pub async fn lorebook_project_outline_update(
     context: &ApiContext,
     request: dto::LorebookProjectOutlineUpdateRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     let outline = request
         .outline
@@ -655,10 +653,9 @@ pub async fn lorebook_project_outline_update(
                                 outline,
                                 context.now(),
                             )
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                             .and_then(|next| {
-                                transaction_view(context, scope, &next)
-                                    .map_err(super::lorebooks::Failure)
+                                transaction_view(context, scope, &next).map_err(super::Failure)
                             })
                     },
                 )
@@ -672,7 +669,7 @@ pub async fn lorebook_project_outline_approve(
     context: &ApiContext,
     request: dto::LorebookProjectRevisionRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     context
         .blocking(move |context| {
@@ -692,10 +689,9 @@ pub async fn lorebook_project_outline_approve(
                                 expected,
                                 context.now(),
                             )
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                             .and_then(|next| {
-                                transaction_view(context, scope, &next)
-                                    .map_err(super::lorebooks::Failure)
+                                transaction_view(context, scope, &next).map_err(super::Failure)
                             })
                     },
                 )
@@ -709,7 +705,7 @@ pub async fn lorebook_project_draft_update(
     context: &ApiContext,
     request: dto::LorebookProjectDraftUpdateRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     let plan_id = parse_id(&request.plan_id, "plan_id")?;
     context
@@ -738,10 +734,9 @@ pub async fn lorebook_project_draft_update(
                                 edit,
                                 context.now(),
                             )
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                             .and_then(|next| {
-                                transaction_view(context, scope, &next)
-                                    .map_err(super::lorebooks::Failure)
+                                transaction_view(context, scope, &next).map_err(super::Failure)
                             })
                     },
                 )
@@ -755,7 +750,7 @@ pub async fn lorebook_project_draft_set_approved(
     context: &ApiContext,
     request: dto::LorebookProjectDraftApprovalRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     let plan_id = parse_id(&request.plan_id, "plan_id")?;
     context
@@ -778,10 +773,9 @@ pub async fn lorebook_project_draft_set_approved(
                                 request.approved,
                                 context.now(),
                             )
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                             .and_then(|next| {
-                                transaction_view(context, scope, &next)
-                                    .map_err(super::lorebooks::Failure)
+                                transaction_view(context, scope, &next).map_err(super::Failure)
                             })
                     },
                 )
@@ -795,7 +789,7 @@ pub async fn lorebook_project_coherence_apply(
     context: &ApiContext,
     request: dto::LorebookProjectCoherenceApplyRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     context
         .blocking(move |context| {
@@ -816,10 +810,9 @@ pub async fn lorebook_project_coherence_apply(
                                 request.accepted_change_ids,
                                 context.now(),
                             )
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                             .and_then(|next| {
-                                transaction_view(context, scope, &next)
-                                    .map_err(super::lorebooks::Failure)
+                                transaction_view(context, scope, &next).map_err(super::Failure)
                             })
                     },
                 )
@@ -833,7 +826,7 @@ pub async fn lorebook_project_cancel(
     context: &ApiContext,
     request: dto::LorebookProjectRevisionRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     context
         .blocking(move |context| {
@@ -849,7 +842,7 @@ pub async fn lorebook_project_cancel(
                         |scope| {
                             scope
                                 .cancel_pending_lorebook_project(id, expected, context.now())
-                                .map_err(|error| super::lorebooks::Failure(failure(error)))
+                                .map_err(|error| super::Failure(failure(error)))
                         },
                     )
                     .map_err(|error| error.0)?;
@@ -867,10 +860,9 @@ pub async fn lorebook_project_cancel(
                     |scope| {
                         scope
                             .cancel_staged_lorebook(run.request_id, expected, context.now())
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                             .and_then(|next| {
-                                transaction_view(context, scope, &next)
-                                    .map_err(super::lorebooks::Failure)
+                                transaction_view(context, scope, &next).map_err(super::Failure)
                             })
                     },
                 )
@@ -951,7 +943,7 @@ pub(super) fn admit_batch(
                         job_ids: jobs.into_iter().map(|id| id.to_string()).collect(),
                     })
                     .map_err(|error| {
-                        super::lorebooks::Failure(match error {
+                        super::Failure(match error {
                             lettuce_jobs::StoreError::AlreadyActive => batch_running(
                                 scope
                                     .lorebook_project_jobs(run.project.id)
@@ -981,7 +973,7 @@ pub async fn lorebook_project_draft_next(
     context: &ApiContext,
     request: dto::LorebookProjectJobRequest,
 ) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     let result = context
         .blocking(move |context| {
@@ -1059,9 +1051,11 @@ pub async fn lorebook_project_refine(
     context: &ApiContext,
     request: dto::LorebookProjectRefineRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
-    let key =
-        super::jobs::local::operation_key("lorebook_project_refine", &request.client_operation_id)?;
-    let digest = super::jobs::local::digest(&request)?;
+    let key = crate::api::jobs::local::operation_key(
+        "lorebook_project_refine",
+        &request.client_operation_id,
+    )?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let id = request_id(
         "lorebook_project_refine",
         &request.client_operation_id,
@@ -1113,11 +1107,11 @@ pub async fn lorebook_project_coherence(
     context: &ApiContext,
     request: dto::LorebookProjectJobRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
-    let key = super::jobs::local::operation_key(
+    let key = crate::api::jobs::local::operation_key(
         "lorebook_project_coherence",
         &request.client_operation_id,
     )?;
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let id = request_id(
         "lorebook_project_coherence",
         &request.client_operation_id,
@@ -1174,7 +1168,7 @@ pub async fn lorebook_project_commit(
         &request.client_operation_id,
         &request,
     )?;
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     let target = match request.target {
         dto::LorebookProjectCommitTarget::NewLorebook { name } => {
@@ -1220,7 +1214,7 @@ pub async fn lorebook_project_commit(
                                     .map(|id| id.to_string())
                                     .collect(),
                             })
-                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                            .map_err(|error| super::Failure(failure(error)))
                     },
                 )
                 .map_err(|error| error.0)?;

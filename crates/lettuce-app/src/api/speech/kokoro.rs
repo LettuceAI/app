@@ -35,14 +35,14 @@ fn client(context: &ApiContext) -> Result<lettuce_network::JsonClient, ApiError>
 fn guard_install(context: &ApiContext, root: &std::path::Path) -> Result<(), ApiError> {
     for (job, install_root) in context.jobs().install_roots() {
         if install_root == root {
-            return Err(crate::api::local_models::busy(
+            return Err(crate::api::models::local::busy(
                 dto::LocalModelsBusyReason::InstallActive {
                     job_id: job.to_string(),
                 },
             ));
         }
     }
-    if root.starts_with(crate::api::local_models::models_root(context)?) {
+    if root.starts_with(crate::api::models::local::models_root(context)?) {
         crate::api::jobs::local::folder_move_active(context)?;
     }
     Ok(())
@@ -168,7 +168,7 @@ pub async fn kokoro_install_model(
                     "this Kokoro variant is not supported on this platform",
                 ));
             }
-            if root.starts_with(crate::api::local_models::models_root(context)?) {
+            if root.starts_with(crate::api::models::local::models_root(context)?) {
                 crate::api::jobs::local::folder_move_active(context)?;
             }
             let model = tokio::runtime::Handle::current()

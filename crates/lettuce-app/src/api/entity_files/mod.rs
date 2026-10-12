@@ -256,7 +256,7 @@ impl IntoApiError for crate::ChatTemplateFileError {
 impl IntoApiError for crate::ModelFileError {
     fn into_api_error(self) -> ApiError {
         match self {
-            Self::Repository(error) => super::model_profiles::model_error(error),
+            Self::Repository(error) => super::models::profiles::model_error(error),
             Self::NotFound => api_error(ApiErrorCode::NotFound, self.to_string()),
             Self::NoProviderAccount(provider) => {
                 let mut error =
@@ -1583,7 +1583,7 @@ pub async fn import_commit(
                                 .to_string(),
                             WritePlan::Model(profile) => scope
                                 .save_model_profile(*profile, None, true)
-                                .map_err(|e| Failure(super::model_profiles::model_error(e)))?
+                                .map_err(|e| Failure(super::models::profiles::model_error(e)))?
                                 .id
                                 .to_string(),
                         };
@@ -1910,13 +1910,13 @@ pub async fn model_export(
         .blocking(move |context| {
             let database = context.backend().database();
             let profile = lettuce_models::ModelProfileRepository::get(database, id)
-                .map_err(super::model_profiles::model_error)?
+                .map_err(super::models::profiles::model_error)?
                 .ok_or_else(|| api_error(ApiErrorCode::NotFound, "model profile was not found"))?;
             let account = lettuce_models::ProviderAccountRepository::get(
                 database,
                 profile.provider_account_id,
             )
-            .map_err(super::model_profiles::model_error)?
+            .map_err(super::models::profiles::model_error)?
             .ok_or_else(|| api_error(ApiErrorCode::NotFound, "provider account was not found"))?;
             let model = lettuce_transfer::uec3::ModelProfile::from_stored(&profile, &account);
             let export = export_uec3_entity(

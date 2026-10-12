@@ -114,7 +114,7 @@ pub async fn provider_verify(
         dto::ProviderVerifyRequest::Saved { account_id } => {
             let account = account(context, account_id).await?;
             verified(
-                super::ollama::remote_providers(context)?
+                super::models::ollama::remote_providers(context)?
                     .verify_api_key(&account)
                     .await
                     .map_err(request_error)?,
@@ -195,7 +195,7 @@ pub async fn provider_openrouter_endpoints(
     context: &ApiContext,
     request: dto::ProviderOpenRouterEndpointsRequest,
 ) -> Result<Vec<dto::ProviderOpenRouterEndpoint>, ApiError> {
-    super::ollama::remote_providers(context)?
+    super::models::ollama::remote_providers(context)?
         .openrouter_public_endpoints(request.model.trim())
         .await
         .map(|endpoints| {
@@ -256,7 +256,7 @@ pub async fn provider_models(
     request: dto::ProviderModelsRequest,
 ) -> Result<Vec<dto::RemoteModelContract>, ApiError> {
     let account = account(context, request.account_id).await?;
-    super::ollama::remote_providers(context)?
+    super::models::ollama::remote_providers(context)?
         .list_models(&account)
         .await
         .map(|models| {
@@ -292,7 +292,7 @@ pub async fn provider_model_verify(
     } else {
         requested
     };
-    let models = super::ollama::remote_providers(context)?
+    let models = super::models::ollama::remote_providers(context)?
         .list_models(&account)
         .await
         .map_err(request_error)?;

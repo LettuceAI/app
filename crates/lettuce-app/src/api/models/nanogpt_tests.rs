@@ -1,4 +1,4 @@
-use super::tests::{Reply, harness};
+use crate::api::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_models::{ModelCatalog, ModelProfileRepository, ProviderAccountRepository};
 use lettuce_types::ProviderAccountId;
@@ -18,7 +18,7 @@ async fn usage_wrong_kind_and_missing_key_are_typed() {
         account_id: account.id.to_string(),
         refresh: true,
     };
-    let wrong = super::provider_nanogpt_usage(&h.context, request.clone())
+    let wrong = crate::api::provider_nanogpt_usage(&h.context, request.clone())
         .await
         .expect_err("wrong kind");
     assert_eq!(wrong.code, ApiErrorCode::InvalidInput);
@@ -35,7 +35,7 @@ async fn usage_wrong_kind_and_missing_key_are_typed() {
     account.api_key_ref = None;
     ProviderAccountRepository::upsert(h.context.backend().database(), account, Some(revision))
         .expect("nano account");
-    let missing = super::provider_nanogpt_usage(&h.context, request)
+    let missing = crate::api::provider_nanogpt_usage(&h.context, request)
         .await
         .expect_err("missing key");
     assert_eq!(missing.code, ApiErrorCode::InvalidInput);
@@ -66,8 +66,8 @@ async fn coalesces_per_account_for_300_seconds_and_keeps_one_in_flight() {
     assert!(state.claim(a, false).is_some());
 }
 
-async fn nano_account(h: &super::tests::Harness, endpoint: String) -> String {
-    let view = super::provider_account_save(
+async fn nano_account(h: &crate::api::tests::Harness, endpoint: String) -> String {
+    let view = crate::api::provider_account_save(
         &h.context,
         dto::ProviderAccountSaveRequest {
             account: dto::ProviderAccountInput {
@@ -115,7 +115,7 @@ async fn usage_non_success_preserves_provider_text_and_redacts_credentials() {
         let body = r#"{"error":{"message":"quota unavailable nano-secret-canary"}}"#;
         socket.write_all(format!("HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("response");
     });
-    let error = super::provider_nanogpt_usage(
+    let error = crate::api::provider_nanogpt_usage(
         &h.context,
         dto::ProviderNanoGptUsageRequest {
             account_id: id,
@@ -164,12 +164,12 @@ async fn completed_request_returns_success_while_quota_check_is_waiting_or_fails
         released.await.expect("release");
         socket.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.expect("failure");
     });
-    let conversation = super::tests::launch(&h, "nano-request").await;
-    let sink = Arc::new(super::tests::RecordingStream::default());
-    super::tests::send(&h, &conversation, "nano-send", "Hi", sink.clone())
+    let conversation = crate::api::tests::launch(&h, "nano-request").await;
+    let sink = Arc::new(crate::api::tests::RecordingStream::default());
+    crate::api::tests::send(&h, &conversation, "nano-send", "Hi", sink.clone())
         .await
         .expect("send");
-    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let worker = crate::api::ConversationGenerationWorker::new(h.context.clone());
     tokio::time::timeout(std::time::Duration::from_secs(5), worker.run_once())
         .await
         .expect("request does not wait for usage")
@@ -183,7 +183,7 @@ async fn completed_request_returns_success_while_quota_check_is_waiting_or_fails
             .iter()
             .any(|event| matches!(event, dto::GenerationEvent::Completed { .. }))
     );
-    let manual = super::provider_nanogpt_usage(
+    let manual = crate::api::provider_nanogpt_usage(
         &h.context,
         dto::ProviderNanoGptUsageRequest {
             account_id: id,
@@ -231,7 +231,7 @@ async fn every_quota_level_emits_once_and_context_restart_does_not_repeat_it() {
         }
     });
     for _ in 0..6 {
-        super::provider_nanogpt_usage(
+        crate::api::provider_nanogpt_usage(
             &h.context,
             dto::ProviderNanoGptUsageRequest {
                 account_id: id.clone(),
@@ -244,7 +244,7 @@ async fn every_quota_level_emits_once_and_context_restart_does_not_repeat_it() {
     let restart = h
         .context
         .with_test_secrets(h.context.secret_store().clone());
-    super::provider_nanogpt_usage(
+    crate::api::provider_nanogpt_usage(
         &restart,
         dto::ProviderNanoGptUsageRequest {
             account_id: id.clone(),
@@ -293,7 +293,7 @@ async fn shutdown_during_usage_check_cancels_without_emitting_a_warning() {
     });
     let context = h.context.clone();
     let command = tokio::spawn(async move {
-        super::provider_nanogpt_usage(
+        crate::api::provider_nanogpt_usage(
             &context,
             dto::ProviderNanoGptUsageRequest {
                 account_id: id,
@@ -352,7 +352,7 @@ async fn html_provider_error_has_status_without_raw_body() {
         let body = "<html>Bad Gateway nano-secret-canary</html>";
         socket.write_all(format!("HTTP/1.1 502 Bad Gateway\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("response");
     });
-    let error = super::provider_nanogpt_usage(
+    let error = crate::api::provider_nanogpt_usage(
         &h.context,
         dto::ProviderNanoGptUsageRequest {
             account_id: id,
@@ -406,7 +406,7 @@ async fn account_deleted_during_usage_check_emits_no_warning() {
     let context = h.context.clone();
     let account_id = id.clone();
     let command = tokio::spawn(async move {
-        super::provider_nanogpt_usage(
+        crate::api::provider_nanogpt_usage(
             &context,
             dto::ProviderNanoGptUsageRequest {
                 account_id,
@@ -465,15 +465,15 @@ async fn usage_cached_read_reuses_result_and_refresh_fetches_again() {
         account_id: id,
         refresh: false,
     };
-    let first = super::provider_nanogpt_usage(&h.context, request.clone())
+    let first = crate::api::provider_nanogpt_usage(&h.context, request.clone())
         .await
         .expect("first");
-    let cached = super::provider_nanogpt_usage(&h.context, request.clone())
+    let cached = crate::api::provider_nanogpt_usage(&h.context, request.clone())
         .await
         .expect("cached");
     assert_eq!(cached, first);
     assert_eq!(count.load(Ordering::SeqCst), 1);
-    let refreshed = super::provider_nanogpt_usage(
+    let refreshed = crate::api::provider_nanogpt_usage(
         &h.context,
         dto::ProviderNanoGptUsageRequest {
             refresh: true,
@@ -506,7 +506,7 @@ async fn provider_error_message_is_capped_by_characters() {
             .to_string();
         socket.write_all(format!("HTTP/1.1 502 Bad Gateway\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("response");
     });
-    let error = super::provider_nanogpt_usage(
+    let error = crate::api::provider_nanogpt_usage(
         &h.context,
         dto::ProviderNanoGptUsageRequest {
             account_id: id,
@@ -553,7 +553,7 @@ async fn rereview_failed_cached_usage_refetches_after_key_is_set() {
         account_id: id,
         refresh: false,
     };
-    let error = super::provider_nanogpt_usage(&h.context, request.clone())
+    let error = crate::api::provider_nanogpt_usage(&h.context, request.clone())
         .await
         .expect_err("missing key");
     assert!(matches!(
@@ -581,7 +581,7 @@ async fn rereview_failed_cached_usage_refetches_after_key_is_set() {
             .await
             .expect("response");
     });
-    let result = super::provider_nanogpt_usage(&h.context, request).await;
+    let result = crate::api::provider_nanogpt_usage(&h.context, request).await;
     server.abort();
     assert_eq!(
         result
@@ -620,7 +620,7 @@ async fn rereview_empty_weekly_window_uses_daily_warning() {
             .await
             .expect("response");
     });
-    let usage = super::provider_nanogpt_usage(
+    let usage = crate::api::provider_nanogpt_usage(
         &h.context,
         dto::ProviderNanoGptUsageRequest {
             account_id: id.clone(),

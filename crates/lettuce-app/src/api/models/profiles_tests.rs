@@ -1,9 +1,9 @@
-use super::tests::{Reply, harness};
+use crate::api::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_models::{ModelCatalog, ModelProfileRepository};
 use lettuce_settings::GlobalSettingsStore;
 
-fn draft(context: &super::ApiContext, operation: &str) -> dto::ModelSaveRequest {
+fn draft(context: &crate::api::ApiContext, operation: &str) -> dto::ModelSaveRequest {
     let profile = context
         .backend()
         .database()
@@ -33,7 +33,7 @@ fn draft(context: &super::ApiContext, operation: &str) -> dto::ModelSaveRequest 
 async fn declared_image_scopes_are_supported_and_explicit_unsupported_is_kept() {
     let h = harness(Reply::Text("Hello."));
     let request = draft(&h.context, "declared-image");
-    let saved = super::model_save(&h.context, request.clone())
+    let saved = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("save");
     let profile = ModelProfileRepository::get(
@@ -51,7 +51,7 @@ async fn declared_image_scopes_are_supported_and_explicit_unsupported_is_kept() 
         lettuce_models::CapabilityEvidenceSource::UserOverride
     );
     fn resolve(
-        context: &super::ApiContext,
+        context: &crate::api::ApiContext,
         profile: &lettuce_models::ModelProfile,
     ) -> Result<lettuce_models::ResolvedChatProfile, lettuce_models::ChatProfileResolutionError>
     {
@@ -97,7 +97,7 @@ async fn declared_image_scopes_are_supported_and_explicit_unsupported_is_kept() 
         .database()
         .model_profiles()
         .expect("before");
-    let error = super::model_save(&h.context, request)
+    let error = crate::api::model_save(&h.context, request)
         .await
         .expect_err("unsupported save");
     assert_eq!(error.code, ApiErrorCode::InvalidInput);
@@ -129,7 +129,7 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
     for model in database.model_profiles().expect("profiles") {
         ModelProfileRepository::delete_and_clear_default(database, model.id).expect("clear");
     }
-    let first = super::model_save(&h.context, request.clone())
+    let first = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("first");
     assert_eq!(
@@ -141,7 +141,7 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
         Some(first.id.clone())
     );
     assert_eq!(
-        super::model_save(&h.context, request.clone())
+        crate::api::model_save(&h.context, request.clone())
             .await
             .expect("replay"),
         first
@@ -149,7 +149,7 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
     let mut changed = request.clone();
     changed.model.display_name = "changed".into();
     assert_eq!(
-        super::model_save(&h.context, changed)
+        crate::api::model_save(&h.context, changed)
             .await
             .expect_err("digest conflict")
             .code,
@@ -157,14 +157,14 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
     );
     let mut second_request = request;
     second_request.client_operation_id = "second-save".into();
-    let second = super::model_save(&h.context, second_request.clone())
+    let second = crate::api::model_save(&h.context, second_request.clone())
         .await
         .expect("second");
     second_request.model.id = Some(second.id.clone());
     second_request.expected_revision = Some(second.revision + 1);
     second_request.client_operation_id = "stale-save".into();
     assert_eq!(
-        super::model_save(&h.context, second_request)
+        crate::api::model_save(&h.context, second_request)
             .await
             .expect_err("stale")
             .code,
@@ -175,10 +175,10 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
         expected_revision: first.revision,
         client_operation_id: "delete-first".into(),
     };
-    super::model_delete(&h.context, deletion.clone())
+    crate::api::model_delete(&h.context, deletion.clone())
         .await
         .expect("delete");
-    super::model_delete(&h.context, deletion)
+    crate::api::model_delete(&h.context, deletion)
         .await
         .expect("replay deleted");
     assert_eq!(
@@ -190,7 +190,7 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
         Some(second.id)
     );
     assert_eq!(
-        super::model_get(&h.context, dto::ModelGetRequest { model_id: first.id })
+        crate::api::model_get(&h.context, dto::ModelGetRequest { model_id: first.id })
             .await
             .expect_err("deleted")
             .code,
@@ -201,11 +201,11 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
 #[tokio::test]
 async fn default_set_cas_replay_and_models_feed_committed_only() {
     let h = harness(Reply::Text("Hello."));
-    let mut feed = super::conversation_feed::ConversationFeed::start(&h.context)
+    let mut feed = crate::api::conversation_feed::ConversationFeed::start(&h.context)
         .await
         .expect("feed");
     let request = draft(&h.context, "feed-save");
-    let saved = super::model_save(&h.context, request.clone())
+    let saved = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("save");
     feed.publish(&h.context).await.expect("publish");
@@ -217,7 +217,7 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
             .count(),
         1
     );
-    super::model_save(&h.context, request)
+    crate::api::model_save(&h.context, request)
         .await
         .expect("replay");
     feed.publish(&h.context).await.expect("replay publish");
@@ -229,7 +229,7 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
             .count(),
         1
     );
-    super::content_filter::publish_pending(&h.context).await;
+    crate::api::content_filter::publish_pending(&h.context).await;
     let settings_events_before = h
         .events
         .events()
@@ -245,16 +245,16 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
         expected_revision: settings.revision.get(),
         client_operation_id: "set-default".into(),
     };
-    let result = super::model_default_set(&h.context, set.clone())
+    let result = crate::api::model_default_set(&h.context, set.clone())
         .await
         .expect("set");
     assert_eq!(
-        super::model_default_set(&h.context, set.clone())
+        crate::api::model_default_set(&h.context, set.clone())
             .await
             .expect("replay"),
         result
     );
-    super::content_filter::publish_pending(&h.context).await;
+    crate::api::content_filter::publish_pending(&h.context).await;
     assert_eq!(
         h.events
             .events()
@@ -267,14 +267,14 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
     let mut stale = set;
     stale.client_operation_id = "stale-default".into();
     assert_eq!(
-        super::model_default_set(&h.context, stale)
+        crate::api::model_default_set(&h.context, stale)
             .await
             .expect_err("stale")
             .code,
         ApiErrorCode::Conflict
     );
     assert_eq!(
-        super::models_list(&h.context)
+        crate::api::models_list(&h.context)
             .await
             .expect("list")
             .models
@@ -283,7 +283,7 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
     );
     h.context.begin_shutdown();
     assert_eq!(
-        super::model_delete(
+        crate::api::model_delete(
             &h.context,
             dto::ModelDeleteRequest {
                 model_id: saved.id,
@@ -314,7 +314,7 @@ async fn duplicate_copies_config_keeps_default_and_accepts_non_unique_names() {
         expected_revision: source.revision.get(),
         client_operation_id: "duplicate-model".into(),
     };
-    let copy = super::model_duplicate(&h.context, request.clone())
+    let copy = crate::api::model_duplicate(&h.context, request.clone())
         .await
         .expect("duplicate");
     assert_ne!(copy.id, source.id.to_string());
@@ -338,7 +338,7 @@ async fn duplicate_copies_config_keeps_default_and_accepts_non_unique_names() {
         Some(source.id)
     );
     assert_eq!(
-        super::model_duplicate(&h.context, request.clone())
+        crate::api::model_duplicate(&h.context, request.clone())
             .await
             .expect("replay"),
         copy
@@ -346,14 +346,14 @@ async fn duplicate_copies_config_keeps_default_and_accepts_non_unique_names() {
     let mut request = request;
     request.client_operation_id = "duplicate-again".into();
     assert!(
-        super::model_duplicate(&h.context, request.clone())
+        crate::api::model_duplicate(&h.context, request.clone())
             .await
             .is_ok()
     );
     request.client_operation_id = "blank-duplicate".into();
     request.display_name = " ".into();
     assert_eq!(
-        super::model_duplicate(&h.context, request)
+        crate::api::model_duplicate(&h.context, request)
             .await
             .expect_err("blank")
             .code,
@@ -380,7 +380,7 @@ async fn editor_local_path_edits_are_not_treated_as_incoming_sync() {
     request.model.external_model_id = "/new/model.gguf".into();
     request.expected_revision = Some(profile.revision.get());
     assert_eq!(
-        super::model_save(&h.context, request)
+        crate::api::model_save(&h.context, request)
             .await
             .expect("save new path")
             .external_model_id,
@@ -393,8 +393,8 @@ async fn concurrent_retries_and_model_edits_commit_one_result() {
     let h = harness(Reply::Text("Hello."));
     let request = draft(&h.context, "concurrent-create");
     let (a, b) = tokio::join!(
-        super::model_save(&h.context, request.clone()),
-        super::model_save(&h.context, request.clone())
+        crate::api::model_save(&h.context, request.clone()),
+        crate::api::model_save(&h.context, request.clone())
     );
     let saved = a.expect("first");
     assert_eq!(saved, b.expect("replay"));
@@ -406,8 +406,8 @@ async fn concurrent_retries_and_model_edits_commit_one_result() {
     b.model.display_name = "Other editor".into();
     b.client_operation_id = "concurrent-edit-b".into();
     let (a, b) = tokio::join!(
-        super::model_save(&h.context, a),
-        super::model_save(&h.context, b)
+        crate::api::model_save(&h.context, a),
+        crate::api::model_save(&h.context, b)
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
     assert_eq!(
@@ -432,7 +432,7 @@ async fn remote_evidence_fills_missing_metadata_from_declarations_and_replay_sur
         input_price: None,
         output_price: None,
     });
-    let saved = super::model_save(&h.context, request.clone())
+    let saved = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("remote save");
     assert_eq!(
@@ -454,10 +454,10 @@ async fn remote_evidence_fills_missing_metadata_from_declarations_and_replay_sur
         expected_revision: saved.revision,
         client_operation_id: "duplicate-removed-source".into(),
     };
-    let copy = super::model_duplicate(&h.context, duplicate.clone())
+    let copy = crate::api::model_duplicate(&h.context, duplicate.clone())
         .await
         .expect("copy");
-    super::model_delete(
+    crate::api::model_delete(
         &h.context,
         dto::ModelDeleteRequest {
             model_id: saved.id,
@@ -468,13 +468,13 @@ async fn remote_evidence_fills_missing_metadata_from_declarations_and_replay_sur
     .await
     .expect("delete");
     assert_eq!(
-        super::model_duplicate(&h.context, duplicate)
+        crate::api::model_duplicate(&h.context, duplicate)
             .await
             .expect("replay"),
         copy
     );
     assert_eq!(
-        super::model_save(&h.context, request)
+        crate::api::model_save(&h.context, request)
             .await
             .expect("save replay after removal")
             .config["capabilities"]["context_length"],
@@ -486,7 +486,7 @@ async fn remote_evidence_fills_missing_metadata_from_declarations_and_replay_sur
 async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrides_echo() {
     let h = harness(Reply::Text("Hello."));
     let mut request = draft(&h.context, "scope-edit-first");
-    let first = super::model_save(&h.context, request.clone())
+    let first = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("first");
     request.model.id = Some(first.id.clone());
@@ -494,7 +494,7 @@ async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrid
     request.expected_revision = Some(first.revision);
     request.client_operation_id = "scope-edit-second".into();
     request.model.input_scopes = vec![dto::ModelModality::Text];
-    let edited = super::model_save(&h.context, request.clone())
+    let edited = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("edit");
     assert_eq!(
@@ -510,7 +510,7 @@ async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrid
     request.expected_revision = Some(edited.revision);
     request.client_operation_id = "scope-edit-remote".into();
     request.model.remote_metadata = Some(serde_json::from_value(serde_json::json!({"id":"editor-model","display_name":"Editor model","input_modalities":["text","image"]})).expect("metadata"));
-    let remote = super::model_save(&h.context, request)
+    let remote = crate::api::model_save(&h.context, request)
         .await
         .expect("remote");
     assert_eq!(
@@ -522,11 +522,11 @@ async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrid
 #[tokio::test]
 async fn non_default_model_writes_emit_only_models_changed() {
     let h = harness(Reply::Text("Hello."));
-    let mut feed = super::conversation_feed::ConversationFeed::start(&h.context)
+    let mut feed = crate::api::conversation_feed::ConversationFeed::start(&h.context)
         .await
         .expect("feed");
     let mut request = draft(&h.context, "event-save");
-    let saved = super::model_save(&h.context, request.clone())
+    let saved = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("save");
     feed.publish(&h.context).await.expect("save feed");
@@ -534,11 +534,11 @@ async fn non_default_model_writes_emit_only_models_changed() {
     request.model.display_name = "Renamed".into();
     request.expected_revision = Some(saved.revision);
     request.client_operation_id = "event-rename".into();
-    let renamed = super::model_save(&h.context, request)
+    let renamed = crate::api::model_save(&h.context, request)
         .await
         .expect("rename");
     feed.publish(&h.context).await.expect("rename feed");
-    super::model_delete(
+    crate::api::model_delete(
         &h.context,
         dto::ModelDeleteRequest {
             model_id: renamed.id,
@@ -564,7 +564,7 @@ async fn deleting_default_model_emits_models_settings_changed() {
     let model = ModelProfileRepository::get(database, id)
         .expect("model")
         .expect("exists");
-    super::model_delete(
+    crate::api::model_delete(
         &h.context,
         dto::ModelDeleteRequest {
             model_id: id.to_string(),
@@ -602,7 +602,7 @@ async fn rereview_remote_scopes_replace_echo_and_survive_plain_save() {
     request.model.config["capabilities"]["input_modalities"]["image"] =
         serde_json::json!("unsupported");
     request.model.remote_metadata = Some(serde_json::from_value(serde_json::json!({"id":"editor-model","input_modalities":["text","image"],"output_modalities":["text"]})).expect("metadata"));
-    let remote = super::model_save(&h.context, request.clone())
+    let remote = crate::api::model_save(&h.context, request.clone())
         .await
         .expect("remote");
     assert_eq!(
@@ -623,7 +623,9 @@ async fn rereview_remote_scopes_replace_echo_and_survive_plain_save() {
     request.model.remote_metadata = None;
     request.expected_revision = Some(remote.revision);
     request.client_operation_id = "rereview-plain".into();
-    let plain = super::model_save(&h.context, request).await.expect("plain");
+    let plain = crate::api::model_save(&h.context, request)
+        .await
+        .expect("plain");
     assert_eq!(
         plain.input_scopes,
         vec![dto::ModelModality::Text, dto::ModelModality::Image]
@@ -681,7 +683,7 @@ async fn rereview_catalog_unsupported_image_declaration_is_typed_and_writes_noth
         expected_revision: Some(model.revision.get()),
         client_operation_id: "rereview-catalog-unsupported".into(),
     };
-    let error = super::model_save(&h.context, request)
+    let error = crate::api::model_save(&h.context, request)
         .await
         .expect_err("unsupported declaration");
     assert_eq!(error.code, ApiErrorCode::InvalidInput);

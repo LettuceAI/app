@@ -1,9 +1,9 @@
-use super::tests::{Reply, harness, launch};
-use super::turns_tests::replied_chat;
-use super::*;
+use crate::api::tests::{Reply, harness, launch};
+use crate::api::turns_tests::replied_chat;
+use crate::api::*;
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiErrorDetails};
 
-fn make_dynamic(harness: &super::tests::Harness, enabled: bool) {
+fn make_dynamic(harness: &crate::api::tests::Harness, enabled: bool) {
     use lettuce_characters::CharacterRepository;
     use lettuce_settings::GlobalSettingsStore;
     let database = harness.context.backend().database();
@@ -334,7 +334,7 @@ struct RecordedCycle {
 }
 
 async fn recorded_cycle(
-    harness: &super::tests::Harness,
+    harness: &crate::api::tests::Harness,
     chat: &str,
     summary: &str,
     text: &str,
@@ -363,7 +363,7 @@ async fn recorded_cycle(
         .expect("conversation")
         .conversation
         .active_branch_id;
-    let view = super::turns_tests::open(harness, chat).await;
+    let view = crate::api::turns_tests::open(harness, chat).await;
     let mut sources = Vec::new();
     for message in view.messages.items.iter().rev() {
         let item = ConversationOverviewReader::timeline_anchor(
@@ -879,7 +879,7 @@ async fn cycle_reverts_and_dismissed_failures_round_trip_through_backup() {
         .expect("requirements")
         .into_iter()
         .map(|descriptor| {
-            let mut sink = super::memory_tests::MemoryArtifactBytes(Vec::new());
+            let mut sink = super::tests::MemoryArtifactBytes(Vec::new());
             match &descriptor {
                 TrustedArtifactDescriptor::Snapshot(reference) => {
                     database.export_snapshot(reference.artifact_id, &mut sink)
@@ -925,7 +925,7 @@ async fn a_duplicated_companion_chat_shows_the_pools_memory_status_not_its_priva
     use lettuce_settings::GlobalSettingsStore;
     let harness = harness(Reply::Text("reply"));
     let database = harness.context.backend().database();
-    let character_id = super::tests::create_character(
+    let character_id = crate::api::tests::create_character(
         database,
         "Pooled Companion",
         lettuce_characters::CharacterDefaults {
@@ -1206,7 +1206,7 @@ async fn a_fork_after_a_finished_turn_does_not_move_the_parents_due_window_to_th
     assert_eq!(batch.branch_id, root);
 }
 
-async fn status_of(harness: &super::tests::Harness, chat: &str) -> dto::MemoryView {
+async fn status_of(harness: &crate::api::tests::Harness, chat: &str) -> dto::MemoryView {
     memory_get(
         &harness.context,
         dto::ConversationRequest {
@@ -1217,7 +1217,7 @@ async fn status_of(harness: &super::tests::Harness, chat: &str) -> dto::MemoryVi
     .expect("memory")
 }
 
-async fn set_user_summary(harness: &super::tests::Harness, chat: &str, key: &str) {
+async fn set_user_summary(harness: &crate::api::tests::Harness, chat: &str, key: &str) {
     let revision = status_of(harness, chat).await.revision;
     memory_summary_update(
         &harness.context,
@@ -1283,7 +1283,7 @@ async fn a_user_summary_over_an_imported_one_keeps_its_coverage_even_when_cleare
     let space = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
         .expect("memory")
         .expect("space");
-    let view = super::turns_tests::open(&harness, &chat).await;
+    let view = crate::api::turns_tests::open(&harness, &chat).await;
     let sources = view
         .messages
         .items
@@ -1346,7 +1346,7 @@ struct OpenRound {
 }
 
 async fn open_round(
-    harness: &super::tests::Harness,
+    harness: &crate::api::tests::Harness,
     chat: &str,
     calls: Vec<(&str, serde_json::Value)>,
 ) -> OpenRound {
@@ -1354,7 +1354,7 @@ async fn open_round(
 }
 
 async fn open_round_with_decay(
-    harness: &super::tests::Harness,
+    harness: &crate::api::tests::Harness,
     chat: &str,
     calls: Vec<(&str, serde_json::Value)>,
     decay: bool,
@@ -1378,7 +1378,7 @@ async fn open_round_with_decay(
         .expect("conversation")
         .conversation
         .active_branch_id;
-    let view = super::turns_tests::open(harness, chat).await;
+    let view = crate::api::turns_tests::open(harness, chat).await;
     let mut sources = Vec::new();
     for message in view.messages.items.iter().rev() {
         let item = ConversationOverviewReader::timeline_anchor(
@@ -1539,7 +1539,7 @@ async fn open_round_with_decay(
 }
 
 fn settle(
-    harness: &super::tests::Harness,
+    harness: &crate::api::tests::Harness,
     round: &OpenRound,
 ) -> lettuce_memory::DynamicMemoryBackgroundRoundSettlement {
     use lettuce_memory::DynamicMemoryRunRepository;
@@ -1596,7 +1596,7 @@ fn settle(
         .settlement
 }
 
-async fn item(harness: &super::tests::Harness, chat: &str, text: &str) -> dto::MemoryItemView {
+async fn item(harness: &crate::api::tests::Harness, chat: &str, text: &str) -> dto::MemoryItemView {
     status_of(harness, chat)
         .await
         .items
@@ -1738,7 +1738,7 @@ async fn the_store_admits_one_active_memory_job_per_conversation() {
         .expect("conversation")
         .conversation
         .active_branch_id;
-    let view = super::turns_tests::open(&harness, &chat).await;
+    let view = crate::api::turns_tests::open(&harness, &chat).await;
     let messages = view
         .messages
         .items
@@ -1861,8 +1861,8 @@ async fn a_concurrent_trigger_and_post_turn_admission_create_one_job() {
     }
 }
 
-fn memory_events(harness: &super::tests::Harness, chat: &str) -> usize {
-    super::tests::api_events(harness)
+fn memory_events(harness: &crate::api::tests::Harness, chat: &str) -> usize {
+    crate::api::tests::api_events(harness)
         .into_iter()
         .filter(|event| matches!(event, dto::ApiEvent::MemoryChanged { conversation_id } if conversation_id == chat))
         .count()
@@ -1870,7 +1870,7 @@ fn memory_events(harness: &super::tests::Harness, chat: &str) -> usize {
 
 #[tokio::test]
 async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_none() {
-    use super::conversation_feed::ConversationFeed;
+    use crate::api::conversation_feed::ConversationFeed;
     let harness = harness(Reply::Text("reply"));
     let (chat, _) = replied_chat(&harness, "events").await;
     let mut feed = ConversationFeed::start(&harness.context)
@@ -1946,10 +1946,10 @@ async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_
 
 #[tokio::test]
 async fn a_cycle_in_one_pooled_chat_emits_memory_changed_for_the_other() {
-    use super::conversation_feed::ConversationFeed;
+    use crate::api::conversation_feed::ConversationFeed;
     let harness = harness(Reply::Text("reply"));
     let database = harness.context.backend().database();
-    let character = super::tests::create_character(
+    let character = crate::api::tests::create_character(
         database,
         "Pool events",
         lettuce_characters::CharacterDefaults {
@@ -2009,7 +2009,7 @@ async fn a_cycle_in_one_pooled_chat_emits_memory_changed_for_the_other() {
 
 #[tokio::test]
 async fn a_revert_emits_memory_changed() {
-    use super::conversation_feed::ConversationFeed;
+    use crate::api::conversation_feed::ConversationFeed;
     let harness = harness(Reply::Text("reply"));
     let (chat, _) = replied_chat(&harness, "events-revert").await;
     make_dynamic(&harness, true);
@@ -2061,9 +2061,9 @@ async fn a_memory_retry_receipt_replays_before_the_selected_model_is_resolved_ag
         client_operation_id: "completed-retry".into(),
     };
     let bytes = serde_json::to_vec(&request).expect("request");
-    let operation = super::messages::operation(request.client_operation_id.clone(), &[b"memory_retry", &bytes]).expect("operation");
+    let operation = crate::api::messages::operation(request.client_operation_id.clone(), &[b"memory_retry", &bytes]).expect("operation");
     let accepted = dto::JobAccepted { job_id: lettuce_types::JobId::new().to_string() };
-    harness.context.backend().database().commit_api_operation::<_, super::memory::EditFailure>(
+    harness.context.backend().database().commit_api_operation::<_, super::EditFailure>(
         "memory_retry", &request.client_operation_id, operation.request_digest.as_str(), harness.context.now(),
         |_| Ok(accepted.clone()),
     ).unwrap_or_else(|error| panic!("receipt write failed: {}", error.0.message));
@@ -2075,11 +2075,11 @@ async fn pooled_delete_after_preserves_retained_user_edits_when_undoing_model_to
     use lettuce_jobs::{JobMutation, JobOutcome, JobStore, OutcomeRef};
     use lettuce_memory::{DynamicMemoryAttemptStatus, DynamicMemoryRunRepository};
     for tool in ["pin_memory", "unpin_memory", "create_memory"] {
-        let harness = super::tests::harness_in(
+        let harness = crate::api::tests::harness_in(
             Reply::Text("reply"), std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
-            std::sync::Arc::new(super::inspect_tests::AllModels),
+            std::sync::Arc::new(crate::api::inspect_tests::AllModels),
         );
-        let character = super::tests::create_character(
+        let character = crate::api::tests::create_character(
             harness.context.backend().database(), "Retained tool edits",
             lettuce_characters::CharacterDefaults {
                 interaction_mode: lettuce_characters::InteractionMode::Companion,
@@ -2196,10 +2196,10 @@ async fn generated_summary_with_failed_tokenizer_keeps_usage_without_publishing_
             panic!("summary counting must not embed")
         }
     }
-    let harness = super::tests::harness_in(
+    let harness = crate::api::tests::harness_in(
         Reply::Text("Mira remembered the user's preferred tea."),
         std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
-        std::sync::Arc::new(super::inspect_tests::AllModels),
+        std::sync::Arc::new(crate::api::inspect_tests::AllModels),
     );
     let (chat, _) = replied_chat(&harness, "failed-summary-tokenizer").await;
     make_dynamic(&harness, false);
@@ -2241,11 +2241,11 @@ async fn delete_after_removes_a_decayed_manual_add_unless_another_pool_chat_edit
     use lettuce_jobs::{JobMutation, JobOutcome, JobStore, OutcomeRef};
     use lettuce_memory::{DynamicMemoryAttemptStatus, DynamicMemoryRunRepository};
     for retained in [false, true] {
-        let harness = super::tests::harness_in(
+        let harness = crate::api::tests::harness_in(
             Reply::Text("reply"), std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
-            std::sync::Arc::new(super::inspect_tests::AllModels),
+            std::sync::Arc::new(crate::api::inspect_tests::AllModels),
         );
-        let character = super::tests::create_character(
+        let character = crate::api::tests::create_character(
             harness.context.backend().database(), "Decayed addition",
             lettuce_characters::CharacterDefaults {
                 interaction_mode: lettuce_characters::InteractionMode::Companion,

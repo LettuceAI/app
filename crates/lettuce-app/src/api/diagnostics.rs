@@ -4,7 +4,7 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_models::ModelCatalog;
 use lettuce_settings::GlobalSettingsStore;
 
-use super::{ApiContext, embedding_health, error::model_error, models::ModelLoad};
+use super::{ApiContext, error::model_error, memory::embedding_health, models::ModelLoad};
 
 fn redact_support_path(path: &str, homes: &[&str]) -> String {
     let path = path.replace('\\', "/");
@@ -246,7 +246,7 @@ pub async fn logs_diagnostics_report(context: &ApiContext) -> Result<String, Api
                     .iter()
                     .find(|provider| provider.id == model.provider_account_id)
                     .ok_or_else(storage_error)?;
-                let view = super::model_profiles::view(model).map_err(|_| storage_error())?;
+                let view = super::models::profiles::view(model).map_err(|_| storage_error())?;
                 lines.extend([
                     format!("- {}", view.id),
                     format!(

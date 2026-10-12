@@ -23,7 +23,7 @@ use super::install::{DOWNLOAD_LANE, InstallFinish, InstallWork};
 use super::runner::{ClaimedJob, JobHandler, JobLane, JobProgressSink};
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, hf_error, invalid_field};
-use crate::api::local_models::{busy, folder_busy, models_root};
+use crate::api::models::local::{busy, folder_busy, models_root};
 use crate::{ArtifactInstallCoordinator, GgufDownload, GgufModelSetup};
 
 const LOCAL_JOB_LEASE: Duration = Duration::from_secs(30 * 60);
@@ -902,7 +902,8 @@ pub(crate) async fn admit_model_pull(
         return Err(invalid_field("model", "model is empty"));
     }
     let key = operation_key("ollama_pull", &request.client_operation_id)?;
-    let account = crate::api::ollama::ollama_account(context, &request.provider_account_id).await?;
+    let account =
+        crate::api::models::ollama::ollama_account(context, &request.provider_account_id).await?;
     let account_id = account.id.to_string();
     let digest = digest(&(&account_id, &model))?;
     let job_id = context
@@ -961,7 +962,7 @@ pub(crate) async fn admit_models_folder_move(
             folder_move_active(context)?;
             let from = models_root(context)?;
             let to = PathBuf::from(&path);
-            let app = crate::api::local_models::app_folder(context)?;
+            let app = crate::api::models::local::app_folder(context)?;
             crate::models::gguf_library::check_models_data_overlap(app, &to)
                 .map_err(|error| invalid_field("path", error.to_string()))?;
             if move_existing {
@@ -1290,7 +1291,9 @@ async fn pull(context: &ApiContext, started: &Arc<StartedJob>) -> Settlement {
     if started.cancellation.is_cancelled() {
         return Settlement::Cancelled;
     }
-    let account = match crate::api::ollama::ollama_account(context, provider_account_id).await {
+    let account = match crate::api::models::ollama::ollama_account(context, provider_account_id)
+        .await
+    {
         Ok(account) => account,
         Err(error) => {
             tracing::warn!(job_id = %started.job_id, message = %error.message, "the Ollama account of a pull is unavailable");
@@ -1301,7 +1304,7 @@ async fn pull(context: &ApiContext, started: &Arc<StartedJob>) -> Settlement {
             ));
         }
     };
-    let providers = match crate::api::ollama::remote_providers(context) {
+    let providers = match crate::api::models::ollama::remote_providers(context) {
         Ok(providers) => providers,
         Err(_) => {
             return Settlement::Failed(job_error(
@@ -1535,7 +1538,7 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
         } else {
             None
         };
-        let app_folder = crate::api::local_models::app_folder(context)?.to_path_buf();
+        let app_folder = crate::api::models::local::app_folder(context)?.to_path_buf();
         let _block = block;
         Ok(
             match crate::set_llm_models_dir(

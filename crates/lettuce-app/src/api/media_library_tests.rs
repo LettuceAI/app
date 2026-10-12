@@ -977,7 +977,7 @@ async fn workers_on_a_kept_database_idle_without_claiming_or_a_due_timer() {
         WorkerStep::due(&jobs).now_or_never().is_none(),
         "kept job worker clears its scheduled wake-up"
     );
-    let memory = super::memory_worker::MemoryWorker::new(h.context.clone());
+    let memory = super::memory::worker::MemoryWorker::new(h.context.clone());
     assert!(
         !WorkerStep::step(&memory)
             .await

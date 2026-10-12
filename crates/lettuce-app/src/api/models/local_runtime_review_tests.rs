@@ -1,5 +1,5 @@
 use super::local_runtime_events::FlowId;
-use super::tests::{RecordingStream, Reply, harness};
+use crate::api::tests::{RecordingStream, Reply, harness};
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_local_llm::generation::{LlamaHostEvent, LlamaNotice};
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, JobId};
@@ -19,7 +19,7 @@ fn runtime_ingress_does_not_wait_for_production_job_watch_initialization() {
     let entered = Arc::new(Barrier::new(2));
     let release = Arc::new(Barrier::new(2));
     struct Sink;
-    impl super::JobEventSink for Sink {
+    impl crate::api::JobEventSink for Sink {
         fn emit(&self, _: lettuce_contracts::JobEvent) -> bool {
             true
         }
@@ -64,7 +64,7 @@ fn runtime_ingress_does_not_wait_for_a_slow_turn_ui_consumer() {
         entered: Arc<Barrier>,
         release: Arc<Barrier>,
     }
-    impl super::GenerationEventSink for Sink {
+    impl crate::api::GenerationEventSink for Sink {
         fn emit(&self, _: lettuce_contracts::GenerationEvent) {
             self.entered.wait();
             self.release.wait();
@@ -158,7 +158,7 @@ fn progress(id: GenerationAttemptId, percent: u8, name: &str) -> LlamaHostEvent 
 
 #[derive(Default)]
 struct JobRecorder(std::sync::Mutex<Vec<lettuce_contracts::JobEvent>>);
-impl super::JobEventSink for JobRecorder {
+impl crate::api::JobEventSink for JobRecorder {
     fn emit(&self, event: lettuce_contracts::JobEvent) -> bool {
         self.0.lock().expect("events").push(event);
         true
@@ -170,7 +170,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
     use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
     use lettuce_types::RequestId;
     let env = harness(Reply::Text("Hello."));
-    let chat = super::tests::launch(&env, "queue-full-source").await;
+    let chat = crate::api::tests::launch(&env, "queue-full-source").await;
     let job = JobStore::create_or_get(
         env.context.backend().database(),
         JobSpec::new(
@@ -196,7 +196,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
         entered: Arc<Barrier>,
         release: Arc<Barrier>,
     }
-    impl super::GenerationEventSink for Slow {
+    impl crate::api::GenerationEventSink for Slow {
         fn emit(&self, _: lettuce_contracts::GenerationEvent) {
             self.entered.wait();
             self.release.wait();
@@ -223,7 +223,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
         router.emit(progress(job_id, 42, &format!("Model {index}")));
     }
     let watch = Arc::new(JobRecorder::default());
-    let result = super::job_watch(
+    let result = crate::api::job_watch(
         &env.context,
         lettuce_contracts::JobWatchRequest {
             job_id: job.id.to_string(),
@@ -233,7 +233,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
     .await;
     let events = watch.0.lock().expect("events").clone();
     let repeated = Arc::new(JobRecorder::default());
-    let repeated_result = super::job_watch(
+    let repeated_result = crate::api::job_watch(
         &env.context,
         lettuce_contracts::JobWatchRequest {
             job_id: job.id.to_string(),
@@ -244,7 +244,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
     let next_id = GenerationAttemptId::new();
     let next_attempt = router.register_attempt(next_id, Some(FlowId::Job(job.id)));
     let fresh = Arc::new(JobRecorder::default());
-    let fresh_result = super::job_watch(
+    let fresh_result = crate::api::job_watch(
         &env.context,
         lettuce_contracts::JobWatchRequest {
             job_id: job.id.to_string(),
@@ -254,7 +254,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
     .await;
     router.emit(progress(next_id, 67, "Next"));
     let next = Arc::new(JobRecorder::default());
-    let next_result = super::job_watch(
+    let next_result = crate::api::job_watch(
         &env.context,
         lettuce_contracts::JobWatchRequest {
             job_id: job.id.to_string(),
@@ -264,7 +264,7 @@ async fn late_job_watch_replays_load_state_even_when_the_dispatch_queue_is_full(
     .await;
     job_token.cancel();
     let cancelled = Arc::new(JobRecorder::default());
-    let cancelled_result = super::job_watch(
+    let cancelled_result = crate::api::job_watch(
         &env.context,
         lettuce_contracts::JobWatchRequest {
             job_id: job.id.to_string(),

@@ -1,5 +1,11 @@
 //! Lorebook library commands: reads, authored writes, archive, hard delete,
 //! the trigger preview and token counts.
+pub(super) mod jobs;
+#[cfg(test)]
+mod jobs_tests;
+pub(super) mod projects;
+#[cfg(test)]
+pub(super) mod tests;
 
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LifecycleStatus, Lorebook, LorebookBehaviorVersion,

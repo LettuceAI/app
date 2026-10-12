@@ -220,7 +220,7 @@ impl JobHandler for SpeechTranscribeHandler {
             .blocking(move |context| {
                 let _folder_access = context.local_models().folder_access();
                 let root = crate::api::speech::whisper::whisper_root(context)?;
-                if root.starts_with(crate::api::local_models::models_root(context)?)
+                if root.starts_with(crate::api::models::local::models_root(context)?)
                     && folder_moving(context)?
                 {
                     return Ok(None);
@@ -365,7 +365,7 @@ impl JobHandler for SpeechSynthesizeHandler {
                         .retained_model_roots_for_guard()?
                         .and_then(|roots| roots.kokoro)
                     && std::path::Path::new(&root)
-                        .starts_with(crate::api::local_models::models_root(context)?)
+                        .starts_with(crate::api::models::local::models_root(context)?)
                     && folder_moving(context)?
                 {
                     return Ok(None);

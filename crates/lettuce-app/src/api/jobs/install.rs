@@ -242,7 +242,7 @@ pub(crate) async fn admit_install_with_detail(
     let job_id = context
         .blocking(move |context| {
             let _folder_access = context.local_models().folder_access();
-            if is_image_install(&work) || work.root().starts_with(crate::api::local_models::models_root(context)?) {
+            if is_image_install(&work) || work.root().starts_with(crate::api::models::local::models_root(context)?) {
                 super::local::folder_move_active(context)?;
             }
             let atomic_detail = detail.is_some() && matches!(&work, InstallWork::Artifact { finish, .. } if matches!(finish.as_ref(), InstallFinish::Embedding { .. }));
@@ -1132,7 +1132,7 @@ async fn finish_artifact(
             let health_cancel = cancellation.clone();
             context
                 .blocking(move |_| {
-                    crate::api::embedding_health::run(engine.as_ref(), &health_cancel)
+                    crate::api::memory::embedding_health::run(engine.as_ref(), &health_cancel)
                         .map_err(internal)
                 })
                 .await

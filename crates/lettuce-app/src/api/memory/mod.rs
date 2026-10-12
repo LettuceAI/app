@@ -1,3 +1,13 @@
+pub(super) mod control;
+#[cfg(test)]
+mod control_tests;
+pub(super) mod embedding_health;
+pub(super) mod models;
+pub(super) mod read;
+#[cfg(test)]
+mod tests;
+pub(super) mod worker;
+
 use lettuce_characters::{CharacterRepository, GroupRepository};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, RequiredModel};
 use lettuce_conversations::{

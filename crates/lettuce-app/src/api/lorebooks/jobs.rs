@@ -1,5 +1,5 @@
-use super::jobs::local::{digest, stable_uuid};
-use super::{
+use crate::api::jobs::local::{digest, stable_uuid};
+use crate::api::{
     ApiContext,
     error::{api_error, invalid_field, parse_id},
 };
@@ -10,7 +10,7 @@ use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{ModelProfileId, RequestId};
 
 pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
-    use super::error::IntoApiError;
+    use crate::api::error::IntoApiError;
     let mut cause: &(dyn std::error::Error + 'static) = &error;
     loop {
         if let Some(error) = cause.downcast_ref::<lettuce_media::MediaStoreError>() {
@@ -242,7 +242,7 @@ pub(super) fn request_id<T: serde::Serialize>(
     key: &str,
     request: &T,
 ) -> Result<RequestId, ApiError> {
-    super::jobs::local::operation_key(command, key)?;
+    crate::api::jobs::local::operation_key(command, key)?;
     let _ = request;
     Ok(RequestId::from_uuid(stable_uuid(&[command, key])))
 }
@@ -334,8 +334,10 @@ pub async fn lorebook_entry_draft(
     context: &ApiContext,
     request: dto::LorebookEntryDraftRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
-    let key =
-        super::jobs::local::operation_key("lorebook_entry_draft", &request.client_operation_id)?;
+    let key = crate::api::jobs::local::operation_key(
+        "lorebook_entry_draft",
+        &request.client_operation_id,
+    )?;
     let digest = digest(&request)?;
     let id = request_id(
         "lorebook_entry_draft",
@@ -425,8 +427,10 @@ pub async fn lorebook_keywords_draft(
     context: &ApiContext,
     request: dto::LorebookKeywordsDraftRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
-    let key =
-        super::jobs::local::operation_key("lorebook_keywords_draft", &request.client_operation_id)?;
+    let key = crate::api::jobs::local::operation_key(
+        "lorebook_keywords_draft",
+        &request.client_operation_id,
+    )?;
     let digest = digest(&request)?;
     let id = request_id(
         "lorebook_keywords_draft",

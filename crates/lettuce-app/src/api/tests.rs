@@ -195,7 +195,7 @@ pub(super) struct FakeProvider {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(super) runtime_events: std::sync::atomic::AtomicBool,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    events_router: Arc<super::local_runtime_events::RuntimeEventRouter>,
+    events_router: Arc<super::models::local_runtime_events::RuntimeEventRouter>,
 }
 
 #[async_trait::async_trait]

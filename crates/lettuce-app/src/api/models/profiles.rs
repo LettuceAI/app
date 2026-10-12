@@ -7,14 +7,14 @@ use lettuce_models::{
 use lettuce_types::{ModelProfileId, Revision};
 use serde::{Serialize, de::DeserializeOwned};
 
-pub(super) fn model_error(error: lettuce_models::ModelRepositoryError) -> ApiError {
+pub(in crate::api) fn model_error(error: lettuce_models::ModelRepositoryError) -> ApiError {
     if error == lettuce_models::ModelRepositoryError::AccountMissing {
         api_error(ApiErrorCode::NotFound, "provider account does not exist")
     } else {
-        super::providers::mutations::model_error(error)
+        crate::api::providers::mutations::model_error(error)
     }
 }
-use super::{
+use crate::api::{
     ApiContext,
     error::{api_error, invalid_field, parse_id},
 };
@@ -44,7 +44,7 @@ fn scopes(capabilities: &ModalityCapabilities) -> Vec<dto::ModelModality> {
     .collect()
 }
 
-pub(super) fn view(model: ModelProfile) -> Result<dto::ModelView, ApiError> {
+pub(in crate::api) fn view(model: ModelProfile) -> Result<dto::ModelView, ApiError> {
     Ok(dto::ModelView {
         id: model.id.to_string(),
         provider_account_id: model.provider_account_id.to_string(),
@@ -181,7 +181,7 @@ where
             "operation id is empty",
         ));
     }
-    let digest = super::jobs::local::digest(&request)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     let _guard = context.provider_write_guard().await;
     if context.shutdown_token().is_cancelled() {
         return Err(api_error(
@@ -221,7 +221,7 @@ pub async fn model_save(
         move |scope, context| {
             let expected = request
                 .expected_revision
-                .map(|value| super::lorebooks::revision(value, "expected_revision"))
+                .map(|value| crate::api::lorebooks::revision(value, "expected_revision"))
                 .transpose()?;
             let id = request
                 .model
@@ -348,7 +348,7 @@ pub async fn model_duplicate(
             }
             let id: ModelProfileId = parse_id(&request.model_id, "model_id")?;
             let expected =
-                super::lorebooks::revision(request.expected_revision, "expected_revision")?;
+                crate::api::lorebooks::revision(request.expected_revision, "expected_revision")?;
             let mut model = scope
                 .model_profile(id)
                 .map_err(model_error)?
@@ -384,14 +384,14 @@ pub async fn model_delete(
         move |scope, context| {
             let id = parse_id(&request.model_id, "model_id")?;
             let expected =
-                super::lorebooks::revision(request.expected_revision, "expected_revision")?;
+                crate::api::lorebooks::revision(request.expected_revision, "expected_revision")?;
             scope
                 .delete_model_profile(id, expected, context.now())
                 .map_err(model_error)
         },
     )
     .await?;
-    super::content_filter::publish_pending(context).await;
+    crate::api::content_filter::publish_pending(context).await;
     Ok(())
 }
 
@@ -412,7 +412,7 @@ pub async fn model_default_set(
                 .map(|id| parse_id(id, "model_id"))
                 .transpose()?;
             let expected =
-                super::lorebooks::revision(request.expected_revision, "expected_revision")?;
+                crate::api::lorebooks::revision(request.expected_revision, "expected_revision")?;
             let revision = scope
                 .set_default_model_profile(id, expected, context.now())
                 .map_err(model_error)?;

@@ -11,8 +11,8 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use super::tests::{Harness, Reply, harness_in};
-use super::*;
+use crate::api::tests::{Harness, Reply, harness_in};
+use crate::api::*;
 use crate::{
     ArtifactBody, ArtifactSource, ArtifactSourceClient, ArtifactSourceError, KokoroDownloadSource,
     KokoroVoiceDownloadSource, WhisperDownloadSource,
@@ -967,8 +967,8 @@ async fn restart(context: &ApiContext) -> ApiContext {
     restarted
         .blocking(|context| {
             context.recover_after_restart()?;
-            super::jobs::recover_queued_installs(context)?;
-            super::jobs::recover_local_model_jobs(context)?;
+            crate::api::jobs::recover_queued_installs(context)?;
+            crate::api::jobs::recover_local_model_jobs(context)?;
             Ok(())
         })
         .await

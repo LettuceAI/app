@@ -72,7 +72,7 @@ pub(crate) fn report(
     cancel: &CancellationToken,
 ) -> Result<HealthReport, String> {
     let probes: Probes =
-        serde_json::from_str(include_str!("../../resources/embedding-health/v1.json"))
+        serde_json::from_str(include_str!("../../../resources/embedding-health/v1.json"))
             .map_err(|_| "invalid embedding health probes")?;
     let dimensions = engine.dimensions();
     let embed = |text: &str| -> Result<EmbeddingVector, String> {
@@ -203,7 +203,7 @@ pub(crate) mod tests {
     }
     pub(crate) fn engine(constant: bool) -> std::sync::Arc<dyn MemoryEmbeddingEngine> {
         let probes: Probes =
-            serde_json::from_str(include_str!("../../resources/embedding-health/v1.json"))
+            serde_json::from_str(include_str!("../../../resources/embedding-health/v1.json"))
                 .expect("probes");
         let mut values = std::collections::HashMap::new();
         values.insert(probes.identity_probe.clone(), 100);
@@ -277,7 +277,7 @@ pub(crate) mod tests {
     #[test]
     fn legacy_health_dataset_is_complete() {
         let probes: Probes =
-            serde_json::from_str(include_str!("../../resources/embedding-health/v1.json"))
+            serde_json::from_str(include_str!("../../../resources/embedding-health/v1.json"))
                 .expect("probes");
         assert_eq!(probes.corpus.len(), 50);
         assert_eq!(probes.cases.len(), 50);

@@ -439,7 +439,7 @@ fn start_workers(
     let conversation = worker_thread("conversation-generation", stopped, move |stopped| {
         Box::pin(async move { generation.run(until_stopped(stopped)).await })
     })?;
-    let memory_worker = super::memory_worker::MemoryWorker::new(context.clone());
+    let memory_worker = super::memory::worker::MemoryWorker::new(context.clone());
     let memory = worker_thread("post-turn-memory", stopped, move |stopped| {
         Box::pin(async move { memory_worker.run(until_stopped(stopped)).await })
     })?;

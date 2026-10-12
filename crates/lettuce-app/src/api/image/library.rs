@@ -24,7 +24,7 @@ use crate::api::error::{api_error, hf_error, invalid_field};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::api::jobs::admit_install_with_detail;
 use crate::api::jobs::{ImageToolDetail, admit_tool};
-use crate::api::local_models::local_path;
+use crate::api::models::local::local_path;
 use crate::{HfBundleRoleSearch, HuggingFaceBrowser};
 
 pub(crate) fn to_engine_lora(value: &dto::ImageLora) -> lettuce_models::StableDiffusionLora {

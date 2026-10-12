@@ -273,7 +273,7 @@ pub(crate) struct MemoryJobOutput {
 
 struct MemoryStream {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    _runtime_events: crate::api::local_runtime_events::FlowRegistration,
+    _runtime_events: crate::api::models::local_runtime_events::FlowRegistration,
     forwarder: tokio::task::JoinHandle<()>,
     _shutdown: crate::api::worker::ShutdownLink,
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::ConversationGenerationWorker;
-use super::tests::{RecordingStream, Reply, harness, launch, send};
+use crate::api::ConversationGenerationWorker;
+use crate::api::tests::{RecordingStream, Reply, harness, launch, send};
 
 fn event_types(stream: &RecordingStream) -> Vec<String> {
     stream
@@ -19,7 +19,7 @@ fn event_types(stream: &RecordingStream) -> Vec<String> {
 #[tokio::test]
 async fn group_speaker_events_precede_the_first_delta() {
     let harness = harness(Reply::Text("Hello."));
-    let cast = super::turns_tests::group_cast(&harness, "live-speaker").await;
+    let cast = crate::api::turns_tests::group_cast(&harness, "live-speaker").await;
     let stream = Arc::new(RecordingStream::default());
     send(
         &harness,
@@ -94,7 +94,7 @@ async fn a_late_attach_receives_the_resolved_speaker() {
     assert!(
         matches!(&events[0], lettuce_contracts::GenerationEvent::SpeakerSelected { turn_id, character_id } if turn_id == &accepted.turn_id && character_id == &harness.character_id.to_string())
     );
-    super::generation_cancel(
+    crate::api::generation_cancel(
         &harness.context,
         lettuce_contracts::GenerationCancelRequest {
             turn_id: accepted.turn_id,
@@ -109,7 +109,7 @@ async fn a_late_attach_receives_the_resolved_speaker() {
 async fn a_director_turn_emits_selected_without_selecting() {
     use lettuce_characters::GroupRepository;
     let harness = harness(Reply::Text("Hello."));
-    let cast = super::turns_tests::group_cast(&harness, "live-director").await;
+    let cast = crate::api::turns_tests::group_cast(&harness, "live-director").await;
     let first = Arc::new(RecordingStream::default());
     send(&harness, &cast.chat, "live-director-send", "Hi", first)
         .await
@@ -131,10 +131,10 @@ async fn a_director_turn_emits_selected_without_selecting() {
     )
     .expect("director");
     let mut request =
-        super::turns_tests::continue_request(&harness, &cast.chat, "live-director-continue");
+        crate::api::turns_tests::continue_request(&harness, &cast.chat, "live-director-continue");
     request.forced_speaker_participant_id = Some(cast.ada.to_string());
     let stream = Arc::new(RecordingStream::default());
-    super::conversation_continue(&harness.context, request, stream.clone())
+    crate::api::conversation_continue(&harness.context, request, stream.clone())
         .await
         .expect("continue");
     ConversationGenerationWorker::new(harness.context.clone())
@@ -157,7 +157,7 @@ async fn a_director_turn_emits_selected_without_selecting() {
 #[tokio::test]
 async fn a_mentioned_character_skips_selection_status() {
     let harness = harness(Reply::Text("Hello."));
-    let cast = super::turns_tests::group_cast(&harness, "live-mention").await;
+    let cast = crate::api::turns_tests::group_cast(&harness, "live-mention").await;
     let stream = Arc::new(RecordingStream::default());
     send(
         &harness,
@@ -268,7 +268,7 @@ async fn a_cancelled_local_turn_stops_receiving_notices_while_inference_is_live(
             )
         })
         .count();
-    super::generation_cancel(
+    crate::api::generation_cancel(
         &harness.context,
         lettuce_contracts::GenerationCancelRequest {
             turn_id: accepted.turn_id,
@@ -353,7 +353,7 @@ fn runtime_reports_emit_only_matching_local_model_ids_after_storage() {
         model_path: path.into(),
     });
     routes.flush();
-    let events = super::tests::api_events(&harness);
+    let events = crate::api::tests::api_events(&harness);
     let ids = events
         .iter()
         .find_map(|event| match event {
@@ -381,7 +381,7 @@ fn runtime_reports_emit_only_matching_local_model_ids_after_storage() {
             recent_text: String::new(),
         },
     });
-    assert_eq!(super::tests::api_events(&harness), events);
+    assert_eq!(crate::api::tests::api_events(&harness), events);
     assert!(
         database
             .model_profiles()
@@ -395,7 +395,7 @@ fn runtime_reports_emit_only_matching_local_model_ids_after_storage() {
 #[tokio::test]
 async fn a_local_turn_completes_when_the_ui_discards_every_event() {
     struct DiscardingStream;
-    impl super::GenerationEventSink for DiscardingStream {
+    impl crate::api::GenerationEventSink for DiscardingStream {
         fn emit(&self, _event: lettuce_contracts::GenerationEvent) {}
     }
     let harness = harness(Reply::Text("Hello."));
@@ -413,7 +413,7 @@ async fn a_local_turn_completes_when_the_ui_discards_every_event() {
         model,
     );
     let chat = launch(&harness, "unwatched-local").await;
-    let accepted = super::conversation_send(
+    let accepted = crate::api::conversation_send(
         &harness.context,
         lettuce_contracts::ConversationSendRequest {
             conversation_id: chat,
@@ -431,7 +431,7 @@ async fn a_local_turn_completes_when_the_ui_discards_every_event() {
             .expect("generation")
     );
     assert!(matches!(
-        super::worker::settled_event(
+        crate::api::worker::settled_event(
             harness.context.backend().database(),
             accepted.turn_id.parse().expect("turn")
         )

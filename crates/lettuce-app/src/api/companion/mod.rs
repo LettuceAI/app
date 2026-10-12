@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::jobs::local::stable_uuid;
-use super::memory_control::controlled_atomic;
+use super::memory::control::controlled_atomic;
 use super::memory::EditFailure;
 
 fn soul_error(error: SoulRepositoryError) -> ApiError {

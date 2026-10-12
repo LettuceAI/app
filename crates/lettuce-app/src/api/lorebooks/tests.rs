@@ -16,11 +16,15 @@ use lettuce_transfer::{
 };
 use lettuce_types::{CharacterId, ConversationId, LorebookId, TimestampMillis};
 
-use super::tests::{Harness, RecordingStream, Reply, harness, launch, send};
-use super::turns_tests::run_generation;
-use super::*;
+use crate::api::tests::{Harness, RecordingStream, Reply, harness, launch, send};
+use crate::api::turns_tests::run_generation;
+use crate::api::*;
 
-pub(super) fn entry(title: &str, content: &str, keyword: Option<&str>) -> dto::LorebookEntryInput {
+pub(in crate::api) fn entry(
+    title: &str,
+    content: &str,
+    keyword: Option<&str>,
+) -> dto::LorebookEntryInput {
     dto::LorebookEntryInput {
         title: title.into(),
         enabled: true,
@@ -35,7 +39,7 @@ pub(super) fn entry(title: &str, content: &str, keyword: Option<&str>) -> dto::L
     }
 }
 
-pub(super) async fn create(
+pub(in crate::api) async fn create(
     harness: &Harness,
     key: &str,
     name: &str,
@@ -150,7 +154,7 @@ impl TrustedArtifactSink for Collected {
 
 /// Exports the database with its artifacts, restores it into an empty one
 /// and returns the restored database once its graph reads back equal.
-pub(super) fn backup_round_trip(
+pub(in crate::api) fn backup_round_trip(
     database: &lettuce_database::Database,
 ) -> lettuce_database::Database {
     let mut graph: ProviderBackupGraph = database.read_provider_backup_graph().expect("export");
@@ -802,7 +806,7 @@ async fn trigger_preview_matches_what_the_next_turn_injects() {
 async fn group_trigger_preview_uses_the_speakers_books_unless_disabled() {
     let harness = harness(Reply::Text("A reply."));
     let database = harness.context.backend().database();
-    let cast = super::turns_tests::group_cast(&harness, "group").await;
+    let cast = crate::api::turns_tests::group_cast(&harness, "group").await;
     let group_book = create(
         &harness,
         "g",

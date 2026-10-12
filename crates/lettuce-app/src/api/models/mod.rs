@@ -2,6 +2,25 @@
 //! a chat that needs one checks it before its turn starts, which loads it
 //! once (fetching ONNX Runtime first when the device has none), and the
 //! loaded model is kept until an install, switch or removal changes it.
+pub(super) mod hugging_face;
+#[cfg(test)]
+mod llama_events_tests;
+pub(super) mod local;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) mod local_runtime_events;
+#[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]
+mod local_runtime_review_tests;
+#[cfg(test)]
+mod local_tests;
+pub(super) mod nanogpt;
+#[cfg(test)]
+mod nanogpt_tests;
+pub(super) mod ollama;
+pub(super) mod profiles;
+#[cfg(test)]
+mod profiles_tests;
+#[cfg(test)]
+mod tests;
 
 use std::{
     path::{Path, PathBuf},
@@ -266,7 +285,7 @@ impl ModelSlots {
                 if let Some(root) = context
                     .retained_model_roots_for_guard()?
                     .and_then(|roots| roots.embedding)
-                    && Path::new(&root).starts_with(super::local_models::models_root(context)?)
+                    && Path::new(&root).starts_with(self::local::models_root(context)?)
                 {
                     super::jobs::local::folder_move_active(context)?;
                 }
@@ -350,7 +369,7 @@ impl ModelSlots {
                             RequiredModel::Emotion => roots.thymos,
                         });
                 if let Some(root) = root
-                    && Path::new(&root).starts_with(super::local_models::models_root(context)?)
+                    && Path::new(&root).starts_with(self::local::models_root(context)?)
                 {
                     super::jobs::local::folder_move_active(context)?;
                 }
@@ -384,7 +403,7 @@ impl ModelSlots {
                             RequiredModel::Emotion => roots.thymos,
                         });
                 if let Some(root) = root
-                    && Path::new(&root).starts_with(super::local_models::models_root(context)?)
+                    && Path::new(&root).starts_with(self::local::models_root(context)?)
                 {
                     super::jobs::local::folder_move_active(context)?;
                 }

@@ -9,11 +9,11 @@ async fn persona_binding_commands_replay_compare_revisions_and_preserve_order() 
     let persona =
         crate::launch::tests::seed_persona(harness.context.backend().database(), "Persona")
             .to_string();
-    let first = super::lorebooks_tests::create(&harness, "first", "First", Vec::new())
+    let first = super::lorebooks::tests::create(&harness, "first", "First", Vec::new())
         .await
         .lorebook
         .id;
-    let second = super::lorebooks_tests::create(&harness, "second", "Second", Vec::new())
+    let second = super::lorebooks::tests::create(&harness, "second", "Second", Vec::new())
         .await
         .lorebook
         .id;
@@ -123,11 +123,11 @@ async fn persona_binding_commands_replay_compare_revisions_and_preserve_order() 
 async fn character_binding_commands_replay_compare_revisions_and_preserve_order() {
     let harness = harness(Reply::Text("reply"));
     let character = harness.character_id.to_string();
-    let first = super::lorebooks_tests::create(&harness, "first", "First", Vec::new())
+    let first = super::lorebooks::tests::create(&harness, "first", "First", Vec::new())
         .await
         .lorebook
         .id;
-    let second = super::lorebooks_tests::create(&harness, "second", "Second", Vec::new())
+    let second = super::lorebooks::tests::create(&harness, "second", "Second", Vec::new())
         .await
         .lorebook
         .id;
@@ -238,11 +238,11 @@ async fn group_binding_commands_replay_compare_revisions_and_preserve_order() {
     let harness = harness(Reply::Text("reply"));
     let group =
         crate::launch::tests::two_member_group(harness.context.backend().database()).to_string();
-    let first = super::lorebooks_tests::create(&harness, "first", "First", Vec::new())
+    let first = super::lorebooks::tests::create(&harness, "first", "First", Vec::new())
         .await
         .lorebook
         .id;
-    let second = super::lorebooks_tests::create(&harness, "second", "Second", Vec::new())
+    let second = super::lorebooks::tests::create(&harness, "second", "Second", Vec::new())
         .await
         .lorebook
         .id;

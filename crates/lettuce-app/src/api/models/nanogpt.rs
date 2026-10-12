@@ -13,7 +13,7 @@ use lettuce_providers::{NanoGptUsage, NanoGptUsageError, QuotaWindow};
 use lettuce_types::ProviderAccountId;
 use tokio::sync::watch;
 
-use super::{ApiContext, context::WeakApiContext, error::api_error};
+use crate::api::{ApiContext, context::WeakApiContext, error::api_error};
 
 type UsageResult = Result<dto::NanoGptUsageView, ApiError>;
 type UsageWatch = watch::Receiver<Option<UsageResult>>;
@@ -176,7 +176,7 @@ pub(super) fn warning(usage: &NanoGptUsage) -> Option<(String, u8, dto::Provider
 }
 
 async fn fetch(context: &ApiContext, id: ProviderAccountId) -> UsageResult {
-    let account = super::providers::account(context, id.to_string()).await?;
+    let account = crate::api::providers::account(context, id.to_string()).await?;
     let providers = context.blocking(super::ollama::remote_providers).await?;
     let usage = providers
         .nanogpt_usage(&account)
@@ -189,7 +189,7 @@ async fn fetch(context: &ApiContext, id: ProviderAccountId) -> UsageResult {
                     .backend()
                     .database()
                     .record_provider_quota_warning(id, &window, threshold)
-                    .map_err(super::providers::mutations::model_error)
+                    .map_err(crate::api::providers::mutations::model_error)
             })
             .await?;
         if emitted {
@@ -238,7 +238,7 @@ pub async fn provider_nanogpt_usage(
             "application is shutting down",
         ));
     }
-    let id = super::error::parse_id(&request.account_id, "account_id")?;
+    let id = crate::api::error::parse_id(&request.account_id, "account_id")?;
     let (claim, mut result) = context.quota().begin(id, request.refresh, true);
     if let Some(claim) = claim {
         spawn(context, claim);

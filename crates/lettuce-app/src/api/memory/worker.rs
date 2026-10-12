@@ -4,20 +4,24 @@ use lettuce_contracts::ApiError;
 use lettuce_jobs::WorkerId;
 use lettuce_types::{ConversationBranchId, ConversationId};
 
-use super::{
+use crate::api::{
     ApiContext, MemoryJobOutput,
     worker::{WorkerStep, drive},
 };
 
 #[derive(Debug, Default)]
-pub(super) struct MemoryWorkState {
+pub(in crate::api) struct MemoryWorkState {
     scheduler: crate::PostTurnMemoryScheduler,
     pending: Mutex<VecDeque<(ConversationId, ConversationBranchId)>>,
     wake: tokio::sync::Notify,
 }
 
 impl MemoryWorkState {
-    pub(super) fn enqueue(&self, conversation: ConversationId, branch: ConversationBranchId) {
+    pub(in crate::api) fn enqueue(
+        &self,
+        conversation: ConversationId,
+        branch: ConversationBranchId,
+    ) {
         if self.scheduler.enqueue(conversation, branch) {
             self.pending
                 .lock()
@@ -35,20 +39,20 @@ impl MemoryWorkState {
     }
 }
 
-pub(super) struct MemoryWorker {
+pub(in crate::api) struct MemoryWorker {
     context: ApiContext,
     worker_id: WorkerId,
 }
 
 impl MemoryWorker {
-    pub(super) fn new(context: ApiContext) -> Self {
+    pub(in crate::api) fn new(context: ApiContext) -> Self {
         Self {
             context,
             worker_id: WorkerId::new(),
         }
     }
 
-    pub(super) async fn run(&self, shutdown: impl Future<Output = ()>) {
+    pub(in crate::api) async fn run(&self, shutdown: impl Future<Output = ()>) {
         drive(self, shutdown).await;
     }
 }

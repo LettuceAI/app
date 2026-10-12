@@ -6,10 +6,10 @@ use lettuce_memory::{
 use lettuce_types::{ConversationId, DynamicMemoryRunId, ModelProfileId};
 use serde::{Serialize, de::DeserializeOwned};
 
-use super::error::{IntoApiError, api_error, invalid_field, parse_id};
-use super::memory::{EditFailure, live_conversation};
-use super::memory_read::{failure, latest_memory_job};
-use super::{ApiContext, mapping, messages};
+use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
+use super::{EditFailure, live_conversation};
+use super::read::{failure, latest_memory_job};
+use crate::api::{ApiContext, mapping, messages};
 use crate::companion::companion_memory_host::{CompanionMemoryHostError, MemoryGate};
 
 fn gate_error(gate: MemoryGate) -> ApiError {
@@ -100,7 +100,7 @@ where
         .await
 }
 
-pub(super) async fn controlled_atomic<T, R, P>(
+pub(in crate::api) async fn controlled_atomic<T, R, P>(
     context: &ApiContext,
     command: &'static str,
     key: &str,
@@ -280,7 +280,7 @@ impl From<MemoryCycleRevertError> for RevertFailure {
 
 impl From<lettuce_memory::MemoryRepositoryError> for RevertFailure {
     fn from(error: lettuce_memory::MemoryRepositoryError) -> Self {
-        Self(super::memory::memory_error(error))
+        Self(super::memory_error(error))
     }
 }
 
@@ -308,7 +308,7 @@ pub async fn memory_error_dismiss(
             let conversation = live_conversation(database, conversation_id)?;
             let scope = database
                 .read_memory_scope(conversation_id, conversation.revision)
-                .map_err(super::memory::memory_error)?;
+                .map_err(super::memory_error)?;
             let failed = latest_memory_job(context, &scope)?.filter(|job| {
                 scope.dismissed_job != Some(job.id)
                     && matches!(job.state, JobState::Failed | JobState::Interrupted)
@@ -407,7 +407,7 @@ pub async fn memory_cycles(
             let conversation = live_conversation(database, conversation_id)?;
             let scope = database
                 .read_memory_scope(conversation_id, conversation.revision)
-                .map_err(super::memory::memory_error)?;
+                .map_err(super::memory_error)?;
             let mut newest_first = scope.cycles.iter().rev().collect::<Vec<_>>();
             if let Some(after) = after {
                 let position = newest_first

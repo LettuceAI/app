@@ -1,5 +1,5 @@
-use super::tests::{Reply, harness};
-use super::*;
+use crate::api::tests::{Reply, harness};
+use crate::api::*;
 use lettuce_context::{LifecycleStatus, PromptEntryDraft, PromptMetadataDraft, PromptRepository};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_creation::LorebookKeywordRunRepository;
@@ -8,7 +8,7 @@ use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::TimestampMillis;
 use std::sync::Arc;
 
-async fn book(harness: &super::tests::Harness) -> dto::LorebookView {
+async fn book(harness: &crate::api::tests::Harness) -> dto::LorebookView {
     lorebook_create(
         &harness.context,
         dto::LorebookCreateRequest {
@@ -37,12 +37,12 @@ fn request(book: &dto::LorebookView) -> dto::LorebookKeywordsDraftRequest {
     }
 }
 
-fn custom_prompt(harness: &super::tests::Harness) -> lettuce_context::PromptDocument {
+fn custom_prompt(harness: &crate::api::tests::Harness) -> lettuce_context::PromptDocument {
     custom_prompt_for(harness, crate::BuiltInPromptId::LorebookKeywordGenerator)
 }
 
 fn custom_prompt_for(
-    harness: &super::tests::Harness,
+    harness: &crate::api::tests::Harness,
     kind: crate::BuiltInPromptId,
 ) -> lettuce_context::PromptDocument {
     let db = harness.context.backend().database();
@@ -226,9 +226,8 @@ async fn configured_archived_prompt_is_typed_and_cancelled_claim_cannot_write() 
     let admitted = lorebook_keywords_draft(&harness.context, request(&book))
         .await
         .expect("admit");
-    let id =
-        super::lorebook_jobs::request_id("lorebook_keywords_draft", "keywords", &request(&book))
-            .expect("request id");
+    let id = super::jobs::request_id("lorebook_keywords_draft", "keywords", &request(&book))
+        .expect("request id");
     let work = harness
         .context
         .backend()
@@ -301,7 +300,7 @@ async fn project_creation_needs_no_text_model_and_planning_is_typed() {
         .expect("create without model");
     assert_eq!(project.stage, dto::LorebookProjectStage::Created);
     assert!(project.active_job_ids.is_empty());
-    let restored = super::lorebooks_tests::backup_round_trip(db);
+    let restored = super::tests::backup_round_trip(db);
     assert_eq!(
         restored
             .pending_lorebook_project(project.project_id.parse().expect("project id"))
@@ -339,7 +338,10 @@ async fn project_creation_needs_no_text_model_and_planning_is_typed() {
     assert_eq!(current.stage, dto::LorebookProjectStage::Created);
 }
 
-async fn staged_project(harness: &super::tests::Harness, key: &str) -> dto::LorebookProjectView {
+async fn staged_project(
+    harness: &crate::api::tests::Harness,
+    key: &str,
+) -> dto::LorebookProjectView {
     lorebook_project_create(
         &harness.context,
         dto::LorebookProjectCreateRequest {
@@ -354,7 +356,7 @@ async fn staged_project(harness: &super::tests::Harness, key: &str) -> dto::Lore
     .expect("project")
 }
 
-async fn execute(harness: &super::tests::Harness, id: &str) {
+async fn execute(harness: &crate::api::tests::Harness, id: &str) {
     let db = harness.context.backend().database();
     let job = JobStore::get(db, id.parse().expect("job id"))
         .expect("job")
@@ -376,7 +378,7 @@ async fn execute(harness: &super::tests::Harness, id: &str) {
         .expect("execute");
 }
 
-async fn project_get(harness: &super::tests::Harness, id: &str) -> dto::LorebookProjectView {
+async fn project_get(harness: &crate::api::tests::Harness, id: &str) -> dto::LorebookProjectView {
     lorebook_project_get(
         &harness.context,
         dto::LorebookProjectGetRequest {
@@ -600,7 +602,7 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
     );
 }
 
-async fn prepare_stage(harness: &super::tests::Harness, stage: &str) -> (String, String) {
+async fn prepare_stage(harness: &crate::api::tests::Harness, stage: &str) -> (String, String) {
     let project = staged_project(harness, stage).await;
     let plan = lorebook_project_plan(
         &harness.context,
@@ -678,14 +680,14 @@ async fn shutdown_restart_stage(stage: &str, tool: &'static str) {
     let backend = Arc::new(
         crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("backend"),
     );
-    let harness = super::tests::harness_over(
+    let harness = crate::api::tests::harness_over(
         backend,
         Reply::LorebookToolsUntil(tool),
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
         Arc::new(NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::tests::NoImages),
     );
     let (project_id, job_id) = prepare_stage(&harness, stage).await;
     let db = harness.context.backend().database();
@@ -698,7 +700,7 @@ async fn shutdown_restart_stage(stage: &str, tool: &'static str) {
         .expect("claim")
         .expect("work");
     let link =
-        super::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
+        crate::api::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
     let context = harness.context.clone();
     let running = tokio::spawn(async move { work.run(context, Arc::new(Progress)).await });
     loop {
@@ -740,14 +742,14 @@ async fn shutdown_restart_stage(stage: &str, tool: &'static str) {
     let backend = Arc::new(
         crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("reopen"),
     );
-    let restarted = super::tests::harness_over(
+    let restarted = crate::api::tests::harness_over(
         backend,
         Reply::LorebookTools,
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
         Arc::new(NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::tests::NoImages),
     );
     execute(&restarted, &job_id).await;
     assert_eq!(
@@ -797,14 +799,14 @@ async fn deleting_prompt_during_keyword_inference_preserves_restart_and_history(
     let backend = Arc::new(
         crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("backend"),
     );
-    let harness = super::tests::harness_over(
+    let harness = crate::api::tests::harness_over(
         backend,
         Reply::UntilCancelled,
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
         Arc::new(NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::tests::NoImages),
     );
     let book = book(&harness).await;
     let prompt = custom_prompt(&harness);
@@ -831,7 +833,7 @@ async fn deleting_prompt_during_keyword_inference_preserves_restart_and_history(
         .expect("claim")
         .expect("work");
     let link =
-        super::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
+        crate::api::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
     let context = harness.context.clone();
     let running = tokio::spawn(async move { work.run(context, Arc::new(Progress)).await });
     harness.provider.entered.notified().await;
@@ -871,14 +873,14 @@ async fn deleting_prompt_during_keyword_inference_preserves_restart_and_history(
     let backend = Arc::new(
         crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("reopen"),
     );
-    let restarted = super::tests::harness_over(
+    let restarted = crate::api::tests::harness_over(
         backend,
         Reply::Text(r#"{"tool":"write_lorebook_keywords","arguments":{"keywords":["Coast"]}}"#),
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
         Arc::new(NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::tests::NoImages),
     );
     assert_eq!(
         lorebook_keywords_draft(&restarted.context, request)
@@ -909,7 +911,7 @@ async fn deleting_prompt_during_keyword_inference_preserves_restart_and_history(
 async fn entry_force_uses_catalog_and_save_is_atomic_and_replayable() {
     let harness = harness(Reply::LorebookTools);
     let book = book(&harness).await;
-    let conversation = super::tests::launch(&harness, "draft-source").await;
+    let conversation = crate::api::tests::launch(&harness, "draft-source").await;
     let open = conversation_open(
         &harness.context,
         dto::ConversationOpenRequest {
@@ -981,11 +983,7 @@ async fn entry_force_uses_catalog_and_save_is_atomic_and_replayable() {
         lorebook_id: book.lorebook.id.clone(),
         expected_revision: book.lorebook.revision,
         mutations: vec![dto::LorebookEntryMutationInput::Add {
-            entry: super::lorebooks_tests::entry(
-                &draft.title,
-                &draft.content,
-                Some(&draft.keywords[0]),
-            ),
+            entry: super::tests::entry(&draft.title, &draft.content, Some(&draft.keywords[0])),
             index: None,
         }],
     };
@@ -1040,7 +1038,7 @@ async fn planner_failure_is_typed_and_a_new_key_retries() {
 async fn deleting_lorebook_during_entry_inference_keeps_frozen_source_history() {
     let harness = harness(Reply::UntilCancelled);
     let book = book(&harness).await;
-    let conversation = super::tests::launch(&harness, "entry-delete-source").await;
+    let conversation = crate::api::tests::launch(&harness, "entry-delete-source").await;
     let open = conversation_open(
         &harness.context,
         dto::ConversationOpenRequest {
@@ -1084,7 +1082,7 @@ async fn deleting_lorebook_during_entry_inference_keeps_frozen_source_history() 
         .expect("claim")
         .expect("work");
     let link =
-        super::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
+        crate::api::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
     let context = harness.context.clone();
     let running = tokio::spawn(async move { work.run(context, Arc::new(Progress)).await });
     harness.provider.entered.notified().await;
@@ -1147,7 +1145,7 @@ async fn deleting_lorebook_during_entry_inference_keeps_frozen_source_history() 
 async fn configured_archived_entry_prompt_is_refused_before_job_admission() {
     let harness = harness(Reply::LorebookTools);
     let book = book(&harness).await;
-    let chat = super::tests::launch(&harness, "archived-entry").await;
+    let chat = crate::api::tests::launch(&harness, "archived-entry").await;
     let prompt = custom_prompt_for(&harness, crate::BuiltInPromptId::LorebookEntryWriter);
     let db = harness.context.backend().database();
     let mut stored = GlobalSettingsStore::load(db).expect("settings");
@@ -1222,7 +1220,7 @@ async fn concurrent_keyword_admissions_replay_one_frozen_job() {
     }
 }
 
-async fn run_standard_runner(harness: &super::tests::Harness) {
+async fn run_standard_runner(harness: &crate::api::tests::Harness) {
     let runner = JobRunner::new(harness.context.clone(), JobHandlers::standard());
     while runner.run_once().await.expect("runner") {}
     runner.wait_idle().await;
@@ -1232,7 +1230,7 @@ async fn run_standard_runner(harness: &super::tests::Harness) {
 async fn standard_runner_executes_entry_and_staged_planner_jobs() {
     let harness = harness(Reply::LorebookTools);
     let book = book(&harness).await;
-    let conversation = super::tests::launch(&harness, "runner-source").await;
+    let conversation = crate::api::tests::launch(&harness, "runner-source").await;
     let open = conversation_open(
         &harness.context,
         dto::ConversationOpenRequest {
@@ -1304,14 +1302,14 @@ async fn planner_retry_job_runs_and_the_project_leaves_planning() {
     let backend = Arc::new(
         crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("backend"),
     );
-    let failing = super::tests::harness_over(
+    let failing = crate::api::tests::harness_over(
         Arc::clone(&backend),
         Reply::Text("invalid planner response"),
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
         Arc::new(NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::tests::NoImages),
     );
     let created = staged_project(&failing, "retry-project").await;
     let plan = lorebook_project_plan(
@@ -1328,14 +1326,14 @@ async fn planner_retry_job_runs_and_the_project_leaves_planning() {
     let failed = project_get(&failing, &created.project_id).await;
     assert_eq!(failed.stage, dto::LorebookProjectStage::PlanFailed);
     drop(failing);
-    let working = super::tests::harness_over(
+    let working = crate::api::tests::harness_over(
         backend,
         Reply::LorebookTools,
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
         Arc::new(NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::tests::NoImages),
     );
     let retry = lorebook_project_plan(
         &working.context,
@@ -1553,7 +1551,7 @@ async fn lost_races_report_conflict_and_the_running_batch() {
                         lettuce_types::Revision::new(created.revision),
                         harness.context.now(),
                     )
-                    .map_err(|error| super::lorebooks::Failure(lorebook_jobs::failure(error)))
+                    .map_err(|error| super::Failure(super::jobs::failure(error)))
             },
         )
         .map(|_| ())
@@ -1586,7 +1584,7 @@ async fn lost_races_report_conflict_and_the_running_batch() {
                         spec,
                         run,
                     )
-                    .map_err(|error| super::lorebooks::Failure(lorebook_jobs::failure(error)))
+                    .map_err(|error| super::Failure(super::jobs::failure(error)))
             },
         )
         .map(|_| ())
@@ -1607,7 +1605,7 @@ async fn lost_races_report_conflict_and_the_running_batch() {
     .expect("approve");
     let stale = lettuce_creation::StagedLorebookRepository::load_staged_lorebook(db, request_id)
         .expect("stale run");
-    let selected = lorebook_projects::overrides(&harness.context).expect("overrides");
+    let selected = super::projects::overrides(&harness.context).expect("overrides");
     let (inputs, writers) = harness
         .context
         .backend()
@@ -1629,7 +1627,7 @@ async fn lost_races_report_conflict_and_the_running_batch() {
     )
     .await
     .expect("first batch");
-    let lost = lorebook_projects::admit_batch(
+    let lost = super::projects::admit_batch(
         &harness.context,
         "race-second",
         "digest",

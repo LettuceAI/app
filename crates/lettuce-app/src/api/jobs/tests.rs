@@ -1060,7 +1060,9 @@ impl crate::api::ModelLoader for HealthModels {
         &self,
         _context: &ApiContext,
     ) -> crate::api::ModelLoad<Arc<dyn crate::MemoryEmbeddingEngine>> {
-        crate::api::ModelLoad::Loaded(crate::api::embedding_health::tests::engine(self.constant))
+        crate::api::ModelLoad::Loaded(crate::api::memory::embedding_health::tests::engine(
+            self.constant,
+        ))
     }
     fn emotion(
         &self,

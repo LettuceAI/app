@@ -1,5 +1,5 @@
-use super::tests::{Reply, harness, launch};
-use super::*;
+use crate::api::tests::{Reply, harness, launch};
+use crate::api::*;
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_conversations::ConversationReader;
 use lettuce_memory::{MemoryRepository, MemorySummaryRepository};
@@ -596,7 +596,7 @@ impl crate::MemoryEmbeddingEngine for ReadTokenizer {
 async fn memory_get_recounts_unknown_items_and_summary_once_without_embedding_or_revision_changes()
 {
     let models = std::sync::Arc::new(ReadTokenizerModels::default());
-    let harness = super::tests::harness_in(
+    let harness = crate::api::tests::harness_in(
         Reply::Text("reply"),
         std::sync::Arc::new(lettuce_jobs::SystemClock),
         None,
@@ -811,16 +811,16 @@ async fn a_source_free_user_summary_is_used_by_the_manual_chat_prompt() {
     )
     .await
     .expect("summary");
-    super::tests::send(
+    crate::api::tests::send(
         &harness,
         &conversation_id,
         "manual-summary-turn",
         "Hello",
-        std::sync::Arc::new(super::tests::RecordingStream::default()),
+        std::sync::Arc::new(crate::api::tests::RecordingStream::default()),
     )
     .await
     .expect("send");
-    super::turns_tests::run_generation(&harness).await;
+    crate::api::turns_tests::run_generation(&harness).await;
     let requests = harness.provider.requests.lock().expect("requests");
     let context = serde_json::to_string(&requests.last().expect("generation request").context)
         .expect("context");
@@ -836,7 +836,7 @@ async fn memory_status_reports_real_model_and_embedding_failures_and_lease_pause
     for case in ["model", "embedding", "lease"] {
         let harness = harness(Reply::Text("reply"));
         let (conversation_id, _) =
-            super::turns_tests::replied_chat(&harness, &format!("status-{case}")).await;
+            crate::api::turns_tests::replied_chat(&harness, &format!("status-{case}")).await;
         if case == "embedding" {
             memory_add(
                 &harness.context,
@@ -1502,14 +1502,14 @@ async fn parent_delete_after_never_changes_a_forked_childs_memory() {
 #[tokio::test]
 async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
     for mode in ["equal", "aba", "cold"] {
-    let harness = super::tests::harness_in(
+    let harness = crate::api::tests::harness_in(
         Reply::Text("reply"),
         std::sync::Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
-        std::sync::Arc::new(super::inspect_tests::AllModels),
+        std::sync::Arc::new(crate::api::inspect_tests::AllModels),
     );
-    let character = super::tests::create_character(
+    let character = crate::api::tests::create_character(
         harness.context.backend().database(),
         "Pooled",
         lettuce_characters::CharacterDefaults {

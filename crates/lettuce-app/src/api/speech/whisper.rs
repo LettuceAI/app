@@ -283,7 +283,7 @@ pub async fn whisper_preload(
         .blocking(move |context| {
             let _folder_access = context.local_models().folder_access();
             let root = whisper_root(context)?;
-            if root.starts_with(crate::api::local_models::models_root(context)?) {
+            if root.starts_with(crate::api::models::local::models_root(context)?) {
                 crate::api::jobs::local::folder_move_active(context)?;
             }
             let model = resolve_model(context, request.model_id.as_deref())?;

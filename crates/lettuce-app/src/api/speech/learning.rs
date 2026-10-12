@@ -581,7 +581,7 @@ pub async fn asr_learning_import(
                         "no media store is open",
                     )
                 })?;
-                let path = crate::api::local_models::local_path(&request.source, "source")?;
+                let path = crate::api::models::local::local_path(&request.source, "source")?;
                 let legacy = serde_json::from_value(document).map_err(|_| {
                     crate::api::error::invalid_field("source", "the legacy library is invalid")
                 })?;

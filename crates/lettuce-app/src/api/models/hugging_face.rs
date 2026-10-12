@@ -9,10 +9,10 @@ use lettuce_model_hub::{HfBrowseMode, HfSearch, RunnabilityFile, RunnabilityHard
 use lettuce_models::ProviderAccountRepository;
 use lettuce_types::ProviderAccountId;
 
-use super::ApiContext;
-use super::error::{api_error, hf_error, invalid_field, parse_id};
-use super::local_models::runnability_defaults;
+use super::local::runnability_defaults;
 use crate::HuggingFaceBrowser;
+use crate::api::ApiContext;
+use crate::api::error::{api_error, hf_error, invalid_field, parse_id};
 
 fn browser(context: &ApiContext) -> Result<Arc<HuggingFaceBrowser>, ApiError> {
     context.local_models().browser(context)
@@ -169,7 +169,7 @@ pub async fn hf_author(
             },
         },
         Err(error) => dto::HfAuthorProfile::Unavailable {
-            failure: error.failure().map(super::error::hf_failure),
+            failure: error.failure().map(crate::api::error::hf_failure),
         },
     };
     Ok(dto::HfAuthor {
@@ -301,10 +301,10 @@ pub async fn hf_runnability(
             .map(|score| dto::HfRunnabilityScore {
                 filename: score.filename,
                 score: score.score,
-                label: super::local_models::runnability_label(score.label),
+                label: super::local::runnability_label(score.label),
                 fits_in_ram: score.fits_in_ram,
                 fits_in_vram: score.fits_in_vram,
-                gpu_mode: super::local_models::gpu_mode(score.gpu_mode),
+                gpu_mode: super::local::gpu_mode(score.gpu_mode),
             })
             .collect(),
     })
@@ -369,7 +369,7 @@ fn plan_report(
         headroom_bytes: report.headroom_bytes,
         vram_budget_bytes: report.vram_budget_bytes,
         score: report.score.score,
-        label: super::local_models::runnability_label(report.score.label),
+        label: super::local::runnability_label(report.score.label),
         fits_vram: report.score.fits_vram,
         gpu_mode: plan_gpu_mode(report.score.gpu_mode),
         gpu_score: report.score.gpu_score,
@@ -535,11 +535,11 @@ pub async fn hf_download(
     request: dto::HfDownloadRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
     if cfg!(any(target_os = "android", target_os = "ios")) {
-        return Err(super::local_models::unsupported_on_mobile(
+        return Err(super::local::unsupported_on_mobile(
             "Downloading local models",
         ));
     }
-    super::jobs::admit_gguf_download(context, request).await
+    crate::api::jobs::admit_gguf_download(context, request).await
 }
 
 fn token_status(status: &lettuce_model_hub::HfAuthStatus) -> dto::HfTokenStatus {

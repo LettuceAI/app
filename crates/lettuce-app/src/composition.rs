@@ -27,7 +27,7 @@ pub struct AppBackend {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     llama_events: Option<crate::LlamaEventSink>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    llama_routes: Arc<crate::api::local_runtime_events::RuntimeEventRouter>,
+    llama_routes: Arc<crate::api::models::local_runtime_events::RuntimeEventRouter>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) local_diffusion:
         Option<Arc<lettuce_image_generation::sd_runtime::server::LocalDiffusionEngine>>,
@@ -97,7 +97,7 @@ impl AppBackend {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn local_runtime_events(
         &self,
-    ) -> &Arc<crate::api::local_runtime_events::RuntimeEventRouter> {
+    ) -> &Arc<crate::api::models::local_runtime_events::RuntimeEventRouter> {
         &self.llama_routes
     }
 

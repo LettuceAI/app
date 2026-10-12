@@ -22,7 +22,7 @@ use super::error::{IntoApiError, api_error};
 use super::events::{ApiEventSink, GenerationEventSink};
 use super::files::FileAccess;
 use super::jobs::JobHostState;
-use super::local_models::LocalModelsState;
+use super::models::local::LocalModelsState;
 use super::models::{ApiEmbedding, ApiEmotion, InstalledModels, ModelLoader, ModelSlots};
 use crate::{
     AppActiveUsageTracker, AppBackend, AppDatabaseLocation, CompanionEmotionEngine,
@@ -93,7 +93,7 @@ struct ApiContextInner {
     wake: tokio::sync::Notify,
     shutdown: CancellationToken,
     jobs: JobHostState,
-    memory_work: super::memory_worker::MemoryWorkState,
+    memory_work: super::memory::worker::MemoryWorkState,
     conversations_changed: Arc<tokio::sync::Notify>,
     settings_changed: Arc<tokio::sync::Notify>,
     settings_sections: Arc<std::sync::Mutex<Vec<&'static str>>>,
@@ -104,7 +104,7 @@ struct ApiContextInner {
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     provider_writes: tokio::sync::Mutex<()>,
-    quota: super::nanogpt::QuotaState,
+    quota: super::models::nanogpt::QuotaState,
     quota_inference: Arc<dyn InferencePort>,
     content_filter: Arc<lettuce_inference::content_filter::ContentFilter>,
     quota_images: Arc<dyn ImageProviderPort>,
@@ -138,7 +138,7 @@ impl ApiContext {
         {
             return Ok(billing);
         }
-        Ok(Arc::new(super::ollama::remote_providers(self)?))
+        Ok(Arc::new(super::models::ollama::remote_providers(self)?))
     }
     pub(super) fn sync_state(&self) -> &super::sync::SyncState { &self.inner.sync }
 
@@ -233,17 +233,17 @@ impl ApiContext {
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            parts.inference = Arc::new(super::local_runtime_events::RoutedInference {
+            parts.inference = Arc::new(super::models::local_runtime_events::RoutedInference {
                 inference: parts.inference,
                 router: parts.backend.local_runtime_events().clone(),
             });
         }
         let quota_signal = Arc::new(std::sync::OnceLock::new());
-        let quota_inference = Arc::new(super::nanogpt::QuotaInference {
+        let quota_inference = Arc::new(super::models::nanogpt::QuotaInference {
             inference: parts.inference.clone(),
             signal: quota_signal.clone(),
         });
-        let quota_images = Arc::new(super::nanogpt::QuotaImages {
+        let quota_images = Arc::new(super::models::nanogpt::QuotaImages {
             provider: parts.image_provider.clone(),
             signal: quota_signal.clone(),
         });
@@ -259,7 +259,7 @@ impl ApiContext {
                 wake: tokio::sync::Notify::new(),
                 shutdown: CancellationToken::new(),
                 jobs,
-                memory_work: super::memory_worker::MemoryWorkState::default(),
+                memory_work: super::memory::worker::MemoryWorkState::default(),
                 conversations_changed,
                 settings_changed,
                 settings_sections,
@@ -270,7 +270,7 @@ impl ApiContext {
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 provider_writes: tokio::sync::Mutex::new(()),
-                quota: super::nanogpt::QuotaState::default(),
+                quota: super::models::nanogpt::QuotaState::default(),
                 quota_inference,
                 content_filter,
                 quota_images,
@@ -720,7 +720,7 @@ impl ApiContext {
         self.inner.parts.database_files.as_ref()
     }
 
-    pub(super) fn memory_work(&self) -> &super::memory_worker::MemoryWorkState {
+    pub(super) fn memory_work(&self) -> &super::memory::worker::MemoryWorkState {
         &self.inner.memory_work
     }
 
@@ -1108,7 +1108,7 @@ impl WeakApiContext {
 }
 
 impl ApiContext {
-    pub(crate) fn quota(&self) -> &super::nanogpt::QuotaState {
+    pub(crate) fn quota(&self) -> &super::models::nanogpt::QuotaState {
         &self.inner.quota
     }
 }

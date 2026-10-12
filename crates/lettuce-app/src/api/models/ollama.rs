@@ -9,8 +9,8 @@ use lettuce_providers::{OllamaHubError, RemoteProviders};
 use lettuce_settings::SecretStore;
 use lettuce_types::ProviderAccountId;
 
-use super::ApiContext;
-use super::error::{api_error, invalid_field, parse_id};
+use crate::api::ApiContext;
+use crate::api::error::{api_error, invalid_field, parse_id};
 
 pub(crate) fn ollama_error(error: OllamaHubError) -> ApiError {
     let failure = match &error {
@@ -120,5 +120,5 @@ pub async fn ollama_pull(
     context: &ApiContext,
     request: dto::OllamaPullRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
-    super::jobs::admit_model_pull(context, request).await
+    crate::api::jobs::admit_model_pull(context, request).await
 }

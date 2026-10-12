@@ -465,7 +465,7 @@ fn notice_code(
     }
 }
 
-impl super::ApiContext {
+impl crate::api::ApiContext {
     pub(crate) fn register_runtime_turn_events(
         &self,
         turn_id: GenerationTurnId,

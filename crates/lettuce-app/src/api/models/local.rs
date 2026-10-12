@@ -14,8 +14,8 @@ use lettuce_models::{
 use lettuce_settings::{DeviceSettingsStore, GlobalSettingsStore};
 use lettuce_types::ModelProfileId;
 
-use super::ApiContext;
-use super::error::{api_error, invalid_field, parse_id};
+use crate::api::ApiContext;
+use crate::api::error::{api_error, invalid_field, parse_id};
 use crate::{
     HuggingFaceBrowser, LocalModelSidecars, ModelFileReference, ModelFileReferences, ModelPathField,
 };
@@ -754,7 +754,7 @@ fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
             };
             if let Some(job) = page.items.iter().find(|job| {
                 if kind == JobKind::Maintenance {
-                    super::jobs::is_lora_discovery(job)
+                    crate::api::jobs::is_lora_discovery(job)
                 } else {
                     job.resources.contains(&ResourceClass::Process)
                 }
@@ -826,7 +826,7 @@ pub(crate) fn folder_busy(
             }
         }
     }
-    if let Some((job_id, path)) = super::jobs::speech::active_local_files(context, root)?
+    if let Some((job_id, path)) = crate::api::jobs::speech::active_local_files(context, root)?
         && Path::new(&path).starts_with(root)
     {
         return Ok(Some(dto::LocalModelsBusyReason::SpeechWorkActive {
@@ -852,7 +852,7 @@ pub async fn local_models_dir_set(
     if cfg!(any(target_os = "android", target_os = "ios")) {
         return Err(unsupported_on_mobile("Moving the models folder"));
     }
-    super::jobs::admit_models_folder_move(context, request).await
+    crate::api::jobs::admit_models_folder_move(context, request).await
 }
 
 fn sidecar_path(source: Option<&dto::FileSource>, field: &str) -> Result<Option<String>, ApiError> {

@@ -1,6 +1,6 @@
 //! Optional memory-model inventory, selection and comparison.
-use super::error::{api_error, invalid_field, model_error};
-use super::{ApiContext, ModelLoad};
+use crate::api::error::{api_error, invalid_field, model_error};
+use crate::api::{ApiContext, ModelLoad};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, RequiredModel};
 use lettuce_jobs::{JobStore, handle::CancellationToken};
 use lettuce_model_hub::{CompanionEmotionInstallStatus, EmbeddingModelFamily};
@@ -95,7 +95,7 @@ pub async fn embedding_remove(
                         .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
                         .is_some_and(|job| !job.is_terminal())
                 {
-                    return Err(super::local_models::busy(
+                    return Err(crate::api::models::local::busy(
                         dto::LocalModelsBusyReason::InstallActive {
                             job_id: id.to_string(),
                         },
@@ -135,9 +135,9 @@ pub async fn embedding_compare(
                 .retained_model_roots_for_guard()?
                 .and_then(|roots| roots.embedding)
                 && std::path::Path::new(&root)
-                    .starts_with(super::local_models::models_root(context)?)
+                    .starts_with(crate::api::models::local::models_root(context)?)
             {
-                super::jobs::local::folder_move_active(context)?;
+                crate::api::jobs::local::folder_move_active(context)?;
             }
             let engine = match context.models().resolve_embedding(context) {
                 ModelLoad::Loaded(engine) => engine,
@@ -248,8 +248,8 @@ pub async fn embedding_install(
     let (root, pin) = context
         .blocking(move |context| {
             let root = root(context)?;
-            if root.starts_with(super::local_models::models_root(context)?) {
-                super::jobs::local::folder_move_active(context)?;
+            if root.starts_with(crate::api::models::local::models_root(context)?) {
+                crate::api::jobs::local::folder_move_active(context)?;
             }
             let tls = context
                 .backend()
@@ -263,18 +263,20 @@ pub async fn embedding_install(
             Ok((root, pin))
         })
         .await?;
-    let detail = serde_json::to_value(super::jobs::local::LocalModelJobDetail::EmbeddingInstall {
-        root: root.clone(),
-        pin: pin.clone(),
-        enable_dynamic_memory: request.enable_dynamic_memory,
-    })
+    let detail = serde_json::to_value(
+        crate::api::jobs::local::LocalModelJobDetail::EmbeddingInstall {
+            root: root.clone(),
+            pin: pin.clone(),
+            enable_dynamic_memory: request.enable_dynamic_memory,
+        },
+    )
     .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
     let plan = crate::embedding_install_plan(&root, &pin);
-    super::jobs::install::admit_install_with_detail(
+    crate::api::jobs::install::admit_install_with_detail(
         context,
-        super::jobs::InstallWork::Artifact {
+        crate::api::jobs::InstallWork::Artifact {
             plan,
-            finish: Box::new(super::jobs::InstallFinish::Embedding {
+            finish: Box::new(crate::api::jobs::InstallFinish::Embedding {
                 root,
                 pin,
                 enable_dynamic_memory: request.enable_dynamic_memory,
@@ -293,8 +295,8 @@ pub async fn companion_emotion_install(context: &ApiContext) -> Result<dto::JobA
                 .and_then(|roots| roots.thymos)
                 .map(std::path::PathBuf::from)
                 .ok_or_else(|| model_error(ApiErrorCode::ModelRequired, RequiredModel::Emotion))?;
-            if root.starts_with(super::local_models::models_root(context)?) {
-                super::jobs::local::folder_move_active(context)?;
+            if root.starts_with(crate::api::models::local::models_root(context)?) {
+                crate::api::jobs::local::folder_move_active(context)?;
             }
             let browser = context.local_models().browser(context)?;
             let remote = tokio::runtime::Handle::current()
@@ -303,15 +305,15 @@ pub async fn companion_emotion_install(context: &ApiContext) -> Result<dto::JobA
             Ok((root, remote))
         })
         .await?;
-    super::jobs::admit_install(
+    crate::api::jobs::admit_install(
         context,
-        super::jobs::InstallWork::Artifact {
+        crate::api::jobs::InstallWork::Artifact {
             plan: crate::ArtifactInstallPlan {
                 install_id: String::new(),
                 root: root.clone(),
                 artifacts: Vec::new(),
             },
-            finish: Box::new(super::jobs::InstallFinish::CompanionEmotion { root, remote }),
+            finish: Box::new(crate::api::jobs::InstallFinish::CompanionEmotion { root, remote }),
         },
     )
     .await

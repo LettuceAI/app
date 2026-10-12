@@ -15,9 +15,9 @@ use lettuce_jobs::{SystemClock, handle::CancellationToken};
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{CharacterId, ConversationId};
 
-use super::models::{TurnOperation, require_conversation_models};
-use super::tests::{Harness, Reply, create_character, harness_in};
-use super::{
+use super::{TurnOperation, require_conversation_models};
+use crate::api::tests::{Harness, Reply, create_character, harness_in};
+use crate::api::{
     ApiContext, ModelLoad, ModelLoader, conversation_launch_direct, conversation_open,
     conversation_send,
 };
@@ -213,7 +213,7 @@ async fn send(harness: &Harness, conversation_id: &str, key: &str) -> Result<(),
 
 struct NoStream;
 
-impl super::GenerationEventSink for NoStream {
+impl crate::api::GenerationEventSink for NoStream {
     fn emit(&self, _event: dto::GenerationEvent) {}
 }
 
@@ -369,7 +369,7 @@ async fn startup_on_a_fresh_install_fetches_and_loads_nothing() {
         Some(root.clone()),
         Arc::clone(&models) as Arc<dyn ModelLoader>,
     );
-    let workers = super::startup(&harness.context).await.expect("startup");
+    let workers = crate::api::startup(&harness.context).await.expect("startup");
     tokio::time::timeout(Duration::from_secs(30), workers.started())
         .await
         .expect("workers started");
@@ -477,7 +477,7 @@ async fn adopting_legacy_embedding_files_forgets_a_missing_model() {
     std::fs::write(legacy.join("v4-tokenizer.json"), b"v4 tokenizer").expect("tokenizer");
     models.installed.store(true, Ordering::SeqCst);
     models.loadable.store(true, Ordering::SeqCst);
-    let workers = super::startup(&harness.context).await.expect("startup");
+    let workers = crate::api::startup(&harness.context).await.expect("startup");
     require_conversation_models(&harness.context, conversation, TurnOperation::Send)
         .await
         .expect("the adopted model loads");
@@ -493,7 +493,7 @@ fn without(models: &CountingModels, model: RequiredModel) {
 }
 
 async fn missing_in_list_and_view(harness: &Harness, conversation_id: &str) -> Vec<RequiredModel> {
-    let listed = super::conversations_list(
+    let listed = crate::api::conversations_list(
         &harness.context,
         dto::ConversationsListRequest {
             lifecycle: Some(dto::LifecycleFilter::All),
@@ -593,13 +593,13 @@ async fn a_model_change_tells_every_window_to_re_read_missing_models() {
     let harness = harness_with_models(Arc::clone(&models));
     harness.context.models_changed();
     assert_eq!(
-        super::tests::api_events(&harness),
+        crate::api::tests::api_events(&harness),
         vec![dto::ApiEvent::RequiredModelsChanged]
     );
 }
 
 async fn settle_generation(harness: &Harness) {
-    let worker = super::ConversationGenerationWorker::new(harness.context.clone());
+    let worker = crate::api::ConversationGenerationWorker::new(harness.context.clone());
     while worker.run_once().await.expect("worker") {}
 }
 
@@ -618,7 +618,7 @@ async fn regenerate(
     .await
     .expect("open")
     .revision;
-    super::conversation_regenerate(
+    crate::api::conversation_regenerate(
         &harness.context,
         dto::ConversationRegenerateRequest {
             conversation_id: conversation_id.into(),
@@ -673,7 +673,7 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
     settle_generation(&harness).await;
 
     enable_dynamic_memory(&harness);
-    super::conversation_settings_update(
+    crate::api::conversation_settings_update(
         &harness.context,
         dto::ConversationSettingsUpdateRequest {
             conversation_id: chat.clone(),
@@ -714,7 +714,7 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
     .expect("open");
     assert_eq!(after.revision, before.revision);
     assert!(after.pending_turn_id.is_none());
-    let continued = super::conversation_continue(
+    let continued = crate::api::conversation_continue(
         &harness.context,
         dto::ConversationContinueRequest {
             conversation_id: chat.clone(),
@@ -729,7 +729,7 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
     .expect_err("a continue retrieves memory too");
     assert_eq!(continued.code, ApiErrorCode::ModelRequired);
     assert_eq!(model_of(&continued), Some(RequiredModel::Embedding));
-    let retried = super::conversation_retry(
+    let retried = crate::api::conversation_retry(
         &harness.context,
         dto::ConversationRetryRequest {
             conversation_id: chat.clone(),
@@ -794,7 +794,7 @@ async fn a_companion_send_without_an_emotion_engine_is_model_required() {
             .begin_send(&command, harness.context.now(), &CancellationToken::new())
             .expect_err("no emotion engine");
     assert!(matches!(error, crate::CompanionTurnError::EmotionRequired));
-    let api = super::error::IntoApiError::into_api_error(error);
+    let api = crate::api::error::IntoApiError::into_api_error(error);
     assert_eq!(api.code, ApiErrorCode::ModelRequired);
     assert_eq!(
         api.details,
@@ -895,13 +895,13 @@ async fn embedding_comparison_uses_one_engine_per_call_and_preserves_raw_cosine(
         left: "same".into(),
         right: "opposite".into(),
     };
-    let result = super::embedding_compare(&harness.context, request())
+    let result = crate::api::embedding_compare(&harness.context, request())
         .await
         .expect("compare");
     assert_eq!(result.cosine_similarity, -1.0);
     assert_eq!(result.dimensions, 64);
     assert_eq!(models.loads.load(Ordering::SeqCst), 1);
-    super::embedding_compare(&harness.context, request())
+    crate::api::embedding_compare(&harness.context, request())
         .await
         .expect("compare again");
     assert_eq!(
@@ -916,17 +916,17 @@ async fn embedding_comparison_uses_one_engine_per_call_and_preserves_raw_cosine(
     database
         .update_device_settings(&|current| current.clone_from(&settings))
         .expect("keep loaded");
-    super::embedding_compare(&harness.context, request())
+    crate::api::embedding_compare(&harness.context, request())
         .await
         .expect("cache engine");
-    super::embedding_compare(&harness.context, request())
+    crate::api::embedding_compare(&harness.context, request())
         .await
         .expect("reuse engine");
     assert_eq!(models.loads.load(Ordering::SeqCst), 3);
-    super::embedding_unload(&harness.context)
+    crate::api::embedding_unload(&harness.context)
         .await
         .expect("unload");
-    super::embedding_compare(&harness.context, request())
+    crate::api::embedding_compare(&harness.context, request())
         .await
         .expect("load after unload");
     assert_eq!(models.loads.load(Ordering::SeqCst), 4);
@@ -949,14 +949,14 @@ async fn embedding_comparison_rejects_invalid_vectors_and_missing_models() {
         right: "same".into(),
     };
     assert_eq!(
-        super::embedding_compare(&harness.context, request())
+        crate::api::embedding_compare(&harness.context, request())
             .await
             .expect_err("NaN rejected")
             .code,
         ApiErrorCode::ModelUnavailable
     );
     let absent = harness_with_models(CountingModels::new(false, false));
-    let error = super::embedding_compare(&absent.context, request())
+    let error = crate::api::embedding_compare(&absent.context, request())
         .await
         .expect_err("missing model");
     assert_eq!(error.code, ApiErrorCode::ModelRequired);
@@ -978,13 +978,13 @@ async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
         Arc::new(SystemClock),
         None,
         Some(folder.clone()),
-        Arc::new(super::NoModels),
+        Arc::new(crate::api::NoModels),
     );
     let database = harness.context.backend().database();
     crate::EmbeddingModelCoordinator::new(&root, database)
         .adopt_legacy_install(&root)
         .expect("adopt");
-    let inventory = super::embedding_status(&harness.context)
+    let inventory = crate::api::embedding_status(&harness.context)
         .await
         .expect("status");
     assert_eq!(inventory.len(), 1);
@@ -993,11 +993,11 @@ async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
     let v4 = || dto::EmbeddingModelRequest {
         family: dto::EmbeddingFamily::LettuceEmbV4,
     };
-    super::embedding_choose(&harness.context, v4())
+    crate::api::embedding_choose(&harness.context, v4())
         .await
         .expect("choose installed");
     assert_eq!(
-        super::embedding_choose(
+        crate::api::embedding_choose(
             &harness.context,
             dto::EmbeddingModelRequest {
                 family: dto::EmbeddingFamily::LettuceEidosV5
@@ -1031,12 +1031,12 @@ async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
         .expect("admit");
     harness.context.jobs().put_install(
         admitted.job.id,
-        super::jobs::InstallWork::Artifact {
+        crate::api::jobs::InstallWork::Artifact {
             plan,
-            finish: Box::new(super::jobs::InstallFinish::Files),
+            finish: Box::new(crate::api::jobs::InstallFinish::Files),
         },
     );
-    let error = super::embedding_remove(&harness.context, v4())
+    let error = crate::api::embedding_remove(&harness.context, v4())
         .await
         .expect_err("install busy");
     assert_eq!(error.code, ApiErrorCode::Busy);
@@ -1047,7 +1047,7 @@ async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
         })
     ));
     assert_eq!(
-        super::embedding_status(&harness.context)
+        crate::api::embedding_status(&harness.context)
             .await
             .expect("kept")
             .len(),
@@ -1055,18 +1055,18 @@ async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
     );
     harness.context.jobs().forget_install(admitted.job.id);
     assert!(
-        super::embedding_remove(&harness.context, v4())
+        crate::api::embedding_remove(&harness.context, v4())
             .await
             .expect("remove")
     );
     assert!(
-        super::embedding_status(&harness.context)
+        crate::api::embedding_status(&harness.context)
             .await
             .expect("empty")
             .is_empty()
     );
     assert!(
-        !super::embedding_remove(&harness.context, v4())
+        !crate::api::embedding_remove(&harness.context, v4())
             .await
             .expect("repeat removal")
     );
@@ -1099,14 +1099,14 @@ async fn headless_model_guards_reach_missing_model_errors_and_install_recovery()
         assert_eq!(error.code, ApiErrorCode::ModelRequired);
         assert_eq!(error.details, Some(ApiErrorDetails::Model { model }));
     }
-    let status = super::companion_emotion_status(context)
+    let status = crate::api::companion_emotion_status(context)
         .await
         .expect_err("missing emotion root");
     assert_eq!(status.code, ApiErrorCode::ModelRequired);
-    let status = super::embedding_status(context)
+    let status = crate::api::embedding_status(context)
         .await
         .expect_err("missing embedding root");
     assert_eq!(status.code, ApiErrorCode::ModelRequired);
-    super::jobs::install::recover_queued_installs(context)
+    crate::api::jobs::install::recover_queued_installs(context)
         .expect("no roots do not abort install recovery");
 }

@@ -21,19 +21,12 @@ mod conversation_feed;
 mod conversation_settings;
 mod conversations;
 mod copies;
-mod embedding_health;
 mod error;
 pub(crate) mod events;
 mod files;
-mod hugging_face;
 mod image;
 mod inspect;
 mod jobs;
-mod local_models;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub(crate) mod local_runtime_events;
-mod lorebook_jobs;
-mod lorebook_projects;
 mod lorebooks;
 mod maintenance;
 mod maintenance_jobs;
@@ -42,13 +35,8 @@ pub use maintenance_jobs::storage_optimize;
 #[cfg(test)]
 mod maintenance_tests;
 mod memory;
-mod memory_control;
-mod memory_models;
-mod memory_read;
-mod memory_worker;
 mod messages;
-mod models;
-mod ollama;
+pub(super) mod models;
 mod prompts;
 mod scenes;
 #[cfg(test)]
@@ -77,21 +65,7 @@ mod inspect_tests;
 #[cfg(test)]
 mod legacy_regenerate_tests;
 #[cfg(test)]
-mod llama_events_tests;
-#[cfg(test)]
-mod local_models_tests;
-#[cfg(test)]
-mod lorebook_jobs_tests;
-#[cfg(test)]
-mod lorebooks_tests;
-#[cfg(test)]
-mod memory_control_tests;
-#[cfg(test)]
-mod memory_tests;
-#[cfg(test)]
 mod messages_tests;
-#[cfg(test)]
-mod models_tests;
 #[cfg(test)]
 mod prompts_tests;
 #[cfg(test)]
@@ -132,7 +106,7 @@ pub use files::{
     ExportProtection, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
     assets_ingest, files_inspect, files_pick_open, files_pick_save,
 };
-pub use hugging_face::{
+pub use models::hugging_face::{
     hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_download,
     hf_model_files, hf_readme, hf_recommendation, hf_runnability, hf_search,
 };
@@ -165,7 +139,7 @@ pub use jobs::{
     VoiceCreationHandler, admit_install, conversation_help_me_reply, job_cancel, job_get,
     job_watch, jobs_list, voice_design_create,
 };
-pub use local_models::{
+pub use models::local::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,
     local_model_adopt, local_model_delete, local_models_dir_get, local_models_dir_set,
     local_models_list,
@@ -175,7 +149,7 @@ pub use lorebooks::{
     lorebook_restore, lorebook_trigger_preview, lorebook_update_metadata, lorebooks_list,
     tokens_count,
 };
-pub use memory_models::{
+pub use memory::models::{
     companion_emotion_install, companion_emotion_remove, companion_emotion_status,
     embedding_choose, embedding_compare, embedding_install, embedding_remove, embedding_status,
     embedding_unload,
@@ -187,7 +161,7 @@ pub use messages::{
     messages_delete_after,
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
-pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
+pub use models::ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
 pub use prompts::{
     prompt_app_default_set, prompt_builtin_reset, prompt_create,
     prompt_delete, prompt_get, prompt_placeholders, prompt_preview, prompt_update, prompt_validate,
@@ -233,20 +207,18 @@ pub use memory::{
     memory_update,
 };
 
-pub use memory_control::{
+pub use memory::control::{
     memory_cycle_revert, memory_cycles, memory_error_dismiss, memory_retry, memory_skip,
     memory_trigger,
 };
-pub use memory_read::memory_get;
+pub use memory::read::memory_get;
 
-#[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]
-mod local_runtime_review_tests;
 
 mod serial_events;
 
 pub use jobs::LorebookHandler;
-pub use lorebook_jobs::{lorebook_entry_draft, lorebook_keywords_draft};
-pub use lorebook_projects::*;
+pub use lorebooks::jobs::{lorebook_entry_draft, lorebook_keywords_draft};
+pub use lorebooks::projects::*;
 
 
 mod providers;
@@ -261,18 +233,12 @@ pub use providers::mutations::{
 };
 pub use providers::{provider_model_verify, provider_models};
 
-#[cfg(test)]
-mod model_profiles_tests;
-#[cfg(test)]
-mod nanogpt_tests;
 
-mod model_profiles;
-pub use model_profiles::{
+pub use models::profiles::{
     model_default_set, model_delete, model_duplicate, model_get, model_save, models_list,
 };
 
-mod nanogpt;
-pub use nanogpt::provider_nanogpt_usage;
+pub use models::nanogpt::provider_nanogpt_usage;
 
 #[cfg(test)]
 mod logs_tests;

@@ -7,7 +7,7 @@ use lettuce_settings::GlobalSettingsStore;
 use lettuce_transfer::ProviderBackupSource;
 use lettuce_types::{ConversationId, PromptDocumentId};
 
-use super::lorebooks_tests::backup_round_trip;
+use super::lorebooks::tests::backup_round_trip;
 use super::tests::{Harness, RecordingStream, Reply, create_character, harness, launch, send};
 use super::turns_tests::run_generation;
 use super::*;
@@ -100,11 +100,11 @@ async fn catalog_feed_sync_apply_refreshes_lorebooks_and_prompts_once() {
     let source = harness(Reply::Text("unused"));
     let target = harness(Reply::Text("unused"));
     create(&source, "sync-prompt", "Shared prompt").await;
-    super::lorebooks_tests::create(
+    super::lorebooks::tests::create(
         &source,
         "sync-book",
         "Shared book",
-        vec![super::lorebooks_tests::entry("Entry", "Content", None)],
+        vec![super::lorebooks::tests::entry("Entry", "Content", None)],
     )
     .await;
     let count = |kind: dto::ApiEvent| {
