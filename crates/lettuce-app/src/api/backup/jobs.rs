@@ -261,10 +261,15 @@ impl Work {
             crate::api::app::reset::host(context)?;
             context.flush_app_usage_for_reset()?;
         }
-        context.backend().database().append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
+        let job = context.backend().database().append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
             if failure == lettuce_jobs::StoreError::IllegalTransition && context.backend().database().get(self.claim.job_id).ok().flatten().is_some_and(|job| job.state == JobState::CancellationRequested) { error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled) }
             else { failure.into_api_error() }
         })?;
+        // Restore stages must reach the screen before their work starts. The
+        // ordinary feed coalesces rapid changes to the latest job snapshot.
+        let view = crate::api::jobs::job_view(context, &job)?;
+        let (event, terminal) = crate::api::jobs::job_event(&job, view);
+        context.jobs().deliver(job.id, event, terminal);
         Ok(())
     }
 }
@@ -273,6 +278,16 @@ impl Work {
 impl ClaimedJob for Work {
     fn cancellation(&self) -> CancellationToken { self.cancellation.clone() }
     async fn run(self: Box<Self>, context: ApiContext, _progress: Arc<dyn JobProgressSink>) -> Result<(), ApiError> {
+        // Decoding, SQLite imports and media copies are synchronous. Keep the
+        // async runtime free to forward events and service the shell meanwhile.
+        let runtime = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || runtime.block_on(self.execute(context)))
+            .await.map_err(IntoApiError::into_api_error)?
+    }
+}
+
+impl Work {
+    async fn execute(self: Box<Self>, context: ApiContext) -> Result<(), ApiError> {
         if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
         let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else { return self.cancel(&context); };
         if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
@@ -291,7 +306,7 @@ impl ClaimedJob for Work {
                     Ok(source) => crate::BackupRestoreCoordinator::new(&files.location, &workspace, &media, context.secret_store().as_ref())
                         .restore_controlled(restore_id, source, &self.password, context.now(), &|stage, database| self.checkpoint(&context, stage, database.map(|(database, path)| (database, path, &[][..])), &current).map_err(crate::BackupRestoreError::Api)).await
                         .map(|receipt| receipt.app_secret_failures.into_iter().map(|failure| dto::BackupWarning::AppSecretUnavailable { purpose: format!("{:?}", failure.purpose), stage: match failure.stage { crate::BackupAppSecretFailureStage::Status => dto::BackupSecretStage::Status, crate::BackupAppSecretFailureStage::Store => dto::BackupSecretStage::Store } }).collect())
-                        .map_err(restore_failure_label),
+                        .map_err(|failure| { tracing::warn!(job_id = %self.claim.job_id, error = ?failure, "the backup restore failed"); restore_failure_label(failure) }),
                     Err(failure) => Err(file_failure_label(&failure)),
                 }
             }
@@ -307,7 +322,7 @@ impl ClaimedJob for Work {
                     coordinator.restore_database_controlled(Path::new(&self.detail.source), context.now(), &check).await
                 };
                 receipt.map(|receipt| receipt.warnings.into_iter().map(|warning| match warning { lettuce_transfer::LegacyBackupWarning::UnknownEntry { name } => dto::BackupWarning::UnknownArchiveEntry { name } }).collect())
-                    .map_err(legacy_restore_failure_label)
+                    .map_err(|failure| { tracing::warn!(job_id = %self.claim.job_id, error = ?failure, "the legacy restore failed"); legacy_restore_failure_label(failure) })
             }
         };
         let switched = files.location.active_path().map_err(|_| unavailable())? != files.active;
@@ -431,6 +446,37 @@ mod fix_tests {
         let claim = claim_started(database, id, harness.context.now()).expect("claim");
         let detail = serde_json::from_value(database.job_detail(id).expect("detail").expect("record").detail).expect("restore detail");
         Fixture { root, location, harness, host, work: Work { claim, detail, cancellation: CancellationToken::new(), password: Zeroizing::new("password".into()) }, source }
+    }
+
+    #[derive(Default)]
+    struct RestoreStages(Mutex<Vec<(String, std::thread::ThreadId)>>);
+
+    impl crate::api::JobEventSink for RestoreStages {
+        fn emit(&self, event: dto::JobEvent) -> bool {
+            if let dto::JobEvent::Progress { job } = event {
+                if let Some(label) = job.progress.label_code {
+                    self.0.lock().expect("stages").push((label, std::thread::current().id()));
+                }
+            }
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn restore_reports_each_stage_without_waiting_for_the_coalesced_feed() {
+        let fixture = fixture().await;
+        let stages = Arc::new(RestoreStages::default());
+        crate::api::job_watch(&fixture.harness.context, dto::JobWatchRequest { job_id: fixture.work.claim.job_id.to_string() }, stages.clone()).await.expect("watch");
+        stages.0.lock().expect("initial snapshot").clear();
+        let runtime_thread = std::thread::current().id();
+        Box::new(fixture.work).run(fixture.harness.context.clone(), Arc::new(super::super::tests::Progress)).await.expect("restore");
+        let recorded = stages.0.lock().expect("stages");
+        let labels: Vec<_> = recorded.iter().map(|(label, _)| label.as_str()).collect();
+        assert_eq!(labels, ["decode", "stage", "write", "verify", "switch"]);
+        assert!(recorded.iter().all(|(_, thread)| *thread != runtime_thread), "restore work must leave the async runtime available for other tasks");
+        drop(recorded);
+        let workers = fixture.host.workers.lock().expect("workers").take().expect("started");
+        workers.stop_for_restore().await.expect("stop");
     }
 
     #[tokio::test]
