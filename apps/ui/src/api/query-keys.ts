@@ -11,7 +11,25 @@ export const queryKeys = {
     detail: (conversationId: string) => [...queryKeys.conversations.all, "detail", conversationId] as const,
     messages: (conversationId: string) => [...queryKeys.conversations.detail(conversationId), "messages"] as const,
   },
-  settings: { all: ["settings"] as const, filterLog: () => ["settings", "content-filter"] as const },
+  settings: {
+    all: ["settings"] as const,
+    detail: () => ["settings", "detail"] as const,
+    filterLog: () => ["settings", "content-filter"] as const,
+  },
+  providers: {
+    all: ["providers"] as const,
+    catalog: () => [...queryKeys.providers.all, "catalog"] as const,
+    accounts: () => [...queryKeys.providers.all, "accounts"] as const,
+    models: (accountId: string) => [...queryKeys.providers.all, "models", accountId] as const,
+  },
+  models: {
+    all: ["models"] as const,
+    list: () => [...queryKeys.models.all, "list"] as const,
+  },
+  embedding: {
+    all: ["embedding"] as const,
+    status: () => [...queryKeys.embedding.all, "status"] as const,
+  },
   jobs: {
     all: ["jobs"] as const,
     lists: () => [...queryKeys.jobs.all, "list"] as const,

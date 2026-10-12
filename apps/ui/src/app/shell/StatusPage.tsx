@@ -1,17 +1,9 @@
 import { Card, LoadingState, Page } from "@lettuceai/crisp";
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import type { ApiClient } from "@/api/client";
-import { queryKeys } from "@/api/query-keys";
+import { appStatusQuery } from "@/api/app-status-query";
 import { FailureState } from "@/shared/ui/FailureState";
-
-function appStatusQuery(api: ApiClient) {
-  return queryOptions({
-    queryKey: queryKeys.app.status(),
-    queryFn: () => api.call("appStatus"),
-  });
-}
 
 export function StatusPage() {
   const { t } = useTranslation();
