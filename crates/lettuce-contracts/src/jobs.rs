@@ -216,6 +216,7 @@ pub enum JobFailureReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct JobFailureDto {
+    pub entity_import: Option<crate::ApiError>,
     pub code: JobFailureCode,
     pub retryable: bool,
     /// What a chat feature job needs the user to change.

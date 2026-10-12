@@ -27,6 +27,8 @@ pub enum FileKind {
     PersonaFile,
     Lorebook,
     PromptPreset,
+    ChatTemplate,
+    ModelFile,
     ChatJsonl,
     BackupV1,
     BackupV2,

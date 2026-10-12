@@ -60,3 +60,7 @@ The file URLs come from `lettuce-model-hub`'s shared Hugging Face client (`resol
 JSON and bulk clients share replaceable TLS state across clones. reload_tls parses stored PEM bundles and rebuilds clients before swapping that state; existing requests keep their captured client and subsequent requests use the replacement. Weak client handles allow the composition root to refresh live clients without retaining temporary runtimes. Invalid stored certificates remain removable through the API and are skipped at runtime.
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
+
+ArtifactDownloadClient::with_tls applies the current TlsPolicy trusted PEM roots when constructing a strict download client.
+
+ArtifactDownloadClient::download_avatar takes the current TlsPolicy and builds its own client per call. It fetches HTTP or HTTPS without requiring a declared size, bounds both Content-Length and streamed bytes by the caller’s media limit, ends the whole download at the caller’s total deadline as well as on a stalled chunk, follows at most five HTTP or HTTPS redirects without credentials, and uses the policy's trusted roots. Entity avatar imports cancel it by dropping the download future. Dropping its future cancels the request; it never retries. The existing pinned-artifact methods retain HTTPS and expected-size validation.

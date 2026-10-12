@@ -38,30 +38,8 @@ impl<R: LorebookRepository + ?Sized> LorebookFileCoordinator<'_, R> {
         json: &str,
         now: TimestampMillis,
     ) -> Result<LorebookDetails, LorebookFileError> {
-        let imported = lettuce_transfer::parse_world_info(json)?;
-        Ok(self.repository.create(
-            LorebookMetadataDraft {
-                name: imported.name,
-                detection_policy: detection_policy(imported.keyword_detection_mode),
-                icon_asset_id: None,
-                behavior_version: LorebookBehaviorVersion::LegacyV1,
-            },
-            imported
-                .entries
-                .into_iter()
-                .map(|entry| LorebookEntryDraft {
-                    title: entry.title,
-                    enabled: entry.enabled,
-                    always_active: entry.always_active,
-                    keywords: entry.keywords,
-                    case_sensitive: entry.case_sensitive,
-                    match_mode: KeywordMatchMode::Literal,
-                    content: entry.content,
-                    priority: entry.priority,
-                })
-                .collect(),
-            now,
-        )?)
+        let (metadata, entries) = prepare_import(json)?;
+        Ok(self.repository.create(metadata, entries, now)?)
     }
 
     pub fn export_world_info(&self, id: LorebookId) -> Result<String, LorebookFileError> {
@@ -79,6 +57,34 @@ impl<R: LorebookRepository + ?Sized> LorebookFileCoordinator<'_, R> {
             .ok_or(LorebookFileError::NotFound)?;
         Ok(lorebook_transfer(&details))
     }
+}
+
+pub(crate) fn prepare_import(
+    json: &str,
+) -> Result<(LorebookMetadataDraft, Vec<LorebookEntryDraft>), LorebookFileError> {
+    let imported = lettuce_transfer::parse_lorebook_import(json)?;
+    Ok((
+        LorebookMetadataDraft {
+            name: imported.name,
+            detection_policy: detection_policy(imported.keyword_detection_mode),
+            icon_asset_id: None,
+            behavior_version: LorebookBehaviorVersion::LegacyV1,
+        },
+        imported
+            .entries
+            .into_iter()
+            .map(|entry| LorebookEntryDraft {
+                title: entry.title,
+                enabled: entry.enabled,
+                always_active: entry.always_active,
+                keywords: entry.keywords,
+                case_sensitive: entry.case_sensitive,
+                match_mode: KeywordMatchMode::Literal,
+                content: entry.content,
+                priority: entry.priority,
+            })
+            .collect(),
+    ))
 }
 
 pub(crate) fn lorebook_transfer(details: &LorebookDetails) -> LorebookTransfer {
@@ -128,6 +134,37 @@ const fn detection_policy(mode: PackagedKeywordDetectionMode) -> DetectionPolicy
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_legacy_usc_lorebook_import_keeps_every_entry_field() {
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let value = serde_json::json!({
+            "schema": {"name": "USC", "version": "1.0"}, "kind": "lorebook",
+            "payload": {"id": "old-book", "name": "Harbour", "keywordDetectionMode": "latestUserMessage",
+                "createdAt": 10, "updatedAt": 20,
+                "entries": [{"id": "old-entry", "title": " A title ", "enabled": false,
+                    "alwaysActive": true, "keywords": [" Ship ", "sea"], "caseSensitive": true,
+                    "content": "", "priority": -7, "displayOrder": 0, "createdAt": 11, "updatedAt": 12}]}
+        });
+        let imported = backend
+            .lorebook_files()
+            .import_world_info(&value.to_string(), TimestampMillis::new(30))
+            .expect("USC import");
+        assert_eq!(imported.book.name, "Harbour");
+        assert_eq!(
+            imported.book.detection_policy,
+            DetectionPolicy::LatestUserMessage
+        );
+        assert_eq!(imported.entries.len(), 1);
+        let entry = &imported.entries[0];
+        assert_eq!(entry.title, " A title ");
+        assert!(!entry.enabled && entry.always_active && entry.case_sensitive);
+        assert_eq!(entry.keywords, [" Ship ", "sea"]);
+        assert_eq!(entry.content, "");
+        assert_eq!(entry.priority, -7);
+        assert_eq!(entry.match_mode, KeywordMatchMode::Literal);
+        assert_eq!(entry.created_at, TimestampMillis::new(30));
+    }
 
     #[test]
     fn world_info_with_long_keywords_and_titles_imports_like_legacy() {

@@ -82,6 +82,7 @@ fn render_project_view(
     let plan_failure = failed
         .then(|| {
             planner.error.as_ref().map(|error| dto::JobFailureDto {
+                entity_import: None,
                 code: super::jobs::failure_code(error.code),
                 retryable: error.retryable,
                 reason: super::jobs::failure_reason(error.message.as_str()),

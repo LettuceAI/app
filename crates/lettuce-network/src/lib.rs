@@ -245,6 +245,10 @@ impl fmt::Debug for ArtifactDownloadStream {
 
 impl ArtifactDownloadClient {
     pub fn new() -> Result<Self, ArtifactDownloadError> {
+        Self::with_tls(&TlsPolicy::default())
+    }
+
+    pub fn with_tls(policy: &TlsPolicy) -> Result<Self, ArtifactDownloadError> {
         let redirect = redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= MAX_ARTIFACT_REDIRECTS
                 || attempt.url().scheme() != "https"
@@ -254,17 +258,89 @@ impl ArtifactDownloadClient {
                 attempt.follow()
             }
         });
-        let client = reqwest::Client::builder()
+        let roots = trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)?;
+        let mut builder = reqwest::Client::builder()
             .redirect(redirect)
             .referer(false)
-            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT)
-            .build()
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
+        for root in roots {
+            builder = builder.add_root_certificate(root);
+        }
+        let client = builder.build().map_err(|_| ArtifactDownloadError::Transport)?;
         Ok(Self {
             client,
             hugging_face_token: None,
             civitai_token: None,
         })
+    }
+
+    pub async fn download_avatar(
+        policy: &TlsPolicy,
+        url: &str,
+        max_bytes: u64,
+        deadline: Duration,
+    ) -> Result<Vec<u8>, ArtifactDownloadError> {
+        let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+            || max_bytes == 0
+        {
+            return Err(ArtifactDownloadError::InvalidRequest);
+        }
+        let deadline = tokio::time::Instant::now() + deadline;
+        let mut builder = reqwest::Client::builder()
+            .redirect(redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= MAX_ARTIFACT_REDIRECTS
+                    || !matches!(attempt.url().scheme(), "http" | "https")
+                    || !attempt.url().username().is_empty()
+                    || attempt.url().password().is_some()
+                {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
+            .referer(false)
+            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
+        for root in trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)? {
+            builder = builder.add_root_certificate(root);
+        }
+        let client = builder.build().map_err(|_| ArtifactDownloadError::Transport)?;
+        let mut response =
+            tokio::time::timeout_at(
+                deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
+                client.get(url).send(),
+            )
+                .await
+                .map_err(|_| ArtifactDownloadError::TimedOut)?
+                .map_err(|_| ArtifactDownloadError::Transport)?;
+        if response.status() != reqwest::StatusCode::OK {
+            return Err(ArtifactDownloadError::Refused {
+                status: response.status().as_u16(),
+                signed_in: false,
+            });
+        }
+        if response.content_length().is_some_and(|size| size > max_bytes) {
+            return Err(ArtifactDownloadError::InvalidResponse);
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = tokio::time::timeout_at(
+            deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
+            response.chunk(),
+        )
+            .await
+            .map_err(|_| ArtifactDownloadError::TimedOut)?
+            .map_err(|_| ArtifactDownloadError::Transport)?
+        {
+            if (bytes.len() as u64).saturating_add(chunk.len() as u64) > max_bytes {
+                return Err(ArtifactDownloadError::InvalidResponse);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
     }
 
     /// Signs Hugging Face downloads in with `token`, for gated repositories.
@@ -2162,6 +2238,52 @@ mod tests {
         assert_eq!(response.body, b"ok");
         let requests = requests.await.expect("requests");
         assert!(requests[1].starts_with("POST /moved HTTP/1.1"));
+    }
+
+    #[tokio::test]
+    async fn avatar_download_has_one_total_deadline_despite_arriving_chunks() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let endpoint = format!("http://{}/avatar", listener.local_addr().expect("address"));
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut request = [0; 4096];
+            let size = stream.read(&mut request).await.expect("request");
+            assert!(size > 0);
+            stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.expect("header");
+            for _ in 0..20 {
+                if stream.write_all(b"1\r\nx\r\n").await.is_err() { return; }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let _ = stream.write_all(b"0\r\n\r\n").await;
+        });
+        let result = ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 1024, Duration::from_millis(80)).await;
+        assert_eq!(result, Err(ArtifactDownloadError::TimedOut));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn avatar_download_bounds_declared_and_streamed_sizes() {
+        for response in [
+            "HTTP/1.1 200 OK\r\nContent-Length: 9\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n9\r\n123456789\r\n0\r\n\r\n",
+        ] {
+            let (endpoint, _) = test_server(response).await;
+            let error = ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 8, Duration::from_secs(180))
+                .await
+                .expect_err("avatar limit");
+            assert_eq!(error, ArtifactDownloadError::InvalidResponse);
+        }
+        let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nok\r\n0\r\n\r\n").await;
+        let client = ArtifactDownloadClient::new().expect("client");
+        assert_eq!(
+            ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 8, Duration::from_secs(180)).await.expect("unknown size"),
+            b"ok"
+        );
+        assert_eq!(
+            client.open_https(&endpoint, 0, 2).await.expect_err("strict artifact"),
+            ArtifactDownloadError::InvalidRequest
+        );
     }
 
     #[tokio::test]

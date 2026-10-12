@@ -354,20 +354,6 @@ pub enum ChatImportRepositoryError {
     Storage,
 }
 
-/// Writes an imported transcript as a finished conversation; a companion
-/// conversation starts the companion's next continuity episode at `now`.
-pub trait ChatImportRepository: Send + Sync {
-    fn import_chat(
-        &self,
-        record: crate::LegacyConversationRecord,
-        companion: Option<(
-            lettuce_companions::CompanionStateOwner,
-            lettuce_companions::CompanionRuntimeState,
-        )>,
-        now: lettuce_types::TimestampMillis,
-    ) -> Result<(), ChatImportRepositoryError>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

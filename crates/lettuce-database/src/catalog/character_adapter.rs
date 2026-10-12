@@ -3104,67 +3104,70 @@ impl SceneRepository for Database {
     }
 }
 
-impl StarterRepository for Database {
-    fn add_starter(
-        &self,
-        character_id: CharacterId,
-        expected_character_revision: Revision,
-        starter: ConversationStarter,
-        now: TimestampMillis,
-    ) -> Result<ConversationStarter, RepositoryError> {
-        let mut starter = starter;
-        starter.updated_at = now;
-        validate(starter.validate())?;
-        if starter.character_id != character_id {
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn import_starter(&self, character_id: CharacterId, expected: Revision, starter: ConversationStarter, now: TimestampMillis) -> Result<ConversationStarter, RepositoryError> {
+        add_starter_in(self.transaction, character_id, expected, starter, now)
+    }
+}
+
+fn add_starter_in(tx: &rusqlite::Transaction<'_>, character_id: CharacterId, expected_character_revision: Revision, starter: ConversationStarter, now: TimestampMillis) -> Result<ConversationStarter, RepositoryError> {
+    let mut starter = starter;
+    starter.updated_at = now;
+    validate(starter.validate())?;
+    if starter.character_id != character_id {
+        return Err(RepositoryError::Invalid(
+            lettuce_characters::ValidationError::InvalidReference {
+                field: "starter.character_id",
+            },
+        ));
+    }
+    let details = ensure_root(tx, character_id, expected_character_revision, false)?;
+    if details.starters.iter().any(|value| value.id == starter.id) {
+        return Err(RepositoryError::AlreadyExists);
+    }
+    if let Some(scene_id) = starter.scene_id {
+        if !details.scenes.iter().any(|scene| scene.id == scene_id) {
             return Err(RepositoryError::Invalid(
                 lettuce_characters::ValidationError::InvalidReference {
-                    field: "starter.character_id",
+                    field: "starter.scene_id",
                 },
             ));
         }
+    }
+    if starter.ordinal as usize > details.starters.len() {
+        return Err(RepositoryError::Invalid(
+            lettuce_characters::ValidationError::InvalidValue {
+                field: "starter.ordinal",
+            },
+        ));
+    }
+    let mut ordered: Vec<_> = details.starters.iter().map(|value| value.id).collect();
+    ordered.insert(starter.ordinal as usize, starter.id);
+    let previous = details
+        .starters
+        .iter()
+        .map(|value| (value.id, value.ordinal))
+        .collect();
+    rewrite_starter_order(tx, character_id, &ordered, &previous, now)?;
+    insert_starter(tx, character_id, &starter)?;
+    bump_root(tx, character_id, expected_character_revision, now)?;
+    let result = load_details(tx, character_id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)?
+        .starters
+        .into_iter()
+        .find(|value| value.id == starter.id)
+        .ok_or(RepositoryError::Storage)?;
+    Ok(result)
+}
+
+impl StarterRepository for Database {
+    fn add_starter(&self, character_id: CharacterId, expected_character_revision: Revision, starter: ConversationStarter, now: TimestampMillis) -> Result<ConversationStarter, RepositoryError> {
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_error)?;
-        let details = ensure_root(&tx, character_id, expected_character_revision, false)?;
-        if details.starters.iter().any(|value| value.id == starter.id) {
-            return Err(RepositoryError::AlreadyExists);
-        }
-        if let Some(scene_id) = starter.scene_id {
-            if !details.scenes.iter().any(|scene| scene.id == scene_id) {
-                return Err(RepositoryError::Invalid(
-                    lettuce_characters::ValidationError::InvalidReference {
-                        field: "starter.scene_id",
-                    },
-                ));
-            }
-        }
-        if starter.ordinal as usize > details.starters.len() {
-            return Err(RepositoryError::Invalid(
-                lettuce_characters::ValidationError::InvalidValue {
-                    field: "starter.ordinal",
-                },
-            ));
-        }
-        let mut ordered: Vec<_> = details.starters.iter().map(|value| value.id).collect();
-        ordered.insert(starter.ordinal as usize, starter.id);
-        let previous = details
-            .starters
-            .iter()
-            .map(|value| (value.id, value.ordinal))
-            .collect();
-        rewrite_starter_order(&tx, character_id, &ordered, &previous, now)?;
-        insert_starter(&tx, character_id, &starter)?;
-        bump_root(&tx, character_id, expected_character_revision, now)?;
-        let result = load_details(&tx, character_id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
-            .starters
-            .into_iter()
-            .find(|value| value.id == starter.id)
-            .ok_or(RepositoryError::Storage)?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
+        let starter = add_starter_in(&tx, character_id, expected_character_revision, starter, now)?;
         tx.commit().map_err(db_error)?;
-        Ok(result)
+        Ok(starter)
     }
 
     fn update_starter(

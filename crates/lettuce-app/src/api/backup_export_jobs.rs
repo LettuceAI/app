@@ -315,7 +315,7 @@ pub(super) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Opt
 pub(super) fn report_recovery(context: &ApiContext, claim: &ClaimRef) -> Result<(), ApiError> {
     let job = context.backend().database().get(claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
     let mut view = super::jobs::job_view(context, &job)?;
-    view.failure = Some(dto::JobFailureDto { code: dto::JobFailureCode::StorageFailure, retryable: false, reason: Some(dto::JobFailureReason::BackupRecoveryRequired), model: None, hugging_face: None, ollama: None, image: None, speech: None });
+    view.failure = Some(dto::JobFailureDto { entity_import: None, code: dto::JobFailureCode::StorageFailure, retryable: false, reason: Some(dto::JobFailureReason::BackupRecoveryRequired), model: None, hugging_face: None, ollama: None, image: None, speech: None });
     context.emit(dto::ApiEvent::JobUpdated { job: Box::new(view.clone()) });
     context.jobs().deliver(job.id, dto::JobEvent::Failed { job: view }, true);
     Ok(())

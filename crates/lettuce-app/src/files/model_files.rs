@@ -110,6 +110,31 @@ where
         imported: lettuce_transfer::ImportedModel,
         now: TimestampMillis,
     ) -> Result<ImportedModelFile, ModelFileError> {
+        let mut prepared = self.prepare(imported, now)?;
+        prepared.profile = ModelProfileRepository::upsert(self.repository, prepared.profile, None)?;
+        match self.repository.load() {
+            Ok(stored) if stored.default_model_profile_id.is_none() => {
+                if let Err(error) = self.repository.save(
+                    stored.settings,
+                    Some(prepared.profile.id),
+                    stored.revision,
+                ) {
+                    tracing::warn!(%error, "the new model could not become the default model");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "the default model could not be checked");
+            }
+        }
+        Ok(prepared)
+    }
+
+    pub fn prepare(
+        &self,
+        imported: lettuce_transfer::ImportedModel,
+        now: TimestampMillis,
+    ) -> Result<ImportedModelFile, ModelFileError> {
         let account = self.account(&imported.provider_id, &imported.provider_label)?;
         let parameters = lettuce_transfer::legacy_model_parameters(
             &imported.provider_id,
@@ -147,35 +172,17 @@ where
         config
             .validate_parameters()
             .map_err(|_| ModelFileError::InvalidSettings)?;
-        let profile = ModelProfileRepository::upsert(
-            self.repository,
-            ModelProfile {
-                id: ModelProfileId::new(),
-                provider_account_id: account.id,
-                external_model_id: imported.name,
-                display_name: imported.display_name,
-                kind: ModelKind::Chat,
-                config,
-                revision: Revision::INITIAL,
-                created_at: now,
-                updated_at: now,
-            },
-            None,
-        )?;
-        match self.repository.load() {
-            Ok(stored) if stored.default_model_profile_id.is_none() => {
-                if let Err(error) =
-                    self.repository
-                        .save(stored.settings, Some(profile.id), stored.revision)
-                {
-                    tracing::warn!(%error, "the new model could not become the default model");
-                }
-            }
-            Ok(_) => {}
-            Err(error) => {
-                tracing::warn!(%error, "the default model could not be checked");
-            }
-        }
+        let profile = ModelProfile {
+            id: ModelProfileId::new(),
+            provider_account_id: account.id,
+            external_model_id: imported.name,
+            display_name: imported.display_name,
+            kind: ModelKind::Chat,
+            config,
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        };
         Ok(ImportedModelFile {
             profile,
             lossy_fields: parameters.lossy_fields,

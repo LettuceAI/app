@@ -1,5 +1,5 @@
 //! Lorebooks as SillyTavern World Info JSON (read and write) and as a USC
-//! lorebook card (write).
+//! lorebook card (read and write).
 
 use std::collections::BTreeMap;
 
@@ -315,6 +315,68 @@ pub fn parse_world_info(json: &str) -> Result<ImportedWorldInfo, LorebookTransfe
     })
 }
 
+pub fn parse_lorebook_import(json: &str) -> Result<ImportedWorldInfo, LorebookTransferError> {
+    let value: Value = serde_json::from_str(json)
+        .map_err(|error| LorebookTransferError::InvalidImport(error.to_string()))?;
+    if value.pointer("/schema/name").and_then(Value::as_str) != Some("USC") {
+        return parse_world_info(json);
+    }
+    if value.get("kind").and_then(Value::as_str) != Some("lorebook")
+        || value.pointer("/schema/version").and_then(Value::as_str) != Some("1.0")
+    {
+        return Err(LorebookTransferError::InvalidImport(
+            "unsupported USC lorebook".into(),
+        ));
+    }
+    let payload: UscLorebookImport = serde_json::from_value(value["payload"].clone())
+        .map_err(|error| LorebookTransferError::InvalidImport(error.to_string()))?;
+    let name = payload.name.trim().to_owned();
+    if name.is_empty() {
+        return Err(LorebookTransferError::MissingName);
+    }
+    let keyword_detection_mode = match payload.keyword_detection_mode.as_deref() {
+        None | Some("recentMessageWindow") => PackagedKeywordDetectionMode::RecentMessageWindow,
+        Some("latestUserMessage") => PackagedKeywordDetectionMode::LatestUserMessage,
+        Some(_) => {
+            return Err(LorebookTransferError::InvalidImport(
+                "unknown keyword detection mode".into(),
+            ));
+        }
+    };
+    let mut entries = payload.entries;
+    entries.sort_by_key(|entry| entry.display_order);
+    Ok(ImportedWorldInfo {
+        name,
+        keyword_detection_mode,
+        entries: entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                Ok(ImportedWorldInfoEntry {
+                    title: entry.title,
+                    enabled: entry.enabled,
+                    always_active: entry.always_active,
+                    keywords: entry.keywords,
+                    case_sensitive: entry.case_sensitive,
+                    content: entry.content,
+                    priority: entry.priority,
+                    display_order: i32::try_from(index).map_err(|_| {
+                        LorebookTransferError::InvalidImport("entry order exceeds i32".into())
+                    })?,
+                })
+            })
+            .collect::<Result<_, LorebookTransferError>>()?,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UscLorebookImport {
+    name: String,
+    keyword_detection_mode: Option<String>,
+    entries: Vec<UscLorebookEntry>,
+}
+
 #[derive(Serialize)]
 struct UscLorebookCard {
     schema: UscSchema,
@@ -339,7 +401,7 @@ struct UscLorebookPayload {
     updated_at: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UscLorebookEntry {
     id: String,

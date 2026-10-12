@@ -329,8 +329,8 @@ struct LegacyManifest {
     nonce: Option<String>,
 }
 
-fn read_manifest(
-    archive: &mut ZipArchive<Box<dyn crate::BackupSource>>,
+fn read_manifest<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
 ) -> Result<LegacyManifest, LegacyBackupInventoryError> {
     let manifest_bytes = read_public_entry(archive, "manifest.json", MAX_LEGACY_MANIFEST_BYTES)?;
     let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes)
@@ -344,6 +344,21 @@ fn read_manifest(
         return Err(LegacyBackupInventoryError::InvalidManifest);
     }
     Ok(manifest)
+}
+
+pub fn zip_has_legacy_backup_manifest(
+    input: impl Read + std::io::Seek,
+) -> Result<bool, LegacyBackupInventoryError> {
+    let mut archive = match ZipArchive::new(input).map_err(archive_error) {
+        Ok(archive) => archive,
+        Err(LegacyBackupInventoryError::Io) => return Err(LegacyBackupInventoryError::Io),
+        Err(_) => return Ok(false),
+    };
+    match read_manifest(&mut archive) {
+        Ok(_) => Ok(true),
+        Err(LegacyBackupInventoryError::Io) => Err(LegacyBackupInventoryError::Io),
+        Err(_) => Ok(false),
+    }
 }
 
 pub fn read_legacy_backup_header(
@@ -514,8 +529,8 @@ fn validate_archive_metadata(
     Ok(())
 }
 
-fn read_public_entry(
-    archive: &mut ZipArchive<Box<dyn crate::BackupSource>>,
+fn read_public_entry<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
     name: &str,
     max_bytes: u64,
 ) -> Result<Vec<u8>, LegacyBackupInventoryError> {

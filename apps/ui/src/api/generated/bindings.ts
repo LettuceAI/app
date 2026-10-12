@@ -193,6 +193,15 @@ export const commands = {
 	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("job_cancel", { request })),
 	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
 	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
+	importPreview: (request: ImportPreviewRequest) => typedError<ImportPreview_Serialize, ApiError>(__TAURI_INVOKE("import_preview", { request })),
+	importCommit: (request: ImportCommitRequest) => typedError<ImportCommitResult, ApiError>(__TAURI_INVOKE("import_commit", { request })),
+	characterExport: (request: CharacterExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("character_export", { request })),
+	personaExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("persona_export", { request })),
+	lorebookExport: (request: LorebookExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("lorebook_export", { request })),
+	promptExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("prompt_export", { request })),
+	chatTemplateExport: (request: ChatTemplateExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("chat_template_export", { request })),
+	modelExport: (request: ModelExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("model_export", { request })),
+	chatExport: (request: ChatExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("chat_export", { request })),
 	backupInspect: (request: BackupInspectRequest) => typedError<BackupHeaderView, ApiError>(__TAURI_INVOKE("backup_inspect", { request })),
 	backupExport: (request: BackupExportRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("backup_export", { request })),
 	backupsList: () => typedError<BackupIndexView[], ApiError>(__TAURI_INVOKE("backups_list")),
@@ -895,6 +904,14 @@ export type CharacterDuplicateRequest = {
 	client_operation_id: string,
 };
 
+export type CharacterExportFormat = "uec" | "v3" | "v2";
+
+export type CharacterExportRequest = {
+	id: string,
+	format: CharacterExportFormat,
+	target: FileTarget | null,
+};
+
 export type CharacterGetRequest = {
 	character_id: string,
 };
@@ -1011,7 +1028,19 @@ export type CharactersListRequest = {
 	search_nickname?: boolean,
 };
 
+export type ChatExportRequest = {
+	conversation_id: string,
+	target: FileTarget | null,
+};
+
 export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "reset" };
+
+export type ChatTemplateExportRequest = {
+	character_id: string,
+	starter_id: string,
+	format: EntityExportFormat,
+	target: FileTarget | null,
+};
 
 /**
  *  Name a source, turn the setting off, or reset it to what the chat
@@ -1791,13 +1820,26 @@ export type EmotionChange = {
 	reassurance_need: number | null,
 };
 
+export type EntityExportFormat = "json" | "usc";
+
+export type EntityExportRequest = {
+	id: string,
+	target: FileTarget | null,
+};
+
+export type EntityExportResult = {
+	uri: string,
+	suggested_name: string,
+	warnings: FileWarning[],
+};
+
 export type FileInspection = {
 	name: string,
 	size: number,
 	kind: FileKind,
 };
 
-export type FileKind = "character_card" | "persona_file" | "lorebook" | "prompt_preset" | "chat_jsonl" | "backup_v1" | "backup_v2" | "legacy_database" | "image" | "audio" | "gguf_model" | "other";
+export type FileKind = "character_card" | "persona_file" | "lorebook" | "prompt_preset" | "chat_template" | "model_file" | "chat_jsonl" | "backup_v1" | "backup_v2" | "legacy_database" | "image" | "audio" | "gguf_model" | "other";
 
 /**  What a file picker offers, which sets its extension and type filters. */
 export type FilePickKind = "any" | "image" | "audio" | "json" | "character_card" | "chat_log" | "backup" | "gguf_model" | "diffusion_model" | "certificate" | "document";
@@ -1819,6 +1861,13 @@ export type FileSource = {
 export type FileTarget = {
 	uri: string,
 };
+
+export type FileWarning = {
+	code: FileWarningCode,
+	field: string,
+};
+
+export type FileWarningCode = "image_decode_failed" | "image_download_failed" | "image_store_failed" | "image_read_failed" | "remote_avatar_will_download" | "remote_avatar_not_downloaded" | "field_skipped" | "field_converted" | "bundled_lorebook_new_copy";
 
 export type FilesInspectRequest = {
 	source: FileSource,
@@ -2697,6 +2746,276 @@ export type ImageUpscaled = {
 	history_id: string | null,
 };
 
+export type ImportBundledLorebook = {
+	lorebook: ImportLorebookMetadata,
+	entries?: ImportLorebookEntry[],
+};
+
+export type ImportCharacterContent = ImportCharacterContent_Serialize | ImportCharacterContent_Deserialize;
+
+export type ImportCharacterContent_Deserialize = {
+	name: string,
+	description: string | null,
+	definition?: string | null,
+	scenario?: string | null,
+	nickname?: string | null,
+	creator?: string | null,
+	creatorNotes?: string | null,
+	creatorNotesMultilingual?: unknown | null,
+	source?: string[] | null,
+	tags?: string[] | null,
+	characterBook?: unknown | null,
+	scenes: ImportScene_Deserialize[],
+	defaultSceneId: string | null,
+	defaultModelId: string | null,
+	mode?: string | null,
+	companion?: unknown | null,
+	companionScheduledNotes?: ImportScheduledNote[],
+	companionSharedMemory?: ImportSharedMemory | null,
+	memoryType?: string | null,
+	activeLorebookIds?: string[],
+	lorebooks?: ImportBundledLorebook[],
+	promptTemplateId: string | null,
+	voiceConfig: unknown | null,
+	voiceAutoplay: boolean | null,
+	disableAvatarGradient: boolean,
+	avatarCrop: ImportCrop | null,
+	bannerCrop?: ImportCrop | null,
+	customGradientEnabled: boolean | null,
+	customGradientColors: string[] | null,
+	customTextColor: string | null,
+	customTextSecondary: string | null,
+	chatTemplates?: ImportStarter_Deserialize[],
+	defaultChatTemplateId?: string | null,
+};
+
+export type ImportCharacterContent_Serialize = {
+	name: string,
+	description: string | null,
+	definition: string | null,
+	scenario: string | null,
+	nickname: string | null,
+	creator: string | null,
+	creatorNotes: string | null,
+	creatorNotesMultilingual: unknown | null,
+	source: string[] | null,
+	tags: string[] | null,
+	characterBook: unknown | null,
+	scenes: ImportScene_Serialize[],
+	defaultSceneId: string | null,
+	defaultModelId: string | null,
+	mode?: string | null,
+	companion?: unknown | null,
+	companionScheduledNotes?: ImportScheduledNote[],
+	companionSharedMemory?: ImportSharedMemory | null,
+	memoryType: string | null,
+	activeLorebookIds: string[],
+	lorebooks: ImportBundledLorebook[],
+	promptTemplateId: string | null,
+	voiceConfig: unknown | null,
+	voiceAutoplay: boolean | null,
+	disableAvatarGradient: boolean,
+	avatarCrop: ImportCrop | null,
+	bannerCrop: ImportCrop | null,
+	customGradientEnabled: boolean | null,
+	customGradientColors: string[] | null,
+	customTextColor: string | null,
+	customTextSecondary: string | null,
+	chatTemplates: ImportStarter_Serialize[],
+	defaultChatTemplateId?: string | null,
+};
+
+export type ImportCommitRequest = {
+	source: FileSource,
+	digest: string,
+	options: ImportOptions,
+	client_operation_id: string,
+};
+
+export type ImportCommitResult = { kind: "imported"; file_kind: FileKind; id: string; warnings: FileWarning[] } | { kind: "job"; job_id: string };
+
+export type ImportCrop = {
+	x: number | null,
+	y: number | null,
+	scale: number | null,
+};
+
+export type ImportImagePreview = {
+	field: string,
+	remote_url: string | null,
+};
+
+export type ImportKeywordDetection = "recentMessageWindow" | "latestUserMessage";
+
+export type ImportLorebookEntry = {
+	title: string,
+	enabled: boolean,
+	alwaysActive: boolean,
+	keywords: string[],
+	caseSensitive: boolean,
+	keywordMatchMode: LorebookKeywordMode,
+	content: string,
+	priority: number,
+	displayOrder: number,
+};
+
+export type ImportLorebookMetadata = {
+	id: string,
+	name: string,
+	keywordDetectionMode: ImportKeywordDetection,
+	createdAt: number,
+	updatedAt: number,
+};
+
+export type ImportOptions = {
+	character_id?: string | null,
+	speakers?: { [key in string]: string },
+};
+
+export type ImportPersonaContent = {
+	title: string,
+	description: string,
+	nickname: string | null,
+	isDefault: boolean | null,
+	avatarCrop: ImportCrop | null,
+	activeLorebookIds?: string[],
+};
+
+export type ImportPreview = ImportPreview_Serialize | ImportPreview_Deserialize;
+
+export type ImportPreviewContent = ImportPreviewContent_Serialize | ImportPreviewContent_Deserialize;
+
+export type ImportPreviewContent_Deserialize = ({ kind: "character"; content: ImportCharacterContent_Deserialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
+
+export type ImportPreviewContent_Serialize = ({ kind: "character"; content: ImportCharacterContent_Serialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
+
+export type ImportPreviewRequest = {
+	source: FileSource,
+};
+
+export type ImportPreview_Deserialize = {
+	kind: FileKind,
+	name: string,
+	digest: string,
+	content: ImportPreviewContent_Deserialize,
+	images: ImportImagePreview[],
+	warnings: FileWarning[],
+};
+
+export type ImportPreview_Serialize = {
+	kind: FileKind,
+	name: string,
+	digest: string,
+	content: ImportPreviewContent_Serialize,
+	images: ImportImagePreview[],
+	warnings: FileWarning[],
+};
+
+export type ImportPromptEntry = {
+	name: string,
+	role: string,
+	content: string,
+	enabled: boolean,
+	injection_position: string,
+	depth: number,
+	conditional_min_messages: number | null,
+	interval_turns: number | null,
+	system_prompt: boolean,
+	conditions: unknown | null,
+	payload: unknown | null,
+};
+
+export type ImportScene = ImportScene_Serialize | ImportScene_Deserialize;
+
+export type ImportSceneVariant = ImportSceneVariant_Serialize | ImportSceneVariant_Deserialize;
+
+export type ImportSceneVariant_Deserialize = {
+	id: string,
+	content: string,
+	direction?: string | null,
+	createdAt?: number | null,
+};
+
+export type ImportSceneVariant_Serialize = {
+	id: string,
+	content: string,
+	direction?: string | null,
+	createdAt?: number | null,
+};
+
+export type ImportScene_Deserialize = {
+	id: string,
+	content: string,
+	direction?: string | null,
+	createdAt?: number | null,
+	selectedVariantId: string | null,
+	variants: ImportSceneVariant_Deserialize[],
+};
+
+export type ImportScene_Serialize = {
+	id: string,
+	content: string,
+	direction?: string | null,
+	createdAt?: number | null,
+	selectedVariantId: string | null,
+	variants: ImportSceneVariant_Serialize[],
+};
+
+export type ImportScheduledNote = {
+	id?: string | null,
+	characterId?: string | null,
+	label?: string,
+	content: string,
+	availableAt: number,
+	expiresAt?: number | null,
+	recurrence: string,
+	recurrenceWindowMs?: number | null,
+	enabled: boolean,
+	createdAt?: number,
+	updatedAt?: number,
+};
+
+export type ImportSharedMemory = {
+	memories?: unknown,
+	memorySummary?: string | null,
+	memorySummaryTokenCount?: number,
+	memoryToolEvents?: unknown,
+	memoryStatus?: string | null,
+	memoryError?: string | null,
+	memoryProgressStep?: number | null,
+	soulGrowth?: unknown,
+	relationshipStates?: unknown,
+	createdAt?: number,
+	updatedAt?: number,
+};
+
+export type ImportStarter = ImportStarter_Serialize | ImportStarter_Deserialize;
+
+export type ImportStarterMessage = {
+	id: string,
+	role: string,
+	content: string,
+};
+
+export type ImportStarter_Deserialize = {
+	id: string,
+	name: string,
+	messages: ImportStarterMessage[],
+	createdAt?: number | null,
+};
+
+export type ImportStarter_Serialize = {
+	id: string,
+	name: string,
+	messages: ImportStarterMessage[],
+	createdAt?: number | null,
+};
+
+export type ImportTemplateMessage = {
+	role: string,
+	content: string,
+};
+
 export type InstalledLora = {
 	filename: string,
 	path: string,
@@ -2728,6 +3047,7 @@ export type JobEvent = { type: "model_loading"; stage: ModelLoadStage; status: M
 export type JobFailureCode = "cancelled" | "invalid_input" | "authentication" | "capability_unavailable" | "integrity_failure" | "resource_unavailable" | "lease_lost" | "worker_failed" | "storage_failure" | "safety_refusal" | "timed_out" | "unknown";
 
 export type JobFailureDto = {
+	entity_import: ApiError | null,
 	code: JobFailureCode,
 	retryable: boolean,
 	/**  What a chat feature job needs the user to change. */
@@ -4008,6 +4328,14 @@ export type LorebookEntryView = {
 	updated_at: number,
 };
 
+export type LorebookExportFormat = "world_info" | "usc";
+
+export type LorebookExportRequest = {
+	id: string,
+	format: LorebookExportFormat,
+	target: FileTarget | null,
+};
+
 export type LorebookGeneratorDefaults = {
 	target_count: number,
 	min_target_count: number,
@@ -4779,6 +5107,12 @@ export type ModelDuplicateRequest = {
 	display_name: string,
 	expected_revision: number,
 	client_operation_id: string,
+};
+
+export type ModelExportRequest = {
+	id: string,
+	format: EntityExportFormat,
+	target: FileTarget | null,
 };
 
 export type ModelGetRequest = {

@@ -615,6 +615,27 @@ fn admit_job_detail_with_id_in(
     Ok((admitted.job, false, admitted.created))
 }
 
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn admit_entity_import_job(&self, spec: NewJob, key: &str, digest: &str, detail: &serde_json::Value) -> Result<JobSnapshot, StoreError> {
+        let (job, _, _) = admit_job_detail_in(self.transaction, spec, key, digest, detail)?;
+        Ok(job)
+    }
+
+    pub fn transition_import_job(&self, mutation: JobMutation) -> Result<JobSnapshot, StoreError> {
+        if let JobMutation::Succeed { claim, at, .. } = &mutation {
+            ensure_job_attempt_in(
+                self.transaction,
+                claim.job_id,
+                Some(claim.attempt.get()),
+                *at,
+                false,
+            )?;
+        }
+        let before = load_with_children(self.transaction, [mutation.job_id()])?;
+        apply_to_job_set(self.transaction, before, |store| store.append_and_transition(mutation))
+    }
+}
+
 fn apply_to_job_set<R>(
     transaction: &Transaction<'_>,
     before: JobRecords,

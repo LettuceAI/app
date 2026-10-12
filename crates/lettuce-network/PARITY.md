@@ -38,3 +38,7 @@ Facts about how `lettuce-network` relates to the legacy app (2.2.x). The crate R
 Invalid stored trusted roots are skipped at runtime, preserving old-code/src-tauri/src/tls.rs:26-39; new imports remain strict. Shared client state supports immediate trust changes without restart, preserving legacy per-request certificate reads (tls.rs:4-24). Bundles trust every certificate rather than only one.
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
+
+Entity avatar downloads apply the stored trusted PEM roots to the artifact client. Legacy had trusted-root configuration for its configured clients (old-code/src-tauri/src/tls.rs:4-39), but avatar download called reqwest::get directly (old-code/src-tauri/src/storage_manager/entity_transfer/mod.rs:3239-3259). The rewrite uses the existing trust policy for avatar downloads without an insecure TLS fallback or retry loop.
+
+Avatar imports accept HTTP, HTTPS and responses without a declared length, preserving old-code/src-tauri/src/storage_manager/entity_transfer/mod.rs:1294-1295,3239-3259. The avatar-specific download method bounds streamed bytes as well as a declared size, can be cancelled by dropping its future, and never retries. The existing strict artifact methods retain their original HTTPS and expected-size requirements.

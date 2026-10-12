@@ -1,19 +1,25 @@
 use lettuce_characters::{
-    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink, PersonaMediaSlot,
+    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaMediaSlot,
     PersonaRepository, RepositoryError,
 };
 use lettuce_context::{
     BindingRepositoryError, LifecycleStatus as LorebookStatus, LorebookRepository,
     PersonaLorebookBindingRepository,
 };
-use lettuce_media::{AssetKind, LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
+use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
+#[cfg(test)]
+use lettuce_media::AssetKind;
+#[cfg(test)]
+use lettuce_characters::PersonaMediaLink;
 use lettuce_transfer::{
     EntityPackageError, LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason,
     PackageCrop, PersonaFileImport, PersonaFileRepository, PersonaPackage, PersonaUecSource,
 };
 use lettuce_types::{LorebookId, PersonaId, Revision, TimestampMillis};
 
-use crate::{inline_image, store_file_image};
+use crate::files::character_files::inline_image_warning;
+#[cfg(test)]
+use crate::files::character_files::store_file_image;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PersonaFileError {
@@ -28,6 +34,7 @@ pub enum PersonaFileError {
 }
 
 /// A persona file written as a new persona.
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct ImportedPersonaFile {
     pub persona: Persona,
@@ -77,13 +84,40 @@ where
     /// Writes the package as a new persona bound to the file's lorebooks that
     /// exist here, made the default when the file says so; an avatar that
     /// cannot be stored is left off.
+    #[cfg(test)]
     pub fn import(
         &self,
         package: &PersonaPackage,
         now: TimestampMillis,
     ) -> Result<ImportedPersonaFile, PersonaFileError> {
+        let (mut import, skipped) = self.prepare(package, now)?;
+        if let Some(asset_id) = package.avatar_data.as_deref().and_then(|avatar| {
+            store_file_image(self.media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
+        }) {
+            import.persona.media.links.push(PersonaMediaLink { asset_id, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
+        }
+        let avatar = import.persona.media.links.first().map(|link| link.asset_id);
+        match self.repository.import_persona_file(&import) {
+            Ok(persona) => Ok(ImportedPersonaFile {
+                persona,
+                skipped,
+            }),
+            Err(error) => {
+                if let Some(asset_id) = avatar {
+                    self.discard_avatar(asset_id, now);
+                }
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn prepare(
+        &self,
+        package: &PersonaPackage,
+        now: TimestampMillis,
+    ) -> Result<(PersonaFileImport, Vec<LegacyImportSkip>), PersonaFileError> {
         let data = &package.persona;
-        let mut persona = Persona {
+        let persona = Persona {
             id: PersonaId::new(),
             status: LifecycleStatus::Active,
             title: data.title.clone(),
@@ -126,39 +160,19 @@ where
             };
             bound.push(lorebook.book.id);
         }
-        let avatar = package.avatar_data.as_deref().and_then(|avatar| {
-            store_file_image(
-                self.media_store,
-                avatar,
-                AssetKind::AvatarOriginal,
-                "lettuceai-persona-file",
-            )
-        });
-        if let Some(asset_id) = avatar {
-            persona.media.links.push(PersonaMediaLink {
-                asset_id,
-                slot: PersonaMediaSlot::Avatar,
-                ordinal: 0,
-            });
-        }
-        let imported = self.repository.import_persona_file(&PersonaFileImport {
-            persona,
-            lorebook_ids: bound,
-            make_default: data.is_default == Some(true),
-        });
-        match imported {
-            Ok(persona) => Ok(ImportedPersonaFile { persona, skipped }),
-            Err(error) => {
-                if let Some(asset_id) = avatar {
-                    self.discard_avatar(asset_id, now);
-                }
-                Err(error.into())
-            }
-        }
+        Ok((
+            PersonaFileImport {
+                persona,
+                lorebook_ids: bound,
+                make_default: data.is_default == Some(true),
+            },
+            skipped,
+        ))
     }
 
     /// Deletes an avatar stored for an import that failed, so it leaves no
     /// unused file behind; a failure here is only logged.
+    #[cfg(test)]
     fn discard_avatar(&self, asset_id: lettuce_types::AssetId, now: TimestampMillis) {
         let blob_id = match self.repository.discard_unlinked_asset(asset_id) {
             Ok(Some(blob_id)) => blob_id,
@@ -179,6 +193,14 @@ where
 
     /// The persona written as a v2 persona UEC with its avatar inlined.
     pub fn export(&self, persona_id: PersonaId) -> Result<String, PersonaFileError> {
+        Ok(self.export_with_warnings(persona_id)?.0)
+    }
+
+    pub fn export_with_warnings(
+        &self,
+        persona_id: PersonaId,
+    ) -> Result<(String, Vec<lettuce_contracts::FileWarning>), PersonaFileError> {
+        let mut warnings = Vec::new();
         let persona = PersonaRepository::get(self.repository, persona_id)?
             .ok_or(PersonaFileError::NotFound)?;
         let mut bindings = self.repository.list_persona_bindings(persona_id)?;
@@ -186,31 +208,41 @@ where
         let is_default =
             self.repository.get_default_snapshot()?.state.persona_id == Some(persona_id);
         let decimal = |value: f32| value.to_string().parse().unwrap_or(f64::from(value));
-        Ok(lettuce_transfer::build_persona_uec(&PersonaUecSource {
-            id: persona.id.to_string(),
-            title: persona.title.clone(),
-            description: persona.description.clone(),
-            nickname: persona.nickname.clone(),
-            is_default,
-            created_at: persona.created_at.get(),
-            updated_at: persona.updated_at.get(),
-            avatar: persona
-                .media
-                .links
-                .iter()
-                .find(|link| link.slot == PersonaMediaSlot::Avatar)
-                .and_then(|link| inline_image(self.media_store, link.asset_id)),
-            avatar_crop: persona.avatar_crop.map(|crop| PackageCrop {
-                x: decimal(crop.x),
-                y: decimal(crop.y),
-                scale: decimal(crop.scale),
-            }),
-            active_lorebook_ids: bindings
-                .iter()
-                .filter(|binding| binding.enabled)
-                .map(|binding| binding.lorebook_id.to_string())
-                .collect(),
-        })?)
+        Ok((
+            lettuce_transfer::build_persona_uec(&PersonaUecSource {
+                id: persona.id.to_string(),
+                title: persona.title.clone(),
+                description: persona.description.clone(),
+                nickname: persona.nickname.clone(),
+                is_default,
+                created_at: persona.created_at.get(),
+                updated_at: persona.updated_at.get(),
+                avatar: persona
+                    .media
+                    .links
+                    .iter()
+                    .find(|link| link.slot == PersonaMediaSlot::Avatar)
+                    .and_then(|link| {
+                        inline_image_warning(
+                            self.media_store,
+                            link.asset_id,
+                            "avatar",
+                            &mut warnings,
+                        )
+                    }),
+                avatar_crop: persona.avatar_crop.map(|crop| PackageCrop {
+                    x: decimal(crop.x),
+                    y: decimal(crop.y),
+                    scale: decimal(crop.scale),
+                }),
+                active_lorebook_ids: bindings
+                    .iter()
+                    .filter(|binding| binding.enabled)
+                    .map(|binding| binding.lorebook_id.to_string())
+                    .collect(),
+            })?,
+            warnings,
+        ))
     }
 }
 

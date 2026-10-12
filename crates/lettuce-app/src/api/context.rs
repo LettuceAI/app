@@ -526,12 +526,12 @@ impl ApiContext {
         &self.inner.parts.secret_store
     }
 
-    /// Settles what the previous process left running; call once before any
-    /// worker starts.
     pub(super) async fn provider_write_guard(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.inner.provider_writes.lock().await
     }
 
+    /// Settles what the previous process left running; call once before any
+    /// worker starts.
     pub fn recover_after_restart(&self) -> Result<(), ApiError> {
         let report = self
             .backend()

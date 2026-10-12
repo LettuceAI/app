@@ -45,7 +45,18 @@ pub(super) fn detect_kind(reader: &mut dyn FileReader) -> Result<dto::FileKind, 
     }
     match lettuce_transfer::detect_backup_format(&header) {
         Ok(lettuce_transfer::BackupFormatVersion::CurrentV2) => return Ok(dto::FileKind::BackupV2),
-        Ok(lettuce_transfer::BackupFormatVersion::LegacyV1) => return Ok(dto::FileKind::BackupV1),
+        Ok(lettuce_transfer::BackupFormatVersion::LegacyV1) => {
+            reader.seek(SeekFrom::Start(0)).map_err(io)?;
+            return lettuce_transfer::zip_has_legacy_backup_manifest(reader)
+                .map(|backup| {
+                    if backup {
+                        dto::FileKind::BackupV1
+                    } else {
+                        dto::FileKind::Other
+                    }
+                })
+                .map_err(|_| FileAccessError::Io);
+        }
         Err(_) => {}
     }
     if header.starts_with(PNG_MAGIC) && png_holds_a_card(reader)? {
@@ -193,6 +204,29 @@ pub(super) fn sample_json<R: Read>(reader: R) -> (Option<Value>, bool) {
 }
 
 fn json_kind(value: &Value) -> dto::FileKind {
+    let text = value.to_string();
+    match value.get("kind").and_then(Value::as_str) {
+        Some("lorebook")
+            if value.pointer("/schema/name").and_then(Value::as_str) == Some("USC") =>
+        {
+            return dto::FileKind::Lorebook;
+        }
+        Some("chat_template") => return dto::FileKind::ChatTemplate,
+        Some("model_profile")
+            if value.pointer("/schema/name").and_then(Value::as_str) == Some("USC") =>
+        {
+            return dto::FileKind::ModelFile;
+        }
+        Some("system_prompt_template")
+            if value.pointer("/schema/name").and_then(Value::as_str) == Some("USC") =>
+        {
+            return dto::FileKind::PromptPreset;
+        }
+        _ => {}
+    }
+    if lettuce_transfer::parse_model_import(&text).is_ok() {
+        return dto::FileKind::ModelFile;
+    }
     if lettuce_transfer::looks_like_uec(value) {
         return if lettuce_transfer::parse_persona_import(value, 0).is_ok() {
             dto::FileKind::PersonaFile
@@ -200,7 +234,6 @@ fn json_kind(value: &Value) -> dto::FileKind {
             dto::FileKind::CharacterCard
         };
     }
-    let text = value.to_string();
     if lettuce_transfer::detect_character_format(value).is_some() {
         dto::FileKind::CharacterCard
     } else if lettuce_transfer::parse_persona_import(value, 0).is_ok() {
@@ -209,6 +242,10 @@ fn json_kind(value: &Value) -> dto::FileKind {
         dto::FileKind::Lorebook
     } else if lettuce_transfer::parse_prompt_import(&text, None, "Imported", "Imported").is_ok() {
         dto::FileKind::PromptPreset
+    } else if value.get("messages").is_some()
+        && lettuce_transfer::parse_chat_template_import(&text).is_ok()
+    {
+        dto::FileKind::ChatTemplate
     } else {
         dto::FileKind::Other
     }
@@ -315,6 +352,63 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn entity_file_kinds_include_usc_and_legacy_templates_and_models() {
+        for (value, expected) in [
+            (
+                serde_json::json!({"schema": {"name": "USC", "version": "1.0"}, "kind": "chat_template", "payload": {"name": "Starter", "messages": []}}),
+                "chat_template",
+            ),
+            (
+                serde_json::json!({"version": 1, "kind": "chat_template", "template": {"name": "Starter", "messages": []}}),
+                "chat_template",
+            ),
+            (
+                serde_json::json!({"schema": {"name": "USC", "version": "1.0"}, "kind": "model_profile", "payload": {"name": "model", "providerId": "llamacpp"}}),
+                "model_file",
+            ),
+            (
+                serde_json::json!({"name": "model", "providerId": "llamacpp"}),
+                "model_file",
+            ),
+            (
+                serde_json::json!({"schema": {"name": "USC", "version": "1.0"}, "kind": "lorebook", "payload": {"id": "book", "name": "Harbour", "entries": [], "createdAt": 1, "updatedAt": 2}}),
+                "lorebook",
+            ),
+        ] {
+            let mut reader = std::io::Cursor::new(value.to_string().into_bytes());
+            let actual = detect_kind(&mut reader).expect("inspect");
+            assert_eq!(
+                serde_json::to_value(actual).expect("kind"),
+                expected,
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_charx_and_plain_zip_are_other_but_a_backup_is_backup_v1() {
+        for (bytes, expected) in [
+            (
+                include_bytes!("fixtures/card.charx").as_slice(),
+                dto::FileKind::Other,
+            ),
+            (
+                include_bytes!("fixtures/plain.zip").as_slice(),
+                dto::FileKind::Other,
+            ),
+            (
+                include_bytes!("fixtures/legacy-unknown.lettuce").as_slice(),
+                dto::FileKind::BackupV1,
+            ),
+        ] {
+            assert_eq!(
+                detect_kind(&mut std::io::Cursor::new(bytes)).expect("inspect"),
+                expected
+            );
+        }
+    }
 
     /// A single-line minified JSON array of `items` small objects, generated
     /// as it is read and counting the bytes handed out.

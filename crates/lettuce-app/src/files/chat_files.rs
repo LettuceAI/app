@@ -1,6 +1,6 @@
 use lettuce_conversations::{ConversationKind, ParticipantRole};
 use lettuce_transfer::{
-    ChatImportRepository, ChatImportRepositoryError, ChatJsonlError, ChatJsonlRole, LegacyIdScope,
+    ChatImportRepositoryError, ChatJsonlError, ChatJsonlRole, LegacyIdScope,
     LegacyImportRepositoryError,
 };
 use lettuce_types::{CharacterId, ConversationId, TimestampMillis};
@@ -85,21 +85,28 @@ struct ImportedLine {
     selected: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct PreparedChatFile {
+    pub group: Option<lettuce_characters::CreateGroupPlan>,
+    pub record: lettuce_transfer::LegacyConversationRecord,
+    pub companion: Option<(
+        lettuce_companions::CompanionStateOwner,
+        lettuce_companions::CompanionRuntimeState,
+    )>,
+}
+
 impl<S> ChatFileCoordinator<'_, S>
 where
-    S: DirectLaunchSources + ChatImportRepository,
+    S: DirectLaunchSources,
 {
-    /// Imports a one-character transcript as a new chat with `character_id`,
-    /// titled by the header's character name, else `file_stem`.
-    pub fn import_direct(
+    pub fn prepare_direct(
         &self,
-        raw: &str,
+        chat: lettuce_transfer::ChatJsonl,
         file_stem: Option<&str>,
         character_id: Option<CharacterId>,
         now: TimestampMillis,
-    ) -> Result<ConversationId, ChatFileError> {
+    ) -> Result<PreparedChatFile, ChatFileError> {
         let character_id = character_id.ok_or(ChatFileError::TargetCharacterRequired)?;
-        let chat = lettuce_transfer::parse_chat_jsonl(raw, now.get())?;
         let source_id = Uuid::new_v4().to_string();
         let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
@@ -230,36 +237,37 @@ where
                 initial,
             )
         });
-        self.sources.import_chat(record, companion, now)?;
-        Ok(conversation_id)
+        Ok(PreparedChatFile {
+            group: None,
+            record,
+            companion,
+        })
     }
 }
 
 impl<S> ChatFileCoordinator<'_, S>
 where
-    S: crate::GroupLaunchSources + ChatImportRepository,
+    S: crate::GroupLaunchSources,
 {
-    /// Imports a transcript with several speakers as a new group of the
-    /// characters `participants` maps each speaker name to, and its chat.
-    pub fn import_group(
+    pub fn prepare_group(
         &self,
-        raw: &str,
+        chat: lettuce_transfer::ChatJsonl,
         participants: &std::collections::BTreeMap<String, CharacterId>,
         now: TimestampMillis,
-    ) -> Result<ConversationId, ChatFileError> {
-        use lettuce_characters::{CharacterRepository, GroupMember, GroupProfile, GroupRepository};
-        let chat = lettuce_transfer::parse_chat_jsonl(raw, now.get())?;
+    ) -> Result<PreparedChatFile, ChatFileError> {
+        use lettuce_characters::{CharacterRepository, GroupMember, GroupProfile};
         let mut unresolved = Vec::new();
         let mut speakers = std::collections::BTreeMap::new();
         for speaker in chat.speakers() {
-            let character = participants.get(&speaker).copied().filter(|id| {
-                CharacterRepository::get(self.sources, *id)
-                    .ok()
-                    .flatten()
-                    .is_some_and(|details| {
+            let character = match participants.get(&speaker).copied() {
+                Some(id) => CharacterRepository::get(self.sources, id)
+                    .map_err(|_| ChatFileError::Repository(ChatImportRepositoryError::Storage))?
+                    .filter(|details| {
                         details.character.status == lettuce_characters::LifecycleStatus::Active
                     })
-            });
+                    .map(|details| details.character.id),
+                None => None,
+            };
             match character {
                 Some(id) => {
                     speakers.insert(speaker, id);
@@ -278,7 +286,7 @@ where
         }
         match members.as_slice() {
             [] => return Err(ChatFileError::GroupNeedsCharacters),
-            [only] => return self.import_direct(raw, None, Some(*only), now),
+            [only] => return self.prepare_direct(chat, None, Some(*only), now),
             _ => {}
         }
         let title = chat
@@ -290,34 +298,30 @@ where
             .filter(|title| !title.is_empty())
             .unwrap_or("Imported Group Chat")
             .to_owned();
-        let group = GroupRepository::create(
-            self.sources,
-            lettuce_characters::CreateGroupPlan {
-                group: GroupProfile::new(
-                    lettuce_types::GroupId::new(),
-                    title.clone(),
-                    members
-                        .iter()
-                        .enumerate()
-                        .map(|(ordinal, character_id)| GroupMember {
-                            character_id: *character_id,
-                            ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
-                            muted: false,
-                            model_profile_override: None,
-                        })
-                        .collect(),
-                    now,
-                )
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-                starting_scene: None,
-            },
-        )
-        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let group = lettuce_characters::CreateGroupPlan {
+            group: GroupProfile::new(
+                lettuce_types::GroupId::new(),
+                title.clone(),
+                members
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, character_id)| GroupMember {
+                        character_id: *character_id,
+                        ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                        muted: false,
+                        model_profile_override: None,
+                    })
+                    .collect(),
+                now,
+            )
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+            starting_scene: None,
+        };
         let source_id = Uuid::new_v4().to_string();
         let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
         let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
-            .prepare_group(
+            .prepare_new_group(
                 &crate::GroupConversationLaunchRequest {
                     format_version: crate::GROUP_LAUNCH_REQUEST_FORMAT_V1,
                     title,
@@ -329,6 +333,10 @@ where
                         scope.source("conversation", &source_id)
                     ))
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                },
+                lettuce_characters::GroupDetails {
+                    group: group.group.clone(),
+                    starting_scene: None,
                 },
                 now,
             )?
@@ -449,9 +457,11 @@ where
             },
             &context,
         )?;
-        let conversation_id = record.history.aggregate.conversation.id;
-        self.sources.import_chat(record, None, now)?;
-        Ok(conversation_id)
+        Ok(PreparedChatFile {
+            group: Some(group),
+            record,
+            companion: None,
+        })
     }
 }
 
@@ -708,6 +718,14 @@ mod tests {
     }
 
     fn named(backend: &crate::AppBackend, name: &str, companion: bool) -> CharacterId {
+        named_database(backend.database(), name, companion)
+    }
+
+    fn named_database(
+        database: &lettuce_database::Database,
+        name: &str,
+        companion: bool,
+    ) -> CharacterId {
         let id = CharacterId::new();
         let mut defaults = CharacterDefaults::default();
         if companion {
@@ -733,7 +751,7 @@ mod tests {
         )
         .expect("character");
         CharacterRepository::create(
-            backend.database(),
+            database,
             CreateCharacterPlan {
                 character,
                 scenes: Vec::new(),
@@ -743,6 +761,21 @@ mod tests {
         )
         .expect("create character");
         id
+    }
+
+    fn apply(
+        database: &lettuce_database::Database,
+        prepared: Result<PreparedChatFile, ChatFileError>,
+        now: TimestampMillis,
+    ) -> Result<ConversationId, ChatFileError> {
+        let prepared = prepared?;
+        let id = prepared.record.history.aggregate.conversation.id;
+        let key = id.to_string();
+        database.commit_api_operation::<(), lettuce_database::ApiOperationError>("import_chat_apply", &key, &key, now, |scope| {
+            scope.import_chat(prepared.group, prepared.record, prepared.companion, now)
+                .map_err(|_| lettuce_database::ApiOperationError::Storage)
+        }).map_err(|_| ChatImportRepositoryError::Storage)?;
+        Ok(id)
     }
 
     #[test]
@@ -758,14 +791,14 @@ mod tests {
         let blank = r#"{"user_name":"You","character_name":"  ","chat_metadata":{}}"#.to_owned()
             + "\n"
             + r#"{"name":"You","is_user":true,"mes":"Hi"}"#;
-        let untitled = backend
+        let untitled = apply(backend.database(), backend
             .chat_files()
-            .import_direct(
-                &blank,
+            .prepare_direct(
+                lettuce_transfer::parse_chat_jsonl(&blank, 40).expect("parse transcript"),
                 Some("night"),
                 Some(character_id),
                 TimestampMillis::new(40),
-            )
+            ), TimestampMillis::new(40))
             .expect("blank header");
         assert_eq!(
             ConversationReader::get(backend.database(), untitled)
@@ -783,16 +816,16 @@ mod tests {
         .join("\n");
         let files = backend.chat_files();
         assert!(matches!(
-            files.import_direct(&raw, None, None, TimestampMillis::new(50)),
+            apply(backend.database(), files.prepare_direct(lettuce_transfer::parse_chat_jsonl(&raw, 50).expect("parse transcript"), None, None, TimestampMillis::new(50)), TimestampMillis::new(50)),
             Err(ChatFileError::TargetCharacterRequired)
         ));
-        let conversation_id = files
-            .import_direct(
-                &raw,
+        let conversation_id = apply(backend.database(), files
+            .prepare_direct(
+                lettuce_transfer::parse_chat_jsonl(&raw, 50).expect("parse transcript"),
                 Some("file"),
                 Some(character_id),
                 TimestampMillis::new(50),
-            )
+            ), TimestampMillis::new(50))
             .expect("import");
         let stored = ConversationReader::get(backend.database(), conversation_id)
             .expect("conversation")
@@ -844,11 +877,11 @@ mod tests {
         let character_id = character(&backend, true);
         let raw = r#"{"name":"You","is_user":true,"mes":"Hello"}"#;
         let files = backend.chat_files();
-        let first = files
-            .import_direct(raw, None, Some(character_id), TimestampMillis::new(50))
+        let first = apply(backend.database(), files
+            .prepare_direct(lettuce_transfer::parse_chat_jsonl(raw, 50).expect("parse transcript"), None, Some(character_id), TimestampMillis::new(50)), TimestampMillis::new(50))
             .expect("first");
-        let second = files
-            .import_direct(raw, None, Some(character_id), TimestampMillis::new(60))
+        let second = apply(backend.database(), files
+            .prepare_direct(lettuce_transfer::parse_chat_jsonl(raw, 60).expect("parse transcript"), None, Some(character_id), TimestampMillis::new(60)), TimestampMillis::new(60))
             .expect("second");
         let episodes = [first, second].map(|conversation_id| {
             lettuce_companions::CompanionStateRepository::get_continuity_episode(
@@ -859,6 +892,40 @@ mod tests {
             .map(|episode| (episode.episode_index, episode.previous_conversation_id))
         });
         assert_eq!(episodes, [Some((1, None)), Some((2, Some(first)))]);
+    }
+
+    #[test]
+    fn a_group_import_that_cannot_prepare_leaves_no_empty_group() {
+        use lettuce_characters::{GroupRepository, GroupSearch, LibrarySort};
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let ada = named_database(&database, "Ada", false);
+        let ben = named_database(&database, "Ben", false);
+        let raw = [
+            r#"{"user_name":"You","character_name":"Crew","chat_metadata":{"group":true}}"#,
+            r#"{"name":"Ada","is_user":false,"mes":"Hi"}"#,
+            r#"{"name":"Ben","is_user":false,"mes":"Hey"}"#,
+        ]
+        .join("\n");
+        let speakers = std::collections::BTreeMap::from([("Ada".into(), ada), ("Ben".into(), ben)]);
+        assert!(
+            apply(&database, ChatFileCoordinator::new(&database)
+                .prepare_group(lettuce_transfer::parse_chat_jsonl(&raw, 50).expect("parse transcript"), &speakers, TimestampMillis::new(50)), TimestampMillis::new(50))
+                .is_err()
+        );
+        let groups = GroupRepository::search(
+            &database,
+            GroupSearch {
+                text: String::new(),
+                include_archived: true,
+                sort: LibrarySort::Name,
+            },
+            lettuce_types::PageRequest::default(),
+        )
+        .expect("groups");
+        assert!(
+            groups.items.is_empty(),
+            "failed preparation must not leave a group"
+        );
     }
 
     #[test]
@@ -882,13 +949,13 @@ mod tests {
         let files = backend.chat_files();
         let partial = std::collections::BTreeMap::from([("Ada".to_owned(), ada)]);
         assert!(matches!(
-            files.import_group(&raw, &partial, TimestampMillis::new(50)),
+            apply(backend.database(), files.prepare_group(lettuce_transfer::parse_chat_jsonl(&raw, 50).expect("parse transcript"), &partial, TimestampMillis::new(50)), TimestampMillis::new(50)),
             Err(ChatFileError::UnresolvedParticipants(names)) if names == "Ben"
         ));
         let alone =
             std::collections::BTreeMap::from([("Ada".to_owned(), ada), ("Ben".to_owned(), ada)]);
-        let direct = files
-            .import_group(&raw, &alone, TimestampMillis::new(50))
+        let direct = apply(backend.database(), files
+            .prepare_group(lettuce_transfer::parse_chat_jsonl(&raw, 50).expect("parse transcript"), &alone, TimestampMillis::new(50)), TimestampMillis::new(50))
             .expect("one character");
         assert!(matches!(
             ConversationReader::get(backend.database(), direct)
@@ -899,8 +966,8 @@ mod tests {
         ));
         let map =
             std::collections::BTreeMap::from([("Ada".to_owned(), ada), ("Ben".to_owned(), ben)]);
-        let conversation_id = files
-            .import_group(&raw, &map, TimestampMillis::new(50))
+        let conversation_id = apply(backend.database(), files
+            .prepare_group(lettuce_transfer::parse_chat_jsonl(&raw, 50).expect("parse transcript"), &map, TimestampMillis::new(50)), TimestampMillis::new(50))
             .expect("import group");
         let conversation = ConversationReader::get(backend.database(), conversation_id)
             .expect("conversation")

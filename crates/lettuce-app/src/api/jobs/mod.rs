@@ -254,6 +254,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
     let (speech_result, speech_failure) = speech::speech_view(context, job)?;
     let soul_result = memory::soul_draft_view(context, job)?;
     let lorebook_result = lorebook::result_view(context, job)?;
+    let entity_import = super::entity_import_jobs::failure_view(context, job)?;
     Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
@@ -270,6 +271,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             .error
             .as_ref()
             .map(|error| dto::JobFailureDto {
+                entity_import: entity_import.clone(),
                 code: failure_code(error.code),
                 retryable: error.retryable,
                 reason: failure_reason(error.message.as_str()),
@@ -298,6 +300,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             })
             .or_else(|| {
                 speech_failure.map(|failure| dto::JobFailureDto {
+                    entity_import: None,
                     code: dto::JobFailureCode::WorkerFailed,
                     retryable: false,
                     reason: None,
