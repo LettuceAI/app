@@ -123,7 +123,7 @@ pub async fn provider_verify(
         dto::ProviderVerifyRequest::Draft { draft } => {
             let descriptor = lettuce_providers::provider_descriptor(&draft.provider_kind)
                 .ok_or_else(|| invalid_field("draft.provider_kind", "unknown provider kind"))?;
-            let config: ProviderConfig = serde_json::from_value(draft.config)
+            let config = provider_config(&draft.provider_kind, draft.config)
                 .map_err(|_| invalid_field("draft.config", "invalid provider configuration"))?;
             let now = context.clock().now();
             let owner = SecretOwnerId::new();
@@ -376,5 +376,37 @@ mod verification_reason_tests {
             assert_eq!(details["reason"], reason);
             assert_eq!(details["provider_message"], serde_json::Value::Null);
         }
+    }
+}
+
+/// An empty object stands for the kind's default configuration, so a client
+/// that only names the provider does not have to know the config shape.
+pub(in crate::api) fn provider_config(
+    kind: &str,
+    config: serde_json::Value,
+) -> Result<ProviderConfig, serde_json::Error> {
+    if config.as_object().is_some_and(serde_json::Map::is_empty) {
+        return Ok(default_provider_config(kind));
+    }
+    serde_json::from_value(config)
+}
+
+fn default_provider_config(kind: &str) -> ProviderConfig {
+    use lettuce_models::{CustomAuth, CustomProviderConfig, OllamaConfig};
+    if kind.eq_ignore_ascii_case("ollama") {
+        ProviderConfig::Ollama(OllamaConfig::default())
+    } else if kind.eq_ignore_ascii_case("custom") {
+        ProviderConfig::Custom(CustomProviderConfig {
+            chat_path: "/v1/chat/completions".to_owned(),
+            auth: CustomAuth::Bearer,
+            ..CustomProviderConfig::default()
+        })
+    } else if kind.eq_ignore_ascii_case("custom-anthropic") {
+        ProviderConfig::Custom(CustomProviderConfig {
+            chat_path: "/v1/messages".to_owned(),
+            ..CustomProviderConfig::default()
+        })
+    } else {
+        ProviderConfig::Standard
     }
 }

@@ -178,3 +178,97 @@ async fn certificate_listing_returns_metadata_without_pem_or_a_count_cap() {
     );
     assert_eq!(database.load_device_settings().expect("settings"), settings);
 }
+
+#[tokio::test]
+async fn openrouter_draft_with_an_empty_config_sends_the_bearer_key() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut bytes = vec![0; 8192];
+        let count = socket.read(&mut bytes).await.expect("request");
+        let request = String::from_utf8(bytes[..count].to_vec()).expect("HTTP");
+        let body = r#"{"data":{}}"#;
+        socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("reply");
+        request
+    });
+    let harness = harness(Reply::Text("Hello."));
+    let verified = provider_verify(&harness.context, dto::ProviderVerifyRequest::Draft {
+        draft: dto::ProviderVerifyDraft {
+            provider_kind: "openrouter".into(),
+            base_url: Some(endpoint),
+            api_key: Some("sk-or-canary".into()),
+            config: serde_json::json!({}),
+        },
+    })
+    .await
+    .expect("verified");
+    let request = tokio::time::timeout(std::time::Duration::from_secs(5), server)
+        .await
+        .expect("server responded")
+        .expect("server");
+    assert!(request.starts_with("GET /v1/key HTTP/1.1"), "{request}");
+    assert!(
+        request.to_lowercase().contains("authorization: bearer sk-or-canary"),
+        "{request}"
+    );
+    assert!(verified.valid);
+}
+
+#[tokio::test]
+async fn saved_openrouter_account_lists_models_with_its_key() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        let mut bytes = vec![0; 8192];
+        let count = socket.read(&mut bytes).await.expect("request");
+        let request = String::from_utf8(bytes[..count].to_vec()).expect("HTTP");
+        let body = r#"{"data":[{"id":"a/b","name":"A B","pricing":{"prompt":"0","completion":"0"}}]}"#;
+        socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("reply");
+        request
+    });
+    let harness = harness(Reply::Text("Hello."));
+    let saved = crate::api::provider_account_save(
+        &harness.context,
+        dto::ProviderAccountSaveRequest {
+            account: dto::ProviderAccountInput {
+                id: None,
+                provider_kind: "openrouter".into(),
+                label: "My OpenRouter".into(),
+                base_url: Some(endpoint),
+                enabled: true,
+                streaming_enabled: true,
+                allow_invalid_tls: false,
+                config: serde_json::json!({}),
+            },
+            api_key: Some("sk-or-canary".into()),
+            clear_api_key: false,
+            expected_revision: None,
+            client_operation_id: "onboarding-save".into(),
+        },
+    )
+    .await
+    .expect("saved");
+    let models = crate::api::provider_models(
+        &harness.context,
+        dto::ProviderModelsRequest { account_id: saved.id.clone() },
+    )
+    .await
+    .expect("models");
+    let request = tokio::time::timeout(std::time::Duration::from_secs(5), server)
+        .await
+        .expect("server responded")
+        .expect("server");
+    assert!(
+        request.to_lowercase().contains("authorization: bearer sk-or-canary"),
+        "{request}"
+    );
+    assert_eq!(models.len(), 1);
+}

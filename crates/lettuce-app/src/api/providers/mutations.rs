@@ -190,7 +190,7 @@ pub async fn provider_account_save(
     }
     let descriptor = lettuce_providers::provider_descriptor(&request.account.provider_kind)
         .ok_or_else(|| invalid_field("account.provider_kind", "unknown provider kind"))?;
-    let config: ProviderConfig = serde_json::from_value(request.account.config)
+    let config = super::provider_config(&request.account.provider_kind, request.account.config)
         .map_err(|_| invalid_field("account.config", "invalid provider configuration"))?;
     let old = match &request.account.id {
         Some(id) => Some(super::account(context, id.clone()).await?),
