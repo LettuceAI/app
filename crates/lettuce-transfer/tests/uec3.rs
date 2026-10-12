@@ -376,27 +376,36 @@ fn companion_identity_notes_and_optional_learned_state_round_trip_without_conver
 }
 
 #[test]
-fn newer_minor_prompt_condition_and_payload_fields_warn_without_domain_changes() {
-    let mut source = lorebook();
-    source["kind"] = json!("prompt");
-    source["schema"]["version"] = json!("3.1");
-    source["assets"] = json!({});
-    source["entity"] = json!({"name":"Program","purpose":"direct_chat","condense":false,
-    "behaviorVersion":"deterministic_v2","builtIn":null,"entries":[{
-        "name":"Entry","role":"system","content":"Authored","enabled":true,"position":"relative","depth":0,
-        "conditionalMinMessages":null,"intervalTurns":null,"systemPrompt":false,
-        "conditions":{"type":"all","future":1,"conditions":[{"type":"chatMode","value":"direct","future":2}]},
-        "payload":{"type":"imageSlot","slot":"character","future":3}
-    }]});
-    let read = uec3::read(&source.to_string(), |_, _, _| Ok(())).expect("new minor");
-    assert_eq!(
-        read.warnings,
-        [
-            "entity.entries[0].conditions.conditions[0].future",
-            "entity.entries[0].conditions.future",
-            "entity.entries[0].payload.future"
-        ]
-    );
+fn newer_minor_prompt_condition_and_payload_fields_are_format_errors() {
+    for (conditions, payload) in [
+        (
+            json!({"type":"all","future":1,"conditions":[]}),
+            json!({"type":"imageSlot","slot":"character"}),
+        ),
+        (
+            json!({"type":"all","conditions":[{"type":"chatMode","value":"direct","future":2}]}),
+            json!({"type":"imageSlot","slot":"character"}),
+        ),
+        (
+            json!({"type":"all","conditions":[]}),
+            json!({"type":"imageSlot","slot":"character","future":3}),
+        ),
+    ] {
+        let mut source = lorebook();
+        source["kind"] = json!("prompt");
+        source["schema"]["version"] = json!("3.1");
+        source["assets"] = json!({});
+        source["entity"] = json!({"name":"Program","purpose":"direct_chat","condense":false,
+        "behaviorVersion":"deterministic_v2","builtIn":null,"entries":[{
+            "name":"Entry","role":"system","content":"Authored","enabled":true,"position":"relative","depth":0,
+            "conditionalMinMessages":null,"intervalTurns":null,"systemPrompt":false,
+            "conditions":conditions,"payload":payload
+        }]});
+        assert!(matches!(
+            uec3::read(&source.to_string(), |_, _, _| Ok(())),
+            Err(uec3::Error::Format(_))
+        ));
+    }
 }
 
 #[test]
