@@ -95,7 +95,7 @@ async fn crash_after_media_removal_commit_replays_without_deleting_a_new_referen
     let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
         .args([
             "--exact",
-            "api::media_library_tests::media_api_removal_after_commit_crash_child",
+            "api::library::media_library_tests::media_api_removal_after_commit_crash_child",
             "--nocapture",
         ])
         .env("LETTUCE_MEDIA_API_REMOVE_CRASH_ROOT", &root)
