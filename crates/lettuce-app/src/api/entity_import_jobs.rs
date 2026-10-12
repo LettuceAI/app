@@ -74,29 +74,13 @@ pub(super) async fn admit(
 ) -> Result<dto::ImportCommitResult, ApiError> {
     let result = context
         .blocking(move |context| {
-            let preview = context
-                .chat_previews()
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .get(&request.digest)
-                .cloned()
-                .ok_or_else(|| invalid_field("source", "preview the transcript before importing"))?;
-            let mut ids = Vec::new();
-            if preview.group {
-                let mapping = request.options.speakers.iter().map(|(name, id)| {
-                    Ok((name, parse_id::<CharacterId>(id, "options.speakers")?))
-                }).collect::<Result<std::collections::BTreeMap<_, _>, ApiError>>()?;
-                if preview.speakers.is_empty() {
-                    return Err(invalid_field("options.speakers", "a group requires characters"));
-                }
-                for speaker in &preview.speakers {
-                    let id = mapping.get(speaker)
-                        .ok_or_else(|| invalid_field("options.speakers", format!("unmapped speaker: {speaker}")))?;
-                    ids.push(*id);
-                }
-            } else {
-                let id = request.options.character_id.as_deref()
-                    .ok_or_else(|| invalid_field("options.character_id", "target character is required"))?;
+            let mut ids = request
+                .options
+                .speakers
+                .values()
+                .map(|id| parse_id::<CharacterId>(id, "options.speakers"))
+                .collect::<Result<Vec<_>, ApiError>>()?;
+            if let Some(id) = request.options.character_id.as_deref() {
                 ids.push(parse_id::<CharacterId>(id, "options.character_id")?);
             }
             for id in ids {
@@ -269,43 +253,50 @@ impl ClaimedJob for ImportClaim {
                     }
                     let prepared = prepare(context, &file, &request.options)?;
                     let id = prepared.record.history.aggregate.conversation.id;
+                    let digest = super::jobs::local::digest(&request)?;
                     database
-                        .apply_import_job(|scope| {
-                            if self.cancellation.is_cancelled()
-                                || context.shutdown_token().is_cancelled()
-                            {
-                                return Err(Failure(api_error(
-                                    ApiErrorCode::Cancelled,
-                                    "import was cancelled",
-                                )));
-                            }
-                            scope
-                                .import_chat(
-                                    prepared.group,
-                                    prepared.record,
-                                    prepared.companion,
-                                    context.now(),
-                                )
-                                .map_err(|e| Failure(internal(e)))?;
-                            scope
-                                .transition_import_job(JobMutation::Succeed {
-                                    claim: self.claim.clone(),
-                                    outcome: JobOutcome::Success {
-                                        result_ref: OutcomeRef::Conversation(id),
-                                    },
-                                    at: context.now(),
-                                })
-                                .map_err(|e| Failure(e.into_api_error()))?;
-                            if self.cancellation.is_cancelled()
-                                || context.shutdown_token().is_cancelled()
-                            {
-                                return Err(Failure(api_error(
-                                    ApiErrorCode::Cancelled,
-                                    "import was cancelled",
-                                )));
-                            }
-                            Ok::<_, Failure>(())
-                        })
+                        .commit_api_operation(
+                            "import_chat_apply",
+                            &request.client_operation_id,
+                            &digest,
+                            context.now(),
+                            |scope| {
+                                if self.cancellation.is_cancelled()
+                                    || context.shutdown_token().is_cancelled()
+                                {
+                                    return Err(Failure(api_error(
+                                        ApiErrorCode::Cancelled,
+                                        "import was cancelled",
+                                    )));
+                                }
+                                scope
+                                    .import_chat(
+                                        prepared.group,
+                                        prepared.record,
+                                        prepared.companion,
+                                        context.now(),
+                                    )
+                                    .map_err(|e| Failure(internal(e)))?;
+                                scope
+                                    .transition_import_job(JobMutation::Succeed {
+                                        claim: self.claim.clone(),
+                                        outcome: JobOutcome::Success {
+                                            result_ref: OutcomeRef::Conversation(id),
+                                        },
+                                        at: context.now(),
+                                    })
+                                    .map_err(|e| Failure(e.into_api_error()))?;
+                                if self.cancellation.is_cancelled()
+                                    || context.shutdown_token().is_cancelled()
+                                {
+                                    return Err(Failure(api_error(
+                                        ApiErrorCode::Cancelled,
+                                        "import was cancelled",
+                                    )));
+                                }
+                                Ok::<_, Failure>(())
+                            },
+                        )
                         .map_err(|e| e.0)?;
                     Ok(())
                 })();

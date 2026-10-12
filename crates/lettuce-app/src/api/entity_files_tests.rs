@@ -8,11 +8,7 @@ use serde_json::{Value, json};
 use super::tests::{Harness, Reply, harness_over};
 
 fn setup() -> (std::path::PathBuf, Harness) {
-    let root = std::env::var_os("TMPDIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-files")
-        })
+    let root = std::env::temp_dir()
         .join(format!(
             "lettuce-entity-files-{}",
             lettuce_types::JobId::new()
@@ -295,7 +291,7 @@ async fn character_bad_avatar_is_named_and_bundled_name_reuse_creates_a_copy() {
 }
 
 #[tokio::test]
-async fn group_import_requires_every_speaker_before_admission() {
+async fn group_import_with_an_unmapped_speaker_fails_typed_before_writing() {
     let (root, harness) = setup();
     let path = root.join("group.jsonl");
     std::fs::write(&path,"{\"chat_metadata\":{\"group\":true},\"character_name\":\"Group\"}\n{\"name\":\"Ada\",\"is_user\":false,\"mes\":\"One\"}\n{\"name\":\"Ben\",\"is_user\":false,\"mes\":\"Two\"}").expect("chat");
@@ -303,7 +299,7 @@ async fn group_import_requires_every_speaker_before_admission() {
         uri: path.display().to_string(),
     };
     let p = preview(&harness.context, source.clone()).await;
-    let result = super::import_commit(
+    let dto::ImportCommitResult::Job { job_id } = super::import_commit(
         &harness.context,
         commit_request(
             source,
@@ -313,17 +309,58 @@ async fn group_import_requires_every_speaker_before_admission() {
         ),
     )
     .await
-    .expect_err("every speaker");
-    assert_eq!(result.code, ApiErrorCode::InvalidInput);
-    assert!(
-        harness
-            .context
-            .backend()
-            .database()
-            .lookup_api_operation("import_commit", "unmapped")
-            .expect("receipt")
-            .is_none()
-    );
+    .expect("admit") else {
+        panic!("job")
+    };
+    let runner = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    assert!(runner.run_once().await.expect("run"));
+    runner.wait_idle().await;
+    let job = super::job_get(&harness.context, dto::JobGetRequest { job_id })
+        .await
+        .expect("job");
+    assert_eq!(job.state, dto::JobStateDto::Failed);
+    let graph = harness
+        .context
+        .backend()
+        .database()
+        .read_provider_backup_graph()
+        .expect("graph");
+    assert!(graph.conversation_history.conversations.is_empty());
+    assert!(graph.authored.groups.is_empty());
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+#[tokio::test]
+async fn chat_commit_needs_no_preview_in_this_process() {
+    let (root, harness) = setup();
+    let path = root.join("chat.jsonl");
+    let raw = "{\"character_name\":\"Ada\"}\n{\"name\":\"Ada\",\"is_user\":false,\"mes\":\"Hello\"}";
+    std::fs::write(&path, raw).expect("chat");
+    let source = dto::FileSource {
+        uri: path.display().to_string(),
+    };
+    let digest = blake3::hash(raw.as_bytes()).to_hex().to_string();
+    let result = super::import_commit(
+        &harness.context,
+        commit_request(
+            source,
+            digest,
+            json!({"character_id":harness.character_id.to_string()}),
+            "no-preview",
+        ),
+    )
+    .await
+    .expect("admit without a preview");
+    let runner = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    assert!(runner.run_once().await.expect("run"));
+    runner.wait_idle().await;
+    let dto::ImportCommitResult::Job { job_id } = result else {
+        panic!("job")
+    };
+    let job = super::job_get(&harness.context, dto::JobGetRequest { job_id })
+        .await
+        .expect("job");
+    assert_eq!(job.state, dto::JobStateDto::Succeeded);
     std::fs::remove_dir_all(root).expect("folder");
 }
 
@@ -431,7 +468,7 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
             harness.context.now(),
         )
         .expect("prepare");
-    let result: Result<(), ApiOperationError> = database.apply_import_job(|scope| {
+    let result: Result<(), ApiOperationError> = database.commit_api_operation("import_chat_apply", "rollback", "rollback", harness.context.now(), |scope| {
             scope
                 .import_chat(
                     prepared.group,
@@ -482,7 +519,7 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
     .await
     .expect("job");
     assert_eq!(job.state, dto::JobStateDto::Succeeded);
-    assert!(database.lookup_api_operation("import_chat_apply", "once-chat").expect("receipt lookup").is_none());
+    assert!(database.lookup_api_operation("import_chat_apply", "once-chat").expect("receipt lookup").is_some());
     assert!(matches!(
         job.result,
         Some(dto::JobResultDto::Conversation { .. })
@@ -509,11 +546,7 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
 async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
     use super::JobHandler;
     use lettuce_jobs::{JobStore, WorkerId};
-    let root = std::env::var_os("TMPDIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-files")
-        })
+    let root = std::env::temp_dir()
         .join(format!("chat-restart-{}", lettuce_types::JobId::new()));
     std::fs::create_dir_all(&root).expect("folder");
     let path = root.join("state.sqlite3");
@@ -926,7 +959,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
         Some("chat"), Some(harness.character_id), harness.context.now(),
     ).expect("chat plan");
     let chat = prepared.record.history.aggregate.conversation.id.to_string();
-    harness.context.backend().database().apply_import_job::<lettuce_database::ApiOperationError>(|scope| {
+    harness.context.backend().database().commit_api_operation::<(), lettuce_database::ApiOperationError>("import_chat_apply", &chat, &chat, harness.context.now(), |scope| {
         scope.import_chat(prepared.group, prepared.record, prepared.companion, harness.context.now())
             .map_err(|_| lettuce_database::ApiOperationError::Storage)
     }).expect("chat");

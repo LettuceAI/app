@@ -20,12 +20,6 @@ pub(super) struct ImportFile {
     pub digest: String,
 }
 
-#[derive(Clone)]
-pub(super) struct ChatAdmission {
-    pub group: bool,
-    pub speakers: Vec<String>,
-}
-
 pub(super) fn read_for_commit(
     context: &ApiContext,
     source: &dto::FileSource,
@@ -476,17 +470,6 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
         dto::FileKind::ChatJsonl => {
             let chat = lettuce_transfer::parse_chat_jsonl(text(&file)?, now.get())
                 .map_err(format_error)?;
-            context
-                .chat_previews()
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .insert(
-                    file.digest.clone(),
-                    ChatAdmission {
-                        group: chat.is_group(),
-                        speakers: chat.speakers().into_iter().collect(),
-                    },
-                );
             dto::ImportPreviewContent::Chat {
                 title: chat
                     .metadata

@@ -61,6 +61,6 @@ JSON and bulk clients share replaceable TLS state across clones. reload_tls pars
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
 
-ArtifactDownloadClient::with_tls applies the current TlsPolicy trusted PEM roots when constructing a strict download client. Entity avatar imports construct it from the current backend policy and cancel by dropping the download future or stream.
+ArtifactDownloadClient::with_tls applies the current TlsPolicy trusted PEM roots when constructing a strict download client.
 
-ArtifactDownloadClient::download_avatar fetches HTTP or HTTPS without requiring a declared size. It bounds both Content-Length and streamed bytes by the caller’s media limit, follows at most five HTTP or HTTPS redirects without credentials, and uses the same trusted roots and connect/stall timeouts. Dropping its future cancels the request; it never retries. The existing pinned-artifact methods retain HTTPS and expected-size validation.
+ArtifactDownloadClient::download_avatar takes the current TlsPolicy and builds its own client per call. It fetches HTTP or HTTPS without requiring a declared size, bounds both Content-Length and streamed bytes by the caller’s media limit, ends the whole download at the caller’s total deadline as well as on a stalled chunk, follows at most five HTTP or HTTPS redirects without credentials, and uses the policy's trusted roots. Entity avatar imports cancel it by dropping the download future. Dropping its future cancels the request; it never retries. The existing pinned-artifact methods retain HTTPS and expected-size validation.

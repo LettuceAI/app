@@ -197,4 +197,4 @@ The shared legacy conflict snapshot decoder returns the recorded primary key and
 
 `parse_lorebook_import` reads World Info and USC 1.0 lorebooks. USC entries retain their title, keyword strings, enabled and activation state, case sensitivity, content and priority, ordered by displayOrder; entry identities and timestamps belong to the new import. `zip_has_legacy_backup_manifest` seeks through the ZIP directory and reads only the bounded public manifest to distinguish legacy backups from other archives.
 
-A prepared chat import carries an optional CreateGroupPlan alongside its historical record and companion state. ChatImportRepository applies them together; preparation does not create a group. File coordinators expose preparation for joining complete imports to the existing operation receipt transaction.
+A prepared chat import carries an optional CreateGroupPlan alongside its historical record and companion state; preparation does not create a group. The app writes the group, the transcript and the job's completion in one operation transaction.

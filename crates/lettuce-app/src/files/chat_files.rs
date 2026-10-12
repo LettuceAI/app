@@ -770,7 +770,8 @@ mod tests {
     ) -> Result<ConversationId, ChatFileError> {
         let prepared = prepared?;
         let id = prepared.record.history.aggregate.conversation.id;
-        database.apply_import_job::<lettuce_database::ApiOperationError>(|scope| {
+        let key = id.to_string();
+        database.commit_api_operation::<(), lettuce_database::ApiOperationError>("import_chat_apply", &key, &key, now, |scope| {
             scope.import_chat(prepared.group, prepared.record, prepared.companion, now)
                 .map_err(|_| lettuce_database::ApiOperationError::Storage)
         }).map_err(|_| ChatImportRepositoryError::Storage)?;

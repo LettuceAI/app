@@ -87,26 +87,6 @@ impl Database {
         lookup_in(&connection, command, key)
     }
 
-    pub fn apply_import_job<E>(
-        &self,
-        apply: impl FnOnce(&ApiOperationTransaction<'_, '_>) -> Result<(), E>,
-    ) -> Result<(), E>
-    where
-        E: From<ApiOperationError>,
-    {
-        let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        apply(&ApiOperationTransaction {
-            command: "import_chat_apply",
-            usage_delete_allowed: &self.usage_delete_allowed,
-            changes: &self.changes,
-            transaction: &transaction,
-        })?;
-        transaction.commit().map_err(|error| storage(error).into())
-    }
-
     pub fn commit_api_operation<T, E>(
         &self,
         command: &str,

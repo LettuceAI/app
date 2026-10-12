@@ -88,7 +88,6 @@ struct ApiContextInner {
     sync: super::sync::SyncState,
     parts: ApiContextParts,
     models: ModelSlots,
-    chat_previews: Mutex<HashMap<String, super::entity_files::ChatAdmission>>,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
     speakers: Mutex<HashMap<GenerationTurnId, GenerationEvent>>,
     wake: tokio::sync::Notify,
@@ -255,7 +254,6 @@ impl ApiContext {
                 sync: super::sync::SyncState::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
-                chat_previews: Mutex::new(HashMap::new()),
                 streams: Mutex::new(HashMap::new()),
                 speakers: Mutex::new(HashMap::new()),
                 wake: tokio::sync::Notify::new(),
@@ -528,16 +526,12 @@ impl ApiContext {
         &self.inner.parts.secret_store
     }
 
-    /// Settles what the previous process left running; call once before any
-    /// worker starts.
-    pub(super) fn chat_previews(&self) -> &Mutex<HashMap<String, super::entity_files::ChatAdmission>> {
-        &self.inner.chat_previews
-    }
-
     pub(super) async fn provider_write_guard(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.inner.provider_writes.lock().await
     }
 
+    /// Settles what the previous process left running; call once before any
+    /// worker starts.
     pub fn recover_after_restart(&self) -> Result<(), ApiError> {
         let report = self
             .backend()
