@@ -204,6 +204,10 @@ struct MessageRow {
     total_tokens: Option<i64>,
     first_token_ms: Option<i64>,
     tokens_per_second: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::legacy::legacy_backup_json_values::json_text_or_absent"
+    )]
     mtp_stats: Option<String>,
     selected_variant_id: Option<String>,
     is_pinned: bool,
@@ -233,6 +237,10 @@ struct VariantRow {
     total_tokens: Option<i64>,
     first_token_ms: Option<i64>,
     tokens_per_second: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::legacy::legacy_backup_json_values::json_text_or_absent"
+    )]
     mtp_stats: Option<String>,
     reasoning: Option<String>,
     selection_reasoning: Option<String>,

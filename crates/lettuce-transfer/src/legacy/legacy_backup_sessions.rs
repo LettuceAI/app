@@ -167,6 +167,10 @@ struct MessageRow {
     total_tokens: Option<i64>,
     first_token_ms: Option<i64>,
     tokens_per_second: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::legacy::legacy_backup_json_values::json_text_or_absent"
+    )]
     mtp_stats: Option<String>,
     model_id: Option<String>,
     selected_variant_id: Option<String>,
@@ -192,6 +196,10 @@ struct VariantRow {
     total_tokens: Option<i64>,
     first_token_ms: Option<i64>,
     tokens_per_second: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "crate::legacy::legacy_backup_json_values::json_text_or_absent"
+    )]
     mtp_stats: Option<String>,
     reasoning: Option<String>,
     #[serde(flatten)]
@@ -1498,6 +1506,19 @@ mod tests {
             Err(LegacyBackupSessionError::Malformed { ref field })
                 if field == "[0].messages[0].mtp_stats.draftTokens"
         ));
+
+        let mut null_text_mtp = session(
+            &root,
+            &character,
+            None,
+            &root,
+            None,
+            vec![message(&first, None, None)],
+        );
+        null_text_mtp["messages"][0]["mtp_stats"] = "null".into();
+        assert!(
+            plan_legacy_backup_direct_sessions(source(json!([null_text_mtp]), &character)).is_ok()
+        );
 
         let cycle = session(
             &root,

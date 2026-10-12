@@ -319,14 +319,20 @@ fn map_sessions(
             .as_deref()
             .map(|value| parse_goal(value, &format!("{path}.session_json.targetType")))
             .transpose()?;
-        validate_target(
+        if !target_exists(
             creation_goal,
             creation_mode,
             target_type,
             nested.target_id.as_deref(),
             source,
             &path,
-        )?;
+        )? {
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                "$[].session_json.targetId",
+            ));
+            continue;
+        }
         let messages = map_messages(nested.messages, &path, notices)?;
         if messages
             .iter()
@@ -590,22 +596,25 @@ fn map_images(
     Ok(images)
 }
 
-fn validate_target(
+/// Whether an edit session's target is in the backup; a create session has none.
+fn target_exists(
     goal: LegacyBackupCreationGoal,
     mode: LegacyBackupCreationMode,
     target_type: Option<LegacyBackupCreationGoal>,
     target_id: Option<&str>,
     source: &LegacyBackupMemoryEmbeddingPlan,
     path: &str,
-) -> Result<(), LegacyBackupCreationHelperError> {
+) -> Result<bool, LegacyBackupCreationHelperError> {
     if mode == LegacyBackupCreationMode::Create {
         if target_id.is_some() {
             return Err(malformed(format!("{path}.session_json.targetId")));
         }
-        return Ok(());
+        return Ok(true);
     }
     let target_type = target_type.unwrap_or(goal);
-    let target_id = target_id.ok_or_else(|| orphan(format!("{path}.session_json.targetId")))?;
+    let Some(target_id) = target_id else {
+        return Ok(false);
+    };
     validate_uuid(target_id, &format!("{path}.session_json.targetId"))?;
     let authored = raw_authored(source);
     let found = match target_type {
@@ -624,11 +633,7 @@ fn validate_target(
             .iter()
             .any(|candidate| candidate.id.to_string() == target_id),
     };
-    if found {
-        Ok(())
-    } else {
-        Err(orphan(format!("{path}.session_json.targetId")))
-    }
+    Ok(found)
 }
 
 fn current_draft_compatible(

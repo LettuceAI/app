@@ -1321,3 +1321,11 @@ mod tests {
         assert_eq!(skipped.len(), 1);
     }
 }
+
+/// A legacy JSON text column where the stored text `null` means the value is absent.
+pub(crate) fn json_text_or_absent<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let raw = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(raw.filter(|raw| raw.trim() != "null"))
+}
