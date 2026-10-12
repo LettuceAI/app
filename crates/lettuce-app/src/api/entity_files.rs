@@ -832,11 +832,17 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                     ) => None,
                     lettuce_transfer::uec3::LorebookSelection::Keyword(
                         lettuce_transfer::uec3::SelectionKeyword::Disabled,
-                    ) => Some(Vec::new()),
+                    ) => None,
                     lettuce_transfer::uec3::LorebookSelection::Explicit(books) => {
                         Some(books.clone())
                     }
                 },
+                lorebooks_disabled: matches!(
+                    template.lorebooks,
+                    lettuce_transfer::uec3::LorebookSelection::Keyword(
+                        lettuce_transfer::uec3::SelectionKeyword::Disabled
+                    )
+                ),
             }
         }
         dto::FileKind::ChatTemplate => {
@@ -852,6 +858,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 scene_id: template.scene_id,
                 prompt_template_id: template.prompt_template_id,
                 lorebook_ids_override: template.lorebook_ids_override,
+                lorebooks_disabled: false,
             }
         }
         dto::FileKind::ModelFile if uec3.is_some() => {
@@ -1272,12 +1279,9 @@ pub async fn import_commit(
                     )?)
                 }
                 (dto::FileKind::PersonaFile, Prepared::Persona(package)) => {
-                    let media = context.media().ok_or_else(|| {
-                        api_error(ApiErrorCode::Unavailable, "no media store is open")
-                    })?;
                     let (mut import, skips) = context
                         .backend()
-                        .persona_files(media)
+                        .persona_files()
                         .prepare(&package, now)
                         .map_err(IntoApiError::into_api_error)?;
                     warnings.extend(

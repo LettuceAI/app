@@ -301,6 +301,7 @@ pub enum ImportPreviewContent {
         scene_id: Option<String>,
         prompt_template_id: Option<String>,
         lorebook_ids_override: Option<Vec<String>>,
+        lorebooks_disabled: bool,
     },
     Model {
         model_kind: crate::ModelKindContract,
