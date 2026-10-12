@@ -810,9 +810,19 @@ mod tests {
     }
 
     #[test]
-    fn v2_compatibility_reader_keeps_asset_locators() {
-        let value = json!({"schema":{"name":"UEC","version":"2.0"},"kind":"character","payload":{"id":"char-1","name":"Aster Vale","scene":{"id":"scene-1","content":"Hello there","selectedVariant":0,"variants":[]},"avatar":{"type":"inline_base64","mimeType":"image/webp","data":"QUJD"},"chatBackground":{"type":"remote_url","url":"https://example.com/bg.png"}}});
-        let read = parse_uec_character(&value, 3).expect("compatibility reader");
+    fn v2_reader_keeps_asset_locators() {
+        let value = json!({
+            "schema": { "name": "UEC", "version": SCHEMA_VERSION_V2 },
+            "kind": "character",
+            "payload": {
+                "id": "char-1",
+                "name": "Aster Vale",
+                "scene": { "id": "scene-1", "content": "Hello there", "selectedVariant": 0, "variants": [] },
+                "avatar": { "type": "inline_base64", "mimeType": "image/webp", "data": "QUJD" },
+                "chatBackground": { "type": "remote_url", "url": "https://example.com/bg.png" }
+            }
+        });
+        let read = parse_uec_character(&value, 3).expect("v2 character");
         assert_eq!(
             read.avatar_data.as_deref(),
             Some("data:image/webp;base64,QUJD")
@@ -821,34 +831,47 @@ mod tests {
             read.background_image_data.as_deref(),
             Some("https://example.com/bg.png")
         );
-        assert_eq!(value["schema"]["version"], SCHEMA_VERSION_V2);
-        assert!(value["payload"].get("scenes").is_none());
-        assert_eq!(
-            value["payload"]["avatar"],
-            json!({"type": "inline_base64", "mimeType": "image/webp", "data": "QUJD"})
-        );
-        assert_eq!(value["payload"]["chatBackground"]["type"], "remote_url");
+        assert_eq!(read.character.scenes.len(), 1);
+        assert_eq!(read.character.scenes[0].content, "Hello there");
     }
 
     #[test]
-    fn v2_compatibility_reader_keeps_selected_and_flattened_variants() {
-        let value = json!({"schema":{"name":"UEC","version":"2.0"},"kind":"character","payload":{"id":"char-1","name":"Aster Vale","scene":{"id":"scene-1","content":"Hello there","selectedVariant":"variant-2","variants":[{"id":"variant-1","content":"Variant one","createdAt":10},{"id":"variant-2","content":"Variant two","direction":"Second","createdAt":20},{"id":"scene-2","content":"Second scene","direction":"alt","createdAt":20}]}}});
-        let read = parse_uec_character(&value, 3).expect("compatibility reader");
-        assert_eq!(read.character.scenes.len(), 4);
+    fn v2_reader_keeps_the_selected_variant_and_flattened_scenes() {
+        let value = json!({
+            "schema": { "name": "UEC", "version": SCHEMA_VERSION_V2 },
+            "kind": "character",
+            "payload": {
+                "id": "char-1",
+                "name": "Aster Vale",
+                "scene": {
+                    "id": "scene-1",
+                    "content": "Hello there",
+                    "selectedVariant": "variant-2",
+                    "variants": [
+                        { "id": "variant-1", "content": "Variant one", "createdAt": 10 },
+                        { "id": "variant-2", "content": "Variant two", "direction": "Second", "createdAt": 20 },
+                        { "id": "scene-2", "content": "Second scene", "direction": "alt", "createdAt": 20 }
+                    ]
+                }
+            }
+        });
+        let read = parse_uec_character(&value, 3).expect("v2 character");
+        let ids = read
+            .character
+            .scenes
+            .iter()
+            .map(|scene| scene.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["scene-1", "variant-1", "variant-2", "scene-2"]);
         assert_eq!(
             read.character.default_scene_id.as_deref(),
             Some("variant-2")
         );
-        let scene = &value["payload"]["scene"];
-        assert_eq!(scene["selectedVariant"], "variant-2");
-        let ids = scene["variants"]
-            .as_array()
-            .expect("variants")
-            .iter()
-            .map(|variant| variant["id"].as_str().expect("id"))
-            .collect::<Vec<_>>();
-        assert_eq!(ids, ["variant-1", "variant-2", "scene-2"]);
-        assert_eq!(scene["variants"][2]["direction"], "alt");
+        assert_eq!(
+            read.character.scenes[2].direction.as_deref(),
+            Some("Second")
+        );
+        assert_eq!(read.character.scenes[3].direction.as_deref(), Some("alt"));
     }
 
     #[test]
@@ -932,12 +955,6 @@ mod tests {
         let uec: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/uec2-character.json"))
                 .expect("fixture");
-        assert_eq!(uec["payload"]["promptTemplateId"], "template");
-        assert_eq!(
-            uec["app_specific_settings"]["interaction_mode"],
-            "companion"
-        );
-        assert_eq!(uec["meta"]["originalSource"], "lettuceai");
         let read = parse_uec_character(&uec, 8).expect("read back");
         assert_eq!(read.character.name, "Ada");
         assert_eq!(
@@ -958,18 +975,11 @@ mod tests {
         let uec: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/uec2-persona.json"))
                 .expect("fixture");
-        assert_eq!(uec["schema"]["version"], SCHEMA_VERSION_V2);
         let read = parse_persona_import(&uec, 3).expect("read back");
         assert_eq!(read.persona.title, "Traveller");
         assert_eq!(read.persona.nickname.as_deref(), Some("T"));
         assert_eq!(read.persona.is_default, Some(true));
         assert_eq!(read.persona.active_lorebook_ids, vec!["book".to_owned()]);
-        let converted: Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/uec2-persona-converted.json"
-        ))
-        .expect("fixture");
-        assert!(converted["payload"].get("nickname").is_none());
-        assert_eq!(converted["payload"]["createdAt"], 3);
         assert!(matches!(
             parse_persona_import(
                 &json!({"version": 2, "persona": {"title": "x", "description": "", "nickname": null, "isDefault": null, "avatarCrop": null}, "avatarData": null}),
