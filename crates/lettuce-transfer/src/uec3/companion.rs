@@ -168,6 +168,8 @@ pub struct AuthoredFact {
     pub slot: String,
     pub locked: bool,
     pub weight: f64,
+    pub confidence: f64,
+    pub evidence_count: u32,
     pub valid_from: i64,
     pub valid_until: Option<i64>,
 }

@@ -263,16 +263,10 @@ pub(in crate::api) fn prepare(
         secondary_text_color: card.appearance.text_colors.secondary.clone(),
         chat_appearance: chat.clone().into_native(slots),
     };
-    let prompt = |value: &Option<String>, purpose| -> Result<Option<PromptDocumentId>, ApiError> {
+    let prompt = |value: &Option<String>| -> Result<Option<PromptDocumentId>, ApiError> {
         value
             .as_deref()
-            .map(|value| {
-                let document = uec3_prompt_reference(context, value, prompts)?;
-                if document.purpose != purpose {
-                    return Err(format_error("prompt purpose does not match reference"));
-                }
-                Ok(document.id)
-            })
+            .map(|value| Ok(uec3_prompt_reference(context, value, prompts)?.id))
             .transpose()
     };
     let (companion_soul, scheduled_notes) =
@@ -290,22 +284,9 @@ pub(in crate::api) fn prepare(
             .as_deref()
             .map(|key| reference(&starter_ids, key))
             .transpose()?,
-        direct_prompt_id: prompt(
-            &card.behavior.prompts.direct,
-            if card.behavior.interaction_mode == InteractionMode::Companion {
-                lettuce_context::PromptPurpose::CompanionChat
-            } else {
-                lettuce_context::PromptPurpose::DirectChat
-            },
-        )?,
-        group_conversation_prompt_id: prompt(
-            &card.behavior.prompts.group_conversation,
-            lettuce_context::PromptPurpose::GroupChatConversational,
-        )?,
-        group_roleplay_prompt_id: prompt(
-            &card.behavior.prompts.group_roleplay,
-            lettuce_context::PromptPurpose::GroupChatRoleplay,
-        )?,
+        direct_prompt_id: prompt(&card.behavior.prompts.direct)?,
+        group_conversation_prompt_id: prompt(&card.behavior.prompts.group_conversation)?,
+        group_roleplay_prompt_id: prompt(&card.behavior.prompts.group_roleplay)?,
         model_profile_id: import_model_hint(context, card.behavior.model.as_ref(), warnings)?,
         voice: import_voice(context, card.behavior.voice.provider.as_ref(), warnings)?,
         voice_autoplay: card.behavior.voice.autoplay,
@@ -455,8 +436,12 @@ pub(super) fn export(
         .iter()
         .map(|starter| {
             Ok(match &starter.lorebooks {
-                Selection::Inherit => wire::LorebookSelection::Inherit(wire::Inherit::Inherit),
-                Selection::Disabled => wire::LorebookSelection::Explicit(Vec::new()),
+                Selection::Inherit => {
+                    wire::LorebookSelection::Keyword(wire::SelectionKeyword::Inherit)
+                }
+                Selection::Disabled => {
+                    wire::LorebookSelection::Keyword(wire::SelectionKeyword::Disabled)
+                }
                 Selection::Explicit(values) => wire::LorebookSelection::Explicit(
                     values
                         .iter()
@@ -941,10 +926,7 @@ fn import_model_hint(
 
 fn prepare_companion(
     companion: Option<&wire::Companion>,
-    prompt: &impl Fn(
-        &Option<String>,
-        lettuce_context::PromptPurpose,
-    ) -> Result<Option<PromptDocumentId>, ApiError>,
+    prompt: &impl Fn(&Option<String>) -> Result<Option<PromptDocumentId>, ApiError>,
     id: CharacterId,
     now: TimestampMillis,
 ) -> Result<
@@ -986,8 +968,8 @@ fn prepare_companion(
                 kind: SoulFactKind::Authored,
                 policy: fact.policy,
                 slot: fact.slot.clone(),
-                confidence: 1.0,
-                evidence_count: 1,
+                confidence: fact.confidence,
+                evidence_count: fact.evidence_count,
                 weight: fact.weight,
                 valid_from: TimestampMillis::new(fact.valid_from),
                 valid_until: fact.valid_until.map(TimestampMillis::new),
@@ -1001,10 +983,7 @@ fn prepare_companion(
             .collect(),
         relationship_defaults: source.relationship_defaults.clone().into(),
         prompting: CompanionPromptingConfig {
-            prompt_template_id: prompt(
-                &source.prompting.prompt,
-                lettuce_context::PromptPurpose::CompanionChat,
-            )?,
+            prompt_template_id: prompt(&source.prompting.prompt)?,
             style_notes: source.prompting.style_notes.clone(),
         },
         time_awareness: source.time_awareness,
@@ -1078,6 +1057,8 @@ fn export_companion(
                 slot: fact.slot.clone(),
                 locked: fact.locked,
                 weight: fact.weight,
+                confidence: fact.confidence,
+                evidence_count: fact.evidence_count,
                 valid_from: fact.valid_from.get(),
                 valid_until: fact.valid_until.map(TimestampMillis::get),
             })
@@ -1121,9 +1102,7 @@ fn export_state(
         return Ok(None);
     };
     let Some(config) = &record.details.character.defaults.companion_soul else {
-        return Err(format_error(
-            "learned state requires companion configuration",
-        ));
+        return Ok(None);
     };
     let mut fact_keys = config
         .authored_facts

@@ -2302,7 +2302,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     let second = SceneId::new();
     let variant_id = SceneVariantId::new();
     let link = SceneAssetLinkId::new();
-    let starter_ids = [ConversationStarterId::new(),ConversationStarterId::new(),ConversationStarterId::new()];
+    let starter_ids = [ConversationStarterId::new(),ConversationStarterId::new(),ConversationStarterId::new(),ConversationStarterId::new()];
     let book = lettuce_context::LorebookRepository::create(database,lettuce_context::LorebookMetadataDraft {
         name:"Harbour".into(),detection_policy:lettuce_context::DetectionPolicy::LatestUserMessage,
         icon_asset_id:Some(asset_ids[4]),behavior_version:lettuce_context::LorebookBehaviorVersion::DeterministicV2,
@@ -2345,7 +2345,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
         id:starter_id,character_id:id,name:format!("Opening {index}"),ordinal:u32::try_from(index).expect("ordinal"),
         messages:vec![StarterMessage {id:StarterMessageId::new(),role:if index==1 {StarterRole::User} else {StarterRole::Assistant},content:format!("Greeting {index}")}],
         scene_id:if index==0 {Some(first)} else {None},prompt_id:if index==0 {Some(direct)} else {None},
-        lorebooks:match index {0 => Selection::Inherit,1 => Selection::Explicit(vec![]),_ => Selection::Explicit(vec![book.book.id])},
+        lorebooks:match index {0 => Selection::Inherit,1 => Selection::Explicit(vec![]),2 => Selection::Explicit(vec![book.book.id]),_ => Selection::Disabled},
         revision:Revision::INITIAL,created_at:now,updated_at:now,
     }).collect();
     let created = CharacterRepository::create(database,CreateCharacterPlan {character,scenes,variants,starters}).expect("create graph");
@@ -2355,6 +2355,10 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     let value:Value = serde_json::from_slice(&std::fs::read(&exported.uri).expect("file")).expect("JSON");
     assert_eq!(value["schema"]["version"],"3.0");
     assert!(value["state"].is_null());
+    assert_eq!(value["entity"]["starters"][0]["lorebooks"],"inherit");
+    assert_eq!(value["entity"]["starters"][1]["lorebooks"],json!([]));
+    assert_eq!(value["entity"]["starters"][2]["lorebooks"].as_array().expect("books").len(),1);
+    assert_eq!(value["entity"]["starters"][3]["lorebooks"],"disabled");
     assert_eq!(value["assets"].as_object().expect("assets").len(),1);
     assert!(!value.to_string().contains(&id.to_string()));
     let mut repeated = value.clone();
@@ -2427,6 +2431,11 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     assert_eq!(super::import_commit(context,changed).await.expect_err("conflict").code,ApiErrorCode::Conflict);
     let dto::ImportCommitResult::Imported {id:imported_id,..} = imported else {panic!("imported")};
     assert_ne!(imported_id,id.to_string());
+    let imported_starters = CharacterRepository::get(database,imported_id.parse().expect("id")).expect("read").expect("character").starters;
+    assert!(matches!(imported_starters[0].lorebooks,Selection::Inherit));
+    assert!(matches!(&imported_starters[1].lorebooks,Selection::Explicit(books) if books.is_empty()));
+    assert!(matches!(&imported_starters[2].lorebooks,Selection::Explicit(books) if books.len()==1));
+    assert!(matches!(imported_starters[3].lorebooks,Selection::Disabled));
     let exported = super::character_export(context,dto::CharacterExportRequest {include_learned:false,id:imported_id,format:dto::CharacterExportFormat::Uec,target:Some(dto::FileTarget {uri:root.join("character3-again.uec").display().to_string()})}).await.expect("re-export");
     let again:Value = serde_json::from_slice(&std::fs::read(exported.uri).expect("file")).expect("JSON");
     assert_eq!(again["entity"],value["entity"]);
@@ -2500,7 +2509,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
     config.time_awareness = true;
     config.share_memory_across_chats = false;
     config.share_soul_growth_across_chats = false;
-    let authored = SoulFact {id:"authored-local".into(),category:SoulCategory::Likes,value:"Tea".into(),kind:SoulFactKind::Authored,policy:SoulFactPolicy::Adaptive,slot:"drink".into(),confidence:1.0,evidence_count:1,weight:0.8,valid_from:TimestampMillis::new(3),valid_until:Some(TimestampMillis::new(1000)),locked:false,source_memory_ids:vec![],created_at:now,supersedes:vec![],superseded_by:None,superseded_at:None};
+    let authored = SoulFact {id:"authored-local".into(),category:SoulCategory::Likes,value:"Tea".into(),kind:SoulFactKind::Authored,policy:SoulFactPolicy::Adaptive,slot:"drink".into(),confidence:0.82,evidence_count:3,weight:0.8,valid_from:TimestampMillis::new(3),valid_until:Some(TimestampMillis::new(1000)),locked:false,source_memory_ids:vec![],created_at:now,supersedes:vec![],superseded_by:None,superseded_at:None};
     config.authored_facts = vec![authored.clone()];
     let mut memory = MemoryItem::written(MemoryId::new(),MemoryShortId::new(17).expect("short"),"We sailed".into(),now);
     memory.category = Some(MemoryCategory::PlotEvent);
@@ -2544,6 +2553,8 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
     let plain:Value = serde_json::from_slice(&std::fs::read(plain.uri).expect("file")).expect("JSON");
     assert!(plain["state"].is_null());
     assert_eq!(plain["entity"]["companion"]["scheduledNotes"].as_array().expect("notes").len(),1);
+    assert_eq!(plain["entity"]["companion"]["authoredFacts"][0]["confidence"],0.82);
+    assert_eq!(plain["entity"]["companion"]["authoredFacts"][0]["evidenceCount"],3);
     let learned = super::character_export(context,export(id.to_string(),true,"learned.uec")).await.expect("learned export");
     let value:Value = serde_json::from_slice(&std::fs::read(&learned.uri).expect("file")).expect("JSON");
     let item = &value["state"]["companion"]["memory"]["items"][0];
@@ -2579,6 +2590,8 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
     let seeded = super::character_export(context,export(id,true,"seeded.uec")).await.expect("seeded Soul");
     let seeded:Value = serde_json::from_slice(&std::fs::read(seeded.uri).expect("file")).expect("JSON");
     assert_eq!(seeded["state"]["companion"]["soul"][0]["value"],"Tea");
+    assert_eq!(seeded["state"]["companion"]["soul"][0]["confidence"],0.82);
+    assert_eq!(seeded["state"]["companion"]["soul"][0]["evidenceCount"],3);
     assert_eq!(seeded["state"]["companion"]["soul"].as_array().expect("Soul").len(),1);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
@@ -2626,5 +2639,210 @@ async fn uec3_archived_scenes_are_omitted_and_named_references_warn() {
     assert!(value["entity"]["defaultScene"].is_null());
     assert!(value["entity"]["starters"][0]["scene"].is_null());
     assert_eq!(exported.warnings.iter().map(|warning|warning.field.as_str()).collect::<Vec<_>>(),["starters.t1.scene","defaultScene"]);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn uec3_prompt_references_round_trip_as_stored_whatever_their_purpose() {
+    use crate::generation::built_in_prompts::BuiltInPromptId;
+    use lettuce_characters::*;
+    use lettuce_companions::CompanionSoulConfig;
+    use lettuce_types::*;
+    let (root, harness) = setup();
+    let context = &harness.context;
+    let database = context.backend().database();
+    let now = TimestampMillis::new(10);
+    let prompt = |id| context.backend().built_in_prompt_ids().get(id);
+    let profile = |name: &str| CharacterProfile {
+        name: name.into(),
+        nickname: None,
+        description: None,
+        definition: None,
+        design_description: None,
+        scenario: None,
+    };
+    let starter = |character_id, prompt_id| ConversationStarter {
+        id: ConversationStarterId::new(),
+        character_id,
+        name: "Opening".into(),
+        ordinal: 0,
+        messages: vec![StarterMessage {
+            id: StarterMessageId::new(),
+            role: StarterRole::Assistant,
+            content: "Hello".into(),
+        }],
+        scene_id: None,
+        prompt_id: Some(prompt_id),
+        lorebooks: Selection::Inherit,
+        revision: Revision::INITIAL,
+        created_at: now,
+        updated_at: now,
+    };
+    let roleplay_id = CharacterId::new();
+    let roleplay = Character::new(
+        roleplay_id,
+        profile("Roleplay"),
+        Default::default(),
+        CharacterDefaults {
+            direct_prompt_id: Some(prompt(BuiltInPromptId::Companion)),
+            ..Default::default()
+        },
+        Default::default(),
+        None,
+        Default::default(),
+        now,
+    )
+    .expect("roleplay");
+    CharacterRepository::create(
+        database,
+        CreateCharacterPlan {
+            character: roleplay,
+            scenes: vec![],
+            variants: vec![],
+            starters: vec![starter(roleplay_id, prompt(BuiltInPromptId::GroupChatRoleplay))],
+        },
+    )
+    .expect("roleplay graph");
+    let companion_id = CharacterId::new();
+    let companion = Character::new(
+        companion_id,
+        profile("Companion"),
+        Default::default(),
+        CharacterDefaults {
+            interaction_mode: InteractionMode::Companion,
+            companion_soul: Some(CompanionSoulConfig::default()),
+            ..Default::default()
+        },
+        Default::default(),
+        None,
+        Default::default(),
+        now,
+    )
+    .expect("companion");
+    CharacterRepository::create(
+        database,
+        CreateCharacterPlan {
+            character: companion,
+            scenes: vec![],
+            variants: vec![],
+            starters: vec![starter(companion_id, prompt(BuiltInPromptId::AppDefault))],
+        },
+    )
+    .expect("companion graph");
+    for (id, expected) in [
+        (roleplay_id, prompt(BuiltInPromptId::GroupChatRoleplay)),
+        (companion_id, prompt(BuiltInPromptId::AppDefault)),
+    ] {
+        let name = format!("{id}.uec");
+        let exported = super::character_export(
+            context,
+            dto::CharacterExportRequest {
+                id: id.to_string(),
+                include_learned: false,
+                format: dto::CharacterExportFormat::Uec,
+                target: Some(dto::FileTarget {
+                    uri: root.join(&name).display().to_string(),
+                }),
+            },
+        )
+        .await
+        .expect("export");
+        let source = dto::FileSource { uri: exported.uri };
+        let p = preview(context, source.clone()).await;
+        let result = super::import_commit(
+            context,
+            commit_request(source, p.digest, json!({}), &name),
+        )
+        .await
+        .expect("a card with a prompt of any purpose imports");
+        let dto::ImportCommitResult::Imported { id: imported, .. } = result else {
+            panic!("imported")
+        };
+        let stored = CharacterRepository::get(database, imported.parse().expect("id"))
+            .expect("read")
+            .expect("character");
+        assert_eq!(stored.starters[0].prompt_id, Some(expected));
+    }
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn uec3_learned_export_of_a_former_companion_writes_no_state() {
+    use lettuce_characters::*;
+    use lettuce_memory::*;
+    use lettuce_types::*;
+    let (root, harness) = setup();
+    let context = &harness.context;
+    let now = TimestampMillis::new(10);
+    let id = CharacterId::new();
+    let character = Character::new(
+        id,
+        CharacterProfile {
+            name: "Former companion".into(),
+            nickname: None,
+            description: None,
+            definition: None,
+            design_description: None,
+            scenario: None,
+        },
+        Default::default(),
+        CharacterDefaults::default(),
+        Default::default(),
+        None,
+        Default::default(),
+        now,
+    )
+    .expect("character");
+    let memory = MemoryItem::written(
+        MemoryId::new(),
+        MemoryShortId::new(1).expect("short"),
+        "Kept memory".into(),
+        now,
+    );
+    let import = lettuce_transfer::CharacterFileImport {
+        lorebooks: vec![],
+        character: CreateCharacterPlan {
+            character,
+            scenes: vec![],
+            variants: vec![],
+            starters: vec![],
+        },
+        lorebook_bindings: vec![],
+        scheduled_notes: vec![],
+        companion_memory: Some(lettuce_transfer::CharacterFileCompanionMemory {
+            pool: Some(MemorySpaceSnapshot {
+                id: MemorySpaceId::new(),
+                revision: Revision::INITIAL,
+                items: vec![memory],
+            }),
+            soul_facts: Some(vec![]),
+            relationships: vec![],
+            created_at: now,
+            updated_at: now,
+        }),
+        skipped: vec![],
+        notices: vec![],
+    };
+    lettuce_transfer::CharacterFileRepository::import_character_file(
+        context.backend().database(),
+        &import,
+    )
+    .expect("fixture");
+    let exported = super::character_export(
+        context,
+        dto::CharacterExportRequest {
+            id: id.to_string(),
+            include_learned: true,
+            format: dto::CharacterExportFormat::Uec,
+            target: Some(dto::FileTarget {
+                uri: root.join("former.uec").display().to_string(),
+            }),
+        },
+    )
+    .await
+    .expect("a roleplay character exports with no learned state");
+    let value: Value = serde_json::from_slice(&std::fs::read(exported.uri).expect("file"))
+        .expect("JSON");
+    assert!(value["state"].is_null());
     std::fs::remove_dir_all(root).expect("cleanup");
 }

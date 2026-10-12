@@ -855,7 +855,12 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 scene_id: None,
                 prompt_template_id: template.prompt.clone(),
                 lorebook_ids_override: match &template.lorebooks {
-                    lettuce_transfer::uec3::LorebookSelection::Inherit(_) => None,
+                    lettuce_transfer::uec3::LorebookSelection::Keyword(
+                        lettuce_transfer::uec3::SelectionKeyword::Inherit,
+                    ) => None,
+                    lettuce_transfer::uec3::LorebookSelection::Keyword(
+                        lettuce_transfer::uec3::SelectionKeyword::Disabled,
+                    ) => Some(Vec::new()),
                     lettuce_transfer::uec3::LorebookSelection::Explicit(books) => {
                         Some(books.clone())
                     }
@@ -2441,27 +2446,15 @@ fn prepare_uec3_template(
     now: TimestampMillis,
 ) -> Result<lettuce_characters::ConversationStarter, ApiError> {
     use lettuce_characters::{ConversationStarter, Selection, StarterMessage};
-    use lettuce_transfer::uec3::LorebookSelection;
-    let purpose = if crate::launch::policy::is_companion(&character.character.defaults) {
-        lettuce_context::PromptPurpose::CompanionChat
-    } else {
-        lettuce_context::PromptPurpose::DirectChat
-    };
+    use lettuce_transfer::uec3::{LorebookSelection, SelectionKeyword};
     let prompt_id = template
         .prompt
         .as_deref()
-        .map(|reference| {
-            let document = uec3_prompt_reference(context, reference, prompts)?;
-            if document.purpose != purpose {
-                return Err(format_error(
-                    "starter prompt purpose does not match character",
-                ));
-            }
-            Ok(document.id)
-        })
+        .map(|reference| Ok(uec3_prompt_reference(context, reference, prompts)?.id))
         .transpose()?;
     let lorebooks = match &template.lorebooks {
-        LorebookSelection::Inherit(_) => Selection::Inherit,
+        LorebookSelection::Keyword(SelectionKeyword::Inherit) => Selection::Inherit,
+        LorebookSelection::Keyword(SelectionKeyword::Disabled) => Selection::Disabled,
         LorebookSelection::Explicit(references) => Selection::Explicit(
             references
                 .iter()
@@ -2569,9 +2562,11 @@ fn export_uec3_template(
         .transpose()?;
     let lorebooks = match &starter.lorebooks {
         lettuce_characters::Selection::Inherit => {
-            uec3::LorebookSelection::Inherit(uec3::Inherit::Inherit)
+            uec3::LorebookSelection::Keyword(uec3::SelectionKeyword::Inherit)
         }
-        lettuce_characters::Selection::Disabled => uec3::LorebookSelection::Explicit(Vec::new()),
+        lettuce_characters::Selection::Disabled => {
+            uec3::LorebookSelection::Keyword(uec3::SelectionKeyword::Disabled)
+        }
         lettuce_characters::Selection::Explicit(book_ids) => {
             let mut references = Vec::new();
             for (index, id) in book_ids.iter().enumerate() {

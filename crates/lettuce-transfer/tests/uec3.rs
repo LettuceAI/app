@@ -173,7 +173,7 @@ fn persona_round_trips_every_authored_field_and_enabled_binding() {
 
 #[test]
 fn standalone_starters_preserve_roles_and_all_lorebook_selection_states() {
-    for books in [json!("inherit"), json!([]), json!(["dep:l1"])] {
+    for books in [json!("inherit"), json!("disabled"), json!([]), json!(["dep:l1"])] {
         let mut source = lorebook();
         source["kind"] = json!("chat_template");
         source["assets"] = json!({});
@@ -337,7 +337,7 @@ fn companion_identity_notes_and_optional_learned_state_round_trip_without_conver
         "baselineAffect":{"warmth":0.1,"trust":0.2,"calm":0.3,"vulnerability":0.4,"longing":0.5,"hurt":0.6,"tension":0.7,"irritation":0.8,"affectionIntensity":0.9,"reassuranceNeed":1.0},
         "regulationStyle":{"suppression":0.1,"volatility":0.2,"recoverySpeed":0.3,"conflictAvoidance":0.4,"reassuranceSeeking":0.5,"protestBehavior":0.6,"emotionalTransparency":0.7,"attachmentActivation":0.8,"pride":0.9},
         "relationshipDefaults":{"closeness":0.1,"trust":0.2,"affection":0.3,"tension":0.4},
-        "authoredFacts":[{"key":"f1","category":"likes","value":"Sea","policy":"adaptive","slot":"likes.sea","locked":true,"weight":0.8,"validFrom":1,"validUntil":20}],
+        "authoredFacts":[{"key":"f1","category":"likes","value":"Sea","policy":"adaptive","slot":"likes.sea","locked":true,"weight":0.8,"confidence":0.82,"evidenceCount":3,"validFrom":1,"validUntil":20}],
         "prompting":{"prompt":"builtin:prompt_app_companion","styleNotes":"Calm"},
         "timeAwareness":true,"shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":false,
         "scheduledNotes":[{"key":"n1","label":"Anniversary","content":"Remember","availableAt":1,"expiresAt":20,"recurrence":"yearly","recurrenceWindowMs":1000,"enabled":false}]

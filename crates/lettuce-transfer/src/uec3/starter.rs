@@ -2,14 +2,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Inherit {
+pub enum SelectionKeyword {
     Inherit,
+    Disabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LorebookSelection {
-    Inherit(Inherit),
+    Keyword(SelectionKeyword),
     Explicit(Vec<String>),
 }
 
