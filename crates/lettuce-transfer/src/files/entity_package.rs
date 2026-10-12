@@ -1,12 +1,8 @@
-//! The character and persona package every entity file reads into and UEC
-//! writes from: UEC v1/v2 cards, character cards and the pre-UEC package JSON.
+//! Compatibility readers for UEC v1/v2, character cards and package JSON.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use unified_entity_card::{
-    SCHEMA_VERSION, SCHEMA_VERSION_V2, UecKind, assert_uec, convert_uec_v1_to_v2,
-    create_character_uec, create_persona_uec, downgrade_uec,
-};
+use unified_entity_card::{SCHEMA_VERSION, SCHEMA_VERSION_V2, UecKind, assert_uec, downgrade_uec};
 
 use crate::{
     CharacterCardDraft, CharacterFileFormat, detect_character_card_format, looks_like_uec,
@@ -279,6 +275,7 @@ pub struct ChatTemplateMessagePackage {
 pub struct PersonaFileImport {
     pub persona: lettuce_characters::Persona,
     pub lorebook_ids: Vec<lettuce_types::LorebookId>,
+    pub disabled_lorebook_ids: Vec<lettuce_types::LorebookId>,
     pub make_default: bool,
 }
 
@@ -780,395 +777,11 @@ fn parse_uec_persona(value: &Value, now: i64) -> Result<PersonaPackage, EntityPa
     })
 }
 
-fn resolve_v1_scene_for_v2(card: &Value) -> Option<Value> {
-    let payload = card.get("payload")?.as_object()?;
-    let scenes = payload.get("scenes")?.as_array()?;
-    if scenes.is_empty() {
-        return None;
-    }
-    let default_scene_id = payload.get("defaultSceneId").and_then(Value::as_str);
-    let picked = default_scene_id
-        .and_then(|id| {
-            scenes
-                .iter()
-                .find(|scene| scene.get("id").and_then(Value::as_str) == Some(id))
-        })
-        .or_else(|| scenes.first())?;
-    let selected_scene_id = picked.get("id").and_then(Value::as_str)?.to_owned();
-    let mut scene = picked.as_object()?.clone();
-    let selected_variant_id = scene
-        .remove("selectedVariantId")
-        .and_then(|value| value.as_str().map(str::to_owned));
-    let mut merged = scene
-        .get("variants")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for alternate in scenes.iter().filter(|scene| {
-        scene
-            .get("id")
-            .and_then(Value::as_str)
-            .is_some_and(|id| id != selected_scene_id)
-    }) {
-        let Some(map) = alternate.as_object() else {
-            continue;
-        };
-        let mut variant = Map::new();
-        for key in ["id", "content", "direction"] {
-            if let Some(value) = map.get(key).cloned() {
-                variant.insert(key.to_owned(), value);
-            }
-        }
-        if let Some(created_at) = map
-            .get("createdAt")
-            .or_else(|| map.get("created_at"))
-            .cloned()
-        {
-            variant.insert("createdAt".to_owned(), created_at);
-        }
-        if variant.contains_key("id") && variant.contains_key("content") {
-            merged.push(Value::Object(variant));
-        }
-        if let Some(extra) = map.get("variants").and_then(Value::as_array) {
-            merged.extend(extra.iter().cloned());
-        }
-    }
-    if !merged.is_empty() {
-        scene.insert("variants".to_owned(), Value::Array(merged.clone()));
-    }
-    let selected = selected_variant_id
-        .filter(|selected| {
-            merged
-                .iter()
-                .any(|variant| variant.get("id").and_then(Value::as_str) == Some(selected))
-        })
-        .map_or_else(|| Value::from(0), Value::String);
-    scene.insert("selectedVariant".to_owned(), selected);
-    Some(Value::Object(scene))
-}
-
-fn stringify_v2_uec(card: &Value) -> Result<String, EntityPackageError> {
-    let resolved_scene = resolve_v1_scene_for_v2(card);
-    let mut upgraded = convert_uec_v1_to_v2(card).map_err(EntityPackageError::Upgrade)?;
-    if let Some(scene) = resolved_scene
-        && let Some(payload) = upgraded.get_mut("payload").and_then(Value::as_object_mut)
-    {
-        payload.insert("scene".to_owned(), scene);
-    }
-    normalize_asset_fields(&mut upgraded, true);
-    serde_json::to_string_pretty(&upgraded).map_err(|_| EntityPackageError::Serialize)
-}
-
-fn crop_value(crop: &PackageCrop) -> Value {
-    serde_json::json!({ "x": crop.x, "y": crop.y, "scale": crop.scale })
-}
-
-/// The pretty-printed v2 character UEC of a package.
-pub fn build_character_uec(
-    package: &CharacterPackage,
-    character_id: &str,
-    created_at: Option<i64>,
-    updated_at: Option<i64>,
-) -> Result<String, EntityPackageError> {
-    let character = &package.character;
-    let mut payload = Map::new();
-    payload.insert("id".into(), Value::String(character_id.to_owned()));
-    payload.insert("name".into(), Value::String(character.name.clone()));
-    if let Some(description) = &character.description {
-        payload.insert("description".into(), Value::String(description.clone()));
-    }
-    if let Some(definition) = character
-        .definition
-        .clone()
-        .or_else(|| character.description.clone())
-    {
-        payload.insert("definitions".into(), Value::String(definition));
-    }
-    if let Some(data) = &package.avatar_data {
-        payload.insert("avatar".into(), Value::String(data.clone()));
-    }
-    if let Some(data) = &package.background_image_data {
-        payload.insert("chatBackground".into(), Value::String(data.clone()));
-    }
-    payload.insert(
-        "scenes".into(),
-        serde_json::to_value(&character.scenes).map_err(|_| EntityPackageError::Serialize)?,
-    );
-    let optional = [
-        ("defaultSceneId", character.default_scene_id.clone()),
-        ("defaultModelId", character.default_model_id.clone()),
-        ("scenario", character.scenario.clone()),
-        ("nickname", character.nickname.clone()),
-        ("creator", character.creator.clone()),
-        ("creatorNotes", character.creator_notes.clone()),
-    ];
-    for (key, value) in optional {
-        if let Some(value) = value {
-            payload.insert(key.into(), Value::String(value));
-        }
-    }
-    if let Some(value) = &character.creator_notes_multilingual {
-        payload.insert("creatorNotesMultilingual".into(), value.clone());
-    }
-    if let Some(value) = &character.source {
-        payload.insert("source".into(), serde_json::json!(value));
-    }
-    if let Some(value) = &character.tags {
-        payload.insert("tags".into(), serde_json::json!(value));
-    }
-    if let Some(value) = &character.character_book {
-        payload.insert("characterBook".into(), value.clone());
-    }
-    let mut system_prompt_is_id = false;
-    if let Some(template) = &character.prompt_template_id {
-        payload.insert("systemPrompt".into(), Value::String(template.clone()));
-        system_prompt_is_id = true;
-    } else if let Some(prompt) = &character.system_prompt {
-        payload.insert("systemPrompt".into(), Value::String(prompt.clone()));
-    }
-    if let Some(voice) = character
-        .voice_config
-        .as_ref()
-        .filter(|voice| !voice.is_null())
-    {
-        payload.insert("voiceConfig".into(), voice.clone());
-    }
-    payload.insert(
-        "voiceAutoplay".into(),
-        Value::Bool(character.voice_autoplay.unwrap_or(false)),
-    );
-    let created_at = created_at.unwrap_or(package.exported_at);
-    let updated_at = updated_at.unwrap_or(package.exported_at);
-    payload.insert("createdAt".into(), Value::from(created_at));
-    payload.insert("updatedAt".into(), Value::from(updated_at));
-
-    let mut app = Map::new();
-    app.insert(
-        "disableAvatarGradient".into(),
-        Value::Bool(character.disable_avatar_gradient),
-    );
-    if let Some(mode) = &character.mode {
-        app.insert("interaction_mode".into(), Value::String(mode.clone()));
-        app.insert("mode".into(), Value::String(mode.clone()));
-    }
-    if let Some(companion) = &character.companion {
-        app.insert("companion".into(), companion.clone());
-    }
-    if !character.companion_scheduled_notes.is_empty() {
-        app.insert(
-            "companionScheduledNotes".into(),
-            serde_json::to_value(&character.companion_scheduled_notes)
-                .unwrap_or_else(|_| Value::Array(Vec::new())),
-        );
-    }
-    if let Some(memory) = &character.companion_shared_memory {
-        app.insert(
-            "companionSharedMemory".into(),
-            serde_json::to_value(memory).unwrap_or_else(|_| Value::Object(Map::new())),
-        );
-    }
-    app.insert(
-        "memoryType".into(),
-        Value::String(
-            character
-                .memory_type
-                .clone()
-                .unwrap_or_else(|| "manual".to_owned()),
-        ),
-    );
-    if !character.active_lorebook_ids.is_empty() {
-        app.insert(
-            "activeLorebookIds".into(),
-            serde_json::json!(character.active_lorebook_ids),
-        );
-    }
-    if !character.lorebooks.is_empty() {
-        app.insert(
-            "lorebooks".into(),
-            serde_json::to_value(&character.lorebooks).unwrap_or_else(|_| Value::Array(Vec::new())),
-        );
-    }
-    app.insert(
-        "customGradientEnabled".into(),
-        Value::Bool(character.custom_gradient_enabled.unwrap_or(false)),
-    );
-    if let Some(colors) = &character.custom_gradient_colors {
-        app.insert("customGradientColors".into(), serde_json::json!(colors));
-    }
-    if let Some(color) = &character.custom_text_color {
-        app.insert("customTextColor".into(), Value::String(color.clone()));
-    }
-    if let Some(color) = &character.custom_text_secondary {
-        app.insert("customTextSecondary".into(), Value::String(color.clone()));
-    }
-    if let Some(crop) = &character.avatar_crop {
-        app.insert("avatarCrop".into(), crop_value(crop));
-    }
-    if let Some(crop) = &character.banner_crop {
-        app.insert("bannerCrop".into(), crop_value(crop));
-    }
-    if !character.chat_templates.is_empty() {
-        app.insert(
-            "chatTemplates".into(),
-            serde_json::to_value(&character.chat_templates)
-                .unwrap_or_else(|_| Value::Array(Vec::new())),
-        );
-    }
-    if let Some(template) = &character.default_chat_template_id {
-        app.insert(
-            "defaultChatTemplateId".into(),
-            Value::String(template.clone()),
-        );
-    }
-    let card = create_character_uec(
-        payload,
-        system_prompt_is_id,
-        None,
-        Some(Value::Object(app)),
-        Some(lettuce_meta(created_at, updated_at)),
-        Some(Value::Object(Map::new())),
-    );
-    stringify_v2_uec(&card)
-}
-
-fn lettuce_meta(created_at: i64, updated_at: i64) -> Value {
-    let mut meta = Map::new();
-    meta.insert("createdAt".into(), Value::from(created_at));
-    meta.insert("updatedAt".into(), Value::from(updated_at));
-    meta.insert("source".into(), Value::String("lettuceai".to_owned()));
-    Value::Object(meta)
-}
-
-/// The pretty-printed v2 persona UEC of a persona package, as a conversion
-/// writes it: no nickname, an empty description and an unset default omitted.
-pub fn build_persona_package_uec(
-    package: &PersonaPackage,
-    persona_id: &str,
-    created_at: Option<i64>,
-    updated_at: Option<i64>,
-) -> Result<String, EntityPackageError> {
-    let mut payload = Map::new();
-    payload.insert("id".into(), Value::String(persona_id.to_owned()));
-    payload.insert("title".into(), Value::String(package.persona.title.clone()));
-    if !package.persona.description.is_empty() {
-        payload.insert(
-            "description".into(),
-            Value::String(package.persona.description.clone()),
-        );
-    }
-    if let Some(avatar) = &package.avatar_data {
-        payload.insert("avatar".into(), Value::String(avatar.clone()));
-    }
-    if let Some(is_default) = package.persona.is_default {
-        payload.insert("isDefault".into(), Value::Bool(is_default));
-    }
-    let created_at = created_at.unwrap_or(package.exported_at);
-    let updated_at = updated_at.unwrap_or(package.exported_at);
-    payload.insert("createdAt".into(), Value::from(created_at));
-    payload.insert("updatedAt".into(), Value::from(updated_at));
-    let mut app = Map::new();
-    if let Some(crop) = &package.persona.avatar_crop {
-        app.insert("avatarCrop".into(), crop_value(crop));
-    }
-    if !package.persona.active_lorebook_ids.is_empty() {
-        app.insert(
-            "activeLorebookIds".into(),
-            serde_json::json!(package.persona.active_lorebook_ids),
-        );
-    }
-    let card = create_persona_uec(
-        payload,
-        None,
-        Some(Value::Object(app)),
-        Some(lettuce_meta(created_at, updated_at)),
-        Some(Value::Object(Map::new())),
-    );
-    stringify_v2_uec(&card)
-}
-
-/// What a persona UEC export reads from a persona.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PersonaUecSource {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub nickname: Option<String>,
-    pub is_default: bool,
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub avatar: Option<String>,
-    pub avatar_crop: Option<PackageCrop>,
-    pub active_lorebook_ids: Vec<String>,
-}
-
-/// The pretty-printed v2 persona UEC.
-pub fn build_persona_uec(persona: &PersonaUecSource) -> Result<String, EntityPackageError> {
-    let mut payload = Map::new();
-    payload.insert("id".into(), Value::String(persona.id.clone()));
-    payload.insert("title".into(), Value::String(persona.title.clone()));
-    payload.insert(
-        "description".into(),
-        Value::String(persona.description.clone()),
-    );
-    if let Some(nickname) = &persona.nickname {
-        payload.insert("nickname".into(), Value::String(nickname.clone()));
-    }
-    payload.insert("isDefault".into(), Value::Bool(persona.is_default));
-    payload.insert("createdAt".into(), Value::from(persona.created_at));
-    payload.insert("updatedAt".into(), Value::from(persona.updated_at));
-    if let Some(avatar) = &persona.avatar {
-        payload.insert("avatar".into(), Value::String(avatar.clone()));
-    }
-    let mut app = Map::new();
-    if let Some(crop) = &persona.avatar_crop {
-        app.insert("avatarCrop".into(), crop_value(crop));
-    }
-    if !persona.active_lorebook_ids.is_empty() {
-        app.insert(
-            "activeLorebookIds".into(),
-            serde_json::json!(persona.active_lorebook_ids),
-        );
-    }
-    let card = create_persona_uec(
-        payload,
-        None,
-        Some(Value::Object(app)),
-        Some(lettuce_meta(persona.created_at, persona.updated_at)),
-        Some(Value::Object(Map::new())),
-    );
-    stringify_v2_uec(&card)
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
-
-    fn v1_card(scenes: Value, extra: &[(&str, Value)]) -> Value {
-        let mut payload = Map::new();
-        payload.insert("id".into(), json!("char-1"));
-        payload.insert("name".into(), json!("Aster Vale"));
-        payload.insert("scenes".into(), scenes);
-        payload.insert("defaultSceneId".into(), json!("scene-1"));
-        payload.insert("createdAt".into(), json!(1));
-        payload.insert("updatedAt".into(), json!(2));
-        for (key, value) in extra {
-            payload.insert((*key).into(), value.clone());
-        }
-        create_character_uec(
-            payload,
-            false,
-            None,
-            None,
-            Some(json!({ "createdAt": 1, "updatedAt": 2, "source": "lettuceai" })),
-            None,
-        )
-    }
-
-    fn v2(card: &Value) -> Value {
-        serde_json::from_str(&stringify_v2_uec(card).expect("v2 json")).expect("json")
-    }
 
     #[test]
     fn v1_and_v2_cards_are_readable() {
@@ -1197,14 +810,17 @@ mod tests {
     }
 
     #[test]
-    fn stringify_upgrades_to_v2_with_asset_locators() {
-        let value = v2(&v1_card(
-            json!([{ "id": "scene-1", "content": "Hello there", "selectedVariantId": null, "variants": [] }]),
-            &[
-                ("avatar", json!("data:image/webp;base64,QUJD")),
-                ("chatBackground", json!("https://example.com/bg.png")),
-            ],
-        ));
+    fn v2_compatibility_reader_keeps_asset_locators() {
+        let value = json!({"schema":{"name":"UEC","version":"2.0"},"kind":"character","payload":{"id":"char-1","name":"Aster Vale","scene":{"id":"scene-1","content":"Hello there","selectedVariant":0,"variants":[]},"avatar":{"type":"inline_base64","mimeType":"image/webp","data":"QUJD"},"chatBackground":{"type":"remote_url","url":"https://example.com/bg.png"}}});
+        let read = parse_uec_character(&value, 3).expect("compatibility reader");
+        assert_eq!(
+            read.avatar_data.as_deref(),
+            Some("data:image/webp;base64,QUJD")
+        );
+        assert_eq!(
+            read.background_image_data.as_deref(),
+            Some("https://example.com/bg.png")
+        );
         assert_eq!(value["schema"]["version"], SCHEMA_VERSION_V2);
         assert!(value["payload"].get("scenes").is_none());
         assert_eq!(
@@ -1215,17 +831,14 @@ mod tests {
     }
 
     #[test]
-    fn stringify_keeps_the_selected_variant_and_flattens_other_scenes() {
-        let value = v2(&v1_card(
-            json!([
-                { "id": "scene-1", "content": "Hello there", "selectedVariantId": "variant-2", "variants": [
-                    { "id": "variant-1", "content": "Variant one", "createdAt": 10 },
-                    { "id": "variant-2", "content": "Variant two", "direction": "Second", "createdAt": 20 }
-                ] },
-                { "id": "scene-2", "content": "Second scene", "direction": "alt", "createdAt": 20, "selectedVariantId": null, "variants": [] }
-            ]),
-            &[],
-        ));
+    fn v2_compatibility_reader_keeps_selected_and_flattened_variants() {
+        let value = json!({"schema":{"name":"UEC","version":"2.0"},"kind":"character","payload":{"id":"char-1","name":"Aster Vale","scene":{"id":"scene-1","content":"Hello there","selectedVariant":"variant-2","variants":[{"id":"variant-1","content":"Variant one","createdAt":10},{"id":"variant-2","content":"Variant two","direction":"Second","createdAt":20},{"id":"scene-2","content":"Second scene","direction":"alt","createdAt":20}]}}});
+        let read = parse_uec_character(&value, 3).expect("compatibility reader");
+        assert_eq!(read.character.scenes.len(), 4);
+        assert_eq!(
+            read.character.default_scene_id.as_deref(),
+            Some("variant-2")
+        );
         let scene = &value["payload"]["scene"];
         assert_eq!(scene["selectedVariant"], "variant-2");
         let ids = scene["variants"]
@@ -1297,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn a_built_character_uec_reads_back() {
+    fn a_captured_uec2_character_still_reads() {
         let (package, format) = parse_character_import(
             &json!({"spec": "chara_card_v2", "data": {"name": "Ada", "first_mes": "Hi", "alternate_greetings": ["Yo", " "]}}),
             7,
@@ -1316,13 +929,9 @@ mod tests {
             Some("scene-1")
         );
         assert_eq!(package.character.scenes.len(), 2);
-        let mut package = package;
-        package.character.mode = Some("companion".into());
-        package.character.prompt_template_id = Some("template".into());
-        let uec: Value = serde_json::from_str(
-            &build_character_uec(&package, "char-9", Some(3), None).expect("uec"),
-        )
-        .expect("json");
+        let uec: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/uec2-character.json"))
+                .expect("fixture");
         assert_eq!(uec["payload"]["promptTemplateId"], "template");
         assert_eq!(
             uec["app_specific_settings"]["interaction_mode"],
@@ -1345,37 +954,20 @@ mod tests {
     }
 
     #[test]
-    fn a_built_persona_uec_reads_back_with_its_nickname() {
-        let uec: Value = serde_json::from_str(
-            &build_persona_uec(&PersonaUecSource {
-                id: "persona-1".into(),
-                title: "Traveller".into(),
-                description: "Curious".into(),
-                nickname: Some("T".into()),
-                is_default: true,
-                created_at: 1,
-                updated_at: 2,
-                avatar: None,
-                avatar_crop: Some(PackageCrop {
-                    x: 0.5,
-                    y: 0.5,
-                    scale: 1.0,
-                }),
-                active_lorebook_ids: vec!["book".into()],
-            })
-            .expect("persona"),
-        )
-        .expect("json");
+    fn a_captured_uec2_persona_still_reads_with_its_nickname() {
+        let uec: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/uec2-persona.json"))
+                .expect("fixture");
         assert_eq!(uec["schema"]["version"], SCHEMA_VERSION_V2);
         let read = parse_persona_import(&uec, 3).expect("read back");
         assert_eq!(read.persona.title, "Traveller");
         assert_eq!(read.persona.nickname.as_deref(), Some("T"));
         assert_eq!(read.persona.is_default, Some(true));
         assert_eq!(read.persona.active_lorebook_ids, vec!["book".to_owned()]);
-        let converted: Value = serde_json::from_str(
-            &build_persona_package_uec(&read, "persona-2", None, None).expect("convert"),
-        )
-        .expect("json");
+        let converted: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/uec2-persona-converted.json"
+        ))
+        .expect("fixture");
         assert!(converted["payload"].get("nickname").is_none());
         assert_eq!(converted["payload"]["createdAt"], 3);
         assert!(matches!(

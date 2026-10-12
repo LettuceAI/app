@@ -1230,9 +1230,10 @@ pub(crate) fn bind_persona_lorebook_in(
     persona_id: PersonaId,
     expected: Revision,
     lorebook_id: LorebookId,
+    enabled: bool,
     now: TimestampMillis,
 ) -> Result<Revision, BindingRepositoryError> {
-    binding_mutation(
+    let result = binding_mutation(
         tx,
         OwnerKind::Persona,
         &persona_id.to_string(),
@@ -1242,8 +1243,20 @@ pub(crate) fn bind_persona_lorebook_in(
             target: BindingInsertionTarget::Append,
         }),
         now,
-    )
-    .map(|result| result.owner_revision)
+    )?;
+    if enabled {
+        Ok(result.owner_revision)
+    } else {
+        binding_mutation(
+            tx,
+            OwnerKind::Persona,
+            &persona_id.to_string(),
+            result.owner_revision,
+            BindingOperation::Enable(lorebook_id, false),
+            now,
+        )
+        .map(|result| result.owner_revision)
+    }
 }
 
 fn mutate_bindings(

@@ -1,5 +1,4 @@
-//! A stored character written back as the old app's character package, the
-//! form every character file format is built from.
+//! Stored characters mapped to compatibility packages and Character Cards.
 
 use std::collections::BTreeMap;
 
@@ -359,6 +358,8 @@ fn lorebook_package(details: &LorebookDetails) -> LorebookPackage {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CharacterExportError {
+    #[error("UEC v1/v2 export is read-only")]
+    UecReadOnly,
     #[error("Character Card V1 export is read-only")]
     CardV1ReadOnly,
     #[error("Legacy JSON export is not supported")]
@@ -373,7 +374,7 @@ pub enum CharacterExportError {
 pub fn export_character_file(
     package: &CharacterPackage,
     format: crate::CharacterFileFormat,
-    character_id: &str,
+    _character_id: &str,
     created_at: i64,
     updated_at: i64,
 ) -> Result<String, CharacterExportError> {
@@ -404,12 +405,7 @@ pub fn export_character_file(
         updated_at: Some(updated_at),
     };
     match format {
-        crate::CharacterFileFormat::Uec => Ok(crate::build_character_uec(
-            package,
-            character_id,
-            Some(created_at),
-            Some(updated_at),
-        )?),
+        crate::CharacterFileFormat::Uec => Err(CharacterExportError::UecReadOnly),
         crate::CharacterFileFormat::CharaCardV3 => Ok(crate::export_chara_card_v3(&card())?),
         crate::CharacterFileFormat::CharaCardV2 => Ok(crate::export_chara_card_v2(&card())?),
         crate::CharacterFileFormat::CharaCardV1 => Err(CharacterExportError::CardV1ReadOnly),

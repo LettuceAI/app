@@ -1,0 +1,45 @@
+{
+  "app_specific_settings": {
+    "customGradientEnabled": false,
+    "disableAvatarGradient": false,
+    "interaction_mode": "companion",
+    "memoryType": "manual",
+    "mode": "companion"
+  },
+  "extensions": {},
+  "kind": "character",
+  "meta": {
+    "createdAt": 3,
+    "originalCreatedAt": 3,
+    "originalSource": "lettuceai",
+    "originalUpdatedAt": 7,
+    "source": "lettuceai",
+    "updatedAt": 7
+  },
+  "payload": {
+    "createdAt": 3,
+    "id": "char-9",
+    "name": "Ada",
+    "promptTemplateId": "template",
+    "scene": {
+      "content": "Hi",
+      "createdAt": 7,
+      "id": "scene-1",
+      "selectedVariant": 0,
+      "variants": [
+        {
+          "content": "Yo",
+          "createdAt": 7,
+          "id": "scene-2"
+        }
+      ]
+    },
+    "systemPrompt": null,
+    "updatedAt": 7,
+    "voiceAutoplay": false
+  },
+  "schema": {
+    "name": "UEC",
+    "version": "2.0"
+  }
+}

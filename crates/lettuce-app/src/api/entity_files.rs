@@ -1,3 +1,5 @@
+pub(super) mod character3;
+
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use base64::Engine;
@@ -131,13 +133,100 @@ fn uec3_document(
         return Ok(None);
     }
     let card = lettuce_transfer::uec3::read(text(file)?, |_, _, _| Ok(())).map_err(uec3_error)?;
-    if !card.document.dependencies.is_empty() {
-        return Err(api_error(
-            ApiErrorCode::Unsupported,
-            "bundled dependencies are not supported by this UEC 3 import path",
-        ));
-    }
     Ok(Some(card))
+}
+
+fn prepare_uec3_model(
+    context: &ApiContext,
+    model: &lettuce_transfer::uec3::ModelProfile,
+) -> Result<lettuce_models::ModelProfile, ApiError> {
+    let account = context
+        .backend()
+        .model_files()
+        .account(&model.provider.kind, &model.provider.label)
+        .map_err(IntoApiError::into_api_error)?;
+    let mut model = model.clone();
+    if matches!(
+        account.protocol,
+        lettuce_models::ProviderProtocol::LlamaCpp
+            | lettuce_models::ProviderProtocol::StableDiffusion
+    ) {
+        model.external_id = lettuce_models::UNPICKED_LOCAL_MODEL_FILE.into();
+    }
+    model
+        .into_stored(account.id, context.now())
+        .map_err(uec3_error)
+}
+
+fn prepare_uec3_prompt(
+    context: &ApiContext,
+    prompt: &lettuce_transfer::uec3::Prompt,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<lettuce_context::PromptDocument, ApiError> {
+    use crate::generation::built_in_prompts::BuiltInPromptId;
+    let source = match prompt.built_in.as_deref() {
+        Some(key) => match BuiltInPromptId::from_key_or_alias(key) {
+            Some(id) => Some(
+                lettuce_context::PromptRepository::get(
+                    context.backend().database(),
+                    context.backend().built_in_prompt_ids().get(id),
+                )
+                .map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| {
+                    api_error(
+                        ApiErrorCode::NotFound,
+                        "source built-in prompt was not found",
+                    )
+                })?,
+            ),
+            None => {
+                warnings.push(warning(
+                    dto::FileWarningCode::FieldConverted,
+                    format!("builtIn:{key}"),
+                ));
+                None
+            }
+        },
+        None => None,
+    };
+    prompt
+        .clone()
+        .into_document(source.as_ref(), context.now())
+        .map_err(uec3_error)
+}
+
+fn export_uec3_entity(
+    context: &ApiContext,
+    entity: lettuce_transfer::uec3::Entity,
+    created_at: TimestampMillis,
+    updated_at: TimestampMillis,
+) -> Result<String, ApiError> {
+    use lettuce_transfer::uec3;
+    let document = uec3::Document {
+        schema: uec3::Schema {
+            name: "UEC".into(),
+            version: "3.0".into(),
+        },
+        meta: uec3::Meta {
+            exported_at: context.now().get(),
+            app: "LettuceAI 3.x".into(),
+            created_at: created_at.get(),
+            updated_at: updated_at.get(),
+            authors: Vec::new(),
+            license: None,
+            sources: Vec::new(),
+        },
+        entity,
+        dependencies: Vec::new(),
+        state: None,
+        assets: Default::default(),
+    };
+    let mut content = Vec::new();
+    uec3::write(&mut content, &document, |_, _| {
+        Err(uec3::Error::Format("missing export asset".into()))
+    })
+    .map_err(uec3_error)?;
+    String::from_utf8(content).map_err(internal)
 }
 
 fn format_error(error: impl std::fmt::Display) -> ApiError {
@@ -335,7 +424,122 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
         );
     }
+    let mut uec3_preview = if let Some(card) = &uec3 {
+        let assets = card
+            .document
+            .assets
+            .keys()
+            .map(|key| (key.clone(), lettuce_types::AssetId::new()))
+            .collect();
+        let books = uec3_books(context, &card.document, &assets)?;
+        uec3_prompts(context, &card.document, &mut warnings)?;
+        let mut dependencies = Vec::new();
+        for dependency in &card.document.dependencies {
+            let (kind, name) = match &dependency.entity {
+                lettuce_transfer::uec3::Entity::Lorebook(book) => {
+                    (dto::FileKind::Lorebook, book.name.clone())
+                }
+                lettuce_transfer::uec3::Entity::Prompt(prompt) => {
+                    (dto::FileKind::PromptPreset, prompt.name.clone())
+                }
+                lettuce_transfer::uec3::Entity::Persona(persona) => {
+                    let mut document = card.document.clone();
+                    document.entity = lettuce_transfer::uec3::Entity::Persona(persona.clone());
+                    prepare_uec3_persona(
+                        context,
+                        &document,
+                        &assets,
+                        &mut Vec::new(),
+                        &mut warnings,
+                        true,
+                        &books,
+                    )?;
+                    (dto::FileKind::PersonaFile, persona.name.clone())
+                }
+                _ => return Err(format_error("invalid dependency kind")),
+            };
+            dependencies.push(dto::ImportUec3Dependency {
+                key: dependency.key.clone(),
+                kind,
+                name,
+            });
+        }
+        Some(dto::ImportUec3Preview {
+            dependencies,
+            include_learned: card.document.state.is_some(),
+            character: None,
+            persona: None,
+            prompt: None,
+            lorebook_bindings: Vec::new(),
+        })
+    } else {
+        None
+    };
     let content = match file.kind {
+        dto::FileKind::CharacterCard if uec3.is_some() => {
+            let card = uec3
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC document"))?;
+            let assets = card
+                .document
+                .assets
+                .keys()
+                .map(|key| (key.clone(), lettuce_types::AssetId::new()))
+                .collect();
+            let books = uec3_books(context, &card.document, &assets)?;
+            let prompts = uec3_prompts(context, &card.document, &mut warnings)?;
+            let mut import = character3::prepare(
+                context,
+                &card.document,
+                character3::ImportAssets {
+                    ids: &assets,
+                    uploads: &mut Vec::new(),
+                    preview: true,
+                },
+                &mut warnings,
+                now,
+                &books,
+                &prompts,
+            )?;
+            import.lorebooks = books.into_values().collect();
+            let details = lettuce_characters::CharacterDetails {
+                character: import.character.character,
+                scenes: import.character.scenes,
+                variants: import.character.variants,
+                starters: import.character.starters,
+            };
+            if let Some(preview) = &mut uec3_preview {
+                preview.character = Some(Box::new(
+                    super::library_characters::view(context, details.clone())?.draft,
+                ));
+                let lettuce_transfer::uec3::Entity::Character(character) = &card.document.entity
+                else {
+                    return Err(format_error("expected character"));
+                };
+                preview.lorebook_bindings = character
+                    .behavior
+                    .lorebooks
+                    .iter()
+                    .map(|binding| dto::ImportUec3LorebookBinding {
+                        book: binding.book.clone(),
+                        enabled: binding.enabled,
+                    })
+                    .collect();
+            }
+            let source = lettuce_transfer::CharacterExportSource {
+                details,
+                lorebooks: import.lorebooks,
+                scheduled_notes: import.scheduled_notes,
+                companion_memory: import.companion_memory,
+                avatar_data: None,
+                background_image_data: None,
+                scene_backgrounds: Default::default(),
+            };
+            let package = lettuce_transfer::character_package(&source, now.get());
+            dto::ImportPreviewContent::Character {
+                content: Box::new(convert(&package.character)?),
+            }
+        }
         dto::FileKind::CharacterCard => {
             let package = character(&file, now)?;
             image_preview(
@@ -428,6 +632,65 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 content: Box::new(convert(&package.character)?),
             }
         }
+        dto::FileKind::PersonaFile if uec3.is_some() => {
+            let card = uec3
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC document"))?;
+            let assets = card
+                .document
+                .assets
+                .keys()
+                .map(|key| (key.clone(), lettuce_types::AssetId::new()))
+                .collect();
+            let import = prepare_uec3_persona(
+                context,
+                &card.document,
+                &assets,
+                &mut Vec::new(),
+                &mut warnings,
+                true,
+                &uec3_books(context, &card.document, &assets)?,
+            )?;
+            if let Some(preview) = &mut uec3_preview {
+                preview.persona =
+                    Some(super::library_personas::view(context, import.persona.clone()).draft);
+            }
+            let lettuce_transfer::uec3::Entity::Persona(persona) = &card.document.entity else {
+                return Err(format_error("expected persona entity"));
+            };
+            for key in card.document.assets.keys() {
+                images.push(dto::ImportImagePreview {
+                    field: format!("asset:{key}"),
+                    remote_url: None,
+                });
+            }
+            if let Some(preview) = &mut uec3_preview {
+                preview.lorebook_bindings = persona
+                    .behavior
+                    .lorebooks
+                    .iter()
+                    .map(|binding| dto::ImportUec3LorebookBinding {
+                        book: binding.book.clone(),
+                        enabled: binding.enabled,
+                    })
+                    .collect();
+            }
+            dto::ImportPreviewContent::Persona {
+                content: dto::ImportPersonaContent {
+                    title: import.persona.title,
+                    description: import.persona.description,
+                    nickname: import.persona.nickname,
+                    is_default: None,
+                    avatar_crop: convert(&import.persona.avatar_crop)?,
+                    active_lorebook_ids: persona
+                        .behavior
+                        .lorebooks
+                        .iter()
+                        .map(|binding| binding.book.clone())
+                        .collect(),
+                },
+            }
+        }
         dto::FileKind::PersonaFile => {
             let package = persona(&file, now)?;
             image_preview(
@@ -445,7 +708,9 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             let card = uec3
                 .as_ref()
                 .ok_or_else(|| internal("missing UEC document"))?;
-            let lettuce_transfer::uec3::Entity::Lorebook(book) = &card.document.entity;
+            let lettuce_transfer::uec3::Entity::Lorebook(book) = &card.document.entity else {
+                return Err(format_error("expected lorebook entity"));
+            };
             book.drafts(None).map_err(uec3_error)?;
             if let Some(icon) = &book.icon {
                 let key = icon
@@ -520,6 +785,29 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 entries,
             }
         }
+        dto::FileKind::PromptPreset if uec3.is_some() => {
+            let card = uec3
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC document"))?;
+            let lettuce_transfer::uec3::Entity::Prompt(prompt) = &card.document.entity else {
+                return Err(format_error("expected prompt entity"));
+            };
+            let document = prepare_uec3_prompt(context, prompt, &mut warnings)?;
+            if let Some(preview) = &mut uec3_preview {
+                preview.prompt = Some(super::prompts::view(context, &document)?);
+            }
+            let entries = document
+                .entries
+                .into_iter()
+                .map(lettuce_context::PromptEntryDraft::from)
+                .collect::<Vec<_>>();
+            dto::ImportPreviewContent::Prompt {
+                name: prompt.name.clone(),
+                purpose: super::prompts::kind(document.purpose),
+                entries: convert(&entries)?,
+                condense: prompt.condense,
+            }
+        }
         dto::FileKind::PromptPreset => {
             let prompt = lettuce_transfer::parse_prompt_import(
                 text(&file)?,
@@ -538,6 +826,42 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 condense: prompt.condense,
             }
         }
+        dto::FileKind::ChatTemplate if uec3.is_some() => {
+            let card = uec3
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC document"))?;
+            let lettuce_transfer::uec3::Entity::ChatTemplate(template) = &card.document.entity
+            else {
+                return Err(format_error("expected chat template entity"));
+            };
+            let prompts = uec3_prompts(context, &card.document, &mut warnings)?;
+            if let Some(reference) = &template.prompt {
+                uec3_prompt_reference(context, reference, &prompts)?;
+            }
+            dto::ImportPreviewContent::ChatTemplate {
+                name: template.name.clone(),
+                messages: template
+                    .messages
+                    .iter()
+                    .map(|message| dto::ImportTemplateMessage {
+                        role: match message.role {
+                            lettuce_characters::StarterRole::User => "user",
+                            lettuce_characters::StarterRole::Assistant => "assistant",
+                        }
+                        .into(),
+                        content: message.text.clone(),
+                    })
+                    .collect(),
+                scene_id: None,
+                prompt_template_id: template.prompt.clone(),
+                lorebook_ids_override: match &template.lorebooks {
+                    lettuce_transfer::uec3::LorebookSelection::Inherit(_) => None,
+                    lettuce_transfer::uec3::LorebookSelection::Explicit(books) => {
+                        Some(books.clone())
+                    }
+                },
+            }
+        }
         dto::FileKind::ChatTemplate => {
             let template =
                 lettuce_transfer::parse_chat_template_import(text(&file)?).map_err(format_error)?;
@@ -553,9 +877,43 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 lorebook_ids_override: template.lorebook_ids_override,
             }
         }
+        dto::FileKind::ModelFile if uec3.is_some() => {
+            let card = uec3
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC document"))?;
+            let lettuce_transfer::uec3::Entity::ModelProfile(model) = &card.document.entity else {
+                return Err(format_error("expected model profile entity"));
+            };
+            let profile = prepare_uec3_model(context, model)?;
+            let scopes = |modalities: &lettuce_models::ModalityCapabilities| {
+                [
+                    ("text", modalities.text),
+                    ("image", modalities.image),
+                    ("audio", modalities.audio),
+                ]
+                .into_iter()
+                .filter(|(_, status)| *status == lettuce_models::CapabilityStatus::Supported)
+                .map(|(name, _)| name.to_owned())
+                .collect()
+            };
+            dto::ImportPreviewContent::Model {
+                model_kind: convert(&model.kind)?,
+                model_file_required: profile.external_model_id
+                    == lettuce_models::UNPICKED_LOCAL_MODEL_FILE,
+                name: model.external_id.clone(),
+                provider_id: model.provider.kind.clone(),
+                provider_label: model.provider.label.clone(),
+                display_name: model.display_name.clone(),
+                input_scopes: scopes(&model.capabilities.input_modalities),
+                output_scopes: scopes(&model.capabilities.output_modalities),
+                settings: serde_json::to_value(profile.config).map_err(internal)?,
+            }
+        }
         dto::FileKind::ModelFile => {
             let model = lettuce_transfer::parse_model_import(text(&file)?).map_err(format_error)?;
             dto::ImportPreviewContent::Model {
+                model_kind: dto::ModelKindContract::Chat,
+                model_file_required: false,
                 name: model.name,
                 provider_id: model.provider_id,
                 provider_label: model.provider_label,
@@ -595,6 +953,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
         name: file.name,
         digest: file.digest,
         content,
+        uec3: uec3_preview,
         images,
         warnings,
     })
@@ -781,12 +1140,12 @@ pub async fn import_commit(
         Text,
     }
     let prepared = match file.kind {
-        dto::FileKind::CharacterCard => {
+        dto::FileKind::CharacterCard if uec3_document(&file)?.is_none() => {
             let mut package = character(&file, context.now())?;
             download_avatar(context, &mut package.avatar_data, &mut warnings).await?;
             Prepared::Character(Box::new(package))
         }
-        dto::FileKind::PersonaFile => {
+        dto::FileKind::PersonaFile if uec3_document(&file)?.is_none() => {
             let mut package = persona(&file, context.now())?;
             download_avatar(context, &mut package.avatar_data, &mut warnings).await?;
             Prepared::Persona(package)
@@ -806,12 +1165,14 @@ pub async fn import_commit(
                     Box<lettuce_transfer::CharacterFilePlan>,
                     lettuce_transfer::CharacterFileAssets,
                 ),
+                Character3(Box<lettuce_transfer::CharacterFileImport>),
                 Persona(lettuce_transfer::PersonaFileImport),
                 Lorebook(
                     lettuce_context::LorebookMetadataDraft,
                     Vec<lettuce_context::LorebookEntryDraft>,
                 ),
                 Prompt(PromptMetadataDraft, Vec<lettuce_context::PromptEntryDraft>),
+                PromptFile(Box<lettuce_context::PromptDocument>),
                 Starter(
                     lettuce_types::CharacterId,
                     lettuce_types::Revision,
@@ -828,6 +1189,40 @@ pub async fn import_commit(
                         .iter()
                         .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
                 );
+            }
+            let assets = if uec3.is_some() {
+                stage_uec3_assets(context, &file, &mut uploads, &mut pins, &mut warnings)?
+            } else {
+                Default::default()
+            };
+            let books = if let Some(card) = &uec3 {
+                uec3_books(context, &card.document, &assets)?
+            } else {
+                Default::default()
+            };
+            let prompts = if let Some(card) = &uec3 {
+                uec3_prompts(context, &card.document, &mut warnings)?
+            } else {
+                Default::default()
+            };
+            let mut bundled_personas = Vec::new();
+            if let Some(card) = &uec3 {
+                for dependency in &card.document.dependencies {
+                    if let lettuce_transfer::uec3::Entity::Persona(persona) = &dependency.entity {
+                        let mut document = card.document.clone();
+                        document.entity = lettuce_transfer::uec3::Entity::Persona(persona.clone());
+                        document.state = None;
+                        bundled_personas.push(prepare_uec3_persona(
+                            context,
+                            &document,
+                            &assets,
+                            &mut uploads,
+                            &mut warnings,
+                            false,
+                            &books,
+                        )?);
+                    }
+                }
             }
             let plan = match (file.kind, prepared) {
                 (dto::FileKind::CharacterCard, Prepared::Character(package)) => {
@@ -877,6 +1272,39 @@ pub async fn import_commit(
                     };
                     WritePlan::Character(Box::new(plan), assets)
                 }
+                (dto::FileKind::CharacterCard, _) if uec3.is_some() => {
+                    let card = uec3
+                        .as_ref()
+                        .ok_or_else(|| internal("missing UEC document"))?;
+                    let import = character3::prepare(
+                        context,
+                        &card.document,
+                        character3::ImportAssets {
+                            ids: &assets,
+                            uploads: &mut uploads,
+                            preview: false,
+                        },
+                        &mut warnings,
+                        now,
+                        &books,
+                        &prompts,
+                    )?;
+                    WritePlan::Character3(Box::new(import))
+                }
+                (dto::FileKind::PersonaFile, _) if uec3.is_some() => {
+                    let card = uec3
+                        .as_ref()
+                        .ok_or_else(|| internal("missing UEC document"))?;
+                    WritePlan::Persona(prepare_uec3_persona(
+                        context,
+                        &card.document,
+                        &assets,
+                        &mut uploads,
+                        &mut warnings,
+                        false,
+                        &books,
+                    )?)
+                }
                 (dto::FileKind::PersonaFile, Prepared::Persona(package)) => {
                     let media = context.media().ok_or_else(|| {
                         api_error(ApiErrorCode::Unavailable, "no media store is open")
@@ -916,44 +1344,15 @@ pub async fn import_commit(
                     let card = uec3
                         .as_ref()
                         .ok_or_else(|| internal("missing UEC document"))?;
-                    let lettuce_transfer::uec3::Entity::Lorebook(book) = &card.document.entity;
-                    let icon_key = book
+                    let lettuce_transfer::uec3::Entity::Lorebook(book) = &card.document.entity
+                    else {
+                        return Err(format_error("expected lorebook entity"));
+                    };
+                    let icon = book
                         .icon
                         .as_deref()
-                        .map(|reference| {
-                            reference
-                                .strip_prefix("asset:")
-                                .ok_or_else(|| format_error("invalid icon reference"))
-                        })
+                        .map(|value| uec3_asset(&assets, value))
                         .transpose()?;
-                    let mut icon = None;
-                    lettuce_transfer::uec3::read(text(&file)?, |key, mime, bytes| {
-                        if Some(key) == icon_key {
-                            let data = format!(
-                                "data:{mime};base64,{}",
-                                base64::engine::general_purpose::STANDARD.encode(bytes)
-                            );
-                            icon = stage_image(
-                                context,
-                                Some(&data),
-                                lettuce_media::AssetKind::LorebookIcon,
-                                "icon",
-                                &mut uploads,
-                                &mut pins,
-                                &mut warnings,
-                            );
-                            if icon.is_none() {
-                                return Err(lettuce_transfer::uec3::Error::Format(
-                                    "icon staging failed".into(),
-                                ));
-                            }
-                        }
-                        Ok(())
-                    })
-                    .map_err(uec3_error)?;
-                    if icon_key.is_some() && icon.is_none() {
-                        return Err(format_error("missing icon asset"));
-                    }
                     let (metadata, entries) = book.drafts(icon).map_err(uec3_error)?;
                     WritePlan::Lorebook(metadata, entries)
                 }
@@ -962,6 +1361,20 @@ pub async fn import_commit(
                         crate::files::lorebook_files::prepare_import(text(&file)?)
                             .map_err(format_error)?;
                     WritePlan::Lorebook(metadata, entries)
+                }
+                (dto::FileKind::PromptPreset, _) if uec3.is_some() => {
+                    let card = uec3
+                        .as_ref()
+                        .ok_or_else(|| internal("missing UEC document"))?;
+                    let lettuce_transfer::uec3::Entity::Prompt(prompt) = &card.document.entity
+                    else {
+                        return Err(format_error("expected prompt entity"));
+                    };
+                    WritePlan::PromptFile(Box::new(prepare_uec3_prompt(
+                        context,
+                        prompt,
+                        &mut warnings,
+                    )?))
                 }
                 (dto::FileKind::PromptPreset, _) => {
                     let imported = lettuce_transfer::parse_prompt_import(
@@ -983,6 +1396,37 @@ pub async fn import_commit(
                         },
                         imported.entries,
                     )
+                }
+                (dto::FileKind::ChatTemplate, _) if uec3.is_some() => {
+                    let id = parse_id(
+                        request.options.character_id.as_deref().ok_or_else(|| {
+                            invalid_field("options.character_id", "target character is required")
+                        })?,
+                        "options.character_id",
+                    )?;
+                    let character = lettuce_characters::CharacterRepository::get(database, id)
+                        .map_err(IntoApiError::into_api_error)?
+                        .ok_or_else(|| {
+                            api_error(ApiErrorCode::NotFound, "character was not found")
+                        })?;
+                    if character.character.status != lettuce_characters::LifecycleStatus::Active {
+                        return Err(invalid_field(
+                            "options.character_id",
+                            "character is archived",
+                        ));
+                    }
+                    let card = uec3
+                        .as_ref()
+                        .ok_or_else(|| internal("missing UEC document"))?;
+                    let lettuce_transfer::uec3::Entity::ChatTemplate(template) =
+                        &card.document.entity
+                    else {
+                        return Err(format_error("expected chat template entity"));
+                    };
+                    let starter = prepare_uec3_template(
+                        context, template, &character, &books, &prompts, now,
+                    )?;
+                    WritePlan::Starter(id, character.character.revision, starter)
                 }
                 (dto::FileKind::ChatTemplate, _) => {
                     let id = parse_id(
@@ -1032,6 +1476,16 @@ pub async fn import_commit(
                     }
                     WritePlan::Starter(id, revision, starter)
                 }
+                (dto::FileKind::ModelFile, _) if uec3.is_some() => {
+                    let card = uec3
+                        .as_ref()
+                        .ok_or_else(|| internal("missing UEC document"))?;
+                    let lettuce_transfer::uec3::Entity::ModelProfile(model) = &card.document.entity
+                    else {
+                        return Err(format_error("expected model profile entity"));
+                    };
+                    WritePlan::Model(Box::new(prepare_uec3_model(context, model)?))
+                }
                 (dto::FileKind::ModelFile, _) => {
                     let imported = context
                         .backend()
@@ -1076,6 +1530,21 @@ pub async fn import_commit(
                                 .install_library_upload(upload)
                                 .map_err(|e| Failure(e.into_api_error()))?;
                         }
+                        for book in books.values() {
+                            scope
+                                .import_lorebook_file(book)
+                                .map_err(|e| Failure(e.into_api_error()))?;
+                        }
+                        for prompt in prompts.values() {
+                            scope
+                                .import_prompt_file(prompt)
+                                .map_err(|e| Failure(e.into_api_error()))?;
+                        }
+                        for persona in &bundled_personas {
+                            scope
+                                .import_persona_file(persona)
+                                .map_err(|e| Failure(e.into_api_error()))?;
+                        }
                         let id = match plan {
                             WritePlan::Character(plan, assets) => {
                                 let references = scope
@@ -1111,6 +1580,12 @@ pub async fn import_commit(
                                     .id
                                     .to_string()
                             }
+                            WritePlan::Character3(import) => scope
+                                .import_character_file(&import)
+                                .map_err(|e| Failure(internal(e)))?
+                                .character
+                                .id
+                                .to_string(),
                             WritePlan::Persona(import) => scope
                                 .import_persona_file(&import)
                                 .map_err(|e| Failure(e.into_api_error()))?
@@ -1124,6 +1599,11 @@ pub async fn import_commit(
                                 .to_string(),
                             WritePlan::Prompt(metadata, entries) => scope
                                 .create_prompt(metadata, entries, now)
+                                .map_err(|e| Failure(e.into_api_error()))?
+                                .id
+                                .to_string(),
+                            WritePlan::PromptFile(document) => scope
+                                .import_prompt_file(&document)
                                 .map_err(|e| Failure(e.into_api_error()))?
                                 .id
                                 .to_string(),
@@ -1242,11 +1722,18 @@ pub async fn character_export(
                 }
             };
             let now = context.now();
-            let (content, warnings) = context
-                .backend()
-                .character_files(media)
-                .export_with_warnings(id, format, now)
-                .map_err(IntoApiError::into_api_error)?;
+            let (content, warnings) = if request.format == dto::CharacterExportFormat::Uec {
+                let mut warnings = Vec::new();
+                let content =
+                    character3::export(context, id, request.include_learned, &mut warnings)?;
+                (content, warnings)
+            } else {
+                context
+                    .backend()
+                    .character_files(media)
+                    .export_with_warnings(id, format, now)
+                    .map_err(IntoApiError::into_api_error)?
+            };
             publish(
                 context,
                 request.target,
@@ -1268,18 +1755,12 @@ pub async fn persona_export(
     let id = parse_id(&request.id, "id")?;
     context
         .blocking(move |context| {
-            let media = context
-                .media()
-                .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no media store is open"))?;
             let persona =
                 lettuce_characters::PersonaRepository::get(context.backend().database(), id)
                     .map_err(IntoApiError::into_api_error)?
                     .ok_or_else(|| api_error(ApiErrorCode::NotFound, "persona was not found"))?;
-            let (content, warnings) = context
-                .backend()
-                .persona_files(media)
-                .export_with_warnings(id)
-                .map_err(IntoApiError::into_api_error)?;
+            let mut warnings = Vec::new();
+            let content = export_uec3_persona(context, &persona, &mut warnings)?;
             publish(
                 context,
                 request.target,
@@ -1400,16 +1881,39 @@ pub async fn prompt_export(
     let id = parse_id(&request.id, "id")?;
     context
         .blocking(move |context| {
-            let file = context
-                .backend()
-                .prompt_files()
-                .export(id, crate::PromptFileFormat::Usc, context.now())
-                .map_err(IntoApiError::into_api_error)?;
+            let database = context.backend().database();
+            let document = lettuce_context::PromptRepository::get(database, id)
+                .map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| api_error(ApiErrorCode::NotFound, "prompt was not found"))?;
+            let built_in = match &document.provenance {
+                lettuce_context::PromptProvenance::BuiltIn { key, .. } => Some(key.clone()),
+                lettuce_context::PromptProvenance::Derived { source, .. } => {
+                    lettuce_context::PromptRepository::get(database, *source)
+                        .map_err(IntoApiError::into_api_error)?
+                        .and_then(|source| match source.provenance {
+                            lettuce_context::PromptProvenance::BuiltIn { key, .. } => Some(key),
+                            _ => None,
+                        })
+                }
+                _ => None,
+            };
+            let entity = lettuce_transfer::uec3::Prompt::from_document(&document, built_in)
+                .map_err(format_error)?;
+            let content = export_uec3_entity(
+                context,
+                lettuce_transfer::uec3::Entity::Prompt(entity),
+                document.created_at,
+                document.updated_at,
+            )?;
             publish(
                 context,
                 request.target,
-                file.filename,
-                file.content,
+                format!(
+                    "system_prompts_{}_{}.uec",
+                    crate::files::prompt_files::export_name(&document.name),
+                    crate::files::prompt_files::export_date(context.now())
+                ),
+                content,
                 Vec::new(),
             )
         })
@@ -1423,20 +1927,27 @@ pub async fn chat_template_export(
     let starter_id = parse_id(&request.starter_id, "starter_id")?;
     context
         .blocking(move |context| {
-            let format = match request.format {
-                dto::EntityExportFormat::Json => crate::ChatTemplateFileFormat::Json,
-                dto::EntityExportFormat::Usc => crate::ChatTemplateFileFormat::Usc,
-            };
-            let file = context
-                .backend()
-                .chat_template_files()
-                .export(character_id, starter_id, format, context.now())
-                .map_err(IntoApiError::into_api_error)?;
+            let details = lettuce_characters::CharacterRepository::get(
+                context.backend().database(),
+                character_id,
+            )
+            .map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "character was not found"))?;
+            let starter = details
+                .starters
+                .iter()
+                .find(|starter| starter.id == starter_id)
+                .ok_or_else(|| api_error(ApiErrorCode::NotFound, "starter was not found"))?;
+            let content = export_uec3_template(context, starter)?;
             publish(
                 context,
                 request.target,
-                file.filename,
-                file.content,
+                format!(
+                    "chat_template_{}_{}.uec",
+                    crate::files::prompt_files::export_name(&starter.name),
+                    crate::files::prompt_files::export_date(context.now())
+                ),
+                content,
                 Vec::new(),
             )
         })
@@ -1449,20 +1960,32 @@ pub async fn model_export(
     let id = parse_id(&request.id, "id")?;
     context
         .blocking(move |context| {
-            let format = match request.format {
-                dto::EntityExportFormat::Json => crate::ModelFileFormat::Json,
-                dto::EntityExportFormat::Usc => crate::ModelFileFormat::Usc,
-            };
-            let file = context
-                .backend()
-                .model_files()
-                .export(id, format, context.now())
-                .map_err(IntoApiError::into_api_error)?;
+            let database = context.backend().database();
+            let profile = lettuce_models::ModelProfileRepository::get(database, id)
+                .map_err(super::model_profiles::model_error)?
+                .ok_or_else(|| api_error(ApiErrorCode::NotFound, "model profile was not found"))?;
+            let account = lettuce_models::ProviderAccountRepository::get(
+                database,
+                profile.provider_account_id,
+            )
+            .map_err(super::model_profiles::model_error)?
+            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "provider account was not found"))?;
+            let model = lettuce_transfer::uec3::ModelProfile::from_stored(&profile, &account);
+            let content = export_uec3_entity(
+                context,
+                lettuce_transfer::uec3::Entity::ModelProfile(Box::new(model)),
+                profile.created_at,
+                profile.updated_at,
+            )?;
             publish(
                 context,
                 request.target,
-                file.filename,
-                file.content,
+                format!(
+                    "model_{}_{}.uec",
+                    crate::files::prompt_files::export_name(&profile.display_name),
+                    crate::files::prompt_files::export_date(context.now())
+                ),
+                content,
                 Vec::new(),
             )
         })
@@ -1489,4 +2012,620 @@ pub async fn chat_export(
             )
         })
         .await
+}
+
+fn import_uec3_image(
+    context: &ApiContext,
+    image: Option<&lettuce_transfer::uec3::ImageRecommendation>,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<Option<lettuce_characters::ImageRecommendation>, ApiError> {
+    use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
+    let Some(image) = image else {
+        return Ok(None);
+    };
+    let database = context.backend().database();
+    let by_hash = image
+        .sha256
+        .as_deref()
+        .map(|hash| database.lora_file_by_sha256(hash))
+        .transpose()
+        .map_err(internal)?
+        .flatten();
+    let found = match by_hash {
+        Some(record) => Some(record),
+        None => database
+            .lora_by_filename(&image.file_name)
+            .map_err(internal)?,
+    };
+    Ok(match found {
+        Some(record) => Some(lettuce_characters::ImageRecommendation {
+            artifact_id: None,
+            unresolved_legacy_name: Some(record.path),
+            strength: image.strength,
+        }),
+        None => {
+            warnings.push(warning(
+                dto::FileWarningCode::FieldSkipped,
+                format!("image.lora:{}", image.file_name),
+            ));
+            None
+        }
+    })
+}
+
+fn export_uec3_image(
+    context: &ApiContext,
+    image: Option<&lettuce_characters::ImageRecommendation>,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<Option<lettuce_transfer::uec3::ImageRecommendation>, ApiError> {
+    use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
+    let Some(image) = image else {
+        return Ok(None);
+    };
+    let Some(path) = image.unresolved_legacy_name.as_deref() else {
+        warnings.push(warning(
+            dto::FileWarningCode::FieldSkipped,
+            "image.lora.artifact",
+        ));
+        return Ok(None);
+    };
+    let record = context.backend().database().lora(path).map_err(internal)?;
+    let Some(file_name) = std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+    else {
+        warnings.push(warning(
+            dto::FileWarningCode::FieldSkipped,
+            "image.lora.filename",
+        ));
+        return Ok(None);
+    };
+    Ok(Some(lettuce_transfer::uec3::ImageRecommendation {
+        file_name: file_name.to_owned(),
+        sha256: record.and_then(|record| record.sha256),
+        strength: image.strength,
+    }))
+}
+
+fn uec3_asset(
+    assets: &std::collections::BTreeMap<String, lettuce_types::AssetId>,
+    reference: &str,
+) -> Result<lettuce_types::AssetId, ApiError> {
+    let key = reference
+        .strip_prefix("asset:")
+        .ok_or_else(|| format_error("invalid asset reference"))?;
+    assets
+        .get(key)
+        .copied()
+        .ok_or_else(|| format_error(format!("missing asset:{key}")))
+}
+
+pub(super) fn uec3_books(
+    context: &ApiContext,
+    document: &lettuce_transfer::uec3::Document,
+    assets: &std::collections::BTreeMap<String, lettuce_types::AssetId>,
+) -> Result<std::collections::BTreeMap<String, lettuce_context::LorebookDetails>, ApiError> {
+    document
+        .dependencies
+        .iter()
+        .filter_map(|dependency| match &dependency.entity {
+            lettuce_transfer::uec3::Entity::Lorebook(book) => Some((dependency.key.clone(), book)),
+            _ => None,
+        })
+        .map(|(key, book)| {
+            let icon = book
+                .icon
+                .as_deref()
+                .map(|reference| uec3_asset(assets, reference))
+                .transpose()?;
+            Ok((
+                format!("dep:{key}"),
+                book.into_details(icon, context.now()).map_err(uec3_error)?,
+            ))
+        })
+        .collect()
+}
+
+fn prepare_uec3_persona(
+    context: &ApiContext,
+    document: &lettuce_transfer::uec3::Document,
+    assets: &std::collections::BTreeMap<String, lettuce_types::AssetId>,
+    uploads: &mut Vec<lettuce_media::IngestedMedia>,
+    warnings: &mut Vec<dto::FileWarning>,
+    preview: bool,
+    books: &std::collections::BTreeMap<String, lettuce_context::LorebookDetails>,
+) -> Result<lettuce_transfer::PersonaFileImport, ApiError> {
+    use lettuce_characters::{PersonaMediaLink, PersonaMediaSlot};
+    let lettuce_transfer::uec3::Entity::Persona(persona) = &document.entity else {
+        return Err(format_error("expected persona entity"));
+    };
+    let now = context.now();
+    let mut lorebook_ids = Vec::new();
+    let mut disabled_lorebook_ids = Vec::new();
+    for binding in &persona.behavior.lorebooks {
+        let book = books
+            .get(&binding.book)
+            .ok_or_else(|| format_error(format!("missing {}", binding.book)))?;
+        lorebook_ids.push(book.book.id);
+        if !binding.enabled {
+            disabled_lorebook_ids.push(book.book.id);
+        }
+    }
+    let mut links = Vec::new();
+    if let Some(reference) = &persona.media.avatar {
+        links.push(PersonaMediaLink {
+            asset_id: character3::logical_asset(assets, uploads, reference, preview)?,
+            slot: PersonaMediaSlot::Avatar,
+            ordinal: 0,
+        });
+    }
+    for (index, reference) in persona.design.references.iter().enumerate() {
+        links.push(PersonaMediaLink {
+            asset_id: character3::logical_asset(assets, uploads, reference, preview)?,
+            slot: PersonaMediaSlot::DesignReference,
+            ordinal: u32::try_from(index).map_err(internal)?,
+        });
+    }
+    let persona = lettuce_characters::Persona {
+        id: lettuce_types::PersonaId::new(),
+        status: lettuce_characters::LifecycleStatus::Active,
+        title: persona.name.clone(),
+        description: persona.description.clone(),
+        nickname: persona.nickname.clone(),
+        design_description: persona.design.description.clone(),
+        avatar_crop: persona.media.avatar_crop.map(Into::into),
+        image_recommendation: import_uec3_image(
+            context,
+            persona.behavior.image.as_ref(),
+            warnings,
+        )?,
+        media: lettuce_characters::PersonaMedia { links },
+        revision: lettuce_types::Revision::INITIAL,
+        created_at: now,
+        updated_at: now,
+    };
+    persona.validate().map_err(format_error)?;
+    Ok(lettuce_transfer::PersonaFileImport {
+        persona,
+        lorebook_ids,
+        disabled_lorebook_ids,
+        make_default: false,
+    })
+}
+
+pub(super) fn stage_uec3_assets(
+    context: &ApiContext,
+    file: &ImportFile,
+    uploads: &mut Vec<lettuce_media::IngestedMedia>,
+    pins: &mut Vec<lettuce_media::MediaObjectPin>,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<std::collections::BTreeMap<String, lettuce_types::AssetId>, ApiError> {
+    let mut assets = std::collections::BTreeMap::new();
+    lettuce_transfer::uec3::read(text(file)?, |key, mime, bytes| {
+        let data = format!(
+            "data:{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        );
+        let id = stage_image(
+            context,
+            Some(&data),
+            lettuce_media::AssetKind::OtherImage,
+            key,
+            uploads,
+            pins,
+            warnings,
+        )
+        .ok_or_else(|| {
+            lettuce_transfer::uec3::Error::Format(format!("asset staging failed: {key}"))
+        })?;
+        assets.insert(key.to_owned(), id);
+        Ok(())
+    })
+    .map_err(uec3_error)?;
+    Ok(assets)
+}
+
+fn add_uec3_asset(
+    context: &ApiContext,
+    id: lettuce_types::AssetId,
+    assets: &mut std::collections::BTreeMap<String, lettuce_transfer::uec3::Asset>,
+    ids: &mut std::collections::BTreeMap<String, lettuce_types::AssetId>,
+) -> Result<String, ApiError> {
+    let media = context
+        .media()
+        .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no media store is open"))?;
+    let opened = media
+        .open_ready(id)
+        .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+    let hash = opened.blob.content_hash.as_str();
+    if let Some((key, _)) = assets.iter().find(|(_, asset)| asset.blake3 == hash) {
+        return Ok(format!("asset:{key}"));
+    }
+    let key = format!("a{}", assets.len() + 1);
+    assets.insert(
+        key.clone(),
+        lettuce_transfer::uec3::Asset {
+            mime: opened.blob.mime_type,
+            blake3: hash.to_owned(),
+        },
+    );
+    ids.insert(key.clone(), id);
+    Ok(format!("asset:{key}"))
+}
+
+fn write_uec3_bundle(
+    context: &ApiContext,
+    document: &lettuce_transfer::uec3::Document,
+    ids: &std::collections::BTreeMap<String, lettuce_types::AssetId>,
+) -> Result<String, ApiError> {
+    let hashes = document
+        .assets
+        .values()
+        .map(|asset| lettuce_types::ContentHash::parse(asset.blake3.clone()).map_err(format_error))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (_, _pin) =
+        lettuce_media::pin_media_objects(|| Ok::<_, std::convert::Infallible>(((), hashes)))
+            .expect("pin");
+    let mut content = Vec::new();
+    lettuce_transfer::uec3::write(&mut content, document, |key, writer| {
+        let id = ids
+            .get(key)
+            .ok_or_else(|| lettuce_transfer::uec3::Error::Format("missing export asset".into()))?;
+        let media = context.media().ok_or_else(|| {
+            lettuce_transfer::uec3::Error::Format("no media store is open".into())
+        })?;
+        let mut opened = media.open_ready(*id).map_err(|error| {
+            lettuce_transfer::uec3::Error::Io(std::io::Error::other(error.to_string()))
+        })?;
+        std::io::copy(&mut opened.reader, writer)?;
+        Ok(())
+    })
+    .map_err(uec3_error)?;
+    String::from_utf8(content).map_err(internal)
+}
+
+fn export_uec3_persona(
+    context: &ApiContext,
+    persona: &lettuce_characters::Persona,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<String, ApiError> {
+    use lettuce_context::PersonaLorebookBindingRepository;
+    use lettuce_transfer::uec3;
+    let mut assets = std::collections::BTreeMap::new();
+    let mut ids = std::collections::BTreeMap::new();
+    let mut dependencies = Vec::new();
+    let mut bindings = context
+        .backend()
+        .database()
+        .list_persona_bindings(persona.id)
+        .map_err(internal)?;
+    bindings.sort_by_key(|binding| binding.ordinal);
+    let mut lorebooks = Vec::new();
+    for binding in bindings {
+        let book = LorebookRepository::get(context.backend().database(), binding.lorebook_id)
+            .map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "bound lorebook was not found"))?;
+        let icon = book
+            .book
+            .icon_asset_id
+            .map(|id| add_uec3_asset(context, id, &mut assets, &mut ids))
+            .transpose()?;
+        let key = format!("l{}", dependencies.len() + 1);
+        lorebooks.push(uec3::LorebookBinding {
+            book: format!("dep:{key}"),
+            enabled: binding.enabled,
+        });
+        dependencies.push(uec3::Dependency {
+            key,
+            entity: uec3::Entity::Lorebook(uec3::Lorebook::from_details(&book, icon)),
+        });
+    }
+    let avatar = persona
+        .media
+        .links
+        .iter()
+        .find(|link| link.slot == lettuce_characters::PersonaMediaSlot::Avatar)
+        .map(|link| add_uec3_asset(context, link.asset_id, &mut assets, &mut ids))
+        .transpose()?;
+    let mut references = persona
+        .media
+        .links
+        .iter()
+        .filter(|link| link.slot == lettuce_characters::PersonaMediaSlot::DesignReference)
+        .collect::<Vec<_>>();
+    references.sort_by_key(|link| link.ordinal);
+    let references = references
+        .into_iter()
+        .map(|link| add_uec3_asset(context, link.asset_id, &mut assets, &mut ids))
+        .collect::<Result<Vec<_>, _>>()?;
+    let document = uec3::Document {
+        schema: uec3::Schema {
+            name: "UEC".into(),
+            version: "3.0".into(),
+        },
+        meta: uec3::Meta {
+            exported_at: context.now().get(),
+            app: "LettuceAI 3.x".into(),
+            created_at: persona.created_at.get(),
+            updated_at: persona.updated_at.get(),
+            authors: Vec::new(),
+            license: None,
+            sources: Vec::new(),
+        },
+        entity: uec3::Entity::Persona(uec3::Persona {
+            name: persona.title.clone(),
+            nickname: persona.nickname.clone(),
+            description: persona.description.clone(),
+            design: uec3::Design {
+                description: persona.design_description.clone(),
+                references,
+            },
+            media: uec3::PersonaMedia {
+                avatar,
+                avatar_crop: persona.avatar_crop.map(Into::into),
+            },
+            behavior: uec3::PersonaBehavior {
+                image: export_uec3_image(context, persona.image_recommendation.as_ref(), warnings)?,
+                lorebooks,
+            },
+        }),
+        dependencies,
+        state: None,
+        assets,
+    };
+    write_uec3_bundle(context, &document, &ids)
+}
+
+pub(super) fn uec3_prompts(
+    context: &ApiContext,
+    document: &lettuce_transfer::uec3::Document,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<std::collections::BTreeMap<String, lettuce_context::PromptDocument>, ApiError> {
+    document
+        .dependencies
+        .iter()
+        .filter_map(|dependency| match &dependency.entity {
+            lettuce_transfer::uec3::Entity::Prompt(prompt) => {
+                Some((dependency.key.clone(), prompt))
+            }
+            _ => None,
+        })
+        .map(|(key, prompt)| {
+            Ok((
+                format!("dep:{key}"),
+                prepare_uec3_prompt(context, prompt, warnings)?,
+            ))
+        })
+        .collect()
+}
+
+fn uec3_prompt_reference(
+    context: &ApiContext,
+    reference: &str,
+    prompts: &std::collections::BTreeMap<String, lettuce_context::PromptDocument>,
+) -> Result<lettuce_context::PromptDocument, ApiError> {
+    if let Some(key) = reference.strip_prefix("builtin:") {
+        let id = crate::generation::built_in_prompts::BuiltInPromptId::from_key_or_alias(key)
+            .ok_or_else(|| {
+                api_error(
+                    ApiErrorCode::NotFound,
+                    format!("built-in prompt not found: {key}"),
+                )
+            })?;
+        lettuce_context::PromptRepository::get(
+            context.backend().database(),
+            context.backend().built_in_prompt_ids().get(id),
+        )
+        .map_err(IntoApiError::into_api_error)?
+        .ok_or_else(|| {
+            api_error(
+                ApiErrorCode::NotFound,
+                format!("built-in prompt not found: {key}"),
+            )
+        })
+    } else {
+        prompts
+            .get(reference)
+            .cloned()
+            .ok_or_else(|| format_error(format!("missing prompt: {reference}")))
+    }
+}
+
+fn prepare_uec3_template(
+    context: &ApiContext,
+    template: &lettuce_transfer::uec3::ChatTemplate,
+    character: &lettuce_characters::CharacterDetails,
+    books: &std::collections::BTreeMap<String, lettuce_context::LorebookDetails>,
+    prompts: &std::collections::BTreeMap<String, lettuce_context::PromptDocument>,
+    now: TimestampMillis,
+) -> Result<lettuce_characters::ConversationStarter, ApiError> {
+    use lettuce_characters::{ConversationStarter, Selection, StarterMessage};
+    use lettuce_transfer::uec3::LorebookSelection;
+    let purpose = if crate::launch::policy::is_companion(&character.character.defaults) {
+        lettuce_context::PromptPurpose::CompanionChat
+    } else {
+        lettuce_context::PromptPurpose::DirectChat
+    };
+    let prompt_id = template
+        .prompt
+        .as_deref()
+        .map(|reference| {
+            let document = uec3_prompt_reference(context, reference, prompts)?;
+            if document.purpose != purpose {
+                return Err(format_error(
+                    "starter prompt purpose does not match character",
+                ));
+            }
+            Ok(document.id)
+        })
+        .transpose()?;
+    let lorebooks = match &template.lorebooks {
+        LorebookSelection::Inherit(_) => Selection::Inherit,
+        LorebookSelection::Explicit(references) => Selection::Explicit(
+            references
+                .iter()
+                .map(|reference| {
+                    books
+                        .get(reference)
+                        .map(|book| book.book.id)
+                        .ok_or_else(|| format_error(format!("missing lorebook: {reference}")))
+                })
+                .collect::<Result<Vec<_>, ApiError>>()?,
+        ),
+    };
+    let starter = ConversationStarter {
+        id: lettuce_types::ConversationStarterId::new(),
+        character_id: character.character.id,
+        name: template.name.clone(),
+        ordinal: u32::try_from(character.starters.len()).map_err(internal)?,
+        messages: template
+            .messages
+            .iter()
+            .map(|message| StarterMessage {
+                id: lettuce_types::StarterMessageId::new(),
+                role: message.role,
+                content: message.text.clone(),
+            })
+            .collect(),
+        scene_id: None,
+        prompt_id,
+        lorebooks,
+        revision: lettuce_types::Revision::INITIAL,
+        created_at: now,
+        updated_at: now,
+    };
+    starter.validate().map_err(format_error)?;
+    Ok(starter)
+}
+
+fn bundle_uec3_prompt(
+    context: &ApiContext,
+    id: lettuce_types::PromptDocumentId,
+    dependencies: &mut Vec<lettuce_transfer::uec3::Dependency>,
+    references: &mut std::collections::BTreeMap<lettuce_types::PromptDocumentId, String>,
+) -> Result<String, ApiError> {
+    use lettuce_transfer::uec3;
+    if let Some(reference) = references.get(&id) {
+        return Ok(reference.clone());
+    }
+    let document = lettuce_context::PromptRepository::get(context.backend().database(), id)
+        .map_err(IntoApiError::into_api_error)?
+        .ok_or_else(|| api_error(ApiErrorCode::NotFound, "referenced prompt was not found"))?;
+    if let lettuce_context::PromptProvenance::BuiltIn {
+        key,
+        seed_digest,
+        authored_digest,
+        ..
+    } = &document.provenance
+    {
+        if seed_digest == authored_digest {
+            let reference = format!("builtin:{key}");
+            references.insert(id, reference.clone());
+            return Ok(reference);
+        }
+    }
+    let built_in = match &document.provenance {
+        lettuce_context::PromptProvenance::BuiltIn { key, .. } => Some(key.clone()),
+        lettuce_context::PromptProvenance::Derived { source, .. } => {
+            lettuce_context::PromptRepository::get(context.backend().database(), *source)
+                .map_err(IntoApiError::into_api_error)?
+                .and_then(|source| match source.provenance {
+                    lettuce_context::PromptProvenance::BuiltIn { key, .. } => Some(key),
+                    _ => None,
+                })
+        }
+        _ => None,
+    };
+    let key = format!(
+        "p{}",
+        dependencies
+            .iter()
+            .filter(|dependency| matches!(dependency.entity, uec3::Entity::Prompt(_)))
+            .count()
+            + 1
+    );
+    let entity = uec3::Prompt::from_document(&document, built_in).map_err(uec3_error)?;
+    let reference = format!("dep:{key}");
+    dependencies.push(uec3::Dependency {
+        key,
+        entity: uec3::Entity::Prompt(entity),
+    });
+    references.insert(id, reference.clone());
+    Ok(reference)
+}
+
+fn export_uec3_template(
+    context: &ApiContext,
+    starter: &lettuce_characters::ConversationStarter,
+) -> Result<String, ApiError> {
+    use lettuce_transfer::uec3;
+    let mut dependencies = Vec::new();
+    let mut assets = std::collections::BTreeMap::new();
+    let mut ids = std::collections::BTreeMap::new();
+    let prompt = starter
+        .prompt_id
+        .map(|id| bundle_uec3_prompt(context, id, &mut dependencies, &mut Default::default()))
+        .transpose()?;
+    let lorebooks = match &starter.lorebooks {
+        lettuce_characters::Selection::Inherit => {
+            uec3::LorebookSelection::Inherit(uec3::Inherit::Inherit)
+        }
+        lettuce_characters::Selection::Disabled => uec3::LorebookSelection::Explicit(Vec::new()),
+        lettuce_characters::Selection::Explicit(book_ids) => {
+            let mut references = Vec::new();
+            for (index, id) in book_ids.iter().enumerate() {
+                let book = LorebookRepository::get(context.backend().database(), *id)
+                    .map_err(IntoApiError::into_api_error)?
+                    .ok_or_else(|| {
+                        api_error(ApiErrorCode::NotFound, "starter lorebook was not found")
+                    })?;
+                let icon = book
+                    .book
+                    .icon_asset_id
+                    .map(|id| add_uec3_asset(context, id, &mut assets, &mut ids))
+                    .transpose()?;
+                let key = format!("l{}", index + 1);
+                references.push(format!("dep:{key}"));
+                dependencies.push(uec3::Dependency {
+                    key,
+                    entity: uec3::Entity::Lorebook(uec3::Lorebook::from_details(&book, icon)),
+                });
+            }
+            uec3::LorebookSelection::Explicit(references)
+        }
+    };
+    let document = uec3::Document {
+        schema: uec3::Schema {
+            name: "UEC".into(),
+            version: "3.0".into(),
+        },
+        meta: uec3::Meta {
+            exported_at: context.now().get(),
+            app: "LettuceAI 3.x".into(),
+            created_at: starter.created_at.get(),
+            updated_at: starter.updated_at.get(),
+            authors: Vec::new(),
+            license: None,
+            sources: Vec::new(),
+        },
+        entity: uec3::Entity::ChatTemplate(uec3::ChatTemplate {
+            key: "t1".into(),
+            name: starter.name.clone(),
+            messages: starter
+                .messages
+                .iter()
+                .map(|message| uec3::StarterMessage {
+                    role: message.role,
+                    text: message.content.clone(),
+                })
+                .collect(),
+            prompt,
+            lorebooks,
+        }),
+        dependencies,
+        state: None,
+        assets,
+    };
+    write_uec3_bundle(context, &document, &ids)
 }

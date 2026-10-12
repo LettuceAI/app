@@ -886,6 +886,7 @@ fn import_persona_file_in(tx: &rusqlite::Transaction<'_>, import: &PersonaFileIm
             persona.id,
             revision,
             *lorebook_id,
+            !import.disabled_lorebook_ids.contains(lorebook_id),
             import.persona.created_at,
         )
         .map_err(|error| match error {
@@ -2062,6 +2063,7 @@ mod tests {
         let failing = PersonaFileImport {
             persona: with_avatar,
             lorebook_ids: vec![lorebook.book.id, lettuce_types::LorebookId::new()],
+            disabled_lorebook_ids: Vec::new(),
             make_default: true,
         };
         assert_eq!(
@@ -2099,6 +2101,7 @@ mod tests {
                     ..persona
                 },
                 lorebook_ids: vec![lorebook.book.id],
+                disabled_lorebook_ids: Vec::new(),
                 make_default: true,
             })
             .expect("retry");
@@ -2136,6 +2139,7 @@ mod tests {
             .import_persona_file(&PersonaFileImport {
                 persona: linked_persona,
                 lorebook_ids: Vec::new(),
+                disabled_lorebook_ids: Vec::new(),
                 make_default: false,
             })
             .expect("linked avatar import");

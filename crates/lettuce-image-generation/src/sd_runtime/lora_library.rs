@@ -72,8 +72,15 @@ pub enum LoraLibraryRepositoryError {
 
 pub trait LoraLibraryRepository: Send + Sync {
     fn lora(&self, path: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError>;
-    /// The newest other record of the same file content that found keywords
-    /// or an architecture.
+    fn lora_by_filename(
+        &self,
+        filename: &str,
+    ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError>;
+    fn lora_file_by_sha256(
+        &self,
+        sha256: &str,
+    ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError>;
+    /// The newest record with matching content and discovery metadata.
     fn lora_by_hash(&self, sha256: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError>;
     /// Records a file; a changed size or modification time forgets its hash,
     /// keywords and architecture.
@@ -1075,6 +1082,20 @@ mod tests {
 
     impl LoraLibraryRepository for NoRecords {
         fn lora(&self, _: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
+            Ok(None)
+        }
+
+        fn lora_by_filename(
+            &self,
+            _: &str,
+        ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
+            Ok(None)
+        }
+
+        fn lora_file_by_sha256(
+            &self,
+            _: &str,
+        ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
             Ok(None)
         }
 

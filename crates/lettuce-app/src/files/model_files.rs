@@ -190,7 +190,11 @@ where
         })
     }
 
-    fn account(&self, provider: &str, label: &str) -> Result<ProviderAccount, ModelFileError> {
+    pub(crate) fn account(
+        &self,
+        provider: &str,
+        label: &str,
+    ) -> Result<ProviderAccount, ModelFileError> {
         let local = provider.eq_ignore_ascii_case("llamacpp");
         let candidates = self
             .repository
