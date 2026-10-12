@@ -535,12 +535,12 @@ mod tests {
         );
         assert_eq!(
             crate::CHARACTER_SYNC_VERSION,
-            3,
-            "banner media extends the character payload"
+            4,
+            "the character payload no longer carries rules"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "daf6952da0b5c16bf0b75712d805d35270ab80b20a5a20aa9ef58096f849152e"
+            "1970b8936fa68ae5d45978ff4227151b323fca65c7d1ebcee29b1d14a09872d8"
         );
     }
 

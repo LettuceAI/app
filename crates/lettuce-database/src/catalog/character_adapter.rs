@@ -3820,7 +3820,6 @@ mod smoke_tests {
                 definition: Some("A companion".into()),
                 design_description: None,
                 scenario: None,
-                rules: Vec::new(),
             },
             CharacterProvenance::default(),
             CharacterDefaults {
@@ -4217,7 +4216,6 @@ mod smoke_tests {
                 definition: None,
                 design_description: None,
                 scenario: None,
-                rules: Vec::new(),
             },
             CharacterProvenance::default(),
             CharacterDefaults {
@@ -4662,7 +4660,6 @@ mod smoke_tests {
                 definition: None,
                 design_description: None,
                 scenario: None,
-                rules: Vec::new(),
             },
             CharacterProvenance::default(),
             CharacterDefaults::default(),
@@ -4750,7 +4747,6 @@ mod smoke_tests {
                 definition: None,
                 design_description: None,
                 scenario: None,
-                rules: Vec::new(),
             },
             CharacterProvenance::default(),
             CharacterDefaults::default(),
@@ -5832,7 +5828,6 @@ mod smoke_tests {
     fn character_save_and_receipt_are_atomic_and_preserve_authored_fields() {
         let database = Database::open_in_memory().expect("database");
         let (mut plan, avatar, _, _) = graph_fixture(&database);
-        plan.character.profile.rules = vec!["authored-rule".into()];
         plan.character.profile.scenario = Some("authored-scenario".into());
         plan.character.provenance.sources = vec!["authored-source".into()];
         plan.character.image_recommendation = Some(ImageRecommendation {
@@ -5877,10 +5872,6 @@ mod smoke_tests {
         let saved = apply("save", "digest").expect("save");
         assert_eq!(saved.character.revision, Revision::new(2));
         assert_eq!(saved.character.created_at, before.character.created_at);
-        assert_eq!(
-            saved.character.profile.rules,
-            before.character.profile.rules
-        );
         assert_eq!(
             saved.character.profile.scenario,
             before.character.profile.scenario

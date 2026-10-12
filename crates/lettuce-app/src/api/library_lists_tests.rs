@@ -27,7 +27,6 @@ async fn character_library_lists_page_by_creation_and_offer_name_updated_and_nic
                 definition: None,
                 design_description: None,
                 scenario: None,
-                rules: vec![],
             },
             CharacterProvenance::default(),
             CharacterDefaults::default(),

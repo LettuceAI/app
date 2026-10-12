@@ -1143,7 +1143,6 @@ mod tests {
             definition: Some(" A sailor. ".into()),
             design_description: Some("red coat".into()),
             scenario: None,
-            rules: Vec::new(),
         }
     }
 

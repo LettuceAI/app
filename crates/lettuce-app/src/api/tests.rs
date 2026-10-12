@@ -536,7 +536,6 @@ pub(super) fn create_character(
                     definition: None,
                     design_description: None,
                     scenario: None,
-                    rules: Vec::new(),
                 },
                 CharacterProvenance::default(),
                 defaults,

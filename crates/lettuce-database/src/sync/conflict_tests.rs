@@ -20,7 +20,6 @@ fn fixture(database: &Database, kind: &str) -> (String, CanonicalPayload) {
                     definition: None,
                     design_description: None,
                     scenario: None,
-                    rules: Vec::new(),
                 },
                 CharacterProvenance::default(),
                 CharacterDefaults::default(),

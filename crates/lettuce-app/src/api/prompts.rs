@@ -1017,31 +1017,3 @@ pub async fn prompt_preview(
         })
         .await
 }
-
-/// The rules a new character starts with. The app's runtime text failing to
-/// load is `RuntimeTextUnavailable`, never an empty list.
-pub async fn default_character_rules(
-    context: &ApiContext,
-    request: dto::DefaultCharacterRulesRequest,
-) -> Result<dto::DefaultCharacterRules, ApiError> {
-    context
-        .blocking(move |context| {
-            let database = context.backend().database();
-            let level = match request.pure_mode {
-                Some(dto::PureModeLevel::Off) => lettuce_settings::PureMode::Off,
-                Some(dto::PureModeLevel::Low) => lettuce_settings::PureMode::Low,
-                Some(dto::PureModeLevel::Standard) => lettuce_settings::PureMode::Standard,
-                Some(dto::PureModeLevel::Strict) => lettuce_settings::PureMode::Strict,
-                None => {
-                    lettuce_settings::GlobalSettingsStore::load(database)
-                        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
-                        .settings
-                        .pure_mode
-                }
-            };
-            crate::generation::pure_mode_rules::default_character_rules(database, level)
-                .map(|rules| dto::DefaultCharacterRules { rules })
-                .map_err(|_| runtime_text_error())
-        })
-        .await
-}

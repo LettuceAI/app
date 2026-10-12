@@ -79,7 +79,6 @@ pub struct CharacterPackageData {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub character_book: Option<Value>,
-    pub rules: Vec<String>,
     pub scenes: Vec<ScenePackage>,
     pub default_scene_id: Option<String>,
     pub default_model_id: Option<String>,
@@ -397,7 +396,6 @@ fn package_from_card(
                 .character_book
                 .as_ref()
                 .and_then(|book| serde_json::to_value(book).ok()),
-            rules: Vec::new(),
             default_scene_id: scenes.first().map(|scene| scene.id.clone()),
             scenes,
             default_model_id: None,
@@ -690,7 +688,6 @@ pub fn parse_uec_character(
                 .get("characterBook")
                 .or_else(|| original.get("character_book"))
                 .cloned(),
-            rules: strings(payload.get("rules")).unwrap_or_default(),
             scenes,
             default_scene_id,
             default_model_id: string(payload, "defaultModelId"),
@@ -893,7 +890,6 @@ pub fn build_character_uec(
     if let Some(data) = &package.background_image_data {
         payload.insert("chatBackground".into(), Value::String(data.clone()));
     }
-    payload.insert("rules".into(), serde_json::json!(character.rules));
     payload.insert(
         "scenes".into(),
         serde_json::to_value(&character.scenes).map_err(|_| EntityPackageError::Serialize)?,

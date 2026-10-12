@@ -313,7 +313,6 @@ mod tests {
                 definition: Some("Navigator".to_owned()),
                 design_description: None,
                 scenario: Some("At the harbor".to_owned()),
-                rules: vec!["Stay kind".to_owned()],
             },
             provenance: CharacterProvenance::default(),
             defaults: LegacyBackupCharacterDefaults {
@@ -602,7 +601,6 @@ mod tests {
             details.character.profile.scenario.as_deref(),
             Some("At the harbor")
         );
-        assert_eq!(details.character.profile.rules, ["Stay kind"]);
         assert_eq!(
             details.character.media.links,
             vec![lettuce_characters::CharacterMediaLink {
