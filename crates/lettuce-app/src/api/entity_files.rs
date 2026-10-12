@@ -200,33 +200,15 @@ fn export_uec3_entity(
     entity: lettuce_transfer::uec3::Entity,
     created_at: TimestampMillis,
     updated_at: TimestampMillis,
-) -> Result<String, ApiError> {
-    use lettuce_transfer::uec3;
-    let document = uec3::Document {
-        schema: uec3::Schema {
-            name: "UEC".into(),
-            version: "3.0".into(),
-        },
-        meta: uec3::Meta {
-            exported_at: context.now().get(),
-            app: "LettuceAI 3.x".into(),
-            created_at: created_at.get(),
-            updated_at: updated_at.get(),
-            authors: Vec::new(),
-            license: None,
-            sources: Vec::new(),
-        },
+) -> Uec3Export {
+    Uec3Export::new(
+        context,
         entity,
-        dependencies: Vec::new(),
-        state: None,
-        assets: Default::default(),
-    };
-    let mut content = Vec::new();
-    uec3::write(&mut content, &document, |_, _| {
-        Err(uec3::Error::Format("missing export asset".into()))
-    })
-    .map_err(uec3_error)?;
-    String::from_utf8(content).map_err(internal)
+        (created_at, updated_at),
+        Vec::new(),
+        Default::default(),
+        Default::default(),
+    )
 }
 
 fn format_error(error: impl std::fmt::Display) -> ApiError {
@@ -1597,11 +1579,19 @@ pub async fn import_commit(
         .await
 }
 
+fn text_body(content: String) -> impl FnOnce(&mut dyn Write) -> Result<(), ApiError> {
+    move |writer| {
+        writer
+            .write_all(content.as_bytes())
+            .map_err(|_| super::files::FileAccessError::Io.into_api_error())
+    }
+}
+
 fn publish(
     context: &ApiContext,
     target: Option<dto::FileTarget>,
     name: String,
-    content: String,
+    body: impl FnOnce(&mut dyn Write) -> Result<(), ApiError>,
     warnings: Vec<dto::FileWarning>,
 ) -> Result<dto::EntityExportResult, ApiError> {
     cancelled(context)?;
@@ -1624,13 +1614,12 @@ fn publish(
             &format!("lettuce-backup-{}.partial", uuid::Uuid::new_v4()),
         )
         .map_err(IntoApiError::into_api_error)?;
-    let (temporary, mut writer) = files
+    let (temporary, writer) = files
         .create_backup_temporary(&temporary_location, &protected)
         .map_err(IntoApiError::into_api_error)?;
     let result = (|| {
-        writer
-            .write_all(content.as_bytes())
-            .map_err(|_| super::files::FileAccessError::Io.into_api_error())?;
+        let mut writer = std::io::BufWriter::new(writer);
+        body(&mut writer)?;
         writer
             .flush()
             .map_err(|_| super::files::FileAccessError::Io.into_api_error())?;
@@ -1688,29 +1677,30 @@ pub async fn character_export(
                 }
             };
             let now = context.now();
-            let (content, warnings) = if request.format == dto::CharacterExportFormat::Uec {
+            let name = format!(
+                "character_{}_{}.{extension}",
+                crate::files::prompt_files::export_name(&details.character.profile.name),
+                crate::files::prompt_files::export_date(now)
+            );
+            if request.format == dto::CharacterExportFormat::Uec {
                 let mut warnings = Vec::new();
-                let content =
+                let export =
                     character3::export(context, id, request.include_learned, &mut warnings)?;
-                (content, warnings)
+                publish(
+                    context,
+                    request.target,
+                    name,
+                    |writer| export.write(context, writer),
+                    warnings,
+                )
             } else {
-                context
+                let (content, warnings) = context
                     .backend()
                     .character_files(media)
                     .export_with_warnings(id, format, now)
-                    .map_err(IntoApiError::into_api_error)?
-            };
-            publish(
-                context,
-                request.target,
-                format!(
-                    "character_{}_{}.{extension}",
-                    crate::files::prompt_files::export_name(&details.character.profile.name),
-                    crate::files::prompt_files::export_date(now)
-                ),
-                content,
-                warnings,
-            )
+                    .map_err(IntoApiError::into_api_error)?;
+                publish(context, request.target, name, text_body(content), warnings)
+            }
         })
         .await
 }
@@ -1726,7 +1716,7 @@ pub async fn persona_export(
                     .map_err(IntoApiError::into_api_error)?
                     .ok_or_else(|| api_error(ApiErrorCode::NotFound, "persona was not found"))?;
             let mut warnings = Vec::new();
-            let content = export_uec3_persona(context, &persona, &mut warnings)?;
+            let export = export_uec3_persona(context, &persona, &mut warnings)?;
             publish(
                 context,
                 request.target,
@@ -1735,7 +1725,7 @@ pub async fn persona_export(
                     crate::files::prompt_files::export_name(&persona.title),
                     crate::files::prompt_files::export_date(context.now())
                 ),
-                content,
+                |writer| export.write(context, writer),
                 warnings,
             )
         })
@@ -1744,69 +1734,23 @@ pub async fn persona_export(
 fn export_uec3_lorebook(
     context: &ApiContext,
     book: &lettuce_context::LorebookDetails,
-) -> Result<String, ApiError> {
+) -> Result<Uec3Export, ApiError> {
     use lettuce_transfer::uec3;
     let mut assets = std::collections::BTreeMap::new();
     let mut ids = std::collections::BTreeMap::new();
-    let mut hashes = Vec::new();
-    if let Some(id) = book.book.icon_asset_id {
-        let media = context
-            .media()
-            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no media store is open"))?;
-        let opened = media
-            .open_ready(id)
-            .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
-        hashes.push(opened.blob.content_hash.clone());
-        assets.insert(
-            "a1".into(),
-            uec3::Asset {
-                mime: opened.blob.mime_type,
-                blake3: opened.blob.content_hash.as_str().to_owned(),
-            },
-        );
-        ids.insert("a1".to_owned(), id);
-    }
-    let (_, _pin) =
-        lettuce_media::pin_media_objects(|| Ok::<_, std::convert::Infallible>(((), hashes)))
-            .expect("pin");
-    let document = uec3::Document {
-        schema: uec3::Schema {
-            name: "UEC".into(),
-            version: "3.0".into(),
-        },
-        meta: uec3::Meta {
-            exported_at: context.now().get(),
-            app: "LettuceAI 3.x".into(),
-            created_at: book.book.created_at.get(),
-            updated_at: book.book.updated_at.get(),
-            authors: Vec::new(),
-            license: None,
-            sources: Vec::new(),
-        },
-        entity: uec3::Entity::Lorebook(uec3::Lorebook::from_details(
-            book,
-            book.book.icon_asset_id.map(|_| "asset:a1".into()),
-        )),
-        dependencies: Vec::new(),
-        state: None,
+    let icon = book
+        .book
+        .icon_asset_id
+        .map(|id| add_uec3_asset(context, id, &mut assets, &mut ids))
+        .transpose()?;
+    Ok(Uec3Export::new(
+        context,
+        uec3::Entity::Lorebook(uec3::Lorebook::from_details(book, icon)),
+        (book.book.created_at, book.book.updated_at),
+        Vec::new(),
         assets,
-    };
-    let mut content = Vec::new();
-    uec3::write(&mut content, &document, |key, writer| {
-        let id = ids
-            .get(key)
-            .ok_or_else(|| uec3::Error::Format("missing export asset".into()))?;
-        let media = context
-            .media()
-            .ok_or_else(|| uec3::Error::Format("no media store is open".into()))?;
-        let mut opened = media
-            .open_ready(*id)
-            .map_err(|error| uec3::Error::Io(std::io::Error::other(error.to_string())))?;
-        std::io::copy(&mut opened.reader, writer)?;
-        Ok(())
-    })
-    .map_err(uec3_error)?;
-    String::from_utf8(content).map_err(internal)
+        ids,
+    ))
 }
 
 pub async fn lorebook_export(
@@ -1819,24 +1763,41 @@ pub async fn lorebook_export(
             let book = LorebookRepository::get(context.backend().database(), id)
                 .map_err(IntoApiError::into_api_error)?
                 .ok_or_else(|| api_error(ApiErrorCode::NotFound, "lorebook was not found"))?;
-            let files = context.backend().lorebook_files();
-            let (content, extension) = match request.format {
-                dto::LorebookExportFormat::WorldInfo => (files.export_world_info(id), "json"),
-                dto::LorebookExportFormat::Uec => {
-                    (Ok(export_uec3_lorebook(context, &book)?), "uec")
-                }
+            let extension = match request.format {
+                dto::LorebookExportFormat::WorldInfo => "json",
+                dto::LorebookExportFormat::Uec => "uec",
             };
-            publish(
-                context,
-                request.target,
-                format!(
-                    "lorebook_{}_{}.{extension}",
-                    crate::files::prompt_files::export_name(&book.book.name),
-                    crate::files::prompt_files::export_date(context.now())
-                ),
-                content.map_err(IntoApiError::into_api_error)?,
-                Vec::new(),
-            )
+            let name = format!(
+                "lorebook_{}_{}.{extension}",
+                crate::files::prompt_files::export_name(&book.book.name),
+                crate::files::prompt_files::export_date(context.now())
+            );
+            match request.format {
+                dto::LorebookExportFormat::WorldInfo => {
+                    let content = context
+                        .backend()
+                        .lorebook_files()
+                        .export_world_info(id)
+                        .map_err(IntoApiError::into_api_error)?;
+                    publish(
+                        context,
+                        request.target,
+                        name,
+                        text_body(content),
+                        Vec::new(),
+                    )
+                }
+                dto::LorebookExportFormat::Uec => {
+                    let export = export_uec3_lorebook(context, &book)?;
+                    publish(
+                        context,
+                        request.target,
+                        name,
+                        |writer| export.write(context, writer),
+                        Vec::new(),
+                    )
+                }
+            }
         })
         .await
 }
@@ -1865,12 +1826,12 @@ pub async fn prompt_export(
             };
             let entity = lettuce_transfer::uec3::Prompt::from_document(&document, built_in)
                 .map_err(format_error)?;
-            let content = export_uec3_entity(
+            let export = export_uec3_entity(
                 context,
                 lettuce_transfer::uec3::Entity::Prompt(entity),
                 document.created_at,
                 document.updated_at,
-            )?;
+            );
             publish(
                 context,
                 request.target,
@@ -1879,7 +1840,7 @@ pub async fn prompt_export(
                     crate::files::prompt_files::export_name(&document.name),
                     crate::files::prompt_files::export_date(context.now())
                 ),
-                content,
+                |writer| export.write(context, writer),
                 Vec::new(),
             )
         })
@@ -1904,7 +1865,7 @@ pub async fn chat_template_export(
                 .iter()
                 .find(|starter| starter.id == starter_id)
                 .ok_or_else(|| api_error(ApiErrorCode::NotFound, "starter was not found"))?;
-            let content = export_uec3_template(context, starter)?;
+            let export = export_uec3_template(context, starter)?;
             publish(
                 context,
                 request.target,
@@ -1913,7 +1874,7 @@ pub async fn chat_template_export(
                     crate::files::prompt_files::export_name(&starter.name),
                     crate::files::prompt_files::export_date(context.now())
                 ),
-                content,
+                |writer| export.write(context, writer),
                 Vec::new(),
             )
         })
@@ -1937,12 +1898,12 @@ pub async fn model_export(
             .map_err(super::model_profiles::model_error)?
             .ok_or_else(|| api_error(ApiErrorCode::NotFound, "provider account was not found"))?;
             let model = lettuce_transfer::uec3::ModelProfile::from_stored(&profile, &account);
-            let content = export_uec3_entity(
+            let export = export_uec3_entity(
                 context,
                 lettuce_transfer::uec3::Entity::ModelProfile(Box::new(model)),
                 profile.created_at,
                 profile.updated_at,
-            )?;
+            );
             publish(
                 context,
                 request.target,
@@ -1951,7 +1912,7 @@ pub async fn model_export(
                     crate::files::prompt_files::export_name(&profile.display_name),
                     crate::files::prompt_files::export_date(context.now())
                 ),
-                content,
+                |writer| export.write(context, writer),
                 Vec::new(),
             )
         })
@@ -1973,7 +1934,7 @@ pub async fn chat_export(
                 context,
                 request.target,
                 file.filename,
-                file.content,
+                text_body(file.content),
                 Vec::new(),
             )
         })
@@ -2220,42 +2181,83 @@ fn add_uec3_asset(
     Ok(format!("asset:{key}"))
 }
 
-fn write_uec3_bundle(
-    context: &ApiContext,
-    document: &lettuce_transfer::uec3::Document,
-    ids: &std::collections::BTreeMap<String, lettuce_types::AssetId>,
-) -> Result<String, ApiError> {
-    let hashes = document
-        .assets
-        .values()
-        .map(|asset| lettuce_types::ContentHash::parse(asset.blake3.clone()).map_err(format_error))
-        .collect::<Result<Vec<_>, _>>()?;
-    let (_, _pin) =
-        lettuce_media::pin_media_objects(|| Ok::<_, std::convert::Infallible>(((), hashes)))
-            .expect("pin");
-    let mut content = Vec::new();
-    lettuce_transfer::uec3::write(&mut content, document, |key, writer| {
-        let id = ids
-            .get(key)
-            .ok_or_else(|| lettuce_transfer::uec3::Error::Format("missing export asset".into()))?;
-        let media = context.media().ok_or_else(|| {
-            lettuce_transfer::uec3::Error::Format("no media store is open".into())
-        })?;
-        let mut opened = media.open_ready(*id).map_err(|error| {
-            lettuce_transfer::uec3::Error::Io(std::io::Error::other(error.to_string()))
-        })?;
-        std::io::copy(&mut opened.reader, writer)?;
-        Ok(())
-    })
-    .map_err(uec3_error)?;
-    String::from_utf8(content).map_err(internal)
+pub(super) struct Uec3Export {
+    document: lettuce_transfer::uec3::Document,
+    ids: std::collections::BTreeMap<String, lettuce_types::AssetId>,
 }
 
-fn export_uec3_persona(
+impl Uec3Export {
+    fn new(
+        context: &ApiContext,
+        entity: lettuce_transfer::uec3::Entity,
+        (created_at, updated_at): (TimestampMillis, TimestampMillis),
+        dependencies: Vec<lettuce_transfer::uec3::Dependency>,
+        assets: std::collections::BTreeMap<String, lettuce_transfer::uec3::Asset>,
+        ids: std::collections::BTreeMap<String, lettuce_types::AssetId>,
+    ) -> Self {
+        use lettuce_transfer::uec3;
+        Self {
+            document: uec3::Document {
+                schema: uec3::Schema {
+                    name: "UEC".into(),
+                    version: "3.0".into(),
+                },
+                meta: uec3::Meta {
+                    exported_at: context.now().get(),
+                    app: "LettuceAI 3.x".into(),
+                    created_at: created_at.get(),
+                    updated_at: updated_at.get(),
+                    authors: Vec::new(),
+                    license: None,
+                    sources: Vec::new(),
+                },
+                entity,
+                dependencies,
+                state: None,
+                assets,
+            },
+            ids,
+        }
+    }
+
+    pub(super) fn write(
+        &self,
+        context: &ApiContext,
+        writer: &mut dyn Write,
+    ) -> Result<(), ApiError> {
+        let hashes = self
+            .document
+            .assets
+            .values()
+            .map(|asset| {
+                lettuce_types::ContentHash::parse(asset.blake3.clone()).map_err(format_error)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let (_, _pin) =
+            lettuce_media::pin_media_objects(|| Ok::<_, std::convert::Infallible>(((), hashes)))
+                .expect("pin");
+        lettuce_transfer::uec3::write(writer, &self.document, |key, writer| {
+            let id = self.ids.get(key).ok_or_else(|| {
+                lettuce_transfer::uec3::Error::Format("missing export asset".into())
+            })?;
+            let media = context.media().ok_or_else(|| {
+                lettuce_transfer::uec3::Error::Format("no media store is open".into())
+            })?;
+            let mut opened = media.open_ready(*id).map_err(|error| {
+                lettuce_transfer::uec3::Error::Io(std::io::Error::other(error.to_string()))
+            })?;
+            std::io::copy(&mut opened.reader, writer)?;
+            Ok(())
+        })
+        .map_err(uec3_error)
+    }
+}
+
+pub(super) fn export_uec3_persona(
     context: &ApiContext,
     persona: &lettuce_characters::Persona,
     warnings: &mut Vec<dto::FileWarning>,
-) -> Result<String, ApiError> {
+) -> Result<Uec3Export, ApiError> {
     use lettuce_context::PersonaLorebookBindingRepository;
     use lettuce_transfer::uec3;
     let mut assets = std::collections::BTreeMap::new();
@@ -2305,21 +2307,9 @@ fn export_uec3_persona(
         .into_iter()
         .map(|link| add_uec3_asset(context, link.asset_id, &mut assets, &mut ids))
         .collect::<Result<Vec<_>, _>>()?;
-    let document = uec3::Document {
-        schema: uec3::Schema {
-            name: "UEC".into(),
-            version: "3.0".into(),
-        },
-        meta: uec3::Meta {
-            exported_at: context.now().get(),
-            app: "LettuceAI 3.x".into(),
-            created_at: persona.created_at.get(),
-            updated_at: persona.updated_at.get(),
-            authors: Vec::new(),
-            license: None,
-            sources: Vec::new(),
-        },
-        entity: uec3::Entity::Persona(uec3::Persona {
+    Ok(Uec3Export::new(
+        context,
+        uec3::Entity::Persona(uec3::Persona {
             name: persona.title.clone(),
             nickname: persona.nickname.clone(),
             description: persona.description.clone(),
@@ -2336,11 +2326,11 @@ fn export_uec3_persona(
                 lorebooks,
             },
         }),
+        (persona.created_at, persona.updated_at),
         dependencies,
-        state: None,
         assets,
-    };
-    write_uec3_bundle(context, &document, &ids)
+        ids,
+    ))
 }
 
 pub(super) fn uec3_prompts(
@@ -2512,7 +2502,7 @@ fn bundle_uec3_prompt(
 fn export_uec3_template(
     context: &ApiContext,
     starter: &lettuce_characters::ConversationStarter,
-) -> Result<String, ApiError> {
+) -> Result<Uec3Export, ApiError> {
     use lettuce_transfer::uec3;
     let mut dependencies = Vec::new();
     let mut assets = std::collections::BTreeMap::new();
@@ -2551,21 +2541,9 @@ fn export_uec3_template(
             uec3::LorebookSelection::Explicit(references)
         }
     };
-    let document = uec3::Document {
-        schema: uec3::Schema {
-            name: "UEC".into(),
-            version: "3.0".into(),
-        },
-        meta: uec3::Meta {
-            exported_at: context.now().get(),
-            app: "LettuceAI 3.x".into(),
-            created_at: starter.created_at.get(),
-            updated_at: starter.updated_at.get(),
-            authors: Vec::new(),
-            license: None,
-            sources: Vec::new(),
-        },
-        entity: uec3::Entity::ChatTemplate(uec3::ChatTemplate {
+    Ok(Uec3Export::new(
+        context,
+        uec3::Entity::ChatTemplate(uec3::ChatTemplate {
             key: "t1".into(),
             name: starter.name.clone(),
             messages: starter
@@ -2579,9 +2557,9 @@ fn export_uec3_template(
             prompt,
             lorebooks,
         }),
+        (starter.created_at, starter.updated_at),
         dependencies,
-        state: None,
         assets,
-    };
-    write_uec3_bundle(context, &document, &ids)
+        ids,
+    ))
 }

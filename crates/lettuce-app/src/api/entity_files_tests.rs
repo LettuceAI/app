@@ -2890,3 +2890,91 @@ async fn uec3_character_preview_names_an_unknown_built_in_once() {
     assert_eq!(named, 1);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+struct RecordingWriter {
+    largest: usize,
+    total: usize,
+}
+
+impl std::io::Write for RecordingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.largest = self.largest.max(bytes.len());
+        self.total += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn uec3_export_encodes_assets_without_buffering_the_file() {
+    use lettuce_characters::*;
+    use lettuce_types::*;
+    let (root, harness) = setup();
+    let context = &harness.context;
+    let database = context.backend().database();
+    let now = TimestampMillis::new(10);
+    let mut image = super::tests::png_bytes();
+    image.extend((0..3_000_000_u32).map(|index| (index.wrapping_mul(2_654_435_761) >> 24) as u8));
+    let upload = context
+        .media()
+        .expect("media")
+        .ingest_with_commit(
+            image.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::OtherImage,
+                lettuce_media::AssetOrigin::Import,
+                lettuce_media::RetentionClass::Persistent,
+                Default::default(),
+            ),
+            |upload| upload,
+        )
+        .expect("stage");
+    let asset_id = upload.asset.id;
+    database
+        .commit_api_operation("fixture", "uec3-large-asset", "digest", now, |scope| {
+            scope.install_library_upload(upload).expect("install");
+            Ok::<_, lettuce_database::ApiOperationError>(())
+        })
+        .expect("asset");
+    let persona = PersonaRepository::create(
+        database,
+        Persona {
+            id: PersonaId::new(),
+            status: LifecycleStatus::Active,
+            title: "Large avatar".into(),
+            description: "Authored".into(),
+            nickname: None,
+            design_description: None,
+            avatar_crop: None,
+            image_recommendation: None,
+            media: PersonaMedia {
+                links: vec![PersonaMediaLink {
+                    asset_id,
+                    slot: PersonaMediaSlot::Avatar,
+                    ordinal: 0,
+                }],
+            },
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        },
+    )
+    .expect("persona");
+    let export = super::entity_files::export_uec3_persona(context, &persona, &mut Vec::new())
+        .expect("export");
+    let mut recorder = RecordingWriter {
+        largest: 0,
+        total: 0,
+    };
+    export.write(context, &mut recorder).expect("write");
+    assert!(recorder.total > image.len());
+    assert!(
+        recorder.largest <= 64 * 1024,
+        "largest write {}",
+        recorder.largest
+    );
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

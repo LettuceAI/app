@@ -383,7 +383,7 @@ pub(super) fn export(
     id: CharacterId,
     include_learned: bool,
     warnings: &mut Vec<dto::FileWarning>,
-) -> Result<String, ApiError> {
+) -> Result<Uec3Export, ApiError> {
     let record = lettuce_transfer::CharacterFileRepository::character_export_record(
         context.backend().database(),
         id,
@@ -693,26 +693,16 @@ pub(super) fn export(
     } else {
         None
     };
-    let document = wire::Document {
-        schema: wire::Schema {
-            name: "UEC".into(),
-            version: "3.0".into(),
-        },
-        meta: wire::Meta {
-            exported_at: context.now().get(),
-            app: "LettuceAI 3.x".into(),
-            created_at: character.created_at.get(),
-            updated_at: character.updated_at.get(),
-            authors: Vec::new(),
-            license: None,
-            sources: Vec::new(),
-        },
-        entity: wire::Entity::Character(Box::new(card)),
+    let mut export = Uec3Export::new(
+        context,
+        wire::Entity::Character(Box::new(card)),
+        (character.created_at, character.updated_at),
         dependencies,
-        state,
         assets,
-    };
-    write_uec3_bundle(context, &document, &ids)
+        ids,
+    );
+    export.document.state = state;
+    Ok(export)
 }
 
 fn kind_name(kind: lettuce_speech::AudioProviderKind) -> Result<String, ApiError> {
