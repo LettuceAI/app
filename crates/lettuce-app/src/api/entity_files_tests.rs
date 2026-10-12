@@ -2400,11 +2400,11 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     assert_eq!(p.uec3.as_ref().expect("UEC preview").character.as_ref().expect("draft").scenes.len(),2);
     let before = database.read_provider_backup_graph().expect("before crash");
     let file = super::entity_files::read(context,&source).expect("read");
-    let card = lettuce_transfer::uec3::read(super::entity_files::text(&file).expect("text"),|_,_,_| Ok(())).expect("card");
     let mut staged = Vec::new();
     let mut pins = Vec::new();
     let mut warnings = Vec::new();
-    let assets = super::entity_files::stage_uec3_assets(context,&file,&mut staged,&mut pins,&mut warnings).expect("assets");
+    let (card,assets) = super::entity_files::read_uec3_staged(context,&file,&mut staged,&mut pins,&mut warnings).expect("card");
+    let card = card.expect("UEC document");
     let books = super::entity_files::uec3_books(context,&card.document,&assets).expect("books");
     let prompts = super::entity_files::uec3_prompts(context,&card.document,&mut warnings).expect("prompts");
     let plan = super::entity_files::character3::prepare(context,&card.document,super::entity_files::character3::ImportAssets {ids:&assets,uploads:&mut staged,preview:false},&mut warnings,context.now(),&books,&prompts).expect("plan");
@@ -2976,5 +2976,44 @@ async fn uec3_export_encodes_assets_without_buffering_the_file() {
         "largest write {}",
         recorder.largest
     );
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn uec3_commit_reads_and_stages_each_asset_once() {
+    use base64::Engine;
+    let (root, harness) = setup();
+    let first = super::tests::png_bytes();
+    let mut second = super::tests::png_bytes();
+    second.extend_from_slice(b"different");
+    let asset = |bytes: &[u8]| {
+        json!({
+            "mime": "image/png",
+            "blake3": blake3::hash(bytes).to_hex().to_string(),
+            "data": base64::engine::general_purpose::STANDARD.encode(bytes)
+        })
+    };
+    let value = json!({"schema":{"name":"UEC","version":"3.0"},"kind":"persona",
+        "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
+        "entity":{"name":"Writer","nickname":null,"description":"Authored","design":{"description":null,"references":["asset:a2"]},
+            "media":{"avatar":"asset:a1","avatarCrop":null},"behavior":{"image":null,"lorebooks":[]}},
+        "dependencies":[],"state":null,"assets":{"a1":asset(&first),"a2":asset(&second)}});
+    let source = source(&root, "two-assets.uec", &value);
+    let file = super::entity_files::read(&harness.context, &source).expect("read");
+    let mut uploads = Vec::new();
+    let mut pins = Vec::new();
+    let mut warnings = Vec::new();
+    let (card, assets) = super::entity_files::read_uec3_staged(
+        &harness.context,
+        &file,
+        &mut uploads,
+        &mut pins,
+        &mut warnings,
+    )
+    .expect("staged");
+    assert!(card.is_some());
+    assert_eq!(assets.len(), 2);
+    assert_eq!(uploads.len(), 2);
+    assert_eq!(pins.len(), 2);
     std::fs::remove_dir_all(root).expect("cleanup");
 }

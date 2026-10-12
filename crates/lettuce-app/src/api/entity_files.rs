@@ -123,16 +123,21 @@ fn uec3_error(error: lettuce_transfer::uec3::Error) -> ApiError {
     }
 }
 
+fn is_uec3(file: &ImportFile) -> Result<bool, ApiError> {
+    if file.bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Ok(false);
+    }
+    lettuce_transfer::uec3::is_document(text(file)?).map_err(uec3_error)
+}
+
 fn uec3_document(
     file: &ImportFile,
+    on_asset: impl FnMut(&str, &str, &[u8]) -> Result<(), lettuce_transfer::uec3::Error>,
 ) -> Result<Option<lettuce_transfer::uec3::ReadResult>, ApiError> {
-    if file.bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+    if !is_uec3(file)? {
         return Ok(None);
     }
-    if !lettuce_transfer::uec3::is_document(text(file)?).map_err(uec3_error)? {
-        return Ok(None);
-    }
-    let card = lettuce_transfer::uec3::read(text(file)?, |_, _, _| Ok(())).map_err(uec3_error)?;
+    let card = lettuce_transfer::uec3::read(text(file)?, on_asset).map_err(uec3_error)?;
     Ok(Some(card))
 }
 
@@ -397,7 +402,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
     let uec3 = if file.kind == dto::FileKind::ChatJsonl {
         None
     } else {
-        uec3_document(&file)?
+        uec3_document(&file, |_, _, _| Ok(()))?
     };
     if let Some(card) = &uec3 {
         warnings.extend(
@@ -1018,7 +1023,19 @@ fn stage_image(
             return None;
         }
     };
-    let hash = lettuce_types::ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
+    stage_bytes(context, &bytes, kind, field, uploads, pins, warnings)
+}
+
+fn stage_bytes(
+    context: &ApiContext,
+    bytes: &[u8],
+    kind: lettuce_media::AssetKind,
+    field: &str,
+    uploads: &mut Vec<lettuce_media::IngestedMedia>,
+    pins: &mut Vec<lettuce_media::MediaObjectPin>,
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Option<lettuce_types::AssetId> {
+    let hash = lettuce_types::ContentHash::parse(blake3::hash(bytes).to_hex().to_string())
         .expect("BLAKE3 digest");
     let (_, pin) =
         lettuce_media::pin_media_objects(|| Ok::<_, std::convert::Infallible>(((), vec![hash])))
@@ -1028,7 +1045,7 @@ fn stage_image(
         return None;
     };
     let upload = media.ingest_with_commit(
-        bytes.as_slice(),
+        bytes,
         lettuce_media::IngestRequest::new(
             kind,
             lettuce_media::AssetOrigin::Import,
@@ -1112,12 +1129,12 @@ pub async fn import_commit(
         Text,
     }
     let prepared = match file.kind {
-        dto::FileKind::CharacterCard if uec3_document(&file)?.is_none() => {
+        dto::FileKind::CharacterCard if !is_uec3(&file)? => {
             let mut package = character(&file, context.now())?;
             download_avatar(context, &mut package.avatar_data, &mut warnings).await?;
             Prepared::Character(Box::new(package))
         }
-        dto::FileKind::PersonaFile if uec3_document(&file)?.is_none() => {
+        dto::FileKind::PersonaFile if !is_uec3(&file)? => {
             let mut package = persona(&file, context.now())?;
             download_avatar(context, &mut package.avatar_data, &mut warnings).await?;
             Prepared::Persona(package)
@@ -1154,7 +1171,8 @@ pub async fn import_commit(
             }
             let mut uploads = Vec::new();
             let mut pins = Vec::new();
-            let uec3 = uec3_document(&file)?;
+            let (uec3, assets) =
+                read_uec3_staged(context, &file, &mut uploads, &mut pins, &mut warnings)?;
             if let Some(card) = &uec3 {
                 warnings.extend(
                     card.warnings
@@ -1162,11 +1180,6 @@ pub async fn import_commit(
                         .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
                 );
             }
-            let assets = if uec3.is_some() {
-                stage_uec3_assets(context, &file, &mut uploads, &mut pins, &mut warnings)?
-            } else {
-                Default::default()
-            };
             let books = if let Some(card) = &uec3 {
                 uec3_books(context, &card.document, &assets)?
             } else {
@@ -2121,22 +2134,24 @@ fn prepare_uec3_persona(
     })
 }
 
-pub(super) fn stage_uec3_assets(
+pub(super) fn read_uec3_staged(
     context: &ApiContext,
     file: &ImportFile,
     uploads: &mut Vec<lettuce_media::IngestedMedia>,
     pins: &mut Vec<lettuce_media::MediaObjectPin>,
     warnings: &mut Vec<dto::FileWarning>,
-) -> Result<std::collections::BTreeMap<String, lettuce_types::AssetId>, ApiError> {
+) -> Result<
+    (
+        Option<lettuce_transfer::uec3::ReadResult>,
+        std::collections::BTreeMap<String, lettuce_types::AssetId>,
+    ),
+    ApiError,
+> {
     let mut assets = std::collections::BTreeMap::new();
-    lettuce_transfer::uec3::read(text(file)?, |key, mime, bytes| {
-        let data = format!(
-            "data:{mime};base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(bytes)
-        );
-        let id = stage_image(
+    let card = uec3_document(file, |key, _mime, bytes| {
+        let id = stage_bytes(
             context,
-            Some(&data),
+            bytes,
             lettuce_media::AssetKind::OtherImage,
             key,
             uploads,
@@ -2148,9 +2163,8 @@ pub(super) fn stage_uec3_assets(
         })?;
         assets.insert(key.to_owned(), id);
         Ok(())
-    })
-    .map_err(uec3_error)?;
-    Ok(assets)
+    })?;
+    Ok((card, assets))
 }
 
 fn add_uec3_asset(
