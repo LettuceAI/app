@@ -1232,11 +1232,11 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
         )
         .expect("stage object");
     let avatar = upload.asset.id;
-    let package = harness.context.backend().persona_files(media).read("{\"version\":1,\"persona\":{\"title\":\"Writer\",\"description\":\"Authored\",\"isDefault\":true}}",harness.context.now()).expect("persona");
+    let package = harness.context.backend().persona_files().read("{\"version\":1,\"persona\":{\"title\":\"Writer\",\"description\":\"Authored\",\"isDefault\":true}}",harness.context.now()).expect("persona");
     let (mut persona, _) = harness
         .context
         .backend()
-        .persona_files(media)
+        .persona_files()
         .prepare(&package, harness.context.now())
         .expect("prepare");
     persona
@@ -4369,4 +4369,34 @@ async fn uec3_commit_reads_and_stages_each_asset_once() {
     assert_eq!(uploads.len(), 2);
     assert_eq!(pins.len(), 2);
     std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn uec3_template_preview_tells_disabled_lorebooks_from_none() {
+    let (root, harness) = setup();
+    let template = |lorebooks: Value| {
+        json!({"schema":{"name":"UEC","version":"3.0"},"kind":"chat_template",
+            "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
+            "entity":{"key":"t1","name":"Opening","messages":[{"role":"assistant","text":"Welcome"}],
+            "prompt":null,"lorebooks":lorebooks},
+            "dependencies":[],"state":null,"assets":{}})
+    };
+    for (name, lorebooks, ids, disabled) in [
+        ("disabled.uec", json!("disabled"), None, true),
+        ("none.uec", json!([]), Some(Vec::new()), false),
+        ("inherit.uec", json!("inherit"), None, false),
+    ] {
+        let p = preview(&harness.context, source(&root, name, &template(lorebooks))).await;
+        let dto::ImportPreviewContent::ChatTemplate {
+            lorebook_ids_override,
+            lorebooks_disabled,
+            ..
+        } = p.content
+        else {
+            panic!("template preview")
+        };
+        assert_eq!(lorebook_ids_override, ids, "{name}");
+        assert_eq!(lorebooks_disabled, disabled, "{name}");
+    }
+    std::fs::remove_dir_all(root).expect("folder");
 }
