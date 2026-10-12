@@ -46,10 +46,6 @@ impl<R: LorebookRepository + ?Sized> LorebookFileCoordinator<'_, R> {
         Ok(lettuce_transfer::export_world_info(&self.transfer(id)?)?)
     }
 
-    pub fn export_usc(&self, id: LorebookId) -> Result<String, LorebookFileError> {
-        Ok(lettuce_transfer::export_lorebook_usc(&self.transfer(id)?)?)
-    }
-
     fn transfer(&self, id: LorebookId) -> Result<LorebookTransfer, LorebookFileError> {
         let details = self
             .repository
@@ -223,12 +219,8 @@ mod tests {
         assert_eq!(exported["entries"]["1"]["name"], "Key");
         assert_eq!(exported["entries"]["1"]["enabled"], false);
         assert_eq!(exported["entries"]["2"]["priority"], 3);
-        let usc: serde_json::Value =
-            serde_json::from_str(&files.export_usc(imported.book.id).expect("usc")).expect("json");
-        assert_eq!(usc["payload"]["id"], imported.book.id.to_string());
-        assert_eq!(usc["payload"]["entries"][1]["title"], "ship");
         assert!(matches!(
-            files.export_usc(LorebookId::new()),
+            files.export_world_info(LorebookId::new()),
             Err(LorebookFileError::NotFound)
         ));
     }

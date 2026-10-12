@@ -1,8 +1,8 @@
 use lettuce_context::{
-    PromptBehaviorVersion, PromptDocument, PromptEntryDraft, PromptMetadataDraft, PromptRepository,
+    PromptBehaviorVersion, PromptDocument, PromptMetadataDraft, PromptRepository,
     PromptRepositoryError,
 };
-use lettuce_transfer::{PromptTransfer, PromptTransferEntry, PromptTransferError};
+use lettuce_transfer::PromptTransferError;
 use lettuce_types::{PromptDocumentId, TimestampMillis};
 
 #[derive(Debug, thiserror::Error)]
@@ -24,22 +24,7 @@ pub struct ImportedPromptFile {
     pub purpose_defaulted: bool,
 }
 
-/// Which file a prompt template is exported as.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PromptFileFormat {
-    Usc,
-    SillyTavern,
-}
-
-/// A prompt file ready to save.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExportedPromptFile {
-    pub filename: String,
-    pub content: String,
-}
-
-/// Prompt templates read from and written to USC cards and SillyTavern
-/// presets.
+/// Prompt templates read from USC cards and SillyTavern presets.
 #[derive(Debug)]
 pub struct PromptFileCoordinator<'a, R: ?Sized> {
     repository: &'a R,
@@ -85,66 +70,6 @@ impl<R: PromptRepository + ?Sized> PromptFileCoordinator<'_, R> {
             purpose_defaulted: imported.purpose_defaulted,
         })
     }
-
-    /// The template as a file of `format`, named like the old app named it.
-    pub fn export(
-        &self,
-        id: PromptDocumentId,
-        format: PromptFileFormat,
-        now: TimestampMillis,
-    ) -> Result<ExportedPromptFile, PromptFileError> {
-        let document = self
-            .repository
-            .get(id)?
-            .ok_or(PromptFileError::NotFound(id))?;
-        let transfer = PromptTransfer {
-            id: document.id.to_string(),
-            name: document.name.clone(),
-            purpose: document.purpose,
-            entries: document
-                .entries
-                .iter()
-                .map(|entry| PromptTransferEntry {
-                    id: entry
-                        .built_in_entry_key
-                        .clone()
-                        .unwrap_or_else(|| entry.id.to_string()),
-                    draft: PromptEntryDraft {
-                        built_in_entry_key: None,
-                        name: entry.name.clone(),
-                        role: entry.role,
-                        content: entry.content.clone(),
-                        enabled: entry.enabled,
-                        injection_position: entry.injection_position,
-                        depth: entry.depth,
-                        conditional_min_messages: entry.conditional_min_messages,
-                        interval_turns: entry.interval_turns,
-                        system_prompt: entry.system_prompt,
-                        conditions: entry.conditions.clone(),
-                        payload: entry.payload.clone(),
-                    },
-                })
-                .collect(),
-            condense: document.condense,
-            created_at: document.created_at.get(),
-            updated_at: document.updated_at.get(),
-        };
-        let (content, extension) = match format {
-            PromptFileFormat::Usc => (lettuce_transfer::export_prompt_usc(&transfer)?, "usc"),
-            PromptFileFormat::SillyTavern => (
-                lettuce_transfer::export_prompt_sillytavern(&transfer)?,
-                "json",
-            ),
-        };
-        Ok(ExportedPromptFile {
-            filename: format!(
-                "system_prompts_{}_{}.{extension}",
-                export_name(&document.name),
-                export_date(now)
-            ),
-            content,
-        })
-    }
 }
 
 /// A name with every UTF-16 unit outside `[A-Za-z0-9_-]` replaced by `_`,
@@ -180,7 +105,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_prompt_template_round_trips_through_both_formats() {
+    fn a_usc_card_becomes_a_prompt_template() {
         let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
         let files = backend.prompt_files();
         let card = serde_json::json!({
@@ -207,44 +132,8 @@ mod tests {
             .expect("import");
         assert_eq!(imported.document.name, "Night Shift");
         assert!(!imported.purpose_defaulted);
-        let usc = files
-            .export(
-                imported.document.id,
-                PromptFileFormat::Usc,
-                TimestampMillis::new(86_400_000),
-            )
-            .expect("usc");
-        assert_eq!(usc.filename, "system_prompts_night_shift_1970-01-02.usc");
-        let again = files
-            .import(
-                &usc.content,
-                None,
-                "Imported",
-                "Imported set",
-                TimestampMillis::new(6),
-            )
-            .expect("usc again");
-        assert_eq!(again.document.entries.len(), 1);
-        assert_eq!(again.document.entries[0].content, "You are {{char}}.");
-        let preset = files
-            .export(
-                imported.document.id,
-                PromptFileFormat::SillyTavern,
-                TimestampMillis::new(0),
-            )
-            .expect("preset");
-        assert!(preset.filename.ends_with(".json"));
-        let from_preset = files
-            .import(
-                &preset.content,
-                Some("night"),
-                "Imported",
-                "Imported set",
-                TimestampMillis::new(7),
-            )
-            .expect("preset again");
-        assert_eq!(from_preset.document.name, "night");
-        assert_eq!(from_preset.document.entries[0].content, "You are {{char}}.");
+        assert_eq!(imported.document.entries.len(), 1);
+        assert_eq!(imported.document.entries[0].content, "You are {{char}}.");
     }
 
     #[test]

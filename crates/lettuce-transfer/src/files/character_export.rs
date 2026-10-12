@@ -358,12 +358,8 @@ fn lorebook_package(details: &LorebookDetails) -> LorebookPackage {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CharacterExportError {
-    #[error("UEC v1/v2 export is read-only")]
-    UecReadOnly,
-    #[error("Character Card V1 export is read-only")]
-    CardV1ReadOnly,
-    #[error("Legacy JSON export is not supported")]
-    LegacyJson,
+    #[error("Export is not supported for this format")]
+    UnsupportedFormat,
     #[error(transparent)]
     Package(#[from] crate::EntityPackageError),
     #[error(transparent)]
@@ -405,10 +401,10 @@ pub fn export_character_file(
         updated_at: Some(updated_at),
     };
     match format {
-        crate::CharacterFileFormat::Uec => Err(CharacterExportError::UecReadOnly),
         crate::CharacterFileFormat::CharaCardV3 => Ok(crate::export_chara_card_v3(&card())?),
         crate::CharacterFileFormat::CharaCardV2 => Ok(crate::export_chara_card_v2(&card())?),
-        crate::CharacterFileFormat::CharaCardV1 => Err(CharacterExportError::CardV1ReadOnly),
-        crate::CharacterFileFormat::LegacyJson => Err(CharacterExportError::LegacyJson),
+        crate::CharacterFileFormat::Uec
+        | crate::CharacterFileFormat::CharaCardV1
+        | crate::CharacterFileFormat::LegacyJson => Err(CharacterExportError::UnsupportedFormat),
     }
 }

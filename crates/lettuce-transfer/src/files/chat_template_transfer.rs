@@ -1,7 +1,6 @@
-//! Chat templates (conversation starters) read from and written to USC
-//! `chat_template` cards and the old app's chat template JSON.
+//! Chat templates (conversation starters) read from USC `chat_template`
+//! cards and the old app's chat template JSON.
 
-use serde::Serialize;
 use serde_json::Value;
 
 const MAX_NAME_BYTES: usize = 1024;
@@ -16,29 +15,6 @@ pub enum ChatTemplateTransferError {
     NameTooLong,
     #[error("Unsupported chat template file.")]
     Unsupported,
-    #[error("Failed to serialize chat template export")]
-    Serialize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatTemplateTransferMessage {
-    pub id: String,
-    /// `user` or `assistant`.
-    pub role: String,
-    pub content: String,
-}
-
-/// A stored chat template in the shape its files carry.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatTemplateTransfer {
-    pub id: String,
-    pub name: String,
-    pub messages: Vec<ChatTemplateTransferMessage>,
-    pub scene_id: Option<String>,
-    pub prompt_template_id: Option<String>,
-    /// `None` inherits the character's lorebooks.
-    pub lorebook_ids_override: Option<Vec<String>>,
-    pub created_at: i64,
 }
 
 /// A chat template read from a file; its references are the file's ids and
@@ -51,129 +27,6 @@ pub struct ImportedChatTemplate {
     pub scene_id: Option<String>,
     pub prompt_template_id: Option<String>,
     pub lorebook_ids_override: Option<Vec<String>>,
-}
-
-#[derive(Serialize)]
-struct UscRef<'a> {
-    kind: &'static str,
-    id: &'a str,
-}
-
-#[derive(Serialize)]
-struct UscMessage<'a> {
-    id: &'a str,
-    role: &'a str,
-    content: &'a str,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UscPayload<'a> {
-    id: &'a str,
-    name: &'a str,
-    messages: Vec<UscMessage<'a>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scene_id: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system_prompt_template: Option<UscRef<'a>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    lorebook_ids_override: Option<&'a Vec<String>>,
-    created_at: i64,
-}
-
-#[derive(Serialize)]
-struct UscSchema {
-    name: &'static str,
-    version: &'static str,
-}
-
-#[derive(Serialize)]
-struct UscCard<'a> {
-    schema: UscSchema,
-    kind: &'static str,
-    payload: UscPayload<'a>,
-}
-
-/// The template as a USC `chat_template` card, pretty-printed.
-pub fn export_chat_template_usc(
-    template: &ChatTemplateTransfer,
-) -> Result<String, ChatTemplateTransferError> {
-    serde_json::to_string_pretty(&UscCard {
-        schema: UscSchema {
-            name: "USC",
-            version: "1.0",
-        },
-        kind: "chat_template",
-        payload: UscPayload {
-            id: &template.id,
-            name: &template.name,
-            messages: template
-                .messages
-                .iter()
-                .map(|message| UscMessage {
-                    id: &message.id,
-                    role: &message.role,
-                    content: &message.content,
-                })
-                .collect(),
-            scene_id: template.scene_id.as_deref(),
-            system_prompt_template: template.prompt_template_id.as_deref().map(|id| UscRef {
-                kind: "system_prompt_template",
-                id,
-            }),
-            lorebook_ids_override: template.lorebook_ids_override.as_ref(),
-            created_at: template.created_at,
-        },
-    })
-    .map_err(|_| ChatTemplateTransferError::Serialize)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct JsonTemplate<'a> {
-    name: &'a str,
-    messages: Vec<JsonMessage<'a>>,
-    scene_id: Option<&'a str>,
-    prompt_template_id: Option<&'a str>,
-    lorebook_ids_override: Option<&'a Vec<String>>,
-}
-
-#[derive(Serialize)]
-struct JsonMessage<'a> {
-    role: &'a str,
-    content: &'a str,
-}
-
-#[derive(Serialize)]
-struct JsonExport<'a> {
-    version: u32,
-    kind: &'static str,
-    template: JsonTemplate<'a>,
-}
-
-/// The template as the old app's plain chat template JSON, pretty-printed.
-pub fn export_chat_template_json(
-    template: &ChatTemplateTransfer,
-) -> Result<String, ChatTemplateTransferError> {
-    serde_json::to_string_pretty(&JsonExport {
-        version: 1,
-        kind: "chat_template",
-        template: JsonTemplate {
-            name: &template.name,
-            messages: template
-                .messages
-                .iter()
-                .map(|message| JsonMessage {
-                    role: &message.role,
-                    content: &message.content,
-                })
-                .collect(),
-            scene_id: template.scene_id.as_deref(),
-            prompt_template_id: template.prompt_template_id.as_deref(),
-            lorebook_ids_override: template.lorebook_ids_override.as_ref(),
-        },
-    })
-    .map_err(|_| ChatTemplateTransferError::Serialize)
 }
 
 /// A chat template file: a USC card, the old app's `{kind, template}` JSON,

@@ -1,5 +1,5 @@
 //! Lorebooks as SillyTavern World Info JSON (read and write) and as a USC
-//! lorebook card (read and write).
+//! lorebook card (read).
 
 use std::collections::BTreeMap;
 
@@ -377,34 +377,11 @@ struct UscLorebookImport {
     entries: Vec<UscLorebookEntry>,
 }
 
-#[derive(Serialize)]
-struct UscLorebookCard {
-    schema: UscSchema,
-    kind: &'static str,
-    payload: UscLorebookPayload,
-}
-
-#[derive(Serialize)]
-struct UscSchema {
-    name: &'static str,
-    version: &'static str,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UscLorebookPayload {
-    id: String,
-    name: String,
-    keyword_detection_mode: &'static str,
-    entries: Vec<UscLorebookEntry>,
-    created_at: i64,
-    updated_at: i64,
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UscLorebookEntry {
-    id: String,
+    #[serde(rename = "id")]
+    _id: String,
     title: String,
     enabled: bool,
     always_active: bool,
@@ -413,45 +390,10 @@ struct UscLorebookEntry {
     content: String,
     priority: i32,
     display_order: i32,
-    created_at: i64,
-    updated_at: i64,
-}
-
-/// Pretty-printed USC 1.0 lorebook card; entries carry no lorebook id or
-/// keyword match mode.
-pub fn export_lorebook_usc(lorebook: &LorebookTransfer) -> Result<String, LorebookTransferError> {
-    serde_json::to_string_pretty(&UscLorebookCard {
-        schema: UscSchema {
-            name: "USC",
-            version: "1.0",
-        },
-        kind: "lorebook",
-        payload: UscLorebookPayload {
-            id: lorebook.id.clone(),
-            name: lorebook.name.clone(),
-            keyword_detection_mode: detection_mode_name(lorebook.keyword_detection_mode),
-            entries: lorebook
-                .entries
-                .iter()
-                .map(|entry| UscLorebookEntry {
-                    id: entry.id.clone(),
-                    title: entry.title.clone(),
-                    enabled: entry.enabled,
-                    always_active: entry.always_active,
-                    keywords: entry.keywords.clone(),
-                    case_sensitive: entry.case_sensitive,
-                    content: entry.content.clone(),
-                    priority: entry.priority,
-                    display_order: entry.display_order,
-                    created_at: entry.created_at,
-                    updated_at: entry.updated_at,
-                })
-                .collect(),
-            created_at: lorebook.created_at,
-            updated_at: lorebook.updated_at,
-        },
-    })
-    .map_err(|_| LorebookTransferError::Serialize)
+    #[serde(rename = "createdAt")]
+    _created_at: i64,
+    #[serde(rename = "updatedAt")]
+    _updated_at: i64,
 }
 
 #[cfg(test)]
@@ -551,20 +493,5 @@ mod tests {
             parse_world_info(&json!({"name": "  "}).to_string()),
             Err(LorebookTransferError::MissingName)
         );
-    }
-
-    #[test]
-    fn usc_lorebook_export_omits_the_lorebook_id_and_match_mode() {
-        let value: Value =
-            serde_json::from_str(&export_lorebook_usc(&lorebook()).expect("usc")).expect("json");
-        assert_eq!(value["schema"], json!({"name": "USC", "version": "1.0"}));
-        assert_eq!(value["kind"], "lorebook");
-        assert_eq!(
-            value["payload"]["keywordDetectionMode"],
-            "latestUserMessage"
-        );
-        let entry = value["payload"]["entries"][0].as_object().expect("entry");
-        assert!(!entry.contains_key("lorebookId") && !entry.contains_key("keywordMatchMode"));
-        assert!(value.get("app_specific_settings").is_none());
     }
 }

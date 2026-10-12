@@ -420,26 +420,6 @@ fn newer_minor_crop_and_widget_fields_are_named_warnings() {
 }
 
 #[test]
-fn compatibility_exporter_refuses_read_only_uec2() {
-    let (package, _) = lettuce_transfer::parse_character_import(
-        &json!({"spec":"chara_card_v2","data":{"name":"Ada","first_mes":"Hello"}}),
-        1,
-        || "s1".into(),
-    )
-    .expect("package");
-    assert!(
-        lettuce_transfer::export_character_file(
-            &package,
-            lettuce_transfer::CharacterFileFormat::Uec,
-            "local",
-            1,
-            1
-        )
-        .is_err()
-    );
-}
-
-#[test]
 fn non_character_files_reject_character_learned_state() {
     let mut source = lorebook();
     source["state"] = json!({"companion":{"soul":[],"memory":{"items":[]}}});
