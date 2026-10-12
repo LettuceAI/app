@@ -119,7 +119,7 @@ impl JobHandlers {
             Arc::new(super::speech::SpeechTranscribeHandler),
             Arc::new(super::speech::SpeechSynthesizeHandler),
             Arc::new(super::voice_creation::VoiceCreationHandler),
-            Arc::new(crate::api::entity_import_jobs::ImportHandler),
+            Arc::new(crate::api::entity_files::import_jobs::ImportHandler),
             Arc::new(crate::api::maintenance_jobs::MaintenanceHandler),
             Arc::new(crate::api::app_reset::AppResetHandler),
             Arc::new(crate::api::backup::jobs::RestoreHandler),

@@ -1,3 +1,9 @@
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod mutation_tests;
+pub(super) mod mutations;
+
 use std::sync::Arc;
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
@@ -218,7 +224,7 @@ pub async fn certificates_list(context: &ApiContext) -> Result<dto::Certificates
                 .backend()
                 .database()
                 .certificates_with_revision()
-                .map_err(super::provider_mutations::model_error)?;
+                .map_err(self::mutations::model_error)?;
             Ok(certificate_view(certificates, revision))
         })
         .await

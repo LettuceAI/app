@@ -21,8 +21,8 @@ use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
 use lettuce_settings::DeviceSettings;
 use lettuce_types::{AssetId, JobId, ModelProfileId, OperationId, RequestId, TimestampMillis};
 
-use super::tests::{Harness, Reply, harness_over_files};
-use super::*;
+use crate::api::tests::{Harness, Reply, harness_over_files};
+use crate::api::*;
 use crate::{AppBackend, AppDatabaseLocation};
 
 const RELEASE: &str = "master-778-a";
@@ -699,7 +699,7 @@ fn every_setting_the_contract_names_is_one_the_model_has() {
     )
     .expect("settings json");
     let dto: dto::ImageSettings = serde_json::from_value(full.clone()).expect("contract");
-    let model = super::image::settings_for_test(&dto).expect("model settings");
+    let model = super::settings_for_test(&dto).expect("model settings");
     let mut back = serde_json::to_value(&model).expect("json");
     back.as_object_mut().expect("object").remove("cpp");
     assert_eq!(back, full);

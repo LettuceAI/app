@@ -1,8 +1,8 @@
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_models::ModelCatalog;
 
-use super::tests::{Reply, harness};
-use super::{provider_accounts_list, provider_catalog, provider_verify};
+use crate::api::tests::{Reply, harness};
+use crate::api::{provider_accounts_list, provider_catalog, provider_verify};
 
 #[tokio::test]
 async fn catalog_and_accounts_are_read_only_and_never_expose_keys() {
@@ -165,7 +165,7 @@ async fn certificate_listing_returns_metadata_without_pem_or_a_count_cap() {
     database
         .update_device_settings(&|current| current.clone_from(&settings))
         .expect("certificates");
-    let rows = super::certificates_list(&harness.context)
+    let rows = crate::api::certificates_list(&harness.context)
         .await
         .expect("certificates");
     assert_eq!(rows.certificates.len(), 1);

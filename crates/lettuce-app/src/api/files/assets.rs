@@ -3,8 +3,8 @@ use std::io::{Read, Seek, SeekFrom};
 use lettuce_contracts::{ApiError, ApiErrorCode};
 use lettuce_types::AssetId;
 
-use super::ApiContext;
-use super::error::{IntoApiError, api_error, parse_id};
+use crate::api::ApiContext;
+use crate::api::error::{IntoApiError, api_error, parse_id};
 
 /// The most bytes an open-ended range (`start..`) returns at once; the
 /// client asks again for the rest.

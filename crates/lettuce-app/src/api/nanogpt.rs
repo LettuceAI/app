@@ -189,7 +189,7 @@ async fn fetch(context: &ApiContext, id: ProviderAccountId) -> UsageResult {
                     .backend()
                     .database()
                     .record_provider_quota_warning(id, &window, threshold)
-                    .map_err(super::provider_mutations::model_error)
+                    .map_err(super::providers::mutations::model_error)
             })
             .await?;
         if emitted {

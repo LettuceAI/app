@@ -11,7 +11,7 @@ pub(super) fn model_error(error: lettuce_models::ModelRepositoryError) -> ApiErr
     if error == lettuce_models::ModelRepositoryError::AccountMissing {
         api_error(ApiErrorCode::NotFound, "provider account does not exist")
     } else {
-        super::provider_mutations::model_error(error)
+        super::providers::mutations::model_error(error)
     }
 }
 use super::{

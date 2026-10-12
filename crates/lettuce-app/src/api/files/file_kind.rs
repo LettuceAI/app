@@ -9,9 +9,9 @@ use lettuce_media::MediaKind;
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
 
-use super::files::{FileAccessError, FileReader};
+use crate::api::{FileAccessError, FileReader};
 
-pub(super) const HEADER_BYTES: usize = 64 * 1024;
+pub(in crate::api) const HEADER_BYTES: usize = 64 * 1024;
 /// How much of each string and how many items of each list or object the
 /// JSON sample keeps; the detectors read only a document's shape and short
 /// fields, so the rest is streamed past.
@@ -35,7 +35,9 @@ pub(super) fn read_header(reader: &mut dyn FileReader) -> Result<Vec<u8>, FileAc
     Ok(header)
 }
 
-pub(super) fn detect_kind(reader: &mut dyn FileReader) -> Result<dto::FileKind, FileAccessError> {
+pub(in crate::api) fn detect_kind(
+    reader: &mut dyn FileReader,
+) -> Result<dto::FileKind, FileAccessError> {
     let header = read_header(reader)?;
     if header.starts_with(SQLITE_MAGIC) {
         return Ok(dto::FileKind::LegacyDatabase);
@@ -419,15 +421,15 @@ mod tests {
     fn a_charx_and_plain_zip_are_other_but_a_backup_is_backup_v1() {
         for (bytes, expected) in [
             (
-                include_bytes!("fixtures/card.charx").as_slice(),
+                include_bytes!("../fixtures/card.charx").as_slice(),
                 dto::FileKind::Other,
             ),
             (
-                include_bytes!("fixtures/plain.zip").as_slice(),
+                include_bytes!("../fixtures/plain.zip").as_slice(),
                 dto::FileKind::Other,
             ),
             (
-                include_bytes!("fixtures/legacy-unknown.lettuce").as_slice(),
+                include_bytes!("../fixtures/legacy-unknown.lettuce").as_slice(),
                 dto::FileKind::BackupV1,
             ),
         ] {

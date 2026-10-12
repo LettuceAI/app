@@ -1,3 +1,8 @@
+pub(super) mod assets;
+pub(super) mod file_kind;
+#[cfg(test)]
+mod pick_tests;
+
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
@@ -243,7 +248,7 @@ pub async fn files_inspect(
             let files = context.files();
             let description = files.describe(&uri).map_err(IntoApiError::into_api_error)?;
             let mut reader = files.open(&uri).map_err(IntoApiError::into_api_error)?;
-            let kind = super::file_kind::detect_kind(reader.as_mut())
+            let kind = self::file_kind::detect_kind(reader.as_mut())
                 .map_err(IntoApiError::into_api_error)?;
             Ok(dto::FileInspection {
                 name: description.name,
@@ -277,7 +282,7 @@ pub async fn assets_ingest(
                 dto::AssetIngestRole::VoiceExample => AssetKind::OtherAudio,
                 dto::AssetIngestRole::ReferenceImage => AssetKind::OtherImage,
                 dto::AssetIngestRole::Attachment => {
-                    let header = super::file_kind::read_header(reader.as_mut())
+                    let header = self::file_kind::read_header(reader.as_mut())
                         .map_err(IntoApiError::into_api_error)?;
                     reader
                         .seek(SeekFrom::Start(0))

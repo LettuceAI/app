@@ -1,3 +1,7 @@
+pub(super) mod import_jobs;
+#[cfg(test)]
+mod tests;
+
 pub(super) mod character3;
 
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -58,8 +62,8 @@ fn read_file(
         .files()
         .open(&source.uri)
         .map_err(IntoApiError::into_api_error)?;
-    let kind =
-        super::file_kind::detect_kind(reader.as_mut()).map_err(IntoApiError::into_api_error)?;
+    let kind = super::files::file_kind::detect_kind(reader.as_mut())
+        .map_err(IntoApiError::into_api_error)?;
     if !matches!(
         kind,
         dto::FileKind::CharacterCard
@@ -1149,7 +1153,7 @@ pub async fn import_commit(
         _ => Prepared::Text,
     };
     if file.kind == dto::FileKind::ChatJsonl {
-        return super::entity_import_jobs::admit(context, request, digest).await;
+        return self::import_jobs::admit(context, request, digest).await;
     }
     context
         .blocking(move |context| {

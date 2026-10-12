@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use lettuce_characters::{CharacterDetails, CharacterRepository, InteractionMode};
 use lettuce_companions::{
     CompanionScheduledNote, CompanionScheduledNoteError, CompanionScheduledNoteRepository,

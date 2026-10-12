@@ -7,7 +7,7 @@ use lettuce_settings::{
 use lettuce_types::{ProviderAccountId, Revision};
 use serde::{Serialize, de::DeserializeOwned};
 
-use super::{
+use crate::api::{
     ApiContext,
     error::{IntoApiError, api_error, invalid_field, parse_id},
 };
@@ -25,7 +25,7 @@ impl From<ApiOperationError> for Failure {
         ))
     }
 }
-pub(super) fn model_error(error: ModelRepositoryError) -> ApiError {
+pub(in crate::api) fn model_error(error: ModelRepositoryError) -> ApiError {
     let code = match &error {
         ModelRepositoryError::NotFound => ApiErrorCode::NotFound,
         ModelRepositoryError::StaleRevision | ModelRepositoryError::AlreadyExists => {
@@ -57,7 +57,7 @@ fn digest<T: Serialize>(request: &T, key: &str) -> Result<String, ApiError> {
             "operation id is empty",
         ));
     }
-    super::jobs::local::digest(request)
+    crate::api::jobs::local::digest(request)
 }
 fn identity(kind: &str, key: &str, digest: &str) -> uuid::Uuid {
     uuid::Uuid::new_v5(
@@ -94,7 +94,7 @@ async fn replay<T: DeserializeOwned + Send + 'static>(
         })
         .await
 }
-pub(super) async fn cleanup_secrets(context: &ApiContext, staged: bool) -> Result<(), ApiError> {
+pub(in crate::api) async fn cleanup_secrets(context: &ApiContext, staged: bool) -> Result<(), ApiError> {
     if let Err(error) = cleanup_secrets_inner(context, staged).await {
         tracing::warn!(code = ?error.code, "provider credential cleanup deferred");
     }
@@ -167,7 +167,7 @@ pub async fn provider_account_save(
     .await?
     {
         if let Some(key) = request.api_key.as_ref().filter(|key| !key.trim().is_empty()) {
-            match super::providers::account(context, view.id.clone()).await {
+            match super::account(context, view.id.clone()).await {
                 Ok(account) => {
                     let reference = SecretRef::from_uuid(identity("key", &request.client_operation_id, &digest));
                     match context.secret_store().load(&reference, &SecretPurpose::ProviderApiKey { owner: account.secret_owner_id }).await {
@@ -193,12 +193,12 @@ pub async fn provider_account_save(
     let config: ProviderConfig = serde_json::from_value(request.account.config)
         .map_err(|_| invalid_field("account.config", "invalid provider configuration"))?;
     let old = match &request.account.id {
-        Some(id) => Some(super::providers::account(context, id.clone()).await?),
+        Some(id) => Some(super::account(context, id.clone()).await?),
         None => None,
     };
     let expected = request
         .expected_revision
-        .map(|value| super::lorebooks::revision(value, "expected_revision"))
+        .map(|value| crate::api::lorebooks::revision(value, "expected_revision"))
         .transpose()?;
     if old.as_ref().map(|account| account.revision) != expected {
         return Err(api_error(
@@ -304,7 +304,7 @@ pub async fn provider_account_save(
             "application is shutting down",
         ));
     }
-    let key_set = super::providers::api_key_set(context, &account).await?;
+    let key_set = super::api_key_set(context, &account).await?;
     let key = request.client_operation_id;
     let view = context
         .blocking(move |context| {
@@ -320,7 +320,7 @@ pub async fn provider_account_save(
                         let account = scope
                             .save_provider_account(account, expected)
                             .map_err(|error| Failure(model_error(error)))?;
-                        super::providers::account_view(account, key_set).map_err(Failure)
+                        super::account_view(account, key_set).map_err(Failure)
                     },
                 )
                 .map_err(|failure: Failure| failure.0)
@@ -343,7 +343,7 @@ pub async fn provider_account_delete(
     }
     let digest = digest(&request, &request.client_operation_id)?;
     let id: ProviderAccountId = parse_id(&request.account_id, "account_id")?;
-    let expected = super::lorebooks::revision(request.expected_revision, "expected_revision")?;
+    let expected = crate::api::lorebooks::revision(request.expected_revision, "expected_revision")?;
     let (_characters, _groups) = context
         .blocking(move |context| {
             context
@@ -368,7 +368,7 @@ pub async fn provider_account_delete(
                 .map_err(|failure: Failure| failure.0)
         })
         .await?;
-    super::content_filter::publish_pending(context).await;
+    crate::api::content_filter::publish_pending(context).await;
     cleanup_secrets(context, false).await?;
     Ok(())
 }
@@ -480,7 +480,7 @@ pub async fn certificates_import(
                                     details: Some(dto::ApiErrorDetails::CertificateAlreadyImported { certificate_id: certificate_id.to_string() }),
                                 },
                             }))?;
-                        Ok::<_, Failure>(super::providers::certificate_view(certificates, revision))
+                        Ok::<_, Failure>(super::certificate_view(certificates, revision))
                     },
                 )
                 .map_err(|failure: Failure| failure.0)?;
@@ -488,7 +488,7 @@ pub async fn certificates_import(
             Ok(view)
         })
         .await?;
-    super::content_filter::publish_pending(context).await;
+    crate::api::content_filter::publish_pending(context).await;
     Ok(result)
 }
 pub async fn certificates_remove(
@@ -496,7 +496,7 @@ pub async fn certificates_remove(
     request: dto::CertificatesRemoveRequest,
 ) -> Result<dto::CertificatesView, ApiError> {
     let id = parse_id::<uuid::Uuid>(&request.certificate_id, "certificate_id")?;
-    let expected = super::lorebooks::revision(request.expected_revision, "expected_revision")?;
+    let expected = crate::api::lorebooks::revision(request.expected_revision, "expected_revision")?;
     let view = context
         .blocking(move |context| {
             let (certificates, revision) = context
@@ -505,9 +505,9 @@ pub async fn certificates_remove(
                 .remove_certificate_cas(id, expected)
                 .map_err(model_error)?;
             refresh_clients(context)?;
-            Ok(super::providers::certificate_view(certificates, revision))
+            Ok(super::certificate_view(certificates, revision))
         })
         .await?;
-    super::content_filter::publish_pending(context).await;
+    crate::api::content_filter::publish_pending(context).await;
     Ok(view)
 }

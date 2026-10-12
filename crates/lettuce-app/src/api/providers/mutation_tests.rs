@@ -1,4 +1,4 @@
-use super::tests::{Reply, harness};
+use crate::api::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_settings::DeviceSettingsStore;
 
@@ -31,7 +31,7 @@ fn save(
 async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
     let harness = harness(Reply::Text("Hello."));
     let request = save(None, Some("secret-canary"), false, None, "create-provider");
-    let first = super::provider_account_save(&harness.context, request.clone())
+    let first = crate::api::provider_account_save(&harness.context, request.clone())
         .await
         .expect("save");
     assert!(first.api_key_set);
@@ -41,13 +41,13 @@ async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
             .contains("secret-canary")
     );
     assert_eq!(
-        super::provider_account_save(&harness.context, request)
+        crate::api::provider_account_save(&harness.context, request)
             .await
             .expect("replay"),
         first
     );
     assert_eq!(
-        super::provider_account_save(
+        crate::api::provider_account_save(
             &harness.context,
             save(None, Some("another-key"), false, None, "create-provider")
         )
@@ -56,7 +56,7 @@ async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
         .code,
         ApiErrorCode::Conflict
     );
-    let blank = super::provider_account_save(
+    let blank = crate::api::provider_account_save(
         &harness.context,
         save(
             Some(first.id.clone()),
@@ -70,7 +70,7 @@ async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
     .expect("blank");
     assert!(blank.api_key_set);
     assert_eq!(
-        super::provider_account_save(
+        crate::api::provider_account_save(
             &harness.context,
             save(
                 Some(first.id.clone()),
@@ -85,7 +85,7 @@ async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
         .code,
         ApiErrorCode::Conflict
     );
-    let clear = super::provider_account_save(
+    let clear = crate::api::provider_account_save(
         &harness.context,
         save(
             Some(first.id),
@@ -104,7 +104,7 @@ async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
 async fn provider_delete_lists_models_and_cascade_keeps_conversation_snapshots() {
     use lettuce_models::{ModelCatalog, ModelProfileRepository};
     let harness = harness(Reply::Text("Hello."));
-    let conversation = super::tests::launch(&harness, "provider-delete-chat").await;
+    let conversation = crate::api::tests::launch(&harness, "provider-delete-chat").await;
     let conversation_id = conversation.parse().expect("conversation id");
     let frozen = lettuce_conversations::ConversationReader::get(
         harness.context.backend().database(),
@@ -141,16 +141,16 @@ async fn provider_delete_lists_models_and_cascade_keeps_conversation_snapshots()
         expected_revision: 1,
         client_operation_id: "delete-provider".into(),
     };
-    let error = super::provider_account_delete(&harness.context, request.clone())
+    let error = crate::api::provider_account_delete(&harness.context, request.clone())
         .await
         .expect_err("in use");
     assert_eq!(error.code, ApiErrorCode::InUse);
     let mut request = request;
     request.delete_models = true;
-    super::provider_account_delete(&harness.context, request.clone())
+    crate::api::provider_account_delete(&harness.context, request.clone())
         .await
         .expect("cascade");
-    super::provider_account_delete(&harness.context, request)
+    crate::api::provider_account_delete(&harness.context, request)
         .await
         .expect("replay");
     assert!(
@@ -204,7 +204,7 @@ async fn startup_cleanup_removes_a_secret_staged_before_the_account_commit() {
         )
         .await
         .expect("secret");
-    super::provider_mutations::cleanup_secrets(&harness.context, true)
+    super::mutations::cleanup_secrets(&harness.context, true)
         .await
         .expect("restart cleanup");
     assert_eq!(
@@ -217,7 +217,7 @@ async fn startup_cleanup_removes_a_secret_staged_before_the_account_commit() {
             .state,
         SecretState::Missing
     );
-    super::provider_mutations::cleanup_secrets(&harness.context, true)
+    super::mutations::cleanup_secrets(&harness.context, true)
         .await
         .expect("repeat restart");
     assert!(
@@ -234,7 +234,7 @@ async fn startup_cleanup_removes_a_secret_staged_before_the_account_commit() {
 #[tokio::test]
 async fn certificate_remove_rejects_stale_revision_and_unknown_identity() {
     let harness = harness(Reply::Text("Hello."));
-    let current = super::certificates_list(&harness.context)
+    let current = crate::api::certificates_list(&harness.context)
         .await
         .expect("list");
     let request = dto::CertificatesRemoveRequest {
@@ -242,7 +242,7 @@ async fn certificate_remove_rejects_stale_revision_and_unknown_identity() {
         expected_revision: current.revision,
     };
     assert_eq!(
-        super::certificates_remove(&harness.context, request.clone())
+        crate::api::certificates_remove(&harness.context, request.clone())
             .await
             .expect_err("missing")
             .code,
@@ -251,14 +251,14 @@ async fn certificate_remove_rejects_stale_revision_and_unknown_identity() {
     let mut stale = request;
     stale.expected_revision += 1;
     assert_eq!(
-        super::certificates_remove(&harness.context, stale)
+        crate::api::certificates_remove(&harness.context, stale)
             .await
             .expect_err("stale")
             .code,
         ApiErrorCode::Conflict
     );
     assert_eq!(
-        super::certificates_list(&harness.context)
+        crate::api::certificates_list(&harness.context)
             .await
             .expect("list"),
         current
@@ -270,7 +270,7 @@ async fn restart_after_commit_removes_the_old_key_and_keeps_the_committed_key() 
     use lettuce_models::ProviderAccountRepository;
     use lettuce_settings::{SecretPurpose, SecretRecord, SecretRef, SecretState, SecretValue};
     let harness = harness(Reply::Text("Hello."));
-    let view = super::provider_account_save(
+    let view = crate::api::provider_account_save(
         &harness.context,
         save(None, Some("old-canary"), false, None, "old-key"),
     )
@@ -316,7 +316,7 @@ async fn restart_after_commit_removes_the_old_key_and_keeps_the_committed_key() 
             },
         )
         .expect("commit before crash");
-    super::provider_mutations::cleanup_secrets(&harness.context, true)
+    super::mutations::cleanup_secrets(&harness.context, true)
         .await
         .expect("restart");
     assert_eq!(
@@ -347,8 +347,8 @@ async fn concurrent_same_operation_replays_and_kind_changes_keep_models_attached
     let harness = harness(Reply::Text("Hello."));
     let request = save(None, Some("race-canary"), false, None, "race-save");
     let (left, right) = tokio::join!(
-        super::provider_account_save(&harness.context, request.clone()),
-        super::provider_account_save(&harness.context, request)
+        crate::api::provider_account_save(&harness.context, request.clone()),
+        crate::api::provider_account_save(&harness.context, request)
     );
     assert_eq!(left.expect("first"), right.expect("replay"));
     let profile = harness
@@ -366,7 +366,7 @@ async fn concurrent_same_operation_replays_and_kind_changes_keep_models_attached
         "kind-change",
     );
     edit.account.provider_kind = "anthropic".into();
-    let changed = super::provider_account_save(&harness.context, edit)
+    let changed = crate::api::provider_account_save(&harness.context, edit)
         .await
         .expect("change kind with model");
     assert_eq!(changed.provider_kind, "anthropic");
@@ -391,7 +391,7 @@ async fn certificate_invalid_pem_writes_nothing() {
         "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----",
     )
     .expect("write");
-    let before = super::certificates_list(&harness.context)
+    let before = crate::api::certificates_list(&harness.context)
         .await
         .expect("before");
     let request = dto::CertificatesImportRequest {
@@ -401,14 +401,14 @@ async fn certificate_invalid_pem_writes_nothing() {
         client_operation_id: "invalid-pem".into(),
     };
     assert_eq!(
-        super::certificates_import(&harness.context, request)
+        crate::api::certificates_import(&harness.context, request)
             .await
             .expect_err("invalid")
             .code,
         ApiErrorCode::InvalidInput
     );
     assert_eq!(
-        super::certificates_list(&harness.context)
+        crate::api::certificates_list(&harness.context)
             .await
             .expect("after"),
         before
@@ -444,7 +444,7 @@ async fn certificate_import_replays_and_reloads_live_clients() {
     let file = TestFile::new();
     std::fs::write(
         file.path(),
-        include_str!("../../tests/fixtures/provider-test-cert.pem"),
+        include_str!("../../../tests/fixtures/provider-test-cert.pem"),
     )
     .expect("write");
     let request = dto::CertificatesImportRequest {
@@ -453,11 +453,11 @@ async fn certificate_import_replays_and_reloads_live_clients() {
         },
         client_operation_id: "import-root".into(),
     };
-    let imported = super::certificates_import(&harness.context, request.clone())
+    let imported = crate::api::certificates_import(&harness.context, request.clone())
         .await
         .expect("import");
     assert_eq!(
-        super::certificates_import(&harness.context, request.clone())
+        crate::api::certificates_import(&harness.context, request.clone())
             .await
             .expect("replay"),
         imported
@@ -481,17 +481,17 @@ async fn certificate_import_replays_and_reloads_live_clients() {
         file.path(),
         format!(
             "{}\n",
-            include_str!("../../tests/fixtures/provider-test-cert.pem")
+            include_str!("../../../tests/fixtures/provider-test-cert.pem")
         ),
     )
     .expect("change content");
     assert_eq!(
-        super::certificates_import(&harness.context, request)
+        crate::api::certificates_import(&harness.context, request)
             .await
             .expect("receipt ignores later source changes"),
         imported
     );
-    let removed = super::certificates_remove(
+    let removed = crate::api::certificates_remove(
         &harness.context,
         dto::CertificatesRemoveRequest {
             certificate_id: imported.certificates[0].id.clone(),
@@ -530,11 +530,11 @@ async fn tls_fixture() -> (String, tokio::task::JoinHandle<()>) {
         },
     };
     let cert = CertificateDer::from_pem_slice(include_bytes!(
-        "../../tests/fixtures/provider-test-server.pem"
+        "../../../tests/fixtures/provider-test-server.pem"
     ))
     .expect("cert");
     let key =
-        PrivateKeyDer::from_pem_slice(include_bytes!("../../tests/fixtures/provider-test-key.pem"))
+        PrivateKeyDer::from_pem_slice(include_bytes!("../../../tests/fixtures/provider-test-key.pem"))
             .expect("key");
     let config = ServerConfig::builder()
         .with_no_client_auth()
@@ -593,7 +593,7 @@ async fn shutdown_before_a_write_saves_nothing() {
         .expect("accounts");
     harness.context.begin_shutdown();
     assert_eq!(
-        super::provider_account_save(
+        crate::api::provider_account_save(
             &harness.context,
             save(None, Some("shutdown-canary"), false, None, "shutdown-save")
         )
@@ -618,7 +618,7 @@ async fn provider_cascade_retains_creation_model_name_in_backup_snapshots() {
     use lettuce_models::ModelCatalog;
     use lettuce_transfer::ProviderBackupSource;
     let harness = harness(Reply::Text("Hello."));
-    let book = super::lorebook_create(
+    let book = crate::api::lorebook_create(
         &harness.context,
         dto::LorebookCreateRequest {
             client_operation_id: "snapshot-book".into(),
@@ -632,7 +632,7 @@ async fn provider_cascade_retains_creation_model_name_in_backup_snapshots() {
     )
     .await
     .expect("book");
-    super::lorebook_keywords_draft(
+    crate::api::lorebook_keywords_draft(
         &harness.context,
         dto::LorebookKeywordsDraftRequest {
             client_operation_id: "snapshot-keywords".into(),
@@ -659,7 +659,7 @@ async fn provider_cascade_retains_creation_model_name_in_backup_snapshots() {
         .database()
         .read_provider_backup_graph()
         .expect("before");
-    super::provider_account_delete(
+    crate::api::provider_account_delete(
         &harness.context,
         dto::ProviderAccountDeleteRequest {
             account_id: profile.provider_account_id.to_string(),
@@ -773,7 +773,7 @@ async fn shutdown_after_secret_put_leaves_only_a_recoverable_staged_secret() {
         .expect("before");
     let writer = context.clone();
     let task = tokio::spawn(async move {
-        super::provider_account_save(
+        crate::api::provider_account_save(
             &writer,
             save(
                 None,
@@ -809,7 +809,7 @@ async fn shutdown_after_secret_put_leaves_only_a_recoverable_staged_secret() {
             .len(),
         1
     );
-    super::provider_mutations::cleanup_secrets(&context, true)
+    super::mutations::cleanup_secrets(&context, true)
         .await
         .expect("startup cleanup");
     assert!(
@@ -835,7 +835,7 @@ async fn unavailable_secret_write_is_typed_and_never_commits_an_account() {
         .database()
         .provider_accounts()
         .expect("before");
-    let error = super::provider_account_save(
+    let error = crate::api::provider_account_save(
         &context,
         save(
             None,
@@ -877,10 +877,10 @@ async fn invalid_stored_certificate_is_visible_and_removable_without_blocking_ru
     database.update_device_settings(&|current| current.clone_from(&device)).expect("stored marker-only root");
     let tls = harness.context.backend().tls_policy().expect("TLS");
     harness.context.backend().provider_runtime(harness.context.secret_store().clone(), &tls).expect("runtime opens");
-    let view = super::certificates_list(&harness.context).await.expect("list");
+    let view = crate::api::certificates_list(&harness.context).await.expect("list");
     assert!(!view.certificates[0].valid);
     assert_eq!(view.certificates[0].reason, Some(dto::CertificateInvalidReason::InvalidPem));
-    let removed = super::certificates_remove(&harness.context, dto::CertificatesRemoveRequest {
+    let removed = crate::api::certificates_remove(&harness.context, dto::CertificatesRemoveRequest {
         certificate_id: view.certificates[0].id.clone(), expected_revision: view.revision,
     }).await.expect("remove");
     assert!(removed.certificates.is_empty());
@@ -892,20 +892,20 @@ async fn cleanup_failure_never_blocks_startup_or_committed_save_and_delete() {
     let store = std::sync::Arc::new(PausedSecrets::default());
     let context = harness.context.with_test_secrets(store.clone());
     store.release.notify_one();
-    let first = super::provider_account_save(&context, save(None, Some("old-key"), false, None, "cleanup-first")).await.expect("first");
+    let first = crate::api::provider_account_save(&context, save(None, Some("old-key"), false, None, "cleanup-first")).await.expect("first");
     store.fail_delete.store(true, std::sync::atomic::Ordering::SeqCst);
     store.release.notify_one();
-    let updated = super::provider_account_save(&context, save(Some(first.id), Some("new-key"), false, Some(first.revision), "cleanup-update")).await.expect("committed save returns its view");
+    let updated = crate::api::provider_account_save(&context, save(Some(first.id), Some("new-key"), false, Some(first.revision), "cleanup-update")).await.expect("committed save returns its view");
     let request = dto::ProviderAccountDeleteRequest { account_id: updated.id, expected_revision: updated.revision, delete_models: false, client_operation_id: "cleanup-delete".into() };
-    super::provider_account_delete(&context, request.clone()).await.expect("committed delete succeeds");
-    super::provider_account_delete(&context, request).await.expect("replay succeeds");
+    crate::api::provider_account_delete(&context, request.clone()).await.expect("committed delete succeeds");
+    crate::api::provider_account_delete(&context, request).await.expect("replay succeeds");
     assert_eq!(context.backend().database().provider_secret_cleanup().expect("journal").len(), 2);
-    let workers = super::startup(&context).await.expect("cleanup does not prevent startup");
+    let workers = crate::api::startup(&context).await.expect("cleanup does not prevent startup");
     tokio::time::timeout(std::time::Duration::from_secs(30), workers.started()).await.expect("workers start");
     assert_eq!(context.backend().database().provider_secret_cleanup().expect("retained").len(), 2);
     workers.stop().await;
     store.fail_delete.store(false, std::sync::atomic::Ordering::SeqCst);
-    super::provider_mutations::cleanup_secrets(&context, true).await.expect("retry");
+    super::mutations::cleanup_secrets(&context, true).await.expect("retry");
     assert!(context.backend().database().provider_secret_cleanup().expect("cleared").is_empty());
 }
 
@@ -919,7 +919,7 @@ async fn cleanup_failure_at_startup_preserves_staged_secret_and_starts_workers()
     context.backend().database().stage_provider_secret(&record).expect("stage");
     store.store.put(record, SecretValue::new("pending-key").expect("key"), None).await.expect("put");
     store.fail_delete.store(true, std::sync::atomic::Ordering::SeqCst);
-    let workers = super::startup(&context).await.expect("startup");
+    let workers = crate::api::startup(&context).await.expect("startup");
     tokio::time::timeout(std::time::Duration::from_secs(30), workers.started()).await.expect("started");
     assert_eq!(context.backend().database().provider_secret_cleanup().expect("journal").len(),1);
     workers.stop().await;
@@ -930,16 +930,16 @@ async fn account_receipt_digest_and_backup_are_independent_of_key_value() {
     use lettuce_transfer::ProviderBackupSource;
     let harness = harness(Reply::Text("Hello."));
     let request = save(None, Some("receipt-key-canary"), false, None, "keyless-receipt");
-    super::provider_account_save(&harness.context, request.clone()).await.expect("save");
+    crate::api::provider_account_save(&harness.context, request.clone()).await.expect("save");
     let receipt = harness.context.backend().database().lookup_api_operation("provider_account_save", "keyless-receipt").expect("lookup").expect("receipt");
     let mut keyless = serde_json::to_value(&request).expect("request");
     keyless["api_key"] = serde_json::json!(true);
-    let expected = super::jobs::local::digest(&keyless).expect("keyless digest");
+    let expected = crate::api::jobs::local::digest(&keyless).expect("keyless digest");
     assert_eq!(receipt.request_digest, expected);
     let backup = harness.context.backend().database().read_provider_backup_graph().expect("backup");
     let bytes = serde_json::to_string(&backup).expect("backup bytes");
     assert!(!bytes.contains("receipt-key-canary"));
-    assert!(!bytes.contains(&super::jobs::local::digest(&request).expect("old keyed digest")));
+    assert!(!bytes.contains(&crate::api::jobs::local::digest(&request).expect("old keyed digest")));
     assert!(!bytes.contains(&blake3::hash(b"receipt-key-canary").to_hex().to_string()));
 }
 
@@ -947,37 +947,37 @@ async fn account_receipt_digest_and_backup_are_independent_of_key_value() {
 async fn certificate_import_replays_after_source_grant_is_gone() {
     let harness = harness(Reply::Text("Hello."));
     let file = TestFile::new();
-    std::fs::write(file.path(), include_str!("../../tests/fixtures/provider-test-cert.pem")).expect("source");
+    std::fs::write(file.path(), include_str!("../../../tests/fixtures/provider-test-cert.pem")).expect("source");
     let request = dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "expired-grant".into() };
-    let first = super::certificates_import(&harness.context, request.clone()).await.expect("import");
+    let first = crate::api::certificates_import(&harness.context, request.clone()).await.expect("import");
     std::fs::remove_file(file.path()).expect("expire source");
     let restarted = harness.context.with_test_secrets(harness.context.secret_store().clone());
-    assert_eq!(super::certificates_import(&restarted, request.clone()).await.expect("receipt before file access"), first);
+    assert_eq!(crate::api::certificates_import(&restarted, request.clone()).await.expect("receipt before file access"), first);
     let mut changed = request;
     changed.source.uri = "content://expired/different-source".into();
-    assert_eq!(super::certificates_import(&restarted, changed).await.expect_err("different source").code, ApiErrorCode::Conflict);
+    assert_eq!(crate::api::certificates_import(&restarted, changed).await.expect_err("different source").code, ApiErrorCode::Conflict);
 }
 
 #[tokio::test]
 async fn certificate_source_above_cap_is_rejected_without_writing() {
     let harness = harness(Reply::Text("Hello."));
     let file = TestFile::new();
-    let pem = include_str!("../../tests/fixtures/provider-test-cert.pem");
+    let pem = include_str!("../../../tests/fixtures/provider-test-cert.pem");
     std::fs::write(file.path(), pem.repeat(1024*1024/pem.len()+1)).expect("large valid bundle");
-    let before = super::certificates_list(&harness.context).await.expect("before");
-    assert_eq!(super::certificates_import(&harness.context, dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "oversized-root".into() }).await.expect_err("oversize").code, ApiErrorCode::InvalidInput);
-    assert_eq!(super::certificates_list(&harness.context).await.expect("after"), before);
+    let before = crate::api::certificates_list(&harness.context).await.expect("before");
+    assert_eq!(crate::api::certificates_import(&harness.context, dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "oversized-root".into() }).await.expect_err("oversize").code, ApiErrorCode::InvalidInput);
+    assert_eq!(crate::api::certificates_list(&harness.context).await.expect("after"), before);
 }
 
 #[tokio::test]
 async fn duplicate_certificate_reports_its_existing_identity() {
     let harness = harness(Reply::Text("Hello."));
     let file = TestFile::new();
-    std::fs::write(file.path(), include_str!("../../tests/fixtures/provider-test-cert.pem")).expect("source");
+    std::fs::write(file.path(), include_str!("../../../tests/fixtures/provider-test-cert.pem")).expect("source");
     let mut request = dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "duplicate-first".into() };
-    let first = super::certificates_import(&harness.context, request.clone()).await.expect("first");
+    let first = crate::api::certificates_import(&harness.context, request.clone()).await.expect("first");
     request.client_operation_id = "duplicate-second".into();
-    let error = super::certificates_import(&harness.context, request).await.expect_err("duplicate");
+    let error = crate::api::certificates_import(&harness.context, request).await.expect_err("duplicate");
     assert_eq!(error.code, ApiErrorCode::Conflict);
     assert_eq!(serde_json::to_value(error.details).expect("detail"), serde_json::json!({"type":"certificate_already_imported", "certificate_id":first.certificates[0].id}));
 }
@@ -989,7 +989,7 @@ impl lettuce_settings::DeviceSettingsStore for CertificateRaceSettings<'_> {
         self.0.commit_api_operation("certificates_import", "folder-race", "folder-race-digest", lettuce_types::TimestampMillis::new(1), |scope| {
             scope.import_certificate(lettuce_settings::TrustedCertificate {
                 id: uuid::Uuid::new_v4(), name: "root.pem".into(), imported_at: 1,
-                pem: include_str!("../../tests/fixtures/provider-test-cert.pem").into(),
+                pem: include_str!("../../../tests/fixtures/provider-test-cert.pem").into(),
             }).map_err(|_| lettuce_models::ModelRepositoryError::Storage)
         }).expect("concurrent certificate commit");
         Ok(stale)
@@ -1024,10 +1024,10 @@ async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
     let harness = harness(Reply::Text("Hello."));
     let database = harness.context.backend().database();
     let profile = database.model_profiles().expect("models").remove(0);
-    let account = super::provider_account_save(&harness.context, save(Some(profile.provider_account_id.to_string()), Some("cascade-key"), false, Some(1), "cascade-key")).await.expect("key");
+    let account = crate::api::provider_account_save(&harness.context, save(Some(profile.provider_account_id.to_string()), Some("cascade-key"), false, Some(1), "cascade-key")).await.expect("key");
     let stored = lettuce_models::ProviderAccountRepository::get(database, profile.provider_account_id).expect("account").expect("exists");
     let key_ref = stored.api_key_ref.expect("reference");
-    let remaining = super::provider_account_save(&harness.context, save(None, Some("remaining-key"), false, None, "remaining-account")).await.expect("remaining account");
+    let remaining = crate::api::provider_account_save(&harness.context, save(None, Some("remaining-key"), false, None, "remaining-account")).await.expect("remaining account");
     let mut remaining_profile = profile.clone();
     remaining_profile.id = lettuce_types::ModelProfileId::new();
     remaining_profile.provider_account_id = remaining.id.parse().expect("id");
@@ -1041,7 +1041,7 @@ async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
     defaults.model_profile_id = Some(profile.id);
     CharacterRepository::update_defaults(database, harness.character_id, character.revision, defaults, harness.context.now()).expect("selection");
     let character_before = CharacterRepository::get(database, harness.character_id).expect("character").expect("exists").character;
-    let other = super::tests::create_character(database, "Grace", lettuce_characters::CharacterDefaults::default());
+    let other = crate::api::tests::create_character(database, "Grace", lettuce_characters::CharacterDefaults::default());
     let group = GroupProfile::new(lettuce_types::GroupId::new(), "Cast".into(), vec![
         GroupMember { character_id: harness.character_id, ordinal: 0, muted: false, model_profile_override: Some(profile.id) },
         GroupMember { character_id: other, ordinal: 1, muted: false, model_profile_override: None },
@@ -1059,9 +1059,9 @@ async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
     let snapshot = GlobalSettingsStore::save(database, settings, Some(profile.id), snapshot.revision).expect("feature selections");
     let snapshot = GlobalSettingsStore::set_dynamic_memory_model_profile(database, Some(profile.id), snapshot.revision).expect("memory");
     let before = GlobalSettingsStore::set_group_speaker_model_profile(database, Some(profile.id), snapshot.revision).expect("speaker");
-    let mut model_feed = super::conversation_feed::ConversationFeed::start(&harness.context).await.expect("model feed");
+    let mut model_feed = crate::api::conversation_feed::ConversationFeed::start(&harness.context).await.expect("model feed");
     let event_start = harness.events.events().len();
-    super::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id: account.id, expected_revision: account.revision, delete_models: true, client_operation_id: "cascade-all".into() }).await.expect("delete");
+    crate::api::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id: account.id, expected_revision: account.revision, delete_models: true, client_operation_id: "cascade-all".into() }).await.expect("delete");
     assert!(lettuce_models::ProviderAccountRepository::get(database, profile.provider_account_id).expect("account").is_none());
     assert!(ModelProfileRepository::get(database, profile.id).expect("model").is_none());
     assert_eq!(harness.context.secret_store().status(&key_ref, &SecretPurpose::ProviderApiKey { owner: stored.secret_owner_id }).await.expect("secret").state, SecretState::Missing);
@@ -1087,31 +1087,31 @@ async fn desktop_context_reopens_with_an_invalid_stored_root_and_verifies_a_prov
     let root = std::env::temp_dir().join(format!("s7a-invalid-root-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).expect("root");
     let secrets = std::sync::Arc::new(lettuce_settings::InMemorySecretStore::new());
-    let events = std::sync::Arc::new(super::tests::RecordingEvents::default());
-    let open = || super::ApiContext::open_desktop(&root, None, secrets.clone(), events.clone(), std::sync::Arc::new(super::tests::StdFiles), "lettuce-asset://localhost".into(), None).expect("context opens");
+    let events = std::sync::Arc::new(crate::api::tests::RecordingEvents::default());
+    let open = || crate::api::ApiContext::open_desktop(&root, None, secrets.clone(), events.clone(), std::sync::Arc::new(crate::api::tests::StdFiles), "lettuce-asset://localhost".into(), None).expect("context opens");
     let context = open();
     context.backend().database().update_device_settings(&|device| {
         device.trusted_certificates.extend([
             lettuce_settings::TrustedCertificate { id: uuid::Uuid::new_v4(), name: "invalid.pem".into(), imported_at: 1, pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".into() },
-            lettuce_settings::TrustedCertificate { id: uuid::Uuid::new_v4(), name: "valid.pem".into(), imported_at: 1, pem: include_str!("../../tests/fixtures/provider-test-cert.pem").into() },
+            lettuce_settings::TrustedCertificate { id: uuid::Uuid::new_v4(), name: "valid.pem".into(), imported_at: 1, pem: include_str!("../../../tests/fixtures/provider-test-cert.pem").into() },
         ]);
     }).expect("stored roots");
     let source = TestFile::new();
-    std::fs::write(source.path(), include_str!("../../tests/fixtures/provider-test-server.pem")).expect("source");
+    std::fs::write(source.path(), include_str!("../../../tests/fixtures/provider-test-server.pem")).expect("source");
     let import = dto::CertificatesImportRequest { source: dto::FileSource { uri: source.path().to_string_lossy().into_owned() }, client_operation_id: "desktop-replay".into() };
-    let imported = super::certificates_import(&context, import.clone()).await.expect("import before restart");
+    let imported = crate::api::certificates_import(&context, import.clone()).await.expect("import before restart");
     drop(context);
     std::fs::remove_file(source.path()).expect("grant gone");
     let context = open();
-    assert_eq!(super::certificates_import(&context, import).await.expect("restart replay"), imported);
+    assert_eq!(crate::api::certificates_import(&context, import).await.expect("restart replay"), imported);
     let (url, server) = tls_fixture().await;
     let mut request = save(None, Some("probe-key"), false, None, "probe-account");
     request.account.base_url = Some(url);
-    let account = super::provider_account_save(&context, request).await.expect("account");
-    assert!(super::provider_verify(&context, dto::ProviderVerifyRequest::Saved { account_id: account.id }).await.expect("request works").valid);
-    let list = super::certificates_list(&context).await.expect("list");
+    let account = crate::api::provider_account_save(&context, request).await.expect("account");
+    assert!(crate::api::provider_verify(&context, dto::ProviderVerifyRequest::Saved { account_id: account.id }).await.expect("request works").valid);
+    let list = crate::api::certificates_list(&context).await.expect("list");
     assert!(!list.certificates[0].valid);
-    super::certificates_remove(&context, dto::CertificatesRemoveRequest { certificate_id: list.certificates[0].id.clone(), expected_revision: list.revision }).await.expect("remove invalid root");
+    crate::api::certificates_remove(&context, dto::CertificatesRemoveRequest { certificate_id: list.certificates[0].id.clone(), expected_revision: list.revision }).await.expect("remove invalid root");
     server.abort();
     drop(context);
     std::fs::remove_dir_all(root).expect("cleanup");
@@ -1121,20 +1121,20 @@ async fn desktop_context_reopens_with_an_invalid_stored_root_and_verifies_a_prov
 async fn completed_save_replays_after_its_key_is_replaced() {
     let harness = harness(Reply::Text("Hello."));
     let request = save(None, Some("original-key"), false, None, "replay-rotated");
-    let first = super::provider_account_save(&harness.context, request.clone()).await.expect("first");
-    let next = super::provider_account_save(&harness.context, save(Some(first.id.clone()), Some("replacement-key"), false, Some(first.revision), "rotate-replayed")).await.expect("replace");
-    assert_eq!(super::provider_account_save(&harness.context, request).await.expect("historical replay"), first);
-    assert_eq!(super::provider_accounts_list(&harness.context).await.expect("accounts").into_iter().find(|account|account.id==next.id).expect("current").revision,next.revision);
+    let first = crate::api::provider_account_save(&harness.context, request.clone()).await.expect("first");
+    let next = crate::api::provider_account_save(&harness.context, save(Some(first.id.clone()), Some("replacement-key"), false, Some(first.revision), "rotate-replayed")).await.expect("replace");
+    assert_eq!(crate::api::provider_account_save(&harness.context, request).await.expect("historical replay"), first);
+    assert_eq!(crate::api::provider_accounts_list(&harness.context).await.expect("accounts").into_iter().find(|account|account.id==next.id).expect("current").revision,next.revision);
 }
 
 #[tokio::test]
 async fn completed_save_replays_after_its_account_is_deleted() {
     let harness = harness(Reply::Text("Hello."));
     let request = save(None, Some("deleted-key"), false, None, "replay-deleted");
-    let first = super::provider_account_save(&harness.context, request.clone()).await.expect("first");
-    super::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id:first.id.clone(), expected_revision:first.revision, delete_models:false, client_operation_id:"delete-replayed".into() }).await.expect("delete");
-    assert_eq!(super::provider_account_save(&harness.context, request).await.expect("historical replay"), first);
-    assert!(!super::provider_accounts_list(&harness.context).await.expect("accounts").iter().any(|account|account.id==first.id));
+    let first = crate::api::provider_account_save(&harness.context, request.clone()).await.expect("first");
+    crate::api::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id:first.id.clone(), expected_revision:first.revision, delete_models:false, client_operation_id:"delete-replayed".into() }).await.expect("delete");
+    assert_eq!(crate::api::provider_account_save(&harness.context, request).await.expect("historical replay"), first);
+    assert!(!crate::api::provider_accounts_list(&harness.context).await.expect("accounts").iter().any(|account|account.id==first.id));
     assert!(harness.context.backend().database().provider_secret_cleanup().expect("journal").is_empty());
 }
 
@@ -1150,16 +1150,16 @@ async fn certificate_replay_rebuilds_clients_after_a_failed_post_commit_refresh(
         panic!("injected registry failure");
     }).join().is_err());
     let file = TestFile::new();
-    std::fs::write(file.path(), include_str!("../../tests/fixtures/provider-test-cert.pem")).expect("source");
+    std::fs::write(file.path(), include_str!("../../../tests/fixtures/provider-test-cert.pem")).expect("source");
     let request = dto::CertificatesImportRequest { source:dto::FileSource { uri:file.path().to_string_lossy().into_owned() }, client_operation_id:"retry-refresh".into() };
-    assert_eq!(super::certificates_import(&harness.context, request.clone()).await.expect_err("refresh failed after commit").code,ApiErrorCode::Internal);
-    let committed = super::certificates_list(&harness.context).await.expect("committed");
+    assert_eq!(crate::api::certificates_import(&harness.context, request.clone()).await.expect_err("refresh failed after commit").code,ApiErrorCode::Internal);
+    let committed = crate::api::certificates_list(&harness.context).await.expect("committed");
     assert_eq!(committed.certificates.len(),1);
     harness.context.backend().provider_json_clients.clear_poison();
     let (url, server) = tls_fixture().await;
     assert!(client.get_json(&url,"/",&[],JsonAuth::None,vec![],RequestPolicy::BROWSE).await.is_err());
     std::fs::remove_file(file.path()).expect("expire grant");
-    assert_eq!(super::certificates_import(&harness.context, request).await.expect("retry refresh"),committed);
+    assert_eq!(crate::api::certificates_import(&harness.context, request).await.expect("retry refresh"),committed);
     assert_eq!(client.get_json(&url,"/",&[],JsonAuth::None,vec![],RequestPolicy::BROWSE).await.expect("rebuilt client").status,200);
     server.abort();
 }

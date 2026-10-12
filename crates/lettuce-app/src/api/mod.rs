@@ -8,7 +8,6 @@ mod content_filter;
 mod settings;
 pub use content_filter::{content_filter_clear, content_filter_log};
 pub use settings::{settings_get, settings_sampler_defaults_update, settings_update};
-mod assets;
 mod branches;
 mod characters;
 mod library_delete;
@@ -25,7 +24,6 @@ mod copies;
 mod embedding_health;
 mod error;
 pub(crate) mod events;
-mod file_kind;
 mod files;
 mod hugging_face;
 mod image;
@@ -63,8 +61,6 @@ mod worker;
 #[cfg(test)]
 mod branches_tests;
 #[cfg(test)]
-mod companion_tests;
-#[cfg(test)]
 pub(crate) mod conversation_delete_tests;
 #[cfg(test)]
 mod conversation_list_tests;
@@ -73,13 +69,9 @@ mod conversation_settings_tests;
 #[cfg(test)]
 mod copy_scene_tests;
 #[cfg(test)]
-mod files_pick_tests;
-#[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
 mod help_me_reply_tests;
-#[cfg(test)]
-mod image_tests;
 #[cfg(test)]
 mod inspect_tests;
 #[cfg(test)]
@@ -112,7 +104,7 @@ mod turns_tests;
 pub use app::{
     app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
 };
-pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
+pub use files::assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
 pub use branches::{
     conversation_branch_delete, conversation_branch_fork, conversation_branch_rename,
     conversation_branch_select, conversation_branches,
@@ -256,8 +248,6 @@ pub use jobs::LorebookHandler;
 pub use lorebook_jobs::{lorebook_entry_draft, lorebook_keywords_draft};
 pub use lorebook_projects::*;
 
-#[cfg(test)]
-mod providers_tests;
 
 mod providers;
 pub use providers::{
@@ -265,11 +255,8 @@ pub use providers::{
     provider_verify,
 };
 
-#[cfg(test)]
-mod provider_mutation_tests;
 
-mod provider_mutations;
-pub use provider_mutations::{
+pub use providers::mutations::{
     certificates_import, certificates_remove, provider_account_delete, provider_account_save,
 };
 pub use providers::{provider_model_verify, provider_models};
@@ -395,7 +382,4 @@ pub use sync::{sync_share_start, sync_share_approve, sync_share_begin, sync_conn
 pub use sync::conflicts::{sync_conflicts_list, sync_conflict_resolve, sync_fork_resolve, legacy_conflict_dismiss};
 
 mod entity_files;
-mod entity_import_jobs;
 pub use entity_files::{import_preview, import_commit, character_export, persona_export, lorebook_export, prompt_export, chat_template_export, model_export, chat_export};
-#[cfg(test)]
-mod entity_files_tests;

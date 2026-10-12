@@ -92,7 +92,7 @@ impl ConversationFeed {
                     .backend()
                     .database()
                     .model_change_position()
-                    .map_err(super::provider_mutations::model_error)
+                    .map_err(super::providers::mutations::model_error)
             })
             .await?;
         Ok(Self {
@@ -158,7 +158,7 @@ impl ConversationFeed {
                     .backend()
                     .database()
                     .model_change_position()
-                    .map_err(super::provider_mutations::model_error)
+                    .map_err(super::providers::mutations::model_error)
             })
             .await?;
         if models > self.models {

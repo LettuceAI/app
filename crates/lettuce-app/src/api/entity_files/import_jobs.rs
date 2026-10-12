@@ -9,7 +9,7 @@ use lettuce_jobs::{
 };
 use lettuce_types::{CharacterId, RequestId};
 
-use super::{
+use crate::api::{
     ApiContext,
     entity_files::{ImportFile, read_with_progress, stem, text},
     error::{IntoApiError, api_error, invalid_field, parse_id},
@@ -132,7 +132,7 @@ pub(super) async fn admit(
     Ok(result)
 }
 
-pub(super) struct ImportHandler;
+pub(in crate::api) struct ImportHandler;
 
 #[async_trait]
 impl JobHandler for ImportHandler {
@@ -253,7 +253,7 @@ impl ClaimedJob for ImportClaim {
                     }
                     let prepared = prepare(context, &file, &request.options)?;
                     let id = prepared.record.history.aggregate.conversation.id;
-                    let digest = super::jobs::local::digest(&request)?;
+                    let digest = crate::api::jobs::local::digest(&request)?;
                     database
                         .commit_api_operation(
                             "import_chat_apply",
@@ -363,7 +363,7 @@ impl ClaimedJob for ImportClaim {
     }
 }
 
-pub(super) fn failure_view(
+pub(in crate::api) fn failure_view(
     context: &ApiContext,
     job: &JobSnapshot,
 ) -> Result<Option<ApiError>, ApiError> {

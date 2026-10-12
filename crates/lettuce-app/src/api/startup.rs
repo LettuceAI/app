@@ -173,7 +173,7 @@ impl ApiWorkers {
 /// feed. It downloads and loads nothing: optional models load when a chat
 /// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
-    super::provider_mutations::cleanup_secrets(context, true).await?;
+    super::providers::mutations::cleanup_secrets(context, true).await?;
     context
         .blocking(|context| super::content_filter::refresh_logging(context).map(|_| ()))
         .await?;

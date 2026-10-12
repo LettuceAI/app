@@ -254,7 +254,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
     let (speech_result, speech_failure) = speech::speech_view(context, job)?;
     let soul_result = memory::soul_draft_view(context, job)?;
     let lorebook_result = lorebook::result_view(context, job)?;
-    let entity_import = super::entity_import_jobs::failure_view(context, job)?;
+    let entity_import = super::entity_files::import_jobs::failure_view(context, job)?;
     Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),

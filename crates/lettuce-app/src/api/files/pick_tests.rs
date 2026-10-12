@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_types::OperationId;
 
-use super::files::pick_filter;
-use super::tests::{RecordingEvents, StdFiles};
-use super::{
+use super::pick_filter;
+use crate::api::tests::{RecordingEvents, StdFiles};
+use crate::api::{
     ApiContext, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
     files_pick_open, files_pick_save,
 };

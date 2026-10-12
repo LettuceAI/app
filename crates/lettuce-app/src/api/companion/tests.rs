@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use super::jobs::JobFeed;
-use super::tests::{Harness, Reply, harness};
-use super::*;
+use crate::api::jobs::JobFeed;
+use crate::api::tests::{Harness, Reply, harness};
+use crate::api::*;
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_types::CharacterId;
 
@@ -26,7 +26,7 @@ fn companion(harness: &Harness, name: &str, share_soul_growth: bool) -> Characte
         superseded_by: None,
         superseded_at: None,
     };
-    super::tests::create_character(
+    crate::api::tests::create_character(
         harness.context.backend().database(),
         name,
         lettuce_characters::CharacterDefaults {
@@ -530,14 +530,14 @@ async fn the_soul_writer_names_a_missing_model_and_a_blank_name() {
 
 #[tokio::test]
 async fn delete_after_in_one_pooled_chat_keeps_the_other_chats_later_edit() {
-    let harness = super::tests::harness_in(
+    let harness = crate::api::tests::harness_in(
         Reply::Text("reply"),
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
-        Arc::new(super::inspect_tests::AllModels),
+        Arc::new(crate::api::inspect_tests::AllModels),
     );
-    let character = super::tests::create_character(
+    let character = crate::api::tests::create_character(
         harness.context.backend().database(),
         "Pooled",
         lettuce_characters::CharacterDefaults {
@@ -668,7 +668,7 @@ async fn source_free_user_summaries_sync_to_fresh_direct_and_pooled_peers() {
     for pooled in [false, true] {
         let harness = harness(Reply::Text("reply"));
         let chat = if pooled {
-            let character = super::tests::create_character(
+            let character = crate::api::tests::create_character(
                 harness.context.backend().database(),
                 "Summary pool",
                 lettuce_characters::CharacterDefaults {
@@ -680,7 +680,7 @@ async fn source_free_user_summaries_sync_to_fresh_direct_and_pooled_peers() {
             );
             launch_companion(&harness, character, "summary-pool").await
         } else {
-            super::tests::launch(&harness, "summary-direct").await
+            crate::api::tests::launch(&harness, "summary-direct").await
         };
         memory_summary_update(
             &harness.context,

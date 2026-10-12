@@ -5,7 +5,7 @@ use lettuce_jobs::SystemClock;
 use lettuce_transfer::ProviderBackupSource;
 use serde_json::{Value, json};
 
-use super::tests::{Harness, Reply, harness_over};
+use crate::api::tests::{Harness, Reply, harness_over};
 
 fn setup() -> (std::path::PathBuf, Harness) {
     let root = std::env::temp_dir()
@@ -27,13 +27,13 @@ fn setup() -> (std::path::PathBuf, Harness) {
         Arc::new(SystemClock),
         Some(entity_media_store(&root)),
         Some(root.clone()),
-        Arc::new(super::NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::NoModels),
+        Arc::new(crate::api::tests::NoImages),
     );
     (root, harness)
 }
 
-fn entity_media_store(root: &std::path::Path) -> Arc<super::ApiMediaStore> {
+fn entity_media_store(root: &std::path::Path) -> Arc<crate::api::ApiMediaStore> {
     let path = root.join("state.sqlite3");
     let authority = lettuce_platform::FilesystemAuthority::new(
         &lettuce_platform::DirectorySnapshot::new(root).expect("snapshot"),
@@ -60,8 +60,8 @@ fn source(root: &std::path::Path, name: &str, content: &Value) -> dto::FileSourc
     }
 }
 
-async fn preview(context: &super::ApiContext, source: dto::FileSource) -> dto::ImportPreview {
-    super::import_preview(context, dto::ImportPreviewRequest { source })
+async fn preview(context: &crate::api::ApiContext, source: dto::FileSource) -> dto::ImportPreview {
+    crate::api::import_preview(context, dto::ImportPreviewRequest { source })
         .await
         .expect("preview")
 }
@@ -108,7 +108,7 @@ async fn previews_agree_with_inspection_and_never_carry_image_bytes() {
         ),
     ] {
         let source = source(&root, name, &value);
-        let inspected = super::files_inspect(
+        let inspected = crate::api::files_inspect(
             &harness.context,
             dto::FilesInspectRequest {
                 source: source.clone(),
@@ -138,7 +138,7 @@ async fn changed_source_conflicts_before_import_and_operation_retries_replay() {
     .expect("change");
     let request = commit_request(source.clone(), before.digest, json!({}), "import-book");
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect_err("changed file")
             .code,
@@ -147,11 +147,11 @@ async fn changed_source_conflicts_before_import_and_operation_retries_replay() {
     std::fs::write(&source.uri, content.to_string()).expect("restore fixture");
     let before = preview(&harness.context, source.clone()).await;
     let request = commit_request(source, before.digest, json!({}), "import-book");
-    let result = super::import_commit(&harness.context, request.clone())
+    let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("import");
     assert_eq!(
-        super::import_commit(&harness.context, request.clone())
+        crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("replay"),
         result
@@ -159,7 +159,7 @@ async fn changed_source_conflicts_before_import_and_operation_retries_replay() {
     let mut changed = request;
     changed.options.character_id = Some(harness.character_id.to_string());
     assert_eq!(
-        super::import_commit(&harness.context, changed)
+        crate::api::import_commit(&harness.context, changed)
             .await
             .expect_err("changed request")
             .code,
@@ -183,7 +183,7 @@ async fn an_unreadable_persona_avatar_is_a_named_warning_and_the_persona_imports
             .iter()
             .any(|warning| warning.field == "avatar")
     );
-    let result = super::import_commit(
+    let result = crate::api::import_commit(
         &harness.context,
         commit_request(source, preview.digest, json!({}), "persona"),
     )
@@ -193,7 +193,7 @@ async fn an_unreadable_persona_avatar_is_a_named_warning_and_the_persona_imports
         panic!("synchronous persona")
     };
     assert!(warnings.iter().any(|warning| warning.field == "avatar"));
-    let persona = super::persona_get(&harness.context, dto::PersonaGetRequest { persona_id: id })
+    let persona = crate::api::persona_get(&harness.context, dto::PersonaGetRequest { persona_id: id })
         .await
         .expect("persona");
     assert_eq!(persona.draft.title, "Writer");
@@ -211,7 +211,7 @@ async fn a_template_requires_an_active_character_before_writing() {
     );
     let preview = preview(&harness.context, source.clone()).await;
     assert_eq!(
-        super::import_commit(
+        crate::api::import_commit(
             &harness.context,
             commit_request(source, preview.digest, json!({}), "template")
         )
@@ -234,7 +234,7 @@ async fn shutdown_refuses_synchronous_import_without_a_receipt() {
     let preview = preview(&harness.context, source.clone()).await;
     harness.context.begin_shutdown();
     assert_eq!(
-        super::import_commit(
+        crate::api::import_commit(
             &harness.context,
             commit_request(source, preview.digest, json!({}), "shutdown-import")
         )
@@ -260,7 +260,7 @@ async fn character_bad_avatar_is_named_and_bundled_name_reuse_creates_a_copy() {
     let (root, harness) = setup();
     let book = source(&root, "book.json", &json!({"name":"Harbour","entries":[]}));
     let p = preview(&harness.context, book.clone()).await;
-    super::import_commit(
+    crate::api::import_commit(
         &harness.context,
         commit_request(book, p.digest, json!({}), "book-first"),
     )
@@ -278,7 +278,7 @@ async fn character_bad_avatar_is_named_and_bundled_name_reuse_creates_a_copy() {
             .iter()
             .any(|w| w.code == dto::FileWarningCode::BundledLorebookNewCopy)
     );
-    let result = super::import_commit(
+    let result = crate::api::import_commit(
         &harness.context,
         commit_request(card, p.digest, json!({}), "card-copy"),
     )
@@ -299,7 +299,7 @@ async fn group_import_with_an_unmapped_speaker_fails_typed_before_writing() {
         uri: path.display().to_string(),
     };
     let p = preview(&harness.context, source.clone()).await;
-    let dto::ImportCommitResult::Job { job_id } = super::import_commit(
+    let dto::ImportCommitResult::Job { job_id } = crate::api::import_commit(
         &harness.context,
         commit_request(
             source,
@@ -312,10 +312,10 @@ async fn group_import_with_an_unmapped_speaker_fails_typed_before_writing() {
     .expect("admit") else {
         panic!("job")
     };
-    let runner = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(harness.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("run"));
     runner.wait_idle().await;
-    let job = super::job_get(&harness.context, dto::JobGetRequest { job_id })
+    let job = crate::api::job_get(&harness.context, dto::JobGetRequest { job_id })
         .await
         .expect("job");
     assert_eq!(job.state, dto::JobStateDto::Failed);
@@ -340,7 +340,7 @@ async fn chat_commit_needs_no_preview_in_this_process() {
         uri: path.display().to_string(),
     };
     let digest = blake3::hash(raw.as_bytes()).to_hex().to_string();
-    let result = super::import_commit(
+    let result = crate::api::import_commit(
         &harness.context,
         commit_request(
             source,
@@ -351,13 +351,13 @@ async fn chat_commit_needs_no_preview_in_this_process() {
     )
     .await
     .expect("admit without a preview");
-    let runner = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(harness.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("run"));
     runner.wait_idle().await;
     let dto::ImportCommitResult::Job { job_id } = result else {
         panic!("job")
     };
-    let job = super::job_get(&harness.context, dto::JobGetRequest { job_id })
+    let job = crate::api::job_get(&harness.context, dto::JobGetRequest { job_id })
         .await
         .expect("job");
     assert_eq!(job.state, dto::JobStateDto::Succeeded);
@@ -373,7 +373,7 @@ async fn lorebook_export_replaces_a_target_only_with_a_complete_current_file() {
         &json!({"name":"Harbour","entries":[{"keys":["ship"],"content":"A ship"}]}),
     );
     let p = preview(&harness.context, source.clone()).await;
-    let dto::ImportCommitResult::Imported { id, .. } = super::import_commit(
+    let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
         &harness.context,
         commit_request(source, p.digest, json!({}), "export-book"),
     )
@@ -390,13 +390,13 @@ async fn lorebook_export_replaces_a_target_only_with_a_complete_current_file() {
             uri: target.display().to_string(),
         }),
     };
-    super::lorebook_export(&harness.context, request.clone())
+    crate::api::lorebook_export(&harness.context, request.clone())
         .await
         .expect("export");
     let content: Value =
         serde_json::from_slice(&std::fs::read(&target).expect("target")).expect("complete JSON");
     assert_eq!(content["entity"]["name"], "Harbour");
-    super::lorebook_export(&harness.context, request)
+    crate::api::lorebook_export(&harness.context, request)
         .await
         .expect("repeat current export");
     std::fs::remove_dir_all(root).expect("folder");
@@ -418,13 +418,13 @@ async fn cancelled_chat_import_job_writes_no_conversation() {
         "cancel-chat",
     );
     let dto::ImportCommitResult::Job { job_id } =
-        super::import_commit(&harness.context, request.clone())
+        crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("admit")
     else {
         panic!("job")
     };
-    super::job_cancel(
+    crate::api::job_cancel(
         &harness.context,
         dto::JobCancelRequest {
             job_id: job_id.clone(),
@@ -432,7 +432,7 @@ async fn cancelled_chat_import_job_writes_no_conversation() {
     )
     .await
     .expect("cancel");
-    let job = super::job_get(
+    let job = crate::api::job_get(
         &harness.context,
         dto::JobGetRequest {
             job_id: job_id.clone(),
@@ -442,7 +442,7 @@ async fn cancelled_chat_import_job_writes_no_conversation() {
     .expect("job");
     assert_eq!(job.state, dto::JobStateDto::Cancelled);
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect("replay admission"),
         dto::ImportCommitResult::Job { job_id }
@@ -498,19 +498,19 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
         "once-chat",
     );
     let dto::ImportCommitResult::Job { job_id } =
-        super::import_commit(&harness.context, request.clone())
+        crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("admit")
     else {
         panic!("job")
     };
-    let first = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
-    let second = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    let first = crate::api::JobRunner::new(harness.context.clone(), crate::api::JobHandlers::standard());
+    let second = crate::api::JobRunner::new(harness.context.clone(), crate::api::JobHandlers::standard());
     let (a, b) = tokio::join!(first.run_once(), second.run_once());
     assert!(a.expect("first") || b.expect("second"));
     first.wait_idle().await;
     second.wait_idle().await;
-    let job = super::job_get(
+    let job = crate::api::job_get(
         &harness.context,
         dto::JobGetRequest {
             job_id: job_id.clone(),
@@ -525,7 +525,7 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
         Some(dto::JobResultDto::Conversation { .. })
     ));
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect("replay"),
         dto::ImportCommitResult::Job { job_id }
@@ -544,7 +544,7 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
 
 #[tokio::test]
 async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
-    use super::JobHandler;
+    use crate::api::JobHandler;
     use lettuce_jobs::{JobStore, WorkerId};
     let root = std::env::temp_dir()
         .join(format!("chat-restart-{}", lettuce_types::JobId::new()));
@@ -553,14 +553,14 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
     let backend = Arc::new(
         crate::AppBackend::open(&path, lettuce_types::TimestampMillis::new(1)).expect("backend"),
     );
-    let harness = super::tests::harness_over(
+    let harness = crate::api::tests::harness_over(
         backend,
         Reply::Text("reply"),
         Arc::new(SystemClock),
         None,
         Some(root.clone()),
-        Arc::new(super::NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::NoModels),
+        Arc::new(crate::api::tests::NoImages),
     );
     let raw = "{\"character_name\":\"Ada\"}\n{\"name\":\"Ada\",\"is_user\":false,\"mes\":\"Whole message\"}";
     let input = root.join("chat.jsonl");
@@ -576,7 +576,7 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
         "restart-chat",
     );
     let dto::ImportCommitResult::Job { job_id } =
-        super::import_commit(&harness.context, request.clone())
+        crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("admit")
     else {
@@ -590,7 +590,7 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
         .get(id)
         .expect("job")
         .expect("snapshot");
-    let claimed = super::entity_import_jobs::ImportHandler
+    let claimed = super::import_jobs::ImportHandler
         .claim(&harness.context, &snapshot, WorkerId::new())
         .await
         .expect("claim")
@@ -599,7 +599,7 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
     claimed
         .run(
             harness.context.clone(),
-            Arc::new(super::backup::tests::Progress),
+            Arc::new(crate::api::backup::tests::Progress),
         )
         .await
         .expect("shutdown");
@@ -619,24 +619,24 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
         crate::AppBackend::open(&path, lettuce_types::TimestampMillis::new(2))
             .expect("restart backend"),
     );
-    let harness = super::tests::harness_over(
+    let harness = crate::api::tests::harness_over(
         backend,
         Reply::Text("reply"),
         Arc::new(SystemClock),
         None,
         Some(root.clone()),
-        Arc::new(super::NoModels),
-        Arc::new(super::tests::NoImages),
+        Arc::new(crate::api::NoModels),
+        Arc::new(crate::api::tests::NoImages),
     );
     harness
         .context
         .recover_after_restart()
         .expect("recover orphan");
-    let runner = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(harness.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("restart"));
     runner.wait_idle().await;
     assert_eq!(
-        super::job_get(
+        crate::api::job_get(
             &harness.context,
             dto::JobGetRequest {
                 job_id: job_id.clone()
@@ -648,7 +648,7 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
         dto::JobStateDto::Succeeded
     );
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect("replay"),
         dto::ImportCommitResult::Job { job_id }
@@ -687,11 +687,11 @@ async fn avatar_server(
         },
     };
     let cert = CertificateDer::from_pem_slice(include_bytes!(
-        "../../tests/fixtures/provider-test-server.pem"
+        "../../../tests/fixtures/provider-test-server.pem"
     ))
     .expect("cert");
     let key =
-        PrivateKeyDer::from_pem_slice(include_bytes!("../../tests/fixtures/provider-test-key.pem"))
+        PrivateKeyDer::from_pem_slice(include_bytes!("../../../tests/fixtures/provider-test-key.pem"))
             .expect("key");
     let acceptor = TlsAcceptor::from(Arc::new(
         ServerConfig::builder()
@@ -712,7 +712,7 @@ async fn avatar_server(
         let mut request = [0; 4096];
         let amount = socket.read(&mut request).await.expect("request");
         assert!(amount > 0);
-        let bytes = super::tests::png_bytes();
+        let bytes = crate::api::tests::png_bytes();
         socket
             .write_all(
                 format!(
@@ -733,7 +733,7 @@ async fn avatar_server(
     (url, started, task)
 }
 
-fn trust_avatar_server(context: &super::ApiContext) {
+fn trust_avatar_server(context: &crate::api::ApiContext) {
     use lettuce_settings::DeviceSettingsStore;
     context
         .backend()
@@ -745,7 +745,7 @@ fn trust_avatar_server(context: &super::ApiContext) {
                     id: uuid::Uuid::new_v4(),
                     name: "test.pem".into(),
                     imported_at: 1,
-                    pem: include_str!("../../tests/fixtures/provider-test-cert.pem").into(),
+                    pem: include_str!("../../../tests/fixtures/provider-test-cert.pem").into(),
                 })
         })
         .expect("trust");
@@ -784,7 +784,7 @@ async fn remote_avatar_downloads_when_enabled_and_warns_when_disabled_or_failing
             &json!({"version":1,"persona":{"title":"Writer","description":"Authored"},"avatarData":avatar}),
         );
         let p = preview(&harness.context, source.clone()).await;
-        let dto::ImportCommitResult::Imported { id, warnings, .. } = super::import_commit(
+        let dto::ImportCommitResult::Imported { id, warnings, .. } = crate::api::import_commit(
             &harness.context,
             commit_request(source, p.digest, json!({}), &format!("remote-{index}")),
         )
@@ -801,7 +801,7 @@ async fn remote_avatar_downloads_when_enabled_and_warns_when_disabled_or_failing
         } else {
             assert!(warnings.is_empty(), "{warnings:?}");
             assert!(
-                !super::persona_get(&harness.context, dto::PersonaGetRequest { persona_id: id })
+                !crate::api::persona_get(&harness.context, dto::PersonaGetRequest { persona_id: id })
                     .await
                     .expect("persona")
                     .assets
@@ -826,7 +826,7 @@ async fn cancelling_a_remote_avatar_mid_stream_leaves_no_media_object() {
     let p = preview(&harness.context, source.clone()).await;
     let request = commit_request(source, p.digest, json!({}), "cancel-avatar");
     let context = harness.context.clone();
-    let task = tokio::spawn(async move { super::import_commit(&context, request).await });
+    let task = tokio::spawn(async move { crate::api::import_commit(&context, request).await });
     tokio::time::timeout(std::time::Duration::from_secs(10), started.notified())
         .await
         .expect("download started");
@@ -848,32 +848,32 @@ async fn cancelling_a_remote_avatar_mid_stream_leaves_no_media_object() {
 }
 
 struct RefuseExport;
-impl super::FileAccess for RefuseExport {
-    fn describe(&self, uri: &str) -> Result<super::FileDescription, super::FileAccessError> {
-        super::tests::StdFiles.describe(uri)
+impl crate::api::FileAccess for RefuseExport {
+    fn describe(&self, uri: &str) -> Result<crate::api::FileDescription, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.describe(uri)
     }
-    fn open(&self, uri: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
-        super::tests::StdFiles.open(uri)
+    fn open(&self, uri: &str) -> Result<Box<dyn crate::api::FileReader>, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.open(uri)
     }
-    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
-        super::tests::StdFiles.create(uri)
+    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.create(uri)
     }
-    fn remove(&self, uri: &str) -> Result<(), super::FileAccessError> {
-        super::tests::StdFiles.remove(uri)
+    fn remove(&self, uri: &str) -> Result<(), crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.remove(uri)
     }
     fn backup_temporary_location(
         &self,
         target: Option<&str>,
         name: &str,
-    ) -> Result<String, super::FileAccessError> {
-        super::tests::StdFiles.backup_temporary_location(target, name)
+    ) -> Result<String, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.backup_temporary_location(target, name)
     }
     fn create_backup_temporary(
         &self,
         intent: &str,
-        protected: super::ExportProtection<'_>,
-    ) -> Result<(String, Box<dyn std::io::Write + Send>), super::FileAccessError> {
-        let (path, _) = super::tests::StdFiles.create_backup_temporary(intent, protected)?;
+        protected: crate::api::ExportProtection<'_>,
+    ) -> Result<(String, Box<dyn std::io::Write + Send>), crate::api::FileAccessError> {
+        let (path, _) = crate::api::tests::StdFiles.create_backup_temporary(intent, protected)?;
         Ok((path, Box::new(RefuseWrite)))
     }
 }
@@ -886,21 +886,21 @@ impl std::io::Write for RefuseWrite {
         Ok(())
     }
 }
-fn failing_exports(harness: &Harness, root: &std::path::Path) -> super::ApiContext {
+fn failing_exports(harness: &Harness, root: &std::path::Path) -> crate::api::ApiContext {
     export_context(harness, root, Arc::new(RefuseExport))
 }
 fn export_context(
     harness: &Harness,
     root: &std::path::Path,
-    files: Arc<dyn super::FileAccess>,
-) -> super::ApiContext {
-    super::ApiContext::new(super::ApiContextParts {
+    files: Arc<dyn crate::api::FileAccess>,
+) -> crate::api::ApiContext {
+    crate::api::ApiContext::new(crate::api::ApiContextParts {
         backend: harness.context.shared_backend(),
         secret_store: harness.context.secret_store().clone(),
         inference: harness.provider.clone(),
-        image_provider: Arc::new(super::tests::NoImages),
-        models: Arc::new(super::NoModels),
-        speech: Arc::new(super::NoSpeech),
+        image_provider: Arc::new(crate::api::tests::NoImages),
+        models: Arc::new(crate::api::NoModels),
+        speech: Arc::new(crate::api::NoSpeech),
         media: Some(entity_media_store(root)),
         events: harness.events.clone(),
         clock: Arc::new(lettuce_jobs::FakeClock::new(
@@ -922,7 +922,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
     let import = async |name: &str, value: Value, options: Value, key: &str| {
         let source = source(&root, name, &value);
         let p = preview(&harness.context, source.clone()).await;
-        let dto::ImportCommitResult::Imported { id, .. } = super::import_commit(
+        let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
             &harness.context,
             commit_request(source, p.digest, options, key),
         )
@@ -967,10 +967,10 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
     }).expect("chat");
     let fail = failing_exports(&harness, &root);
     let android = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
-    let success = export_context(&harness, &root, Arc::new(super::tests::StdFiles));
+    let success = export_context(&harness, &root, Arc::new(crate::api::tests::StdFiles));
     for kind in 0..7 {
         let target = root.join(format!("export-{kind}"));
-        let export = async |context: &super::ApiContext, downloads: bool| {
+        let export = async |context: &crate::api::ApiContext, downloads: bool| {
             let target = if downloads {
                 None
             } else {
@@ -980,7 +980,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
             };
             match kind {
                 0 => {
-                    super::character_export(
+                    crate::api::character_export(
                         context,
                         dto::CharacterExportRequest {
                             include_learned: false,
@@ -992,7 +992,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                     .await
                 }
                 1 => {
-                    super::persona_export(
+                    crate::api::persona_export(
                         context,
                         dto::EntityExportRequest {
                             id: persona.clone(),
@@ -1002,7 +1002,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                     .await
                 }
                 2 => {
-                    super::lorebook_export(
+                    crate::api::lorebook_export(
                         context,
                         dto::LorebookExportRequest {
                             id: book.clone(),
@@ -1013,7 +1013,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                     .await
                 }
                 3 => {
-                    super::prompt_export(
+                    crate::api::prompt_export(
                         context,
                         dto::EntityExportRequest {
                             id: prompt.clone(),
@@ -1023,7 +1023,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                     .await
                 }
                 4 => {
-                    super::chat_template_export(
+                    crate::api::chat_template_export(
                         context,
                         dto::ChatTemplateExportRequest {
                             character_id: character.clone(),
@@ -1034,7 +1034,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                     .await
                 }
                 5 => {
-                    super::model_export(
+                    crate::api::model_export(
                         context,
                         dto::ModelExportRequest {
                             id: model.clone(),
@@ -1044,7 +1044,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                     .await
                 }
                 _ => {
-                    super::chat_export(
+                    crate::api::chat_export(
                         context,
                         dto::ChatExportRequest {
                             conversation_id: chat.clone(),
@@ -1111,16 +1111,16 @@ async fn every_synchronous_import_replays_concurrent_retries_without_the_source(
         let source = source(&root, name, &value);
         let p = preview(&harness.context, source.clone()).await;
         let request = commit_request(source.clone(), p.digest, options, &format!("concurrent-{index}"));
-        let (a,b) = tokio::join!(super::import_commit(&harness.context,request.clone()), super::import_commit(&harness.context,request.clone()));
+        let (a,b) = tokio::join!(crate::api::import_commit(&harness.context,request.clone()), crate::api::import_commit(&harness.context,request.clone()));
         let result = a.expect("first import");
         assert_eq!(b.expect("concurrent replay"),result);
         let graph = database.read_provider_backup_graph().expect("graph");
         std::fs::remove_file(&source.uri).expect("remove source");
-        assert_eq!(super::import_commit(&harness.context,request.clone()).await.expect("replay without source"),result);
+        assert_eq!(crate::api::import_commit(&harness.context,request.clone()).await.expect("replay without source"),result);
         assert_eq!(database.read_provider_backup_graph().expect("after"),graph);
         let mut changed = request;
         changed.digest.push('0');
-        assert_eq!(super::import_commit(&harness.context,changed).await.expect_err("conflict").code,ApiErrorCode::Conflict);
+        assert_eq!(crate::api::import_commit(&harness.context,changed).await.expect_err("conflict").code,ApiErrorCode::Conflict);
         if index == 5 {
             let dto::ImportCommitResult::Imported{id,..} = result else {panic!("model")};
             assert_eq!(database.load().expect("settings").default_model_profile_id.expect("default").to_string(),id);
@@ -1134,7 +1134,7 @@ async fn group_and_whole_transcript_roll_back_together_then_import_once() {
     use lettuce_database::ApiOperationError;
     let (root, harness) = setup();
     let database = harness.context.backend().database();
-    let ben = super::tests::create_character(database, "Ben", Default::default());
+    let ben = crate::api::tests::create_character(database, "Ben", Default::default());
     let raw = "{\"character_name\":\"Ada and Ben\"}\n{\"name\":\"Ada\",\"is_user\":false,\"mes\":\"Ada message\"}\n{\"name\":\"Ben\",\"is_user\":false,\"mes\":\"Ben message\"}";
     let mapping = std::collections::BTreeMap::from([
         ("Ada".into(), harness.character_id),
@@ -1182,21 +1182,21 @@ async fn group_and_whole_transcript_roll_back_together_then_import_once() {
         json!({"speakers":{"Ada":harness.character_id.to_string(),"Ben":ben.to_string()}}),
         "group-once",
     );
-    let result = super::import_commit(&harness.context, request.clone())
+    let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("admit");
-    let runner = super::JobRunner::new(harness.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(harness.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("run"));
     runner.wait_idle().await;
     let dto::ImportCommitResult::Job { job_id } = result.clone() else {
         panic!("job")
     };
-    let job = super::job_get(&harness.context, dto::JobGetRequest { job_id })
+    let job = crate::api::job_get(&harness.context, dto::JobGetRequest { job_id })
         .await
         .expect("job");
     assert_eq!(job.state, dto::JobStateDto::Succeeded);
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect("replay"),
         result
@@ -1221,7 +1221,7 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
     let media = harness.context.media().expect("media");
     let upload = media
         .ingest_with_commit(
-            super::tests::png_bytes().as_slice(),
+            crate::api::tests::png_bytes().as_slice(),
             lettuce_media::IngestRequest::new(
                 lettuce_media::AssetKind::AvatarOriginal,
                 lettuce_media::AssetOrigin::Import,
@@ -1292,14 +1292,14 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
 async fn a_missing_required_export_avatar_fails_typed_and_preserves_the_target() {
     use base64::Engine;
     let (root, harness) = setup();
-    let image = base64::engine::general_purpose::STANDARD.encode(super::tests::png_bytes());
+    let image = base64::engine::general_purpose::STANDARD.encode(crate::api::tests::png_bytes());
     let source = source(
         &root,
         "persona.json",
         &json!({"version":1,"persona":{"title":"Writer","description":"Authored"},"avatarData":image}),
     );
     let p = preview(&harness.context, source.clone()).await;
-    let dto::ImportCommitResult::Imported { id, warnings, .. } = super::import_commit(
+    let dto::ImportCommitResult::Imported { id, warnings, .. } = crate::api::import_commit(
         &harness.context,
         commit_request(source, p.digest, json!({}), "missing-avatar"),
     )
@@ -1322,7 +1322,7 @@ async fn a_missing_required_export_avatar_fails_typed_and_preserves_the_target()
     remove_objects(&objects);
     let target = root.join("persona.uec");
     std::fs::write(&target, b"existing complete file").expect("target");
-    let result = super::persona_export(
+    let result = crate::api::persona_export(
         &harness.context,
         dto::EntityExportRequest {
             id,
@@ -1346,7 +1346,7 @@ async fn active_database_maintenance_refuses_import_and_export_before_writing() 
     let (root, harness) = setup();
     let source = source(&root, "book.json", &json!({"name":"Harbour","entries":[]}));
     let p = preview(&harness.context, source.clone()).await;
-    let dto::ImportCommitResult::Imported { id, .. } = super::import_commit(
+    let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
         &harness.context,
         commit_request(
             source.clone(),
@@ -1366,13 +1366,13 @@ async fn active_database_maintenance_refuses_import_and_export_before_writing() 
         .maintenance(&cancellation)
         .await
         .expect("maintenance");
-    let import = super::import_commit(
+    let import = crate::api::import_commit(
         &harness.context,
         commit_request(source, p.digest, json!({}), "during-maintenance"),
     )
     .await;
     let target = root.join("during-maintenance.usc");
-    let export = super::lorebook_export(
+    let export = crate::api::lorebook_export(
         &harness.context,
         dto::LorebookExportRequest {
             id,
@@ -1400,7 +1400,7 @@ async fn active_database_maintenance_refuses_import_and_export_before_writing() 
 
 #[tokio::test]
 async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
-    use super::JobHandler;
+    use crate::api::JobHandler;
     use lettuce_jobs::{JobStore, WorkerId};
     let (root, harness) = setup();
     for changed in [false, true] {
@@ -1417,7 +1417,7 @@ async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
             &format!("claimed-{changed}"),
         );
         let dto::ImportCommitResult::Job { job_id } =
-            super::import_commit(&harness.context, request.clone())
+            crate::api::import_commit(&harness.context, request.clone())
                 .await
                 .expect("admit")
         else {
@@ -1430,7 +1430,7 @@ async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
             .get(job_id.parse().expect("id"))
             .expect("job")
             .expect("snapshot");
-        let claimed = super::entity_import_jobs::ImportHandler
+        let claimed = super::import_jobs::ImportHandler
             .claim(&harness.context, &snapshot, WorkerId::new())
             .await
             .expect("claim")
@@ -1438,7 +1438,7 @@ async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
         if changed {
             std::fs::write(&path, "{\"name\":\"Ada\",\"mes\":\"Changed\"}").expect("change");
         } else {
-            super::job_cancel(
+            crate::api::job_cancel(
                 &harness.context,
                 dto::JobCancelRequest {
                     job_id: job_id.clone(),
@@ -1450,11 +1450,11 @@ async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
         claimed
             .run(
                 harness.context.clone(),
-                Arc::new(super::backup::tests::Progress),
+                Arc::new(crate::api::backup::tests::Progress),
             )
             .await
             .expect("settle");
-        let job = super::job_get(
+        let job = crate::api::job_get(
             &harness.context,
             dto::JobGetRequest {
                 job_id: job_id.clone(),
@@ -1487,7 +1487,7 @@ async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
                 .is_empty()
         );
         assert_eq!(
-            super::import_commit(&harness.context, request)
+            crate::api::import_commit(&harness.context, request)
                 .await
                 .expect("replay"),
             dto::ImportCommitResult::Job { job_id }
@@ -1503,7 +1503,7 @@ async fn model_import_ignores_inert_legacy_prompt_fields_without_warnings() {
         let source = source(&root,&format!("model-prompt-{index}.json"),&value);
         let p = preview(&harness.context,source.clone()).await;
         assert!(p.warnings.is_empty(), "{:?}", p.warnings);
-        let dto::ImportCommitResult::Imported{file_kind,warnings,..} = super::import_commit(&harness.context,commit_request(source,p.digest,json!({}),&format!("model-prompt-{index}"))).await.expect("inert fields accepted") else {panic!("model")};
+        let dto::ImportCommitResult::Imported{file_kind,warnings,..} = crate::api::import_commit(&harness.context,commit_request(source,p.digest,json!({}),&format!("model-prompt-{index}"))).await.expect("inert fields accepted") else {panic!("model")};
         assert_eq!(file_kind,dto::FileKind::ModelFile);
         assert!(warnings.is_empty(),"{warnings:?}");
     }
@@ -1519,7 +1519,7 @@ async fn an_http_avatar_without_a_declared_size_downloads_and_is_checked_as_an_i
         .expect("bind");
     let address = listener.local_addr().expect("address");
     let server = tokio::spawn(async move {
-        for bytes in [super::tests::png_bytes(), b"this is not an image".to_vec()] {
+        for bytes in [crate::api::tests::png_bytes(), b"this is not an image".to_vec()] {
             let (mut stream, _) = listener.accept().await.expect("accept");
             let mut request = [0; 4096];
             let size = stream.read(&mut request).await.expect("request");
@@ -1545,7 +1545,7 @@ async fn an_http_avatar_without_a_declared_size_downloads_and_is_checked_as_an_i
             &json!({"version":1,"persona":{"title":"Writer","description":"Authored"},"avatarData":format!("http://{address}/avatar")}),
         );
         let p = preview(&harness.context, source.clone()).await;
-        let dto::ImportCommitResult::Imported { id, warnings, .. } = super::import_commit(
+        let dto::ImportCommitResult::Imported { id, warnings, .. } = crate::api::import_commit(
             &harness.context,
             commit_request(source, p.digest, json!({}), &format!("http-{index}")),
         )
@@ -1556,7 +1556,7 @@ async fn an_http_avatar_without_a_declared_size_downloads_and_is_checked_as_an_i
         if index == 0 {
             assert!(warnings.is_empty(), "{warnings:?}");
             assert!(
-                !super::persona_get(&harness.context, dto::PersonaGetRequest { persona_id: id })
+                !crate::api::persona_get(&harness.context, dto::PersonaGetRequest { persona_id: id })
                     .await
                     .expect("persona")
                     .assets
@@ -1582,12 +1582,12 @@ async fn android_exports_accept_no_target_and_return_the_published_uri() {
         "id": harness.character_id.to_string(), "format": "uec"
     }))
     .expect("Android target is optional");
-    let desktop_error = super::character_export(&harness.context, request.clone())
+    let desktop_error = crate::api::character_export(&harness.context, request.clone())
         .await
         .expect_err("desktop requires a target");
     assert_eq!(desktop_error.code, ApiErrorCode::Unsupported);
     let context = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
-    let result = super::character_export(&context, request)
+    let result = crate::api::character_export(&context, request)
         .await
         .expect("Android export");
     let value = serde_json::to_value(&result).expect("result");
@@ -1611,24 +1611,24 @@ async fn android_exports_accept_no_target_and_return_the_published_uri() {
 }
 
 struct AndroidDownloads(std::path::PathBuf);
-impl super::FileAccess for AndroidDownloads {
-    fn describe(&self, uri: &str) -> Result<super::FileDescription, super::FileAccessError> {
-        super::tests::StdFiles.describe(uri)
+impl crate::api::FileAccess for AndroidDownloads {
+    fn describe(&self, uri: &str) -> Result<crate::api::FileDescription, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.describe(uri)
     }
-    fn open(&self, uri: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
-        super::tests::StdFiles.open(uri)
+    fn open(&self, uri: &str) -> Result<Box<dyn crate::api::FileReader>, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.open(uri)
     }
-    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
-        super::tests::StdFiles.create(uri)
+    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.create(uri)
     }
-    fn remove(&self, uri: &str) -> Result<(), super::FileAccessError> {
-        super::tests::StdFiles.remove(uri)
+    fn remove(&self, uri: &str) -> Result<(), crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.remove(uri)
     }
     fn backup_temporary_location(
         &self,
         target: Option<&str>,
         name: &str,
-    ) -> Result<String, super::FileAccessError> {
+    ) -> Result<String, crate::api::FileAccessError> {
         assert!(target.is_none());
         assert!(name.ends_with(".partial"));
         Ok(self.0.join(name).display().to_string())
@@ -1636,20 +1636,20 @@ impl super::FileAccess for AndroidDownloads {
     fn create_backup_temporary(
         &self,
         intent: &str,
-        protected: super::ExportProtection<'_>,
-    ) -> Result<(String, Box<dyn std::io::Write + Send>), super::FileAccessError> {
-        super::tests::StdFiles.create_backup_temporary(intent, protected)
+        protected: crate::api::ExportProtection<'_>,
+    ) -> Result<(String, Box<dyn std::io::Write + Send>), crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.create_backup_temporary(intent, protected)
     }
-    fn sync_backup(&self, uri: &str) -> Result<(), super::FileAccessError> {
-        super::tests::StdFiles.sync_backup(uri)
+    fn sync_backup(&self, uri: &str) -> Result<(), crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.sync_backup(uri)
     }
     fn publish_backup(
         &self,
         temporary: &str,
         target: Option<&str>,
         name: &str,
-        protected: super::ExportProtection<'_>,
-    ) -> Result<String, super::FileAccessError> {
+        protected: crate::api::ExportProtection<'_>,
+    ) -> Result<String, crate::api::FileAccessError> {
         assert!(target.is_none());
         std::fs::write(self.0.join(name), "existing download").expect("existing download");
         let path = std::path::Path::new(name);
@@ -1658,7 +1658,7 @@ impl super::FileAccess for AndroidDownloads {
             path.file_stem().expect("stem").to_string_lossy(),
             path.extension().expect("extension").to_string_lossy()
         ));
-        super::tests::StdFiles.publish_backup(
+        crate::api::tests::StdFiles.publish_backup(
             temporary,
             Some(&published.display().to_string()),
             name,
@@ -1671,7 +1671,7 @@ struct HeaderOnlyFiles(Vec<u8>);
 struct HeaderOnlyReader(std::io::Cursor<Vec<u8>>);
 impl std::io::Read for HeaderOnlyReader {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        assert!(self.0.position() < super::file_kind::HEADER_BYTES as u64, "read past the header");
+        assert!(self.0.position() < crate::api::files::file_kind::HEADER_BYTES as u64, "read past the header");
         std::io::Read::read(&mut self.0, buffer)
     }
 }
@@ -1681,16 +1681,16 @@ impl std::io::Seek for HeaderOnlyReader {
         std::io::Seek::seek(&mut self.0, position)
     }
 }
-impl super::FileAccess for HeaderOnlyFiles {
-    fn describe(&self, _: &str) -> Result<super::FileDescription, super::FileAccessError> {
-        Ok(super::FileDescription { name: "large".into(), size: 12 * 1024 * 1024 * 1024 })
+impl crate::api::FileAccess for HeaderOnlyFiles {
+    fn describe(&self, _: &str) -> Result<crate::api::FileDescription, crate::api::FileAccessError> {
+        Ok(crate::api::FileDescription { name: "large".into(), size: 12 * 1024 * 1024 * 1024 })
     }
-    fn open(&self, _: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
+    fn open(&self, _: &str) -> Result<Box<dyn crate::api::FileReader>, crate::api::FileAccessError> {
         let mut header = self.0.clone();
-        header.resize(super::file_kind::HEADER_BYTES, 0);
+        header.resize(crate::api::files::file_kind::HEADER_BYTES, 0);
         Ok(Box::new(HeaderOnlyReader(std::io::Cursor::new(header))))
     }
-    fn create(&self, _: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
+    fn create(&self, _: &str) -> Result<Box<dyn std::io::Write + Send>, crate::api::FileAccessError> {
         panic!("no writes")
     }
 }
@@ -1701,8 +1701,8 @@ async fn unsupported_entity_imports_stop_at_the_header() {
     for magic in [b"GGUF".as_slice(), b"LETTUCE-BACKUP2\0".as_slice()] {
         let context = export_context(&harness, &root, Arc::new(HeaderOnlyFiles(magic.to_vec())));
         let source = dto::FileSource { uri: "large".into() };
-        assert_eq!(super::import_preview(&context, dto::ImportPreviewRequest { source: source.clone() }).await.expect_err("unsupported").code, ApiErrorCode::Unsupported);
-        assert_eq!(super::import_commit(&context, commit_request(source, "digest".into(), json!({}), "unsupported")).await.expect_err("unsupported").code, ApiErrorCode::Unsupported);
+        assert_eq!(crate::api::import_preview(&context, dto::ImportPreviewRequest { source: source.clone() }).await.expect_err("unsupported").code, ApiErrorCode::Unsupported);
+        assert_eq!(crate::api::import_commit(&context, commit_request(source, "digest".into(), json!({}), "unsupported")).await.expect_err("unsupported").code, ApiErrorCode::Unsupported);
     }
     std::fs::remove_dir_all(root).expect("folder");
 }
@@ -1739,7 +1739,7 @@ struct BoundedReads {
     bounded: Arc<std::sync::atomic::AtomicBool>,
 }
 struct BoundedReader {
-    reader: Box<dyn super::FileReader>,
+    reader: Box<dyn crate::api::FileReader>,
     bounded: Arc<std::sync::atomic::AtomicBool>,
 }
 impl std::io::Read for BoundedReader {
@@ -1755,14 +1755,14 @@ impl std::io::Seek for BoundedReader {
         self.reader.seek(position)
     }
 }
-impl super::FileAccess for BoundedReads {
-    fn describe(&self, uri: &str) -> Result<super::FileDescription, super::FileAccessError> {
-        super::tests::StdFiles.describe(uri)
+impl crate::api::FileAccess for BoundedReads {
+    fn describe(&self, uri: &str) -> Result<crate::api::FileDescription, crate::api::FileAccessError> {
+        crate::api::tests::StdFiles.describe(uri)
     }
-    fn open(&self, uri: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
-        Ok(Box::new(BoundedReader { reader: super::tests::StdFiles.open(uri)?, bounded: self.bounded.clone() }))
+    fn open(&self, uri: &str) -> Result<Box<dyn crate::api::FileReader>, crate::api::FileAccessError> {
+        Ok(Box::new(BoundedReader { reader: crate::api::tests::StdFiles.open(uri)?, bounded: self.bounded.clone() }))
     }
-    fn create(&self, _: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
+    fn create(&self, _: &str) -> Result<Box<dyn std::io::Write + Send>, crate::api::FileAccessError> {
         panic!("no writes")
     }
 }
@@ -1778,10 +1778,10 @@ async fn large_chat_admission_streams_a_digest_in_bounded_reads() {
     let source = dto::FileSource { uri: path.display().to_string() };
     let p = preview(&context, source.clone()).await;
     bounded.store(true, std::sync::atomic::Ordering::SeqCst);
-    let streamed = super::entity_files::read_for_commit(&context, &source).expect("streamed digest");
+    let streamed = super::read_for_commit(&context, &source).expect("streamed digest");
     assert!(streamed.bytes.is_empty());
     assert_eq!(streamed.digest, p.digest);
-    let result = super::import_commit(&context, commit_request(source, p.digest, json!({"character_id":harness.character_id.to_string()}), "large-chat")).await.expect("streamed admission");
+    let result = crate::api::import_commit(&context, commit_request(source, p.digest, json!({"character_id":harness.character_id.to_string()}), "large-chat")).await.expect("streamed admission");
     assert!(matches!(result, dto::ImportCommitResult::Job { .. }));
     std::fs::remove_dir_all(root).expect("folder");
 }
@@ -1812,7 +1812,7 @@ async fn disabled_avatar_downloads_make_no_network_requests() {
     ].into_iter().enumerate() {
         let source = source(&root, &format!("disabled-{index}.json"), &value);
         let p = preview(&harness.context, source.clone()).await;
-        let dto::ImportCommitResult::Imported { warnings, .. } = super::import_commit(&harness.context, commit_request(source, p.digest, json!({}), &format!("disabled-{index}"))).await.expect("import") else { panic!("entity") };
+        let dto::ImportCommitResult::Imported { warnings, .. } = crate::api::import_commit(&harness.context, commit_request(source, p.digest, json!({}), &format!("disabled-{index}"))).await.expect("import") else { panic!("entity") };
         assert!(warnings.iter().any(|w| w.code == dto::FileWarningCode::RemoteAvatarNotDownloaded));
     }
     tokio::task::yield_now().await;
@@ -1826,7 +1826,7 @@ async fn png_cards_and_charx_agree_with_file_inspection() {
     use base64::Engine;
     let (root, harness) = setup();
     let card = json!({"spec":"chara_card_v2","spec_version":"2.0","data":{"name":"Ada","description":"Keeper","first_mes":"Hello"}});
-    let mut png = super::tests::png_bytes();
+    let mut png = crate::api::tests::png_bytes();
     let mut text = b"chara\0".to_vec();
     text.extend_from_slice(base64::engine::general_purpose::STANDARD.encode(card.to_string()).as_bytes());
     let mut chunk = (text.len() as u32).to_be_bytes().to_vec();
@@ -1838,14 +1838,14 @@ async fn png_cards_and_charx_agree_with_file_inspection() {
     png.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0, 0, 0, 0]);
     for (name, bytes, expected) in [
         ("card.png", png.as_slice(), dto::FileKind::CharacterCard),
-        ("card.charx", include_bytes!("fixtures/card.charx").as_slice(), dto::FileKind::Other),
+        ("card.charx", include_bytes!("../fixtures/card.charx").as_slice(), dto::FileKind::Other),
     ] {
         let path = root.join(name);
         std::fs::write(&path, bytes).expect("file");
         let source = dto::FileSource { uri: path.display().to_string() };
-        let inspected = super::files_inspect(&harness.context, dto::FilesInspectRequest { source: source.clone() }).await.expect("inspect");
+        let inspected = crate::api::files_inspect(&harness.context, dto::FilesInspectRequest { source: source.clone() }).await.expect("inspect");
         assert_eq!(inspected.kind, expected);
-        let result = super::import_preview(&harness.context, dto::ImportPreviewRequest { source }).await;
+        let result = crate::api::import_preview(&harness.context, dto::ImportPreviewRequest { source }).await;
         if expected == dto::FileKind::CharacterCard {
             assert_eq!(result.expect("PNG preview").kind, inspected.kind);
         } else {
@@ -1869,7 +1869,7 @@ async fn uec3_lorebook_import_preserves_behavior_and_replays() {
         "dependencies": [], "state": null, "assets": {}
     });
     let source = source(&root, "harbour.uec", &value);
-    let inspected = super::files_inspect(
+    let inspected = crate::api::files_inspect(
         &harness.context,
         dto::FilesInspectRequest {
             source: source.clone(),
@@ -1881,11 +1881,11 @@ async fn uec3_lorebook_import_preserves_behavior_and_replays() {
     let preview = preview(&harness.context, source.clone()).await;
     assert_eq!(preview.kind, inspected.kind);
     let request = commit_request(source, preview.digest, json!({}), "uec3-lorebook");
-    let result = super::import_commit(&harness.context, request.clone())
+    let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("import");
     assert_eq!(
-        super::import_commit(&harness.context, request.clone())
+        crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("replay"),
         result
@@ -1893,7 +1893,7 @@ async fn uec3_lorebook_import_preserves_behavior_and_replays() {
     let mut changed = request;
     changed.digest.push_str("changed");
     assert_eq!(
-        super::import_commit(&harness.context, changed)
+        crate::api::import_commit(&harness.context, changed)
             .await
             .expect_err("changed retry")
             .code,
@@ -1973,7 +1973,7 @@ async fn invalid_uec3_assets_and_versions_leave_no_lorebook_or_receipt() {
         let source = source(&root, &format!("{name}.uec"), &value);
         if name == "major" {
             assert_eq!(
-                super::files_inspect(
+                crate::api::files_inspect(
                     &harness.context,
                     dto::FilesInspectRequest {
                         source: source.clone()
@@ -1990,7 +1990,7 @@ async fn invalid_uec3_assets_and_versions_leave_no_lorebook_or_receipt() {
             .to_string();
         let request = commit_request(source.clone(), digest, json!({}), name);
         assert_eq!(
-            super::import_commit(&harness.context, request)
+            crate::api::import_commit(&harness.context, request)
                 .await
                 .expect_err(name)
                 .code,
@@ -2008,7 +2008,7 @@ async fn invalid_uec3_assets_and_versions_leave_no_lorebook_or_receipt() {
         );
         if name != "image" {
             assert_eq!(
-                super::import_preview(&harness.context, dto::ImportPreviewRequest { source })
+                crate::api::import_preview(&harness.context, dto::ImportPreviewRequest { source })
                     .await
                     .expect_err(name)
                     .code,
@@ -2049,7 +2049,7 @@ async fn uec3_model_import_preserves_kind_configuration_and_replay() {
     let p = preview(&harness.context, source.clone()).await;
     assert_eq!(
         p.kind,
-        super::files_inspect(
+        crate::api::files_inspect(
             &harness.context,
             dto::FilesInspectRequest {
                 source: source.clone()
@@ -2060,11 +2060,11 @@ async fn uec3_model_import_preserves_kind_configuration_and_replay() {
         .kind
     );
     let request = commit_request(source, p.digest, json!({}), "uec3-model");
-    let result = super::import_commit(&harness.context, request.clone())
+    let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("import");
     assert_eq!(
-        super::import_commit(&harness.context, request.clone())
+        crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("replay"),
         result
@@ -2072,7 +2072,7 @@ async fn uec3_model_import_preserves_kind_configuration_and_replay() {
     let mut changed = request;
     changed.digest.push('x');
     assert_eq!(
-        super::import_commit(&harness.context, changed)
+        crate::api::import_commit(&harness.context, changed)
             .await
             .expect_err("conflict")
             .code,
@@ -2099,7 +2099,7 @@ async fn uec3_model_import_preserves_kind_configuration_and_replay() {
         uri: absent_path.display().to_string(),
     };
     assert_eq!(
-        super::import_preview(
+        crate::api::import_preview(
             &harness.context,
             dto::ImportPreviewRequest {
                 source: absent_source.clone()
@@ -2114,7 +2114,7 @@ async fn uec3_model_import_preserves_kind_configuration_and_replay() {
         .to_hex()
         .to_string();
     assert_eq!(
-        super::import_commit(
+        crate::api::import_commit(
             &harness.context,
             commit_request(absent_source, digest, json!({}), "missing-account")
         )
@@ -2130,7 +2130,7 @@ async fn uec3_model_import_preserves_kind_configuration_and_replay() {
             .is_none()
     );
     let target = root.join("export-model.uec");
-    super::model_export(
+    crate::api::model_export(
         &harness.context,
         dto::ModelExportRequest {
             id: stored.id.to_string(),
@@ -2338,7 +2338,7 @@ async fn uec3_prompt_preserves_entries_and_resolves_known_and_unknown_built_in_s
         let p = preview(&harness.context, source.clone()).await;
         assert_eq!(
             p.kind,
-            super::files_inspect(
+            crate::api::files_inspect(
                 &harness.context,
                 dto::FilesInspectRequest {
                     source: source.clone()
@@ -2349,11 +2349,11 @@ async fn uec3_prompt_preserves_entries_and_resolves_known_and_unknown_built_in_s
             .kind
         );
         let request = commit_request(source, p.digest, json!({}), &format!("uec3-prompt-{index}"));
-        let result = super::import_commit(&harness.context, request.clone())
+        let result = crate::api::import_commit(&harness.context, request.clone())
             .await
             .expect("import");
         assert_eq!(
-            super::import_commit(&harness.context, request)
+            crate::api::import_commit(&harness.context, request)
                 .await
                 .expect("replay"),
             result
@@ -2404,7 +2404,7 @@ async fn uec3_prompt_preserves_entries_and_resolves_known_and_unknown_built_in_s
             );
         }
         let target = root.join(format!("export-prompt-{index}.uec"));
-        super::prompt_export(
+        crate::api::prompt_export(
             &harness.context,
             dto::EntityExportRequest {
                 id,
@@ -2482,7 +2482,7 @@ async fn uec3_persona_import_preserves_disabled_bundled_book_and_authored_fields
     let p = preview(&harness.context, source.clone()).await;
     assert_eq!(
         p.kind,
-        super::files_inspect(
+        crate::api::files_inspect(
             &harness.context,
             dto::FilesInspectRequest {
                 source: source.clone()
@@ -2493,11 +2493,11 @@ async fn uec3_persona_import_preserves_disabled_bundled_book_and_authored_fields
         .kind
     );
     let request = commit_request(source, p.digest, json!({}), "persona3");
-    let result = super::import_commit(&harness.context, request.clone())
+    let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("import");
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect("replay"),
         result
@@ -2524,7 +2524,7 @@ async fn uec3_persona_import_preserves_disabled_bundled_book_and_authored_fields
             .name,
         "Harbour"
     );
-    let exported = super::persona_export(
+    let exported = crate::api::persona_export(
         &harness.context,
         dto::EntityExportRequest {
             id: id.to_string(),
@@ -2583,7 +2583,7 @@ async fn uec3_template_import_preserves_roles_and_bundled_overrides() {
     use lettuce_characters::CharacterRepository;
     let (root, harness) = setup();
     let database = harness.context.backend().database();
-    let character = super::tests::create_character(database, "Ada", Default::default());
+    let character = crate::api::tests::create_character(database, "Ada", Default::default());
     let value = json!({"schema":{"name":"UEC","version":"3.0"},"kind":"chat_template",
         "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
         "entity":{"key":"t1","name":"Opening","messages":[{"role":"user","text":"Hello"},{"role":"assistant","text":"Welcome"}],
@@ -2594,7 +2594,7 @@ async fn uec3_template_import_preserves_roles_and_bundled_overrides() {
     let p = preview(&harness.context, source.clone()).await;
     assert_eq!(
         p.kind,
-        super::files_inspect(
+        crate::api::files_inspect(
             &harness.context,
             dto::FilesInspectRequest {
                 source: source.clone()
@@ -2610,11 +2610,11 @@ async fn uec3_template_import_preserves_roles_and_bundled_overrides() {
         json!({"character_id":character.to_string()}),
         "template3",
     );
-    let result = super::import_commit(&harness.context, request.clone())
+    let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("import");
     assert_eq!(
-        super::import_commit(&harness.context, request)
+        crate::api::import_commit(&harness.context, request)
             .await
             .expect("replay"),
         result
@@ -2644,7 +2644,7 @@ async fn uec3_template_import_preserves_roles_and_bundled_overrides() {
         panic!("explicit")
     };
     assert_eq!(books.len(), 1);
-    let exported = super::chat_template_export(
+    let exported = crate::api::chat_template_export(
         &harness.context,
         dto::ChatTemplateExportRequest {
             character_id: character.to_string(),
@@ -2708,7 +2708,7 @@ async fn uec3_lora_hints_resolve_hash_then_name_and_missing_hints_warn() {
                 .any(|warning| warning.field == "image.lora:missing.safetensors"),
             !matched
         );
-        let result = super::import_commit(
+        let result = crate::api::import_commit(
             &harness.context,
             commit_request(source, p.digest, json!({}), &format!("lora-{index}")),
         )
@@ -2733,7 +2733,7 @@ async fn uec3_lora_hints_resolve_hash_then_name_and_missing_hints_warn() {
                     .display()
                     .to_string(),
             };
-            let exported = super::persona_export(
+            let exported = crate::api::persona_export(
                 &harness.context,
                 dto::EntityExportRequest {
                     id,
@@ -2775,7 +2775,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
                 .media()
                 .expect("media")
                 .ingest_with_commit(
-                    super::tests::png_bytes().as_slice(),
+                    crate::api::tests::png_bytes().as_slice(),
                     lettuce_media::IngestRequest::new(
                         lettuce_media::AssetKind::OtherImage,
                         lettuce_media::AssetOrigin::Import,
@@ -3118,7 +3118,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     database
         .set_character_lorebook_enabled(id, bound.owner_revision, book.book.id, false, now)
         .expect("disable");
-    let exported = super::character_export(
+    let exported = crate::api::character_export(
         context,
         dto::CharacterExportRequest {
             include_learned: false,
@@ -3155,7 +3155,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
         .push(image);
     let repeated_source = source(&root, "repeated-inline.uec", &repeated);
     let repeated_preview = preview(context, repeated_source.clone()).await;
-    let repeated_result = super::import_commit(
+    let repeated_result = crate::api::import_commit(
         context,
         commit_request(
             repeated_source,
@@ -3172,7 +3172,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     else {
         panic!("imported")
     };
-    let repeated_export = super::character_export(
+    let repeated_export = crate::api::character_export(
         context,
         dto::CharacterExportRequest {
             include_learned: false,
@@ -3192,7 +3192,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     profiled["entity"]["behavior"]["voice"]["provider"] = json!({"voiceProfile":{"name":voice_profile.name,"provider":"open_ai_tts","externalId":voice_profile.voice_id}});
     let profile_source = source(&root, "profile-voice.uec", &profiled);
     let profile_preview = preview(context, profile_source.clone()).await;
-    let profile_result = super::import_commit(
+    let profile_result = crate::api::import_commit(
         context,
         commit_request(
             profile_source,
@@ -3234,7 +3234,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
             "{field}"
         );
     }
-    let unresolved_result = super::import_commit(
+    let unresolved_result = crate::api::import_commit(
         context,
         commit_request(
             unresolved_source,
@@ -3280,11 +3280,11 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
         2
     );
     let before = database.read_provider_backup_graph().expect("before crash");
-    let file = super::entity_files::read(context, &source).expect("read");
+    let file = super::read(context, &source).expect("read");
     let mut staged = Vec::new();
     let mut pins = Vec::new();
     let mut warnings = Vec::new();
-    let (card, assets) = super::entity_files::read_uec3_staged(
+    let (card, assets) = super::read_uec3_staged(
         context,
         &file,
         &mut staged,
@@ -3293,13 +3293,13 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     )
     .expect("card");
     let card = card.expect("UEC document");
-    let books = super::entity_files::uec3_books(context, &card.document, &assets).expect("books");
+    let books = super::uec3_books(context, &card.document, &assets).expect("books");
     let prompts =
-        super::entity_files::uec3_prompts(context, &card.document, &mut warnings).expect("prompts");
-    let plan = super::entity_files::character3::prepare(
+        super::uec3_prompts(context, &card.document, &mut warnings).expect("prompts");
+    let plan = super::character3::prepare(
         context,
         &card.document,
-        super::entity_files::character3::ImportAssets {
+        super::character3::ImportAssets {
             ids: &assets,
             uploads: &mut staged,
             preview: false,
@@ -3348,15 +3348,15 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
     drop(pins);
     let request = commit_request(source, p.digest, json!({}), "uec3-character");
     let (a, b) = tokio::join!(
-        super::import_commit(context, request.clone()),
-        super::import_commit(context, request.clone())
+        crate::api::import_commit(context, request.clone()),
+        crate::api::import_commit(context, request.clone())
     );
     let imported = a.expect("import");
     assert_eq!(b.expect("concurrent replay"), imported);
     let mut changed = request;
     changed.digest.push('x');
     assert_eq!(
-        super::import_commit(context, changed)
+        crate::api::import_commit(context, changed)
             .await
             .expect_err("conflict")
             .code,
@@ -3382,7 +3382,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
         imported_starters[3].lorebooks,
         Selection::Disabled
     ));
-    let exported = super::character_export(
+    let exported = crate::api::character_export(
         context,
         dto::CharacterExportRequest {
             include_learned: false,
@@ -3407,7 +3407,7 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
 async fn uec3_every_dependency_imports_once_and_shared_image_gets_distinct_logical_assets() {
     use base64::Engine;
     let (root, harness) = setup();
-    let bytes = super::tests::png_bytes();
+    let bytes = crate::api::tests::png_bytes();
     let value = json!({"schema":{"name":"UEC","version":"3.0"},"kind":"persona",
         "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
         "entity":{"name":"Writer","nickname":null,"description":"Authored","design":{"description":"Coat","references":["asset:a1"]},
@@ -3422,7 +3422,7 @@ async fn uec3_every_dependency_imports_once_and_shared_image_gets_distinct_logic
     assert_eq!(uec3.dependencies.len(), 2);
     assert!(!uec3.include_learned);
     assert_eq!(uec3.persona.as_ref().expect("persona draft").media.len(), 2);
-    let result = super::import_commit(
+    let result = crate::api::import_commit(
         &harness.context,
         commit_request(source, p.digest, json!({}), "all-dependencies"),
     )
@@ -3462,7 +3462,7 @@ async fn uec3_every_dependency_imports_once_and_shared_image_gets_distinct_logic
     with_persona["dependencies"].as_array_mut().expect("dependencies").push(json!({"key":"a1","kind":"persona","entity":{"name":"Bundle persona","nickname":null,"description":"Bundled","design":{"description":null,"references":[]},"media":{"avatar":null,"avatarCrop":null},"behavior":{"image":null,"lorebooks":[]}}}));
     let path = root.join("persona-dependency.uec");
     std::fs::write(&path, with_persona.to_string()).expect("write");
-    let refused = super::import_preview(
+    let refused = crate::api::import_preview(
         &harness.context,
         dto::ImportPreviewRequest {
             source: dto::FileSource {
@@ -3696,7 +3696,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
             uri: root.join(name).display().to_string(),
         }),
     };
-    let plain = super::character_export(context, export(id.to_string(), false, "plain.uec"))
+    let plain = crate::api::character_export(context, export(id.to_string(), false, "plain.uec"))
         .await
         .expect("authored export");
     let plain: Value =
@@ -3717,7 +3717,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
         plain["entity"]["companion"]["authoredFacts"][0]["evidenceCount"],
         3
     );
-    let learned = super::character_export(context, export(id.to_string(), true, "learned.uec"))
+    let learned = crate::api::character_export(context, export(id.to_string(), true, "learned.uec"))
         .await
         .expect("learned export");
     let value: Value =
@@ -3768,7 +3768,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
     );
     let source = dto::FileSource { uri: learned.uri };
     let p = preview(context, source.clone()).await;
-    let result = super::import_commit(
+    let result = crate::api::import_commit(
         context,
         commit_request(source, p.digest, json!({}), "companion-learned"),
     )
@@ -3777,7 +3777,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
     let dto::ImportCommitResult::Imported { id, .. } = result else {
         panic!("imported")
     };
-    let again = super::character_export(context, export(id, true, "learned-again.uec"))
+    let again = crate::api::character_export(context, export(id, true, "learned-again.uec"))
         .await
         .expect("re-export");
     let again: Value =
@@ -3793,7 +3793,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
         uri: root.join("plain.uec").display().to_string(),
     };
     let p = preview(context, plain_source.clone()).await;
-    let result = super::import_commit(
+    let result = crate::api::import_commit(
         context,
         commit_request(plain_source, p.digest, json!({}), "companion-plain"),
     )
@@ -3802,7 +3802,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
     let dto::ImportCommitResult::Imported { id, .. } = result else {
         panic!("imported")
     };
-    let seeded = super::character_export(context, export(id, true, "seeded.uec"))
+    let seeded = crate::api::character_export(context, export(id, true, "seeded.uec"))
         .await
         .expect("seeded Soul");
     let seeded: Value =
@@ -3849,7 +3849,7 @@ async fn uec3_artifact_only_lora_exports_a_named_warning_without_failing() {
         },
     )
     .expect("persona");
-    let exported = super::persona_export(
+    let exported = crate::api::persona_export(
         &harness.context,
         dto::EntityExportRequest {
             id: persona.id.to_string(),
@@ -3884,7 +3884,7 @@ async fn uec3_artifact_only_lora_exports_a_named_warning_without_failing() {
         now,
     )
     .expect("unresolvable legacy path");
-    let exported = super::persona_export(
+    let exported = crate::api::persona_export(
         &harness.context,
         dto::EntityExportRequest {
             id: invalid_path.id.to_string(),
@@ -3969,7 +3969,7 @@ async fn uec3_archived_scenes_are_omitted_and_named_references_warn() {
         },
     )
     .expect("fixture");
-    let exported = super::character_export(
+    let exported = crate::api::character_export(
         &harness.context,
         dto::CharacterExportRequest {
             id: id.to_string(),
@@ -4093,7 +4093,7 @@ async fn uec3_prompt_references_round_trip_as_stored_whatever_their_purpose() {
         (companion_id, prompt(BuiltInPromptId::AppDefault)),
     ] {
         let name = format!("{id}.uec");
-        let exported = super::character_export(
+        let exported = crate::api::character_export(
             context,
             dto::CharacterExportRequest {
                 id: id.to_string(),
@@ -4109,7 +4109,7 @@ async fn uec3_prompt_references_round_trip_as_stored_whatever_their_purpose() {
         let source = dto::FileSource { uri: exported.uri };
         let p = preview(context, source.clone()).await;
         let result =
-            super::import_commit(context, commit_request(source, p.digest, json!({}), &name))
+            crate::api::import_commit(context, commit_request(source, p.digest, json!({}), &name))
                 .await
                 .expect("a card with a prompt of any purpose imports");
         let dto::ImportCommitResult::Imported { id: imported, .. } = result else {
@@ -4185,7 +4185,7 @@ async fn uec3_learned_export_of_a_former_companion_writes_no_state() {
         &import,
     )
     .expect("fixture");
-    let exported = super::character_export(
+    let exported = crate::api::character_export(
         context,
         dto::CharacterExportRequest {
             id: id.to_string(),
@@ -4207,7 +4207,7 @@ async fn uec3_learned_export_of_a_former_companion_writes_no_state() {
 #[tokio::test]
 async fn uec3_character_preview_names_an_unknown_built_in_once() {
     let (root, harness) = setup();
-    let exported = super::character_export(
+    let exported = crate::api::character_export(
         &harness.context,
         dto::CharacterExportRequest {
             id: harness.character_id.to_string(),
@@ -4269,7 +4269,7 @@ async fn uec3_export_encodes_assets_without_buffering_the_file() {
     let context = &harness.context;
     let database = context.backend().database();
     let now = TimestampMillis::new(10);
-    let mut image = super::tests::png_bytes();
+    let mut image = crate::api::tests::png_bytes();
     image.extend((0..3_000_000_u32).map(|index| (index.wrapping_mul(2_654_435_761) >> 24) as u8));
     let upload = context
         .media()
@@ -4316,7 +4316,7 @@ async fn uec3_export_encodes_assets_without_buffering_the_file() {
         },
     )
     .expect("persona");
-    let export = super::entity_files::export_uec3_persona(context, &persona, &mut Vec::new())
+    let export = super::export_uec3_persona(context, &persona, &mut Vec::new())
         .expect("export");
     let mut recorder = RecordingWriter {
         largest: 0,
@@ -4336,8 +4336,8 @@ async fn uec3_export_encodes_assets_without_buffering_the_file() {
 async fn uec3_commit_reads_and_stages_each_asset_once() {
     use base64::Engine;
     let (root, harness) = setup();
-    let first = super::tests::png_bytes();
-    let mut second = super::tests::png_bytes();
+    let first = crate::api::tests::png_bytes();
+    let mut second = crate::api::tests::png_bytes();
     second.extend_from_slice(b"different");
     let asset = |bytes: &[u8]| {
         json!({
@@ -4352,11 +4352,11 @@ async fn uec3_commit_reads_and_stages_each_asset_once() {
             "media":{"avatar":"asset:a1","avatarCrop":null},"behavior":{"image":null,"lorebooks":[]}},
         "dependencies":[],"state":null,"assets":{"a1":asset(&first),"a2":asset(&second)}});
     let source = source(&root, "two-assets.uec", &value);
-    let file = super::entity_files::read(&harness.context, &source).expect("read");
+    let file = super::read(&harness.context, &source).expect("read");
     let mut uploads = Vec::new();
     let mut pins = Vec::new();
     let mut warnings = Vec::new();
-    let (card, assets) = super::entity_files::read_uec3_staged(
+    let (card, assets) = super::read_uec3_staged(
         &harness.context,
         &file,
         &mut uploads,
