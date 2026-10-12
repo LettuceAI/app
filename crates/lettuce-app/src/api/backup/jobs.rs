@@ -8,7 +8,7 @@ use lettuce_types::{JobId, OperationId, RequestId};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use super::{ApiContext, backup::{error, file_error}, error::IntoApiError, jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink}};
+use crate::api::{ApiContext, backup::{error, file_error}, error::IntoApiError, jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,9 +49,9 @@ async fn admit(context: &ApiContext, kind: RestoreKind, source: String, password
             if previous.request_digest != detail.request_digest { return Err(error(ApiErrorCode::Conflict, dto::BackupFailureReason::Storage)); }
             return database.get(previous.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable);
         }
-        super::speech::ensure_no_active_dictation(context)?;
-        if detail.source.trim().is_empty() { return Err(super::error::invalid_field("source", "file source is empty")); }
-        if invalid_password { return Err(super::error::invalid_field("password", "backup password is empty")); }
+        crate::api::speech::ensure_no_active_dictation(context)?;
+        if detail.source.trim().is_empty() { return Err(crate::api::error::invalid_field("source", "file source is empty")); }
+        if invalid_password { return Err(crate::api::error::invalid_field("password", "backup password is empty")); }
         let admitted = database.admit_job_with_detail_result(spec(&detail)?, &detail.operation_key, &detail.request_digest, &encode(&detail)?).map_err(IntoApiError::into_api_error)?;
         if admitted.created && admitted.job.state == JobState::Queued { context.jobs().remember_backup_password(admitted.job.id, password); }
         Ok(admitted.job)
@@ -60,8 +60,8 @@ async fn admit(context: &ApiContext, kind: RestoreKind, source: String, password
 }
 
 async fn admit_backup(context: &ApiContext, request: dto::BackupRestoreRequest, kind: RestoreKind, command: &str) -> Result<dto::JobAccepted, ApiError> {
-    let digest = super::jobs::local::digest(&serde_json::json!({ "source": request.source, "client_operation_id": request.client_operation_id }))?;
-    let key = super::jobs::local::operation_key(command, &request.client_operation_id)?;
+    let digest = crate::api::jobs::local::digest(&serde_json::json!({ "source": request.source, "client_operation_id": request.client_operation_id }))?;
+    let key = crate::api::jobs::local::operation_key(command, &request.client_operation_id)?;
     admit(context, kind, request.source.uri, Zeroizing::new(request.password.trim().to_owned()), key, digest).await
 }
 
@@ -75,19 +75,19 @@ pub async fn legacy_backup_restore(context: &ApiContext, request: dto::BackupRes
 
 pub async fn legacy_database_import(context: &ApiContext, request: dto::LegacyDatabaseImportRequest) -> Result<dto::JobAccepted, ApiError> {
     let source = context.app_folder().ok_or_else(unavailable)?.display().to_string();
-    let key = super::jobs::local::operation_key("legacy_database_import", &request.client_operation_id)?;
-    let digest = super::jobs::local::digest(&request)?;
+    let key = crate::api::jobs::local::operation_key("legacy_database_import", &request.client_operation_id)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
     admit(context, RestoreKind::LegacyDatabase, source, Zeroizing::new(String::new()), key, digest).await
 }
 
-pub(super) fn already_applied(context: &ApiContext, id: JobId) -> Result<bool, ApiError> {
-    if super::app_reset::database_for_job(context, id)?.is_some() { return Ok(true); }
+pub(in crate::api) fn already_applied(context: &ApiContext, id: JobId) -> Result<bool, ApiError> {
+    if crate::api::app_reset::database_for_job(context, id)?.is_some() { return Ok(true); }
     let Some(record) = context.backend().database().job_detail(id).map_err(|_| unavailable())? else { return Ok(false); };
     let detail: Detail = serde_json::from_value(record.detail).map_err(|_| unavailable())?;
     Ok(detail.target.as_ref().is_some_and(|target| context.database_files().is_some_and(|files| &files.active == target)))
 }
 
-pub(super) struct RestoreHandler;
+pub(in crate::api) struct RestoreHandler;
 
 #[async_trait]
 impl JobHandler for RestoreHandler {
@@ -203,7 +203,7 @@ fn legacy_restore_failure_label(failure: crate::LegacyRestoreError) -> &'static 
 
 impl Work {
     async fn finish_switched(&self, context: ApiContext, database: Arc<Database>, outcome: Result<Vec<dto::BackupWarning>, &'static str>) -> Result<(), ApiError> {
-        let reloaded = super::app_reset::host(&context)?.reload_database(&self.claim.job_id.to_string()).await;
+        let reloaded = crate::api::app_reset::host(&context)?.reload_database(&self.claim.job_id.to_string()).await;
         let settled = (|| {
             let result = match (&reloaded, outcome) {
                 (Ok(_), Ok(warnings)) => Ok(dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings }),
@@ -217,11 +217,11 @@ impl Work {
         })();
         match settled {
             Ok(job) => {
-                let view = super::jobs::job_view(&context, &job)?;
-                let (event, terminal) = super::jobs::job_event(&job, view);
+                let view = crate::api::jobs::job_view(&context, &job)?;
+                let (event, terminal) = crate::api::jobs::job_event(&job, view);
                 context.jobs().deliver(job.id, event, terminal);
             }
-            Err(_) => super::backup_export_jobs::report_recovery(&context, &self.claim)?,
+            Err(_) => super::export_jobs::report_recovery(&context, &self.claim)?,
         }
         if let Ok(reloaded) = reloaded {
             reloaded.jobs().take_backup_password(self.claim.job_id);
@@ -258,7 +258,7 @@ impl Work {
             return Ok(());
         }
         if stage == "switch" {
-            super::app_reset::host(context)?;
+            crate::api::app_reset::host(context)?;
             context.flush_app_usage_for_reset()?;
         }
         context.backend().database().append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
@@ -273,9 +273,9 @@ impl Work {
 impl ClaimedJob for Work {
     fn cancellation(&self) -> CancellationToken { self.cancellation.clone() }
     async fn run(self: Box<Self>, context: ApiContext, _progress: Arc<dyn JobProgressSink>) -> Result<(), ApiError> {
-        if super::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
+        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
         let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else { return self.cancel(&context); };
-        if super::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
+        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
         let files = context.database_files().ok_or_else(unavailable)?;
         if files.location.active_path().map_err(|_| unavailable())? != files.active { return Err(unavailable()); }
         let root = context.app_folder().ok_or_else(unavailable)?;
@@ -324,9 +324,9 @@ impl ClaimedJob for Work {
     }
 }
 
-pub(super) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Option<dto::JobResultDto>, ApiError> {
+pub(in crate::api) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Option<dto::JobResultDto>, ApiError> {
     if job.kind != JobKind::BackupRestore || job.state != JobState::Succeeded { return Ok(None); }
-    let current = super::app_reset::database_for_job(context, job.id)?;
+    let current = crate::api::app_reset::database_for_job(context, job.id)?;
     let database = current.as_deref().unwrap_or_else(|| context.backend().database());
     let record = database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
     record.result.map(|result| serde_json::from_value(result).map_err(|_| unavailable())).transpose()
@@ -341,7 +341,7 @@ fn remove_workspace(context: &ApiContext, id: JobId) -> Result<(), ApiError> {
     }
 }
 
-pub(super) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
+pub(in crate::api) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
     use lettuce_jobs::{JobCatalog, JobListFilter};
     use lettuce_types::{PageLimit, PageRequest};
     let database = context.backend().database();
@@ -363,7 +363,7 @@ pub(super) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
 }
 
 fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> {
-    if super::app_reset::database_for_job(context, job.id)?.is_some() { return Ok(()); }
+    if crate::api::app_reset::database_for_job(context, job.id)?.is_some() { return Ok(()); }
     let database = context.backend().database();
     let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
     remove_workspace(context, job.id)?;
@@ -409,15 +409,15 @@ mod fix_tests {
     struct Fixture {
         root: PathBuf,
         location: crate::AppDatabaseLocation,
-        harness: super::super::tests::Harness,
-        host: Arc<super::super::backup_tests::ReloadHost>,
+        harness: crate::api::tests::Harness,
+        host: Arc<super::super::tests::ReloadHost>,
         work: Work,
         source: Vec<u8>,
     }
 
     async fn fixture() -> Fixture {
-        let (root, location, harness) = super::super::app_reset_tests::harness();
-        let host = Arc::new(super::super::backup_tests::ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(super::super::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: Mutex::new(None), fail: false, fail_settlement: false });
+        let (root, location, harness) = crate::api::app_reset_tests::harness();
+        let host = Arc::new(super::super::tests::ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(crate::api::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: Mutex::new(None), fail: false, fail_settlement: false });
         harness.context.attach_reset_host(host.clone()).expect("host");
         let active = location.active_path().expect("active");
         let media = lettuce_media::LocalSyncMediaStore::open(root.join("platform-v2/media-blobs"), Database::open(&active).expect("blobs"), Database::open(&active).expect("assets")).expect("media");
@@ -459,7 +459,7 @@ mod fix_tests {
         fixture.work.finish_switched(context.clone(), database, Err("backup-unavailable")).await.expect("rebind succeeds");
         let fresh = fixture.host.slot.snapshot().expect("commands stay available");
         assert_eq!(fixture.harness.events.events().iter().filter(|event| matches!(event, dto::ApiEvent::DatabaseReloaded)).count(), 1);
-        assert_eq!(super::super::job_get(&fresh, dto::JobGetRequest { job_id: fixture.work.claim.job_id.to_string() }).await.expect("completed job").state, dto::JobStateDto::Succeeded);
+        assert_eq!(crate::api::job_get(&fresh, dto::JobGetRequest { job_id: fixture.work.claim.job_id.to_string() }).await.expect("completed job").state, dto::JobStateDto::Succeeded);
         let workers = fixture.host.workers.lock().expect("workers").take().expect("started");
         workers.stop_for_restore().await.expect("stop");
     }
@@ -501,7 +501,7 @@ mod fix_tests {
         let id = accepted.job_id.parse().expect("id");
         let job = original_context.backend().database().get(id).expect("job").expect("stored");
         let work = RestoreHandler.claim(&original_context, &job, WorkerId::new()).await.expect("claim").expect("work");
-        work.run(original_context.clone(), Arc::new(super::super::backup_tests::Progress)).await.expect("retry completed");
+        work.run(original_context.clone(), Arc::new(super::super::tests::Progress)).await.expect("retry completed");
         let active = original_location.active_path().expect("new active");
         assert_ne!(active, old);
         assert_ne!(active, candidate_path);

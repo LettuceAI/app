@@ -546,8 +546,8 @@ impl ApiContext {
         for (turn_id, _) in &report.turns {
             self.forget_stream(*turn_id);
         }
-        super::backup_jobs::recover_at_startup(self)?;
-        super::backup_export_jobs::recover_at_startup(self)?;
+        super::backup::jobs::recover_at_startup(self)?;
+        super::backup::export_jobs::recover_at_startup(self)?;
         super::jobs::voice_creation::recover_queued(self)?;
         super::scenes::recover(self)?;
         super::speech::sweep_scratch(self);

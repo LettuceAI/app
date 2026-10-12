@@ -1,3 +1,8 @@
+#[cfg(test)]
+pub(super) mod tests;
+pub(super) mod jobs;
+pub(super) mod export_jobs;
+
 use std::io::{Read, Seek, SeekFrom};
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
@@ -69,7 +74,7 @@ async fn mutate_index(context: &ApiContext, request: dto::BackupMutationRequest,
     context.blocking(move |context| {
         let database = context.backend().database();
         let fresh = delete && database.lookup_api_operation(command, &request.client_operation_id).map_err(|failure| Failure::from(failure).0)?.is_none();
-        let pending = if fresh { super::backup_export_jobs::pending_export_targets(context)? } else { Default::default() };
+        let pending = if fresh { self::export_jobs::pending_export_targets(context)? } else { Default::default() };
         let _lifecycle = if fresh {
             context.database_files().map(|files| files.location.try_file_lifecycle().map_err(|failure| match failure {
                 crate::AppDatabaseLocationError::Busy => file_error(super::FileAccessError::Busy),

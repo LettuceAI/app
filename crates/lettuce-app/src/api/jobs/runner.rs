@@ -122,8 +122,8 @@ impl JobHandlers {
             Arc::new(crate::api::entity_import_jobs::ImportHandler),
             Arc::new(crate::api::maintenance_jobs::MaintenanceHandler),
             Arc::new(crate::api::app_reset::AppResetHandler),
-            Arc::new(crate::api::backup_jobs::RestoreHandler),
-            Arc::new(crate::api::backup_export_jobs::ExportHandler),
+            Arc::new(crate::api::backup::jobs::RestoreHandler),
+            Arc::new(crate::api::backup::export_jobs::ExportHandler),
             Arc::new(crate::api::usage::billing::UsageBillingHandler),
         ])
     }

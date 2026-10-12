@@ -380,26 +380,19 @@ pub use legacy_state::legacy_state;
 
 #[cfg(test)]
 mod context_slot_tests;
-#[cfg(test)]
-mod backup_tests;
 
 mod context_slot;
 pub use context_slot::ApiContextSlot;
 mod backup;
 pub use backup::{backup_inspect, backups_list, backup_forget, backup_delete};
 
-mod backup_jobs;
-mod backup_export_jobs;
-pub use backup_export_jobs::backup_export;
-pub use backup_jobs::{backup_restore, legacy_backup_restore, legacy_database_import};
+pub use backup::export_jobs::backup_export;
+pub use backup::jobs::{backup_restore, legacy_backup_restore, legacy_database_import};
 
-#[cfg(test)]
-mod sync_tests;
 
 mod sync;
 pub use sync::{sync_share_start, sync_share_approve, sync_share_begin, sync_connect, sync_stop, sync_status};
-mod sync_conflicts;
-pub use sync_conflicts::{sync_conflicts_list, sync_conflict_resolve, sync_fork_resolve, legacy_conflict_dismiss};
+pub use sync::conflicts::{sync_conflicts_list, sync_conflict_resolve, sync_fork_resolve, legacy_conflict_dismiss};
 
 mod entity_files;
 mod entity_import_jobs;

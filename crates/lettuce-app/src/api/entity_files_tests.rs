@@ -599,7 +599,7 @@ async fn shutdown_after_a_chat_claim_leaves_nothing_and_restart_retries_once() {
     claimed
         .run(
             harness.context.clone(),
-            Arc::new(super::backup_tests::Progress),
+            Arc::new(super::backup::tests::Progress),
         )
         .await
         .expect("shutdown");
@@ -1450,7 +1450,7 @@ async fn claimed_chat_cancellation_and_changed_source_leave_no_transcript() {
         claimed
             .run(
                 harness.context.clone(),
-                Arc::new(super::backup_tests::Progress),
+                Arc::new(super::backup::tests::Progress),
             )
             .await
             .expect("settle");

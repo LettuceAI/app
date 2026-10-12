@@ -157,7 +157,7 @@ pub async fn job_cancel(
             }
             if job.kind == JobKind::BackupRestore
                 && job.subject.id.as_str() == "database-restore"
-                && super::backup_jobs::already_applied(context, job_id)?
+                && super::backup::jobs::already_applied(context, job_id)?
             {
                 return Err(lettuce_jobs::StoreError::TooLate.into_api_error());
             }
@@ -315,8 +315,8 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             .or(super::usage::billing::result_view(context, job)?)
             .or(super::maintenance_jobs::result_view(context, job)?)
             .or(super::app_reset::result_view(context, job)?)
-            .or(super::backup_jobs::result_view(context, job)?)
-            .or(super::backup_export_jobs::result_view(context, job)?)
+            .or(super::backup::jobs::result_view(context, job)?)
+            .or(super::backup::export_jobs::result_view(context, job)?)
             .or(local.result)
             .or(soul_result)
             .or(lorebook_result)

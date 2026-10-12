@@ -1,7 +1,7 @@
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_sync::{ConflictRepositoryError, ConversationForkRepository, SyncConflictRepository};
 
-use super::{ApiContext, error::parse_id, lorebooks::Failure};
+use crate::api::{ApiContext, error::parse_id, lorebooks::Failure};
 
 fn conflict_error(error: ConflictRepositoryError) -> ApiError {
     let code = match error {
@@ -34,10 +34,10 @@ fn candidate(
     use lettuce_sync::SyncConflictValue as V;
     let value = match candidate.value {
         V::Character(value) => dto::SyncConflictValue::Character {
-            value: Box::new(super::library_characters::view(context, *value)?),
+            value: Box::new(crate::api::library_characters::view(context, *value)?),
         },
         V::Persona(value) => dto::SyncConflictValue::Persona {
-            value: Box::new(super::library_personas::view(context, value)),
+            value: Box::new(crate::api::library_personas::view(context, value)),
         },
         V::Default(value) => dto::SyncConflictValue::PersonaDefault {
             value: dto::PersonaDefaultView {
@@ -48,10 +48,10 @@ fn candidate(
             },
         },
         V::Lorebook(value) => dto::SyncConflictValue::Lorebook {
-            value: super::lorebooks::view(context, &value),
+            value: crate::api::lorebooks::view(context, &value),
         },
         V::Prompt(value) => dto::SyncConflictValue::Prompt {
-            value: super::prompts::view(context, &value)?,
+            value: crate::api::prompts::view(context, &value)?,
         },
         V::Deleted => dto::SyncConflictValue::Deleted,
     };
@@ -143,7 +143,7 @@ pub async fn sync_conflict_resolve(
             uuid::Uuid::parse_str(id)
                 .map(lettuce_sync::SyncChangeId::from_uuid)
                 .map_err(|_| {
-                    super::error::invalid_field("expected_current_change", "Invalid change id")
+                    crate::api::error::invalid_field("expected_current_change", "Invalid change id")
                 })
         })
         .transpose()?;
@@ -151,8 +151,8 @@ pub async fn sync_conflict_resolve(
         dto::SyncConflictChoice::Current => lettuce_sync::ConflictChoice::Current,
         dto::SyncConflictChoice::Other => lettuce_sync::ConflictChoice::Other,
     };
-    let digest = super::jobs::local::digest(&request)?;
-    super::jobs::local::operation_key("sync_conflict_resolve", &request.client_operation_id)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
+    crate::api::jobs::local::operation_key("sync_conflict_resolve", &request.client_operation_id)?;
     let key = request.client_operation_id;
     let cancellation = context.shutdown_token();
     let _lease = context
@@ -160,7 +160,7 @@ pub async fn sync_conflict_resolve(
         .work(cancellation)
         .await
         .ok_or_else(|| {
-            super::error::api_error(
+            crate::api::error::api_error(
                 ApiErrorCode::Cancelled,
                 "Shutdown interrupted conflict resolution",
             )
@@ -168,7 +168,7 @@ pub async fn sync_conflict_resolve(
     context
         .blocking(move |context| {
             if context.shutdown_token().is_cancelled() {
-                return Err(super::error::api_error(
+                return Err(crate::api::error::api_error(
                     ApiErrorCode::Cancelled,
                     "Shutdown interrupted conflict resolution",
                 ));
@@ -207,15 +207,15 @@ pub async fn sync_fork_resolve(
 ) -> Result<(), ApiError> {
     let conversation_id = parse_id(&request.conversation_id, "conversation_id")?;
     let branch_id = parse_id(&request.branch_id, "branch_id")?;
-    let digest = super::jobs::local::digest(&request)?;
-    super::jobs::local::operation_key("sync_fork_resolve", &request.client_operation_id)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
+    crate::api::jobs::local::operation_key("sync_fork_resolve", &request.client_operation_id)?;
     let key = request.client_operation_id;
     let _lease = context
         .maintenance()
         .work(context.shutdown_token())
         .await
         .ok_or_else(|| {
-            super::error::api_error(
+            crate::api::error::api_error(
                 ApiErrorCode::Cancelled,
                 "Shutdown interrupted fork resolution",
             )
@@ -223,7 +223,7 @@ pub async fn sync_fork_resolve(
     context
         .blocking(move |context| {
             if context.shutdown_token().is_cancelled() {
-                return Err(super::error::api_error(
+                return Err(crate::api::error::api_error(
                     ApiErrorCode::Cancelled,
                     "Shutdown interrupted fork resolution",
                 ));
@@ -246,20 +246,23 @@ pub async fn legacy_conflict_dismiss(
 ) -> Result<(), ApiError> {
     let run_id = parse_id(&request.run_id, "run_id")?;
     if request.source_key.trim().is_empty() {
-        return Err(super::error::invalid_field(
+        return Err(crate::api::error::invalid_field(
             "source_key",
             "A source key is required",
         ));
     }
-    let digest = super::jobs::local::digest(&request)?;
-    super::jobs::local::operation_key("legacy_conflict_dismiss", &request.client_operation_id)?;
+    let digest = crate::api::jobs::local::digest(&request)?;
+    crate::api::jobs::local::operation_key(
+        "legacy_conflict_dismiss",
+        &request.client_operation_id,
+    )?;
     let key = request.client_operation_id;
     let _lease = context
         .maintenance()
         .work(context.shutdown_token())
         .await
         .ok_or_else(|| {
-            super::error::api_error(
+            crate::api::error::api_error(
                 ApiErrorCode::Cancelled,
                 "Shutdown interrupted legacy dismissal",
             )
@@ -267,7 +270,7 @@ pub async fn legacy_conflict_dismiss(
     context
         .blocking(move |context| {
             if context.shutdown_token().is_cancelled() {
-                return Err(super::error::api_error(
+                return Err(crate::api::error::api_error(
                     ApiErrorCode::Cancelled,
                     "Shutdown interrupted legacy dismissal",
                 ));

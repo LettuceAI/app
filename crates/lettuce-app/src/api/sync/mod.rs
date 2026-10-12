@@ -1,3 +1,7 @@
+#[cfg(test)]
+mod tests;
+pub(super) mod conflicts;
+
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::{Mutex, MutexGuard},

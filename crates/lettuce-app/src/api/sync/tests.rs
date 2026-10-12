@@ -1,7 +1,7 @@
 use lettuce_contracts::{self as dto, ApiErrorCode};
 
-use super::tests::{Harness, Reply, harness_over};
-use super::*;
+use crate::api::tests::{Harness, Reply, harness_over};
+use crate::api::*;
 
 fn device() -> (Harness, std::path::PathBuf) {
     let root = std::env::temp_dir().join(format!("sync-api-{}", lettuce_types::OperationId::new()));
@@ -20,7 +20,7 @@ fn device() -> (Harness, std::path::PathBuf) {
         None,
         Some(root.clone()),
         std::sync::Arc::new(NoModels),
-        std::sync::Arc::new(super::tests::NoImages),
+        std::sync::Arc::new(crate::api::tests::NoImages),
     );
     (harness, root)
 }
@@ -849,7 +849,7 @@ async fn seed_media(
         database,
         database,
     );
-    let mut bytes = super::tests::png_bytes();
+    let mut bytes = crate::api::tests::png_bytes();
     bytes.resize(bytes.len().max(size), 0x5a);
     let uploaded = store
         .ingest(
@@ -1180,7 +1180,7 @@ async fn canceled_pending_start_rejects_begin_without_granting_the_gate() {
 async fn unusual_device_names_allow_sharing() {
     for name in ["界".repeat(43), "Phone\n\t\0".into(), "\n\t".into(), "   ".into()] {
         let (host, root) = device();
-        let sharing = super::sync::share_start_named(&host.context, name).await.expect("share starts");
+        let sharing = super::share_start_named(&host.context, name).await.expect("share starts");
         assert!(matches!(sync_status(&host.context).await.expect("status"), dto::SyncStatus::Sharing { .. }));
         assert!(!sharing.pin.is_empty());
         sync_stop(&host.context).await.expect("stop");

@@ -8,7 +8,7 @@ use lettuce_types::{JobId, OperationId, RequestId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use super::{ApiContext, backup::{error, file_error}, error::IntoApiError, files::FileExportProtection, jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink}};
+use crate::api::{ApiContext, backup::{error, file_error}, error::IntoApiError, files::FileExportProtection, jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink}};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Detail {
@@ -26,8 +26,8 @@ fn unavailable() -> ApiError { error(ApiErrorCode::Unavailable, dto::BackupFailu
 fn encoded(detail: &Detail) -> Result<serde_json::Value, ApiError> { serde_json::to_value(detail).map_err(|_| unavailable()) }
 
 pub async fn backup_export(context: &ApiContext, request: dto::BackupExportRequest) -> Result<dto::JobAccepted, ApiError> {
-    let key = super::jobs::local::operation_key("backup_export", &request.client_operation_id)?;
-    let digest = super::jobs::local::digest(&serde_json::json!({ "target": request.target, "client_operation_id": request.client_operation_id }))?;
+    let key = crate::api::jobs::local::operation_key("backup_export", &request.client_operation_id)?;
+    let digest = crate::api::jobs::local::digest(&serde_json::json!({ "target": request.target, "client_operation_id": request.client_operation_id }))?;
     let password = Zeroizing::new(request.password.trim().to_owned());
     let invalid_password = password.is_empty();
     let target = request.target.map(|target| target.uri);
@@ -37,14 +37,14 @@ pub async fn backup_export(context: &ApiContext, request: dto::BackupExportReque
             if previous.request_digest != digest { return Err(error(ApiErrorCode::Conflict, dto::BackupFailureReason::Storage)); }
             return database.get(previous.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable);
         }
-        if invalid_password { return Err(super::error::invalid_field("password", "backup password is empty")); }
-        if target.as_ref().is_some_and(|uri| uri.trim().is_empty()) { return Err(super::error::invalid_field("target", "backup target is empty")); }
+        if invalid_password { return Err(crate::api::error::invalid_field("password", "backup password is empty")); }
+        if target.as_ref().is_some_and(|uri| uri.trim().is_empty()) { return Err(crate::api::error::invalid_field("target", "backup target is empty")); }
         let created_at = context.now();
         let date = chrono::DateTime::from_timestamp_millis(created_at.get()).ok_or_else(unavailable)?;
         let temporary_intent = context.files().backup_temporary_location(target.as_deref(), &format!("lettuce-backup-{}.partial", OperationId::new())).map_err(file_error)?;
         let target = target.map(|target| {
-            let name = std::path::Path::new(&target).file_name().ok_or_else(|| file_error(super::FileAccessError::Unsupported))?;
-            std::path::Path::new(&temporary_intent).with_file_name(name).into_os_string().into_string().map_err(|_| file_error(super::FileAccessError::Unsupported))
+            let name = std::path::Path::new(&target).file_name().ok_or_else(|| file_error(crate::api::FileAccessError::Unsupported))?;
+            std::path::Path::new(&temporary_intent).with_file_name(name).into_os_string().into_string().map_err(|_| file_error(crate::api::FileAccessError::Unsupported))
         }).transpose()?;
         let detail = Detail {
             temporary_intent,
@@ -66,7 +66,7 @@ pub async fn backup_export(context: &ApiContext, request: dto::BackupExportReque
     Ok(dto::JobAccepted { job_id: job.id.to_string() })
 }
 
-pub(super) struct ExportHandler;
+pub(in crate::api) struct ExportHandler;
 
 #[async_trait]
 impl JobHandler for ExportHandler {
@@ -110,14 +110,14 @@ fn cleanup(context: &ApiContext, detail: &Detail) -> Result<(), ApiError> {
     let uri = detail.temporary_uri.as_deref().unwrap_or(&detail.temporary_intent);
     let description = match context.files().describe(uri) {
         Ok(description) => description,
-        Err(super::FileAccessError::NotFound) => return Ok(()),
+        Err(crate::api::FileAccessError::NotFound) => return Ok(()),
         Err(failure) => return Err(file_error(failure)),
     };
     let intended = std::path::Path::new(&detail.temporary_intent).file_name().and_then(|name| name.to_str()).ok_or_else(unavailable)?;
     if !intended.starts_with("lettuce-backup-") || !intended.ends_with(".partial") { return Err(unavailable()); }
     if description.name != intended { return Ok(()); }
     match context.files().remove(uri) {
-        Ok(()) | Err(super::FileAccessError::NotFound) => Ok(()),
+        Ok(()) | Err(crate::api::FileAccessError::NotFound) => Ok(()),
         Err(failure) => Err(file_error(failure)),
     }
 }
@@ -128,7 +128,7 @@ fn published(context: &ApiContext, detail: &Detail) -> Result<Option<BackupIndex
     let candidates = if let Some(target) = &detail.target {
         match context.files().describe(detail.temporary_uri.as_deref().unwrap_or(&detail.temporary_intent)) {
             Ok(_) => return Ok(None),
-            Err(super::FileAccessError::NotFound) => {},
+            Err(crate::api::FileAccessError::NotFound) => {},
             Err(failure) => return Err(file_error(failure)),
         }
         vec![target.clone()]
@@ -139,14 +139,14 @@ fn published(context: &ApiContext, detail: &Detail) -> Result<Option<BackupIndex
     for uri in candidates {
         let description = match context.files().describe(&uri) {
             Ok(description) => description,
-            Err(super::FileAccessError::NotFound) => continue,
+            Err(crate::api::FileAccessError::NotFound) => continue,
             Err(failure) => return Err(file_error(failure)),
         };
         if description.name.ends_with(".partial") || description.size != size { continue; }
         let mut input = context.files().open(&uri).map_err(file_error)?;
         let (metadata, bytes) = match lettuce_transfer::read_backup_header_bytes(&mut input) {
             Ok(header) => header,
-            Err(lettuce_transfer::BackupEnvelopeError::Io) => return Err(file_error(super::FileAccessError::Io)),
+            Err(lettuce_transfer::BackupEnvelopeError::Io) => return Err(file_error(crate::api::FileAccessError::Io)),
             Err(_) => continue,
         };
         if &bytes != expected_header { continue; }
@@ -159,7 +159,7 @@ fn finish(context: &ApiContext, claim: &ClaimRef, mut record: BackupIndexRecord,
     record.id = claim.job_id;
     context.backend().database().record_backup(&record).map_err(|_| unavailable())?;
     let backup = dto::BackupIndexView { id: record.id.to_string(), uri: record.uri, header: dto::BackupHeaderView { version: record.version, created_at: record.created_at.get(), app_version: record.app_version }, size: record.size, availability: dto::BackupAvailability::Available };
-    super::backup_jobs::settle(context.backend().database(), claim, context, Ok(dto::JobResultDto::BackupExported { backup, warnings }))?;
+    super::jobs::settle(context.backend().database(), claim, context, Ok(dto::JobResultDto::BackupExported { backup, warnings }))?;
     Ok(())
 }
 
@@ -169,7 +169,7 @@ impl ClaimedJob for Work {
     async fn run(mut self: Box<Self>, context: ApiContext, _progress: Arc<dyn JobProgressSink>) -> Result<(), ApiError> {
         let protection = match FileExportProtection::new(&context) {
             Ok(protection) => protection,
-            Err(failure) => return super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err(if failure.code == ApiErrorCode::Busy { "backup-file-busy" } else { super::backup_jobs::file_failure_label(&failure) })).map(|_| ()),
+            Err(failure) => return super::jobs::settle(context.backend().database(), &self.claim, &context, Err(if failure.code == ApiErrorCode::Busy { "backup-file-busy" } else { super::jobs::file_failure_label(&failure) })).map(|_| ()),
         };
         let protected = |uri: &str, file: Option<&std::fs::File>| protection.protects(uri, file);
         let mut created = false;
@@ -186,11 +186,11 @@ impl ClaimedJob for Work {
             let media = lettuce_media::LocalSyncMediaStore::open(root.join("platform-v2/media-blobs"), lettuce_database::Database::open(&files.active).map_err(|_| unavailable())?, lettuce_database::Database::open(&files.active).map_err(|_| unavailable())?).map_err(|_| unavailable())?;
             let mut export = context.backend().provider_backup(context.secret_store().as_ref(), &media).export_to_controlled(writer, self.detail.header.app_version.clone(), TimestampMillis::new(self.detail.header.created_at), &self.password, &|| if self.cancellation.is_cancelled() { Err(crate::ProviderBackupError::Cancelled) } else { Ok(()) }).await.map_err(|failure| match failure {
                 crate::ProviderBackupError::Cancelled => error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled),
-                crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::Io) | crate::ProviderBackupError::Media(_) | crate::ProviderBackupError::Artifact(_) => file_error(super::FileAccessError::Io),
+                crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::Io) | crate::ProviderBackupError::Media(_) | crate::ProviderBackupError::Artifact(_) => file_error(crate::api::FileAccessError::Io),
                 crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::LimitExceeded) | crate::ProviderBackupError::Graph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded) => error(ApiErrorCode::InvalidInput, dto::BackupFailureReason::LimitExceeded),
                 _ => unavailable(),
             })?;
-            export.output.flush().map_err(|_| file_error(super::FileAccessError::Io))?;
+            export.output.flush().map_err(|_| file_error(crate::api::FileAccessError::Io))?;
             drop(export.output);
             context.files().sync_backup(&uri).map_err(file_error)?;
             self.detail.size = Some(context.files().describe(&uri).map_err(file_error)?.size);
@@ -211,7 +211,7 @@ impl ClaimedJob for Work {
         }
         let cancelled = self.cancellation.is_cancelled() || result.as_ref().is_err_and(|failure| failure.code == ApiErrorCode::Cancelled);
         if created && cleanup(&context, &self.detail).is_err() {
-            return super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err("backup-unavailable")).map(|_| ());
+            return super::jobs::settle(context.backend().database(), &self.claim, &context, Err("backup-unavailable")).map(|_| ());
         }
         if cancelled {
             let job = context.backend().database().get(self.claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
@@ -224,7 +224,7 @@ impl ClaimedJob for Work {
             return Ok(());
         }
         if let Err(failure) = result {
-            super::backup_jobs::settle(context.backend().database(), &self.claim, &context, Err(super::backup_jobs::file_failure_label(&failure)))?;
+            super::jobs::settle(context.backend().database(), &self.claim, &context, Err(super::jobs::file_failure_label(&failure)))?;
         }
         Ok(())
     }
@@ -251,7 +251,7 @@ pub(super) fn pending_export_targets(context: &ApiContext) -> Result<std::collec
     }
 }
 
-pub(super) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
+pub(in crate::api) fn recover_at_startup(context: &ApiContext) -> Result<(), ApiError> {
     use lettuce_jobs::{JobCatalog, JobListFilter};
     use lettuce_types::{PageLimit, PageRequest};
     let database = context.backend().database();
@@ -282,7 +282,7 @@ fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> 
     }
     let record = published(context, &detail);
     if matches!(record, Ok(None)) { cleanup(context, &detail)?; }
-    let claim = super::backup_jobs::claim_started(database, job.id, context.now().max(job.updated_at))?;
+    let claim = super::jobs::claim_started(database, job.id, context.now().max(job.updated_at))?;
     let record = match record {
         Ok(record) => record,
         Err(failure) => { report_recovery(context, &claim)?; return Err(failure); }
@@ -301,12 +301,12 @@ fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> 
             return Err(failure);
         }
     } else {
-        super::backup_jobs::settle(database, &claim, context, Err("backup-retry-required"))?;
+        super::jobs::settle(database, &claim, context, Err("backup-retry-required"))?;
     }
     Ok(())
 }
 
-pub(super) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Option<dto::JobResultDto>, ApiError> {
+pub(in crate::api) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Option<dto::JobResultDto>, ApiError> {
     if job.kind != JobKind::BackupExport || job.state != JobState::Succeeded { return Ok(None); }
     let record = context.backend().database().job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
     record.result.map(|value| serde_json::from_value(value).map_err(|_| unavailable())).transpose()
@@ -314,7 +314,7 @@ pub(super) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Opt
 
 pub(super) fn report_recovery(context: &ApiContext, claim: &ClaimRef) -> Result<(), ApiError> {
     let job = context.backend().database().get(claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
-    let mut view = super::jobs::job_view(context, &job)?;
+    let mut view = crate::api::jobs::job_view(context, &job)?;
     view.failure = Some(dto::JobFailureDto { entity_import: None, code: dto::JobFailureCode::StorageFailure, retryable: false, reason: Some(dto::JobFailureReason::BackupRecoveryRequired), model: None, hugging_face: None, ollama: None, image: None, speech: None });
     context.emit(dto::ApiEvent::JobUpdated { job: Box::new(view.clone()) });
     context.jobs().deliver(job.id, dto::JobEvent::Failed { job: view }, true);
