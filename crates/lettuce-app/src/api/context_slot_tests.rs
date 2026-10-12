@@ -23,7 +23,7 @@ fn context_slot_swaps_snapshots_and_blocks_commands_requiring_recovery() {
 async fn review_context_is_published_only_after_restart_recovery_finishes() {
     use lettuce_types::JobId;
     let first = Arc::new(harness(Reply::Text("first")).context);
-    let (_root, _location, fresh) = super::app_reset_tests::harness();
+    let (_root, _location, fresh) = super::app::reset_tests::harness();
     let fresh = Arc::new(fresh.context);
     let slot = Arc::new(ApiContextSlot::new(first.clone()));
     let recovery_guard = fresh.provider_write_guard().await;
@@ -44,7 +44,7 @@ async fn review_context_is_published_only_after_restart_recovery_finishes() {
 #[tokio::test]
 async fn review_failed_startup_blocks_snapshots_without_publishing_or_reloading() {
     let first = Arc::new(harness(Reply::Text("first")).context);
-    let (_root, _location, fresh) = super::app_reset_tests::harness();
+    let (_root, _location, fresh) = super::app::reset_tests::harness();
     let events = fresh.events.clone();
     let fresh = Arc::new(fresh.context);
     let slot = ApiContextSlot::new(first.clone());

@@ -16,14 +16,14 @@ use lettuce_jobs::{SystemClock, handle::CancellationToken};
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{MessageId, TimestampMillis, UsageEventId};
 
-use super::conversations::turns_tests::{
+use crate::api::conversations::turns_tests::{
     author_of, continue_request, conversation, group_cast, open, regenerate_request, replied_chat,
     run_generation,
 };
-use super::tests::{
+use crate::api::tests::{
     RecordingStream, Reply, api_events, create_character, harness, harness_in, send,
 };
-use super::*;
+use crate::api::*;
 use crate::{
     CompanionEmotionEngine, CompanionEmotionGenerationError, EmbeddingGenerationError,
     MemoryEmbeddingEngine,
@@ -69,7 +69,7 @@ impl CompanionEmotionEngine for NeutralEmotion {
     }
 }
 
-pub(super) struct AllModels;
+pub(in crate::api) struct AllModels;
 
 #[async_trait]
 impl ModelLoader for AllModels {
@@ -90,7 +90,7 @@ impl ModelLoader for AllModels {
     }
 }
 
-async fn stats(harness: &super::tests::Harness, chat: &str) -> dto::ParticipationStats {
+async fn stats(harness: &crate::api::tests::Harness, chat: &str) -> dto::ParticipationStats {
     conversation_participation_stats(
         &harness.context,
         dto::ConversationRequest {
@@ -241,7 +241,7 @@ async fn the_speaker_selection_preview_renders_the_prompt_without_a_provider_cal
 }
 
 async fn snapshot(
-    harness: &super::tests::Harness,
+    harness: &crate::api::tests::Harness,
     message: &str,
 ) -> Result<dto::PromptSnapshot, dto::ApiError> {
     message_prompt_snapshot(
@@ -625,7 +625,7 @@ async fn settled_companion_effect(retry: bool) {
     .expect("a processing effect");
     assert_eq!(processing.status, dto::CompanionEffectStatus::Processing);
 
-    let mut feed = super::conversations::feed::ConversationFeed::start(&harness.context)
+    let mut feed = crate::api::conversations::feed::ConversationFeed::start(&harness.context)
         .await
         .expect("feed");
     let effect = CompanionTurnEffectRepository::get_for_message(database, stored.id, reply)
@@ -867,7 +867,7 @@ async fn production_workers_admit_memory_after_a_finished_dynamic_turn() {
     .expect("enable automatic memory");
     let workers = startup(&harness.context).await.expect("startup");
     workers.started().await;
-    let chat = super::tests::launch(&harness, "production-memory-launch").await;
+    let chat = crate::api::tests::launch(&harness, "production-memory-launch").await;
     let accepted = send(
         &harness,
         &chat,

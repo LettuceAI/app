@@ -1,4 +1,4 @@
-use super::tests::{Reply, harness};
+use crate::api::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 
 #[tokio::test]
@@ -17,7 +17,7 @@ async fn metrics_page_get_clear_and_replay_preserve_new_records() {
             )
             .expect("record");
     }
-    let first = super::llm_metrics_list(
+    let first = crate::api::llm_metrics_list(
         &h.context,
         dto::LlmMetricsListRequest {
             cursor: None,
@@ -34,7 +34,7 @@ async fn metrics_page_get_clear_and_replay_preserve_new_records() {
             .collect::<Vec<_>>(),
         vec!["metric-2", "metric-1"]
     );
-    let second = super::llm_metrics_list(
+    let second = crate::api::llm_metrics_list(
         &h.context,
         dto::LlmMetricsListRequest {
             cursor: first.next_cursor,
@@ -46,7 +46,7 @@ async fn metrics_page_get_clear_and_replay_preserve_new_records() {
     assert_eq!(second.items.len(), 1);
     assert_eq!(second.items[0].id, "metric-0");
     assert_eq!(second.next_cursor, None);
-    let detail = super::llm_metrics_get(
+    let detail = crate::api::llm_metrics_get(
         &h.context,
         dto::LlmMetricGetRequest {
             id: "metric-0".into(),
@@ -66,7 +66,7 @@ async fn metrics_page_get_clear_and_replay_preserve_new_records() {
         client_operation_id: key,
     };
     assert_eq!(
-        super::llm_metrics_clear(&h.context, request.clone())
+        crate::api::llm_metrics_clear(&h.context, request.clone())
             .await
             .expect("clear")
             .removed,
@@ -78,20 +78,20 @@ async fn metrics_page_get_clear_and_replay_preserve_new_records() {
         .record_llm_generation_metrics("new", None, &serde_json::json!({}), &[], 4)
         .expect("record");
     assert_eq!(
-        super::llm_metrics_clear(&h.context, request)
+        crate::api::llm_metrics_clear(&h.context, request)
             .await
             .expect("replay")
             .removed,
         3
     );
     assert!(
-        super::llm_metrics_get(&h.context, dto::LlmMetricGetRequest { id: "new".into() })
+        crate::api::llm_metrics_get(&h.context, dto::LlmMetricGetRequest { id: "new".into() })
             .await
             .expect("get")
             .is_some()
     );
     assert_eq!(
-        super::llm_metrics_list(
+        crate::api::llm_metrics_list(
             &h.context,
             dto::LlmMetricsListRequest {
                 cursor: Some("bad cursor".into()),

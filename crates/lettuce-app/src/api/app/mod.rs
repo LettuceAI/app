@@ -1,3 +1,34 @@
+pub(super) mod content_filter;
+pub(super) mod diagnostics;
+pub(super) mod inspect;
+#[cfg(test)]
+pub(super) mod inspect_tests;
+pub(super) mod legacy_state;
+#[cfg(test)]
+mod legacy_state_tests;
+pub(super) mod logs;
+#[cfg(test)]
+mod logs_tests;
+pub(super) mod maintenance;
+pub(super) mod maintenance_jobs;
+#[cfg(test)]
+mod maintenance_tests;
+pub(super) mod metrics;
+#[cfg(test)]
+mod metrics_tests;
+pub(super) mod reset;
+#[cfg(test)]
+pub(super) mod reset_tests;
+pub(super) mod settings;
+#[cfg(test)]
+mod settings_tests;
+pub(super) mod startup;
+pub(super) mod storage;
+#[cfg(test)]
+mod storage_tests;
+#[cfg(test)]
+mod usage_tests;
+
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_database::{PurgeNoticeEntity, PurgeNoticeReason};
 use lettuce_settings::{DeviceUiStateStore, GlobalSettingsStoreError};
@@ -65,7 +96,7 @@ pub async fn app_status(context: &ApiContext) -> Result<dto::AppStatus, ApiError
                 platform: platform(),
                 ui_state: database.load_device_ui_state().map_err(settings_error)?,
                 legacy_database_detected: context.legacy_database_detected(),
-                legacy_state: super::legacy_state::detect(context)?,
+                legacy_state: self::legacy_state::detect(context)?,
                 unresolved_sync_conflicts: database
                     .unresolved_sync_conflict_count()
                     .map_err(purge_error)?,
@@ -92,9 +123,9 @@ pub async fn app_ui_state_update(
                 .database()
                 .patch_device_ui_state(request.patch)
                 .map_err(settings_error)?;
-            Ok(super::settings::finish_committed(
+            Ok(self::settings::finish_committed(
                 dto::AppUiStateView { state },
-                || super::content_filter::publish_settings_changes(context),
+                || self::content_filter::publish_settings_changes(context),
             ))
         })
         .await

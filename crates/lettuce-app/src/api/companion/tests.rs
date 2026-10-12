@@ -535,7 +535,7 @@ async fn delete_after_in_one_pooled_chat_keeps_the_other_chats_later_edit() {
         Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
-        Arc::new(crate::api::inspect_tests::AllModels),
+        Arc::new(crate::api::app::inspect_tests::AllModels),
     );
     let character = crate::api::tests::create_character(
         harness.context.backend().database(),

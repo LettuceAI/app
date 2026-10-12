@@ -1,7 +1,7 @@
+pub(super) mod export_jobs;
+pub(super) mod jobs;
 #[cfg(test)]
 pub(super) mod tests;
-pub(super) mod jobs;
-pub(super) mod export_jobs;
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -78,7 +78,7 @@ async fn mutate_index(context: &ApiContext, request: dto::BackupMutationRequest,
         let _lifecycle = if fresh {
             context.database_files().map(|files| files.location.try_file_lifecycle().map_err(|failure| match failure {
                 crate::AppDatabaseLocationError::Busy => file_error(super::FileAccessError::Busy),
-                _ => super::storage::file_error(failure, None),
+                _ => super::app::storage::file_error(failure, None),
             })).transpose()?
         } else { None };
         database.commit_api_operation(command, &request.client_operation_id, &digest, context.now(), |transaction| {

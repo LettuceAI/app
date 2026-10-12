@@ -14,7 +14,7 @@ use lettuce_jobs::{
 };
 use lettuce_types::{JobId, RequestId};
 
-use super::{
+use crate::api::{
     ApiContext,
     error::{IntoApiError, api_error, parse_id},
     jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink},
@@ -29,13 +29,13 @@ pub trait AppResetHost: Send + Sync {
     async fn prepare_restart(&self) -> Result<(), ApiError>;
     fn exit_for_restart(&self);
     async fn reload_database(&self, _job: &str) -> Result<Arc<ApiContext>, ApiError> {
-        Err(super::backup::error(ApiErrorCode::Unsupported, dto::BackupFailureReason::Unsupported))
+        Err(crate::api::backup::error(ApiErrorCode::Unsupported, dto::BackupFailureReason::Unsupported))
     }
 
 }
 
 #[derive(Default)]
-pub(super) struct ResetState {
+pub(in crate::api) struct ResetState {
     host: Mutex<Option<Arc<dyn AppResetHost>>>,
     current: Mutex<Option<(JobId, Arc<Database>)>>,
 }
@@ -43,8 +43,8 @@ pub(super) struct ResetState {
 impl ApiContext {
     pub fn bind_reloaded_job(&self, job: &str) -> Result<(), ApiError> {
         let id = parse_id(job, "job_id")?;
-        let path = &self.database_files().ok_or_else(|| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))?.active;
-        let database = Arc::new(Database::open(path).map_err(|_| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))?);
+        let path = &self.database_files().ok_or_else(|| crate::api::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))?.active;
+        let database = Arc::new(Database::open(path).map_err(|_| crate::api::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))?);
         self.track_reloaded_job(id, database)
     }
 
@@ -53,12 +53,12 @@ impl ApiContext {
     }
 
     pub fn track_reloaded_job(&self, id: JobId, database: Arc<Database>) -> Result<(), ApiError> {
-        *self.reset_state().current.lock().map_err(|_| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))? = Some((id, database));
+        *self.reset_state().current.lock().map_err(|_| crate::api::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))? = Some((id, database));
         Ok(())
     }
 
     pub fn finish_reloaded_job(&self) -> Result<(), ApiError> {
-        *self.reset_state().current.lock().map_err(|_| super::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))? = None;
+        *self.reset_state().current.lock().map_err(|_| crate::api::backup::error(ApiErrorCode::Unavailable, dto::BackupFailureReason::RecoveryRequired))? = None;
         Ok(())
     }
 
@@ -84,7 +84,7 @@ pub(super) fn reset_error(stage: dto::AppDataResetStage, kept: Option<String>) -
     error
 }
 
-pub(super) fn host(context: &ApiContext) -> Result<Arc<dyn AppResetHost>, ApiError> {
+pub(in crate::api) fn host(context: &ApiContext) -> Result<Arc<dyn AppResetHost>, ApiError> {
     context
         .reset_state()
         .host
@@ -94,7 +94,7 @@ pub(super) fn host(context: &ApiContext) -> Result<Arc<dyn AppResetHost>, ApiErr
         .ok_or_else(|| reset_error(dto::AppDataResetStage::Preflight, None))
 }
 
-pub(super) fn database_for_job(
+pub(in crate::api) fn database_for_job(
     context: &ApiContext,
     id: JobId,
 ) -> Result<Option<Arc<Database>>, ApiError> {
@@ -136,7 +136,7 @@ fn key(id: RequestId) -> String {
 }
 
 fn digest() -> Result<String, ApiError> {
-    super::jobs::local::digest(&serde_json::json!({"command":"app_data_reset"}))
+    crate::api::jobs::local::digest(&serde_json::json!({"command":"app_data_reset"}))
 }
 
 pub async fn app_data_reset(
@@ -188,7 +188,7 @@ pub async fn app_data_reset(
             job_id: id.to_string(),
         });
     }
-    super::speech::ensure_no_active_dictation(context)?;
+    crate::api::speech::ensure_no_active_dictation(context)?;
     host(context)?.preflight().await?;
     let files = context
         .database_files()
@@ -236,7 +236,7 @@ pub async fn app_data_reset(
     })
 }
 
-pub(super) fn result_view(
+pub(in crate::api) fn result_view(
     context: &ApiContext,
     job: &JobSnapshot,
 ) -> Result<Option<dto::JobResultDto>, ApiError> {
@@ -263,7 +263,7 @@ pub(super) fn result_view(
     }))
 }
 
-pub(super) struct AppResetHandler;
+pub(in crate::api) struct AppResetHandler;
 
 #[async_trait]
 impl JobHandler for AppResetHandler {
@@ -573,13 +573,13 @@ impl ClaimedJob for Work {
         context: ApiContext,
         _progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
-        if super::speech::refuse_active_dictation(&context, &self.claim)? {
+        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? {
             return Ok(());
         }
         let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else {
             return self.cancel(&context).await;
         };
-        if super::speech::refuse_active_dictation(&context, &self.claim)? {
+        if crate::api::speech::refuse_active_dictation(&context, &self.claim)? {
             return Ok(());
         }
         let files = context
@@ -652,8 +652,8 @@ impl ClaimedJob for Work {
                             &context,
                             Err(stage),
                         )?;
-                        let view = super::jobs::job_view(&context, &job)?;
-                        let (event, terminal) = super::jobs::job_event(&job, view);
+                        let view = crate::api::jobs::job_view(&context, &job)?;
+                        let (event, terminal) = crate::api::jobs::job_event(&job, view);
                         context.jobs().deliver(job.id, event, terminal);
                         return Ok(());
                     }
@@ -668,8 +668,8 @@ impl ClaimedJob for Work {
                         .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))? =
                         Some((self.claim.job_id, database.clone()));
                     let job = settle(&database, &self.claim, &context, Err(stage))?;
-                    let view = super::jobs::job_view(&context, &job)?;
-                    let (event, terminal) = super::jobs::job_event(&job, view);
+                    let view = crate::api::jobs::job_view(&context, &job)?;
+                    let (event, terminal) = crate::api::jobs::job_event(&job, view);
                     context.jobs().deliver(job.id, event, terminal);
                     drop(lifecycle);
                     let shell = host(&context)?;
@@ -691,8 +691,8 @@ impl ClaimedJob for Work {
             }
         };
         let job = settle(&database, &claim, &context, result)?;
-        let view = super::jobs::job_view(&context, &job)?;
-        let (event, terminal) = super::jobs::job_event(&job, view);
+        let view = crate::api::jobs::job_view(&context, &job)?;
+        let (event, terminal) = crate::api::jobs::job_event(&job, view);
         context.jobs().deliver(job.id, event, terminal);
         drop(lifecycle);
         if needs_restart {

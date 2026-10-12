@@ -901,7 +901,7 @@ async fn a_rewind_a_crash_left_owed_finishes_at_startup() {
     let harness = harness(Reply::Text("Hello."));
     let chat = memory_chat(&harness, "owed-startup").await;
     let pending = tombstone_without_rewind(&harness, &chat, "owed-startup-1");
-    crate::api::startup::complete_pending_rewinds(&harness.context)
+    crate::api::app::startup::complete_pending_rewinds(&harness.context)
         .await
         .expect("startup rewind");
     let receipt = rewind_receipt(&harness, chat.conversation_id, &pending.tombstone.operation)
@@ -2234,7 +2234,7 @@ async fn a_failing_owed_rewind_is_recorded_per_chat_and_startup_goes_on() {
         },
     )
     .expect("a receipt that disagrees with the owed rewind");
-    crate::api::startup::complete_pending_rewinds(&harness.context)
+    crate::api::app::startup::complete_pending_rewinds(&harness.context)
         .await
         .expect("startup goes on");
     assert!(
@@ -2364,7 +2364,7 @@ async fn a_crash_after_the_rewind_before_the_owed_record_is_cleared_replays_the_
     let receipt = rewind_receipt(&harness, chat.conversation_id, &token).expect("receipt");
     let memory = memory_revision(&harness, chat.conversation_id);
     assert_eq!(pending_of(&harness, chat.conversation_id).len(), 1);
-    crate::api::startup::complete_pending_rewinds(&harness.context)
+    crate::api::app::startup::complete_pending_rewinds(&harness.context)
         .await
         .expect("startup");
     assert!(pending_of(&harness, chat.conversation_id).is_empty());
@@ -2812,7 +2812,7 @@ async fn a_failing_owed_rewind_refuses_every_operation_that_begins_a_turn() {
         },
     )
     .expect("a receipt that disagrees with the owed rewind");
-    crate::api::startup::complete_pending_rewinds(&harness.context)
+    crate::api::app::startup::complete_pending_rewinds(&harness.context)
         .await
         .expect("startup goes on");
     assert_eq!(pending_of(&harness, broken.conversation_id).len(), 1);

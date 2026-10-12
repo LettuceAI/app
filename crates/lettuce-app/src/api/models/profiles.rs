@@ -391,7 +391,7 @@ pub async fn model_delete(
         },
     )
     .await?;
-    crate::api::content_filter::publish_pending(context).await;
+    crate::api::app::content_filter::publish_pending(context).await;
     Ok(())
 }
 

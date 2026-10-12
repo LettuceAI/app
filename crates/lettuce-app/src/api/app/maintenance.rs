@@ -4,16 +4,16 @@ use lettuce_jobs::handle::CancellationToken;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 #[derive(Debug, Default)]
-pub(super) struct MaintenanceGate {
+pub(in crate::api) struct MaintenanceGate {
     execution: Arc<RwLock<()>>,
 }
 
 impl MaintenanceGate {
-    pub(super) fn try_work(&self) -> Option<OwnedRwLockReadGuard<()>> {
+    pub(in crate::api) fn try_work(&self) -> Option<OwnedRwLockReadGuard<()>> {
         self.execution.clone().try_read_owned().ok()
     }
 
-    pub(super) async fn work(
+    pub(in crate::api) async fn work(
         &self,
         cancellation: &CancellationToken,
     ) -> Option<OwnedRwLockReadGuard<()>> {
@@ -24,7 +24,7 @@ impl MaintenanceGate {
         }
     }
 
-    pub(super) async fn maintenance(
+    pub(in crate::api) async fn maintenance(
         &self,
         cancellation: &CancellationToken,
     ) -> Option<OwnedRwLockWriteGuard<()>> {

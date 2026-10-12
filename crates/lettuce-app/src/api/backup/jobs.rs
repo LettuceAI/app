@@ -81,7 +81,7 @@ pub async fn legacy_database_import(context: &ApiContext, request: dto::LegacyDa
 }
 
 pub(in crate::api) fn already_applied(context: &ApiContext, id: JobId) -> Result<bool, ApiError> {
-    if crate::api::app_reset::database_for_job(context, id)?.is_some() { return Ok(true); }
+    if crate::api::app::reset::database_for_job(context, id)?.is_some() { return Ok(true); }
     let Some(record) = context.backend().database().job_detail(id).map_err(|_| unavailable())? else { return Ok(false); };
     let detail: Detail = serde_json::from_value(record.detail).map_err(|_| unavailable())?;
     Ok(detail.target.as_ref().is_some_and(|target| context.database_files().is_some_and(|files| &files.active == target)))
@@ -203,7 +203,7 @@ fn legacy_restore_failure_label(failure: crate::LegacyRestoreError) -> &'static 
 
 impl Work {
     async fn finish_switched(&self, context: ApiContext, database: Arc<Database>, outcome: Result<Vec<dto::BackupWarning>, &'static str>) -> Result<(), ApiError> {
-        let reloaded = crate::api::app_reset::host(&context)?.reload_database(&self.claim.job_id.to_string()).await;
+        let reloaded = crate::api::app::reset::host(&context)?.reload_database(&self.claim.job_id.to_string()).await;
         let settled = (|| {
             let result = match (&reloaded, outcome) {
                 (Ok(_), Ok(warnings)) => Ok(dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings }),
@@ -258,7 +258,7 @@ impl Work {
             return Ok(());
         }
         if stage == "switch" {
-            crate::api::app_reset::host(context)?;
+            crate::api::app::reset::host(context)?;
             context.flush_app_usage_for_reset()?;
         }
         context.backend().database().append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
@@ -326,7 +326,7 @@ impl ClaimedJob for Work {
 
 pub(in crate::api) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Result<Option<dto::JobResultDto>, ApiError> {
     if job.kind != JobKind::BackupRestore || job.state != JobState::Succeeded { return Ok(None); }
-    let current = crate::api::app_reset::database_for_job(context, job.id)?;
+    let current = crate::api::app::reset::database_for_job(context, job.id)?;
     let database = current.as_deref().unwrap_or_else(|| context.backend().database());
     let record = database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
     record.result.map(|result| serde_json::from_value(result).map_err(|_| unavailable())).transpose()
@@ -363,7 +363,7 @@ pub(in crate::api) fn recover_at_startup(context: &ApiContext) -> Result<(), Api
 }
 
 fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> {
-    if crate::api::app_reset::database_for_job(context, job.id)?.is_some() { return Ok(()); }
+    if crate::api::app::reset::database_for_job(context, job.id)?.is_some() { return Ok(()); }
     let database = context.backend().database();
     let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
     remove_workspace(context, job.id)?;
@@ -416,7 +416,7 @@ mod fix_tests {
     }
 
     async fn fixture() -> Fixture {
-        let (root, location, harness) = crate::api::app_reset_tests::harness();
+        let (root, location, harness) = crate::api::app::reset_tests::harness();
         let host = Arc::new(super::super::tests::ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(crate::api::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: Mutex::new(None), fail: false, fail_settlement: false });
         harness.context.attach_reset_host(host.clone()).expect("host");
         let active = location.active_path().expect("active");

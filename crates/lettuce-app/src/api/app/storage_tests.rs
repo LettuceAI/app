@@ -4,8 +4,8 @@ use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
 use lettuce_types::{OperationId, RequestId, TimestampMillis};
 use std::sync::Arc;
 
-use super::tests::{NoImages, Reply, harness_over_files};
-use super::{ApiDatabaseFiles, ApiMediaStore, NoModels};
+use crate::api::tests::{NoImages, Reply, harness_over_files};
+use crate::api::{ApiDatabaseFiles, ApiMediaStore, NoModels};
 use crate::{AppBackend, AppDatabaseLocation};
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncat
             uri: output.to_string_lossy().into_owned(),
         },
     };
-    super::usage_export_csv(&h.context, request.clone())
+    crate::api::usage_export_csv(&h.context, request.clone())
         .await
         .expect("export");
     assert_eq!(
@@ -48,7 +48,7 @@ async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncat
     let alias = root.join("database-alias.csv");
     std::fs::hard_link(&active, &alias).expect("hard link");
     for target in [&active, &alias] {
-        let error = super::usage_export_csv(
+        let error = crate::api::usage_export_csv(
             &h.context,
             dto::UsageExportCsvRequest {
                 target: dto::FileTarget {
@@ -62,7 +62,7 @@ async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncat
         assert_eq!(error.code, ApiErrorCode::Conflict);
         assert_eq!(std::fs::read(&active).expect("preserved database"), before);
     }
-    let error = super::usage_export_csv(
+    let error = crate::api::usage_export_csv(
         &h.context,
         dto::UsageExportCsvRequest {
             filters: dto::UsageFilters {
@@ -90,8 +90,8 @@ async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncat
 async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missing_sources() {
     let root = std::env::temp_dir().join(format!("lettuce-media-save-{}", OperationId::new()));
     std::fs::create_dir_all(&root).expect("root");
-    let media = super::tests::media_store(&root);
-    let png = super::tests::png_bytes();
+    let media = crate::api::tests::media_store(&root);
+    let png = crate::api::tests::png_bytes();
     let object = media
         .ingest(
             png.as_slice(),
@@ -103,7 +103,7 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
             ),
         )
         .expect("media object");
-    let h = super::tests::harness_in(
+    let h = crate::api::tests::harness_in(
         Reply::Text("ok"),
         Arc::new(SystemClock),
         Some(media),
@@ -122,11 +122,11 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
             uri: target.to_string_lossy().into_owned(),
         },
     };
-    super::media_save_to(&h.context, request.clone())
+    crate::api::media_save_to(&h.context, request.clone())
         .await
         .expect("save");
     assert_eq!(std::fs::read(&target).expect("export"), png);
-    super::media_save_to(&h.context, request.clone())
+    crate::api::media_save_to(&h.context, request.clone())
         .await
         .expect("retry");
     assert_eq!(std::fs::read(&target).expect("export"), png);
@@ -139,7 +139,7 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
     let alias = root.join("alias");
     std::fs::hard_link(&source, &alias).expect("hardlink");
     for protected in [&source, &alias] {
-        let error = super::media_save_to(
+        let error = crate::api::media_save_to(
             &h.context,
             dto::MediaSaveToRequest {
                 target: dto::FileTarget {
@@ -154,7 +154,7 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
         assert!(error.details.is_some());
         assert_eq!(std::fs::read(&source).expect("preserved source"), png);
     }
-    let error = super::media_save_to(
+    let error = crate::api::media_save_to(
         &h.context,
         dto::MediaSaveToRequest {
             asset_id: lettuce_types::AssetId::new().to_string(),
@@ -166,7 +166,7 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
     assert_eq!(error.code, ApiErrorCode::NotFound);
     assert!(error.details.is_some());
     assert_eq!(std::fs::read(&target).expect("preserved target"), png);
-    let empty = super::media_save_to(
+    let empty = crate::api::media_save_to(
         &h.context,
         dto::MediaSaveToRequest {
             asset_id: object.asset.id.to_string(),
@@ -176,8 +176,8 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
     .await
     .expect_err("empty target");
     assert_eq!(empty.code, ApiErrorCode::InvalidInput);
-    let unavailable = super::tests::harness(Reply::Text("ok"));
-    let error = super::media_save_to(
+    let unavailable = crate::api::tests::harness(Reply::Text("ok"));
+    let error = crate::api::media_save_to(
         &unavailable.context,
         dto::MediaSaveToRequest {
             asset_id: object.asset.id.to_string(),
@@ -191,7 +191,7 @@ async fn media_save_streams_to_a_chosen_target_and_preserves_protected_or_missin
     assert_eq!(error.code, ApiErrorCode::Unavailable);
     assert!(error.details.is_some());
     std::fs::remove_file(&source).expect("missing object");
-    let error = super::media_save_to(&h.context, request)
+    let error = crate::api::media_save_to(&h.context, request)
         .await
         .expect_err("missing bytes");
     assert_eq!(error.code, ApiErrorCode::NotFound);
@@ -271,7 +271,7 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
             active: active.clone(),
         }),
     );
-    let listed = super::storage_database_files_list(&h.context)
+    let listed = crate::api::storage_database_files_list(&h.context)
         .await
         .expect("list");
     assert_eq!(listed.len(), 2);
@@ -296,7 +296,7 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
         lettuce_observability::local_output(lettuce_observability::LocalOutputConfig::new(&logs))
             .expect("output");
     h.context.attach_logs(logs, output.sink);
-    let summary = super::storage_summary(&h.context)
+    let summary = crate::api::storage_summary(&h.context)
         .await
         .expect("kept summary");
     assert!(summary.kept_database_bytes >= std::fs::metadata(&kept).expect("kept metadata").len());
@@ -310,7 +310,7 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
         png.len() as u64
     );
     let key = RequestId::new().to_string();
-    let error = super::storage_database_file_delete(
+    let error = crate::api::storage_database_file_delete(
         &h.context,
         dto::DatabaseFileDeleteRequest {
             file: "lettuce.sqlite3".into(),
@@ -335,7 +335,7 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
             .permissions();
         std::fs::set_permissions(bucket, std::fs::Permissions::from_mode(0o555))
             .expect("deny removal");
-        let result = super::storage_database_file_delete(&h.context, request.clone()).await;
+        let result = crate::api::storage_database_file_delete(&h.context, request.clone()).await;
         std::fs::set_permissions(bucket, permissions).expect("restore permissions");
         let error = result.expect_err("failed media removal remains visible");
         assert_eq!(error.code, ApiErrorCode::Unavailable);
@@ -343,15 +343,15 @@ async fn database_file_commands_protect_the_active_file_and_collect_the_only_kep
         assert!(!kept.exists());
         assert!(object_path.exists());
     }
-    super::storage_database_file_delete(&h.context, request.clone())
+    crate::api::storage_database_file_delete(&h.context, request.clone())
         .await
         .expect("delete kept file");
     assert!(!kept.exists());
     assert!(!object_path.exists());
-    super::storage_database_file_delete(&h.context, request)
+    crate::api::storage_database_file_delete(&h.context, request)
         .await
         .expect("exact replay");
-    let error = super::storage_database_file_delete(
+    let error = crate::api::storage_database_file_delete(
         &h.context,
         dto::DatabaseFileDeleteRequest {
             file: "lettuce.sqlite3".into(),
@@ -386,7 +386,7 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
         lettuce_database::Database::open(&active).expect("blob database"),
         lettuce_database::Database::open(&active).expect("asset database"),
     ));
-    let png = super::tests::png_bytes();
+    let png = crate::api::tests::png_bytes();
     let object = media
         .ingest(
             png.as_slice(),
@@ -426,7 +426,7 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
     )
     .expect("output");
     h.context.attach_logs(log_directory, output.sink);
-    super::log_append(
+    crate::api::log_append(
         &h.context,
         dto::LogAppendRequest {
             timestamp: "2026-10-09T12:00:00Z".into(),
@@ -438,12 +438,12 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
     )
     .await
     .expect("log");
-    let name = super::logs_list(&h.context).await.expect("logs").files[0].clone();
+    let name = crate::api::logs_list(&h.context).await.expect("logs").files[0].clone();
     let alias = root.join("database-alias");
     std::fs::hard_link(&active, &alias).expect("hardlink");
     let before = std::fs::read(&active).expect("database bytes");
     for target in [&active, &alias, &object_path, &object_alias] {
-        let error = super::log_export(
+        let error = crate::api::log_export(
             &h.context,
             dto::LogExportRequest {
                 name: name.clone(),
@@ -461,7 +461,7 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
     }
     let pointer = root.join("private-persistent-v2/active-database");
     assert!(!pointer.exists());
-    let error = super::log_export(
+    let error = crate::api::log_export(
         &h.context,
         dto::LogExportRequest {
             name,
@@ -474,7 +474,7 @@ async fn log_export_cannot_truncate_the_active_database_or_its_hardlink() {
     .expect_err("reserved pointer target");
     assert_eq!(error.code, ApiErrorCode::Conflict);
     assert!(!pointer.exists());
-    super::settings_get(&h.context)
+    crate::api::settings_get(&h.context)
         .await
         .expect("database remains usable");
     drop(h);
@@ -510,7 +510,9 @@ async fn storage_summary_counts_database_sidecars_and_panic_reports() {
             .expect("output");
     h.context.attach_logs(logs.clone(), output.sink);
     std::fs::write(logs.join("panic-report.txt"), [1_u8; 17]).expect("panic report");
-    let summary = super::storage_summary(&h.context).await.expect("summary");
+    let summary = crate::api::storage_summary(&h.context)
+        .await
+        .expect("summary");
     let mut expected = std::fs::metadata(&active).expect("main").len();
     for suffix in ["-wal", "-shm"] {
         let path = std::path::PathBuf::from(format!("{}{suffix}", active.display()));
@@ -526,7 +528,7 @@ async fn storage_summary_counts_database_sidecars_and_panic_reports() {
     assert!(summary.media.iter().all(|item| item.bytes == 0));
     let _lifecycle = location.try_file_lifecycle().expect("lifecycle");
     assert_eq!(
-        super::storage_summary(&h.context)
+        crate::api::storage_summary(&h.context)
             .await
             .expect_err("cutover busy")
             .code,
@@ -548,7 +550,7 @@ async fn storage_summary_counts_database_sidecars_and_panic_reports() {
         .expect("prepare cutover");
     lifecycle.finish_cutover(&name).expect("activate");
     drop(lifecycle);
-    let after = super::storage_summary(&h.context)
+    let after = crate::api::storage_summary(&h.context)
         .await
         .expect("summary after cutover");
     assert!(after.kept_database_bytes > 0);
@@ -613,7 +615,7 @@ async fn storage_summary_sums_catalog_model_files_without_walking_model_folders(
             .expect("output");
     h.context.attach_logs(logs, output.sink);
     std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o000)).expect("seal");
-    let summary = super::storage_summary(&h.context).await;
+    let summary = crate::api::storage_summary(&h.context).await;
     std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o700)).expect("unseal");
     let summary = summary.expect("a model folder tree never fails the summary");
     assert_eq!(

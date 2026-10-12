@@ -3,18 +3,21 @@ use std::io::Write;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_observability::{LogDirectory, LogEntry, LogFileError, LogSearchOptions, LogSink};
 
-use super::{
+use crate::api::{
     ApiContext,
     error::{IntoApiError, invalid_field},
 };
 
 #[derive(Clone)]
-pub(super) struct LogHost {
+pub(in crate::api) struct LogHost {
     pub directory: LogDirectory,
     pub sink: LogSink,
 }
 
-pub(super) fn unavailable(reason: dto::LogFailureReason, message: impl Into<String>) -> ApiError {
+pub(in crate::api) fn unavailable(
+    reason: dto::LogFailureReason,
+    message: impl Into<String>,
+) -> ApiError {
     ApiError {
         code: ApiErrorCode::Unavailable,
         message: message.into(),
@@ -155,14 +158,14 @@ pub async fn log_export(
             if request.target.uri.trim().is_empty() {
                 return Err(invalid_field("target.uri", "export target is empty"));
             }
-            let protection = super::files::FileExportProtection::new(context)?;
+            let protection = crate::api::files::FileExportProtection::new(context)?;
             let mut output = context
                 .files()
                 .create_export(&request.target.uri, Some(&input), &|uri, target| {
                     protection.protects(uri, target)
                 })
                 .map_err(|error| {
-                    if error == super::FileAccessError::SourceIsTarget {
+                    if error == crate::api::FileAccessError::SourceIsTarget {
                         ApiError {
                             code: ApiErrorCode::Conflict,
                             message: error.to_string(),

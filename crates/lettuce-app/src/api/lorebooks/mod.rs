@@ -1,5 +1,6 @@
 //! Lorebook library commands: reads, authored writes, archive, hard delete,
 //! the trigger preview and token counts.
+
 pub(super) mod jobs;
 #[cfg(test)]
 mod jobs_tests;

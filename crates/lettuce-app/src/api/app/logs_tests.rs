@@ -1,9 +1,9 @@
-use super::tests::{Reply, harness};
+use crate::api::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiEvent};
 
-async fn developer(context: &super::ApiContext, enabled: bool) {
-    let view = super::settings_get(context).await.expect("settings");
-    super::settings_update(
+async fn developer(context: &crate::api::ApiContext, enabled: bool) {
+    let view = crate::api::settings_get(context).await.expect("settings");
+    crate::api::settings_update(
         context,
         dto::SettingsUpdateRequest {
             expected_revision: view.revision,
@@ -22,7 +22,7 @@ async fn developer(context: &super::ApiContext, enabled: bool) {
     .expect("developer mode");
 }
 
-async fn mirrored(events: &super::tests::RecordingEvents, expected: usize) -> usize {
+async fn mirrored(events: &crate::api::tests::RecordingEvents, expected: usize) -> usize {
     let count = || {
         events
             .events()
@@ -43,26 +43,26 @@ async fn developer_log_mirror_follows_saved_developer_mode_after_a_restart() {
         crate::AppBackend::open_in_memory(lettuce_types::TimestampMillis::new(10))
             .expect("backend"),
     );
-    let before = super::tests::harness_over_files(
+    let before = crate::api::tests::harness_over_files(
         backend.clone(),
         Reply::Text("Hello."),
         std::sync::Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
-        std::sync::Arc::new(super::NoModels),
-        std::sync::Arc::new(super::tests::NoImages),
+        std::sync::Arc::new(crate::api::NoModels),
+        std::sync::Arc::new(crate::api::tests::NoImages),
         None,
     );
     developer(&before.context, true).await;
     drop(before);
-    let h = super::tests::harness_over_files(
+    let h = crate::api::tests::harness_over_files(
         backend,
         Reply::Text("Hello."),
         std::sync::Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
-        std::sync::Arc::new(super::NoModels),
-        std::sync::Arc::new(super::tests::NoImages),
+        std::sync::Arc::new(crate::api::NoModels),
+        std::sync::Arc::new(crate::api::tests::NoImages),
         None,
     );
     let path = std::env::temp_dir().join(format!(
@@ -74,7 +74,7 @@ async fn developer_log_mirror_follows_saved_developer_mode_after_a_restart() {
         lettuce_observability::local_output(lettuce_observability::LocalOutputConfig::new(&path))
             .expect("output");
     h.context.attach_logs(path.clone(), output.sink.clone());
-    let workers = super::startup(&h.context).await.expect("startup");
+    let workers = crate::api::startup(&h.context).await.expect("startup");
     output
         .sink
         .append(&lettuce_observability::LogEntry {
@@ -111,7 +111,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
         function: None,
         message: "first line".into(),
     };
-    super::log_append(&h.context, request.clone())
+    crate::api::log_append(&h.context, request.clone())
         .await
         .expect("append in debug build");
     assert!(
@@ -121,16 +121,16 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
             .any(|event| matches!(event, ApiEvent::DeveloperLogLine { .. }))
     );
     developer(&h.context, true).await;
-    super::log_append(&h.context, request.clone())
+    crate::api::log_append(&h.context, request.clone())
         .await
         .expect("append");
     assert_eq!(mirrored(&h.events, 1).await, 1);
     developer(&h.context, false).await;
-    super::log_append(&h.context, request.clone())
+    crate::api::log_append(&h.context, request.clone())
         .await
         .expect("append without mirror");
     developer(&h.context, true).await;
-    super::log_append(
+    crate::api::log_append(
         &h.context,
         dto::LogAppendRequest {
             message: "after re-enabling".into(),
@@ -145,10 +145,10 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
         ApiEvent::DeveloperLogLine { line } if line.contains("after re-enabling")
     )));
     developer(&h.context, false).await;
-    let list = super::logs_list(&h.context).await.expect("list");
+    let list = crate::api::logs_list(&h.context).await.expect("list");
     assert_eq!(list.files.len(), 1);
     let name = list.files[0].clone();
-    let page = super::log_read_page(
+    let page = crate::api::log_read_page(
         &h.context,
         dto::LogReadPageRequest {
             name: name.clone(),
@@ -160,7 +160,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
     .expect("page");
     assert_eq!(page.total, 4);
     assert_eq!(page.lines.len(), 1);
-    let found = super::log_search(
+    let found = crate::api::log_search(
         &h.context,
         dto::LogSearchRequest {
             name: name.clone(),
@@ -173,7 +173,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
     .await
     .expect("search");
     assert_eq!(found.matches, vec![0, 1, 2]);
-    let bad = super::log_search(
+    let bad = crate::api::log_search(
         &h.context,
         dto::LogSearchRequest {
             name: name.clone(),
@@ -187,7 +187,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
     .expect_err("invalid regex");
     assert_eq!(bad.code, ApiErrorCode::InvalidInput);
     assert_eq!(
-        super::log_read_page(
+        crate::api::log_read_page(
             &h.context,
             dto::LogReadPageRequest {
                 name: "../private".into(),
@@ -201,7 +201,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
         ApiErrorCode::NotFound
     );
     let original = path.join(&name);
-    let same_target = super::log_export(
+    let same_target = crate::api::log_export(
         &h.context,
         dto::LogExportRequest {
             name: name.clone(),
@@ -223,7 +223,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
         4
     );
     let export = path.join("export.txt");
-    super::log_export(
+    crate::api::log_export(
         &h.context,
         dto::LogExportRequest {
             name: name.clone(),
@@ -241,17 +241,17 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
             .count(),
         4
     );
-    super::log_delete(&h.context, dto::LogNameRequest { name })
+    crate::api::log_delete(&h.context, dto::LogNameRequest { name })
         .await
         .expect("delete");
     assert!(
-        super::logs_list(&h.context)
+        crate::api::logs_list(&h.context)
             .await
             .expect("list")
             .files
             .is_empty()
     );
-    super::logs_clear(&h.context).await.expect("clear");
+    crate::api::logs_clear(&h.context).await.expect("clear");
     drop(output);
     std::fs::remove_dir_all(path).expect("cleanup");
 }
@@ -260,7 +260,7 @@ async fn log_commands_write_page_search_export_and_delete_with_a_gated_mirror() 
 async fn missing_log_host_is_typed() {
     let h = harness(Reply::Text("Hello."));
     assert_eq!(
-        super::logs_list(&h.context)
+        crate::api::logs_list(&h.context)
             .await
             .expect_err("host absent")
             .code,

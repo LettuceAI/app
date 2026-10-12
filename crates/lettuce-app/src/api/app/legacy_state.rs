@@ -3,7 +3,7 @@ use std::path::Path;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_transfer::LegacyDatabasePreflightError;
 
-use super::{ApiContext, error::api_error};
+use crate::api::{ApiContext, error::api_error};
 
 pub async fn legacy_state(context: &ApiContext) -> Result<dto::LegacyState, ApiError> {
     context.blocking(detect).await

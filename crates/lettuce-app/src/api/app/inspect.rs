@@ -13,10 +13,10 @@ use lettuce_conversations::{
 };
 use lettuce_types::{ConversationId, ConversationParticipantId, MessageId, PageLimit, PageRequest};
 
-use super::ApiContext;
-use super::conversations::messages::{active_branch, on_timeline};
-use super::error::{IntoApiError, api_error, invalid_field, parse_id};
-use super::mapping;
+use crate::api::ApiContext;
+use crate::api::conversations::messages::{active_branch, on_timeline};
+use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
+use crate::api::mapping;
 
 fn conversation_of(
     context: &ApiContext,
@@ -259,7 +259,7 @@ pub async fn conversation_speaker_selection_preview(
             let runner = backend.prepared_conversation_generation_runner(
                 embedding.as_ref(),
                 context.inference(),
-                &super::worker::UnstoredReplyMedia,
+                &crate::api::worker::UnstoredReplyMedia,
             );
             let prompt = runner
                 .speaker_selection_preview(

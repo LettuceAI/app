@@ -368,7 +368,7 @@ pub async fn provider_account_delete(
                 .map_err(|failure: Failure| failure.0)
         })
         .await?;
-    crate::api::content_filter::publish_pending(context).await;
+    crate::api::app::content_filter::publish_pending(context).await;
     cleanup_secrets(context, false).await?;
     Ok(())
 }
@@ -488,7 +488,7 @@ pub async fn certificates_import(
             Ok(view)
         })
         .await?;
-    crate::api::content_filter::publish_pending(context).await;
+    crate::api::app::content_filter::publish_pending(context).await;
     Ok(result)
 }
 pub async fn certificates_remove(
@@ -508,6 +508,6 @@ pub async fn certificates_remove(
             Ok(super::certificate_view(certificates, revision))
         })
         .await?;
-    crate::api::content_filter::publish_pending(context).await;
+    crate::api::app::content_filter::publish_pending(context).await;
     Ok(view)
 }

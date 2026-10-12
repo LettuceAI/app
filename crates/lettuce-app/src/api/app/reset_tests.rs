@@ -6,13 +6,13 @@ use lettuce_jobs::{JobStore, SystemClock};
 use lettuce_platform::{DirectorySnapshot, FilesystemAuthority};
 use lettuce_types::{OperationId, RequestId, TimestampMillis};
 
-use super::app_reset::{AppResetHandler, AppResetHost};
-use super::tests::{NoImages, Reply, harness_over_files};
-use super::{ApiContext, ApiDatabaseFiles, NoModels};
+use super::reset::{AppResetHandler, AppResetHost};
+use crate::api::tests::{NoImages, Reply, harness_over_files};
+use crate::api::{ApiContext, ApiDatabaseFiles, NoModels};
 use crate::{AppBackend, AppDatabaseLocation};
 
 #[derive(Default)]
-pub(super) struct Host {
+pub(in crate::api) struct Host {
     calls: Mutex<Vec<&'static str>>,
     fail_clear: bool,
     fail_restart: bool,
@@ -36,7 +36,7 @@ impl AppResetHost for Host {
             release.notified().await;
         }
         if self.fail_clear {
-            return Err(super::app_reset::reset_error(
+            return Err(super::reset::reset_error(
                 dto::AppDataResetStage::WebviewStorage,
                 None,
             ));
@@ -46,7 +46,7 @@ impl AppResetHost for Host {
     async fn prepare_restart(&self) -> Result<(), ApiError> {
         self.calls.lock().expect("calls").push("restart");
         if self.fail_restart {
-            return Err(super::app_reset::reset_error(
+            return Err(super::reset::reset_error(
                 dto::AppDataResetStage::Restart,
                 None,
             ));
@@ -60,21 +60,21 @@ impl AppResetHost for Host {
 
 struct Progress;
 
-impl super::jobs::JobProgressSink for Progress {
+impl crate::api::jobs::JobProgressSink for Progress {
     fn text_delta(&self, _text: Option<String>, _reasoning: Option<String>) {}
     fn image_progress(&self, _progress: dto::ImageProgress) {}
 }
 
 #[tokio::test]
 async fn reset_resumes_webview_clear_and_restart_after_shutdown_after_cutover() {
-    use super::jobs::{JobHandler, JobProgressSink};
+    use crate::api::jobs::{JobHandler, JobProgressSink};
     let (root, location, h) = harness();
     let host = Arc::new(Host {
         hold_clear: Some(Arc::new(tokio::sync::Notify::new())),
         ..Host::default()
     });
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -104,17 +104,17 @@ async fn reset_resumes_webview_clear_and_restart_after_shutdown_after_cutover() 
     let active = location.active_path().expect("fresh active");
     let backend =
         Arc::new(AppBackend::open(&active, TimestampMillis::new(20)).expect("fresh backend"));
-    let fresh = ApiContext::new(super::ApiContextParts {
+    let fresh = ApiContext::new(crate::api::ApiContextParts {
         backend,
         secret_store: h.context.secret_store().clone(),
         inference: h.provider.clone(),
         image_provider: Arc::new(NoImages),
         models: Arc::new(NoModels),
-        speech: Arc::new(super::NoSpeech),
+        speech: Arc::new(crate::api::NoSpeech),
         media: None,
         events: h.events.clone(),
         clock: Arc::new(SystemClock),
-        files: Arc::new(super::tests::StdFiles),
+        files: Arc::new(crate::api::tests::StdFiles),
         app_folder: Some(root.clone()),
         resource_dir: None,
         database_files: Some(ApiDatabaseFiles { location, active }),
@@ -130,7 +130,7 @@ async fn reset_resumes_webview_clear_and_restart_after_shutdown_after_cutover() 
         resumed_host.calls.lock().expect("calls").as_slice(),
         &["stop", "clear", "restart", "exit"]
     );
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &fresh,
         dto::JobGetRequest {
             job_id: accepted.job_id,
@@ -143,10 +143,10 @@ async fn reset_resumes_webview_clear_and_restart_after_shutdown_after_cutover() 
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-pub(super) fn harness() -> (
+pub(in crate::api) fn harness() -> (
     std::path::PathBuf,
     AppDatabaseLocation,
-    super::tests::Harness,
+    crate::api::tests::Harness,
 ) {
     let root = std::env::temp_dir().join(format!("lettuce-api-reset-{}", OperationId::new()));
     let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
@@ -155,7 +155,7 @@ pub(super) fn harness() -> (
         AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority).expect("location");
     let active = location.active_path().expect("active");
     let backend = Arc::new(AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
-    let media = Arc::new(super::ApiMediaStore::new(
+    let media = Arc::new(crate::api::ApiMediaStore::new(
         authority.managed_files(),
         authority
             .read_capability(lettuce_platform::ManagedRoot::MediaBlobs)
@@ -183,9 +183,9 @@ pub(super) fn harness() -> (
 }
 
 async fn run(context: &ApiContext) {
-    let runner = super::jobs::JobRunner::new(
+    let runner = crate::api::jobs::JobRunner::new(
         context.clone(),
-        super::jobs::JobHandlers::new(vec![Arc::new(AppResetHandler)]),
+        crate::api::jobs::JobHandlers::new(vec![Arc::new(AppResetHandler)]),
     );
     assert!(runner.run_once().await.expect("run reset"));
     runner.wait_idle().await;
@@ -196,7 +196,7 @@ async fn reset_missing_shell_fails_typed_before_admission_or_file_changes() {
     let (root, location, h) = harness();
     let before = location.active_path().expect("active");
     let bytes = std::fs::read(&before).expect("source bytes");
-    let error = super::app_data_reset(
+    let error = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -229,7 +229,7 @@ async fn reset_is_a_durable_job_keeps_the_source_and_replays_in_the_fresh_databa
         .media()
         .expect("media")
         .ingest(
-            super::tests::png_bytes().as_slice(),
+            crate::api::tests::png_bytes().as_slice(),
             lettuce_media::IngestRequest::new(
                 lettuce_media::AssetKind::OtherImage,
                 lettuce_media::AssetOrigin::Upload,
@@ -244,17 +244,17 @@ async fn reset_is_a_durable_job_keeps_the_source_and_replays_in_the_fresh_databa
     let request = dto::AppDataResetRequest {
         client_operation_id: RequestId::new().to_string(),
     };
-    let accepted = super::app_data_reset(&h.context, request.clone())
+    let accepted = crate::api::app_data_reset(&h.context, request.clone())
         .await
         .expect("admit");
     assert_eq!(
-        super::app_data_reset(&h.context, request.clone())
+        crate::api::app_data_reset(&h.context, request.clone())
             .await
             .expect("queued replay"),
         accepted
     );
     run(&h.context).await;
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: accepted.job_id.clone(),
@@ -286,7 +286,7 @@ async fn reset_is_a_durable_job_keeps_the_source_and_replays_in_the_fresh_databa
         &["stop", "clear", "restart", "exit"]
     );
     assert_eq!(
-        super::app_data_reset(&h.context, request)
+        crate::api::app_data_reset(&h.context, request)
             .await
             .expect("fresh replay"),
         accepted
@@ -304,7 +304,7 @@ async fn reset_webview_failure_keeps_the_cutover_reports_a_terminal_failure_and_
         ..Host::default()
     });
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -313,7 +313,7 @@ async fn reset_webview_failure_keeps_the_cutover_reports_a_terminal_failure_and_
     .await
     .expect("admit");
     run(&h.context).await;
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: accepted.job_id,
@@ -342,7 +342,7 @@ async fn reset_cancelled_before_claim_preserves_the_active_database() {
     let old = location.active_path().expect("old active");
     let host = Arc::new(Host::default());
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -350,7 +350,7 @@ async fn reset_cancelled_before_claim_preserves_the_active_database() {
     )
     .await
     .expect("admit");
-    super::job_cancel(
+    crate::api::job_cancel(
         &h.context,
         dto::JobCancelRequest {
             job_id: accepted.job_id.clone(),
@@ -377,12 +377,12 @@ async fn reset_cancelled_before_claim_preserves_the_active_database() {
 
 #[tokio::test]
 async fn reset_claimed_by_another_worker_does_not_start_or_change_files() {
-    use super::jobs::JobHandler;
+    use crate::api::jobs::JobHandler;
     let (root, location, h) = harness();
     let old = location.active_path().expect("active");
     let host = Arc::new(Host::default());
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -418,7 +418,7 @@ async fn reset_claimed_by_another_worker_does_not_start_or_change_files() {
 
 #[tokio::test]
 async fn reset_rejects_cancel_after_cutover_and_reports_restart_failure() {
-    use super::jobs::{JobHandler, JobProgressSink};
+    use crate::api::jobs::{JobHandler, JobProgressSink};
     let (root, location, h) = harness();
     let release = Arc::new(tokio::sync::Notify::new());
     let host = Arc::new(Host {
@@ -427,7 +427,7 @@ async fn reset_rejects_cancel_after_cutover_and_reports_restart_failure() {
         ..Host::default()
     });
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -453,7 +453,7 @@ async fn reset_rejects_cancel_after_cutover_and_reports_restart_failure() {
     let task = tokio::spawn(async move { work.run(context, progress).await });
     host.entered_clear.notified().await;
     assert_eq!(
-        super::job_cancel(
+        crate::api::job_cancel(
             &h.context,
             dto::JobCancelRequest {
                 job_id: accepted.job_id.clone()
@@ -466,7 +466,7 @@ async fn reset_rejects_cancel_after_cutover_and_reports_restart_failure() {
     );
     release.notify_one();
     task.await.expect("task").expect("settled");
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: accepted.job_id,
@@ -496,7 +496,7 @@ async fn reset_failing_after_workers_stopped_restarts_on_the_preserved_database(
     let leaked = lettuce_database::Database::open(&old).expect("a handle reset cannot close");
     let host = Arc::new(Host::default());
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -505,7 +505,7 @@ async fn reset_failing_after_workers_stopped_restarts_on_the_preserved_database(
     .await
     .expect("admit");
     run(&h.context).await;
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: accepted.job_id,
@@ -548,7 +548,7 @@ async fn reset_retried_after_a_crash_that_left_its_target_file_starts_a_new_file
     }
     let host = Arc::new(Host::default());
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: request.to_string(),
@@ -557,7 +557,7 @@ async fn reset_retried_after_a_crash_that_left_its_target_file_starts_a_new_file
     .await
     .expect("admit");
     run(&h.context).await;
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: accepted.job_id,
@@ -576,7 +576,7 @@ async fn a_reset_job_restored_into_another_database_file_never_runs() {
     let (root, location, h) = harness();
     let host = Arc::new(Host::default());
     h.context.attach_reset_host(host.clone()).expect("host");
-    let accepted = super::app_data_reset(
+    let accepted = crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -621,7 +621,7 @@ async fn a_reset_job_restored_into_another_database_file_never_runs() {
         .attach_reset_host(host.clone())
         .expect("host");
     run(&restored.context).await;
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &restored.context,
         dto::JobGetRequest {
             job_id: accepted.job_id,
@@ -654,7 +654,7 @@ fn fence(location: &AppDatabaseLocation) {
 async fn api_writes_after_the_cutover_fence_fail_typed() {
     let (root, location, h) = harness();
     fence(&location);
-    let error = super::conversation_launch_direct(
+    let error = crate::api::conversation_launch_direct(
         &h.context,
         dto::LaunchDirectRequest {
             character_id: h.character_id.to_string(),
@@ -678,11 +678,11 @@ async fn api_writes_after_the_cutover_fence_fail_typed() {
 #[tokio::test]
 async fn a_generation_whose_settlement_hits_the_fence_ends_its_stream_typed() {
     let (root, location, h) = harness();
-    let conversation = super::tests::launch(&h, "fenced-generation-launch").await;
+    let conversation = crate::api::tests::launch(&h, "fenced-generation-launch").await;
     let release = Arc::new(tokio::sync::Notify::new());
     *h.provider.response_release.lock().expect("release") = Some(release.clone());
-    let stream = Arc::new(super::tests::RecordingStream::default());
-    let accepted = super::tests::send(
+    let stream = Arc::new(crate::api::tests::RecordingStream::default());
+    let accepted = crate::api::tests::send(
         &h,
         &conversation,
         "fenced-generation-send",
@@ -691,7 +691,7 @@ async fn a_generation_whose_settlement_hits_the_fence_ends_its_stream_typed() {
     )
     .await
     .expect("send");
-    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let worker = crate::api::ConversationGenerationWorker::new(h.context.clone());
     let generation = tokio::spawn(async move { worker.run_once().await });
     h.provider.entered.notified().await;
     fence(&location);
@@ -719,11 +719,11 @@ async fn a_generation_whose_settlement_hits_the_fence_ends_its_stream_typed() {
 async fn a_reset_requested_during_a_generation_waits_and_keeps_its_reply() {
     let (root, location, h) = harness();
     let old = location.active_path().expect("active");
-    let conversation = super::tests::launch(&h, "reset-generation-launch").await;
+    let conversation = crate::api::tests::launch(&h, "reset-generation-launch").await;
     let release = Arc::new(tokio::sync::Notify::new());
     *h.provider.response_release.lock().expect("release") = Some(release.clone());
-    let stream = Arc::new(super::tests::RecordingStream::default());
-    super::tests::send(
+    let stream = Arc::new(crate::api::tests::RecordingStream::default());
+    crate::api::tests::send(
         &h,
         &conversation,
         "reset-generation-send",
@@ -732,12 +732,12 @@ async fn a_reset_requested_during_a_generation_waits_and_keeps_its_reply() {
     )
     .await
     .expect("send");
-    let worker = super::ConversationGenerationWorker::new(h.context.clone());
+    let worker = crate::api::ConversationGenerationWorker::new(h.context.clone());
     let generation = tokio::spawn(async move { worker.run_once().await });
     h.provider.entered.notified().await;
     let host = Arc::new(Host::default());
     h.context.attach_reset_host(host.clone()).expect("host");
-    super::app_data_reset(
+    crate::api::app_data_reset(
         &h.context,
         dto::AppDataResetRequest {
             client_operation_id: RequestId::new().to_string(),

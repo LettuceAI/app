@@ -5,21 +5,21 @@ use lettuce_jobs::SystemClock;
 use lettuce_transfer::LegacyDatabasePreflightError;
 use lettuce_types::OperationId;
 
-use super::tests::{Reply, harness_in};
+use crate::api::tests::{Reply, harness_in};
 
 #[tokio::test]
 async fn bin_storage_reports_upgrade_without_reading_it() {
     let root = std::env::temp_dir().join(format!("lettuce-legacy-state-{}", OperationId::new()));
     std::fs::create_dir_all(root.join("lettuce")).expect("folder");
     std::fs::write(root.join("lettuce/settings.bin"), b"old storage").expect("bin");
-    let harness = harness_in(Reply::Text("Hello"), Arc::new(SystemClock), None, Some(root.clone()), Arc::new(super::NoModels));
-    let workers = super::startup(&harness.context).await.expect("startup");
+    let harness = harness_in(Reply::Text("Hello"), Arc::new(SystemClock), None, Some(root.clone()), Arc::new(crate::api::NoModels));
+    let workers = crate::api::startup(&harness.context).await.expect("startup");
     workers.started().await;
-    assert_eq!(super::app_status(&harness.context).await.expect("status").legacy_state, dto::LegacyState::RequiresLegacyUpgrade { reason: dto::LegacyUpgradeReason::BinStorage, required_app_version: "2.2.5".into() });
-    assert_eq!(super::legacy_state(&harness.context).await.expect("state"), dto::LegacyState::RequiresLegacyUpgrade { reason: dto::LegacyUpgradeReason::BinStorage, required_app_version: "2.2.5".into() });
+    assert_eq!(crate::api::app_status(&harness.context).await.expect("status").legacy_state, dto::LegacyState::RequiresLegacyUpgrade { reason: dto::LegacyUpgradeReason::BinStorage, required_app_version: "2.2.5".into() });
+    assert_eq!(crate::api::legacy_state(&harness.context).await.expect("state"), dto::LegacyState::RequiresLegacyUpgrade { reason: dto::LegacyUpgradeReason::BinStorage, required_app_version: "2.2.5".into() });
     assert_eq!(std::fs::read(root.join("lettuce/settings.bin")).expect("retained"), b"old storage");
     std::fs::remove_file(root.join("lettuce/settings.bin")).expect("remove bin");
-    assert_eq!(super::legacy_state(&harness.context).await.expect("absent"), dto::LegacyState::Absent);
+    assert_eq!(crate::api::legacy_state(&harness.context).await.expect("absent"), dto::LegacyState::Absent);
     workers.stop().await;
     std::fs::remove_dir_all(root).expect("remove folder");
 }
@@ -42,7 +42,7 @@ async fn fix11a_truncated_legacy_database_does_not_block_startup_or_status() {
 
 #[tokio::test]
 async fn fix11a_newer_legacy_database_does_not_block_startup_or_status() {
-    invalid_legacy_startup(include_bytes!("../../../lettuce-database/tests/fixtures/legacy-schema-97.db"), "unsupported", false).await;
+    invalid_legacy_startup(include_bytes!("../../../../lettuce-database/tests/fixtures/legacy-schema-97.db"), "unsupported", false).await;
 }
 
 #[cfg(unix)]
@@ -52,7 +52,7 @@ async fn fix11a_unreadable_legacy_database_does_not_block_startup_or_status() {
 }
 
 async fn invalid_legacy_startup(bytes: &[u8], code: &str, unreadable: bool) {
-    let (root, _location, harness) = super::app_reset_tests::harness();
+    let (root, _location, harness) = super::reset_tests::harness();
     let legacy = root.join("lettuce/app.db");
     std::fs::create_dir_all(legacy.parent().expect("parent")).expect("legacy folder");
     std::fs::write(&legacy, bytes).expect("legacy database");
@@ -61,7 +61,7 @@ async fn invalid_legacy_startup(bytes: &[u8], code: &str, unreadable: bool) {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o0)).expect("unreadable");
     }
-    let result = super::startup(&harness.context).await;
+    let result = crate::api::startup(&harness.context).await;
     #[cfg(unix)]
     if unreadable && result.is_err() {
         use std::os::unix::fs::PermissionsExt;
@@ -69,8 +69,8 @@ async fn invalid_legacy_startup(bytes: &[u8], code: &str, unreadable: bool) {
     }
     let workers = result.expect("legacy detection cannot prevent startup");
     workers.started_result().await.expect("workers ready");
-    let status = super::app_status(&harness.context).await.expect("status remains available");
-    let state = super::legacy_state(&harness.context).await.expect("typed state");
+    let status = crate::api::app_status(&harness.context).await.expect("status remains available");
+    let state = crate::api::legacy_state(&harness.context).await.expect("typed state");
     assert_eq!(status.legacy_state, state);
     let state = serde_json::to_value(state).expect("state JSON");
     assert_eq!(state["type"], "failed");

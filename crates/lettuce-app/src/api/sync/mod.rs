@@ -1,6 +1,6 @@
+pub(super) mod conflicts;
 #[cfg(test)]
 mod tests;
-pub(super) mod conflicts;
 
 use std::{
     net::{Ipv4Addr, SocketAddr},

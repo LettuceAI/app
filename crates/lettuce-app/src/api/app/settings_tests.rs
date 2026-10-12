@@ -1,5 +1,5 @@
-use super::tests::{Reply, harness};
-use super::{settings_get, settings_update};
+use crate::api::tests::{Reply, harness};
+use crate::api::{settings_get, settings_update};
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiEvent};
 
 #[tokio::test]
@@ -64,14 +64,14 @@ async fn settings_update_cas_invalid_and_single_section_event() {
 async fn filter_commands_are_gated_and_hits_are_coalesced() {
     let h = harness(Reply::Text("Hello."));
     assert_eq!(
-        super::content_filter_log(&h.context)
+        crate::api::content_filter_log(&h.context)
             .await
             .expect_err("disabled")
             .code,
         ApiErrorCode::Unsupported
     );
     assert_eq!(
-        super::content_filter_clear(&h.context)
+        crate::api::content_filter_clear(&h.context)
             .await
             .expect_err("disabled")
             .code,
@@ -106,7 +106,7 @@ async fn filter_commands_are_gated_and_hits_are_coalesced() {
             .check_text("decapitate and disembowel", index);
     }
     assert_eq!(
-        super::content_filter_log(&h.context)
+        crate::api::content_filter_log(&h.context)
             .await
             .expect("log")
             .entries
@@ -131,11 +131,11 @@ async fn filter_commands_are_gated_and_hits_are_coalesced() {
             .count(),
         1
     );
-    super::content_filter_clear(&h.context)
+    crate::api::content_filter_clear(&h.context)
         .await
         .expect("clear");
     assert!(
-        super::content_filter_log(&h.context)
+        crate::api::content_filter_log(&h.context)
             .await
             .expect("log")
             .entries
@@ -160,7 +160,7 @@ async fn filter_commands_are_gated_and_hits_are_coalesced() {
     .await
     .expect("disable debug");
     assert_eq!(
-        super::content_filter_log(&h.context)
+        crate::api::content_filter_log(&h.context)
             .await
             .expect_err("disabled")
             .code,
@@ -353,7 +353,7 @@ async fn settings_concurrent_cas_and_sampler_share_one_revision() {
         ApiErrorCode::Conflict
     );
     assert_eq!(
-        super::settings_sampler_defaults_update(
+        crate::api::settings_sampler_defaults_update(
             &h.context,
             dto::SettingsSamplerDefaultsUpdateRequest {
                 value: before.sampler_defaults.clone(),
@@ -369,7 +369,7 @@ async fn settings_concurrent_cas_and_sampler_share_one_revision() {
     let mut invalid = current.sampler_defaults;
     invalid.chat_parameters.temperature = Some(f64::NAN);
     assert_eq!(
-        super::settings_sampler_defaults_update(
+        crate::api::settings_sampler_defaults_update(
             &h.context,
             dto::SettingsSamplerDefaultsUpdateRequest {
                 value: invalid,
@@ -399,7 +399,7 @@ async fn settings_sampler_wire_validation_and_commit_event() {
         )
         .expect("IPC");
     assert_eq!(
-        super::settings_sampler_defaults_update(&h.context, request)
+        crate::api::settings_sampler_defaults_update(&h.context, request)
             .await
             .expect_err("unknown")
             .code,
@@ -412,7 +412,7 @@ async fn settings_sampler_wire_validation_and_commit_event() {
         value,
         expected_revision: before.revision,
     };
-    let after = super::settings_sampler_defaults_update(&h.context, request.clone())
+    let after = crate::api::settings_sampler_defaults_update(&h.context, request.clone())
         .await
         .expect("save");
     assert_eq!(
@@ -420,7 +420,7 @@ async fn settings_sampler_wire_validation_and_commit_event() {
         Some(3000)
     );
     assert_eq!(
-        super::settings_sampler_defaults_update(&h.context, request)
+        crate::api::settings_sampler_defaults_update(&h.context, request)
             .await
             .expect_err("retry")
             .code,
@@ -695,30 +695,30 @@ fn committed_result_survives_filter_refresh_failure() {
 struct InstalledEmbedding;
 
 #[async_trait::async_trait]
-impl super::ModelLoader for InstalledEmbedding {
-    fn installed(&self, _: &super::ApiContext, model: dto::RequiredModel) -> bool {
+impl crate::api::ModelLoader for InstalledEmbedding {
+    fn installed(&self, _: &crate::api::ApiContext, model: dto::RequiredModel) -> bool {
         model == dto::RequiredModel::Embedding
     }
-    async fn prepare(&self, _: &super::ApiContext) -> bool {
+    async fn prepare(&self, _: &crate::api::ApiContext) -> bool {
         panic!("enable must not load models")
     }
     fn embedding(
         &self,
-        _: &super::ApiContext,
-    ) -> super::ModelLoad<std::sync::Arc<dyn crate::MemoryEmbeddingEngine>> {
+        _: &crate::api::ApiContext,
+    ) -> crate::api::ModelLoad<std::sync::Arc<dyn crate::MemoryEmbeddingEngine>> {
         panic!("enable must not load models")
     }
     fn emotion(
         &self,
-        _: &super::ApiContext,
-    ) -> super::ModelLoad<std::sync::Arc<dyn crate::CompanionEmotionEngine>> {
+        _: &crate::api::ApiContext,
+    ) -> crate::api::ModelLoad<std::sync::Arc<dyn crate::CompanionEmotionEngine>> {
         panic!("enable must not load models")
     }
 }
 
 #[tokio::test]
 async fn memory_enable_seeds_the_default_once_and_group_enable_succeeds() {
-    let h = super::tests::harness_in(
+    let h = crate::api::tests::harness_in(
         Reply::Text("Hello."),
         std::sync::Arc::new(lettuce_jobs::SystemClock),
         None,

@@ -5,10 +5,8 @@
 
 mod app;
 mod library;
-mod content_filter;
-mod settings;
-pub use content_filter::{content_filter_clear, content_filter_log};
-pub use settings::{settings_get, settings_sampler_defaults_update, settings_update};
+pub use app::content_filter::{content_filter_clear, content_filter_log};
+pub use app::settings::{settings_get, settings_sampler_defaults_update, settings_update};
 pub use library::delete::{character_delete, group_delete, persona_delete};
 pub(crate) mod companion;
 mod context;
@@ -17,27 +15,17 @@ mod error;
 pub(crate) mod events;
 mod files;
 mod image;
-mod inspect;
 mod jobs;
 mod lorebooks;
-mod maintenance;
-mod maintenance_jobs;
 mod mapping;
-pub use maintenance_jobs::storage_optimize;
-#[cfg(test)]
-mod maintenance_tests;
+pub use app::maintenance_jobs::storage_optimize;
 mod memory;
-pub(super) mod models;
-#[cfg(test)]
-mod settings_tests;
+pub(crate) mod models;
 mod speech;
-mod startup;
 mod worker;
 
 #[cfg(test)]
 mod foundation_tests;
-#[cfg(test)]
-mod inspect_tests;
 #[cfg(test)]
 mod tests;
 
@@ -90,7 +78,7 @@ pub use image::{
     sd_runtime_releases, sd_runtime_switch, sd_upscalers_install, sd_upscalers_list,
     sd_upscalers_remove,
 };
-pub use inspect::{
+pub use app::inspect::{
     conversation_participation_stats, conversation_speaker_selection_preview,
     message_companion_effect, message_prompt_snapshot,
 };
@@ -155,7 +143,7 @@ pub use speech::{
     whisper_clear_cache, whisper_delete, whisper_dictation_model_set, whisper_download,
     whisper_models_list, whisper_preload,
 };
-pub use startup::{ApiWorkers, StartupStep, startup};
+pub use app::startup::{ApiWorkers, StartupStep, startup};
 pub use conversations::turns::{
     conversation_add_user_message, conversation_continue, conversation_regenerate,
     conversation_retry,
@@ -206,42 +194,27 @@ pub use models::profiles::{
 
 pub use models::nanogpt::provider_nanogpt_usage;
 
-#[cfg(test)]
-mod logs_tests;
 
-mod diagnostics;
-mod logs;
-pub use diagnostics::logs_diagnostics_report;
-pub use logs::{
+pub use app::diagnostics::logs_diagnostics_report;
+pub use app::logs::{
     log_append, log_delete, log_export, log_read_page, log_relevant_lines, log_search, logs_clear,
     logs_list,
 };
 
-#[cfg(test)]
-mod app_usage_tests;
 
-#[cfg(test)]
-mod metrics_tests;
 
-mod metrics;
-pub use metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list};
+pub use app::metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list};
 
 mod usage;
 pub use usage::billing::usage_recalculate_costs;
 pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
 
-mod app_reset;
-mod storage;
-pub use app_reset::{AppResetHost, app_data_reset};
-#[cfg(test)]
-mod app_reset_tests;
-pub use storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
+pub use app::reset::{AppResetHost, app_data_reset};
+pub use app::storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
 
 pub use library::media_library::{media_library_list, media_library_remove, media_save_to};
 
 
-#[cfg(test)]
-mod storage_tests;
 
 pub use library::bindings::{character_lorebooks_list, character_lorebooks_bind, character_lorebooks_unbind, character_lorebooks_enable, character_lorebooks_reorder, persona_lorebooks_list, persona_lorebooks_bind, persona_lorebooks_unbind, persona_lorebooks_enable, persona_lorebooks_reorder, group_lorebooks_list, group_lorebooks_bind, group_lorebooks_unbind, group_lorebooks_enable, group_lorebooks_reorder};
 
@@ -265,11 +238,8 @@ pub use library::groups::{group_get, group_save, groups_list};
 
 pub use library::media::{character_media_set, persona_media_set};
 
-#[cfg(test)]
-mod legacy_state_tests;
 
-mod legacy_state;
-pub use legacy_state::legacy_state;
+pub use app::legacy_state::legacy_state;
 
 #[cfg(test)]
 mod context_slot_tests;

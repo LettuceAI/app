@@ -1,4 +1,4 @@
-use super::tests::{Reply, harness_in};
+use crate::api::tests::{Reply, harness_in};
 use lettuce_types::TimestampMillis;
 use std::sync::{
     Arc,
@@ -21,7 +21,7 @@ async fn usage_flush_emits_an_event_after_persistence() {
         clock.clone(),
         None,
         None,
-        Arc::new(super::NoModels),
+        Arc::new(crate::api::NoModels),
     );
     clock.0.store(4000, Ordering::SeqCst);
     h.context.flush_app_usage();
@@ -44,10 +44,10 @@ async fn usage_read_includes_the_current_stretch_without_a_write() {
         clock.clone(),
         None,
         None,
-        Arc::new(super::NoModels),
+        Arc::new(crate::api::NoModels),
     );
     clock.0.store(4000, Ordering::SeqCst);
-    let read = super::app_usage_days(&h.context).await.expect("read");
+    let read = crate::api::app_usage_days(&h.context).await.expect("read");
     assert_eq!(read.days.iter().map(|day| day.active_ms).sum::<u64>(), 3000);
     assert!(
         lettuce_usage::AppUsageRepository::app_usage_days(h.context.backend().database())
@@ -55,12 +55,14 @@ async fn usage_read_includes_the_current_stretch_without_a_write() {
             .is_empty()
     );
     assert_eq!(
-        super::app_usage_days(&h.context).await.expect("repeat"),
+        crate::api::app_usage_days(&h.context)
+            .await
+            .expect("repeat"),
         read
     );
     h.context.flush_app_usage();
     assert_eq!(
-        super::app_usage_days(&h.context)
+        crate::api::app_usage_days(&h.context)
             .await
             .expect("after flush"),
         read

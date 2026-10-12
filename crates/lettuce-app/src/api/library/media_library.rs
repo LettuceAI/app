@@ -131,19 +131,19 @@ pub(super) async fn media_library_remove_with_checkpoint(
                 .media()
                 .ok_or_else(|| host_unavailable(Some(request.asset_id.clone())))?;
             let files = context.database_files().ok_or_else(|| {
-                crate::api::storage::file_error(crate::AppDatabaseLocationError::Storage, None)
+                crate::api::app::storage::file_error(crate::AppDatabaseLocationError::Storage, None)
             })?;
             let lifecycle = files
                 .location
                 .try_file_lifecycle()
-                .map_err(|error| crate::api::storage::file_error(error, None))?;
+                .map_err(|error| crate::api::app::storage::file_error(error, None))?;
             if files
                 .location
                 .active_path()
-                .map_err(|error| crate::api::storage::file_error(error, None))?
+                .map_err(|error| crate::api::app::storage::file_error(error, None))?
                 != files.active
             {
-                return Err(crate::api::storage::file_error(
+                return Err(crate::api::app::storage::file_error(
                     crate::AppDatabaseLocationError::Conflict,
                     None,
                 ));
@@ -161,7 +161,7 @@ pub(super) async fn media_library_remove_with_checkpoint(
             })?;
             let kept = lifecycle
                 .kept_media_hashes()
-                .map_err(|error| crate::api::storage::file_error(error, None))?;
+                .map_err(|error| crate::api::app::storage::file_error(error, None))?;
             let digest = blake3::hash(request.asset_id.as_bytes())
                 .to_hex()
                 .to_string();
@@ -219,7 +219,7 @@ pub(super) async fn media_library_remove_with_checkpoint(
                         media_error(Some(request.asset_id.clone()), error)
                     }
                     crate::HardDeleteError::DatabaseFiles(error) => {
-                        crate::api::storage::file_error(error, None)
+                        crate::api::app::storage::file_error(error, None)
                     }
                     crate::HardDeleteError::Purge(_) => {
                         library_error(request.asset_id.clone(), MediaLibraryError::Storage)

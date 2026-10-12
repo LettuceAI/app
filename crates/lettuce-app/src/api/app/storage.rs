@@ -1,13 +1,16 @@
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_types::RequestId;
 
-use super::{
+use crate::AppDatabaseLocationError;
+use crate::api::{
     ApiContext,
     error::{invalid_field, parse_id},
 };
-use crate::AppDatabaseLocationError;
 
-pub(super) fn file_error(error: AppDatabaseLocationError, file: Option<String>) -> ApiError {
+pub(in crate::api) fn file_error(
+    error: AppDatabaseLocationError,
+    file: Option<String>,
+) -> ApiError {
     ApiError {
         code: match error {
             AppDatabaseLocationError::Busy => ApiErrorCode::Busy,

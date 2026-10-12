@@ -2077,7 +2077,7 @@ async fn pooled_delete_after_preserves_retained_user_edits_when_undoing_model_to
     for tool in ["pin_memory", "unpin_memory", "create_memory"] {
         let harness = crate::api::tests::harness_in(
             Reply::Text("reply"), std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
-            std::sync::Arc::new(crate::api::inspect_tests::AllModels),
+            std::sync::Arc::new(crate::api::app::inspect_tests::AllModels),
         );
         let character = crate::api::tests::create_character(
             harness.context.backend().database(), "Retained tool edits",
@@ -2199,7 +2199,7 @@ async fn generated_summary_with_failed_tokenizer_keeps_usage_without_publishing_
     let harness = crate::api::tests::harness_in(
         Reply::Text("Mira remembered the user's preferred tea."),
         std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
-        std::sync::Arc::new(crate::api::inspect_tests::AllModels),
+        std::sync::Arc::new(crate::api::app::inspect_tests::AllModels),
     );
     let (chat, _) = replied_chat(&harness, "failed-summary-tokenizer").await;
     make_dynamic(&harness, false);
@@ -2243,7 +2243,7 @@ async fn delete_after_removes_a_decayed_manual_add_unless_another_pool_chat_edit
     for retained in [false, true] {
         let harness = crate::api::tests::harness_in(
             Reply::Text("reply"), std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
-            std::sync::Arc::new(crate::api::inspect_tests::AllModels),
+            std::sync::Arc::new(crate::api::app::inspect_tests::AllModels),
         );
         let character = crate::api::tests::create_character(
             harness.context.backend().database(), "Decayed addition",

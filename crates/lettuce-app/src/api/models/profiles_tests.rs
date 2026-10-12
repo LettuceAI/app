@@ -229,7 +229,7 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
             .count(),
         1
     );
-    crate::api::content_filter::publish_pending(&h.context).await;
+    crate::api::app::content_filter::publish_pending(&h.context).await;
     let settings_events_before = h
         .events
         .events()
@@ -254,7 +254,7 @@ async fn default_set_cas_replay_and_models_feed_committed_only() {
             .expect("replay"),
         result
     );
-    crate::api::content_filter::publish_pending(&h.context).await;
+    crate::api::app::content_filter::publish_pending(&h.context).await;
     assert_eq!(
         h.events
             .events()

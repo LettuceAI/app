@@ -1,4 +1,4 @@
-use super::{ApiContext, app::settings_error};
+use crate::api::{ApiContext, app::settings_error};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_inference::content_filter::PureModeLevel;
 
@@ -99,7 +99,7 @@ pub(super) fn publish_settings_changes(context: &ApiContext) -> Result<(), ApiEr
     refreshed
 }
 
-pub(super) async fn publish_pending(context: &ApiContext) {
+pub(in crate::api) async fn publish_pending(context: &ApiContext) {
     if let Err(error) = context.blocking(publish_settings_changes).await {
         tracing::error!(?error, "settings change delivery failed");
     }

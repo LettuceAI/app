@@ -70,18 +70,18 @@ async fn optimize_admission_replays_and_queued_cancellation_never_runs() {
     use lettuce_contracts as dto;
     use lettuce_jobs::{JobState, JobStore};
     use lettuce_types::{JobId, RequestId};
-    let h = super::tests::harness(super::tests::Reply::Text("ok"));
+    let h = crate::api::tests::harness(crate::api::tests::Reply::Text("ok"));
     let request = dto::StorageOptimizeRequest {
         client_operation_id: RequestId::new().to_string(),
     };
     let (first, replay) = tokio::join!(
-        super::storage_optimize(&h.context, request.clone()),
-        super::storage_optimize(&h.context, request.clone())
+        crate::api::storage_optimize(&h.context, request.clone()),
+        crate::api::storage_optimize(&h.context, request.clone())
     );
     let first = first.expect("first admission");
     assert_eq!(first, replay.expect("replay"));
     let job_id: JobId = first.job_id.parse().expect("job id");
-    super::job_cancel(
+    crate::api::job_cancel(
         &h.context,
         dto::JobCancelRequest {
             job_id: first.job_id,
@@ -89,7 +89,7 @@ async fn optimize_admission_replays_and_queued_cancellation_never_runs() {
     )
     .await
     .expect("cancel queued");
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(!runner.run_once().await.expect("runner"));
     assert_eq!(
         h.context
@@ -102,7 +102,7 @@ async fn optimize_admission_replays_and_queued_cancellation_never_runs() {
         JobState::Cancelled
     );
     assert_eq!(
-        super::storage_optimize(&h.context, request)
+        crate::api::storage_optimize(&h.context, request)
             .await
             .expect("cancelled replay")
             .job_id,
@@ -115,14 +115,14 @@ async fn optimize_runner_waits_for_work_and_shutdown_cancels_the_waiter() {
     use lettuce_contracts as dto;
     use lettuce_jobs::{JobState, JobStore};
     use lettuce_types::{JobId, RequestId};
-    let h = super::tests::harness(super::tests::Reply::Text("ok"));
+    let h = crate::api::tests::harness(crate::api::tests::Reply::Text("ok"));
     let active = h
         .context
         .maintenance()
         .work(&CancellationToken::new())
         .await
         .expect("running work");
-    let accepted = super::storage_optimize(
+    let accepted = crate::api::storage_optimize(
         &h.context,
         dto::StorageOptimizeRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -131,7 +131,7 @@ async fn optimize_runner_waits_for_work_and_shutdown_cancels_the_waiter() {
     .await
     .expect("admission");
     let job_id: JobId = accepted.job_id.parse().expect("job id");
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("started"));
     assert_eq!(
         h.context
@@ -163,14 +163,14 @@ async fn optimize_executes_after_work_releases_and_another_worker_cannot_claim_i
     use lettuce_contracts as dto;
     use lettuce_jobs::{JobState, JobStore};
     use lettuce_types::{JobId, RequestId};
-    let h = super::tests::harness(super::tests::Reply::Text("ok"));
+    let h = crate::api::tests::harness(crate::api::tests::Reply::Text("ok"));
     let active = h
         .context
         .maintenance()
         .work(&CancellationToken::new())
         .await
         .expect("running work");
-    let accepted = super::storage_optimize(
+    let accepted = crate::api::storage_optimize(
         &h.context,
         dto::StorageOptimizeRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -179,9 +179,9 @@ async fn optimize_executes_after_work_releases_and_another_worker_cannot_claim_i
     .await
     .expect("admission");
     let job_id: JobId = accepted.job_id.parse().expect("job id");
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("started"));
-    let other = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let other = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(!other.run_once().await.expect("claimed elsewhere"));
     assert_eq!(
         h.context
@@ -195,7 +195,7 @@ async fn optimize_executes_after_work_releases_and_another_worker_cannot_claim_i
     );
     drop(active);
     runner.wait_idle().await;
-    let view = super::job_get(
+    let view = crate::api::job_get(
         &h.context,
         dto::JobGetRequest {
             job_id: job_id.to_string(),
@@ -212,7 +212,7 @@ async fn optimize_rejects_a_receipt_with_a_different_digest() {
     use lettuce_contracts as dto;
     use lettuce_jobs::{JobKind, JobSpec, JobSubject, OutcomeRef, SubjectKind};
     use lettuce_types::RequestId;
-    let h = super::tests::harness(super::tests::Reply::Text("ok"));
+    let h = crate::api::tests::harness(crate::api::tests::Reply::Text("ok"));
     let id = RequestId::new();
     h.context
         .backend()
@@ -229,7 +229,7 @@ async fn optimize_rejects_a_receipt_with_a_different_digest() {
             &serde_json::json!({"kind": "storage_optimize"}),
         )
         .expect("previous receipt");
-    let error = super::storage_optimize(
+    let error = crate::api::storage_optimize(
         &h.context,
         dto::StorageOptimizeRequest {
             client_operation_id: id.to_string(),
@@ -245,11 +245,11 @@ async fn optimize_orphaned_claim_requeues_and_reuses_the_original_receipt() {
     use lettuce_contracts as dto;
     use lettuce_jobs::{JobMutation, JobState, JobStore, ResourceAvailability, WorkerId};
     use lettuce_types::{JobId, RequestId};
-    let h = super::tests::harness(super::tests::Reply::Text("ok"));
+    let h = crate::api::tests::harness(crate::api::tests::Reply::Text("ok"));
     let request = dto::StorageOptimizeRequest {
         client_operation_id: RequestId::new().to_string(),
     };
-    let accepted = super::storage_optimize(&h.context, request.clone())
+    let accepted = crate::api::storage_optimize(&h.context, request.clone())
         .await
         .expect("admit");
     let job_id: JobId = accepted.job_id.parse().expect("id");
@@ -276,12 +276,12 @@ async fn optimize_orphaned_claim_requeues_and_reuses_the_original_receipt() {
         JobState::Queued
     );
     assert_eq!(
-        super::storage_optimize(&h.context, request)
+        crate::api::storage_optimize(&h.context, request)
             .await
             .expect("receipt"),
         accepted
     );
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("restarted"));
     runner.wait_idle().await;
     assert_eq!(
@@ -292,8 +292,8 @@ async fn optimize_orphaned_claim_requeues_and_reuses_the_original_receipt() {
 
 #[tokio::test]
 async fn optimize_waits_for_restore_file_lifecycle_and_cancels_without_writing() {
-    use super::tests::{NoImages, Reply, harness_over_files};
-    use super::{ApiDatabaseFiles, NoModels};
+    use crate::api::tests::{NoImages, Reply, harness_over_files};
+    use crate::api::{ApiDatabaseFiles, NoModels};
     use crate::{AppBackend, AppDatabaseLocation};
     use lettuce_contracts as dto;
     use lettuce_jobs::{JobState, JobStore, SystemClock};
@@ -318,7 +318,7 @@ async fn optimize_waits_for_restore_file_lifecycle_and_cancels_without_writing()
         Arc::new(NoImages),
         Some(ApiDatabaseFiles { location, active }),
     );
-    let accepted = super::storage_optimize(
+    let accepted = crate::api::storage_optimize(
         &h.context,
         dto::StorageOptimizeRequest {
             client_operation_id: RequestId::new().to_string(),
@@ -327,7 +327,7 @@ async fn optimize_waits_for_restore_file_lifecycle_and_cancels_without_writing()
     .await
     .expect("admit");
     let job_id: JobId = accepted.job_id.parse().expect("id");
-    let runner = super::JobRunner::new(h.context.clone(), super::JobHandlers::standard());
+    let runner = crate::api::JobRunner::new(h.context.clone(), crate::api::JobHandlers::standard());
     assert!(runner.run_once().await.expect("started"));
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(30), runner.wait_idle())
@@ -344,7 +344,7 @@ async fn optimize_waits_for_restore_file_lifecycle_and_cancels_without_writing()
             .state,
         JobState::Running
     );
-    super::job_cancel(
+    crate::api::job_cancel(
         &h.context,
         dto::JobCancelRequest {
             job_id: accepted.job_id,

@@ -1507,7 +1507,7 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
         std::sync::Arc::new(lettuce_jobs::SystemClock),
         None,
         None,
-        std::sync::Arc::new(crate::api::inspect_tests::AllModels),
+        std::sync::Arc::new(crate::api::app::inspect_tests::AllModels),
     );
     let character = crate::api::tests::create_character(
         harness.context.backend().database(),

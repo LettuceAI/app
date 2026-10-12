@@ -1,4 +1,4 @@
-use super::{
+use crate::api::{
     ApiContext,
     app::settings_error,
     error::{api_error, invalid_field, parse_id},
@@ -20,7 +20,7 @@ fn require_embedding(context: &ApiContext) -> Result<(), ApiError> {
         .models()
         .installed(context, dto::RequiredModel::Embedding)
     {
-        return Err(super::error::model_error(
+        return Err(crate::api::error::model_error(
             ApiErrorCode::ModelRequired,
             dto::RequiredModel::Embedding,
         ));
@@ -68,7 +68,7 @@ fn view(
             embedding_keep_model_loaded: device.embedding.keep_model_loaded,
             llm_models_dir: device.llm_models_dir,
             dictation_model_id: device.speech.dictation_model_id,
-            trusted_certificates: super::providers::certificate_view(
+            trusted_certificates: crate::api::providers::certificate_view(
                 device.trusted_certificates,
                 device_revision,
             )

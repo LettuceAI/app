@@ -2,6 +2,7 @@
 //! a chat that needs one checks it before its turn starts, which loads it
 //! once (fetching ONNX Runtime first when the device has none), and the
 //! loaded model is kept until an install, switch or removal changes it.
+
 pub(super) mod hugging_face;
 #[cfg(test)]
 mod llama_events_tests;

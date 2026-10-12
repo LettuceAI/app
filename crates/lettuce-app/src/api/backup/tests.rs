@@ -80,7 +80,7 @@ impl crate::api::jobs::JobProgressSink for Progress {
 async fn restore_admission_replays_conflicts_and_wrong_password_writes_no_target_or_event() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let path = root.join("source.lettuce");
     let media = lettuce_media::LocalSyncMediaStore::open(root.join("platform-v2/media-blobs"), lettuce_database::Database::open(location.active_path().expect("path")).expect("blobs"), lettuce_database::Database::open(location.active_path().expect("path")).expect("assets")).expect("media");
     let export = harness.context.backend().provider_backup(harness.context.secret_store().as_ref(), &media).export("1.0", TimestampMillis::new(100), "password").await.expect("export");
@@ -105,7 +105,7 @@ async fn restore_admission_replays_conflicts_and_wrong_password_writes_no_target
 
 #[tokio::test]
 async fn reopened_restore_without_password_fails_retry_required_and_removes_staging() {
-    let (root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (root, _location, harness) = crate::api::app::reset_tests::harness();
     let accepted = crate::api::backup_restore(&harness.context, dto::BackupRestoreRequest { source: dto::FileSource { uri: "/backup.lettuce".into() }, password: "password".into(), client_operation_id: "reopen".into() }).await.expect("admit");
     let id = accepted.job_id.parse().expect("id");
     harness.context.jobs().take_backup_password(id);
@@ -180,7 +180,7 @@ async fn completed_restore(fail: bool) -> (std::path::PathBuf, crate::AppDatabas
 async fn completed_restore_with_faults(fail: bool, fail_settlement: bool) -> (std::path::PathBuf, crate::AppDatabaseLocation, crate::api::tests::Harness, Arc<ReloadHost>, String) {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let host = Arc::new(ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(crate::api::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: std::sync::Mutex::new(None), fail, fail_settlement });
     harness.context.attach_reset_host(host.clone()).expect("host");
     let path = root.join("source.lettuce");
@@ -231,7 +231,7 @@ async fn failed_rebind_keeps_restored_database_blocks_commands_and_emits_no_relo
 async fn backup_export_replays_conflicts_and_atomically_replaces_one_indexed_path() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (root, _location, harness) = crate::api::app::reset_tests::harness();
     let target = root.join("export.lettuce");
     std::fs::write(&target, b"existing user file").expect("existing");
     let request = dto::BackupExportRequest { password: "password".into(), target: Some(dto::FileTarget { uri: target.display().to_string() }), client_operation_id: "export".into() };
@@ -255,7 +255,7 @@ async fn backup_export_replays_conflicts_and_atomically_replaces_one_indexed_pat
 async fn backup_export_failed_rename_removes_temporary_and_keeps_index_empty() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (root, _location, harness) = crate::api::app::reset_tests::harness();
     let target = root.join("directory.lettuce");
     std::fs::create_dir(&target).expect("existing directory");
     let accepted = crate::api::backup_export(&harness.context, dto::BackupExportRequest { password: "password".into(), target: Some(dto::FileTarget { uri: target.display().to_string() }), client_operation_id: "export-failing-rename".into() }).await.expect("admit");
@@ -298,7 +298,7 @@ impl crate::api::FileAccess for FaultFiles {
 async fn full_disk_export_leaves_no_backup_no_temporary_and_no_index_entry() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let active = location.active_path().expect("active");
     let context = crate::api::ApiContext::new(crate::api::ApiContextParts {
         backend: Arc::new(crate::AppBackend::open(&active, TimestampMillis::new(100)).expect("backend")),
@@ -322,7 +322,7 @@ async fn full_disk_export_leaves_no_backup_no_temporary_and_no_index_entry() {
 async fn export_reopen_recovers_only_a_published_file_matching_the_recorded_header() {
     use lettuce_jobs::{JobStore, JobMutation, StageSnapshot, ResourceAvailability};
     for (renamed, different_salt) in [(false, false), (true, false), (true, true)] {
-        let (root, _location, harness) = crate::api::app_reset_tests::harness();
+        let (root, _location, harness) = crate::api::app::reset_tests::harness();
         let target = root.join("publication.lettuce");
         let accepted = crate::api::backup_export(&harness.context, dto::BackupExportRequest { password: "never-store-this-password".into(), target: Some(dto::FileTarget { uri: target.display().to_string() }), client_operation_id: "publication".into() }).await.expect("admit");
         let id = accepted.job_id.parse().expect("id");
@@ -388,7 +388,7 @@ fn file_test_context(root: &std::path::Path, location: crate::AppDatabaseLocatio
 async fn published_export_index_failure_reports_typed_recovery_without_writing_the_job() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let active = location.active_path().expect("active");
     let backend = Arc::new(crate::AppBackend::open(&active, TimestampMillis::new(100)).expect("backend"));
     let context = file_test_context(&root, location.clone(), &harness, backend.clone(), Arc::new(FaultFiles { write_fails: false, close_after_publish: Some(backend) }));
@@ -412,7 +412,7 @@ async fn published_export_index_failure_reports_typed_recovery_without_writing_t
 async fn restore_waits_for_a_streaming_generation_and_keeps_its_completed_reply_in_the_old_database() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let host = Arc::new(ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(crate::api::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: std::sync::Mutex::new(None), fail: false, fail_settlement: false });
     harness.context.attach_reset_host(host.clone()).expect("host");
     let source = root.join("before-generation.lettuce");
@@ -449,7 +449,7 @@ async fn restore_waits_for_a_streaming_generation_and_keeps_its_completed_reply_
 async fn reloaded_restore_job_cannot_be_claimed_by_the_new_runner_during_replay() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (_root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (_root, _location, harness) = crate::api::app::reset_tests::harness();
     let request = dto::BackupRestoreRequest { source: dto::FileSource { uri: "/source.lettuce".into() }, password: "password".into(), client_operation_id: "reloaded-replay".into() };
     let accepted = crate::api::backup_restore(&harness.context, request.clone()).await.expect("admit");
     harness.context.bind_reloaded_job(&accepted.job_id).expect("rebind owns job");
@@ -462,7 +462,7 @@ async fn reloaded_restore_job_cannot_be_claimed_by_the_new_runner_during_replay(
 
 #[tokio::test]
 async fn changed_backup_requests_conflict_before_revalidating_their_fields() {
-    let (root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (root, _location, harness) = crate::api::app::reset_tests::harness();
     let request = dto::BackupExportRequest { password: "password".into(), target: Some(dto::FileTarget { uri: root.join("backup.lettuce").display().to_string() }), client_operation_id: "export-field-conflict".into() };
     crate::api::backup_export(&harness.context, request.clone()).await.expect("admit");
     assert_eq!(crate::api::backup_export(&harness.context, dto::BackupExportRequest { target: Some(dto::FileTarget { uri: String::new() }), ..request }).await.expect_err("conflict").code, ApiErrorCode::Conflict);
@@ -532,7 +532,7 @@ async fn android_recovery_keeps_a_complete_file_with_a_mismatching_publication_h
 
 async fn recover_android_export(stale: bool, mismatched: bool) {
     use lettuce_jobs::{JobMutation, StageSnapshot, JobStore, ResourceAvailability};
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let files = Arc::new(PendingPublicationFiles { path: root.join("lettuce_backup_20261011_120000.lettuce"), publications: std::sync::atomic::AtomicUsize::new(0), stale });
     let backend = Arc::new(crate::AppBackend::open(location.active_path().expect("active"), TimestampMillis::new(100)).expect("backend"));
     let context = file_test_context(&root, location, &harness, backend, files.clone());
@@ -572,7 +572,7 @@ async fn recover_android_export(stale: bool, mismatched: bool) {
 async fn cancellation_while_waiting_for_maintenance_keeps_the_old_database_and_emits_no_reload() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let old_path = location.active_path().expect("old path");
     let hold = harness.context.maintenance().work(&lettuce_jobs::handle::CancellationToken::new()).await.expect("running work");
     let request = dto::BackupRestoreRequest { source: dto::FileSource { uri: root.join("never-opened.lettuce").display().to_string() }, password: "password".into(), client_operation_id: "cancel-wait".into() };
@@ -595,7 +595,7 @@ async fn cancellation_while_waiting_for_maintenance_keeps_the_old_database_and_e
 #[tokio::test]
 async fn live_legacy_import_replays_its_only_request_field_and_cold_restart_never_opens_the_source() {
     use lettuce_jobs::JobStore;
-    let (_root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (_root, _location, harness) = crate::api::app::reset_tests::harness();
     let request = dto::LegacyDatabaseImportRequest { client_operation_id: "legacy-live".into() };
     let accepted = crate::api::legacy_database_import(&harness.context, request.clone()).await.expect("admit");
     assert_eq!(crate::api::legacy_database_import(&harness.context, request).await.expect("replay"), accepted);
@@ -645,7 +645,7 @@ async fn restore_waits_for_running_install_and_memory_jobs_before_decoding_or_to
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::{JobKind, JobSpec, JobSubject, SubjectKind, OutcomeRef, JobStore};
     for kind in [JobKind::ArtifactInstall, JobKind::MemoryExtraction] {
-        let (root, location, harness) = crate::api::app_reset_tests::harness();
+        let (root, location, harness) = crate::api::app::reset_tests::harness();
         let old_path = location.active_path().expect("old");
         harness.context.backend().database().create_or_get(JobSpec::new(kind, JobSubject::new(SubjectKind::Backup, "held-job").expect("subject"), OutcomeRef::Request(lettuce_types::RequestId::new())).with_resources(vec![lettuce_jobs::ResourceClass::DiskWrite])).expect("held job");
         let entered = Arc::new(tokio::sync::Notify::new());
@@ -698,7 +698,7 @@ async fn legacy_archive_authentication_precedes_writes_and_unknown_entries_resto
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
     for correct in [false, true] {
-        let (root, location, harness) = crate::api::app_reset_tests::harness();
+        let (root, location, harness) = crate::api::app::reset_tests::harness();
         let old_path = location.active_path().expect("old");
         let host = Arc::new(ReloadHost { root: root.clone(), location: location.clone(), provider: harness.provider.clone(), events: harness.events.clone(), slot: Arc::new(crate::api::ApiContextSlot::new(Arc::new(harness.context.clone()))), workers: std::sync::Mutex::new(None), fail: false, fail_settlement: false });
         harness.context.attach_reset_host(host.clone()).expect("host");
@@ -732,7 +732,7 @@ async fn legacy_archive_authentication_precedes_writes_and_unknown_entries_resto
 async fn export_lifecycle_contention_settles_typed_without_creating_a_file_or_index_entry() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let target = root.join("busy.lettuce");
     let accepted = crate::api::backup_export(&harness.context, dto::BackupExportRequest { password: "password".into(), target: Some(dto::FileTarget { uri: target.display().to_string() }), client_operation_id: "busy-export".into() }).await.expect("admit");
     let job = harness.context.backend().database().get(accepted.job_id.parse().expect("id")).expect("job").expect("exists");
@@ -751,7 +751,7 @@ async fn export_lifecycle_contention_settles_typed_without_creating_a_file_or_in
 #[tokio::test]
 async fn review_restore_candidate_rejects_cancellation_before_switch_and_after_bookkeeping_failure() {
     use lettuce_jobs::JobStore;
-    let (_root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (_root, _location, harness) = crate::api::app::reset_tests::harness();
     let accepted = crate::api::backup_restore(&harness.context, dto::BackupRestoreRequest { source: dto::FileSource { uri: "/source.lettuce".into() }, password: "password".into(), client_operation_id: "review-cancel".into() }).await.expect("admission");
     let id = accepted.job_id.parse().expect("id");
     harness.context.bind_reloaded_job(&accepted.job_id).expect("candidate owns restore");
@@ -771,7 +771,7 @@ async fn review_restore_candidate_rejects_cancellation_before_switch_and_after_b
 
 #[tokio::test]
 async fn review_backup_delete_is_busy_during_publication_and_rechecks_replaced_id() {
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let target = root.join("replacement.lettuce");
     let entry = lettuce_database::BackupIndexRecord { id: JobId::new(), uri: target.display().to_string(), version: 2, created_at: TimestampMillis::new(1), app_version: "old".into(), size: 3 };
     std::fs::write(&target, b"old").expect("old file");
@@ -808,7 +808,7 @@ async fn review_backup_jobs_preserve_missing_permission_busy_and_unsupported_fil
     use lettuce_jobs::JobStore;
     for (failure, reason) in [(crate::api::FileAccessError::NotFound, "backup_file_not_found"), (crate::api::FileAccessError::PermissionDenied, "backup_permission_denied"), (crate::api::FileAccessError::Busy, "backup_file_busy"), (crate::api::FileAccessError::Unsupported, "backup_file_unsupported"), (crate::api::FileAccessError::SourceIsTarget, "backup_source_is_target"), (crate::api::FileAccessError::Io, "backup_file_unavailable")] {
         for kind in 0..3 {
-            let (root, location, harness) = crate::api::app_reset_tests::harness();
+            let (root, location, harness) = crate::api::app::reset_tests::harness();
             let context = file_test_context(&root, location.clone(), &harness, Arc::new(crate::AppBackend::open(location.active_path().expect("active"), TimestampMillis::new(100)).expect("backend")), Arc::new(ReviewFileFailure(failure)));
             let handler: Box<dyn JobHandler> = if kind == 0 { Box::new(super::export_jobs::ExportHandler) } else { Box::new(super::jobs::RestoreHandler) };
             let accepted = if kind == 0 {
@@ -844,7 +844,7 @@ async fn review_parent_alias_pending_replacement_is_kept_until_index_recovery() 
 
 async fn pending_replacement_deletion(alias: bool) {
     use lettuce_jobs::{JobMutation, JobStore, ResourceAvailability, StageSnapshot};
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let target = root.join("published-before-index.lettuce");
     std::fs::create_dir_all(root.join("sub")).expect("folder");
     let export_target = if alias { root.join("sub/../published-before-index.lettuce") } else { target.clone() };
@@ -898,7 +898,7 @@ async fn pending_replacement_deletion(alias: bool) {
 async fn review_parent_alias_exports_replace_one_index_identity() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, _location, harness) = crate::api::app_reset_tests::harness();
+    let (root, _location, harness) = crate::api::app::reset_tests::harness();
     std::fs::create_dir_all(root.join("sub")).expect("folder");
     let target = root.join("aliases.lettuce");
     let mut targets = vec![target.clone(), root.join("sub/../aliases.lettuce")];
@@ -936,7 +936,7 @@ async fn review_backup_commands_accept_legacy_password_bytes() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
     for password in ["foo\tbar".to_owned(), "a".repeat(1025)] {
-        let (root, location, harness) = crate::api::app_reset_tests::harness();
+        let (root, location, harness) = crate::api::app::reset_tests::harness();
         let target = root.join("password.lettuce");
         let accepted = crate::api::backup_export(&harness.context, dto::BackupExportRequest { password: password.clone(), target: Some(dto::FileTarget { uri: target.display().to_string() }), client_operation_id: "password-export".into() }).await.expect("admit");
         let job = harness.context.backend().database().get(accepted.job_id.parse().expect("id")).expect("get").expect("job");
@@ -959,7 +959,7 @@ async fn review_backup_commands_accept_legacy_password_bytes() {
 #[tokio::test]
 async fn fix11a_operation_digests_exclude_password_for_every_backup_command() {
     for command in ["backup_export", "backup_restore", "legacy_backup_restore"] {
-        let (root, _location, harness) = crate::api::app_reset_tests::harness();
+        let (root, _location, harness) = crate::api::app::reset_tests::harness();
         let password = "unique-password-that-must-never-be-persisted";
         let (first, request) = if command == "backup_export" {
             let request = dto::BackupExportRequest { password: password.into(), target: Some(dto::FileTarget { uri: root.join("output.lettuce").display().to_string() }), client_operation_id: "password-free-digest".into() };
@@ -1011,7 +1011,7 @@ async fn cancelled_backup_recovery(restore: bool) {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::{JobMutation, JobStore};
     {
-        let (root, _location, harness) = crate::api::app_reset_tests::harness();
+        let (root, _location, harness) = crate::api::app::reset_tests::harness();
         let accepted = if restore {
             crate::api::backup_restore(&harness.context, dto::BackupRestoreRequest { password: "password".into(), source: dto::FileSource { uri: root.join("input.lettuce").display().to_string() }, client_operation_id: "cancel-crash".into() }).await
         } else {
@@ -1048,7 +1048,7 @@ impl crate::api::FileAccess for FixListFiles {
 
 #[tokio::test]
 async fn fix11a_backup_list_preserves_readable_entries_when_other_files_fail() {
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let context = file_test_context(&root, location.clone(), &harness, Arc::new(crate::AppBackend::open(location.active_path().expect("path"), TimestampMillis::new(100)).expect("backend")), Arc::new(FixListFiles));
     for uri in ["available", "permission", "unavailable", "missing"] {
         context.backend().database().record_backup(&lettuce_database::BackupIndexRecord { id: JobId::new(), uri: uri.into(), version: 2, created_at: TimestampMillis::new(123), app_version: "1.0".into(), size: 100 }).expect("entry");
@@ -1064,7 +1064,7 @@ async fn fix11a_backup_list_preserves_readable_entries_when_other_files_fail() {
 
 #[tokio::test]
 async fn fix11a_backup_delete_returns_busy_without_waiting_for_export() {
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let target = root.join("busy-delete.lettuce");
     std::fs::write(&target, b"old user backup").expect("backup");
     let entry = lettuce_database::BackupIndexRecord { id: JobId::new(), uri: target.display().to_string(), version: 2, created_at: TimestampMillis::new(1), app_version: "1.0".into(), size: 15 };
@@ -1117,7 +1117,7 @@ impl crate::api::FileAccess for FixCancelFiles {
 async fn fix11a_export_stops_between_sections_when_cancelled() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let writes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let files = Arc::new(FixCancelFiles { cancellation: std::sync::Mutex::new(None), writes: writes.clone() });
     let context = file_test_context(&root, location.clone(), &harness, Arc::new(crate::AppBackend::open(location.active_path().expect("path"), TimestampMillis::new(100)).expect("backend")), files.clone());
@@ -1161,7 +1161,7 @@ async fn source_io_failure(legacy: bool) {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
     {
-        let (root, location, harness) = crate::api::app_reset_tests::harness();
+        let (root, location, harness) = crate::api::app::reset_tests::harness();
         let context = file_test_context(&root, location.clone(), &harness, Arc::new(crate::AppBackend::open(location.active_path().expect("path"), TimestampMillis::new(100)).expect("backend")), Arc::new(FixSourceIo));
         let request = dto::BackupRestoreRequest { password: "password".into(), source: dto::FileSource { uri: "source.lettuce".into() }, client_operation_id: "read-io".into() };
         let accepted = if legacy { crate::api::legacy_backup_restore(&context, request).await } else { crate::api::backup_restore(&context, request).await }.expect("admit");
@@ -1178,7 +1178,7 @@ async fn source_io_failure(legacy: bool) {
 async fn fix11a_live_legacy_import_source_io_is_unavailable() {
     use crate::api::jobs::JobHandler;
     use lettuce_jobs::JobStore;
-    let (_root, location, harness) = crate::api::app_reset_tests::harness();
+    let (_root, location, harness) = crate::api::app::reset_tests::harness();
     let active = location.active_path().expect("active");
     let accepted = crate::api::legacy_database_import(&harness.context, dto::LegacyDatabaseImportRequest { client_operation_id: "live-source-io".into() }).await.expect("admit");
     let job = harness.context.backend().database().get(accepted.job_id.parse().expect("id")).expect("get").expect("job");
@@ -1209,7 +1209,7 @@ impl crate::api::FileAccess for RecoveryFiles {
 }
 
 fn recovery_context() -> (std::path::PathBuf, crate::api::ApiContext, Arc<RecoveryFiles>) {
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let active = location.active_path().expect("active");
     let files = Arc::new(RecoveryFiles { denied: std::sync::Mutex::new(None), descriptions: std::sync::atomic::AtomicUsize::new(0) });
     let backend = Arc::new(crate::AppBackend::open(&active, TimestampMillis::new(100)).expect("backend"));

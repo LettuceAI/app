@@ -1,9 +1,9 @@
 //! Image generation: requests and their jobs, the playground, the local
 //! stable-diffusion.cpp engine, LoRAs, Hugging Face image bundles, CivitAI
 //! and the avatar and design reference helpers.
+
 #[cfg(test)]
 mod tests;
-
 
 mod engine;
 mod generate;

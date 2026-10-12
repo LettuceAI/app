@@ -334,7 +334,7 @@ impl<'a> FileExportProtection<'a> {
             .database_files()
             .map(|files| files.location.try_file_lifecycle())
             .transpose()
-            .map_err(|error| super::storage::file_error(error, None))?;
+            .map_err(|error| super::app::storage::file_error(error, None))?;
         Ok(Self { context, lifecycle })
     }
 

@@ -84,7 +84,7 @@ pub struct ApiContext {
 
 struct ApiContextInner {
     usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
-    maintenance: super::maintenance::MaintenanceGate,
+    maintenance: super::app::maintenance::MaintenanceGate,
     sync: super::sync::SyncState,
     parts: ApiContextParts,
     models: ModelSlots,
@@ -99,8 +99,8 @@ struct ApiContextInner {
     settings_sections: Arc<std::sync::Mutex<Vec<&'static str>>>,
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
-    logs: Mutex<Option<super::logs::LogHost>>,
-    reset: super::app_reset::ResetState,
+    logs: Mutex<Option<super::app::logs::LogHost>>,
+    reset: super::app::reset::ResetState,
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     provider_writes: tokio::sync::Mutex<()>,
@@ -142,7 +142,7 @@ impl ApiContext {
     }
     pub(super) fn sync_state(&self) -> &super::sync::SyncState { &self.inner.sync }
 
-    pub(super) fn maintenance(&self) -> &super::maintenance::MaintenanceGate {
+    pub(super) fn maintenance(&self) -> &super::app::maintenance::MaintenanceGate {
         &self.inner.maintenance
     }
 
@@ -151,7 +151,7 @@ impl ApiContext {
             .database()
             .is_file_write_fenced()
             .map(|fenced| !fenced)
-            .map_err(|_| super::storage::file_error(crate::AppDatabaseLocationError::Storage, None))
+            .map_err(|_| super::app::storage::file_error(crate::AppDatabaseLocationError::Storage, None))
     }
 
     #[must_use]
@@ -250,7 +250,7 @@ impl ApiContext {
         let context = Self {
             inner: Arc::new(ApiContextInner {
                 usage_billing: Mutex::new(None),
-                maintenance: super::maintenance::MaintenanceGate::default(),
+                maintenance: super::app::maintenance::MaintenanceGate::default(),
                 sync: super::sync::SyncState::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
@@ -266,7 +266,7 @@ impl ApiContext {
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
                 logs: Mutex::new(None),
-                reset: super::app_reset::ResetState::default(),
+                reset: super::app::reset::ResetState::default(),
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 provider_writes: tokio::sync::Mutex::new(()),
@@ -320,10 +320,10 @@ impl ApiContext {
                 .map_err(|error| storage_error("database location", error))?;
         let file_lifecycle = location
             .acquire_file_lifecycle(true)
-            .map_err(|error| super::storage::file_error(error, None))?;
+            .map_err(|error| super::app::storage::file_error(error, None))?;
         let path = file_lifecycle
             .prepare_open(clock.now())
-            .map_err(|error| super::storage::file_error(error, None))?;
+            .map_err(|error| super::app::storage::file_error(error, None))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| storage_error("database directory", error))?;
@@ -332,7 +332,7 @@ impl ApiContext {
             .map_err(|error| storage_error("application database", error))?;
         file_lifecycle
             .complete_open()
-            .map_err(|error| super::storage::file_error(error, None))?;
+            .map_err(|error| super::app::storage::file_error(error, None))?;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let backend = {
             use lettuce_settings::DeviceSettingsStore;
@@ -595,7 +595,7 @@ impl ApiContext {
         &self.inner.shutdown
     }
 
-    pub(super) fn reset_state(&self) -> &super::app_reset::ResetState {
+    pub(super) fn reset_state(&self) -> &super::app::reset::ResetState {
         &self.inner.reset
     }
 
@@ -679,25 +679,25 @@ impl ApiContext {
                 }
             },
         );
-        *self.inner.logs.lock().expect("log host") = Some(super::logs::LogHost {
+        *self.inner.logs.lock().expect("log host") = Some(super::app::logs::LogHost {
             directory: lettuce_observability::LogDirectory::new(directory),
             sink,
         });
     }
 
-    pub(super) fn logs(&self) -> Result<super::logs::LogHost, ApiError> {
+    pub(super) fn logs(&self) -> Result<super::app::logs::LogHost, ApiError> {
         self.inner
             .logs
             .lock()
             .map_err(|_| {
-                super::logs::unavailable(
+                super::app::logs::unavailable(
                     lettuce_contracts::LogFailureReason::HostUnavailable,
                     "log host unavailable",
                 )
             })?
             .clone()
             .ok_or_else(|| {
-                super::logs::unavailable(
+                super::app::logs::unavailable(
                     lettuce_contracts::LogFailureReason::HostUnavailable,
                     "log host unavailable",
                 )

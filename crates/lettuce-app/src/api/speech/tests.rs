@@ -3588,7 +3588,7 @@ async fn cancelled_transcription_releases_input_but_retains_blob_until_expiry() 
 
 #[tokio::test]
 async fn dictation_blocks_database_cutover_before_admission_and_keeps_audio() {
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let context = harness.context.clone().with_speech(Arc::new(FakeSpeech {
         tts: Arc::new(FakeTts { mode: TtsMode::Speak, calls: AtomicUsize::new(0) }),
         asr: Arc::new(FakeAsr { mode: AsrMode::Text("recording"), calls: AtomicUsize::new(0) }),
@@ -3625,7 +3625,7 @@ async fn dictation_start_refuses_a_held_database_maintenance_lease() {
 #[tokio::test]
 async fn dictation_started_after_restore_admission_fails_the_job_without_cutover() {
     use lettuce_jobs::JobStore;
-    let (root, location, harness) = crate::api::app_reset_tests::harness();
+    let (root, location, harness) = crate::api::app::reset_tests::harness();
     let context = harness.context.clone().with_speech(Arc::new(FakeSpeech {
         tts: Arc::new(FakeTts { mode: TtsMode::Speak, calls: AtomicUsize::new(0) }),
         asr: Arc::new(FakeAsr { mode: AsrMode::Text("recording"), calls: AtomicUsize::new(0) }),
@@ -3635,7 +3635,7 @@ async fn dictation_started_after_restore_admission_fails_the_job_without_cutover
     let active = location.active_path().expect("active");
     let request = dto::BackupRestoreRequest { source: dto::FileSource { uri: root.join("missing.lettuce").display().to_string() }, password: "password".into(), client_operation_id: "admitted-before-capture".into() };
     let accepted = crate::api::backup_restore(&context, request.clone()).await.expect("admission");
-    context.attach_reset_host(Arc::new(crate::api::app_reset_tests::Host::default())).expect("host");
+    context.attach_reset_host(Arc::new(crate::api::app::reset_tests::Host::default())).expect("host");
     let reset_request = dto::AppDataResetRequest { client_operation_id: RequestId::new().to_string() };
     let reset = crate::api::app_data_reset(&context, reset_request.clone()).await.expect("reset admission");
     let capture = super::dictation_start(&context, dto::DictationStartRequest { conversation_id: None }).await.expect("capture");
@@ -3644,7 +3644,7 @@ async fn dictation_started_after_restore_admission_fails_the_job_without_cutover
     let changed = dto::BackupRestoreRequest { source: dto::FileSource { uri: "changed.lettuce".into() }, ..request };
     assert_eq!(crate::api::backup_restore(&context, changed).await.expect_err("conflict precedes busy").code, ApiErrorCode::Conflict);
     assert_eq!(crate::api::app_data_reset(&context, reset_request).await.expect("reset replay while recording"), reset);
-    let runner = crate::api::jobs::JobRunner::new(context.clone(), crate::api::jobs::JobHandlers::new(vec![Arc::new(crate::api::backup::jobs::RestoreHandler), Arc::new(crate::api::app_reset::AppResetHandler)]));
+    let runner = crate::api::jobs::JobRunner::new(context.clone(), crate::api::jobs::JobHandlers::new(vec![Arc::new(crate::api::backup::jobs::RestoreHandler), Arc::new(crate::api::app::reset::AppResetHandler)]));
     assert!(runner.run_once().await.expect("run"));
     runner.wait_idle().await;
     assert!(runner.run_once().await.expect("second cutover"));

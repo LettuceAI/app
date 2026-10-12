@@ -4,7 +4,7 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_models::ModelCatalog;
 use lettuce_settings::GlobalSettingsStore;
 
-use super::{ApiContext, error::model_error, memory::embedding_health, models::ModelLoad};
+use crate::api::{ApiContext, error::model_error, memory::embedding_health, models::ModelLoad};
 
 fn redact_support_path(path: &str, homes: &[&str]) -> String {
     let path = path.replace('\\', "/");
@@ -160,10 +160,7 @@ pub async fn logs_diagnostics_report(context: &ApiContext) -> Result<String, Api
                 ));
             }
             let database = context.backend().database();
-            let settings = database
-                .load()
-                .map_err(super::app::settings_error)?
-                .settings;
+            let settings = database.load().map_err(super::settings_error)?.settings;
             let providers = database.provider_accounts().map_err(|_| storage_error())?;
             let (models, _, _) = database
                 .model_catalog_snapshot()
@@ -246,7 +243,8 @@ pub async fn logs_diagnostics_report(context: &ApiContext) -> Result<String, Api
                     .iter()
                     .find(|provider| provider.id == model.provider_account_id)
                     .ok_or_else(storage_error)?;
-                let view = super::models::profiles::view(model).map_err(|_| storage_error())?;
+                let view =
+                    crate::api::models::profiles::view(model).map_err(|_| storage_error())?;
                 lines.extend([
                     format!("- {}", view.id),
                     format!(
@@ -392,7 +390,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl super::super::ModelLoader for DiagnosticModels {
+    impl crate::api::ModelLoader for DiagnosticModels {
         fn installed(&self, _: &ApiContext, model: dto::RequiredModel) -> bool {
             model == dto::RequiredModel::Embedding
         }
@@ -427,15 +425,15 @@ mod tests {
         let active = location.active_path().expect("active");
         let backend =
             Arc::new(crate::AppBackend::open(&active, TimestampMillis::new(10)).expect("backend"));
-        let h = super::super::tests::harness_over_files(
+        let h = crate::api::tests::harness_over_files(
             backend,
-            super::super::tests::Reply::Text("Hello."),
+            crate::api::tests::Reply::Text("Hello."),
             Arc::new(lettuce_jobs::SystemClock),
             None,
             Some(root.clone()),
             Arc::new(DiagnosticModels),
-            Arc::new(super::super::tests::NoImages),
-            Some(super::super::ApiDatabaseFiles { location, active }),
+            Arc::new(crate::api::tests::NoImages),
+            Some(crate::api::ApiDatabaseFiles { location, active }),
         );
         let roots = h.context.retained_model_roots().expect("roots");
         let embedding_root = Path::new(roots.embedding.as_deref().expect("embedding root"));
@@ -544,7 +542,7 @@ mod tests {
 
     #[tokio::test]
     async fn diagnostics_missing_embedding_is_a_typed_model_requirement() {
-        let h = super::super::tests::harness(super::super::tests::Reply::Text("Hello."));
+        let h = crate::api::tests::harness(crate::api::tests::Reply::Text("Hello."));
         let error = logs_diagnostics_report(&h.context)
             .await
             .expect_err("missing required model");

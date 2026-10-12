@@ -15,7 +15,7 @@ use lettuce_jobs::{
 };
 use lettuce_types::{JobId, RequestId};
 
-use super::{
+use crate::api::{
     ApiContext,
     error::{IntoApiError, api_error, parse_id},
     jobs::{ClaimedJob, JobHandler, JobLane, JobProgressSink},
@@ -34,7 +34,7 @@ pub async fn storage_optimize(
     let id: RequestId = parse_id(&request.client_operation_id, "client_operation_id")?;
     let key = format!("storage-optimize:{id}");
     let detail = MaintenanceDetail::StorageOptimize;
-    let digest = super::jobs::local::digest(&detail)?;
+    let digest = crate::api::jobs::local::digest(&detail)?;
     let job = context
         .blocking(move |context| {
             let spec = JobSpec::new(
@@ -67,7 +67,7 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
     api_error(ApiErrorCode::Internal, error.to_string())
 }
 
-pub(super) fn result_view(
+pub(in crate::api) fn result_view(
     context: &ApiContext,
     job: &JobSnapshot,
 ) -> Result<Option<dto::JobResultDto>, ApiError> {
@@ -84,7 +84,7 @@ pub(super) fn result_view(
     Ok((job.state == JobState::Succeeded).then_some(dto::JobResultDto::StorageOptimized))
 }
 
-pub(super) struct MaintenanceHandler;
+pub(in crate::api) struct MaintenanceHandler;
 
 #[async_trait]
 impl JobHandler for MaintenanceHandler {
@@ -271,7 +271,7 @@ impl ClaimedMaintenance {
                 claim: self.claim.clone(),
                 outcome: JobOutcome::Success {
                     result_ref: OutcomeRef::Request(RequestId::from_uuid(
-                        super::jobs::local::stable_uuid(&[
+                        crate::api::jobs::local::stable_uuid(&[
                             "storage-optimize",
                             &self.job_id.to_string(),
                         ]),

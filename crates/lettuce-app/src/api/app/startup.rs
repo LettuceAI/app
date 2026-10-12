@@ -10,12 +10,12 @@ use std::{
 use lettuce_contracts::{ApiError, ApiErrorCode};
 use lettuce_jobs::WorkerId;
 
-use super::conversations::feed::ConversationFeed;
-use super::error::api_error;
-use super::jobs::{
+use crate::api::conversations::feed::ConversationFeed;
+use crate::api::error::api_error;
+use crate::api::jobs::{
     JobFeed, JobHandlers, JobRunner, recover_local_model_jobs, recover_queued_installs,
 };
-use super::{ApiContext, ConversationGenerationWorker};
+use crate::api::{ApiContext, ConversationGenerationWorker};
 use crate::{CompanionFollowUpHost, EmbeddingModelCoordinator, MediaGarbageScope};
 
 /// A background memory or companion job run while resuming outlives its
@@ -86,7 +86,7 @@ impl ApiWorkers {
         let threads = Arc::clone(&self.threads);
         tokio::task::spawn_blocking(move || {
             let failed = || {
-                super::app_reset::reset_error(lettuce_contracts::AppDataResetStage::Workers, None)
+                super::reset::reset_error(lettuce_contracts::AppDataResetStage::Workers, None)
             };
             if let Some(startup) = startup {
                 startup.join().map_err(|_| failed())?;
@@ -101,7 +101,7 @@ impl ApiWorkers {
         })
         .await
         .map_err(|_| {
-            super::app_reset::reset_error(lettuce_contracts::AppDataResetStage::Workers, None)
+            super::reset::reset_error(lettuce_contracts::AppDataResetStage::Workers, None)
         })?
     }
 
@@ -117,7 +117,7 @@ impl ApiWorkers {
     /// Waits until the workers run, or startup stopped before them.
     pub async fn started_result(&self) -> Result<(), ApiError> {
         let mut started = self.started.clone();
-        started.wait_for(|started| *started).await.map(|_| ()).map_err(|_| super::backup::error(ApiErrorCode::Unavailable, lettuce_contracts::BackupFailureReason::RecoveryRequired))
+        started.wait_for(|started| *started).await.map(|_| ()).map_err(|_| crate::api::backup::error(ApiErrorCode::Unavailable, lettuce_contracts::BackupFailureReason::RecoveryRequired))
     }
 
     pub async fn started(&self) {
@@ -173,7 +173,7 @@ impl ApiWorkers {
 /// feed. It downloads and loads nothing: optional models load when a chat
 /// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
-    super::providers::mutations::cleanup_secrets(context, true).await?;
+    crate::api::providers::mutations::cleanup_secrets(context, true).await?;
     context
         .blocking(|context| super::content_filter::refresh_logging(context).map(|_| ()))
         .await?;
@@ -184,7 +184,7 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
         .blocking(|context| context.recover_after_restart())
         .await?;
     record(&steps, StartupStep::RecoverAfterRestart);
-    super::usage::billing::recover_at_startup(context).await;
+    crate::api::usage::billing::recover_at_startup(context).await;
     complete_pending_rewinds(context).await?;
     record(&steps, StartupStep::CompletePendingRewinds);
     let detected = context
@@ -321,7 +321,7 @@ async fn finish_startup(
     record(steps, StartupStep::SweepOrphanMedia);
 }
 
-pub(super) async fn complete_pending_rewinds(context: &ApiContext) -> Result<(), ApiError> {
+pub(in crate::api) async fn complete_pending_rewinds(context: &ApiContext) -> Result<(), ApiError> {
     let report = context
         .blocking(|context| {
             let database = context.backend().database();
@@ -439,7 +439,7 @@ fn start_workers(
     let conversation = worker_thread("conversation-generation", stopped, move |stopped| {
         Box::pin(async move { generation.run(until_stopped(stopped)).await })
     })?;
-    let memory_worker = super::memory::worker::MemoryWorker::new(context.clone());
+    let memory_worker = crate::api::memory::worker::MemoryWorker::new(context.clone());
     let memory = worker_thread("post-turn-memory", stopped, move |stopped| {
         Box::pin(async move { memory_worker.run(until_stopped(stopped)).await })
     })?;

@@ -141,7 +141,7 @@ pub async fn job_cancel(
     let job_id: JobId = parse_id(&request.job_id, "job_id")?;
     context
         .blocking(move |context| {
-            let reset_database = super::app_reset::database_for_job(context, job_id)?;
+            let reset_database = super::app::reset::database_for_job(context, job_id)?;
             let database = reset_database
                 .as_deref()
                 .unwrap_or_else(|| context.backend().database());
@@ -224,7 +224,7 @@ pub async fn job_watch(
 }
 
 fn load(context: &ApiContext, job_id: JobId) -> Result<JobSnapshot, ApiError> {
-    let reset_database = super::app_reset::database_for_job(context, job_id)?;
+    let reset_database = super::app::reset::database_for_job(context, job_id)?;
     reset_database
         .as_deref()
         .unwrap_or_else(|| context.backend().database())
@@ -313,8 +313,8 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             }),
         result: feature
             .or(super::usage::billing::result_view(context, job)?)
-            .or(super::maintenance_jobs::result_view(context, job)?)
-            .or(super::app_reset::result_view(context, job)?)
+            .or(super::app::maintenance_jobs::result_view(context, job)?)
+            .or(super::app::reset::result_view(context, job)?)
             .or(super::backup::jobs::result_view(context, job)?)
             .or(super::backup::export_jobs::result_view(context, job)?)
             .or(local.result)

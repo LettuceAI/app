@@ -1,8 +1,8 @@
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod mutation_tests;
 pub(super) mod mutations;
+#[cfg(test)]
+mod tests;
 
 use std::sync::Arc;
 
