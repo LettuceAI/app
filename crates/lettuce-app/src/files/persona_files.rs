@@ -1,11 +1,12 @@
 use lettuce_characters::{
     Crop, LifecycleStatus, Persona, PersonaMedia, PersonaRepository, RepositoryError,
 };
+#[cfg(test)]
+use lettuce_characters::{PersonaMediaLink, PersonaMediaSlot};
 use lettuce_context::{
     BindingRepositoryError, LifecycleStatus as LorebookStatus, LorebookRepository,
     PersonaLorebookBindingRepository,
 };
-use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
 #[cfg(test)]
 use lettuce_media::AssetKind;
 use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
@@ -42,7 +43,7 @@ pub struct ImportedPersonaFile {
 #[derive(Debug)]
 pub struct PersonaFileCoordinator<'a, R: ?Sized, BR, AR> {
     repository: &'a R,
-    media_store: &'a LocalMediaBlobStore<BR, AR>,
+    _media_store: &'a LocalMediaBlobStore<BR, AR>,
 }
 
 impl<'a, R: ?Sized, BR, AR> PersonaFileCoordinator<'a, R, BR, AR> {
@@ -50,7 +51,7 @@ impl<'a, R: ?Sized, BR, AR> PersonaFileCoordinator<'a, R, BR, AR> {
     pub const fn new(repository: &'a R, media_store: &'a LocalMediaBlobStore<BR, AR>) -> Self {
         Self {
             repository,
-            media_store,
+            _media_store: media_store,
         }
     }
 }
@@ -89,7 +90,7 @@ where
     ) -> Result<ImportedPersonaFile, PersonaFileError> {
         let (mut import, skipped) = self.prepare(package, now)?;
         if let Some(asset_id) = package.avatar_data.as_deref().and_then(|avatar| {
-            store_file_image(self.media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
+            store_file_image(self._media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
         }) {
             import.persona.media.links.push(PersonaMediaLink { asset_id, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
         }
@@ -180,7 +181,7 @@ where
                 return;
             }
         };
-        if let Err(error) = self.media_store.release_blob(blob_id, |_| {
+        if let Err(error) = self._media_store.release_blob(blob_id, |_| {
             self.repository
                 .release_unused_blob(blob_id, now)
                 .map_err(|_| lettuce_media::MediaStoreError::CatalogFailure)
