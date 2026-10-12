@@ -69,15 +69,20 @@ export function isApiFailure(value: unknown): value is ApiFailure {
   return value instanceof ApiFailure;
 }
 
-async function settle<K extends CommandName>(pending: () => Promise<CommandOutcome<K>>): Promise<CommandData<K>> {
+function reported(command: string, failure: ApiFailure): ApiFailure {
+  if (import.meta.env.DEV) console.error(`[api] ${command} failed: ${failure.code}`, failure.message, failure.details ?? "", failure.cause ?? "");
+  return failure;
+}
+
+async function settle<K extends CommandName>(command: K, pending: () => Promise<CommandOutcome<K>>): Promise<CommandData<K>> {
   let outcome: CommandOutcome<K>;
   try {
     outcome = await pending();
   } catch (thrown) {
-    throw ApiFailure.fromRejection(thrown);
+    throw reported(command, ApiFailure.fromRejection(thrown));
   }
   if (outcome.status === "ok") return outcome.data;
-  throw ApiFailure.fromRejection(outcome.error);
+  throw reported(command, ApiFailure.fromRejection(outcome.error));
 }
 
 export interface ApiClient {
@@ -96,8 +101,8 @@ export interface ApiClient {
 export function createApiClient(transport: Transport): ApiClient {
   return {
     transport: transport.kind,
-    call: (command, ...args) => settle(() => transport.call(command, ...args)),
-    stream: (command, args, onEvent, options) => settle(() => transport.stream(command, args, onEvent, options)),
+    call: (command, ...args) => settle(command, () => transport.call(command, ...args)),
+    stream: (command, args, onEvent, options) => settle(command, () => transport.stream(command, args, onEvent, options)),
     subscribe: async (listener) => {
       try {
         return await transport.subscribe(listener);
