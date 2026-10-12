@@ -5,8 +5,7 @@
     "product": "LettuceAI Next",
     "bodyAfter": ". Rebuilt from the ground up, with everything you made coming along.",
     "migrate": "Migrate data",
-    "notNow": "Not now",
-    "note": "Your chats, characters and media come with you."
+    "notNow": "Not now"
   },
   "migrate": {
     "title": "Moving your data",

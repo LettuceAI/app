@@ -280,7 +280,6 @@ export function WelcomeBackPage() {
           <>
             {primary(t("welcome.migrate"), begin)}
             {secondary(t("welcome.notNow"), () => void decline())}
-            <p className="mt-3 text-sm text-fg-3">{t("welcome.note")}</p>
           </>
         )
       : step === "migrate"
