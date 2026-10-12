@@ -168,9 +168,8 @@ where
             }),
         };
         let (mut plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
-            .prepare_group_with(&request, &overrides, now)
-            .map_err(|_| Error::Conflict)?
-            .into_parts();
+            .prepare_group_history(&request, &overrides, now)
+            .map_err(|_| Error::Conflict)?;
         let authors = session_cast(
             self.sources,
             context.scope,
@@ -433,11 +432,9 @@ fn session_cast<S: DirectLaunchSources>(
     if members.is_empty() {
         return Err(Error::InvalidInput);
     }
-    if members.iter().all(|member| member.muted) {
-        let index = members
-            .iter()
-            .position(|member| member.enabled)
-            .unwrap_or(0);
+    if members.iter().all(|member| member.muted)
+        && let Some(index) = members.iter().position(|member| member.enabled)
+    {
         members[index].muted = false;
         cast[index + 1].muted = false;
     }

@@ -728,7 +728,11 @@ pub(crate) fn insert_group_rows(
     tx: &rusqlite::Transaction<'_>,
     plan: &CreateGroupPlan,
 ) -> Result<GroupDetails, RepositoryError> {
-    plan.validate()?;
+    GroupDetails {
+        group: plan.group.clone(),
+        starting_scene: plan.starting_scene.clone(),
+    }
+    .validate()?;
     if load_details(tx, plan.group.id).map_err(db_error)?.is_some() {
         return Err(RepositoryError::AlreadyExists);
     }
@@ -3426,6 +3430,30 @@ mod tests {
             Revision::new(2)
         );
     }
+    #[test]
+    fn stored_groups_with_reduced_membership_survive_backup_restore() {
+        for shape in 0..3 {
+            let database = Database::open_in_memory().expect("database");
+            let mut plan = library_plan(&database);
+            match shape {
+                0 => plan.group.members.clear(),
+                1 => plan.group.members.truncate(1),
+                _ => {
+                    for member in &mut plan.group.members {
+                        member.muted = true;
+                    }
+                }
+            }
+            assert!(GroupRepository::create(&database, plan.clone()).is_err());
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            insert_group_rows(&transaction, &plan).expect("stored historical group");
+            transaction.commit().expect("commit stored group");
+            drop(connection);
+            crate::backup::restore_writer::tests::assert_backup_round_trip(&database);
+        }
+    }
+
     #[test]
     fn group_save_keeps_reduced_membership_and_rejects_invalid_reference_edits() {
         let database = Database::open_in_memory().expect("database");

@@ -678,7 +678,11 @@ impl GroupLaunchSnapshot {
             }
             member.validate_snapshot("group.member")?;
         }
-        if self.members.iter().all(|member| member.muted) {
+        // A historical cast can consist entirely of deleted, disabled speakers.
+        // Keep them muted; a live cast still needs an unmuted member.
+        if self.members.iter().any(|member| member.enabled)
+            && self.members.iter().all(|member| member.muted)
+        {
             return Err(ValidationError::Invariant {
                 field: "group.members.active",
             });

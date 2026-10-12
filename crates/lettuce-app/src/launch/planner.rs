@@ -864,7 +864,20 @@ where
         overrides: &GroupLaunchOverrides,
         now: TimestampMillis,
     ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
-        self.prepare_group_source(request, overrides, None, now)
+        let (plan, drafts) = self.prepare_group_source(request, overrides, None, false, now)?;
+        Ok(PreparedConversationLaunch::new(plan, drafts)?)
+    }
+
+    /// Draft the stored group's settings for legacy history import. The caller
+    /// restores the historical cast (including deleted speakers) before the
+    /// conversation repository validates and writes the complete record.
+    pub(crate) fn prepare_group_history(
+        &self,
+        request: &GroupConversationLaunchRequest,
+        overrides: &GroupLaunchOverrides,
+        now: TimestampMillis,
+    ) -> Result<(CreateConversationPlan, Vec<SnapshotArtifactDraft>), ConversationLaunchError> {
+        self.prepare_group_source(request, overrides, None, true, now)
     }
 
     pub(crate) fn prepare_new_group(
@@ -873,7 +886,14 @@ where
         group: GroupDetails,
         now: TimestampMillis,
     ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
-        self.prepare_group_source(request, &GroupLaunchOverrides::default(), Some(group), now)
+        let (plan, drafts) = self.prepare_group_source(
+            request,
+            &GroupLaunchOverrides::default(),
+            Some(group),
+            false,
+            now,
+        )?;
+        Ok(PreparedConversationLaunch::new(plan, drafts)?)
     }
 
     fn prepare_group_source(
@@ -881,8 +901,9 @@ where
         request: &GroupConversationLaunchRequest,
         overrides: &GroupLaunchOverrides,
         provided: Option<GroupDetails>,
+        historical: bool,
         now: TimestampMillis,
-    ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
+    ) -> Result<(CreateConversationPlan, Vec<SnapshotArtifactDraft>), ConversationLaunchError> {
         if request.format_version != GROUP_LAUNCH_REQUEST_FORMAT_V1 {
             return Err(ConversationLaunchError::InvalidRequest {
                 field: "format_version",
@@ -902,20 +923,20 @@ where
                 .ok_or(ConversationLaunchError::GroupNotFound { group_id })?,
         };
         overrides.apply(&mut group);
-        if group.group.status == lettuce_characters::LifecycleStatus::Archived {
+        if !historical && group.group.status == lettuce_characters::LifecycleStatus::Archived {
             return Err(ConversationLaunchError::GroupArchived { group_id });
         }
         let members = policy::ordered_members(&group.group.members);
-        match policy::member_shape(&members) {
-            policy::MemberShape::TooFew => {
+        match (historical, policy::member_shape(&members)) {
+            (false, policy::MemberShape::TooFew) => {
                 return Err(ConversationLaunchError::TooFewMembers {
                     min: policy::MIN_GROUP_MEMBERS,
                 });
             }
-            policy::MemberShape::AllMuted => {
+            (false, policy::MemberShape::AllMuted) => {
                 return Err(ConversationLaunchError::AllMembersMuted { group_id });
             }
-            policy::MemberShape::Launchable => {}
+            _ => {}
         }
         let mut characters = Vec::with_capacity(members.len());
         for member in &members {
@@ -923,7 +944,9 @@ where
             let details = CharacterRepository::get(self.sources, character_id)
                 .map_err(LaunchSourceError::Character)?
                 .ok_or(ConversationLaunchError::MemberCharacterNotFound { character_id })?;
-            if details.character.status == lettuce_characters::LifecycleStatus::Archived {
+            if !historical
+                && details.character.status == lettuce_characters::LifecycleStatus::Archived
+            {
                 return Err(ConversationLaunchError::MemberCharacterArchived { character_id });
             }
             characters.push(details);
@@ -1356,7 +1379,7 @@ where
                 request_digest,
             },
         };
-        Ok(PreparedConversationLaunch::new(plan, drafts)?)
+        Ok((plan, drafts))
     }
 
     /// The starting scene is authored on the group profile, so it carries the

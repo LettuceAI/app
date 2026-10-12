@@ -396,8 +396,9 @@ fn map_memories(
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let item_compatible = uuid::Uuid::parse_str(&row.id).is_ok()
-            && matches!(
+        // Legacy generated six-digit string identities. Materialization derives
+        // a space-owned UUID from that string, including supersession links.
+        let item_compatible = matches!(
                 row.category.as_deref(),
                 None | Some(
                     "character_trait"
@@ -432,14 +433,6 @@ fn map_memories(
             && row.source_message_id.as_deref().is_none_or(|value| {
                 uuid::Uuid::parse_str(value).is_ok() && source_message_ids.contains(value)
             })
-            && row
-                .superseded_by
-                .as_deref()
-                .is_none_or(|value| uuid::Uuid::parse_str(value).is_ok())
-            && row
-                .supersedes
-                .iter()
-                .all(|value| uuid::Uuid::parse_str(value).is_ok())
             && canonical_entities.is_empty()
             && row.fact_signature.is_none()
             && row.fact_polarity.is_none()
@@ -841,6 +834,38 @@ mod tests {
         let group = plan_legacy_backup_group_sessions(direct).expect("group session plan");
         let notes = plan_legacy_backup_scheduled_notes(group).expect("scheduled-note plan");
         plan_legacy_backup_companion_shared_memory(notes).expect("shared-memory plan")
+    }
+
+    #[test]
+    fn legacy_short_memory_ids_and_supersession_materialize() {
+        let character_id = id(41);
+        let session_id = id(42);
+        let mut old = memory("123456", 64);
+        old["supersededBy"] = json!("654321");
+        old["supersededAt"] = json!(20);
+        let mut replacement = memory("654321", 64);
+        replacement["supersedes"] = json!(["123456"]);
+        let raw = serde_json::to_string(&json!([old, replacement])).expect("memory JSON");
+        let plan = plan_legacy_backup_memory_embeddings(source(
+            Some(json!([{
+                "session_id": session_id,
+                "session_kind": "session",
+                "memory_embeddings": raw
+            }])),
+            &raw,
+            &character_id,
+            &session_id,
+        ))
+        .expect("short legacy identities are valid");
+        assert_eq!(plan.owners[0].memories.len(), 2);
+        for memory in &plan.owners[0].memories {
+            assert_eq!(
+                memory.materialization,
+                LegacyBackupMemoryMaterialization::InitialItemAndProjection
+            );
+        }
+        assert_eq!(plan.owners[0].memories[0].superseded_by.as_deref(), Some("654321"));
+        assert_eq!(plan.owners[0].memories[1].supersedes, ["123456"]);
     }
 
     #[test]

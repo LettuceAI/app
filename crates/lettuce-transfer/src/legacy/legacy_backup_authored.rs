@@ -1587,16 +1587,9 @@ fn map_groups(
             created_at: TimestampMillis::new(row.created_at),
             updated_at: TimestampMillis::new(row.updated_at),
         };
-        if validation.validate_membership().is_err() {
-            let undersized = members.len() < 2 || members.iter().all(|member| member.muted);
-            if undersized {
-                skipped.push(reference_skip(
-                    crate::LegacyImportSkipKind::GroupProfile,
-                    group_key.clone(),
-                    crate::LegacyImportSkipReason::UndersizedGroup,
-                ));
-                continue;
-            }
+        // Import stored groups, including ones reduced by character deletion.
+        // Requiring new-group membership here would discard their chat history.
+        if validation.validate().is_err() {
             return Err(malformed(
                 LegacyBackupDocumentKind::GroupCharacters,
                 "group_profile",
@@ -3305,7 +3298,7 @@ mod tests {
     }
 
     #[test]
-    fn groups_left_undersized_by_pruning_are_skipped() {
+    fn groups_left_undersized_by_pruning_keep_their_history_source() {
         let member = id(80);
         let deleted = id(81);
         let group_id = id(82);
@@ -3325,12 +3318,14 @@ mod tests {
                 }]),
             ),
         ])
-        .expect("an undersized group is skipped");
-        assert!(plan.groups.is_empty());
+        .expect("an undersized stored group remains importable");
+        assert_eq!(plan.groups.len(), 1);
+        assert_eq!(plan.groups[0].members.len(), 1);
+        assert_eq!(plan.groups[0].members[0].character_id.to_string(), member);
         assert!(plan.skipped.contains(&crate::LegacyImportSkip {
-            kind: crate::LegacyImportSkipKind::GroupProfile,
-            source_key: group_id.clone(),
-            reason: crate::LegacyImportSkipReason::UndersizedGroup,
+            kind: crate::LegacyImportSkipKind::CharacterReference,
+            source_key: format!("group_characters.character_ids:{group_id}:{deleted}"),
+            reason: crate::LegacyImportSkipReason::MissingCharacter,
         }));
     }
 

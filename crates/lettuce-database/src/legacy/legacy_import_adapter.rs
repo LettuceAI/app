@@ -1647,7 +1647,7 @@ impl LegacyImportRepository for Database {
         let scope = lettuce_transfer::LegacyIdScope::new();
         for candidate in &request.groups {
             let plan = legacy_group_plan(candidate, &assignments, &media_by_use, scope)?;
-            crate::catalog::group_adapter::insert_group_plan(&transaction, &plan)
+            crate::catalog::group_adapter::insert_group_rows(&transaction, &plan)
                 .map_err(stage_insert_error)?;
         }
         for owner in &request.group_lorebooks {

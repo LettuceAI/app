@@ -941,6 +941,26 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_metrics_follow_their_direct_and_group_messages_and_survive_a_second_restore() {
+        legacy_history_restore(0).await;
+    }
+
+    #[tokio::test]
+    async fn legacy_history_keeps_short_memory_ids_and_a_deleted_group_member() {
+        legacy_history_restore(1).await;
+    }
+
+    #[tokio::test]
+    async fn legacy_history_keeps_a_group_with_no_surviving_members() {
+        legacy_history_restore(2).await;
+    }
+
+    #[tokio::test]
+    async fn legacy_history_keeps_an_archived_group_with_only_muted_members() {
+        legacy_history_restore(3).await;
+    }
+
+    async fn legacy_history_restore(historical_shape: u8) {
+        let deleted_member = historical_shape != 0;
         let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
         std::fs::create_dir_all(&root).expect("fixture root");
         let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
@@ -963,7 +983,7 @@ mod tests {
             serde_json::json!({
                 "id": variant,
                 "content": format!("take {variant}"),
-                "speaker_character_id": ada,
+                "speaker_character_id": if deleted_member { &grace } else { &ada },
                 "created_at": created_at,
                 "attachments": "[]"
             })
@@ -978,7 +998,7 @@ mod tests {
                 "id": message,
                 "role": role,
                 "content": "hello",
-                "speaker_character_id": (role == "assistant").then_some(&ada),
+                "speaker_character_id": (role == "assistant").then_some(if deleted_member { &grace } else { &ada }),
                 "turn_number": 1,
                 "created_at": 20,
                 "selected_variant_id": (role == "assistant").then_some("group-variant"),
@@ -990,7 +1010,11 @@ mod tests {
                 "variants": variants
             })
         };
-        let members = serde_json::to_string(&[&ada, &grace]).expect("members");
+        let members = if historical_shape == 2 {
+            serde_json::to_string(&[grace.clone(), id(8)]).expect("deleted members")
+        } else {
+            serde_json::to_string(&[&ada, &grace]).expect("members")
+        };
         let metric = |metric: &str, created_at: i64, message: Option<&str>| {
             serde_json::json!({
                 "id": metric,
@@ -1001,6 +1025,15 @@ mod tests {
                 "message_id": message
             })
         };
+        let embeddings = if deleted_member {
+            serde_json::json!([{
+                "id": "123456", "text": "A retained legacy memory",
+                "embedding": vec![0.125_f32; 64],
+                "embeddingDimensions": 64, "embeddingSourceVersion": "v4",
+                "createdAt": 1, "lastAccessedAt": 20,
+                "category": "plot_event"
+            }]).to_string()
+        } else { "[]".to_owned() };
         let source = |title: &str| {
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
                 warnings: Vec::new(),
@@ -1055,10 +1088,16 @@ mod tests {
                     ),
                     document(
                         lettuce_transfer::LegacyBackupDocumentKind::Characters,
-                        serde_json::json!([
-                            {"id": ada, "name": "Ada", "created_at": 1, "updated_at": 1},
-                            {"id": grace, "name": "Grace", "created_at": 1, "updated_at": 1}
-                        ]),
+                        if deleted_member {
+                            serde_json::json!([
+                                {"id": ada, "name": "Ada", "created_at": 1, "updated_at": 1}
+                            ])
+                        } else {
+                            serde_json::json!([
+                                {"id": ada, "name": "Ada", "created_at": 1, "updated_at": 1},
+                                {"id": grace, "name": "Grace", "created_at": 1, "updated_at": 1}
+                            ])
+                        },
                     ),
                     document(
                         lettuce_transfer::LegacyBackupDocumentKind::Sessions,
@@ -1070,7 +1109,7 @@ mod tests {
                             "persona_disabled": false,
                             "lorebook_ids_override": "[]",
                             "memories": "[]",
-                            "memory_embeddings": "[]",
+                            "memory_embeddings": embeddings,
                             "memory_summary_token_count": 0,
                             "memory_tool_events": "[]",
                             "archived": false,
@@ -1083,15 +1122,23 @@ mod tests {
                         }]),
                     ),
                     document(
+                        lettuce_transfer::LegacyBackupDocumentKind::MemoryEmbeddings,
+                        if deleted_member { serde_json::json!([{
+                            "session_id": session,
+                            "session_kind": "session",
+                            "memory_embeddings": embeddings
+                        }]) } else { serde_json::json!([]) },
+                    ),
+                    document(
                         lettuce_transfer::LegacyBackupDocumentKind::GroupCharacters,
                         serde_json::json!([{
                             "id": group,
                             "name": "Room",
                             "character_ids": members,
-                            "muted_character_ids": "[]",
+                            "muted_character_ids": if historical_shape == 3 { serde_json::json!([ada]).to_string() } else { "[]".to_owned() },
                             "created_at": 1,
                             "updated_at": 1,
-                            "archived": false,
+                            "archived": historical_shape == 3,
                             "chat_type": "conversation",
                             "lorebook_ids": "[]",
                             "disable_character_lorebooks": false,
@@ -1259,6 +1306,34 @@ mod tests {
             let graph = database
                 .read_provider_backup_graph()
                 .expect("restored graph");
+            if deleted_member {
+                let memory_id = lettuce_types::MemoryId::from_uuid(scope.derived(
+                    "memory", &session, "memory-item:123456",
+                ));
+                assert!(graph.memory.spaces.iter().any(|space| {
+                    space.snapshot.items.iter().any(|item| {
+                        item.id == memory_id && item.text == "A retained legacy memory"
+                    })
+                }));
+                assert!(graph.memory_projections.projections.iter().any(|projection| {
+                    projection.memory_id == memory_id
+                }));
+                let restored_group = graph.conversation_history.conversations.iter().find(|value| {
+                    value.aggregate.conversation.id
+                        == lettuce_types::ConversationId::from_uuid(scope.source("conversation", &group_session))
+                }).expect("history of the undersized group");
+                assert_eq!(restored_group.messages.len(), 2);
+                let deleted = restored_group.aggregate.conversation.participants.iter().find(|participant| {
+                    participant.display_name == "Unknown"
+                }).expect("deleted speaker retained");
+                assert!(!deleted.enabled);
+                assert!(deleted.muted);
+                let reply_id = lettuce_types::MessageId::from_uuid(scope.source("message", &group_reply));
+                let reply = restored_group.messages.iter().find(|value| value.message.id == reply_id)
+                    .expect("deleted speaker reply");
+                assert_eq!(reply.message.author_participant_id, Some(deleted.id));
+                assert_eq!(reply.candidates.len(), 1);
+            }
             let found = |legacy: &str| {
                 let message_id =
                     lettuce_types::MessageId::from_uuid(scope.source("message", legacy));

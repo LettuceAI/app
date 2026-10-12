@@ -1193,11 +1193,9 @@ impl SnapshotDocumentBody for GroupSnapshotBodyV1 {
 
     fn validate(&self) -> Result<(), ValidationError> {
         validate_text("group_document.name", &self.name, MAX_NAME_BYTES, false)?;
-        if self.members.is_empty() {
-            return Err(ValidationError::Invariant {
-                field: "group_document.members.minimum",
-            });
-        }
+        // This document freezes a stored profile, whose cast can have been
+        // reduced by deletion. Launch snapshots and new-group commands enforce
+        // their own active-cast rules; historical profiles must stay readable.
         validate_unique(
             "group_document.members.character_ids",
             self.members.iter().map(|member| member.character_id),
@@ -1206,11 +1204,6 @@ impl SnapshotDocumentBody for GroupSnapshotBodyV1 {
             "group_document.members.order",
             self.members.iter().map(|member| member.ordinal),
         )?;
-        if self.members.iter().all(|member| member.muted) {
-            return Err(ValidationError::Invariant {
-                field: "group_document.members.active",
-            });
-        }
         Ok(())
     }
 }
@@ -2048,28 +2041,18 @@ mod tests {
     }
 
     #[test]
-    fn group_body_rejects_an_empty_and_an_all_muted_cast() {
+    fn group_body_preserves_stored_empty_and_all_muted_casts() {
         let mut body = group_body();
         body.members.truncate(1);
         assert_eq!(body.validate(), Ok(()));
         body.members.clear();
-        assert_eq!(
-            body.validate(),
-            Err(ValidationError::Invariant {
-                field: "group_document.members.minimum"
-            })
-        );
+        assert_eq!(body.validate(), Ok(()));
 
         let mut body = group_body();
         for member in &mut body.members {
             member.muted = true;
         }
-        assert_eq!(
-            body.validate(),
-            Err(ValidationError::Invariant {
-                field: "group_document.members.active"
-            })
-        );
+        assert_eq!(body.validate(), Ok(()));
     }
 
     #[test]
