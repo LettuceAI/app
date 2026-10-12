@@ -28,7 +28,6 @@ pub struct ImportCharacterContent {
     #[serde(default)]
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Unknown>))]
     pub character_book: Option<Value>,
-    pub rules: Vec<String>,
     pub scenes: Vec<ImportScene>,
     pub default_scene_id: Option<String>,
     pub default_model_id: Option<String>,
@@ -48,7 +47,6 @@ pub struct ImportCharacterContent {
     #[serde(default)]
     pub lorebooks: Vec<ImportBundledLorebook>,
     pub prompt_template_id: Option<String>,
-    pub system_prompt: Option<String>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Unknown>))]
     pub voice_config: Option<Value>,
     pub voice_autoplay: Option<bool>,
@@ -166,8 +164,6 @@ pub struct ImportLorebookMetadata {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct ImportLorebookEntry {
-    pub id: String,
-    pub lorebook_id: String,
     pub title: String,
     pub enabled: bool,
     pub always_active: bool,
@@ -177,10 +173,6 @@ pub struct ImportLorebookEntry {
     pub content: String,
     pub priority: i32,
     pub display_order: i32,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub created_at: i64,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

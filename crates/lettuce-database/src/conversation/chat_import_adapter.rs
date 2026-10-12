@@ -1,37 +1,14 @@
 use lettuce_companions::{CompanionRuntimeState, CompanionStateOwner};
 use lettuce_transfer::{
-    ChatImportRepository, ChatImportRepositoryError, LegacyCompanionConversation,
+    ChatImportRepositoryError, LegacyCompanionConversation,
     LegacyCompanionEpisodeRecord, LegacyConversationRecord,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
-use crate::Database;
 
 fn storage<E>(_: E) -> ChatImportRepositoryError {
     ChatImportRepositoryError::Storage
-}
-
-impl ChatImportRepository for Database {
-    fn import_chat(
-        &self,
-        group: Option<lettuce_characters::CreateGroupPlan>,
-        record: LegacyConversationRecord,
-        companion: Option<(CompanionStateOwner, CompanionRuntimeState)>,
-        now: TimestampMillis,
-    ) -> Result<(), ChatImportRepositoryError> {
-        let mut connection = self.connection().map_err(storage)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        if let Some(group) = group {
-            crate::catalog::group_adapter::insert_group_plan(&tx, &group)
-                .map_err(|_| ChatImportRepositoryError::InvalidInput)?;
-        }
-        import_chat_in(&tx, record, companion, now)?;
-        tx.commit().map_err(storage)?;
-        Ok(())
-    }
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {

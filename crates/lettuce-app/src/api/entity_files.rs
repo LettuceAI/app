@@ -20,6 +20,19 @@ pub(super) struct ImportFile {
     pub digest: String,
 }
 
+#[derive(Clone)]
+pub(super) struct ChatAdmission {
+    pub group: bool,
+    pub speakers: Vec<String>,
+}
+
+pub(super) fn read_for_commit(
+    context: &ApiContext,
+    source: &dto::FileSource,
+) -> Result<ImportFile, ApiError> {
+    read_file(context, source, &mut |_| Ok(()), false)
+}
+
 pub(super) fn read(context: &ApiContext, source: &dto::FileSource) -> Result<ImportFile, ApiError> {
     read_with_progress(context, source, &mut |_| Ok(()))
 }
@@ -28,6 +41,15 @@ pub(super) fn read_with_progress(
     context: &ApiContext,
     source: &dto::FileSource,
     progress: &mut dyn FnMut(u64) -> Result<(), ApiError>,
+) -> Result<ImportFile, ApiError> {
+    read_file(context, source, progress, true)
+}
+
+fn read_file(
+    context: &ApiContext,
+    source: &dto::FileSource,
+    progress: &mut dyn FnMut(u64) -> Result<(), ApiError>,
+    retain_chat: bool,
 ) -> Result<ImportFile, ApiError> {
     if source.uri.trim().is_empty() {
         return Err(invalid_field("source", "source is empty"));
@@ -42,24 +64,45 @@ pub(super) fn read_with_progress(
         .map_err(IntoApiError::into_api_error)?;
     let kind =
         super::file_kind::detect_kind(reader.as_mut()).map_err(IntoApiError::into_api_error)?;
+    if !matches!(
+        kind,
+        dto::FileKind::CharacterCard
+            | dto::FileKind::PersonaFile
+            | dto::FileKind::Lorebook
+            | dto::FileKind::PromptPreset
+            | dto::FileKind::ChatTemplate
+            | dto::FileKind::ModelFile
+            | dto::FileKind::ChatJsonl
+    ) {
+        return Err(api_error(
+            ApiErrorCode::Unsupported,
+            "this file kind cannot be imported as an entity",
+        ));
+    }
     reader
         .seek(SeekFrom::Start(0))
         .map_err(|_| super::files::FileAccessError::Io.into_api_error())?;
     let mut bytes = Vec::new();
-    let mut buffer = vec![0; 1024 * 1024];
+    let mut buffer = vec![0; if retain_chat { 1024 * 1024 } else { 64 * 1024 }];
+    let mut hasher = blake3::Hasher::new();
+    let mut completed = 0;
     loop {
         cancelled(context)?;
-        progress(bytes.len() as u64)?;
+        progress(completed)?;
         let length = reader
             .read(&mut buffer)
             .map_err(|_| super::files::FileAccessError::Io.into_api_error())?;
         if length == 0 {
             break;
         }
-        bytes.extend_from_slice(&buffer[..length]);
+        hasher.update(&buffer[..length]);
+        completed += length as u64;
+        if retain_chat || kind != dto::FileKind::ChatJsonl {
+            bytes.extend_from_slice(&buffer[..length]);
+        }
     }
-    progress(bytes.len() as u64)?;
-    let digest = blake3::hash(&bytes).to_hex().to_string();
+    progress(completed)?;
+    let digest = hasher.finalize().to_hex().to_string();
     Ok(ImportFile {
         name: description.name,
         kind,
@@ -368,8 +411,6 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 .entries
                 .into_iter()
                 .map(|entry| dto::ImportLorebookEntry {
-                    id: String::new(),
-                    lorebook_id: String::new(),
                     title: entry.title,
                     enabled: entry.enabled,
                     always_active: entry.always_active,
@@ -379,8 +420,6 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                     content: entry.content,
                     priority: entry.priority,
                     display_order: entry.display_order,
-                    created_at: now.get(),
-                    updated_at: now.get(),
                 })
                 .collect();
             dto::ImportPreviewContent::Lorebook {
@@ -437,6 +476,17 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
         dto::FileKind::ChatJsonl => {
             let chat = lettuce_transfer::parse_chat_jsonl(text(&file)?, now.get())
                 .map_err(format_error)?;
+            context
+                .chat_previews()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(
+                    file.digest.clone(),
+                    ChatAdmission {
+                        group: chat.is_group(),
+                        speakers: chat.speakers().into_iter().collect(),
+                    },
+                );
             dto::ImportPreviewContent::Chat {
                 title: chat
                     .metadata
@@ -511,11 +561,14 @@ async fn download_avatar(
         .blocking(|context| context.backend().tls_policy().map_err(internal))
         .await?;
     let download = async {
-        let client = lettuce_network::ArtifactDownloadClient::with_tls(&tls).map_err(|_| ())?;
-        client
-            .download_avatar(&url, lettuce_media::MAX_MEDIA_BLOB_BYTES)
-            .await
-            .map_err(|_| ())
+        lettuce_network::ArtifactDownloadClient::download_avatar(
+            &tls,
+            &url,
+            lettuce_media::MAX_MEDIA_BLOB_BYTES,
+            std::time::Duration::from_secs(180),
+        )
+        .await
+        .map_err(|_| ())
     };
     tokio::select! {
         biased;
@@ -632,7 +685,7 @@ pub async fn import_commit(
     cancelled(context)?;
     let source = request.source.clone();
     let file = context
-        .blocking(move |context| read(context, &source))
+        .blocking(move |context| read_for_commit(context, &source))
         .await?;
     if file.digest != request.digest {
         return Err(api_error(
@@ -660,7 +713,7 @@ pub async fn import_commit(
         _ => Prepared::Text,
     };
     if file.kind == dto::FileKind::ChatJsonl {
-        return super::entity_import_jobs::admit(context, request, digest, file).await;
+        return super::entity_import_jobs::admit(context, request, digest).await;
     }
     context
         .blocking(move |context| {
@@ -739,14 +792,11 @@ pub async fn import_commit(
                     let media = context.media().ok_or_else(|| {
                         api_error(ApiErrorCode::Unavailable, "no media store is open")
                     })?;
-                    let mut without_image = package.clone();
-                    without_image.avatar_data = None;
-                    let (mut import, skips, images) = context
+                    let (mut import, skips) = context
                         .backend()
                         .persona_files(media)
-                        .prepare(&without_image, now)
+                        .prepare(&package, now)
                         .map_err(IntoApiError::into_api_error)?;
-                    warnings.extend(images);
                     warnings.extend(
                         skips.into_iter().map(|skip| {
                             warning(dto::FileWarningCode::FieldSkipped, skip.source_key)

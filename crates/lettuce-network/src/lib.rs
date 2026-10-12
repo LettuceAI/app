@@ -215,7 +215,6 @@ pub enum ArtifactProbeError {
 #[derive(Clone)]
 pub struct ArtifactDownloadClient {
     client: reqwest::Client,
-    avatar_client: reqwest::Client,
     hugging_face_token: Option<(std::sync::Arc<SecretValue>, Url)>,
     civitai_token: Option<std::sync::Arc<SecretValue>>,
 }
@@ -260,40 +259,26 @@ impl ArtifactDownloadClient {
             }
         });
         let roots = trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)?;
-        let build = |redirect| {
-            let mut builder = reqwest::Client::builder()
-                .redirect(redirect)
-                .referer(false)
-                .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
-            for root in &roots {
-                builder = builder.add_root_certificate(root.clone());
-            }
-            builder.build().map_err(|_| ArtifactDownloadError::Transport)
-        };
-        let client = build(redirect)?;
-        let avatar_client = build(redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= MAX_ARTIFACT_REDIRECTS
-                || !matches!(attempt.url().scheme(), "http" | "https")
-                || !attempt.url().username().is_empty()
-                || attempt.url().password().is_some()
-            {
-                attempt.stop()
-            } else {
-                attempt.follow()
-            }
-        }))?;
+        let mut builder = reqwest::Client::builder()
+            .redirect(redirect)
+            .referer(false)
+            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
+        for root in roots {
+            builder = builder.add_root_certificate(root);
+        }
+        let client = builder.build().map_err(|_| ArtifactDownloadError::Transport)?;
         Ok(Self {
             client,
-            avatar_client,
             hugging_face_token: None,
             civitai_token: None,
         })
     }
 
     pub async fn download_avatar(
-        &self,
+        policy: &TlsPolicy,
         url: &str,
         max_bytes: u64,
+        deadline: Duration,
     ) -> Result<Vec<u8>, ArtifactDownloadError> {
         let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
         if !matches!(url.scheme(), "http" | "https")
@@ -305,8 +290,30 @@ impl ArtifactDownloadClient {
         {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
+        let deadline = tokio::time::Instant::now() + deadline;
+        let mut builder = reqwest::Client::builder()
+            .redirect(redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= MAX_ARTIFACT_REDIRECTS
+                    || !matches!(attempt.url().scheme(), "http" | "https")
+                    || !attempt.url().username().is_empty()
+                    || attempt.url().password().is_some()
+                {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
+            .referer(false)
+            .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
+        for root in trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)? {
+            builder = builder.add_root_certificate(root);
+        }
+        let client = builder.build().map_err(|_| ArtifactDownloadError::Transport)?;
         let mut response =
-            tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, self.avatar_client.get(url).send())
+            tokio::time::timeout_at(
+                deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
+                client.get(url).send(),
+            )
                 .await
                 .map_err(|_| ArtifactDownloadError::TimedOut)?
                 .map_err(|_| ArtifactDownloadError::Transport)?;
@@ -320,7 +327,10 @@ impl ArtifactDownloadClient {
             return Err(ArtifactDownloadError::InvalidResponse);
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, response.chunk())
+        while let Some(chunk) = tokio::time::timeout_at(
+            deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
+            response.chunk(),
+        )
             .await
             .map_err(|_| ArtifactDownloadError::TimedOut)?
             .map_err(|_| ArtifactDownloadError::Transport)?
@@ -2231,15 +2241,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn avatar_download_has_one_total_deadline_despite_arriving_chunks() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let endpoint = format!("http://{}/avatar", listener.local_addr().expect("address"));
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut request = [0; 4096];
+            stream.read(&mut request).await.expect("request");
+            stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.expect("header");
+            for _ in 0..20 {
+                if stream.write_all(b"1\r\nx\r\n").await.is_err() { return; }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let _ = stream.write_all(b"0\r\n\r\n").await;
+        });
+        let result = ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 1024, Duration::from_millis(80)).await;
+        assert_eq!(result, Err(ArtifactDownloadError::TimedOut));
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn avatar_download_bounds_declared_and_streamed_sizes() {
         for response in [
             "HTTP/1.1 200 OK\r\nContent-Length: 9\r\nConnection: close\r\n\r\n",
             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n9\r\n123456789\r\n0\r\n\r\n",
         ] {
             let (endpoint, _) = test_server(response).await;
-            let error = ArtifactDownloadClient::new()
-                .expect("client")
-                .download_avatar(&endpoint, 8)
+            let error = ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 8, Duration::from_secs(180))
                 .await
                 .expect_err("avatar limit");
             assert_eq!(error, ArtifactDownloadError::InvalidResponse);
@@ -2247,7 +2276,7 @@ mod tests {
         let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nok\r\n0\r\n\r\n").await;
         let client = ArtifactDownloadClient::new().expect("client");
         assert_eq!(
-            client.download_avatar(&endpoint, 8).await.expect("unknown size"),
+            ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 8, Duration::from_secs(180)).await.expect("unknown size"),
             b"ok"
         );
         assert_eq!(

@@ -425,18 +425,13 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
         .backend()
         .chat_files()
         .prepare_direct(
-            raw,
+            lettuce_transfer::parse_chat_jsonl(raw, 1).expect("parse transcript"),
             Some("chat"),
             Some(harness.character_id),
             harness.context.now(),
         )
         .expect("prepare");
-    let result: Result<String, ApiOperationError> = database.commit_api_operation(
-        "import_chat_apply",
-        "crash",
-        "digest",
-        harness.context.now(),
-        |scope| {
+    let result: Result<(), ApiOperationError> = database.apply_import_job(|scope| {
             scope
                 .import_chat(
                     prepared.group,
@@ -487,6 +482,7 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
     .await
     .expect("job");
     assert_eq!(job.state, dto::JobStateDto::Succeeded);
+    assert!(database.lookup_api_operation("import_chat_apply", "once-chat").expect("receipt lookup").is_none());
     assert!(matches!(
         job.result,
         Some(dto::JobResultDto::Conversation { .. })
@@ -925,18 +921,15 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
         .expect("models")[0]
         .id
         .to_string();
-    let chat = harness
-        .context
-        .backend()
-        .chat_files()
-        .import_direct(
-            "{\"character_name\":\"Ada\"}\n{\"name\":\"Ada\",\"mes\":\"Hello\"}",
-            Some("chat"),
-            Some(harness.character_id),
-            harness.context.now(),
-        )
-        .expect("chat")
-        .to_string();
+    let prepared = harness.context.backend().chat_files().prepare_direct(
+        lettuce_transfer::parse_chat_jsonl("{\"character_name\":\"Ada\"}\n{\"name\":\"Ada\",\"mes\":\"Hello\"}", 1).expect("parse transcript"),
+        Some("chat"), Some(harness.character_id), harness.context.now(),
+    ).expect("chat plan");
+    let chat = prepared.record.history.aggregate.conversation.id.to_string();
+    harness.context.backend().database().apply_import_job::<lettuce_database::ApiOperationError>(|scope| {
+        scope.import_chat(prepared.group, prepared.record, prepared.companion, harness.context.now())
+            .map_err(|_| lettuce_database::ApiOperationError::Storage)
+    }).expect("chat");
     let fail = failing_exports(&harness, &root);
     let android = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
     for kind in 0..7 {
@@ -1118,7 +1111,7 @@ async fn group_and_whole_transcript_roll_back_together_then_import_once() {
         .context
         .backend()
         .chat_files()
-        .prepare_group(raw, &mapping, harness.context.now())
+        .prepare_group(lettuce_transfer::parse_chat_jsonl(raw, 1).expect("parse transcript"), &mapping, harness.context.now())
         .expect("prepare group");
     assert!(prepared.group.is_some());
     let before = database.read_provider_backup_graph().expect("before");
@@ -1207,7 +1200,7 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
         .expect("stage object");
     let avatar = upload.asset.id;
     let package = harness.context.backend().persona_files(media).read("{\"version\":1,\"persona\":{\"title\":\"Writer\",\"description\":\"Authored\",\"isDefault\":true}}",harness.context.now()).expect("persona");
-    let (mut persona, _, _) = harness
+    let (mut persona, _) = harness
         .context
         .backend()
         .persona_files(media)
@@ -1643,4 +1636,192 @@ impl super::FileAccess for AndroidDownloads {
             protected,
         )
     }
+}
+
+struct HeaderOnlyFiles(Vec<u8>);
+struct HeaderOnlyReader(std::io::Cursor<Vec<u8>>);
+impl std::io::Read for HeaderOnlyReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        assert!(self.0.position() < super::file_kind::HEADER_BYTES as u64, "read past the header");
+        std::io::Read::read(&mut self.0, buffer)
+    }
+}
+impl std::io::Seek for HeaderOnlyReader {
+    fn seek(&mut self, position: std::io::SeekFrom) -> std::io::Result<u64> {
+        assert!(!matches!(position, std::io::SeekFrom::Start(0)), "reopened body after detection");
+        std::io::Seek::seek(&mut self.0, position)
+    }
+}
+impl super::FileAccess for HeaderOnlyFiles {
+    fn describe(&self, _: &str) -> Result<super::FileDescription, super::FileAccessError> {
+        Ok(super::FileDescription { name: "large".into(), size: 12 * 1024 * 1024 * 1024 })
+    }
+    fn open(&self, _: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
+        let mut header = self.0.clone();
+        header.resize(super::file_kind::HEADER_BYTES, 0);
+        Ok(Box::new(HeaderOnlyReader(std::io::Cursor::new(header))))
+    }
+    fn create(&self, _: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
+        panic!("no writes")
+    }
+}
+
+#[tokio::test]
+async fn unsupported_entity_imports_stop_at_the_header() {
+    let (root, harness) = setup();
+    for magic in [b"GGUF".as_slice(), b"LETTUCE-BACKUP2\0".as_slice()] {
+        let context = export_context(&harness, &root, Arc::new(HeaderOnlyFiles(magic.to_vec())));
+        let source = dto::FileSource { uri: "large".into() };
+        assert_eq!(super::import_preview(&context, dto::ImportPreviewRequest { source: source.clone() }).await.expect_err("unsupported").code, ApiErrorCode::Unsupported);
+        assert_eq!(super::import_commit(&context, commit_request(source, "digest".into(), json!({}), "unsupported")).await.expect_err("unsupported").code, ApiErrorCode::Unsupported);
+    }
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+#[tokio::test]
+async fn character_preview_accepts_a_package_without_rules() {
+    let (root, harness) = setup();
+    let source = source(&root, "character.json", &json!({"version":1,"character":{"name":"Ada","scenes":[],"disableAvatarGradient":false}}));
+    let p = preview(&harness.context, source).await;
+    let dto::ImportPreviewContent::Character { content } = p.content else { panic!("character") };
+    assert_eq!(content.name, "Ada");
+    assert!(serde_json::to_value(content).expect("content").get("rules").is_none());
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+#[tokio::test]
+async fn previews_omit_inert_prompts_and_fabricated_entry_metadata() {
+    let (root, harness) = setup();
+    let card = source(&root, "character.json", &json!({"version":1,"character":{"name":"Ada","scenes":[],"disableAvatarGradient":false}}));
+    let p = preview(&harness.context, card).await;
+    let serialized = serde_json::to_value(p.content).expect("content");
+    assert!(serialized["content"].get("systemPrompt").is_none());
+    let book = source(&root, "book.json", &json!({"name":"Harbour","entries":[{"keys":["ship"],"content":"A ship"}]}));
+    let p = preview(&harness.context, book).await;
+    let serialized = serde_json::to_value(p.content).expect("content");
+    let entry = &serialized["entries"][0];
+    for field in ["id", "lorebookId", "createdAt", "updatedAt"] {
+        assert!(entry.get(field).is_none(), "{field}");
+    }
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+struct BoundedReads {
+    bounded: Arc<std::sync::atomic::AtomicBool>,
+}
+struct BoundedReader {
+    reader: Box<dyn super::FileReader>,
+    bounded: Arc<std::sync::atomic::AtomicBool>,
+}
+impl std::io::Read for BoundedReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.bounded.load(std::sync::atomic::Ordering::SeqCst) {
+            assert!(buffer.len() <= 64 * 1024, "request attempted a whole-file buffer");
+        }
+        self.reader.read(buffer)
+    }
+}
+impl std::io::Seek for BoundedReader {
+    fn seek(&mut self, position: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.reader.seek(position)
+    }
+}
+impl super::FileAccess for BoundedReads {
+    fn describe(&self, uri: &str) -> Result<super::FileDescription, super::FileAccessError> {
+        super::tests::StdFiles.describe(uri)
+    }
+    fn open(&self, uri: &str) -> Result<Box<dyn super::FileReader>, super::FileAccessError> {
+        Ok(Box::new(BoundedReader { reader: super::tests::StdFiles.open(uri)?, bounded: self.bounded.clone() }))
+    }
+    fn create(&self, _: &str) -> Result<Box<dyn std::io::Write + Send>, super::FileAccessError> {
+        panic!("no writes")
+    }
+}
+
+#[tokio::test]
+async fn large_chat_admission_streams_a_digest_in_bounded_reads() {
+    let (root, harness) = setup();
+    let path = root.join("large.jsonl");
+    let raw = format!("{{\"character_name\":\"Ada\"}}\n{}", json!({"name":"Ada","is_user":false,"mes":"x".repeat(8 * 1024 * 1024)}));
+    std::fs::write(&path, &raw).expect("large transcript");
+    let bounded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let context = export_context(&harness, &root, Arc::new(BoundedReads { bounded: bounded.clone() }));
+    let source = dto::FileSource { uri: path.display().to_string() };
+    let p = preview(&context, source.clone()).await;
+    bounded.store(true, std::sync::atomic::Ordering::SeqCst);
+    let streamed = super::entity_files::read_for_commit(&context, &source).expect("streamed digest");
+    assert!(streamed.bytes.is_empty());
+    assert_eq!(streamed.digest, p.digest);
+    let result = super::import_commit(&context, commit_request(source, p.digest, json!({"character_id":harness.character_id.to_string()}), "large-chat")).await.expect("streamed admission");
+    assert!(matches!(result, dto::ImportCommitResult::Job { .. }));
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+#[tokio::test]
+async fn disabled_avatar_downloads_make_no_network_requests() {
+    use lettuce_settings::GlobalSettingsStore;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (root, harness) = setup();
+    let database = harness.context.backend().database();
+    let settings = database.load().expect("settings");
+    let mut draft = settings.settings;
+    draft.auto_download_character_card_avatars = false;
+    database.save(draft, settings.default_model_profile_id, settings.revision).expect("disable");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let address = listener.local_addr().expect("address");
+    let requests = Arc::new(AtomicUsize::new(0));
+    let count = requests.clone();
+    let server = tokio::spawn(async move {
+        loop {
+            let _ = listener.accept().await.expect("accept");
+            count.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for (index, value) in [
+        json!({"version":1,"character":{"name":"Ada","scenes":[],"disableAvatarGradient":false},"avatarData":format!("http://{address}/avatar")}),
+        json!({"version":1,"persona":{"title":"Writer","description":"Authored"},"avatarData":format!("http://{address}/avatar")}),
+    ].into_iter().enumerate() {
+        let source = source(&root, &format!("disabled-{index}.json"), &value);
+        let p = preview(&harness.context, source.clone()).await;
+        let dto::ImportCommitResult::Imported { warnings, .. } = super::import_commit(&harness.context, commit_request(source, p.digest, json!({}), &format!("disabled-{index}"))).await.expect("import") else { panic!("entity") };
+        assert!(warnings.iter().any(|w| w.code == dto::FileWarningCode::RemoteAvatarNotDownloaded));
+    }
+    tokio::task::yield_now().await;
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    server.abort();
+    std::fs::remove_dir_all(root).expect("folder");
+}
+
+#[tokio::test]
+async fn png_cards_and_charx_agree_with_file_inspection() {
+    use base64::Engine;
+    let (root, harness) = setup();
+    let card = json!({"spec":"chara_card_v2","spec_version":"2.0","data":{"name":"Ada","description":"Keeper","first_mes":"Hello"}});
+    let mut png = super::tests::png_bytes();
+    let mut text = b"chara\0".to_vec();
+    text.extend_from_slice(base64::engine::general_purpose::STANDARD.encode(card.to_string()).as_bytes());
+    let mut chunk = (text.len() as u32).to_be_bytes().to_vec();
+    chunk.extend_from_slice(b"tEXt");
+    chunk.extend_from_slice(&text);
+    chunk.extend_from_slice(&[0; 4]);
+    png.truncate(33);
+    png.extend_from_slice(&chunk);
+    png.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0, 0, 0, 0]);
+    for (name, bytes, expected) in [
+        ("card.png", png.as_slice(), dto::FileKind::CharacterCard),
+        ("card.charx", include_bytes!("fixtures/card.charx").as_slice(), dto::FileKind::Other),
+    ] {
+        let path = root.join(name);
+        std::fs::write(&path, bytes).expect("file");
+        let source = dto::FileSource { uri: path.display().to_string() };
+        let inspected = super::files_inspect(&harness.context, dto::FilesInspectRequest { source: source.clone() }).await.expect("inspect");
+        assert_eq!(inspected.kind, expected);
+        let result = super::import_preview(&harness.context, dto::ImportPreviewRequest { source }).await;
+        if expected == dto::FileKind::CharacterCard {
+            assert_eq!(result.expect("PNG preview").kind, inspected.kind);
+        } else {
+            assert_eq!(result.expect_err("unsupported CharX").code, ApiErrorCode::Unsupported);
+        }
+    }
+    std::fs::remove_dir_all(root).expect("folder");
 }

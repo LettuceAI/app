@@ -2765,7 +2765,6 @@ export type ImportCharacterContent_Deserialize = {
 	source?: string[] | null,
 	tags?: string[] | null,
 	characterBook?: unknown | null,
-	rules: string[],
 	scenes: ImportScene_Deserialize[],
 	defaultSceneId: string | null,
 	defaultModelId: string | null,
@@ -2777,7 +2776,6 @@ export type ImportCharacterContent_Deserialize = {
 	activeLorebookIds?: string[],
 	lorebooks?: ImportBundledLorebook[],
 	promptTemplateId: string | null,
-	systemPrompt: string | null,
 	voiceConfig: unknown | null,
 	voiceAutoplay: boolean | null,
 	disableAvatarGradient: boolean,
@@ -2803,7 +2801,6 @@ export type ImportCharacterContent_Serialize = {
 	source: string[] | null,
 	tags: string[] | null,
 	characterBook: unknown | null,
-	rules: string[],
 	scenes: ImportScene_Serialize[],
 	defaultSceneId: string | null,
 	defaultModelId: string | null,
@@ -2815,7 +2812,6 @@ export type ImportCharacterContent_Serialize = {
 	activeLorebookIds: string[],
 	lorebooks: ImportBundledLorebook[],
 	promptTemplateId: string | null,
-	systemPrompt: string | null,
 	voiceConfig: unknown | null,
 	voiceAutoplay: boolean | null,
 	disableAvatarGradient: boolean,
@@ -2852,8 +2848,6 @@ export type ImportImagePreview = {
 export type ImportKeywordDetection = "recentMessageWindow" | "latestUserMessage";
 
 export type ImportLorebookEntry = {
-	id: string,
-	lorebookId: string,
 	title: string,
 	enabled: boolean,
 	alwaysActive: boolean,
@@ -2863,8 +2857,6 @@ export type ImportLorebookEntry = {
 	content: string,
 	priority: number,
 	displayOrder: number,
-	createdAt: number,
-	updatedAt: number,
 };
 
 export type ImportLorebookMetadata = {

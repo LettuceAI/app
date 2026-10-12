@@ -1,15 +1,17 @@
 use base64::Engine;
-use lettuce_characters::{CharacterDetails, CharacterMediaSlot, SceneAssetSlot};
-use lettuce_media::{
-    AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
-    MediaAssetRepository, MediaBlobRepository, RetentionClass,
-};
+use lettuce_characters::{CharacterMediaSlot, SceneAssetSlot};
+#[cfg(test)]
+use lettuce_characters::CharacterDetails;
+use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
+#[cfg(test)]
+use lettuce_media::{AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, RetentionClass};
 use lettuce_transfer::{
-    CharacterCardError, CharacterExportError, CharacterExportSource, CharacterFileAssets,
+    CharacterCardError, CharacterExportError, CharacterExportSource,
     CharacterFileFormat, CharacterFilePlanError, CharacterFileRepository,
     CharacterFileRepositoryError, CharacterPackage, CharacterPlanError, EntityPackageError,
-    LegacyBackupConversionNotice, LegacyImportSkip,
 };
+#[cfg(test)]
+use lettuce_transfer::{CharacterFileAssets, LegacyBackupConversionNotice, LegacyImportSkip};
 use lettuce_types::{AssetId, CharacterId, TimestampMillis};
 use uuid::Uuid;
 
@@ -32,19 +34,19 @@ pub enum CharacterFileError {
 }
 
 /// A character file written as a new character.
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct ImportedCharacterFile {
     pub character: CharacterDetails,
     pub skipped: Vec<LegacyImportSkip>,
     pub notices: Vec<LegacyBackupConversionNotice>,
-    pub warnings: Vec<lettuce_contracts::FileWarning>,
 }
 
+#[cfg(test)]
 type PreparedCharacterFile = (
     lettuce_transfer::CharacterFileImport,
     Vec<LegacyImportSkip>,
     Vec<LegacyBackupConversionNotice>,
-    Vec<lettuce_contracts::FileWarning>,
 );
 
 /// Character files read into new characters and written from stored ones.
@@ -106,12 +108,13 @@ where
     }
 
     /// Writes a new character with bundled data and reports skipped images.
+    #[cfg(test)]
     pub fn import(
         &self,
         package: &CharacterPackage,
         now: TimestampMillis,
     ) -> Result<ImportedCharacterFile, CharacterFileError> {
-        let (import, mut skipped, mut notices, warnings) = self.prepare(package, now)?;
+        let (import, mut skipped, mut notices) = self.prepare(package, now)?;
         let character = self.repository.import_character_file(&import)?;
         skipped.extend(import.skipped);
         notices.extend(import.notices);
@@ -119,7 +122,6 @@ where
             character,
             skipped,
             notices,
-            warnings,
         })
     }
 
@@ -137,6 +139,7 @@ where
         )?)
     }
 
+    #[cfg(test)]
     fn prepare(
         &self,
         package: &CharacterPackage,
@@ -144,24 +147,21 @@ where
     ) -> Result<PreparedCharacterFile, CharacterFileError> {
         let references = self.repository.character_file_references()?;
         let plan = self.plan(package, now)?;
-        let mut warnings = Vec::new();
         let assets = CharacterFileAssets {
             avatar: plan.avatar_data.as_deref().and_then(|data| {
-                store_image_warning(
+                store_file_image(
                     self.media_store,
                     data,
                     AssetKind::AvatarOriginal,
-                    "avatar",
-                    &mut warnings,
+                    "lettuceai-entity-file",
                 )
             }),
             background: plan.background_image_data.as_deref().and_then(|data| {
-                store_image_warning(
+                store_file_image(
                     self.media_store,
                     data,
                     AssetKind::BackgroundImage,
-                    "background",
-                    &mut warnings,
+                    "lettuceai-entity-file",
                 )
             }),
             scene_backgrounds: plan
@@ -170,19 +170,18 @@ where
                 .filter_map(|(scene_id, data)| {
                     Some((
                         *scene_id,
-                        store_image_warning(
+                        store_file_image(
                             self.media_store,
                             data,
                             AssetKind::BackgroundImage,
-                            &format!("scenes:{scene_id}.background"),
-                            &mut warnings,
+                            "lettuceai-entity-file",
                         )?,
                     ))
                 })
                 .collect(),
         };
         let import = plan.import(&references, &assets, now.get(), Uuid::new_v4)?;
-        Ok((import, plan.skipped, plan.notices, warnings))
+        Ok((import, plan.skipped, plan.notices))
     }
 
     /// The character written as a file of `format`, its images inlined as
@@ -277,32 +276,6 @@ pub(crate) fn inline_image_warning<BR: MediaBlobRepository, AR: MediaAssetReposi
     result
 }
 
-pub(crate) fn store_image_warning<BR: MediaBlobRepository, AR: MediaAssetRepository>(
-    store: &LocalMediaBlobStore<BR, AR>,
-    data: &str,
-    kind: AssetKind,
-    field: &str,
-    warnings: &mut Vec<lettuce_contracts::FileWarning>,
-) -> Option<AssetId> {
-    let remote = data.starts_with("http://") || data.starts_with("https://");
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(data.split_once(',').map_or(data, |(_, encoded)| encoded));
-    let result = store_file_image(store, data, kind, "lettuceai-entity-file");
-    if result.is_none() {
-        warnings.push(lettuce_contracts::FileWarning {
-            code: if remote {
-                lettuce_contracts::FileWarningCode::RemoteAvatarNotDownloaded
-            } else if decoded.is_err() {
-                lettuce_contracts::FileWarningCode::ImageDecodeFailed
-            } else {
-                lettuce_contracts::FileWarningCode::ImageStoreFailed
-            },
-            field: field.into(),
-        });
-    }
-    result
-}
-
 /// A stored image as a data URL with its stored mime type.
 pub(crate) fn inline_image<BR, AR>(
     media_store: &LocalMediaBlobStore<BR, AR>,
@@ -329,6 +302,7 @@ where
 
 /// Stores a file's inline image (base64 after the first comma); a remote URL
 /// or undecodable image is not stored.
+#[cfg(test)]
 pub(crate) fn store_file_image<BR, AR>(
     media_store: &LocalMediaBlobStore<BR, AR>,
     data: &str,

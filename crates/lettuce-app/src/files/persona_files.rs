@@ -1,19 +1,25 @@
 use lettuce_characters::{
-    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink, PersonaMediaSlot,
+    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaMediaSlot,
     PersonaRepository, RepositoryError,
 };
 use lettuce_context::{
     BindingRepositoryError, LifecycleStatus as LorebookStatus, LorebookRepository,
     PersonaLorebookBindingRepository,
 };
-use lettuce_media::{AssetKind, LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
+use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
+#[cfg(test)]
+use lettuce_media::AssetKind;
+#[cfg(test)]
+use lettuce_characters::PersonaMediaLink;
 use lettuce_transfer::{
     EntityPackageError, LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason,
     PackageCrop, PersonaFileImport, PersonaFileRepository, PersonaPackage, PersonaUecSource,
 };
 use lettuce_types::{LorebookId, PersonaId, Revision, TimestampMillis};
 
-use crate::files::character_files::{inline_image_warning, store_image_warning};
+use crate::files::character_files::inline_image_warning;
+#[cfg(test)]
+use crate::files::character_files::store_file_image;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PersonaFileError {
@@ -28,11 +34,11 @@ pub enum PersonaFileError {
 }
 
 /// A persona file written as a new persona.
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct ImportedPersonaFile {
     pub persona: Persona,
     pub skipped: Vec<LegacyImportSkip>,
-    pub warnings: Vec<lettuce_contracts::FileWarning>,
 }
 
 /// Persona files read into new personas and written from stored ones.
@@ -78,18 +84,23 @@ where
     /// Writes the package as a new persona bound to the file's lorebooks that
     /// exist here, made the default when the file says so; an avatar that
     /// cannot be stored is left off.
+    #[cfg(test)]
     pub fn import(
         &self,
         package: &PersonaPackage,
         now: TimestampMillis,
     ) -> Result<ImportedPersonaFile, PersonaFileError> {
-        let (import, skipped, warnings) = self.prepare(package, now)?;
+        let (mut import, skipped) = self.prepare(package, now)?;
+        if let Some(asset_id) = package.avatar_data.as_deref().and_then(|avatar| {
+            store_file_image(self.media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
+        }) {
+            import.persona.media.links.push(PersonaMediaLink { asset_id, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
+        }
         let avatar = import.persona.media.links.first().map(|link| link.asset_id);
         match self.repository.import_persona_file(&import) {
             Ok(persona) => Ok(ImportedPersonaFile {
                 persona,
                 skipped,
-                warnings,
             }),
             Err(error) => {
                 if let Some(asset_id) = avatar {
@@ -104,16 +115,9 @@ where
         &self,
         package: &PersonaPackage,
         now: TimestampMillis,
-    ) -> Result<
-        (
-            PersonaFileImport,
-            Vec<LegacyImportSkip>,
-            Vec<lettuce_contracts::FileWarning>,
-        ),
-        PersonaFileError,
-    > {
+    ) -> Result<(PersonaFileImport, Vec<LegacyImportSkip>), PersonaFileError> {
         let data = &package.persona;
-        let mut persona = Persona {
+        let persona = Persona {
             id: PersonaId::new(),
             status: LifecycleStatus::Active,
             title: data.title.clone(),
@@ -156,23 +160,6 @@ where
             };
             bound.push(lorebook.book.id);
         }
-        let mut warnings = Vec::new();
-        let avatar = package.avatar_data.as_deref().and_then(|avatar| {
-            store_image_warning(
-                self.media_store,
-                avatar,
-                AssetKind::AvatarOriginal,
-                "avatar",
-                &mut warnings,
-            )
-        });
-        if let Some(asset_id) = avatar {
-            persona.media.links.push(PersonaMediaLink {
-                asset_id,
-                slot: PersonaMediaSlot::Avatar,
-                ordinal: 0,
-            });
-        }
         Ok((
             PersonaFileImport {
                 persona,
@@ -180,12 +167,12 @@ where
                 make_default: data.is_default == Some(true),
             },
             skipped,
-            warnings,
         ))
     }
 
     /// Deletes an avatar stored for an import that failed, so it leaves no
     /// unused file behind; a failure here is only logged.
+    #[cfg(test)]
     fn discard_avatar(&self, asset_id: lettuce_types::AssetId, now: TimestampMillis) {
         let blob_id = match self.repository.discard_unlinked_asset(asset_id) {
             Ok(Some(blob_id)) => blob_id,
