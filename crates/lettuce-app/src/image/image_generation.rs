@@ -1303,6 +1303,8 @@ mod tests {
 
     impl LoraLibraryRepository for FailedUsageSettlement<'_> {
         fn lora(&self, path: &str) -> Result<Option<lettuce_image_generation::sd_runtime::lora_library::LoraRecord>, LoraLibraryRepositoryError> { self.0.lora(path) }
+        fn lora_file_by_sha256(&self, hash: &str) -> Result<Option<lettuce_image_generation::sd_runtime::lora_library::LoraRecord>, LoraLibraryRepositoryError> { self.0.lora_file_by_sha256(hash) }
+        fn lora_by_filename(&self, filename: &str) -> Result<Option<lettuce_image_generation::sd_runtime::lora_library::LoraRecord>, LoraLibraryRepositoryError> { self.0.lora_by_filename(filename) }
         fn lora_by_hash(&self, hash: &str) -> Result<Option<lettuce_image_generation::sd_runtime::lora_library::LoraRecord>, LoraLibraryRepositoryError> { self.0.lora_by_hash(hash) }
         fn record_lora_file(&self, path: &str, filename: &str, bytes: u64, modified: u64, at: TimestampMillis) -> Result<lettuce_image_generation::sd_runtime::lora_library::LoraRecord, LoraLibraryRepositoryError> { self.0.record_lora_file(path,filename,bytes,modified,at) }
         fn save_lora(&self, record: &lettuce_image_generation::sd_runtime::lora_library::LoraRecord, at: TimestampMillis) -> Result<(), LoraLibraryRepositoryError> { self.0.save_lora(record,at) }

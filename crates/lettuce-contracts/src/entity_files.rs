@@ -301,8 +301,11 @@ pub enum ImportPreviewContent {
         scene_id: Option<String>,
         prompt_template_id: Option<String>,
         lorebook_ids_override: Option<Vec<String>>,
+        lorebooks_disabled: bool,
     },
     Model {
+        model_kind: crate::ModelKindContract,
+        model_file_required: bool,
         name: String,
         provider_id: String,
         provider_label: String,
@@ -337,11 +340,38 @@ pub struct ImportPreviewRequest {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ImportUec3Dependency {
+    pub key: String,
+    pub kind: FileKind,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ImportUec3LorebookBinding {
+    pub book: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ImportUec3Preview {
+    pub dependencies: Vec<ImportUec3Dependency>,
+    pub include_learned: bool,
+    pub character: Option<Box<crate::CharacterDraft>>,
+    pub persona: Option<crate::PersonaDraft>,
+    pub prompt: Option<crate::PromptView>,
+    pub lorebook_bindings: Vec<ImportUec3LorebookBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ImportPreview {
     pub kind: FileKind,
     pub name: String,
     pub digest: String,
     pub content: ImportPreviewContent,
+    pub uec3: Option<ImportUec3Preview>,
     pub images: Vec<ImportImagePreview>,
     pub warnings: Vec<FileWarning>,
 }
@@ -394,15 +424,7 @@ pub enum CharacterExportFormat {
 #[serde(rename_all = "snake_case")]
 pub enum LorebookExportFormat {
     WorldInfo,
-    Usc,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "snake_case")]
-pub enum EntityExportFormat {
-    Json,
-    Usc,
+    Uec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +432,8 @@ pub enum EntityExportFormat {
 #[serde(deny_unknown_fields)]
 pub struct CharacterExportRequest {
     pub id: String,
+    #[serde(default)]
+    pub include_learned: bool,
     pub format: CharacterExportFormat,
     pub target: Option<FileTarget>,
 }
@@ -436,7 +460,6 @@ pub struct EntityExportRequest {
 #[serde(deny_unknown_fields)]
 pub struct ModelExportRequest {
     pub id: String,
-    pub format: EntityExportFormat,
     pub target: Option<FileTarget>,
 }
 
@@ -446,7 +469,6 @@ pub struct ModelExportRequest {
 pub struct ChatTemplateExportRequest {
     pub character_id: String,
     pub starter_id: String,
-    pub format: EntityExportFormat,
     pub target: Option<FileTarget>,
 }
 

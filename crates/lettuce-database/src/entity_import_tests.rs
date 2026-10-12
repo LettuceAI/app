@@ -39,6 +39,7 @@ fn character_bundles_and_persona_default_roll_back_on_a_late_receipt_failure() {
             updated_at: now,
         },
         lorebook_ids: vec![],
+        disabled_lorebook_ids: Vec::new(),
         make_default: true,
     };
     let before = database.read_provider_backup_graph().expect("before");

@@ -1,0 +1,35 @@
+{
+  "app_specific_settings": {
+    "activeLorebookIds": [
+      "book"
+    ],
+    "avatarCrop": {
+      "scale": 1.0,
+      "x": 0.5,
+      "y": 0.5
+    }
+  },
+  "extensions": {},
+  "kind": "persona",
+  "meta": {
+    "createdAt": 1,
+    "originalCreatedAt": 1,
+    "originalSource": "lettuceai",
+    "originalUpdatedAt": 2,
+    "source": "lettuceai",
+    "updatedAt": 2
+  },
+  "payload": {
+    "createdAt": 1,
+    "description": "Curious",
+    "id": "persona-1",
+    "isDefault": true,
+    "nickname": "T",
+    "title": "Traveller",
+    "updatedAt": 2
+  },
+  "schema": {
+    "name": "UEC",
+    "version": "2.0"
+  }
+}

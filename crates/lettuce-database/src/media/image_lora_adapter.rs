@@ -89,6 +89,28 @@ impl LoraLibraryRepository for Database {
         load(&connection, path)
     }
 
+    fn lora_by_filename(
+        &self,
+        filename: &str,
+    ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection.query_row(
+            &format!("SELECT {COLUMNS} FROM image_loras WHERE filename = ?1 AND (SELECT COUNT(*) FROM image_loras WHERE filename = ?1) = 1"),
+            [filename], from_row,
+        ).optional().map_err(storage)?.transpose()
+    }
+
+    fn lora_file_by_sha256(
+        &self,
+        sha256: &str,
+    ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection.query_row(
+            &format!("SELECT {COLUMNS} FROM image_loras WHERE sha256 = ?1 ORDER BY updated_at DESC, path LIMIT 1"),
+            [sha256], from_row,
+        ).optional().map_err(storage)?.transpose()
+    }
+
     fn lora_by_hash(&self, sha256: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
         let connection = self.connection().map_err(storage)?;
         connection

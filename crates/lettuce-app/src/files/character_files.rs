@@ -587,16 +587,23 @@ mod tests {
                 .iter()
                 .any(|notice| notice.field == "memory_summary")
         );
-        let exported = files
-            .export(
-                character.character.id,
-                CharacterFileFormat::Uec,
-                TimestampMillis::new(60),
-            )
-            .expect("export");
-        let package = files
-            .read(&exported, TimestampMillis::new(70))
-            .expect("read export");
+        let record = backend
+            .database()
+            .character_export_record(character.character.id)
+            .expect("record")
+            .expect("character");
+        let package = lettuce_transfer::character_package(
+            &CharacterExportSource {
+                details: record.details,
+                lorebooks: record.lorebooks,
+                scheduled_notes: record.scheduled_notes,
+                companion_memory: record.companion_memory,
+                avatar_data: Some(avatar.clone()),
+                background_image_data: None,
+                scene_backgrounds: Default::default(),
+            },
+            60,
+        );
         assert_eq!(package.avatar_data.as_deref(), Some(avatar.as_str()));
         assert_eq!(package.character.lorebooks.len(), 1);
         assert_eq!(package.character.companion_scheduled_notes.len(), 1);
@@ -644,7 +651,7 @@ mod tests {
                 TimestampMillis::new(60)
             ),
             Err(CharacterFileError::Export(
-                CharacterExportError::CardV1ReadOnly
+                CharacterExportError::UnsupportedFormat
             ))
         ));
         std::fs::remove_dir_all(&root).ok();

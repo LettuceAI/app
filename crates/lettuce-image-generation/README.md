@@ -88,3 +88,5 @@ The local engine and llama.cpp never run at once: `AppBackend::with_local_diffus
 ## Playground
 
 `playground.rs` has the playground history types: generated and imported entries with their images, listed 30 at a time by default (1 to 200), the upscale entry an upscaled playground image becomes, and deleting an entry, which queues its images for media collection.
+
+The LoRA library port has an unfiltered SHA-256 file lookup and a unique exact filename lookup beside the metadata cache lookup, which keeps its discovery-data filter so recording a new file cannot hide cached metadata for identical content. Entity file imports use the new reads to resolve portable LoRA recommendations to a library-relative path; an ambiguous filename has no match.

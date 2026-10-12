@@ -908,6 +908,7 @@ export type CharacterExportFormat = "uec" | "v3" | "v2";
 
 export type CharacterExportRequest = {
 	id: string,
+	include_learned?: boolean,
 	format: CharacterExportFormat,
 	target: FileTarget | null,
 };
@@ -1038,7 +1039,6 @@ export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "res
 export type ChatTemplateExportRequest = {
 	character_id: string,
 	starter_id: string,
-	format: EntityExportFormat,
 	target: FileTarget | null,
 };
 
@@ -1819,8 +1819,6 @@ export type EmotionChange = {
 	affection_intensity: number | null,
 	reassurance_need: number | null,
 };
-
-export type EntityExportFormat = "json" | "usc";
 
 export type EntityExportRequest = {
 	id: string,
@@ -2885,9 +2883,9 @@ export type ImportPreview = ImportPreview_Serialize | ImportPreview_Deserialize;
 
 export type ImportPreviewContent = ImportPreviewContent_Serialize | ImportPreviewContent_Deserialize;
 
-export type ImportPreviewContent_Deserialize = ({ kind: "character"; content: ImportCharacterContent_Deserialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
+export type ImportPreviewContent_Deserialize = ({ kind: "character"; content: ImportCharacterContent_Deserialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null; lorebooks_disabled: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; model_kind: ModelKindContract; model_file_required: boolean; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
 
-export type ImportPreviewContent_Serialize = ({ kind: "character"; content: ImportCharacterContent_Serialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; messages?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
+export type ImportPreviewContent_Serialize = ({ kind: "character"; content: ImportCharacterContent_Serialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null; lorebooks_disabled: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; model_kind: ModelKindContract; model_file_required: boolean; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
 
 export type ImportPreviewRequest = {
 	source: FileSource,
@@ -2898,6 +2896,7 @@ export type ImportPreview_Deserialize = {
 	name: string,
 	digest: string,
 	content: ImportPreviewContent_Deserialize,
+	uec3: ImportUec3Preview_Deserialize | null,
 	images: ImportImagePreview[],
 	warnings: FileWarning[],
 };
@@ -2907,6 +2906,7 @@ export type ImportPreview_Serialize = {
 	name: string,
 	digest: string,
 	content: ImportPreviewContent_Serialize,
+	uec3: ImportUec3Preview_Serialize | null,
 	images: ImportImagePreview[],
 	warnings: FileWarning[],
 };
@@ -3014,6 +3014,37 @@ export type ImportStarter_Serialize = {
 export type ImportTemplateMessage = {
 	role: string,
 	content: string,
+};
+
+export type ImportUec3Dependency = {
+	key: string,
+	kind: FileKind,
+	name: string,
+};
+
+export type ImportUec3LorebookBinding = {
+	book: string,
+	enabled: boolean,
+};
+
+export type ImportUec3Preview = ImportUec3Preview_Serialize | ImportUec3Preview_Deserialize;
+
+export type ImportUec3Preview_Deserialize = {
+	dependencies: ImportUec3Dependency[],
+	include_learned: boolean,
+	character: CharacterDraft_Deserialize | null,
+	persona: PersonaDraft_Deserialize | null,
+	prompt: PromptView | null,
+	lorebook_bindings: ImportUec3LorebookBinding[],
+};
+
+export type ImportUec3Preview_Serialize = {
+	dependencies: ImportUec3Dependency[],
+	include_learned: boolean,
+	character: CharacterDraft_Serialize | null,
+	persona: PersonaDraft_Serialize | null,
+	prompt: PromptView | null,
+	lorebook_bindings: ImportUec3LorebookBinding[],
 };
 
 export type InstalledLora = {
@@ -4328,7 +4359,7 @@ export type LorebookEntryView = {
 	updated_at: number,
 };
 
-export type LorebookExportFormat = "world_info" | "usc";
+export type LorebookExportFormat = "world_info" | "uec";
 
 export type LorebookExportRequest = {
 	id: string,
@@ -5111,7 +5142,6 @@ export type ModelDuplicateRequest = {
 
 export type ModelExportRequest = {
 	id: string,
-	format: EntityExportFormat,
 	target: FileTarget | null,
 };
 

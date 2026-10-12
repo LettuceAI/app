@@ -80,8 +80,20 @@ fn filters_union_kinds_and_open_every_file_when_a_kind_has_no_reliable_type() {
     assert_eq!(
         pick_filter(&[dto::FilePickKind::Image, dto::FilePickKind::CharacterCard]),
         PickFilter {
-            extensions: vec!["png", "jpg", "jpeg", "webp", "json"],
-            mime_types: vec!["image/*", "image/png", "application/json"],
+            extensions: vec!["png", "jpg", "jpeg", "webp", "json", "uec"],
+            mime_types: vec![
+                "image/*",
+                "image/png",
+                "application/json",
+                "application/octet-stream"
+            ],
+        }
+    );
+    assert_eq!(
+        pick_filter(&[dto::FilePickKind::Json]),
+        PickFilter {
+            extensions: vec!["json", "uec"],
+            mime_types: vec!["application/json", "application/octet-stream"]
         }
     );
     assert_eq!(
@@ -94,7 +106,7 @@ fn filters_union_kinds_and_open_every_file_when_a_kind_has_no_reliable_type() {
     assert_eq!(
         pick_filter(&[dto::FilePickKind::Json, dto::FilePickKind::ChatLog]),
         PickFilter {
-            extensions: vec!["json", "jsonl"],
+            extensions: vec!["json", "uec", "jsonl"],
             mime_types: vec![],
         }
     );

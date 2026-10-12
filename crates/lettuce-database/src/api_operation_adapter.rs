@@ -144,6 +144,13 @@ impl ApiOperationTransaction<'_, '_> {
         crate::lorebook::lorebook_adapter::create_in(self.transaction, metadata, entries, now)
     }
 
+    pub fn import_lorebook_file(
+        &self,
+        book: &lettuce_context::LorebookDetails,
+    ) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
+        crate::lorebook::lorebook_adapter::insert_lorebook_details(self.transaction, book)
+    }
+
     pub fn create_prompt(
         &self,
         metadata: lettuce_context::PromptMetadataDraft,
@@ -156,6 +163,14 @@ impl ApiOperationTransaction<'_, '_> {
             entries,
             now,
         )
+    }
+
+    pub fn import_prompt_file(
+        &self,
+        document: &lettuce_context::PromptDocument,
+    ) -> Result<lettuce_context::PromptDocument, lettuce_context::PromptRepositoryError> {
+        crate::catalog::prompt_adapter::insert_imported_document(self.transaction, document)?;
+        Ok(document.clone())
     }
 
     pub fn edit_soul_growth(

@@ -446,3 +446,7 @@ The legacy conflict reader maps supported preserved snapshots to their imported 
 Legacy conflict fields use NotMapped for every current value when the entity is missing; actual null fields on existing entities remain JSON null.
 
 Entity file imports reuse ApiOperationTransaction. Character and persona aggregate writers share their existing implementation with the scoped import methods; starter append keeps lifecycle and revision checks. Group chat import inserts the prepared group and historical transcript in one transaction. The chat job's successful transition and application receipt join that scope, while admission stores its request in the existing job detail. Media catalog installation reuses install_library_upload; an import rollback removes those rows with the aggregate. No import staging table or export receipt is required.
+
+UEC 3 imports reuse the scoped lorebook, prompt, persona and starter writers inside the entity operation receipt transaction. Persona plans preserve disabled lorebook bindings through the existing binding mutation path. Portable LoRA hints reuse image_loras discovery and an exact unique filename query; no transfer-specific storage is added.
+
+UEC 3 resolves portable LoRA file hints through an unfiltered SHA-256 file lookup and a unique exact filename lookup on the existing library repository. The metadata cache lookup keeps its discovery-data filter, so recording a new file cannot hide cached metadata for identical content.

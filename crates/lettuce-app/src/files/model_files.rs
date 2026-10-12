@@ -4,7 +4,7 @@ use lettuce_models::{
     ModelProfileRepository, ModelRepositoryError, ParameterSupport, ProviderAccount,
     ProviderAccountRepository,
 };
-use lettuce_transfer::{ModelTransfer, ModelTransferError};
+use lettuce_transfer::ModelTransferError;
 use lettuce_types::{ModelProfileId, Revision, TimestampMillis};
 
 #[derive(Debug, thiserror::Error)]
@@ -31,21 +31,7 @@ pub struct ImportedModelFile {
     pub unknown_fields: Vec<String>,
 }
 
-/// Which file a model profile is exported as.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelFileFormat {
-    Json,
-    Usc,
-}
-
-/// A model file ready to save.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExportedModelFile {
-    pub filename: String,
-    pub content: String,
-}
-
-/// Model files read into model profiles and written from them.
+/// Model files read into model profiles.
 #[derive(Debug)]
 pub struct ModelFileCoordinator<'a, R: ?Sized> {
     repository: &'a R,
@@ -71,18 +57,6 @@ fn modalities(scopes: &[String]) -> ModalityCapabilities {
         image: status("image"),
         audio: status("audio"),
     }
-}
-
-fn scopes(modalities: &ModalityCapabilities) -> Vec<String> {
-    [
-        ("text", modalities.text),
-        ("image", modalities.image),
-        ("audio", modalities.audio),
-    ]
-    .into_iter()
-    .filter(|(_, status)| *status == CapabilityStatus::Supported)
-    .map(|(scope, _)| scope.to_owned())
-    .collect()
 }
 
 impl<R> ModelFileCoordinator<'_, R>
@@ -190,7 +164,11 @@ where
         })
     }
 
-    fn account(&self, provider: &str, label: &str) -> Result<ProviderAccount, ModelFileError> {
+    pub(crate) fn account(
+        &self,
+        provider: &str,
+        label: &str,
+    ) -> Result<ProviderAccount, ModelFileError> {
         let local = provider.eq_ignore_ascii_case("llamacpp");
         let candidates = self
             .repository
@@ -209,54 +187,6 @@ where
             _ => Err(ModelFileError::NoProviderAccount(provider.to_owned())),
         }
     }
-
-    /// The model as a file of `format`, named after its display name like the
-    /// old app named it.
-    pub fn export(
-        &self,
-        id: ModelProfileId,
-        format: ModelFileFormat,
-        now: TimestampMillis,
-    ) -> Result<ExportedModelFile, ModelFileError> {
-        let profile =
-            ModelProfileRepository::get(self.repository, id)?.ok_or(ModelFileError::NotFound)?;
-        let account = ProviderAccountRepository::get(self.repository, profile.provider_account_id)?
-            .ok_or(ModelFileError::NotFound)?;
-        let config = &profile.config;
-        let transfer = ModelTransfer {
-            id: profile.id.to_string(),
-            name: profile.external_model_id.clone(),
-            display_name: profile.display_name.clone(),
-            provider_id: account.provider_kind.clone(),
-            provider_label: account.label.clone(),
-            created_at: profile.created_at.get(),
-            input_scopes: scopes(&config.capabilities.input_modalities),
-            output_scopes: scopes(&config.capabilities.output_modalities),
-            advanced_model_settings: lettuce_transfer::legacy_advanced_model_settings(
-                &config.chat_parameters,
-                &config.feature_parameters,
-                &config.llama_cpp,
-                &config.stable_diffusion,
-            ),
-        };
-        let (content, extension) = match format {
-            ModelFileFormat::Json => (lettuce_transfer::export_model_json(&transfer)?, "json"),
-            ModelFileFormat::Usc => (lettuce_transfer::export_model_usc(&transfer)?, "usc"),
-        };
-        let name = if profile.display_name.is_empty() {
-            &profile.external_model_id
-        } else {
-            &profile.display_name
-        };
-        Ok(ExportedModelFile {
-            filename: format!(
-                "model_{}_{}.{extension}",
-                crate::files::prompt_files::export_name(name),
-                crate::files::prompt_files::export_date(now)
-            ),
-            content,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -272,16 +202,21 @@ mod tests {
             "anthropic",
         );
         let files = backend.model_files();
-        let exported = files
-            .export(seeded, ModelFileFormat::Usc, TimestampMillis::new(0))
-            .expect("export");
-        assert_eq!(exported.filename, "model_vendor_model_1970-01-01.usc");
-        let imported = files
-            .import(&exported.content, TimestampMillis::new(9))
-            .expect("import");
         let original = ModelProfileRepository::get(backend.database(), seeded)
             .expect("get")
             .expect("seeded");
+        let file = serde_json::json!({
+            "schema": {"name": "USC", "version": "1.0"},
+            "kind": "model_profile",
+            "payload": {
+                "name": original.external_model_id,
+                "providerId": "anthropic",
+                "advancedModelSettings": {"temperature": 0.7, "maxOutputTokens": 1024, "contextLength": 8192}
+            }
+        });
+        let imported = files
+            .import(&file.to_string(), TimestampMillis::new(9))
+            .expect("import");
         assert_ne!(imported.profile.id, seeded);
         assert_eq!(
             imported.profile.provider_account_id,

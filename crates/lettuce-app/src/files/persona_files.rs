@@ -1,25 +1,15 @@
 use lettuce_characters::{
-    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaMediaSlot,
-    PersonaRepository, RepositoryError,
+    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaRepository, RepositoryError,
 };
 use lettuce_context::{
     BindingRepositoryError, LifecycleStatus as LorebookStatus, LorebookRepository,
     PersonaLorebookBindingRepository,
 };
-use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
-#[cfg(test)]
-use lettuce_media::AssetKind;
-#[cfg(test)]
-use lettuce_characters::PersonaMediaLink;
 use lettuce_transfer::{
     EntityPackageError, LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason,
-    PackageCrop, PersonaFileImport, PersonaFileRepository, PersonaPackage, PersonaUecSource,
+    PersonaFileImport, PersonaFileRepository, PersonaPackage,
 };
 use lettuce_types::{LorebookId, PersonaId, Revision, TimestampMillis};
-
-use crate::files::character_files::inline_image_warning;
-#[cfg(test)]
-use crate::files::character_files::store_file_image;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PersonaFileError {
@@ -33,40 +23,26 @@ pub enum PersonaFileError {
     NotFound,
 }
 
-/// A persona file written as a new persona.
-#[cfg(test)]
-#[derive(Debug, Clone)]
-pub struct ImportedPersonaFile {
-    pub persona: Persona,
-    pub skipped: Vec<LegacyImportSkip>,
-}
-
-/// Persona files read into new personas and written from stored ones.
+/// Compatibility persona packages read into new personas.
 #[derive(Debug)]
-pub struct PersonaFileCoordinator<'a, R: ?Sized, BR, AR> {
+pub struct PersonaFileCoordinator<'a, R: ?Sized> {
     repository: &'a R,
-    media_store: &'a LocalMediaBlobStore<BR, AR>,
 }
 
-impl<'a, R: ?Sized, BR, AR> PersonaFileCoordinator<'a, R, BR, AR> {
+impl<'a, R: ?Sized> PersonaFileCoordinator<'a, R> {
     #[must_use]
-    pub const fn new(repository: &'a R, media_store: &'a LocalMediaBlobStore<BR, AR>) -> Self {
-        Self {
-            repository,
-            media_store,
-        }
+    pub const fn new(repository: &'a R) -> Self {
+        Self { repository }
     }
 }
 
-impl<R, BR, AR> PersonaFileCoordinator<'_, R, BR, AR>
+impl<R> PersonaFileCoordinator<'_, R>
 where
     R: PersonaRepository
         + PersonaFileRepository
         + PersonaLorebookBindingRepository
         + LorebookRepository
         + ?Sized,
-    BR: MediaBlobRepository,
-    AR: MediaAssetRepository,
 {
     /// The package in a persona UEC or the pre-UEC persona package; the host
     /// may replace a remote `avatar_data` with the downloaded image's data URL
@@ -79,36 +55,6 @@ where
         let value = serde_json::from_str(json)
             .map_err(|error| EntityPackageError::InvalidImport(error.to_string()))?;
         Ok(lettuce_transfer::parse_persona_import(&value, now.get())?)
-    }
-
-    /// Writes the package as a new persona bound to the file's lorebooks that
-    /// exist here, made the default when the file says so; an avatar that
-    /// cannot be stored is left off.
-    #[cfg(test)]
-    pub fn import(
-        &self,
-        package: &PersonaPackage,
-        now: TimestampMillis,
-    ) -> Result<ImportedPersonaFile, PersonaFileError> {
-        let (mut import, skipped) = self.prepare(package, now)?;
-        if let Some(asset_id) = package.avatar_data.as_deref().and_then(|avatar| {
-            store_file_image(self.media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
-        }) {
-            import.persona.media.links.push(PersonaMediaLink { asset_id, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
-        }
-        let avatar = import.persona.media.links.first().map(|link| link.asset_id);
-        match self.repository.import_persona_file(&import) {
-            Ok(persona) => Ok(ImportedPersonaFile {
-                persona,
-                skipped,
-            }),
-            Err(error) => {
-                if let Some(asset_id) = avatar {
-                    self.discard_avatar(asset_id, now);
-                }
-                Err(error.into())
-            }
-        }
     }
 
     pub fn prepare(
@@ -164,108 +110,20 @@ where
             PersonaFileImport {
                 persona,
                 lorebook_ids: bound,
+                disabled_lorebook_ids: Vec::new(),
                 make_default: data.is_default == Some(true),
             },
             skipped,
-        ))
-    }
-
-    /// Deletes an avatar stored for an import that failed, so it leaves no
-    /// unused file behind; a failure here is only logged.
-    #[cfg(test)]
-    fn discard_avatar(&self, asset_id: lettuce_types::AssetId, now: TimestampMillis) {
-        let blob_id = match self.repository.discard_unlinked_asset(asset_id) {
-            Ok(Some(blob_id)) => blob_id,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::warn!(%error, "unused persona avatar was not deleted");
-                return;
-            }
-        };
-        if let Err(error) = self.media_store.release_blob(blob_id, |_| {
-            self.repository
-                .release_unused_blob(blob_id, now)
-                .map_err(|_| lettuce_media::MediaStoreError::CatalogFailure)
-        }) {
-            tracing::warn!(%error, "unused persona avatar bytes were not deleted");
-        }
-    }
-
-    /// The persona written as a v2 persona UEC with its avatar inlined.
-    pub fn export(&self, persona_id: PersonaId) -> Result<String, PersonaFileError> {
-        Ok(self.export_with_warnings(persona_id)?.0)
-    }
-
-    pub fn export_with_warnings(
-        &self,
-        persona_id: PersonaId,
-    ) -> Result<(String, Vec<lettuce_contracts::FileWarning>), PersonaFileError> {
-        let mut warnings = Vec::new();
-        let persona = PersonaRepository::get(self.repository, persona_id)?
-            .ok_or(PersonaFileError::NotFound)?;
-        let mut bindings = self.repository.list_persona_bindings(persona_id)?;
-        bindings.sort_by_key(|binding| binding.ordinal);
-        let is_default =
-            self.repository.get_default_snapshot()?.state.persona_id == Some(persona_id);
-        let decimal = |value: f32| value.to_string().parse().unwrap_or(f64::from(value));
-        Ok((
-            lettuce_transfer::build_persona_uec(&PersonaUecSource {
-                id: persona.id.to_string(),
-                title: persona.title.clone(),
-                description: persona.description.clone(),
-                nickname: persona.nickname.clone(),
-                is_default,
-                created_at: persona.created_at.get(),
-                updated_at: persona.updated_at.get(),
-                avatar: persona
-                    .media
-                    .links
-                    .iter()
-                    .find(|link| link.slot == PersonaMediaSlot::Avatar)
-                    .and_then(|link| {
-                        inline_image_warning(
-                            self.media_store,
-                            link.asset_id,
-                            "avatar",
-                            &mut warnings,
-                        )
-                    }),
-                avatar_crop: persona.avatar_crop.map(|crop| PackageCrop {
-                    x: decimal(crop.x),
-                    y: decimal(crop.y),
-                    scale: decimal(crop.scale),
-                }),
-                active_lorebook_ids: bindings
-                    .iter()
-                    .filter(|binding| binding.enabled)
-                    .map(|binding| binding.lorebook_id.to_string())
-                    .collect(),
-            })?,
-            warnings,
         ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine;
     use lettuce_context::{DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft};
-    use lettuce_database::Database;
-    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_types::OperationId;
 
     use super::*;
-
-    fn png() -> Vec<u8> {
-        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
-        bytes.extend_from_slice(&13_u32.to_be_bytes());
-        bytes.extend_from_slice(b"IHDR");
-        bytes.extend_from_slice(&2_u32.to_be_bytes());
-        bytes.extend_from_slice(&3_u32.to_be_bytes());
-        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
-        bytes.extend_from_slice(b"persona avatar");
-        bytes
-    }
 
     #[test]
     fn a_persona_uec_without_a_description_imports_like_legacy_parse_uec_persona() {
@@ -273,54 +131,33 @@ mod tests {
         std::fs::create_dir_all(&root).expect("root");
         let path = root.join("state.sqlite3");
         let backend = crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
-        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
-            .expect("authority");
-        let store = LocalMediaBlobStore::new(
-            authority.managed_files(),
-            authority
-                .read_capability(ManagedRoot::MediaBlobs)
-                .expect("read"),
-            authority
-                .write_capability(ManagedRoot::MediaBlobs)
-                .expect("write"),
-            Database::open(&path).expect("blobs"),
-            Database::open(&path).expect("assets"),
-        );
-        let mut uec: serde_json::Value = serde_json::from_str(
-            &lettuce_transfer::build_persona_uec(&PersonaUecSource {
-                id: "persona-1".into(),
-                title: "Wanderer".into(),
-                description: String::new(),
-                nickname: None,
-                is_default: true,
-                created_at: 1,
-                updated_at: 1,
-                avatar: None,
-                avatar_crop: None,
-                active_lorebook_ids: Vec::new(),
-            })
-            .expect("uec"),
-        )
-        .expect("json");
+        let mut uec: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../lettuce-transfer/tests/fixtures/uec2-persona-blank.json"
+        ))
+        .expect("fixture");
         uec["payload"]
             .as_object_mut()
             .expect("payload")
             .remove("description");
-        let files = backend.persona_files(&store);
+        let files = backend.persona_files();
         let package = files
             .read(&uec.to_string(), TimestampMillis::new(5))
             .expect("read");
-        let imported = files
-            .import(&package, TimestampMillis::new(5))
+        let (import, _) = files
+            .prepare(&package, TimestampMillis::new(5))
+            .expect("prepare");
+        let persona = backend
+            .database()
+            .import_persona_file(&import)
             .expect("a title-only persona imports");
-        assert_eq!(imported.persona.title, "Wanderer");
-        assert_eq!(imported.persona.description, "");
+        assert_eq!(persona.title, "Wanderer");
+        assert_eq!(persona.description, "");
         assert_eq!(
             PersonaRepository::get_default_snapshot(backend.database())
                 .expect("default")
                 .state
                 .persona_id,
-            Some(imported.persona.id)
+            Some(persona.id)
         );
         std::fs::remove_dir_all(&root).ok();
     }
@@ -331,19 +168,6 @@ mod tests {
         std::fs::create_dir_all(&root).expect("root");
         let path = root.join("state.sqlite3");
         let backend = crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
-        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
-            .expect("authority");
-        let store = LocalMediaBlobStore::new(
-            authority.managed_files(),
-            authority
-                .read_capability(ManagedRoot::MediaBlobs)
-                .expect("read"),
-            authority
-                .write_capability(ManagedRoot::MediaBlobs)
-                .expect("write"),
-            Database::open(&path).expect("blobs"),
-            Database::open(&path).expect("assets"),
-        );
         let lorebook = LorebookRepository::create(
             backend.database(),
             LorebookMetadataDraft {
@@ -356,11 +180,7 @@ mod tests {
             TimestampMillis::new(2),
         )
         .expect("lorebook");
-        let avatar = format!(
-            "data:image/png;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(png())
-        );
-        let files = backend.persona_files(&store);
+        let files = backend.persona_files();
         let package = files
             .read(
                 &serde_json::json!({
@@ -373,20 +193,21 @@ mod tests {
                         "isDefault": true,
                         "avatarCrop": {"x": 0.3, "y": 0.1, "scale": 1.5},
                         "activeLorebookIds": [lorebook.book.id.to_string(), "missing"]
-                    },
-                    "avatarData": avatar
+                    }
                 })
                 .to_string(),
                 TimestampMillis::new(10),
             )
             .expect("read");
-        let imported = files
-            .import(&package, TimestampMillis::new(10))
+        let (import, skipped) = files
+            .prepare(&package, TimestampMillis::new(10))
+            .expect("prepare");
+        let persona = &backend
+            .database()
+            .import_persona_file(&import)
             .expect("import");
-        let persona = &imported.persona;
         assert_eq!(persona.title, "Mira");
-        assert_eq!(persona.media.links.len(), 1);
-        assert_eq!(imported.skipped.len(), 1);
+        assert_eq!(skipped.len(), 1);
         assert_eq!(
             backend
                 .database()
@@ -402,21 +223,22 @@ mod tests {
                 .persona_id,
             Some(persona.id)
         );
-        let exported = files.export(persona.id).expect("export");
-        let again = files
-            .read(&exported, TimestampMillis::new(20))
-            .expect("read export");
-        assert_eq!(again.persona.title, "Mira");
-        assert_eq!(again.persona.nickname.as_deref(), Some("Mi"));
-        assert_eq!(again.persona.is_default, Some(true));
-        assert_eq!(again.avatar_data.as_deref(), Some(avatar.as_str()));
+        let again = PersonaRepository::get(backend.database(), persona.id)
+            .expect("read")
+            .expect("persona");
+        assert_eq!(again.title, "Mira");
+        assert_eq!(again.nickname.as_deref(), Some("Mi"));
+        assert_eq!(again.avatar_crop.map(|crop| crop.x), Some(0.3f32));
+        let bindings = backend
+            .database()
+            .list_persona_bindings(again.id)
+            .expect("bindings");
         assert_eq!(
-            again.persona.active_lorebook_ids,
+            bindings
+                .iter()
+                .map(|binding| binding.lorebook_id.to_string())
+                .collect::<Vec<_>>(),
             vec![lorebook.book.id.to_string()]
-        );
-        assert_eq!(
-            again.persona.avatar_crop.as_ref().map(|crop| crop.x),
-            Some(0.3)
         );
         std::fs::remove_dir_all(&root).ok();
     }

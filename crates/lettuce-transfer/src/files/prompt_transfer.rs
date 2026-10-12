@@ -1,13 +1,12 @@
-//! Prompt templates read from and written to USC system prompt cards and
-//! SillyTavern prompt-manager presets.
+//! Prompt templates read from USC system prompt cards and SillyTavern
+//! prompt-manager presets.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_context::{
-    PromptEntryCondition, PromptEntryDraft, PromptEntryImageSlot, PromptEntryPayload,
-    PromptEntryPosition, PromptEntryRole, PromptPurpose,
+    PromptEntryDraft, PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition,
+    PromptEntryRole, PromptPurpose,
 };
-use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -19,27 +18,6 @@ pub enum PromptTransferError {
     NameRequired,
     #[error("NO_IMPORTABLE_PROMPTS")]
     NoImportablePrompts,
-    #[error("Failed to serialize prompt export")]
-    Serialize,
-}
-
-/// One stored prompt entry with the id it is exported under.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PromptTransferEntry {
-    pub id: String,
-    pub draft: PromptEntryDraft,
-}
-
-/// A stored prompt template in the shape its files carry.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PromptTransfer {
-    pub id: String,
-    pub name: String,
-    pub purpose: PromptPurpose,
-    pub entries: Vec<PromptTransferEntry>,
-    pub condense: bool,
-    pub created_at: i64,
-    pub updated_at: i64,
 }
 
 /// A prompt template read from a file, ready to be created.
@@ -54,30 +32,6 @@ pub struct ImportedPrompt {
     pub purpose_defaulted: bool,
 }
 
-/// The preset-level SillyTavern prompts an exported preset carries.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SillyTavernPresetTexts {
-    pub impersonation_prompt: String,
-    pub new_chat_prompt: String,
-    pub new_group_chat_prompt: String,
-    pub new_example_chat_prompt: String,
-    pub continue_nudge_prompt: String,
-    pub scenario_format: String,
-    pub personality_format: String,
-    pub group_nudge_prompt: String,
-    pub wi_format: String,
-}
-
-impl SillyTavernPresetTexts {
-    /// The texts the old app wrote into every exported preset.
-    #[must_use]
-    pub fn bundled() -> Self {
-        serde_json::from_str(include_str!("../../resources/sillytavern-preset.json"))
-            .expect("bundled SillyTavern preset texts are valid")
-    }
-}
-
 const SILLYTAVERN_MARKERS: [(&str, &str); 8] = [
     ("worldInfoBefore", "Lorebook Before"),
     ("personaDescription", "Persona Description"),
@@ -89,171 +43,10 @@ const SILLYTAVERN_MARKERS: [(&str, &str); 8] = [
     ("chatHistory", "Chat History"),
 ];
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UscEntry<'a> {
-    id: &'a str,
-    name: &'a str,
-    role: PromptEntryRole,
-    content: &'a str,
-    enabled: bool,
-    injection_position: PromptEntryPosition,
-    injection_depth: u32,
-    conditional_min_messages: Option<u32>,
-    interval_turns: Option<u32>,
-    system_prompt: bool,
-    conditions: &'a Option<PromptEntryCondition>,
-    prompt_entry_payload: &'a Option<PromptEntryPayload>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UscPromptPayload<'a> {
-    id: &'a str,
-    name: &'a str,
-    prompt_type: PromptPurpose,
-    content: &'a str,
-    entries: Vec<UscEntry<'a>>,
-    condense_prompt_entries: bool,
-    created_at: i64,
-    updated_at: i64,
-}
-
-#[derive(Serialize)]
-struct UscSchema {
-    name: &'static str,
-    version: &'static str,
-}
-
-#[derive(Serialize)]
-struct UscPromptCard<'a> {
-    schema: UscSchema,
-    kind: &'static str,
-    payload: UscPromptPayload<'a>,
-}
-
-/// The template as a USC `system_prompt_template` card, pretty-printed.
-pub fn export_prompt_usc(prompt: &PromptTransfer) -> Result<String, PromptTransferError> {
-    serde_json::to_string_pretty(&UscPromptCard {
-        schema: UscSchema {
-            name: "USC",
-            version: "1.0",
-        },
-        kind: "system_prompt_template",
-        payload: UscPromptPayload {
-            id: &prompt.id,
-            name: &prompt.name,
-            prompt_type: prompt.purpose,
-            content: "",
-            entries: prompt
-                .entries
-                .iter()
-                .map(|entry| UscEntry {
-                    id: &entry.id,
-                    name: &entry.draft.name,
-                    role: entry.draft.role,
-                    content: &entry.draft.content,
-                    enabled: entry.draft.enabled,
-                    injection_position: entry.draft.injection_position,
-                    injection_depth: entry.draft.depth,
-                    conditional_min_messages: entry.draft.conditional_min_messages,
-                    interval_turns: entry.draft.interval_turns,
-                    system_prompt: entry.draft.system_prompt,
-                    conditions: &entry.draft.conditions,
-                    prompt_entry_payload: &entry.draft.payload,
-                })
-                .collect(),
-            condense_prompt_entries: prompt.condense,
-            created_at: prompt.created_at,
-            updated_at: prompt.updated_at,
-        },
-    })
-    .map_err(|_| PromptTransferError::Serialize)
-}
-
 fn sillytavern_variables(content: &str) -> String {
     content
         .replace("{{scenario}}", "{{scene}}")
         .replace("{{personality}}", "{{char.desc}}")
-}
-
-/// The template as a SillyTavern prompt-manager preset: its entries, then the
-/// eight SillyTavern markers, in one prompt order.
-pub fn export_prompt_sillytavern(prompt: &PromptTransfer) -> Result<String, PromptTransferError> {
-    let texts = SillyTavernPresetTexts::bundled();
-    let mut prompts = prompt
-        .entries
-        .iter()
-        .map(|entry| {
-            let draft = &entry.draft;
-            let mut value = serde_json::Map::new();
-            value.insert("identifier".into(), json!(entry.id));
-            value.insert("name".into(), json!(draft.name));
-            value.insert("system_prompt".into(), json!(draft.system_prompt));
-            value.insert("marker".into(), json!(false));
-            value.insert(
-                "content".into(),
-                json!(sillytavern_variables(&draft.content)),
-            );
-            value.insert("role".into(), json!(draft.role));
-            value.insert(
-                "injection_position".into(),
-                match draft.injection_position {
-                    PromptEntryPosition::Relative => json!(0),
-                    PromptEntryPosition::InChat => json!(1),
-                    PromptEntryPosition::Conditional => json!("conditional"),
-                    PromptEntryPosition::Interval => json!("interval"),
-                },
-            );
-            value.insert("injection_depth".into(), json!(draft.depth));
-            if let Some(count) = draft.conditional_min_messages {
-                value.insert("conditional_min_messages".into(), json!(count));
-            }
-            if let Some(turns) = draft.interval_turns {
-                value.insert("interval_turns".into(), json!(turns));
-            }
-            value.insert("forbid_overrides".into(), json!(false));
-            value.insert("enabled".into(), json!(draft.enabled));
-            if let Some(payload) = &draft.payload {
-                value.insert(
-                    "prompt_entry_payload".into(),
-                    serde_json::to_value(payload).map_err(|_| PromptTransferError::Serialize)?,
-                );
-            }
-            Ok(Value::Object(value))
-        })
-        .collect::<Result<Vec<_>, PromptTransferError>>()?;
-    prompts.extend(SILLYTAVERN_MARKERS.iter().map(|(identifier, name)| {
-        json!({
-            "identifier": identifier,
-            "name": name,
-            "system_prompt": true,
-            "marker": true,
-        })
-    }));
-    let order = prompts
-        .iter()
-        .map(|prompt| {
-            json!({
-                "identifier": prompt.get("identifier").cloned().unwrap_or(json!("")),
-                "enabled": prompt.get("enabled").cloned().unwrap_or(json!(true)),
-            })
-        })
-        .collect::<Vec<_>>();
-    let preset = json!({
-        "impersonation_prompt": texts.impersonation_prompt,
-        "new_chat_prompt": texts.new_chat_prompt,
-        "new_group_chat_prompt": texts.new_group_chat_prompt,
-        "new_example_chat_prompt": texts.new_example_chat_prompt,
-        "continue_nudge_prompt": texts.continue_nudge_prompt,
-        "scenario_format": texts.scenario_format,
-        "personality_format": texts.personality_format,
-        "group_nudge_prompt": texts.group_nudge_prompt,
-        "wi_format": texts.wi_format,
-        "prompts": prompts,
-        "prompt_order": [{"character_id": 100_001, "order": order}],
-    });
-    serde_json::to_string_pretty(&preset).map_err(|_| PromptTransferError::Serialize)
 }
 
 /// A prompt file: a USC `system_prompt_template` card, else a SillyTavern
@@ -655,16 +448,52 @@ fn sillytavern_entry(
 
 #[cfg(test)]
 mod tests {
+    use lettuce_context::PromptEntryCondition;
+
     use super::*;
 
-    fn entry(id: &str, content: &str) -> PromptTransferEntry {
-        PromptTransferEntry {
-            id: id.to_owned(),
-            draft: PromptEntryDraft {
+    #[test]
+    fn a_usc_card_reads_with_every_entry_field() {
+        let card = json!({
+            "schema": {"name": "USC", "version": "1.0"},
+            "kind": "system_prompt_template",
+            "payload": {
+                "id": "prompt-1",
+                "name": "Storyteller",
+                "promptType": "companionChat",
+                "content": "",
+                "entries": [{
+                    "id": "a",
+                    "name": "Entry a",
+                    "role": "system",
+                    "content": "Stay in the scene.",
+                    "enabled": true,
+                    "injectionPosition": "inChat",
+                    "injectionDepth": 2,
+                    "conditionalMinMessages": null,
+                    "intervalTurns": 3,
+                    "systemPrompt": false,
+                    "conditions": null,
+                    "promptEntryPayload": {"type": "imageSlot", "slot": "persona"}
+                }],
+                "condensePromptEntries": true,
+                "createdAt": 1,
+                "updatedAt": 2
+            }
+        });
+        let imported =
+            parse_prompt_import(&card.to_string(), None, "Imported", "Set").expect("import");
+        assert_eq!(imported.name, "Storyteller");
+        assert_eq!(imported.purpose, PromptPurpose::CompanionChat);
+        assert!(!imported.purpose_defaulted);
+        assert!(imported.condense);
+        assert_eq!(
+            imported.entries,
+            vec![PromptEntryDraft {
                 built_in_entry_key: None,
-                name: format!("Entry {id}"),
+                name: "Entry a".to_owned(),
                 role: PromptEntryRole::System,
-                content: content.to_owned(),
+                content: "Stay in the scene.".to_owned(),
                 enabled: true,
                 injection_position: PromptEntryPosition::InChat,
                 depth: 2,
@@ -675,38 +504,7 @@ mod tests {
                 payload: Some(PromptEntryPayload::ImageSlot {
                     slot: PromptEntryImageSlot::Persona,
                 }),
-            },
-        }
-    }
-
-    fn prompt() -> PromptTransfer {
-        PromptTransfer {
-            id: "prompt-1".to_owned(),
-            name: "Storyteller".to_owned(),
-            purpose: PromptPurpose::CompanionChat,
-            entries: vec![entry("a", "Stay in {{scenario}}."), entry("b", "Be kind.")],
-            condense: true,
-            created_at: 1,
-            updated_at: 2,
-        }
-    }
-
-    #[test]
-    fn a_usc_card_reads_back_as_the_same_template() {
-        let exported = export_prompt_usc(&prompt()).expect("export");
-        assert!(exported.starts_with("{\n  \"schema\": {\n    \"name\": \"USC\""));
-        let imported = parse_prompt_import(&exported, None, "Imported", "Set").expect("import");
-        assert_eq!(imported.name, "Storyteller");
-        assert_eq!(imported.purpose, PromptPurpose::CompanionChat);
-        assert!(!imported.purpose_defaulted);
-        assert!(imported.condense);
-        assert_eq!(
-            imported.entries,
-            prompt()
-                .entries
-                .into_iter()
-                .map(|entry| entry.draft)
-                .collect::<Vec<_>>()
+            }]
         );
     }
 
@@ -744,18 +542,24 @@ mod tests {
     }
 
     #[test]
-    fn a_sillytavern_preset_round_trips_through_its_prompt_order() {
-        let exported = export_prompt_sillytavern(&prompt()).expect("export");
-        let value: Value = serde_json::from_str(&exported).expect("json");
-        assert_eq!(value["prompts"].as_array().map(Vec::len), Some(10));
-        assert_eq!(value["prompts"][0]["content"], "Stay in {{scene}}.");
-        assert_eq!(value["prompts"][0]["injection_position"], 1);
-        assert_eq!(value["prompt_order"][0]["character_id"], 100_001);
-        let imported =
-            parse_prompt_import(&exported, Some("preset"), "Imported", "Set").expect("import");
+    fn a_sillytavern_preset_reads_through_its_prompt_order() {
+        let preset = json!({
+            "prompts": [
+                {"identifier": "a", "name": "Entry a", "system_prompt": false, "marker": false,
+                 "content": "Stay in {{scenario}}.", "role": "system", "injection_position": 1,
+                 "injection_depth": 2, "enabled": true},
+                {"identifier": "chatHistory", "name": "Chat History", "system_prompt": true, "marker": true}
+            ],
+            "prompt_order": [{"character_id": 100_001, "order": [
+                {"identifier": "a", "enabled": true},
+                {"identifier": "chatHistory", "enabled": true}
+            ]}]
+        });
+        let imported = parse_prompt_import(&preset.to_string(), Some("preset"), "Imported", "Set")
+            .expect("import");
         assert_eq!(imported.name, "preset");
         assert_eq!(imported.purpose, PromptPurpose::DirectChat);
-        assert_eq!(imported.entries.len(), 2);
+        assert_eq!(imported.entries.len(), 1);
         assert_eq!(imported.entries[0].content, "Stay in {{scene}}.");
         assert_eq!(
             imported.entries[0].injection_position,

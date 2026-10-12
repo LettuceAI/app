@@ -474,15 +474,9 @@ impl AppBackend {
         crate::ChatFileCoordinator::new(self.database.as_ref())
     }
 
-    pub fn persona_files<'a, BR, AR>(
-        &'a self,
-        media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,
-    ) -> crate::PersonaFileCoordinator<'a, Database, BR, AR>
-    where
-        BR: lettuce_media::MediaBlobRepository,
-        AR: lettuce_media::MediaAssetRepository,
-    {
-        crate::PersonaFileCoordinator::new(self.database.as_ref(), media_store)
+    #[must_use]
+    pub fn persona_files(&self) -> crate::PersonaFileCoordinator<'_, Database> {
+        crate::PersonaFileCoordinator::new(self.database.as_ref())
     }
 
     pub fn legacy_asr_learning_transfer<'a, BR, AR>(
