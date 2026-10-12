@@ -5974,6 +5974,7 @@ export type RemoteModelContract = {
 	output_modalities: string[] | null,
 	supported_endpoints: string[] | null,
 	input_price: number | null,
+	cache_read_price?: number | null,
 	output_price: number | null,
 };
 
