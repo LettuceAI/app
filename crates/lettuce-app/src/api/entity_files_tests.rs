@@ -2455,13 +2455,12 @@ async fn uec3_every_dependency_imports_once_and_shared_image_gets_distinct_logic
             "media":{"avatar":"asset:a1","avatarCrop":null},"behavior":{"image":null,"lorebooks":[{"book":"dep:l1","enabled":false}]}},
         "dependencies":[
             {"key":"l1","kind":"lorebook","entity":{"name":"Bundle book","icon":"asset:a1","detection":"latest_user_message","behaviorVersion":"deterministic_v2","entries":[]}},
-            {"key":"p1","kind":"prompt","entity":{"name":"Bundle prompt","purpose":"direct_chat","condense":false,"behaviorVersion":"legacy_v1","builtIn":null,"entries":[]}},
-            {"key":"a1","kind":"persona","entity":{"name":"Bundle persona","nickname":null,"description":"Bundled","design":{"description":null,"references":[]},"media":{"avatar":null,"avatarCrop":null},"behavior":{"image":null,"lorebooks":[{"book":"dep:l1","enabled":true}]}}}],
+            {"key":"p1","kind":"prompt","entity":{"name":"Bundle prompt","purpose":"direct_chat","condense":false,"behaviorVersion":"legacy_v1","builtIn":null,"entries":[]}}],
         "state":null,"assets":{"a1":{"mime":"image/png","blake3":blake3::hash(&bytes).to_hex().to_string(),"data":base64::engine::general_purpose::STANDARD.encode(&bytes)}}});
     let source = source(&root,"dependencies.uec",&value);
     let p = preview(&harness.context,source.clone()).await;
     let uec3 = p.uec3.as_ref().expect("UEC 3 details");
-    assert_eq!(uec3.dependencies.len(),3);
+    assert_eq!(uec3.dependencies.len(),2);
     assert!(!uec3.include_learned);
     assert_eq!(uec3.persona.as_ref().expect("persona draft").media.len(),2);
     let result = super::import_commit(&harness.context,commit_request(source,p.digest,json!({}),"all-dependencies")).await.expect("import");
@@ -2469,11 +2468,16 @@ async fn uec3_every_dependency_imports_once_and_shared_image_gets_distinct_logic
     let database = harness.context.backend().database();
     let graph = database.read_provider_backup_graph().expect("graph");
     assert_eq!(graph.prompts.iter().filter(|prompt| prompt.name == "Bundle prompt").count(),1);
-    assert_eq!(graph.authored.personas.iter().filter(|persona| persona.title == "Bundle persona").count(),1);
     assert_eq!(graph.authored.lorebooks.iter().filter(|book| book.book.name == "Bundle book").count(),1);
     let persona = lettuce_characters::PersonaRepository::get(database,id.parse().expect("id")).expect("read").expect("persona");
     assert_eq!(persona.media.links.len(),2);
     assert_ne!(persona.media.links[0].asset_id,persona.media.links[1].asset_id);
+    let mut with_persona = value.clone();
+    with_persona["dependencies"].as_array_mut().expect("dependencies").push(json!({"key":"a1","kind":"persona","entity":{"name":"Bundle persona","nickname":null,"description":"Bundled","design":{"description":null,"references":[]},"media":{"avatar":null,"avatarCrop":null},"behavior":{"image":null,"lorebooks":[]}}}));
+    let path = root.join("persona-dependency.uec");
+    std::fs::write(&path,with_persona.to_string()).expect("write");
+    let refused = super::import_preview(&harness.context,dto::ImportPreviewRequest {source:dto::FileSource {uri:path.display().to_string()}}).await.expect_err("a persona is not a dependency");
+    assert_eq!(refused.code,ApiErrorCode::InvalidInput);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -2844,5 +2848,45 @@ async fn uec3_learned_export_of_a_former_companion_writes_no_state() {
     let value: Value = serde_json::from_slice(&std::fs::read(exported.uri).expect("file"))
         .expect("JSON");
     assert!(value["state"].is_null());
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn uec3_character_preview_names_an_unknown_built_in_once() {
+    let (root, harness) = setup();
+    let exported = super::character_export(
+        &harness.context,
+        dto::CharacterExportRequest {
+            id: harness.character_id.to_string(),
+            include_learned: false,
+            format: dto::CharacterExportFormat::Uec,
+            target: Some(dto::FileTarget {
+                uri: root.join("base.uec").display().to_string(),
+            }),
+        },
+    )
+    .await
+    .expect("export");
+    let mut value: Value =
+        serde_json::from_slice(&std::fs::read(exported.uri).expect("file")).expect("JSON");
+    value["dependencies"] = json!([{
+        "key": "p1",
+        "kind": "prompt",
+        "entity": {
+            "name": "Future prompt",
+            "purpose": "direct_chat",
+            "condense": false,
+            "behaviorVersion": "legacy_v1",
+            "builtIn": "future.catalog",
+            "entries": []
+        }
+    }]);
+    let p = preview(&harness.context, source(&root, "future.uec", &value)).await;
+    let named = p
+        .warnings
+        .iter()
+        .filter(|warning| warning.field == "builtIn:future.catalog")
+        .count();
+    assert_eq!(named, 1);
     std::fs::remove_dir_all(root).expect("cleanup");
 }

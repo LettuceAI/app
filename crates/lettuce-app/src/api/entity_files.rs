@@ -424,15 +424,20 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
         );
     }
-    let mut uec3_preview = if let Some(card) = &uec3 {
+    let uec3_parts = if let Some(card) = &uec3 {
         let assets = card
             .document
             .assets
             .keys()
             .map(|key| (key.clone(), lettuce_types::AssetId::new()))
-            .collect();
+            .collect::<std::collections::BTreeMap<_, _>>();
         let books = uec3_books(context, &card.document, &assets)?;
-        uec3_prompts(context, &card.document, &mut warnings)?;
+        let prompts = uec3_prompts(context, &card.document, &mut warnings)?;
+        Some((assets, books, prompts))
+    } else {
+        None
+    };
+    let mut uec3_preview = if let Some(card) = &uec3 {
         let mut dependencies = Vec::new();
         for dependency in &card.document.dependencies {
             let (kind, name) = match &dependency.entity {
@@ -441,20 +446,6 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 }
                 lettuce_transfer::uec3::Entity::Prompt(prompt) => {
                     (dto::FileKind::PromptPreset, prompt.name.clone())
-                }
-                lettuce_transfer::uec3::Entity::Persona(persona) => {
-                    let mut document = card.document.clone();
-                    document.entity = lettuce_transfer::uec3::Entity::Persona(persona.clone());
-                    prepare_uec3_persona(
-                        context,
-                        &document,
-                        &assets,
-                        &mut Vec::new(),
-                        &mut warnings,
-                        true,
-                        &books,
-                    )?;
-                    (dto::FileKind::PersonaFile, persona.name.clone())
                 }
                 _ => return Err(format_error("invalid dependency kind")),
             };
@@ -480,28 +471,23 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             let card = uec3
                 .as_ref()
                 .ok_or_else(|| internal("missing UEC document"))?;
-            let assets = card
-                .document
-                .assets
-                .keys()
-                .map(|key| (key.clone(), lettuce_types::AssetId::new()))
-                .collect();
-            let books = uec3_books(context, &card.document, &assets)?;
-            let prompts = uec3_prompts(context, &card.document, &mut warnings)?;
+            let (assets, books, prompts) = uec3_parts
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC parts"))?;
             let mut import = character3::prepare(
                 context,
                 &card.document,
                 character3::ImportAssets {
-                    ids: &assets,
+                    ids: assets,
                     uploads: &mut Vec::new(),
                     preview: true,
                 },
                 &mut warnings,
                 now,
-                &books,
-                &prompts,
+                books,
+                prompts,
             )?;
-            import.lorebooks = books.into_values().collect();
+            import.lorebooks = books.values().cloned().collect();
             let details = lettuce_characters::CharacterDetails {
                 character: import.character.character,
                 scenes: import.character.scenes,
@@ -636,20 +622,17 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             let card = uec3
                 .as_ref()
                 .ok_or_else(|| internal("missing UEC document"))?;
-            let assets = card
-                .document
-                .assets
-                .keys()
-                .map(|key| (key.clone(), lettuce_types::AssetId::new()))
-                .collect();
+            let (assets, books, _) = uec3_parts
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC parts"))?;
             let import = prepare_uec3_persona(
                 context,
                 &card.document,
-                &assets,
+                assets,
                 &mut Vec::new(),
                 &mut warnings,
                 true,
-                &uec3_books(context, &card.document, &assets)?,
+                books,
             )?;
             if let Some(preview) = &mut uec3_preview {
                 preview.persona =
@@ -834,9 +817,11 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             else {
                 return Err(format_error("expected chat template entity"));
             };
-            let prompts = uec3_prompts(context, &card.document, &mut warnings)?;
+            let (_, _, prompts) = uec3_parts
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC parts"))?;
             if let Some(reference) = &template.prompt {
-                uec3_prompt_reference(context, reference, &prompts)?;
+                uec3_prompt_reference(context, reference, prompts)?;
             }
             dto::ImportPreviewContent::ChatTemplate {
                 name: template.name.clone(),
@@ -1210,25 +1195,6 @@ pub async fn import_commit(
             } else {
                 Default::default()
             };
-            let mut bundled_personas = Vec::new();
-            if let Some(card) = &uec3 {
-                for dependency in &card.document.dependencies {
-                    if let lettuce_transfer::uec3::Entity::Persona(persona) = &dependency.entity {
-                        let mut document = card.document.clone();
-                        document.entity = lettuce_transfer::uec3::Entity::Persona(persona.clone());
-                        document.state = None;
-                        bundled_personas.push(prepare_uec3_persona(
-                            context,
-                            &document,
-                            &assets,
-                            &mut uploads,
-                            &mut warnings,
-                            false,
-                            &books,
-                        )?);
-                    }
-                }
-            }
             let plan = match (file.kind, prepared) {
                 (dto::FileKind::CharacterCard, Prepared::Character(package)) => {
                     let media = context.media().ok_or_else(|| {
@@ -1543,11 +1509,6 @@ pub async fn import_commit(
                         for prompt in prompts.values() {
                             scope
                                 .import_prompt_file(prompt)
-                                .map_err(|e| Failure(e.into_api_error()))?;
-                        }
-                        for persona in &bundled_personas {
-                            scope
-                                .import_persona_file(persona)
                                 .map_err(|e| Failure(e.into_api_error()))?;
                         }
                         let id = match plan {
