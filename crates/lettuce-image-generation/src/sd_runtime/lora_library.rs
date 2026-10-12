@@ -80,7 +80,8 @@ pub trait LoraLibraryRepository: Send + Sync {
         &self,
         sha256: &str,
     ) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError>;
-    /// The newest record with matching content and discovery metadata.
+    /// The newest other record of the same file content that found keywords
+    /// or an architecture.
     fn lora_by_hash(&self, sha256: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError>;
     /// Records a file; a changed size or modification time forgets its hash,
     /// keywords and architecture.
