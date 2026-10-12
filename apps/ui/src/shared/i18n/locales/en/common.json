@@ -5,7 +5,8 @@
   "status": {
     "loading": "Connecting to the app…",
     "version": "Version",
-    "platform": "Platform"
+    "platform": "Platform",
+    "resetOnboarding": "Reset onboarding"
   },
   "platform": {
     "windows": "Windows",

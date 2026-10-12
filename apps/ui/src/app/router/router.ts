@@ -9,11 +9,12 @@ import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { ApiClient } from "@/api/client";
 import { loadOnboardingRoute } from "@/features/onboarding";
+import { loadWelcomeBackRoute } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
 import { RouteNotFound } from "../error-boundaries/RouteNotFound";
 import { AppShell } from "../shell/AppShell";
 import { PendingScreen } from "../shell/PendingScreen";
-import { onboardingCompleted, onboardingRedirect, welcomePath } from "./onboarding-gate";
+import { legacyMigrationOffered, onboardingCompleted, onboardingRedirect, welcomeBackPath, welcomePath } from "./onboarding-gate";
 
 export interface RouterContext {
   api: ApiClient;
@@ -26,7 +27,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
       ...appStatusQuery(context.api),
       revalidateIfStale: true,
     });
-    const target = onboardingRedirect(onboardingCompleted(status), location.pathname);
+    const target = onboardingRedirect({ completed: onboardingCompleted(status), legacy: legacyMigrationOffered(status) }, location.pathname);
     if (target) throw redirect({ to: target, replace: true });
   },
   component: AppShell,
@@ -42,7 +43,12 @@ const welcomeRoute = createRoute({
   path: welcomePath,
 }).lazy(loadOnboardingRoute);
 
-const routeTree = rootRoute.addChildren([statusRoute, welcomeRoute]);
+const welcomeBackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: welcomeBackPath,
+}).lazy(loadWelcomeBackRoute);
+
+const routeTree = rootRoute.addChildren([statusRoute, welcomeRoute, welcomeBackRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;

@@ -11,6 +11,7 @@
   },
   "ignorePatterns": [
     "src/api/generated/**",
+    "src/shared/ui/react-bits/**",
     "dist/**"
   ],
   "rules": {
