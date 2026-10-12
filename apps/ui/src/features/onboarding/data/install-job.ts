@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient } from "@/api/client";
 import type { JobView } from "@/api/generated/bindings";
+import { downloadPhaseOf, terminalJobStates, watchJob, type DownloadPhase } from "@/entities/job";
 
-export type InstallPhase = "idle" | "downloading" | "verifying" | "done" | "failed";
+export type InstallPhase = "idle" | DownloadPhase;
 
 export interface InstallState {
   phase: InstallPhase;
@@ -11,23 +12,6 @@ export interface InstallState {
 }
 
 const idle: InstallState = { phase: "idle", job: null, error: null };
-
-const terminalStates: ReadonlySet<JobView["state"]> = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
-
-export function phaseOf(job: JobView): InstallPhase {
-  switch (job.state) {
-    case "succeeded":
-      return "done";
-    case "failed":
-    case "cancelled":
-    case "interrupted":
-      return "failed";
-    default: {
-      const label = job.progress.label_code;
-      return label === null || label === "download" ? "downloading" : "verifying";
-    }
-  }
-}
 
 export function useEmbeddingInstall(api: ApiClient) {
   const [state, setState] = useState<InstallState>(idle);
@@ -42,20 +26,12 @@ export function useEmbeddingInstall(api: ApiClient) {
     setState({ phase: "downloading", job: null, error: null });
     const apply = (job: JobView) => {
       if (controller.signal.aborted) return;
-      setState({ phase: phaseOf(job), job, error: null });
-      if (terminalStates.has(job.state)) controller.abort();
+      setState({ phase: downloadPhaseOf(job), job, error: null });
+      if (terminalJobStates.has(job.state)) controller.abort();
     };
     try {
       const accepted = await api.call("embeddingInstall", { family: "lettuce_eidos_v5", enable_dynamic_memory: true });
-      const finished = await api.stream(
-        "jobWatch",
-        [{ job_id: accepted.job_id }],
-        (event) => {
-          if ("job" in event) apply(event.job);
-        },
-        { signal: controller.signal },
-      );
-      apply(finished);
+      await watchJob(api, accepted.job_id, apply, controller.signal);
     } catch (error) {
       if (!controller.signal.aborted) setState({ phase: "failed", job: null, error });
     }
