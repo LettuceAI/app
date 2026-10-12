@@ -9,6 +9,7 @@ mod backup;
 mod restore;
 mod legacy;
 mod files;
+pub mod uec3;
 
 pub use backup::*;
 pub use restore::*;

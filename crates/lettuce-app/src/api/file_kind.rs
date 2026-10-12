@@ -187,6 +187,18 @@ fn detect_text_kind(reader: &mut dyn FileReader) -> Result<dto::FileKind, FileAc
             dto::FileKind::Other
         });
     }
+    if value.pointer("/schema/name").and_then(Value::as_str) == Some("UEC")
+        && value
+            .pointer("/schema/version")
+            .and_then(Value::as_str)
+            .is_some_and(|version| {
+                !["1.", "2.", "3."]
+                    .iter()
+                    .any(|major| version.starts_with(major))
+            })
+    {
+        return Err(FileAccessError::Unsupported);
+    }
     Ok(json_kind(&value))
 }
 
@@ -204,6 +216,22 @@ pub(super) fn sample_json<R: Read>(reader: R) -> (Option<Value>, bool) {
 }
 
 fn json_kind(value: &Value) -> dto::FileKind {
+    if value.pointer("/schema/name").and_then(Value::as_str) == Some("UEC")
+        && value
+            .pointer("/schema/version")
+            .and_then(Value::as_str)
+            .is_some_and(|version| !version.starts_with("1.") && !version.starts_with("2."))
+    {
+        return match value.get("kind").and_then(Value::as_str) {
+            Some("character") => dto::FileKind::CharacterCard,
+            Some("persona") => dto::FileKind::PersonaFile,
+            Some("lorebook") => dto::FileKind::Lorebook,
+            Some("prompt") => dto::FileKind::PromptPreset,
+            Some("chat_template") => dto::FileKind::ChatTemplate,
+            Some("model_profile") => dto::FileKind::ModelFile,
+            _ => dto::FileKind::Other,
+        };
+    }
     let text = value.to_string();
     match value.get("kind").and_then(Value::as_str) {
         Some("lorebook")

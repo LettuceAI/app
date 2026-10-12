@@ -109,6 +109,37 @@ pub(super) fn text(file: &ImportFile) -> Result<&str, ApiError> {
     std::str::from_utf8(&file.bytes).map_err(|_| invalid_field("source", "the file is not UTF-8"))
 }
 
+fn uec3_error(error: lettuce_transfer::uec3::Error) -> ApiError {
+    match error {
+        lettuce_transfer::uec3::Error::Io(_) => {
+            api_error(ApiErrorCode::Unavailable, error.to_string())
+        }
+        lettuce_transfer::uec3::Error::UnsupportedVersion(_) => {
+            api_error(ApiErrorCode::Unsupported, error.to_string())
+        }
+        _ => format_error(error),
+    }
+}
+
+fn uec3_document(
+    file: &ImportFile,
+) -> Result<Option<lettuce_transfer::uec3::ReadResult>, ApiError> {
+    if file.bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Ok(None);
+    }
+    if !lettuce_transfer::uec3::is_document(text(file)?).map_err(uec3_error)? {
+        return Ok(None);
+    }
+    let card = lettuce_transfer::uec3::read(text(file)?, |_, _, _| Ok(())).map_err(uec3_error)?;
+    if !card.document.dependencies.is_empty() {
+        return Err(api_error(
+            ApiErrorCode::Unsupported,
+            "bundled dependencies are not supported by this UEC 3 import path",
+        ));
+    }
+    Ok(Some(card))
+}
+
 fn format_error(error: impl std::fmt::Display) -> ApiError {
     invalid_field("source", error.to_string())
 }
@@ -292,6 +323,18 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
         .map_err(|e| api_error(ApiErrorCode::Unavailable, e.to_string()))?
         .settings
         .auto_download_character_card_avatars;
+    let uec3 = if file.kind == dto::FileKind::ChatJsonl {
+        None
+    } else {
+        uec3_document(&file)?
+    };
+    if let Some(card) = &uec3 {
+        warnings.extend(
+            card.warnings
+                .iter()
+                .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
+        );
+    }
     let content = match file.kind {
         dto::FileKind::CharacterCard => {
             let package = character(&file, now)?;
@@ -396,6 +439,61 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             );
             dto::ImportPreviewContent::Persona {
                 content: convert(&package.persona)?,
+            }
+        }
+        dto::FileKind::Lorebook if uec3.is_some() => {
+            let card = uec3
+                .as_ref()
+                .ok_or_else(|| internal("missing UEC document"))?;
+            let lettuce_transfer::uec3::Entity::Lorebook(book) = &card.document.entity;
+            book.drafts(None).map_err(uec3_error)?;
+            if let Some(icon) = &book.icon {
+                let key = icon
+                    .strip_prefix("asset:")
+                    .ok_or_else(|| format_error("invalid icon reference"))?;
+                if !card.document.assets.contains_key(key) {
+                    return Err(format_error("missing icon asset"));
+                }
+                images.push(dto::ImportImagePreview {
+                    field: "icon".into(),
+                    remote_url: None,
+                });
+            }
+            dto::ImportPreviewContent::Lorebook {
+                name: book.name.clone(),
+                keyword_detection_mode: match book.detection {
+                    lettuce_transfer::uec3::Detection::RecentMessageWindow => {
+                        dto::ImportKeywordDetection::RecentMessageWindow
+                    }
+                    lettuce_transfer::uec3::Detection::LatestUserMessage => {
+                        dto::ImportKeywordDetection::LatestUserMessage
+                    }
+                },
+                entries: book
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .map(|(index, entry)| {
+                        Ok(dto::ImportLorebookEntry {
+                            title: entry.title.clone(),
+                            enabled: entry.enabled,
+                            always_active: entry.always_active,
+                            keywords: entry.keywords.clone(),
+                            case_sensitive: entry.case_sensitive,
+                            keyword_match_mode: match entry.match_mode {
+                                lettuce_context::KeywordMatchMode::Literal => {
+                                    dto::LorebookKeywordMode::Literal
+                                }
+                                lettuce_context::KeywordMatchMode::Regex => {
+                                    dto::LorebookKeywordMode::Regex
+                                }
+                            },
+                            content: entry.content.clone(),
+                            priority: entry.priority,
+                            display_order: i32::try_from(index).map_err(internal)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ApiError>>()?,
             }
         }
         dto::FileKind::Lorebook => {
@@ -723,6 +821,14 @@ pub async fn import_commit(
             }
             let mut uploads = Vec::new();
             let mut pins = Vec::new();
+            let uec3 = uec3_document(&file)?;
+            if let Some(card) = &uec3 {
+                warnings.extend(
+                    card.warnings
+                        .iter()
+                        .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
+                );
+            }
             let plan = match (file.kind, prepared) {
                 (dto::FileKind::CharacterCard, Prepared::Character(package)) => {
                     let media = context.media().ok_or_else(|| {
@@ -805,6 +911,51 @@ pub async fn import_commit(
                             });
                     }
                     WritePlan::Persona(import)
+                }
+                (dto::FileKind::Lorebook, _) if uec3.is_some() => {
+                    let card = uec3
+                        .as_ref()
+                        .ok_or_else(|| internal("missing UEC document"))?;
+                    let lettuce_transfer::uec3::Entity::Lorebook(book) = &card.document.entity;
+                    let icon_key = book
+                        .icon
+                        .as_deref()
+                        .map(|reference| {
+                            reference
+                                .strip_prefix("asset:")
+                                .ok_or_else(|| format_error("invalid icon reference"))
+                        })
+                        .transpose()?;
+                    let mut icon = None;
+                    lettuce_transfer::uec3::read(text(&file)?, |key, mime, bytes| {
+                        if Some(key) == icon_key {
+                            let data = format!(
+                                "data:{mime};base64,{}",
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            );
+                            icon = stage_image(
+                                context,
+                                Some(&data),
+                                lettuce_media::AssetKind::LorebookIcon,
+                                "icon",
+                                &mut uploads,
+                                &mut pins,
+                                &mut warnings,
+                            );
+                            if icon.is_none() {
+                                return Err(lettuce_transfer::uec3::Error::Format(
+                                    "icon staging failed".into(),
+                                ));
+                            }
+                        }
+                        Ok(())
+                    })
+                    .map_err(uec3_error)?;
+                    if icon_key.is_some() && icon.is_none() {
+                        return Err(format_error("missing icon asset"));
+                    }
+                    let (metadata, entries) = book.drafts(icon).map_err(uec3_error)?;
+                    WritePlan::Lorebook(metadata, entries)
                 }
                 (dto::FileKind::Lorebook, _) => {
                     let (metadata, entries) =
@@ -1143,6 +1294,74 @@ pub async fn persona_export(
         })
         .await
 }
+fn export_uec3_lorebook(
+    context: &ApiContext,
+    book: &lettuce_context::LorebookDetails,
+) -> Result<String, ApiError> {
+    use lettuce_transfer::uec3;
+    let mut assets = std::collections::BTreeMap::new();
+    let mut ids = std::collections::BTreeMap::new();
+    let mut hashes = Vec::new();
+    if let Some(id) = book.book.icon_asset_id {
+        let media = context
+            .media()
+            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no media store is open"))?;
+        let opened = media
+            .open_ready(id)
+            .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+        hashes.push(opened.blob.content_hash.clone());
+        assets.insert(
+            "a1".into(),
+            uec3::Asset {
+                mime: opened.blob.mime_type,
+                blake3: opened.blob.content_hash.as_str().to_owned(),
+            },
+        );
+        ids.insert("a1".to_owned(), id);
+    }
+    let (_, _pin) =
+        lettuce_media::pin_media_objects(|| Ok::<_, std::convert::Infallible>(((), hashes)))
+            .expect("pin");
+    let document = uec3::Document {
+        schema: uec3::Schema {
+            name: "UEC".into(),
+            version: "3.0".into(),
+        },
+        meta: uec3::Meta {
+            exported_at: context.now().get(),
+            app: "LettuceAI 3.x".into(),
+            created_at: book.book.created_at.get(),
+            updated_at: book.book.updated_at.get(),
+            authors: Vec::new(),
+            license: None,
+            sources: Vec::new(),
+        },
+        entity: uec3::Entity::Lorebook(uec3::Lorebook::from_details(
+            book,
+            book.book.icon_asset_id.map(|_| "asset:a1".into()),
+        )),
+        dependencies: Vec::new(),
+        state: None,
+        assets,
+    };
+    let mut content = Vec::new();
+    uec3::write(&mut content, &document, |key, writer| {
+        let id = ids
+            .get(key)
+            .ok_or_else(|| uec3::Error::Format("missing export asset".into()))?;
+        let media = context
+            .media()
+            .ok_or_else(|| uec3::Error::Format("no media store is open".into()))?;
+        let mut opened = media
+            .open_ready(*id)
+            .map_err(|error| uec3::Error::Io(std::io::Error::other(error.to_string())))?;
+        std::io::copy(&mut opened.reader, writer)?;
+        Ok(())
+    })
+    .map_err(uec3_error)?;
+    String::from_utf8(content).map_err(internal)
+}
+
 pub async fn lorebook_export(
     context: &ApiContext,
     request: dto::LorebookExportRequest,
@@ -1156,7 +1375,9 @@ pub async fn lorebook_export(
             let files = context.backend().lorebook_files();
             let (content, extension) = match request.format {
                 dto::LorebookExportFormat::WorldInfo => (files.export_world_info(id), "json"),
-                dto::LorebookExportFormat::Usc => (files.export_usc(id), "usc"),
+                dto::LorebookExportFormat::Uec => {
+                    (Ok(export_uec3_lorebook(context, &book)?), "uec")
+                }
             };
             publish(
                 context,

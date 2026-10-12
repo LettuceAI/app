@@ -385,7 +385,7 @@ async fn lorebook_export_replaces_a_target_only_with_a_complete_current_file() {
     std::fs::write(&target, "previous").expect("target");
     let request = dto::LorebookExportRequest {
         id,
-        format: dto::LorebookExportFormat::Usc,
+        format: dto::LorebookExportFormat::Uec,
         target: Some(dto::FileTarget {
             uri: target.display().to_string(),
         }),
@@ -395,7 +395,7 @@ async fn lorebook_export_replaces_a_target_only_with_a_complete_current_file() {
         .expect("export");
     let content: Value =
         serde_json::from_slice(&std::fs::read(&target).expect("target")).expect("complete JSON");
-    assert_eq!(content["payload"]["name"], "Harbour");
+    assert_eq!(content["entity"]["name"], "Harbour");
     super::lorebook_export(&harness.context, request)
         .await
         .expect("repeat current export");
@@ -903,7 +903,7 @@ fn export_context(
         speech: Arc::new(super::NoSpeech),
         media: Some(entity_media_store(root)),
         events: harness.events.clone(),
-        clock: Arc::new(SystemClock),
+        clock: Arc::new(lettuce_jobs::FakeClock::new(lettuce_types::TimestampMillis::new(1))),
         files,
         app_folder: Some(root.into()),
         resource_dir: None,
@@ -965,6 +965,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
     }).expect("chat");
     let fail = failing_exports(&harness, &root);
     let android = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
+    let success = export_context(&harness, &root, Arc::new(super::tests::StdFiles));
     for kind in 0..7 {
         let target = root.join(format!("export-{kind}"));
         let export = async |context: &super::ApiContext, downloads: bool| {
@@ -1002,7 +1003,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
                         context,
                         dto::LorebookExportRequest {
                             id: book.clone(),
-                            format: dto::LorebookExportFormat::Usc,
+                            format: dto::LorebookExportFormat::Uec,
                             target,
                         },
                     )
@@ -1062,7 +1063,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
         std::fs::remove_file(&target).expect("remove old");
         assert!(export(&fail, false).await.is_err());
         assert!(!target.exists());
-        export(&harness.context, false)
+        export(&success, false)
             .await
             .expect("complete export");
         let content = std::fs::read_to_string(&target).expect("export");
@@ -1380,7 +1381,7 @@ async fn active_database_maintenance_refuses_import_and_export_before_writing() 
         &harness.context,
         dto::LorebookExportRequest {
             id,
-            format: dto::LorebookExportFormat::Usc,
+            format: dto::LorebookExportFormat::Uec,
             target: Some(dto::FileTarget {
                 uri: target.display().to_string(),
             }),
@@ -1857,4 +1858,73 @@ async fn png_cards_and_charx_agree_with_file_inspection() {
         }
     }
     std::fs::remove_dir_all(root).expect("folder");
+}
+
+
+#[tokio::test]
+async fn uec3_lorebook_import_preserves_behavior_and_replays() {
+    let (root, harness) = setup();
+    let value = json!({
+        "schema": {"name": "UEC", "version": "3.0"}, "kind": "lorebook",
+        "meta": {"exportedAt": 3, "app": "LettuceAI 3.x", "createdAt": 1,
+            "updatedAt": 2, "authors": [], "license": null, "sources": []},
+        "entity": {"name": "UEC Harbour", "icon": null, "detection": "latest_user_message",
+            "behaviorVersion": "deterministic_v2", "entries": [{"title": "Ships", "enabled": false,
+                "alwaysActive": true, "keywords": ["ship.*"], "caseSensitive": true,
+                "matchMode": "regex", "content": "The harbour", "priority": -7}]},
+        "dependencies": [], "state": null, "assets": {}
+    });
+    let source = source(&root, "harbour.uec", &value);
+    let inspected = super::files_inspect(&harness.context, dto::FilesInspectRequest { source: source.clone() }).await.expect("inspect");
+    assert_eq!(inspected.kind, dto::FileKind::Lorebook);
+    let preview = preview(&harness.context, source.clone()).await;
+    assert_eq!(preview.kind, inspected.kind);
+    let request = commit_request(source, preview.digest, json!({}), "uec3-lorebook");
+    let result = super::import_commit(&harness.context, request.clone()).await.expect("import");
+    assert_eq!(super::import_commit(&harness.context, request.clone()).await.expect("replay"), result);
+    let mut changed = request;
+    changed.digest.push_str("changed");
+    assert_eq!(super::import_commit(&harness.context, changed).await.expect_err("changed retry").code, ApiErrorCode::Conflict);
+    let graph = harness.context.backend().database().read_provider_backup_graph().expect("graph");
+    let details = graph.authored.lorebooks.iter().find(|details| details.book.name == "UEC Harbour").expect("book");
+    assert_eq!(details.book.behavior_version, lettuce_context::LorebookBehaviorVersion::DeterministicV2);
+    assert_eq!(details.book.detection_policy, lettuce_context::DetectionPolicy::LatestUserMessage);
+    assert_eq!(details.entries[0].match_mode, lettuce_context::KeywordMatchMode::Regex);
+    assert_eq!(details.entries[0].priority, -7);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn invalid_uec3_assets_and_versions_leave_no_lorebook_or_receipt() {
+    let (root, harness) = setup();
+    let database = harness.context.backend().database();
+    let before = database.read_provider_backup_graph().expect("before");
+    for (name, version, icon, assets, expected) in [
+        ("hash", "3.0", "asset:a1", json!({"a1": {"mime": "image/png", "blake3": "0".repeat(64), "data": "aW1hZ2U="}}), ApiErrorCode::InvalidInput),
+        ("major", "4.0", "asset:a1", json!({}), ApiErrorCode::Unsupported),
+        ("missing", "3.0", "asset:a1", json!({}), ApiErrorCode::InvalidInput),
+        ("image", "3.0", "asset:a1", json!({"a1": {"mime": "image/png", "blake3": blake3::hash(b"image").to_hex().as_str(), "data": "aW1hZ2U="}}), ApiErrorCode::InvalidInput),
+    ] {
+        let value = json!({
+            "schema": {"name": "UEC", "version": version}, "kind": "lorebook",
+            "meta": {"exportedAt": 3, "app": "LettuceAI 3.x", "createdAt": 1,
+                "updatedAt": 2, "authors": [], "license": null, "sources": []},
+            "entity": {"name": "Invalid", "icon": icon, "detection": "recent_message_window",
+                "behaviorVersion": "legacy_v1", "entries": []},
+            "dependencies": [], "state": null, "assets": assets
+        });
+        let source = source(&root, &format!("{name}.uec"), &value);
+        if name == "major" {
+            assert_eq!(super::files_inspect(&harness.context, dto::FilesInspectRequest { source: source.clone() }).await.expect_err("unsupported inspect").code, ApiErrorCode::Unsupported);
+        }
+        let digest = blake3::hash(value.to_string().as_bytes()).to_hex().to_string();
+        let request = commit_request(source.clone(), digest, json!({}), name);
+        assert_eq!(super::import_commit(&harness.context, request).await.expect_err(name).code, expected);
+        assert_eq!(database.read_provider_backup_graph().expect("after"), before);
+        assert!(database.lookup_api_operation("import_commit", name).expect("receipt").is_none());
+        if name != "image" {
+            assert_eq!(super::import_preview(&harness.context, dto::ImportPreviewRequest { source }).await.expect_err(name).code, expected);
+        }
+    }
+    std::fs::remove_dir_all(root).expect("cleanup");
 }

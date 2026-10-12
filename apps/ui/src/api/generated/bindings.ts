@@ -4328,7 +4328,7 @@ export type LorebookEntryView = {
 	updated_at: number,
 };
 
-export type LorebookExportFormat = "world_info" | "usc";
+export type LorebookExportFormat = "world_info" | "uec";
 
 export type LorebookExportRequest = {
 	id: string,

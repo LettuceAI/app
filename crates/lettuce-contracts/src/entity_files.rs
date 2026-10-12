@@ -394,7 +394,7 @@ pub enum CharacterExportFormat {
 #[serde(rename_all = "snake_case")]
 pub enum LorebookExportFormat {
     WorldInfo,
-    Usc,
+    Uec,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

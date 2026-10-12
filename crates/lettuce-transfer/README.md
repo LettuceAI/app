@@ -198,3 +198,9 @@ The shared legacy conflict snapshot decoder returns the recorded primary key and
 `parse_lorebook_import` reads World Info and USC 1.0 lorebooks. USC entries retain their title, keyword strings, enabled and activation state, case sensitivity, content and priority, ordered by displayOrder; entry identities and timestamps belong to the new import. `zip_has_legacy_backup_manifest` seeks through the ZIP directory and reads only the bounded public manifest to distinguish legacy backups from other archives.
 
 A prepared chat import carries an optional CreateGroupPlan alongside its historical record and companion state; preparation does not create a group. The app writes the group, the transcript and the job's completion in one operation transaction.
+
+## UEC 3
+
+A UEC 3 lorebook is one JSON file with `schema.name` set to `UEC`, `schema.version` set to `3.0`, and `kind` set to `lorebook`. The envelope separates export metadata, the authored entity, dependencies, optional state and an asset table. Lorebook entries preserve order, literal or regex matching, detection policy and behavior version. Entity references use `asset:<key>` rather than local asset identifiers.
+
+Each asset records its MIME type, BLAKE3 digest and base64 data. The writer encodes media through a streaming sink and verifies the streamed digest. The reader retains JSON text and encoded assets but decodes only one asset at a time, verifies its hash and passes it to the caller for staging. A newer 3.x minor version can add fields; the reader returns the paths of unknown fields as warnings. Other major versions fail with a typed unsupported-version error.
