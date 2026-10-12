@@ -48,7 +48,16 @@ const welcomeBackRoute = createRoute({
   path: welcomeBackPath,
 }).lazy(loadWelcomeBackRoute);
 
-const routeTree = rootRoute.addChildren([statusRoute, welcomeRoute, welcomeBackRoute]);
+const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups" })
+  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.groupsRoute));
+const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover" })
+  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.discoverRoute));
+const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library" })
+  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.libraryRoute));
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings" })
+  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.settingsRoute));
+
+const routeTree = rootRoute.addChildren([statusRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;

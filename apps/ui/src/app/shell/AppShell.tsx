@@ -1,9 +1,86 @@
-import { Outlet } from "@tanstack/react-router";
+import { AppShell as CrispAppShell, cn, CrispStringsProvider, icon, TitleBar, useCompactLayout, type NavDestination } from "@lettuceai/crisp";
+import { useQuery } from "@tanstack/react-query";
+import { Outlet, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Compass, Library, MessageSquare, Settings, Users } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { appStatusQuery } from "@/api/app-status-query";
+import type { WindowEdge } from "@/api/window-controls";
+import { destinations, destinationOf, type Destination } from "./navigation";
+import { useWindowController } from "./useWindowController";
+
+const resizeEdges: readonly [WindowEdge, string][] = [
+  ["North", "inset-x-2 top-0 h-1 cursor-n-resize"],
+  ["South", "inset-x-2 bottom-0 h-1 cursor-s-resize"],
+  ["East", "inset-y-2 right-0 w-1 cursor-e-resize"],
+  ["West", "inset-y-2 left-0 w-1 cursor-w-resize"],
+  ["NorthWest", "left-0 top-0 h-2 w-2 cursor-nw-resize"],
+  ["NorthEast", "right-0 top-0 h-2 w-2 cursor-ne-resize"],
+  ["SouthWest", "left-0 bottom-0 h-2 w-2 cursor-sw-resize"],
+  ["SouthEast", "right-0 bottom-0 h-2 w-2 cursor-se-resize"],
+];
 
 export function AppShell() {
+  const { t } = useTranslation();
+  const api = useRouteContext({ from: "__root__", select: (context) => context.api });
+  const { data: status } = useQuery(appStatusQuery(api));
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const navigate = useNavigate();
+  const compact = useCompactLayout();
+  const platform = status?.platform ?? "other";
+  const mobile = platform === "android" || platform === "ios";
+  const desktop = !mobile;
+  const windowPlatform = platform === "macos" || platform === "windows" ? platform : "linux";
+  const { controller, expanded, failed, perform } = useWindowController(platform);
+  const welcome = pathname === "/welcome" || pathname === "/welcome-back";
+  const items: NavDestination<Destination>[] = [
+    { id: "chats", label: t("navigation.chats"), icon: <MessageSquare size={icon.lg} /> },
+    { id: "groups", label: t("navigation.groups"), icon: <Users size={icon.lg} /> },
+    { id: "discover", label: t("navigation.discover"), icon: <Compass size={icon.lg} /> },
+    { id: "library", label: t("navigation.library"), icon: <Library size={icon.lg} /> },
+  ];
+  const settings: NavDestination<Destination> = { id: "settings", label: t("navigation.settings"), icon: <Settings size={icon.lg} /> };
+  const tabs = compact || mobile;
+  const titleBar = desktop ? (
+    <TitleBar
+      title={t("app.name")}
+      platform={windowPlatform}
+      className="relative [&>div:first-child]:pointer-events-none"
+      {...(controller ? {
+        onMinimize: () => perform(() => controller.minimize()),
+        onMaximize: () => perform(() => controller.toggleMaximize()),
+        onClose: () => perform(() => controller.close()),
+      } : {})}
+    />
+  ) : null;
   return (
-    <div className="flex h-full min-h-screen flex-col bg-surface text-fg">
-      <Outlet />
+    <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
+      {failed && <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">{t("window.failed")}</p>}
+      {welcome ? (
+        <>
+          {titleBar}
+          <div className="relative min-h-0 flex-1"><Outlet /></div>
+        </>
+      ) : (
+        <CrispAppShell
+          items={tabs ? [...items, settings] : items}
+          {...(tabs ? {} : { footerItems: [settings] })}
+          value={destinationOf(pathname)}
+          onChange={(id) => { void navigate({ to: destinations[id] }); }}
+          navStyle={tabs ? "tabs" : "rail"}
+          titleBar={titleBar}
+        >
+          <Outlet />
+        </CrispAppShell>
+      )}
+      {controller && desktop && windowPlatform !== "macos" && !expanded && resizeEdges.map(([edge, className]) => (
+        <div key={edge} aria-hidden className={cn("absolute z-50 touch-none", className)} onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          perform(() => controller.resize(edge));
+        }} />
+      ))}
     </div>
+    </CrispStringsProvider>
   );
 }

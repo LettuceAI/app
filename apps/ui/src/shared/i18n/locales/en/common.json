@@ -8,6 +8,20 @@
     "platform": "Platform",
     "resetOnboarding": "Reset onboarding"
   },
+  "navigation": {
+    "primary": "Main navigation",
+    "chats": "Chats",
+    "groups": "Groups",
+    "discover": "Discover",
+    "library": "Library",
+    "settings": "Settings"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close window",
+    "failed": "The window action couldn't be completed. Try again."
+  },
   "platform": {
     "windows": "Windows",
     "macos": "macOS",

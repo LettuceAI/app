@@ -10,6 +10,11 @@ body,
   height: 100%;
 }
 
+body {
+  overflow: hidden;
+  background: transparent;
+}
+
 @theme {
   --color-brand: #88c057;
   --color-primary-disabled: #2d523b;

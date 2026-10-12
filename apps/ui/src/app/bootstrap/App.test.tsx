@@ -1,12 +1,15 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createWindowController } from "@/api/window-controls";
 import { createMockTransport, mockAppStatus, type MockTransportOptions } from "@/api/mock-transport";
 import { createTestI18n } from "@/shared/testing/i18n";
 import { App } from "./App";
 import { createAppRuntime } from "./runtime";
 
 const completedStatus = { ...mockAppStatus, ui_state: { onboarding: { completed: true } } };
+
+vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
 async function renderApp(options: MockTransportOptions = {}, language: "en" | "cimode" = "en") {
   const runtime = await createAppRuntime({
@@ -28,6 +31,51 @@ afterEach(() => {
 });
 
 describe("status placeholder", () => {
+  it("connects window buttons and removes rounding while maximized", async () => {
+    let expanded!: (value: boolean) => void;
+    const minimize = vi.fn().mockResolvedValue(undefined);
+    const toggleMaximize = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const stop = vi.fn();
+    vi.mocked(createWindowController).mockResolvedValueOnce({
+      minimize, toggleMaximize, close, resize: vi.fn().mockResolvedValue(undefined),
+      observeExpanded: async (changed) => { expanded = changed; changed(false); return stop; },
+    });
+    await renderApp({ calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, platform: "linux" } }) } });
+    fireEvent.click(await screen.findByRole("button", { name: "Minimize" }));
+    fireEvent.click(screen.getByRole("button", { name: "Maximize" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close window" }));
+    expect(minimize).toHaveBeenCalledOnce();
+    expect(toggleMaximize).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    const frame = document.querySelector(".rounded-2xl");
+    expect(frame).not.toBeNull();
+    act(() => expanded(true));
+    expect(frame!.classList.contains("rounded-2xl")).toBe(false);
+    act(() => expanded(false));
+    expect(frame!.classList.contains("rounded-2xl")).toBe(true);
+    cleanup();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("navigates through the shell destinations and keeps browser history", async () => {
+    const runtime = await renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "Groups" }));
+    expect(await screen.findByRole("heading", { name: "Groups" })).toBeTruthy();
+    expect(runtime.router.state.location.pathname).toBe("/groups");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+    await act(async () => { runtime.router.history.back(); });
+    expect(await screen.findByRole("heading", { name: "Groups" })).toBeTruthy();
+  });
+
+  it("keeps every destination reachable on mobile without desktop window controls", async () => {
+    await renderApp({ calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, platform: "android" } }) } });
+    expect(await screen.findByRole("button", { name: "Settings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Chats" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Close window" })).toBeNull();
+  });
+
   it("shows the app name and the backend's version and platform", async () => {
     await renderApp({
       calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, version: "9.9.9", platform: "linux" } }) },
