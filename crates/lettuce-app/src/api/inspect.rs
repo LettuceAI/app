@@ -14,9 +14,9 @@ use lettuce_conversations::{
 use lettuce_types::{ConversationId, ConversationParticipantId, MessageId, PageLimit, PageRequest};
 
 use super::ApiContext;
+use super::conversations::messages::{active_branch, on_timeline};
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::mapping;
-use super::messages::{active_branch, on_timeline};
 
 fn conversation_of(
     context: &ApiContext,

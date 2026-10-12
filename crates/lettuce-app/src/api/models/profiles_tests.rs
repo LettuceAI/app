@@ -201,7 +201,7 @@ async fn first_save_default_delete_promotion_replay_digest_and_stale_cas() {
 #[tokio::test]
 async fn default_set_cas_replay_and_models_feed_committed_only() {
     let h = harness(Reply::Text("Hello."));
-    let mut feed = crate::api::conversation_feed::ConversationFeed::start(&h.context)
+    let mut feed = crate::api::conversations::feed::ConversationFeed::start(&h.context)
         .await
         .expect("feed");
     let request = draft(&h.context, "feed-save");
@@ -522,7 +522,7 @@ async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrid
 #[tokio::test]
 async fn non_default_model_writes_emit_only_models_changed() {
     let h = harness(Reply::Text("Hello."));
-    let mut feed = crate::api::conversation_feed::ConversationFeed::start(&h.context)
+    let mut feed = crate::api::conversations::feed::ConversationFeed::start(&h.context)
         .await
         .expect("feed");
     let mut request = draft(&h.context, "event-save");

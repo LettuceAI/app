@@ -1059,7 +1059,7 @@ async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
     let snapshot = GlobalSettingsStore::save(database, settings, Some(profile.id), snapshot.revision).expect("feature selections");
     let snapshot = GlobalSettingsStore::set_dynamic_memory_model_profile(database, Some(profile.id), snapshot.revision).expect("memory");
     let before = GlobalSettingsStore::set_group_speaker_model_profile(database, Some(profile.id), snapshot.revision).expect("speaker");
-    let mut model_feed = crate::api::conversation_feed::ConversationFeed::start(&harness.context).await.expect("model feed");
+    let mut model_feed = crate::api::conversations::feed::ConversationFeed::start(&harness.context).await.expect("model feed");
     let event_start = harness.events.events().len();
     crate::api::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id: account.id, expected_revision: account.revision, delete_models: true, client_operation_id: "cascade-all".into() }).await.expect("delete");
     assert!(lettuce_models::ProviderAccountRepository::get(database, profile.provider_account_id).expect("account").is_none());

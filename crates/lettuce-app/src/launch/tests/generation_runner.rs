@@ -5286,7 +5286,7 @@ async fn memory_job_handler_respects_another_worker_and_the_frozen_parent_branch
     let parent = work.admission.batch.branch_id;
     let inference = std::sync::Arc::new(successful_memory_cycle());
     let context =
-        crate::api::conversation_delete_tests::context_over(backend.clone(), inference.clone());
+        crate::api::conversations::delete_tests::context_over(backend.clone(), inference.clone());
     let handler = crate::api::MemoryExtractionHandler;
     assert!(
         handler
@@ -5434,7 +5434,7 @@ async fn memory_job_output_drains_deltas_before_terminal_settlement() {
         scripted: successful_memory_cycle(),
     });
     let context =
-        crate::api::conversation_delete_tests::context_over(backend.clone(), inference.clone());
+        crate::api::conversations::delete_tests::context_over(backend.clone(), inference.clone());
     let work = backend
         .companion_memory_host(&ScenarioEmbeddingEngine, inference.as_ref())
         .after_turn(
@@ -9701,7 +9701,7 @@ async fn deleting_a_chat_during_its_memory_run_cancels_the_run_first() {
         entered: tokio::sync::Notify::new(),
         calls: Default::default(),
     });
-    let context = crate::api::conversation_delete_tests::context_over(
+    let context = crate::api::conversations::delete_tests::context_over(
         std::sync::Arc::clone(&backend),
         inference.clone(),
     );
@@ -9831,7 +9831,7 @@ async fn a_restarted_memory_job_cancelled_while_queued_leaves_the_chat_deletable
         JobState::Queued,
         "the cycle is queued again"
     );
-    let context = crate::api::conversation_delete_tests::context_over(
+    let context = crate::api::conversations::delete_tests::context_over(
         std::sync::Arc::clone(&backend),
         std::sync::Arc::new(UnavailableInference),
     );

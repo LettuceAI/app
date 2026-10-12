@@ -16,12 +16,12 @@ use lettuce_jobs::{SystemClock, handle::CancellationToken};
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{MessageId, TimestampMillis, UsageEventId};
 
-use super::tests::{
-    RecordingStream, Reply, api_events, create_character, harness, harness_in, send,
-};
-use super::turns_tests::{
+use super::conversations::turns_tests::{
     author_of, continue_request, conversation, group_cast, open, regenerate_request, replied_chat,
     run_generation,
+};
+use super::tests::{
+    RecordingStream, Reply, api_events, create_character, harness, harness_in, send,
 };
 use super::*;
 use crate::{
@@ -625,7 +625,7 @@ async fn settled_companion_effect(retry: bool) {
     .expect("a processing effect");
     assert_eq!(processing.status, dto::CompanionEffectStatus::Processing);
 
-    let mut feed = super::conversation_feed::ConversationFeed::start(&harness.context)
+    let mut feed = super::conversations::feed::ConversationFeed::start(&harness.context)
         .await
         .expect("feed");
     let effect = CompanionTurnEffectRepository::get_for_message(database, stored.id, reply)

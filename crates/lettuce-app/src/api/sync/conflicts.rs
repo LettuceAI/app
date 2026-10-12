@@ -34,10 +34,10 @@ fn candidate(
     use lettuce_sync::SyncConflictValue as V;
     let value = match candidate.value {
         V::Character(value) => dto::SyncConflictValue::Character {
-            value: Box::new(crate::api::library_characters::view(context, *value)?),
+            value: Box::new(crate::api::library::characters::view(context, *value)?),
         },
         V::Persona(value) => dto::SyncConflictValue::Persona {
-            value: Box::new(crate::api::library_personas::view(context, value)),
+            value: Box::new(crate::api::library::personas::view(context, value)),
         },
         V::Default(value) => dto::SyncConflictValue::PersonaDefault {
             value: dto::PersonaDefaultView {
@@ -51,7 +51,7 @@ fn candidate(
             value: crate::api::lorebooks::view(context, &value),
         },
         V::Prompt(value) => dto::SyncConflictValue::Prompt {
-            value: crate::api::prompts::view(context, &value)?,
+            value: crate::api::library::prompts::view(context, &value)?,
         },
         V::Deleted => dto::SyncConflictValue::Deleted,
     };

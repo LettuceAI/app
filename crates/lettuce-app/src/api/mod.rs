@@ -4,23 +4,15 @@
 //! runs on the blocking pool.
 
 mod app;
+mod library;
 mod content_filter;
 mod settings;
 pub use content_filter::{content_filter_clear, content_filter_log};
 pub use settings::{settings_get, settings_sampler_defaults_update, settings_update};
-mod branches;
-mod characters;
-mod library_delete;
-pub use library_delete::{character_delete, group_delete, persona_delete};
-#[cfg(test)]
-mod library_delete_tests;
+pub use library::delete::{character_delete, group_delete, persona_delete};
 pub(crate) mod companion;
 mod context;
-mod conversation_delete;
-mod conversation_feed;
-mod conversation_settings;
-mod conversations;
-mod copies;
+pub(crate) mod conversations;
 mod error;
 pub(crate) mod events;
 mod files;
@@ -35,63 +27,37 @@ pub use maintenance_jobs::storage_optimize;
 #[cfg(test)]
 mod maintenance_tests;
 mod memory;
-mod messages;
 pub(super) mod models;
-mod prompts;
-mod scenes;
 #[cfg(test)]
 mod settings_tests;
 mod speech;
 mod startup;
-mod turns;
 mod worker;
 
 #[cfg(test)]
-mod branches_tests;
-#[cfg(test)]
-pub(crate) mod conversation_delete_tests;
-#[cfg(test)]
-mod conversation_list_tests;
-#[cfg(test)]
-mod conversation_settings_tests;
-#[cfg(test)]
-mod copy_scene_tests;
-#[cfg(test)]
 mod foundation_tests;
-#[cfg(test)]
-mod help_me_reply_tests;
 #[cfg(test)]
 mod inspect_tests;
 #[cfg(test)]
-mod legacy_regenerate_tests;
-#[cfg(test)]
-mod messages_tests;
-#[cfg(test)]
-mod prompts_tests;
-#[cfg(test)]
-mod scenes_tests;
-#[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod turns_tests;
 
 pub use app::{
     app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
 };
 pub use files::assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
-pub use branches::{
+pub use conversations::branches::{
     conversation_branch_delete, conversation_branch_fork, conversation_branch_rename,
     conversation_branch_select, conversation_branches,
 };
-pub use characters::characters_list;
+pub use library::character_list::characters_list;
 pub use companion::{
     companion_notes_active_preview, companion_notes_delete, companion_notes_list,
     companion_notes_upsert, companion_soul_get, companion_soul_growth_clear,
     companion_soul_growth_lock, companion_soul_growth_remove, companion_soul_writer_run,
 };
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
-pub use conversation_delete::conversation_delete;
-pub use conversation_settings::{
+pub use conversations::delete::conversation_delete;
+pub use conversations::settings::{
     conversation_archive, conversation_participant_add, conversation_participant_update,
     conversation_rename, conversation_restore, conversation_settings_get,
     conversation_settings_update,
@@ -154,7 +120,7 @@ pub use memory::models::{
     embedding_choose, embedding_compare, embedding_install, embedding_remove, embedding_status,
     embedding_unload,
 };
-pub use messages::{
+pub use conversations::messages::{
     conversation_message_count, conversation_messages_around, conversation_pinned_messages,
     conversation_search, memory_rewind_retry, message_candidate_select, message_candidates,
     message_delete, message_edit, message_pin, message_revisions, message_scene_select,
@@ -162,12 +128,12 @@ pub use messages::{
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use models::ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
-pub use prompts::{
+pub use library::prompts::{
     prompt_app_default_set, prompt_builtin_reset, prompt_create,
     prompt_delete, prompt_get, prompt_placeholders, prompt_preview, prompt_update, prompt_validate,
     prompts_list,
 };
-pub use scenes::{
+pub use conversations::scenes::{
     message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
     message_scene_prompt_generate,
 };
@@ -190,13 +156,13 @@ pub use speech::{
     whisper_models_list, whisper_preload,
 };
 pub use startup::{ApiWorkers, StartupStep, startup};
-pub use turns::{
+pub use conversations::turns::{
     conversation_add_user_message, conversation_continue, conversation_regenerate,
     conversation_retry,
 };
 pub use worker::ConversationGenerationWorker;
 
-pub use copies::{
+pub use conversations::copies::{
     conversation_branch_direct_to_character, conversation_branch_direct_to_group,
     conversation_branch_to_character, conversation_branch_to_character_from_message,
     conversation_duplicate,
@@ -271,59 +237,33 @@ pub use app_reset::{AppResetHost, app_data_reset};
 mod app_reset_tests;
 pub use storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
 
-mod media_library;
-pub use media_library::{media_library_list, media_library_remove, media_save_to};
+pub use library::media_library::{media_library_list, media_library_remove, media_save_to};
 
-#[cfg(test)]
-mod media_library_tests;
 
 #[cfg(test)]
 mod storage_tests;
 
-mod library_bindings;
-pub use library_bindings::{character_lorebooks_list, character_lorebooks_bind, character_lorebooks_unbind, character_lorebooks_enable, character_lorebooks_reorder, persona_lorebooks_list, persona_lorebooks_bind, persona_lorebooks_unbind, persona_lorebooks_enable, persona_lorebooks_reorder, group_lorebooks_list, group_lorebooks_bind, group_lorebooks_unbind, group_lorebooks_enable, group_lorebooks_reorder};
+pub use library::bindings::{character_lorebooks_list, character_lorebooks_bind, character_lorebooks_unbind, character_lorebooks_enable, character_lorebooks_reorder, persona_lorebooks_list, persona_lorebooks_bind, persona_lorebooks_unbind, persona_lorebooks_enable, persona_lorebooks_reorder, group_lorebooks_list, group_lorebooks_bind, group_lorebooks_unbind, group_lorebooks_enable, group_lorebooks_reorder};
 
-#[cfg(test)]
-mod library_bindings_tests;
 
-#[cfg(test)]
-mod library_duplicate_tests;
 
-mod library_duplicate;
-pub use library_duplicate::character_duplicate;
+pub use library::duplicate::character_duplicate;
 
-#[cfg(test)]
-mod library_personas_tests;
 
-mod library_personas;
-pub use library_personas::{persona_get, persona_save, personas_list};
+pub use library::personas::{persona_get, persona_save, personas_list};
 
-#[cfg(test)]
-mod library_persona_default_tests;
 
-mod library_persona_default;
-pub use library_persona_default::{persona_default_set, persona_default_clear};
+pub use library::persona_default::{persona_default_set, persona_default_clear};
 
-#[cfg(test)]
-mod library_lists_tests;
 
-#[cfg(test)]
-mod library_characters_tests;
 
-mod library_characters;
-pub use library_characters::{character_archive, character_get, character_restore, character_save};
+pub use library::characters::{character_archive, character_get, character_restore, character_save};
 
-#[cfg(test)]
-mod library_groups_tests;
 
-mod library_groups;
-pub use library_groups::{group_get, group_save, groups_list};
+pub use library::groups::{group_get, group_save, groups_list};
 
-#[cfg(test)]
-mod library_media_tests;
 
-mod library_media;
-pub use library_media::{character_media_set, persona_media_set};
+pub use library::media::{character_media_set, persona_media_set};
 
 #[cfg(test)]
 mod legacy_state_tests;

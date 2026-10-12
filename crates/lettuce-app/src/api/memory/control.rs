@@ -9,7 +9,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::{EditFailure, live_conversation};
 use super::read::{failure, latest_memory_job};
-use crate::api::{ApiContext, mapping, messages};
+use crate::api::{ApiContext, mapping, conversations::messages};
 use crate::companion::companion_memory_host::{CompanionMemoryHostError, MemoryGate};
 
 fn gate_error(gate: MemoryGate) -> ApiError {

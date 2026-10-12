@@ -1,5 +1,5 @@
 use crate::api::tests::{Reply, harness, launch};
-use crate::api::turns_tests::replied_chat;
+use crate::api::conversations::turns_tests::replied_chat;
 use crate::api::*;
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiErrorDetails};
 
@@ -363,7 +363,7 @@ async fn recorded_cycle(
         .expect("conversation")
         .conversation
         .active_branch_id;
-    let view = crate::api::turns_tests::open(harness, chat).await;
+    let view = crate::api::conversations::turns_tests::open(harness, chat).await;
     let mut sources = Vec::new();
     for message in view.messages.items.iter().rev() {
         let item = ConversationOverviewReader::timeline_anchor(
@@ -1283,7 +1283,7 @@ async fn a_user_summary_over_an_imported_one_keeps_its_coverage_even_when_cleare
     let space = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
         .expect("memory")
         .expect("space");
-    let view = crate::api::turns_tests::open(&harness, &chat).await;
+    let view = crate::api::conversations::turns_tests::open(&harness, &chat).await;
     let sources = view
         .messages
         .items
@@ -1378,7 +1378,7 @@ async fn open_round_with_decay(
         .expect("conversation")
         .conversation
         .active_branch_id;
-    let view = crate::api::turns_tests::open(harness, chat).await;
+    let view = crate::api::conversations::turns_tests::open(harness, chat).await;
     let mut sources = Vec::new();
     for message in view.messages.items.iter().rev() {
         let item = ConversationOverviewReader::timeline_anchor(
@@ -1738,7 +1738,7 @@ async fn the_store_admits_one_active_memory_job_per_conversation() {
         .expect("conversation")
         .conversation
         .active_branch_id;
-    let view = crate::api::turns_tests::open(&harness, &chat).await;
+    let view = crate::api::conversations::turns_tests::open(&harness, &chat).await;
     let messages = view
         .messages
         .items
@@ -1870,7 +1870,7 @@ fn memory_events(harness: &crate::api::tests::Harness, chat: &str) -> usize {
 
 #[tokio::test]
 async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_none() {
-    use crate::api::conversation_feed::ConversationFeed;
+    use crate::api::conversations::feed::ConversationFeed;
     let harness = harness(Reply::Text("reply"));
     let (chat, _) = replied_chat(&harness, "events").await;
     let mut feed = ConversationFeed::start(&harness.context)
@@ -1946,7 +1946,7 @@ async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_
 
 #[tokio::test]
 async fn a_cycle_in_one_pooled_chat_emits_memory_changed_for_the_other() {
-    use crate::api::conversation_feed::ConversationFeed;
+    use crate::api::conversations::feed::ConversationFeed;
     let harness = harness(Reply::Text("reply"));
     let database = harness.context.backend().database();
     let character = crate::api::tests::create_character(
@@ -2009,7 +2009,7 @@ async fn a_cycle_in_one_pooled_chat_emits_memory_changed_for_the_other() {
 
 #[tokio::test]
 async fn a_revert_emits_memory_changed() {
-    use crate::api::conversation_feed::ConversationFeed;
+    use crate::api::conversations::feed::ConversationFeed;
     let harness = harness(Reply::Text("reply"));
     let (chat, _) = replied_chat(&harness, "events-revert").await;
     make_dynamic(&harness, true);
@@ -2061,7 +2061,7 @@ async fn a_memory_retry_receipt_replays_before_the_selected_model_is_resolved_ag
         client_operation_id: "completed-retry".into(),
     };
     let bytes = serde_json::to_vec(&request).expect("request");
-    let operation = crate::api::messages::operation(request.client_operation_id.clone(), &[b"memory_retry", &bytes]).expect("operation");
+    let operation = crate::api::conversations::messages::operation(request.client_operation_id.clone(), &[b"memory_retry", &bytes]).expect("operation");
     let accepted = dto::JobAccepted { job_id: lettuce_types::JobId::new().to_string() };
     harness.context.backend().database().commit_api_operation::<_, super::EditFailure>(
         "memory_retry", &request.client_operation_id, operation.request_digest.as_str(), harness.context.now(),

@@ -1909,7 +1909,7 @@ async fn message_playback_resolves_live_provider_voice_and_reuses_frozen_audio()
         .expect("voice");
     };
     set_voice("voice-a");
-    let (chat, message_id) = crate::api::turns_tests::replied_chat(&env.harness, "speak").await;
+    let (chat, message_id) = crate::api::conversations::turns_tests::replied_chat(&env.harness, "speak").await;
     let request = || dto::MessageSpeakRequest {
         request_id: RequestId::new().to_string(),
         message_id: message_id.clone(),

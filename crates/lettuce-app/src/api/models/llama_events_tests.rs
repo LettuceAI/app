@@ -19,7 +19,7 @@ fn event_types(stream: &RecordingStream) -> Vec<String> {
 #[tokio::test]
 async fn group_speaker_events_precede_the_first_delta() {
     let harness = harness(Reply::Text("Hello."));
-    let cast = crate::api::turns_tests::group_cast(&harness, "live-speaker").await;
+    let cast = crate::api::conversations::turns_tests::group_cast(&harness, "live-speaker").await;
     let stream = Arc::new(RecordingStream::default());
     send(
         &harness,
@@ -109,7 +109,7 @@ async fn a_late_attach_receives_the_resolved_speaker() {
 async fn a_director_turn_emits_selected_without_selecting() {
     use lettuce_characters::GroupRepository;
     let harness = harness(Reply::Text("Hello."));
-    let cast = crate::api::turns_tests::group_cast(&harness, "live-director").await;
+    let cast = crate::api::conversations::turns_tests::group_cast(&harness, "live-director").await;
     let first = Arc::new(RecordingStream::default());
     send(&harness, &cast.chat, "live-director-send", "Hi", first)
         .await
@@ -130,8 +130,11 @@ async fn a_director_turn_emits_selected_without_selecting() {
         lettuce_types::TimestampMillis::now().expect("now"),
     )
     .expect("director");
-    let mut request =
-        crate::api::turns_tests::continue_request(&harness, &cast.chat, "live-director-continue");
+    let mut request = crate::api::conversations::turns_tests::continue_request(
+        &harness,
+        &cast.chat,
+        "live-director-continue",
+    );
     request.forced_speaker_participant_id = Some(cast.ada.to_string());
     let stream = Arc::new(RecordingStream::default());
     crate::api::conversation_continue(&harness.context, request, stream.clone())
@@ -157,7 +160,7 @@ async fn a_director_turn_emits_selected_without_selecting() {
 #[tokio::test]
 async fn a_mentioned_character_skips_selection_status() {
     let harness = harness(Reply::Text("Hello."));
-    let cast = crate::api::turns_tests::group_cast(&harness, "live-mention").await;
+    let cast = crate::api::conversations::turns_tests::group_cast(&harness, "live-mention").await;
     let stream = Arc::new(RecordingStream::default());
     send(
         &harness,

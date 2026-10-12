@@ -18,9 +18,9 @@ use lettuce_database::ApiOperationError;
 use lettuce_types::{AssetId, CharacterId, LorebookEntryId, LorebookId, PageRequest, Revision};
 
 use super::ApiContext;
+use super::conversations::messages::operation;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::mapping;
-use super::messages::operation;
 
 pub(super) struct Failure(pub(super) ApiError);
 

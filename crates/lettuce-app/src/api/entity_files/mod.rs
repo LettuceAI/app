@@ -487,7 +487,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             };
             if let Some(preview) = &mut uec3_preview {
                 preview.character = Some(Box::new(
-                    super::library_characters::view(context, details.clone())?.draft,
+                    super::library::characters::view(context, details.clone())?.draft,
                 ));
                 let lettuce_transfer::uec3::Entity::Character(character) = &card.document.entity
                 else {
@@ -627,7 +627,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             )?;
             if let Some(preview) = &mut uec3_preview {
                 preview.persona =
-                    Some(super::library_personas::view(context, import.persona.clone()).draft);
+                    Some(super::library::personas::view(context, import.persona.clone()).draft);
             }
             let lettuce_transfer::uec3::Entity::Persona(persona) = &card.document.entity else {
                 return Err(format_error("expected persona entity"));
@@ -768,7 +768,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             };
             let document = prepare_uec3_prompt(context, prompt, &mut warnings)?;
             if let Some(preview) = &mut uec3_preview {
-                preview.prompt = Some(super::prompts::view(context, &document)?);
+                preview.prompt = Some(super::library::prompts::view(context, &document)?);
             }
             let entries = document
                 .entries
@@ -777,7 +777,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 .collect::<Vec<_>>();
             dto::ImportPreviewContent::Prompt {
                 name: prompt.name.clone(),
-                purpose: super::prompts::kind(document.purpose),
+                purpose: super::library::prompts::kind(document.purpose),
                 entries: convert(&entries)?,
                 condense: prompt.condense,
             }
@@ -795,7 +795,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             }
             dto::ImportPreviewContent::Prompt {
                 name: prompt.name,
-                purpose: super::prompts::kind(prompt.purpose),
+                purpose: super::library::prompts::kind(prompt.purpose),
                 entries: convert(&prompt.entries)?,
                 condense: prompt.condense,
             }

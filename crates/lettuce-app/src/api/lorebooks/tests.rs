@@ -16,8 +16,8 @@ use lettuce_transfer::{
 };
 use lettuce_types::{CharacterId, ConversationId, LorebookId, TimestampMillis};
 
+use crate::api::conversations::turns_tests::run_generation;
 use crate::api::tests::{Harness, RecordingStream, Reply, harness, launch, send};
-use crate::api::turns_tests::run_generation;
 use crate::api::*;
 
 pub(in crate::api) fn entry(
@@ -806,7 +806,7 @@ async fn trigger_preview_matches_what_the_next_turn_injects() {
 async fn group_trigger_preview_uses_the_speakers_books_unless_disabled() {
     let harness = harness(Reply::Text("A reply."));
     let database = harness.context.backend().database();
-    let cast = crate::api::turns_tests::group_cast(&harness, "group").await;
+    let cast = crate::api::conversations::turns_tests::group_cast(&harness, "group").await;
     let group_book = create(
         &harness,
         "g",

@@ -280,7 +280,12 @@ fn fail_follow_up(
         .follow_up_of_request(request_id)
         .map_err(internal)?
     {
-        crate::api::scenes::fail_follow_up(database, &follow_up, label, context.now())?;
+        crate::api::conversations::scenes::fail_follow_up(
+            database,
+            &follow_up,
+            label,
+            context.now(),
+        )?;
     }
     Ok(())
 }

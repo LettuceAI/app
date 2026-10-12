@@ -10,7 +10,7 @@ use std::{
 use lettuce_contracts::{ApiError, ApiErrorCode};
 use lettuce_jobs::WorkerId;
 
-use super::conversation_feed::ConversationFeed;
+use super::conversations::feed::ConversationFeed;
 use super::error::api_error;
 use super::jobs::{
     JobFeed, JobHandlers, JobRunner, recover_local_model_jobs, recover_queued_installs,

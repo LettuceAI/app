@@ -206,7 +206,7 @@ impl ConversationGenerationWorker {
                                 .enqueue(conversation_id, turn.branch_id);
                         }
                         for candidate_id in turn.candidate_ids {
-                            super::scenes::start_auto(
+                            super::conversations::scenes::start_auto(
                                 context,
                                 conversation_id,
                                 lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),

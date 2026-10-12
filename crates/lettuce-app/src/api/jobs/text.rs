@@ -284,7 +284,7 @@ pub(crate) async fn admit_scene_prompt(
                     "the media store is unavailable",
                 ));
             };
-            let (_, target) = crate::api::scenes::scene_target(context, message_id)?;
+            let (_, target) = crate::api::conversations::scenes::scene_target(context, message_id)?;
             let recent_context = ScenePromptWriter::new(database, media, context.inference())
                 .capture_recent(conversation_id, message_id)
                 .map_err(internal)?;

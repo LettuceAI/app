@@ -820,7 +820,7 @@ async fn a_source_free_user_summary_is_used_by_the_manual_chat_prompt() {
     )
     .await
     .expect("send");
-    crate::api::turns_tests::run_generation(&harness).await;
+    crate::api::conversations::turns_tests::run_generation(&harness).await;
     let requests = harness.provider.requests.lock().expect("requests");
     let context = serde_json::to_string(&requests.last().expect("generation request").context)
         .expect("context");
@@ -836,7 +836,7 @@ async fn memory_status_reports_real_model_and_embedding_failures_and_lease_pause
     for case in ["model", "embedding", "lease"] {
         let harness = harness(Reply::Text("reply"));
         let (conversation_id, _) =
-            crate::api::turns_tests::replied_chat(&harness, &format!("status-{case}")).await;
+            crate::api::conversations::turns_tests::replied_chat(&harness, &format!("status-{case}")).await;
         if case == "embedding" {
             memory_add(
                 &harness.context,

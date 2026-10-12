@@ -24,7 +24,7 @@ use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{ConversationId, MemoryId, OperationId, TimestampMillis};
 
 use super::error::{IntoApiError, api_error, invalid_field, model_error, parse_id};
-use super::{ApiContext, messages};
+use super::{ApiContext, conversations::messages};
 
 pub(super) struct EditFailure(pub(super) ApiError);
 
