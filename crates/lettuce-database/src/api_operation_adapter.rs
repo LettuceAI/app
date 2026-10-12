@@ -145,7 +145,8 @@ impl ApiOperationTransaction<'_, '_> {
     }
 
     pub fn import_lorebook_file(
-        &self, book: &lettuce_context::LorebookDetails,
+        &self,
+        book: &lettuce_context::LorebookDetails,
     ) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
         crate::lorebook::lorebook_adapter::insert_lorebook_details(self.transaction, book)
     }

@@ -1,6 +1,5 @@
 use lettuce_characters::{
-    Crop, LifecycleStatus, Persona, PersonaMedia,
-    PersonaRepository, RepositoryError,
+    Crop, LifecycleStatus, Persona, PersonaMedia, PersonaRepository, RepositoryError,
 };
 use lettuce_context::{
     BindingRepositoryError, LifecycleStatus as LorebookStatus, LorebookRepository,
@@ -9,8 +8,7 @@ use lettuce_context::{
 use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
 #[cfg(test)]
 use lettuce_media::AssetKind;
-#[cfg(test)]
-use lettuce_characters::{PersonaMediaLink, PersonaMediaSlot};
+use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
 use lettuce_transfer::{
     EntityPackageError, LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason,
     PersonaFileImport, PersonaFileRepository, PersonaPackage,
@@ -44,7 +42,7 @@ pub struct ImportedPersonaFile {
 #[derive(Debug)]
 pub struct PersonaFileCoordinator<'a, R: ?Sized, BR, AR> {
     repository: &'a R,
-    _media_store: &'a LocalMediaBlobStore<BR, AR>,
+    media_store: &'a LocalMediaBlobStore<BR, AR>,
 }
 
 impl<'a, R: ?Sized, BR, AR> PersonaFileCoordinator<'a, R, BR, AR> {
@@ -52,7 +50,7 @@ impl<'a, R: ?Sized, BR, AR> PersonaFileCoordinator<'a, R, BR, AR> {
     pub const fn new(repository: &'a R, media_store: &'a LocalMediaBlobStore<BR, AR>) -> Self {
         Self {
             repository,
-            _media_store: media_store,
+            media_store,
         }
     }
 }
@@ -91,7 +89,7 @@ where
     ) -> Result<ImportedPersonaFile, PersonaFileError> {
         let (mut import, skipped) = self.prepare(package, now)?;
         if let Some(asset_id) = package.avatar_data.as_deref().and_then(|avatar| {
-            store_file_image(self._media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
+            store_file_image(self.media_store, avatar, AssetKind::AvatarOriginal, "lettuceai-entity-file")
         }) {
             import.persona.media.links.push(PersonaMediaLink { asset_id, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
         }
@@ -182,7 +180,7 @@ where
                 return;
             }
         };
-        if let Err(error) = self._media_store.release_blob(blob_id, |_| {
+        if let Err(error) = self.media_store.release_blob(blob_id, |_| {
             self.repository
                 .release_unused_blob(blob_id, now)
                 .map_err(|_| lettuce_media::MediaStoreError::CatalogFailure)
@@ -234,7 +232,10 @@ mod tests {
             Database::open(&path).expect("blobs"),
             Database::open(&path).expect("assets"),
         );
-        let mut uec: serde_json::Value = serde_json::from_str(include_str!("../../../lettuce-transfer/tests/fixtures/uec2-persona-blank.json")).expect("fixture");
+        let mut uec: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../lettuce-transfer/tests/fixtures/uec2-persona-blank.json"
+        ))
+        .expect("fixture");
         uec["payload"]
             .as_object_mut()
             .expect("payload")
@@ -335,16 +336,29 @@ mod tests {
                 .persona_id,
             Some(persona.id)
         );
-        let again = PersonaRepository::get(backend.database(),persona.id).expect("read").expect("persona");
-        assert_eq!(again.title,"Mira");
-        assert_eq!(again.nickname.as_deref(),Some("Mi"));
-        assert_eq!(again.avatar_crop.map(|crop| crop.x),Some(0.3f32));
-        let bindings = backend.database().list_persona_bindings(again.id).expect("bindings");
-        assert_eq!(bindings.iter().map(|binding| binding.lorebook_id.to_string()).collect::<Vec<_>>(),vec![lorebook.book.id.to_string()]);
-        let mut opened = store.open_ready(again.media.links[0].asset_id).expect("avatar");
+        let again = PersonaRepository::get(backend.database(), persona.id)
+            .expect("read")
+            .expect("persona");
+        assert_eq!(again.title, "Mira");
+        assert_eq!(again.nickname.as_deref(), Some("Mi"));
+        assert_eq!(again.avatar_crop.map(|crop| crop.x), Some(0.3f32));
+        let bindings = backend
+            .database()
+            .list_persona_bindings(again.id)
+            .expect("bindings");
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.lorebook_id.to_string())
+                .collect::<Vec<_>>(),
+            vec![lorebook.book.id.to_string()]
+        );
+        let mut opened = store
+            .open_ready(again.media.links[0].asset_id)
+            .expect("avatar");
         let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut opened.reader,&mut bytes).expect("bytes");
-        assert_eq!(bytes,png());
+        std::io::Read::read_to_end(&mut opened.reader, &mut bytes).expect("bytes");
+        assert_eq!(bytes, png());
         std::fs::remove_dir_all(&root).ok();
     }
 }

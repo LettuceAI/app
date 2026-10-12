@@ -446,7 +446,9 @@ fn validate_dependencies(document: &Document) -> Result<(), Error> {
             return Err(format("dependency keys must be nonempty and unique"));
         }
         if !matches!(dependency.entity, Entity::Lorebook(_) | Entity::Prompt(_)) {
-            return Err(format("dependencies may only contain lorebooks and prompts"));
+            return Err(format(
+                "dependencies may only contain lorebooks and prompts",
+            ));
         }
     }
     Ok(())

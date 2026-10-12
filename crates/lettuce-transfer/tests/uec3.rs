@@ -173,7 +173,12 @@ fn persona_round_trips_every_authored_field_and_enabled_binding() {
 
 #[test]
 fn standalone_starters_preserve_roles_and_all_lorebook_selection_states() {
-    for books in [json!("inherit"), json!("disabled"), json!([]), json!(["dep:l1"])] {
+    for books in [
+        json!("inherit"),
+        json!("disabled"),
+        json!([]),
+        json!(["dep:l1"]),
+    ] {
         let mut source = lorebook();
         source["kind"] = json!("chat_template");
         source["assets"] = json!({});
