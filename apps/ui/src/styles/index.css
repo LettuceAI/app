@@ -9,3 +9,8 @@ body,
 #root {
   height: 100%;
 }
+
+@theme {
+  --color-brand: #88c057;
+  --color-primary-disabled: #2d523b;
+}

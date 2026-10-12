@@ -1,11 +1,12 @@
 import { createInstance, type i18n } from "i18next";
 import { initReactI18next } from "react-i18next";
 import common from "./locales/en/common.json";
+import onboarding from "./locales/en/onboarding.json";
 
 export const defaultNamespace = "common";
 
 export const resources = {
-  en: { common },
+  en: { common, onboarding },
 } as const;
 
 export type Language = keyof typeof resources;

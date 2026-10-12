@@ -1,0 +1,368 @@
+{
+  "header": {
+    "back": "Back",
+    "learn": "Guided setup · The basics, {{current}} of {{total}}",
+    "path": "Guided setup · Free or paid",
+    "guided": "Guided setup · {{name}}, {{current}} of {{total}}",
+    "connect": "Setup · 1 of 3",
+    "model": "Setup · 2 of 3",
+    "memory": "Setup · 3 of 3"
+  },
+  "welcome": {
+    "line1": "Your <brand>stories</brand>,",
+    "line2": "your <brand>characters</brand>.",
+    "pitch": "Chats and characters stay on your device. You choose which AI writes the replies.",
+    "start": "Get started",
+    "other": "Other options"
+  },
+  "actions": {
+    "next": "Next",
+    "gotIt": "Got it",
+    "haveKey": "I have my key",
+    "connect": "Connect",
+    "checking": "Checking your key",
+    "useModel": "Use this model",
+    "saving": "Saving your model",
+    "finish": "Finish setup",
+    "finishing": "Finishing setup",
+    "openApp": "Open LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Welcome",
+      "title": "Welcome to LettuceAI",
+      "body": "You are about to set up your first AI roleplay. The next few steps explain the basics in plain language, then we help you connect everything. It only takes a couple of minutes."
+    },
+    "car": {
+      "tag": "How it works",
+      "title": "The app is the car, not the engine",
+      "body": "Think of this app as a car with no engine yet. It has the dashboard, the seats, and your characters, but it cannot drive on its own. You add an engine, and these few steps show you how.",
+      "plain": "This app is the screen and the characters. The AI that actually writes the replies runs online, and you connect the app to it."
+    },
+    "provider": {
+      "tag": "Step 1 of 3",
+      "title": "Pick where the engine comes from",
+      "body": "A provider is the company that supplies and runs the engine, like Google or OpenRouter. You open a free or paid account with one, and the app borrows their engine to power your chats.",
+      "plain": "A provider is a company that runs AI models. You make an account with one, and the app sends your messages to them to get replies."
+    },
+    "key": {
+      "tag": "Step 2 of 3",
+      "title": "Your key starts the engine",
+      "body": "An API key works just like a car key. The provider hands you one, you slot it into the app, and it switches the engine on. Keep it to yourself. It stays on your device, like a key in your pocket.",
+      "plain": "An API key is a secret code from your provider that lets the app use your account. You paste it in once, and it is saved only on your device."
+    },
+    "engine": {
+      "tag": "Step 3 of 3",
+      "title": "Choose your engine",
+      "body": "A model is the engine itself. Providers offer small, efficient engines and big, powerful ones. Bigger engines drive better but burn more fuel, so they cost more. You can swap engines any time.",
+      "plain": "A model is the specific AI that writes the replies. Bigger models are smarter but cost more, and you can switch between them whenever you want."
+    },
+    "cost": {
+      "tag": "The cost",
+      "title": "Free or paid, your choice",
+      "body": "Some models are completely free to use, with a daily limit on how much you chat. Paid models charge a small amount for each message, often less than a cent.",
+      "plain": "You only ever pay the provider, never this app. You can start free and switch to paid later if you ever want to."
+    },
+    "inOtherWords": "In other words"
+  },
+  "path": {
+    "gemini": {
+      "title": "Free",
+      "subtitle": "Google Gemini",
+      "cta": "Start free",
+      "pro1": "Costs nothing and never asks for a card",
+      "pro2": "A generous daily allowance for everyday chatting",
+      "pro3": "Good quality for roleplay and conversation",
+      "con1": "Only Google's own models",
+      "con2": "Mature or explicit content is blocked"
+    },
+    "openrouter": {
+      "title": "Pay as you go",
+      "subtitle": "OpenRouter",
+      "cta": "Use OpenRouter",
+      "pro1": "Almost every AI model, including the strongest",
+      "pro2": "No daily caps, you pay only for what you use",
+      "pro3": "Switch to cheaper models any time",
+      "con1": "Cost depends on the model and how much you chat",
+      "con2": "Needs a card or prepaid credit"
+    },
+    "title": "Free or paid?",
+    "lead": "Both connect the app to an AI. The difference is whether you pay, and how many models you can pick from.",
+    "footer": "Not sure? Start free. You can add a paid service later without losing anything."
+  },
+  "connect": {
+    "title": "Connect an AI",
+    "lead": "LettuceAI is the app; an AI service writes the replies. Connect the one you have a key for.",
+    "guidedLink": "New to AI apps? Take the guided setup",
+    "search": "Search {{count}} services",
+    "chooseAnother": "Choose another service",
+    "pickTitle": "Pick a service from the list",
+    "pickBody": "You need an account and an API key from it.",
+    "groups": {
+      "cloud": "Cloud services",
+      "local": "On your computer or network",
+      "custom": "Any other service"
+    },
+    "subtitle": {
+      "custom": "Your own endpoint",
+      "local": "Runs on your computer"
+    },
+    "form": {
+      "address": "Address",
+      "addressHintLocal": "Where the server runs",
+      "addressHintCustom": "The base URL of the API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API key",
+      "apiKeyOptional": "API key (optional)",
+      "apiKeyHint": "Stored encrypted on this device",
+      "apiKeyPlaceholder": "Paste your key",
+      "name": "Name",
+      "nameHint": "How it appears in your menus",
+      "namePlaceholder": "My {{name}}"
+    },
+    "error": {
+      "rejected": "This key was not accepted",
+      "unreachable": "Could not reach {{name}}. Check your connection."
+    }
+  },
+  "guide": {
+    "previousPicture": "Previous picture",
+    "nextPicture": "Next picture",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Screenshot",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Paste your key",
+      "geminiBody": "Paste the key you just copied from Google AI Studio. We check it with Google, then show you the models it unlocks.",
+      "openrouterBody": "Paste the key you copied from OpenRouter. It starts with sk-or. We check it, then show you the models you can use.",
+      "geminiPlaceholder": "Paste your API key",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Stored encrypted on this device. Only sent to {{name}} when you chat."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Open Google AI Studio",
+        "body": "Google AI Studio is the official Google site where your free Gemini key is created. Open it in your browser using the button below. When the page loads, sign in with your normal Google account by clicking Get started in the top-right corner. If you are already signed in, it will take you straight through.",
+        "open": "Open Google AI Studio",
+        "slide1": "Click Get started in the top-right corner."
+      },
+      "find": {
+        "title": "Find the API keys",
+        "body": "You should now be looking at the main Google AI Studio workspace. The API keys are not on the main screen, they live in the sidebar running down the left side of the page. Look near the bottom of that sidebar for a small key icon and click it to open the page where keys are managed.",
+        "slide1": "Click the key icon at the bottom-left of the sidebar."
+      },
+      "create": {
+        "title": "Create your key",
+        "body": "Creating a key takes a short sequence of clicks, and the pictures walk through each one in order. First open the new-key dialog from the top-right, then create a project for the key to live in, give that project any name you like, and finally create the key itself. Use the arrows on the right to step through each screen.",
+        "slide1": "Click Create API key in the top-right.",
+        "slide2": "Open the dropdown and click Create project.",
+        "slide3": "Give it any name, then click Create project.",
+        "slide4": "With your project selected, click Create key."
+      },
+      "copy": {
+        "title": "Copy your key",
+        "body": "Your key has been created and is now shown in full. Click the copy icon next to it to copy the whole key to your clipboard. This is the only time Google displays the complete key, so copy it now before closing the dialog, then come back here to paste it.",
+        "slide1": "Click the copy icon to copy your API key."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Open Google AI Studio",
+        "body": "Google AI Studio is the official Google site where your free Gemini key is created. Open it in your browser using the button below, and we will walk through getting a key together. The two pictures show exactly where to tap once the page loads, so swipe between them if you are not sure where to look.",
+        "open": "Open Google AI Studio",
+        "slide1": "Tap the menu in the top-right corner.",
+        "slide2": "Then tap Get started at the bottom."
+      },
+      "find": {
+        "title": "Find the API keys",
+        "body": "You should now be signed in and looking at the main Google AI Studio page. The part you need is tucked away inside the side menu rather than on the main screen. Open that menu, then look right at the bottom for a small key icon. Tapping it takes you straight to the page where keys are created.",
+        "slide1": "Open the menu in the top-left corner.",
+        "slide2": "Tap the key icon at the bottom of the menu."
+      },
+      "start": {
+        "title": "Start a new key",
+        "body": "This is your API Keys page, and it is empty right now because you have not made one yet. That is completely normal. The button that starts the process sits in the top-right corner of the screen, so tap it to begin creating your first key.",
+        "slide1": "Tap Create API key in the top-right."
+      },
+      "project": {
+        "title": "Make a project first",
+        "body": "Before Google hands you a key, it asks which project the key should belong to. A project is just a folder Google uses to keep things organised, and you do not have one yet. Create a fresh project and give it any name you like, such as LettuceAI. The name does not affect anything, so pick whatever is easiest.",
+        "slide1": "Open the dropdown and tap Create project.",
+        "slide2": "Give it any name, then tap Create project."
+      },
+      "create": {
+        "title": "Create and copy your key",
+        "body": "With your new project selected, create the key itself. Once it appears, copy it straight away using the copy icon. This is the only time Google shows you the full key, so it is important to copy it now before closing the window. You will paste it into the app on the next step.",
+        "slide1": "With your project selected, tap Create key.",
+        "slide2": "Tap the copy icon to copy your key."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Create your account",
+        "body": "OpenRouter is a single service that connects you to hundreds of AI models from many different companies, all through one account and one key. Open it in your browser using the button below and create a free account. The Sign Up button sits in the top-right corner of the page.",
+        "open": "Open OpenRouter",
+        "slide1": "Click Sign Up in the top-right corner."
+      },
+      "key": {
+        "title": "Get your API key",
+        "body": "After signing up, OpenRouter asks how you plan to use it. Choose Individual, which is the right option for personal use. As soon as you do, it creates your very first API key and shows it on screen. Copy that key now. It starts with sk-or, and you will paste it into the app in a moment.",
+        "slide1": "Choose Individual when asked.",
+        "slide2": "Copy your new API key (starts with sk-or)."
+      },
+      "payment": {
+        "title": "Add a payment method",
+        "body": "Paid models charge a very small amount for each message, so OpenRouter needs a card on file before it will run them. Add your billing details now to unlock the models. Nothing is charged at this step, it simply confirms who you are and lets you spend credit later.",
+        "slide1": "Fill in your billing details.",
+        "slide2": "You are all set once it is added."
+      },
+      "credits": {
+        "title": "Add some credits",
+        "body": "Credit is the balance that actually pays for your messages as you chat. Open the Credits page from the sidebar and top up a small amount to get started. Even a few dollars lasts a long time with most models, and you can always add more later whenever you run low.",
+        "slide1": "Open Credits from the sidebar.",
+        "slide2": "Click Add Credits and choose an amount."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Create your account",
+        "body": "OpenRouter is a single service that connects you to hundreds of AI models from many different companies, all through one account and one key. Open it in your browser using the button below and create a free account. The Sign Up button sits in the top-right corner of the page.",
+        "open": "Open OpenRouter",
+        "slide1": "Tap Sign Up in the top-right corner."
+      },
+      "key": {
+        "title": "Get your API key",
+        "body": "After signing up, OpenRouter asks how you plan to use it. Choose Individual, which is the right option for personal use. As soon as you do, it creates your very first API key and shows it on screen. Copy that key now. It starts with sk-or, and you will paste it into the app in a moment.",
+        "slide1": "Choose Individual when asked.",
+        "slide2": "Copy your new API key (starts with sk-or)."
+      },
+      "payment": {
+        "title": "Add a payment method",
+        "body": "Paid models charge a very small amount for each message, so OpenRouter needs a card on file before it will run them. Add your billing details now to unlock the models. Nothing is charged at this step, it simply confirms who you are and lets you spend credit later.",
+        "slide1": "Fill in your billing details.",
+        "slide2": "You are all set once it is added."
+      },
+      "credits": {
+        "title": "Add some credits",
+        "body": "Credit is the balance that actually pays for your messages as you chat. Open the menu, go to the Credits page, and top up a small amount to get started. Even a few dollars lasts a long time with most models, and you can always add more later whenever you run low.",
+        "slide1": "Open the menu and go to Credits.",
+        "slide2": "Tap Add Credits and choose an amount."
+      }
+    }
+  },
+  "model": {
+    "title": "Choose a model",
+    "lead": "Pick the {{name}} model that writes the replies. You can change it or add more any time.",
+    "model": "Model",
+    "modelId": "Model id",
+    "modelIdHint": "The exact id the service expects",
+    "modelIdPlaceholder": "model-name",
+    "choose": "Choose from {{count}} models",
+    "customId": "Custom id",
+    "displayName": "Display name",
+    "displayNameHint": "What you see inside the app",
+    "displayNamePlaceholder": "My model",
+    "connected": "Connected",
+    "context": "Context",
+    "contextTokens": "{{value}} tokens",
+    "contextSuffix": "{{value}} context",
+    "images": "Understands images",
+    "yes": "Yes",
+    "no": "No",
+    "inputPerMillion": "Input, per million",
+    "outputPerMillion": "Output, per million",
+    "emptyTitle": "No model picked yet",
+    "emptyBody": "Its context size and prices show here.",
+    "free": "Free",
+    "priceIn": "in",
+    "priceOut": "out",
+    "picker": {
+      "title": "{{name}} models",
+      "search": "Search {{count}} models",
+      "filter": "Filter models",
+      "layout": "Layout",
+      "list": "List",
+      "twoPerRow": "Two per row",
+      "onlyFree": "Only free models",
+      "none": "No models match these filters.",
+      "useId": "Use <mono>{{id}}</mono>",
+      "useIdBody": "Not in the list: use this exact id",
+      "priceNote": "Prices per million tokens, from {{name}}.",
+      "loading": "Loading models"
+    },
+    "filters": {
+      "title": "Filter models",
+      "madeBy": "Made by",
+      "capabilities": "Capabilities",
+      "imagesTitle": "Understands images",
+      "imagesBody": "Can read pictures you send in a chat",
+      "sortBy": "Sort by",
+      "sortName": "Name",
+      "sortPrice": "Cheapest",
+      "sortContext": "Longest context",
+      "clear": "Clear",
+      "show_one": "Show {{count}} model",
+      "show_other": "Show {{count}} models"
+    }
+  },
+  "memory": {
+    "title": "How should characters remember?",
+    "lead": "Characters forget what falls outside the recent messages. Pick how the important parts come back. You can change this per chat later.",
+    "group": "Memory",
+    "recommended": "Recommended",
+    "classic": "Classic",
+    "detailTitle": "{{title}} memory",
+    "automatic": {
+      "title": "Automatic",
+      "point1": "A small model on your device picks out what matters and brings it back when needed",
+      "point2": "Long chats stay consistent",
+      "point3": "Fewer tokens sent, so replies cost less",
+      "note": "Needs a one-time download. Runs offline after that."
+    },
+    "manual": {
+      "title": "Manual",
+      "point1": "You pin messages and write the facts yourself",
+      "point2": "Full control over what is remembered",
+      "point3": "Nothing runs in the background",
+      "note": "Nothing to download."
+    },
+    "sheet": {
+      "title": "Download the memory model",
+      "titleDone": "Memory is ready",
+      "body": "Automatic memory needs a small model on this device. It downloads once, then runs offline.",
+      "bodyDone": "Your characters will now keep track of what matters, even in long chats. You can turn this off per chat.",
+      "modelName": "Eidos memory model",
+      "keepOpen": "Keep the app open until it finishes.",
+      "download": "Download and finish",
+      "downloading": "Downloading",
+      "checking": "Checking the model",
+      "useManual": "Use manual memory instead",
+      "doneDetail": "Installed and tested · runs offline",
+      "failedOffline": "Connection lost. Try again to continue.",
+      "failedOther": "The download did not finish. Try again to continue."
+    }
+  },
+  "other": {
+    "title": "Other options",
+    "language": "Language",
+    "skip": "Skip setup",
+    "skipBody": "Look around first. Chats need an AI before they can reply.",
+    "languageTitle": "Language",
+    "warning": {
+      "title": "Chats need an AI before they can reply",
+      "body": "Without a connected AI, characters cannot answer. You can connect one later in the settings.",
+      "connect": "Connect an AI",
+      "skipAnyway": "Skip anyway"
+    }
+  },
+  "failure": {
+    "finish": "Could not finish setup.",
+    "models": "Could not load the models.",
+    "save": "Could not save."
+  }
+}

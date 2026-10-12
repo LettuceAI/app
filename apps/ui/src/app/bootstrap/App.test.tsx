@@ -6,9 +6,14 @@ import { createTestI18n } from "@/shared/testing/i18n";
 import { App } from "./App";
 import { createAppRuntime } from "./runtime";
 
+const completedStatus = { ...mockAppStatus, ui_state: { onboarding: { completed: true } } };
+
 async function renderApp(options: MockTransportOptions = {}, language: "en" | "cimode" = "en") {
   const runtime = await createAppRuntime({
-    transport: createMockTransport(options),
+    transport: createMockTransport({
+      ...options,
+      calls: { appStatus: () => ({ status: "ok", data: completedStatus }), ...options.calls },
+    }),
     history: createMemoryHistory({ initialEntries: ["/"] }),
     i18n: await createTestI18n(language),
   });
@@ -25,7 +30,7 @@ afterEach(() => {
 describe("status placeholder", () => {
   it("shows the app name and the backend's version and platform", async () => {
     await renderApp({
-      calls: { appStatus: () => ({ status: "ok", data: { ...mockAppStatus, version: "9.9.9", platform: "linux" } }) },
+      calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, version: "9.9.9", platform: "linux" } }) },
     });
     expect(await screen.findByText("9.9.9")).toBeTruthy();
     expect(screen.getByText("Linux")).toBeTruthy();
@@ -38,13 +43,13 @@ describe("status placeholder", () => {
       calls: {
         appStatus: () =>
           new Promise((done) => {
-            resolve = () => done({ status: "ok", data: mockAppStatus });
+            resolve = () => done({ status: "ok", data: completedStatus });
           }),
       },
     });
     expect(await screen.findByText("Connecting to the app…")).toBeTruthy();
     await act(async () => resolve?.());
-    expect(await screen.findByText(mockAppStatus.version)).toBeTruthy();
+    expect(await screen.findByText(completedStatus.version)).toBeTruthy();
   });
 
   it("shows the typed error copy when app_status fails", async () => {
