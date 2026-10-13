@@ -1,0 +1,124 @@
+{
+  "title": "Settings",
+  "back": "Back",
+  "notYet": "Not available yet",
+  "groups": {
+    "intelligence": "Intelligence",
+    "experience": "Experience",
+    "connectivity": "Connectivity",
+    "security": "Security & privacy",
+    "support": "Support & info",
+    "danger": "Danger zone"
+  },
+  "sections": {
+    "providers": {
+      "title": "Providers",
+      "subtitle": "Connect to AI services"
+    },
+    "models": {
+      "title": "Models",
+      "subtitle": "Configure AI models"
+    },
+    "imageGeneration": {
+      "title": "Image generation",
+      "subtitle": "Generate and test images"
+    },
+    "prompts": {
+      "title": "System prompts",
+      "subtitle": "Shape AI personality"
+    },
+    "advanced": {
+      "title": "Advanced",
+      "subtitle": "Memory & features"
+    },
+    "performance": {
+      "title": "Local LLM performance",
+      "subtitle": "Speed & context graphs"
+    },
+    "voices": {
+      "title": "Voices",
+      "subtitle": "Text-to-speech voices"
+    },
+    "customization": {
+      "title": "Customization",
+      "subtitle": "Language, sound cues, haptics, appearance"
+    },
+    "speech": {
+      "title": "Speech recognition",
+      "subtitle": "Vocabulary, corrections, voice examples"
+    },
+    "sync": {
+      "title": "Local sync",
+      "subtitle": "Sync across devices"
+    },
+    "backup": {
+      "title": "Backup & restore",
+      "subtitle": "Export or import data"
+    },
+    "convert": {
+      "title": "Convert files",
+      "subtitle": "Migrate legacy .json exports to .uec"
+    },
+    "security": {
+      "title": "Security",
+      "subtitle": "Encryption & privacy"
+    },
+    "usage": {
+      "title": "Usage analytics",
+      "subtitle": "Costs & token stats"
+    },
+    "help": {
+      "title": "Help & FAQ",
+      "subtitle": "BYOK, API keys, privacy, common questions"
+    },
+    "whatsNew": {
+      "title": "What's new",
+      "subtitle": "See what changed in the latest update"
+    },
+    "about": {
+      "title": "About",
+      "subtitle": "Version, updates & links"
+    },
+    "changelog": {
+      "title": "Changelog",
+      "subtitle": "What's new"
+    },
+    "docs": {
+      "title": "Documentation",
+      "subtitle": "Guides & reference"
+    },
+    "logs": {
+      "title": "Logs",
+      "subtitle": "Debug & diagnostics"
+    },
+    "guide": {
+      "title": "Setup guide",
+      "subtitle": "Rerun onboarding"
+    },
+    "reset": {
+      "title": "Reset",
+      "subtitle": "Erase everything"
+    },
+    "developer": {
+      "title": "Developer tools",
+      "subtitle": "Debug & testing"
+    }
+  },
+  "about": {
+    "information": "Information",
+    "version": "Version",
+    "build": "Build",
+    "channel": "Channel",
+    "platform": "Platform",
+    "variant": {
+      "normal": "Standard",
+      "cuda": "CUDA"
+    },
+    "dev": "Development build",
+    "release": "Stable release",
+    "resetOnboarding": "Reset onboarding",
+    "versionLine": "Version {{version}} · {{build}}",
+    "tagline": "Your stories, your characters. Chats stay on your device, and you choose which AI writes the replies.",
+    "resetOnboardingBody": "Go through the first-run setup again"
+  }
+}

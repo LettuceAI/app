@@ -3,10 +3,7 @@
     "name": "LettuceAI"
   },
   "status": {
-    "loading": "Connecting to the app…",
-    "version": "Version",
-    "platform": "Platform",
-    "resetOnboarding": "Reset onboarding"
+    "loading": "Connecting to the app…"
   },
   "navigation": {
     "primary": "Main navigation",
@@ -19,7 +16,8 @@
     "create": "Create",
     "collapse": "Collapse",
     "collapseSidebar": "Collapse sidebar",
-    "expandSidebar": "Expand sidebar"
+    "expandSidebar": "Expand sidebar",
+    "backToApp": "Back to app"
   },
   "window": {
     "minimize": "Minimize",

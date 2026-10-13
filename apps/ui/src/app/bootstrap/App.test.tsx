@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWindowController } from "@/api/window-controls";
@@ -11,7 +11,7 @@ const completedStatus = { ...mockAppStatus, ui_state: { onboarding: { completed:
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
-async function renderApp(options: MockTransportOptions = {}, language: "en" | "cimode" = "en", path = "/settings") {
+async function renderApp(options: MockTransportOptions = {}, language: "en" | "cimode" = "en", path = "/settings/about") {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       ...options,
@@ -59,12 +59,12 @@ describe("status placeholder", () => {
   });
 
   it("navigates through the shell destinations and keeps browser history", async () => {
-    const runtime = await renderApp();
+    const runtime = await renderApp({}, "en", "/");
     fireEvent.click(await screen.findByRole("button", { name: "Groups" }));
     expect(await screen.findByRole("heading", { name: "Groups" })).toBeTruthy();
     expect(runtime.router.state.location.pathname).toBe("/groups");
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/settings/about"));
     await act(async () => { runtime.router.history.back(); });
     expect(await screen.findByRole("heading", { name: "Groups" })).toBeTruthy();
   });
@@ -80,7 +80,7 @@ describe("status placeholder", () => {
     await renderApp({
       calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, version: "9.9.9", platform: "linux" } }) },
     });
-    expect(await screen.findByText("9.9.9")).toBeTruthy();
+    expect((await screen.findAllByText("9.9.9")).length).toBeGreaterThan(0);
     expect(screen.getByText("Linux")).toBeTruthy();
     expect(screen.getAllByText("LettuceAI").length).toBeGreaterThan(0);
   });
@@ -97,7 +97,7 @@ describe("status placeholder", () => {
     });
     expect(await screen.findByText("Connecting to the app…")).toBeTruthy();
     await act(async () => resolve?.());
-    expect(await screen.findByText(completedStatus.version)).toBeTruthy();
+    expect((await screen.findAllByText(completedStatus.version)).length).toBeGreaterThan(0);
   });
 
   it("shows the typed error copy when app_status fails", async () => {
@@ -115,8 +115,8 @@ describe("status placeholder", () => {
     await renderApp({}, "cimode");
     expect(await screen.findByText("platform.other")).toBeTruthy();
     expect(screen.getAllByText("app.name").length).toBeGreaterThan(0);
-    expect(screen.getByText("status.version")).toBeTruthy();
-    expect(screen.getByText("status.platform")).toBeTruthy();
+    expect(screen.getByText("about.version")).toBeTruthy();
+    expect(screen.getByText("about.platform")).toBeTruthy();
     expect(screen.queryByText("LettuceAI")).toBeNull();
   });
 });

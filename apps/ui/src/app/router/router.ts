@@ -2,6 +2,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  notFound,
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
@@ -10,13 +11,13 @@ import { appStatusQuery } from "@/api/app-status-query";
 import type { ApiClient } from "@/api/client";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
+import { builtSettingsSections, isSettingsSection, SettingsIndexPage, SettingsSectionPage } from "@/features/settings";
 import { WelcomeBackPage } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
 import { RouteNotFound } from "../error-boundaries/RouteNotFound";
 import { AppShell } from "../shell/AppShell";
 import { NavigationPage } from "../shell/NavigationPage";
 import { PendingScreen } from "../shell/PendingScreen";
-import { StatusPage } from "../shell/StatusPage";
 import { legacyMigrationOffered, onboardingCompleted, onboardingRedirect, welcomeBackPath, welcomePath } from "./onboarding-gate";
 
 export interface RouterContext {
@@ -42,9 +43,17 @@ const welcomeBackRoute = createRoute({ getParentRoute: () => rootRoute, path: we
 const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups", component: NavigationPage });
 const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover", component: NavigationPage });
 const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library", component: NavigationPage });
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: StatusPage });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsIndexPage });
+const settingsSectionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/$section",
+  beforeLoad: ({ params }) => {
+    if (!isSettingsSection(params.section) || !builtSettingsSections.has(params.section)) throw notFound();
+  },
+  component: SettingsSectionPage,
+});
 
-const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute, settingsSectionRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;

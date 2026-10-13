@@ -1,12 +1,13 @@
 import { AppShell as CrispAppShell, cn, CrispStringsProvider, icon, TitleBar, useCompactLayout, type NavDestination } from "@lettuceai/crisp";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useState } from "react";
-import { Compass, House, Library, MessageSquare, Settings, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, Compass, House, Library, MessageSquare, Settings, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { WindowEdge } from "@/api/window-controls";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
+import { isSettingsSection, SidebarSettings } from "@/features/settings";
 import { CreateSheet } from "./CreateSheet";
 import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, type Destination } from "./navigation";
@@ -50,6 +51,13 @@ export function AppShell() {
     { id: "library", label: t("navigation.library"), icon: <Library size={icon.lg} /> },
   ];
   const settings: NavDestination<Destination> = { id: "settings", label: t("navigation.settings"), icon: <Settings size={icon.lg} /> };
+  const inSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const settingsMode = inSettings && !tabs;
+  const backToApp: NavDestination<Destination> = { id: "chats", label: t("navigation.backToApp"), icon: <ArrowLeft size={icon.lg} /> };
+  const section = pathname.startsWith("/settings/") ? pathname.slice("/settings/".length) : "";
+  useEffect(() => {
+    if (settingsMode && pathname === "/settings") void navigate({ to: "/settings/$section", params: { section: "about" }, replace: true });
+  }, [settingsMode, pathname, navigate]);
   const titleBar = desktop ? (
     <TitleBar
       title={t("app.name")}
@@ -73,16 +81,20 @@ export function AppShell() {
         </>
       ) : (
         <CrispAppShell
-          items={tabs ? [...items, settings] : items}
+          items={tabs ? [...items, settings] : settingsMode ? [backToApp] : items}
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}
-          onChange={(id) => { void navigate({ to: destinations[id] }); }}
+          onChange={(id) => { void navigate({ to: id === "settings" && settingsMode ? "/" : destinations[id] }); }}
           navStyle={tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
           {...(tabs ? {} : {
             onNavToggle: () => setSidebarOpen(!sidebarOpen),
-            onCreate: () => setCreateOpen(true),
-            createLabel: t("navigation.create"),
-            navSection: <SidebarRecents api={api} heldId={chatMenu?.chat.id ?? null} onMenu={setChatMenu} />,
+            ...(settingsMode ? {
+              navSection: <SidebarSettings active={isSettingsSection(section) ? section : null} onOpen={(id) => { void navigate({ to: "/settings/$section", params: { section: id } }); }} />,
+            } : {
+              onCreate: () => setCreateOpen(true),
+              createLabel: t("navigation.create"),
+              navSection: <SidebarRecents api={api} heldId={chatMenu?.chat.id ?? null} onMenu={setChatMenu} />,
+            }),
           })}
           titleBar={titleBar}
         >

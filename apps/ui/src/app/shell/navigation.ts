@@ -8,6 +8,11 @@ export const destinations = {
 
 export type Destination = keyof typeof destinations;
 
+/** The destination a path belongs to: its own page or any page under it. */
 export function destinationOf(pathname: string): Destination {
-  return (Object.keys(destinations) as Destination[]).find((id) => destinations[id] === pathname) ?? "chats";
+  return (
+    (Object.keys(destinations) as Destination[]).find(
+      (id) => id !== "chats" && (pathname === destinations[id] || pathname.startsWith(`${destinations[id]}/`)),
+    ) ?? "chats"
+  );
 }
