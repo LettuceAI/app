@@ -7,6 +7,7 @@ import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
 import { customGradientCss, textOnColors } from "./data/gradient";
+import { exportFileName } from "./data/actions";
 import { sortByActivity } from "./data/home-characters";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
@@ -71,6 +72,11 @@ describe("home characters", () => {
     expect(await screen.findByText("1 of 2")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Bram")).toBeNull());
     expect(screen.getByText("Aria")).toBeTruthy();
+  });
+
+  it("suggests an export file name the way the backend names exports", () => {
+    expect(exportFileName("Sam O'Neil", "uec", new Date("2026-10-13T08:00:00Z"))).toBe("character_sam_o_neil_2026-10-13.uec");
+    expect(exportFileName("Aria", "v3", new Date("2026-10-13T08:00:00Z"))).toBe("character_aria_2026-10-13.json");
   });
 
   it("says when there are no characters", async () => {

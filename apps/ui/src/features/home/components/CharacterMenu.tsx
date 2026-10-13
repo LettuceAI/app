@@ -135,6 +135,7 @@ export function CharacterMenu({ api, home, onClose }: { api: ApiClient; home: Ho
                 if (!target) return;
                 void run(async () => {
                   const result = await exportCharacter(services, target.character, format);
+                  if (!result) return;
                   setExporting(null);
                   toast.success(t("export.done", { name: result.suggested_name }));
                 });
