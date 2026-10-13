@@ -8,7 +8,7 @@ The React frontend the Tauri shell (`apps/tauri`) loads. It is built with Vite, 
 
 `src/api/` is the only code that knows how the backend is reached. `generated/bindings.ts` is written by tauri-specta from the Rust command signatures and is never edited by hand. `transport.ts`, `tauri-transport.ts`, `mock-transport.ts`, `client.ts` and `query-keys.ts` wrap it, as described below.
 
-`src/features/` will hold one folder per product feature, each exposing a small public `index.ts` and a lazy route module. `src/entities/` will hold domain building blocks several features render. `src/shared/` holds code with no feature knowledge: `ui/` (shared components such as the typed failure state), `i18n/`, `hooks/`, `formatting/` and `testing/`. `src/styles/` holds the global stylesheet.
+`src/features/` will hold one folder per product feature, each exposing a small public `index.ts` that exports its page components. `src/entities/` will hold domain building blocks several features render. `src/shared/` holds code with no feature knowledge: `ui/` (shared components such as the typed failure state), `i18n/`, `hooks/`, `formatting/` and `testing/`. `src/styles/` holds the global stylesheet.
 
 ## Backend access
 
@@ -30,7 +30,7 @@ Server state lives in the TanStack Query cache under keys from `query-keys.ts`. 
 
 Keys nest so that invalidating a prefix refreshes everything under it: `conversations.messages(id)` sits under `conversations.detail(id)`, so the `generation_settled` rule refreshes a conversation's message queries along with its view. `app.status` has no event that refreshes it; the placeholder only shows the version and platform, which cannot change while the app runs. Any other `AppStatus` field (the UI state, legacy detection, conflict and purge-notice counts) must get its own query keyed to the backend event that changes it before a screen uses it. Route and workflow state belongs in typed route params and search params, and ephemeral UI state stays in components.
 
-The router is TanStack Router with a code-based route tree. Its context carries the `ApiClient` and the `QueryClient`, so route components and loaders get the client from the router instead of from a global. Each route's component is loaded lazily through `createRoute(...).lazy(...)`; features will export their route modules the same way.
+The router is TanStack Router with a code-based route tree. Its context carries the `ApiClient` and the `QueryClient`, so route components and loaders get the client from the router instead of from a global. Route components are imported directly: the app ships as one local bundle, so splitting routes into lazy chunks would only add a loading state to every navigation. Features export their page components from their `index.ts`, and the pending screen shows only while the first app status loads.
 
 ## Startup
 

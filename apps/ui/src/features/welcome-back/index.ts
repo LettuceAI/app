@@ -1,1 +1,1 @@
-export const loadWelcomeBackRoute = () => import("./route.lazy").then((module) => module.Route);
+export { WelcomeBackPage } from "./WelcomeBackPage";

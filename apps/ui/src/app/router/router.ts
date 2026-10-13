@@ -8,12 +8,14 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { ApiClient } from "@/api/client";
-import { loadOnboardingRoute } from "@/features/onboarding";
-import { loadWelcomeBackRoute } from "@/features/welcome-back";
+import { OnboardingPage } from "@/features/onboarding";
+import { WelcomeBackPage } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
 import { RouteNotFound } from "../error-boundaries/RouteNotFound";
 import { AppShell } from "../shell/AppShell";
+import { NavigationPage } from "../shell/NavigationPage";
 import { PendingScreen } from "../shell/PendingScreen";
+import { StatusPage } from "../shell/StatusPage";
 import { legacyMigrationOffered, onboardingCompleted, onboardingRedirect, welcomeBackPath, welcomePath } from "./onboarding-gate";
 
 export interface RouterContext {
@@ -33,29 +35,13 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: AppShell,
 });
 
-const statusRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-}).lazy(() => import("../shell/status-route.lazy").then((module) => module.Route));
-
-const welcomeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: welcomePath,
-}).lazy(loadOnboardingRoute);
-
-const welcomeBackRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: welcomeBackPath,
-}).lazy(loadWelcomeBackRoute);
-
-const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups" })
-  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.groupsRoute));
-const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover" })
-  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.discoverRoute));
-const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library" })
-  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.libraryRoute));
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings" })
-  .lazy(() => import("../shell/navigation-route.lazy").then((module) => module.settingsRoute));
+const statusRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: StatusPage });
+const welcomeRoute = createRoute({ getParentRoute: () => rootRoute, path: welcomePath, component: OnboardingPage });
+const welcomeBackRoute = createRoute({ getParentRoute: () => rootRoute, path: welcomeBackPath, component: WelcomeBackPage });
+const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups", component: NavigationPage });
+const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover", component: NavigationPage });
+const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library", component: NavigationPage });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: NavigationPage });
 
 const routeTree = rootRoute.addChildren([statusRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute]);
 
@@ -69,7 +55,6 @@ export function createAppRouter(context: RouterContext, options: AppRouterOption
     context,
     defaultErrorComponent: RouteErrorState,
     defaultNotFoundComponent: RouteNotFound,
-    defaultPreload: "intent",
     defaultPendingComponent: PendingScreen,
     defaultPendingMs: 0,
     ...(options.history ? { history: options.history } : {}),
