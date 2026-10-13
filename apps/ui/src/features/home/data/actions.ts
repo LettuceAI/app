@@ -71,3 +71,18 @@ export async function deleteChat(services: HomeServices, chat: ConversationSumma
   await services.api.call("conversationDelete", { conversation_id: chat.id });
   await refresh(services);
 }
+
+/** Asks for a character card file and imports it; resolves false when the picker was cancelled. */
+export async function importCharacterCard(services: HomeServices): Promise<boolean> {
+  const { api, queryClient } = services;
+  const picked = await api.call("filesPickOpen", { kinds: ["character_card"], multiple: false });
+  const source = picked.sources[0];
+  if (!source) return false;
+  const preview = await api.call("importPreview", { source });
+  await api.call("importCommit", { source, digest: preview.digest, options: {}, client_operation_id: crypto.randomUUID() });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.characters.all }),
+  ]);
+  return true;
+}

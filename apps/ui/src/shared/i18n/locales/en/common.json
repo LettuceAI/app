@@ -14,7 +14,12 @@
     "groups": "Groups",
     "discover": "Discover",
     "library": "Library",
-    "settings": "Settings"
+    "settings": "Settings",
+    "home": "Home",
+    "create": "Create",
+    "collapse": "Collapse",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar"
   },
   "window": {
     "minimize": "Minimize",
@@ -56,5 +61,14 @@
       "model_unavailable": "A required model couldn't be loaded.",
       "transport": "The app's backend couldn't be reached."
     }
+  },
+  "create": {
+    "title": "Create",
+    "description": "Someone new to talk to.",
+    "import": "Import a card",
+    "importBody": "PNG or JSON character card",
+    "imported": "Character imported",
+    "discover": "Browse Discover",
+    "discoverBody": "Characters other people have shared"
   }
 }

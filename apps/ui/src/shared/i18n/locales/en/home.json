@@ -89,5 +89,9 @@
     "delete": "Delete chat",
     "deleteTitle": "Delete {{title}}?",
     "deleteBody": "The character stays; this story goes."
+  },
+  "sidebar": {
+    "label": "Recent chats",
+    "empty": "Chats you start show up here."
   }
 }

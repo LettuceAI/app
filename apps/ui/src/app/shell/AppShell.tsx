@@ -1,10 +1,14 @@
 import { AppShell as CrispAppShell, cn, CrispStringsProvider, icon, TitleBar, useCompactLayout, type NavDestination } from "@lettuceai/crisp";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Compass, Library, MessageSquare, Settings, Users } from "lucide-react";
+import { useState } from "react";
+import { Compass, House, Library, MessageSquare, Settings, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { WindowEdge } from "@/api/window-controls";
+import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
+import { CreateSheet } from "./CreateSheet";
+import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, type Destination } from "./navigation";
 import { useWindowController } from "./useWindowController";
 
@@ -32,14 +36,20 @@ export function AppShell() {
   const windowPlatform = platform === "macos" || platform === "windows" ? platform : "linux";
   const { controller, expanded, failed, perform } = useWindowController(platform);
   const welcome = pathname === "/welcome" || pathname === "/welcome-back";
+  const tabs = compact || mobile;
+  const [sidebarOpen, setSidebarOpen] = useSidebarExpanded(api);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [chatMenu, setChatMenu] = useState<ChatMenuTarget | null>(null);
+  const first: NavDestination<Destination> = tabs
+    ? { id: "chats", label: t("navigation.chats"), icon: <MessageSquare size={icon.lg} /> }
+    : { id: "chats", label: t("navigation.home"), icon: <House size={icon.lg} /> };
   const items: NavDestination<Destination>[] = [
-    { id: "chats", label: t("navigation.chats"), icon: <MessageSquare size={icon.lg} /> },
+    first,
     { id: "groups", label: t("navigation.groups"), icon: <Users size={icon.lg} /> },
     { id: "discover", label: t("navigation.discover"), icon: <Compass size={icon.lg} /> },
     { id: "library", label: t("navigation.library"), icon: <Library size={icon.lg} /> },
   ];
   const settings: NavDestination<Destination> = { id: "settings", label: t("navigation.settings"), icon: <Settings size={icon.lg} /> };
-  const tabs = compact || mobile;
   const titleBar = desktop ? (
     <TitleBar
       title={t("app.name")}
@@ -53,7 +63,7 @@ export function AppShell() {
     />
   ) : null;
   return (
-    <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
+    <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), navCreate: t("navigation.create"), navCollapse: t("navigation.collapse"), navCollapseSidebar: t("navigation.collapseSidebar"), navExpandSidebar: t("navigation.expandSidebar"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
     <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
       {failed && <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">{t("window.failed")}</p>}
       {welcome ? (
@@ -67,12 +77,20 @@ export function AppShell() {
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}
           onChange={(id) => { void navigate({ to: destinations[id] }); }}
-          navStyle={tabs ? "tabs" : "rail"}
+          navStyle={tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
+          {...(tabs ? {} : {
+            onNavToggle: () => setSidebarOpen(!sidebarOpen),
+            onCreate: () => setCreateOpen(true),
+            createLabel: t("navigation.create"),
+            navSection: <SidebarRecents api={api} heldId={chatMenu?.chat.id ?? null} onMenu={setChatMenu} />,
+          })}
           titleBar={titleBar}
         >
           <Outlet />
         </CrispAppShell>
       )}
+      <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onDiscover={() => { void navigate({ to: destinations.discover }); }} />
+      <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
       {controller && desktop && windowPlatform !== "macos" && !expanded && resizeEdges.map(([edge, className]) => (
         <div key={edge} aria-hidden className={cn("absolute z-50 touch-none", className)} onPointerDown={(event) => {
           if (event.button !== 0) return;
