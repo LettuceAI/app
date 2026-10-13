@@ -24,3 +24,14 @@ export function vendorOf(modelId: string): ModelVendor | null {
   const id = modelId.toLowerCase();
   return modelVendors.find((vendor) => vendor.match.test(id)) ?? null;
 }
+
+/**
+ * The name a model gets when it is added: the provider's name for it, or the last part of its id, without the
+ * "Company: " prefix aggregators put in front when the company is known from the id.
+ */
+export function defaultModelName(displayName: string | null, modelId: string): string {
+  const name = displayName ?? (modelId.split("/").at(-1) || modelId);
+  if (!vendorOf(modelId)) return name;
+  const colon = name.indexOf(": ");
+  return colon > 0 && colon < name.length - 2 ? name.slice(colon + 2) : name;
+}

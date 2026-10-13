@@ -7,6 +7,8 @@ import gemini from "./assets/gemini.svg";
 import groq from "./assets/groq.svg";
 import intenserp from "./assets/intenserp.png";
 import literouter from "./assets/literouter.png";
+import llamaCpp from "./assets/llama-cpp.svg";
+import stableDiffusionCpp from "./assets/stable-diffusion-cpp.png";
 import lmstudio from "./assets/lmstudio_light.png";
 import mistral from "./assets/mistralai_light.svg";
 import moonshot from "./assets/moonshot_light.svg";
@@ -42,6 +44,8 @@ const providerLogos: Readonly<Record<string, string>> = {
   pollinations,
   ollama,
   lmstudio,
+  llamacpp: llamaCpp,
+  sdcpp: stableDiffusionCpp,
   intenserp,
 };
 

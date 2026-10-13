@@ -68,5 +68,15 @@
     "imported": "Character imported",
     "discover": "Browse Discover",
     "discoverBody": "Characters other people have shared"
+  },
+  "providerSelect": {
+    "placeholder": "Choose a provider",
+    "title": "Provider",
+    "empty": "No providers available.",
+    "groups": {
+      "cloud": "Cloud",
+      "local": "Local",
+      "custom": "Custom"
+    }
   }
 }

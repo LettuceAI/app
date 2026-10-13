@@ -175,13 +175,13 @@ describe("model", () => {
     const saves = await reachModel({ calls: { providerModels: () => ({ status: "ok", data: pricedModels }) } });
     await click(/Choose from 3 models/);
     fireEvent.click(await screen.findByText("Anthropic: Claude Sonnet 5"));
-    await waitFor(() => expect((screen.getByPlaceholderText("Anthropic: Claude Sonnet 5") as HTMLInputElement).value).toBe("Anthropic: Claude Sonnet 5"));
+    await waitFor(() => expect((screen.getByPlaceholderText("Anthropic: Claude Sonnet 5") as HTMLInputElement).value).toBe("Claude Sonnet 5"));
     await click("Use this model");
     await waitFor(() => expect(saves.length).toBe(1));
     expect(saves[0]?.model).toMatchObject({
       provider_account_id: accountId,
       external_model_id: "anthropic/claude-sonnet-5",
-      display_name: "Anthropic: Claude Sonnet 5",
+      display_name: "Claude Sonnet 5",
       kind: "chat",
       input_scopes: ["text", "image"],
       output_scopes: ["text"],
