@@ -20,12 +20,65 @@ pub(crate) fn page_limit(limit: Option<u32>) -> PageLimit {
 }
 
 pub(crate) fn character_avatar(character: &Character) -> Option<AssetId> {
+    character_media(character, CharacterMediaSlot::AvatarOriginal)
+}
+
+fn character_media(character: &Character, slot: CharacterMediaSlot) -> Option<AssetId> {
     character
         .media
         .links
         .iter()
-        .find(|link| link.slot == CharacterMediaSlot::AvatarOriginal)
+        .find(|link| link.slot == slot)
         .map(|link| link.asset_id)
+}
+
+const CHARACTER_DESCRIPTION_CHARS: usize = 400;
+
+/// The card a character list shows for `character`.
+pub(crate) fn character_summary(
+    context: &ApiContext,
+    character: &Character,
+) -> dto::CharacterSummary {
+    let profile = &character.profile;
+    let presentation = &character.presentation;
+    let description = [
+        profile.description.as_deref(),
+        profile.definition.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|text| !text.is_empty())
+    .map(|text| text.chars().take(CHARACTER_DESCRIPTION_CHARS).collect());
+    let gradient = if presentation.custom_gradient_enabled
+        && !presentation.custom_gradient_colors.is_empty()
+    {
+        dto::CharacterCardGradient::Custom {
+            colors: presentation.custom_gradient_colors.clone(),
+            text_color: presentation.primary_text_color.clone(),
+            text_secondary: presentation.secondary_text_color.clone(),
+        }
+    } else if presentation.disable_gradient {
+        dto::CharacterCardGradient::None
+    } else {
+        dto::CharacterCardGradient::Avatar
+    };
+    dto::CharacterSummary {
+        id: character.id.to_string(),
+        name: profile.name.clone(),
+        avatar: character_avatar(character).map(|asset_id| context.asset_ref(asset_id)),
+        banner: character_media(character, CharacterMediaSlot::Banner)
+            .map(|asset_id| context.asset_ref(asset_id)),
+        description,
+        card_style: match presentation.card_style {
+            lettuce_characters::CardStyle::Circle => dto::LibraryCardStyle::Circle,
+            lettuce_characters::CardStyle::Banner => dto::LibraryCardStyle::Banner,
+        },
+        gradient,
+        revision: character.revision.get(),
+        created_at: character.created_at.get(),
+        updated_at: character.updated_at.get(),
+    }
 }
 
 /// Character avatars read once per request.

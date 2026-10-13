@@ -344,3 +344,113 @@ async fn group_library_pages_follow_activity_and_bind_cursor_to_filter_and_sort(
     assert_eq!(names.items[0].group.id, alpha.to_string());
     assert_eq!(names.items[1].group.id, zed.to_string());
 }
+
+#[tokio::test]
+async fn character_list_cards_carry_the_description_card_style_and_gradient_choice() {
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let custom = CharacterPresentationV1 {
+        disable_gradient: true,
+        custom_gradient_enabled: true,
+        custom_gradient_colors: vec!["#112233".into(), "#445566".into()],
+        primary_text_color: Some("#ffffff".into()),
+        ..CharacterPresentationV1::default()
+    };
+    let disabled = CharacterPresentationV1 {
+        disable_gradient: true,
+        card_style: lettuce_characters::CardStyle::Banner,
+        ..CharacterPresentationV1::default()
+    };
+    let long_definition = "d".repeat(500);
+    for (name, description, definition, presentation) in [
+        (
+            "Card-Custom",
+            Some("   ".to_owned()),
+            Some(long_definition.clone()),
+            custom,
+        ),
+        (
+            "Card-Disabled",
+            Some("  Hello  ".to_owned()),
+            None,
+            disabled,
+        ),
+        (
+            "Card-Avatar",
+            None,
+            None,
+            CharacterPresentationV1::default(),
+        ),
+    ] {
+        let character = Character::new(
+            CharacterId::new(),
+            CharacterProfile {
+                name: name.into(),
+                nickname: None,
+                description,
+                definition,
+                design_description: None,
+                scenario: None,
+            },
+            CharacterProvenance::default(),
+            CharacterDefaults::default(),
+            presentation,
+            None,
+            CharacterMedia::default(),
+            TimestampMillis::new(7),
+        )
+        .expect("character");
+        CharacterRepository::create(
+            database,
+            CreateCharacterPlan {
+                character,
+                scenes: vec![],
+                variants: vec![],
+                starters: vec![],
+            },
+        )
+        .expect("create");
+    }
+    let page = characters_list(
+        &harness.context,
+        dto::CharactersListRequest {
+            query: Some("Card-".into()),
+            sort: Some(dto::LibrarySort::Name),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("page");
+    let card = |name: &str| {
+        page.items
+            .iter()
+            .find(|item| item.name == name)
+            .expect("card")
+    };
+
+    let avatar = card("Card-Avatar");
+    assert_eq!(avatar.description, None);
+    assert_eq!(avatar.banner, None);
+    assert_eq!(avatar.card_style, dto::LibraryCardStyle::Circle);
+    assert_eq!(avatar.gradient, dto::CharacterCardGradient::Avatar);
+    assert_eq!(avatar.created_at, 7);
+
+    let custom = card("Card-Custom");
+    assert_eq!(
+        custom.description.as_deref(),
+        Some("d".repeat(400).as_str())
+    );
+    assert_eq!(
+        custom.gradient,
+        dto::CharacterCardGradient::Custom {
+            colors: vec!["#112233".into(), "#445566".into()],
+            text_color: Some("#ffffff".into()),
+            text_secondary: None,
+        }
+    );
+
+    let disabled = card("Card-Disabled");
+    assert_eq!(disabled.description.as_deref(), Some("Hello"));
+    assert_eq!(disabled.card_style, dto::LibraryCardStyle::Banner);
+    assert_eq!(disabled.gradient, dto::CharacterCardGradient::None);
+}

@@ -91,6 +91,12 @@ pub struct ConversationSummary {
     pub kind: ConversationKind,
     pub title: String,
     pub avatars: Vec<AssetRef>,
+    /// The background the chat shows: its own, else its scene's, else its
+    /// character's or group's; absent when it hides one or has none.
+    pub background: Option<AssetRef>,
+    /// The revision a rename, archive or delete passes as expected.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
     /// The newest visible message's text on the selected branch, at most 400
     /// characters.
     pub last_message_preview: Option<String>,
@@ -851,6 +857,35 @@ pub struct CharacterSummary {
     pub id: String,
     pub name: String,
     pub avatar: Option<AssetRef>,
+    /// The wide banner image, when the character has one.
+    pub banner: Option<AssetRef>,
+    /// The description, or the definition when there is none, trimmed and
+    /// cut to at most 400 characters; absent when both are blank.
+    pub description: Option<String>,
+    pub card_style: crate::LibraryCardStyle,
+    pub gradient: CharacterCardGradient,
+    /// The revision a save, archive or delete passes as expected.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub created_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub updated_at: i64,
+}
+
+/// The colours behind a character's card. `Custom` wins over a disabled
+/// gradient; `Avatar` asks `avatar_gradient` for the avatar's colours.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CharacterCardGradient {
+    None,
+    Custom {
+        colors: Vec<String>,
+        text_color: Option<String>,
+        text_secondary: Option<String>,
+    },
+    Avatar,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

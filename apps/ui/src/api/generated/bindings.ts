@@ -867,6 +867,12 @@ export type CertificatesView = {
 	revision: number,
 };
 
+/**
+ *  The colours behind a character's card. `Custom` wins over a disabled
+ *  gradient; `Avatar` asks `avatar_gradient` for the avatar's colours.
+ */
+export type CharacterCardGradient = { type: "none" } | { type: "custom"; colors: string[]; text_color: string | null; text_secondary: string | null } | { type: "avatar" };
+
 export type CharacterDeleteRequest = {
 	character_id: string,
 	expected_revision: number,
@@ -997,6 +1003,19 @@ export type CharacterSummary = {
 	id: string,
 	name: string,
 	avatar: AssetRef | null,
+	/**  The wide banner image, when the character has one. */
+	banner: AssetRef | null,
+	/**
+	 *  The description, or the definition when there is none, trimmed and
+	 *  cut to at most 400 characters; absent when both are blank.
+	 */
+	description: string | null,
+	card_style: LibraryCardStyle,
+	gradient: CharacterCardGradient,
+	/**  The revision a save, archive or delete passes as expected. */
+	revision: number,
+	created_at: number,
+	updated_at: number,
 };
 
 export type CharacterView = CharacterView_Serialize | CharacterView_Deserialize;
@@ -1653,6 +1672,13 @@ export type ConversationSummary = {
 	kind: ConversationKind,
 	title: string,
 	avatars: AssetRef[],
+	/**
+	 *  The background the chat shows: its own, else its scene's, else its
+	 *  character's or group's; absent when it hides one or has none.
+	 */
+	background: AssetRef | null,
+	/**  The revision a rename, archive or delete passes as expected. */
+	revision: number,
 	/**
 	 *  The newest visible message's text on the selected branch, at most 400
 	 *  characters.

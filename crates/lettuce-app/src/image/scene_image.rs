@@ -522,6 +522,28 @@ impl StoredSceneReferences {
     }
 }
 
+/// The effective background of a one-to-one chat with `character`.
+pub(crate) fn direct_background(
+    conversation: &lettuce_conversations::Conversation,
+    character: &lettuce_characters::CharacterDetails,
+) -> Option<AssetId> {
+    let media_of = |slot: CharacterMediaSlot| {
+        let mut links = character
+            .character
+            .media
+            .links
+            .iter()
+            .filter(|link| link.slot == slot)
+            .collect::<Vec<_>>();
+        links.sort_by_key(|link| link.ordinal);
+        links
+            .into_iter()
+            .map(|link| link.asset_id)
+            .collect::<Vec<_>>()
+    };
+    conversation_background(conversation, character, &media_of)
+}
+
 /// The effective chat background: the conversation's own (none when it hides
 /// it), else the selected or default scene's, else the character's.
 fn conversation_background(

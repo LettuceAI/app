@@ -29,14 +29,14 @@ pub(super) mod turns_tests;
 
 use std::{collections::HashMap, sync::Arc};
 
-use lettuce_characters::CharacterRepository;
+use lettuce_characters::{CharacterDetails, CharacterRepository};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    BeginGeneration, ConversationKindTag, ConversationLifecycle, ConversationOverview,
-    ConversationOverviewReader, ConversationQuery, ConversationReader, ConversationRepositoryError,
-    GenerationInput, IdempotencyKey, MessageDraft, MessagePart, MessageRole, MessageVisibility,
-    OperationKind, OperationToken, ParticipantRole, ParticipantSource, SendConversation,
-    ValidationError,
+    BeginGeneration, ConversationBackground, ConversationKind, ConversationKindTag,
+    ConversationLifecycle, ConversationOverview, ConversationOverviewReader, ConversationQuery,
+    ConversationReader, ConversationRepositoryError, GenerationInput, IdempotencyKey, MessageDraft,
+    MessagePart, MessageRole, MessageVisibility, OperationKind, OperationToken, ParticipantRole,
+    ParticipantSource, SendConversation, ValidationError,
 };
 use lettuce_jobs::{CancellationReason, handle::CancellationToken};
 use lettuce_types::{
@@ -98,9 +98,12 @@ fn conversation_summary(
     overview: &ConversationOverview,
     avatars: &mut AvatarLookup,
     missing: &mut MissingModels,
+    characters: &mut HashMap<CharacterId, Option<CharacterDetails>>,
 ) -> Result<dto::ConversationSummary, ApiError> {
     let database = context.backend().database();
     let conversation = &overview.conversation;
+    let group = crate::generation::live_sources::live_group(database, conversation)
+        .map_err(IntoApiError::into_api_error)?;
     let mut summary_avatars = Vec::new();
     for participant in &conversation.participants {
         if let ParticipantSource::Character(character_id) = participant.source
@@ -116,6 +119,9 @@ fn conversation_summary(
         kind: mapping::conversation_kind_tag(overview.summary.kind),
         title: overview.summary.title.clone(),
         avatars: summary_avatars,
+        background: summary_background(context, conversation, group.as_ref(), characters)?
+            .map(|asset_id| context.asset_ref(asset_id)),
+        revision: conversation.revision.get(),
         last_message_preview: overview
             .last_message
             .as_ref()
@@ -124,10 +130,57 @@ fn conversation_summary(
         archived: overview.summary.lifecycle == ConversationLifecycle::Archived,
         source: mapping::conversation_source(&conversation.kind),
         message_count: overview.message_count,
-        chat_mode: chat_mode(context, conversation)?,
+        chat_mode: group
+            .as_ref()
+            .map(|group| mapping::group_chat_mode(group.chat_mode)),
         missing_models: missing.of(context, conversation)?,
         memory_blocked: self::messages::memory_blocked(context, conversation.id)?,
     })
+}
+
+/// The background a conversation shows, the way its chat screen resolves it.
+fn summary_background(
+    context: &ApiContext,
+    conversation: &lettuce_conversations::Conversation,
+    group: Option<&crate::generation::live_sources::LiveGroup>,
+    characters: &mut HashMap<CharacterId, Option<CharacterDetails>>,
+) -> Result<Option<lettuce_types::AssetId>, ApiError> {
+    match &conversation.kind {
+        ConversationKind::Direct(details) => {
+            let id = details.character.source_id;
+            if !characters.contains_key(&id) {
+                let loaded = CharacterRepository::get(context.backend().database(), id)
+                    .map_err(IntoApiError::into_api_error)?;
+                characters.insert(id, loaded);
+            }
+            Ok(match characters.get(&id).and_then(Option::as_ref) {
+                Some(character) => {
+                    crate::image::scene_image::direct_background(conversation, character)
+                }
+                None => match conversation
+                    .current_settings
+                    .as_ref()
+                    .and_then(|settings| settings.background)
+                {
+                    Some(ConversationBackground::Image { asset_id }) => Some(asset_id),
+                    _ => None,
+                },
+            })
+        }
+        ConversationKind::Group(_) => Ok(
+            match conversation
+                .current_settings
+                .as_ref()
+                .and_then(|settings| settings.background)
+            {
+                Some(ConversationBackground::Image { asset_id }) => Some(asset_id),
+                Some(ConversationBackground::Hidden) => None,
+                None => group
+                    .and_then(|group| group.profile.as_ref())
+                    .and_then(|profile| profile.background_asset_id),
+            },
+        ),
+    }
 }
 
 fn chat_mode(
@@ -147,9 +200,18 @@ fn summaries(
 ) -> Result<Vec<dto::ConversationSummary>, ApiError> {
     let mut avatars = AvatarLookup::default();
     let mut missing = MissingModels::new(context)?;
+    let mut characters = HashMap::new();
     overviews
         .iter()
-        .map(|overview| conversation_summary(context, overview, &mut avatars, &mut missing))
+        .map(|overview| {
+            conversation_summary(
+                context,
+                overview,
+                &mut avatars,
+                &mut missing,
+                &mut characters,
+            )
+        })
         .collect()
 }
 

@@ -31,12 +31,7 @@ pub async fn characters_list(
                 items: page
                     .items
                     .iter()
-                    .map(|character| dto::CharacterSummary {
-                        id: character.id.to_string(),
-                        name: character.profile.name.clone(),
-                        avatar: mapping::character_avatar(character)
-                            .map(|asset_id| context.asset_ref(asset_id)),
-                    })
+                    .map(|character| mapping::character_summary(context, character))
                     .collect(),
                 next_cursor: page.next_cursor,
             })

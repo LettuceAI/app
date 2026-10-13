@@ -62,12 +62,7 @@ pub async fn character_duplicate(
                         let character = scope
                             .library_character(copied.character_id)
                             .map_err(|error| Failure(error.into_api_error()))?;
-                        Ok(dto::CharacterSummary {
-                            id: character.id.to_string(),
-                            name: character.profile.name.clone(),
-                            avatar: mapping::character_avatar(&character)
-                                .map(|id| context.asset_ref(id)),
-                        })
+                        Ok(mapping::character_summary(context, &character))
                     },
                 )
                 .map_err(|failure: Failure| failure.0)

@@ -167,6 +167,18 @@ fn member_view(
     })
 }
 
+async fn listed_background(harness: &Harness, conversation_id: &str) -> Option<String> {
+    conversations_list(&harness.context, dto::ConversationsListRequest::default())
+        .await
+        .expect("list")
+        .items
+        .into_iter()
+        .find(|item| item.id == conversation_id)
+        .expect("listed")
+        .background
+        .map(|asset| asset.asset_id)
+}
+
 fn id<T: ToString>(value: T) -> Option<String> {
     Some(value.to_string())
 }
@@ -366,6 +378,7 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         id(background)
     );
     assert_eq!(live.background.source, group);
+    assert_eq!(listed_background(&harness, &chat).await, id(background));
     assert_eq!(
         live.scene,
         dto::SettingChoice {
@@ -444,6 +457,7 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
     )
     .await
     .expect("own settings");
+    assert_eq!(listed_background(&harness, &chat).await, None);
     assert!(
         own.revision > live.revision,
         "a settings change bumps the conversation"
