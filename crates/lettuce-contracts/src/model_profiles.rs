@@ -93,6 +93,31 @@ pub struct ModelDeleteRequest {
     pub client_operation_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ModelUsageRequest {
+    pub model_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ModelRole {
+    Default,
+    DynamicMemory,
+    GroupSpeaker,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ModelUsage {
+    pub characters: Vec<crate::CharacterReferenceView>,
+    pub groups: Vec<crate::GroupReferenceView>,
+    pub roles: Vec<ModelRole>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]

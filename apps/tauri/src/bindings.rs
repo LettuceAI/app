@@ -382,6 +382,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::model_profiles::model_get,
             commands::model_profiles::model_save,
             commands::model_profiles::model_delete,
+            commands::model_profiles::model_usage,
             commands::model_profiles::model_duplicate,
             commands::model_profiles::model_default_set,
             commands::model_profiles::provider_nanogpt_usage,

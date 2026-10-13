@@ -41,6 +41,16 @@ pub async fn model_delete(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn model_usage(
+    context: State<'_, ApiContextSlot>,
+    request: dto::ModelUsageRequest,
+) -> Result<dto::ModelUsage, ApiError> {
+    let context = context.snapshot()?;
+    api::model_usage(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn model_duplicate(
     context: State<'_, ApiContextSlot>,
     request: dto::ModelDuplicateRequest,

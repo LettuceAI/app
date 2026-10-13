@@ -231,6 +231,14 @@ pub struct CharacterReferenceView {
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupReferenceView {
+    pub id: String,
+    pub name: String,
+}
+
 /// The error every API call returns. `message` is English diagnostic text
 /// for logs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

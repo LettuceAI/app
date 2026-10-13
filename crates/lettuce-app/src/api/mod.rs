@@ -189,7 +189,8 @@ pub use providers::{provider_model_verify, provider_models};
 
 
 pub use models::profiles::{
-    model_default_set, model_delete, model_duplicate, model_get, model_save, models_list,
+    model_default_set, model_delete, model_duplicate, model_get, model_save, model_usage,
+    models_list,
 };
 
 pub use models::nanogpt::provider_nanogpt_usage;

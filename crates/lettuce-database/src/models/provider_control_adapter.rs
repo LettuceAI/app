@@ -328,6 +328,66 @@ pub(crate) fn delete_model_in(
     Ok((characters, groups))
 }
 
+/// Records that deleting a model would detach or reassign.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelUsageRecord {
+    pub characters: Vec<(String, String)>,
+    pub groups: Vec<(String, String)>,
+    pub default: bool,
+    pub dynamic_memory: bool,
+    pub group_speaker: bool,
+}
+
+impl Database {
+    pub fn model_usage(&self, id: ModelProfileId) -> Result<ModelUsageRecord, ModelRepositoryError> {
+        let connection = self
+            .connection()
+            .map_err(|_| ModelRepositoryError::Storage)?;
+        let id = id.to_string();
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM model_profiles WHERE id=?1)",
+                [&id],
+                |row| row.get(0),
+            )
+            .map_err(crate::model_error)?;
+        if !exists {
+            return Err(ModelRepositoryError::NotFound);
+        }
+        let pairs = |sql: &str| -> Result<Vec<(String, String)>, ModelRepositoryError> {
+            connection
+                .prepare(sql)
+                .map_err(crate::model_error)?
+                .query_map([&id], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map_err(crate::model_error)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(crate::model_error)
+        };
+        let characters = pairs(
+            "SELECT id,name FROM characters WHERE model_profile_id=?1 ORDER BY name,id",
+        )?;
+        let groups = pairs(
+            "SELECT g.id,g.name FROM groups g WHERE g.id IN (SELECT group_id FROM group_members WHERE model_profile_override_id=?1) ORDER BY g.name,g.id",
+        )?;
+        let (default, dynamic_memory, group_speaker) = connection
+            .query_row(
+                "SELECT COALESCE(default_model_profile_id=?1,0),COALESCE(dynamic_memory_model_profile_id=?1,0),COALESCE(group_speaker_model_profile_id=?1,0) FROM app_settings WHERE id=1",
+                [&id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(crate::model_error)?
+            .unwrap_or_default();
+        Ok(ModelUsageRecord {
+            characters,
+            groups,
+            default,
+            dynamic_memory,
+            group_speaker,
+        })
+    }
+}
+
 impl Database {
     pub fn remove_certificate_cas(
         &self,

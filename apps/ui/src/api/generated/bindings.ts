@@ -401,6 +401,7 @@ export const commands = {
 	modelGet: (request: ModelGetRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_get", { request })),
 	modelSave: (request: ModelSaveRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_save", { request })),
 	modelDelete: (request: ModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("model_delete", { request })),
+	modelUsage: (request: ModelUsageRequest) => typedError<ModelUsage, ApiError>(__TAURI_INVOKE("model_usage", { request })),
 	modelDuplicate: (request: ModelDuplicateRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_duplicate", { request })),
 	modelDefaultSet: (request: ModelDefaultSetRequest) => typedError<ModelDefaultView, ApiError>(__TAURI_INVOKE("model_default_set", { request })),
 	providerNanogptUsage: (request: ProviderNanoGptUsageRequest) => typedError<NanoGptUsageView, ApiError>(__TAURI_INVOKE("provider_nanogpt_usage", { request })),
@@ -2062,6 +2063,11 @@ export type GroupPage_Deserialize = {
 export type GroupPage_Serialize = {
 	items: GroupListItem_Serialize[],
 	next_cursor: string | null,
+};
+
+export type GroupReferenceView = {
+	id: string,
+	name: string,
 };
 
 export type GroupSaveRequest = GroupSaveRequest_Serialize | GroupSaveRequest_Deserialize;
@@ -5200,10 +5206,22 @@ export type ModelLoadStatus = "loading" | "retrying" | "loaded" | "failed";
 
 export type ModelModality = "text" | "image" | "audio";
 
+export type ModelRole = "default" | "dynamic_memory" | "group_speaker";
+
 export type ModelSaveRequest = {
 	model: ModelInput,
 	expected_revision: number | null,
 	client_operation_id: string,
+};
+
+export type ModelUsage = {
+	characters: CharacterReferenceView[],
+	groups: GroupReferenceView[],
+	roles: ModelRole[],
+};
+
+export type ModelUsageRequest = {
+	model_id: string,
 };
 
 export type ModelView = {

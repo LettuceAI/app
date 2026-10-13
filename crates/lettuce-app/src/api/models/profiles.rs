@@ -371,6 +371,43 @@ pub async fn model_duplicate(
     .await
 }
 
+pub async fn model_usage(
+    context: &ApiContext,
+    request: dto::ModelUsageRequest,
+) -> Result<dto::ModelUsage, ApiError> {
+    let id = parse_id(&request.model_id, "model_id")?;
+    context
+        .blocking(move |context| {
+            let usage = context
+                .backend()
+                .database()
+                .model_usage(id)
+                .map_err(model_error)?;
+            let roles = [
+                (usage.default, dto::ModelRole::Default),
+                (usage.dynamic_memory, dto::ModelRole::DynamicMemory),
+                (usage.group_speaker, dto::ModelRole::GroupSpeaker),
+            ]
+            .into_iter()
+            .filter_map(|(used, role)| used.then_some(role))
+            .collect();
+            Ok(dto::ModelUsage {
+                characters: usage
+                    .characters
+                    .into_iter()
+                    .map(|(id, name)| dto::CharacterReferenceView { id, name })
+                    .collect(),
+                groups: usage
+                    .groups
+                    .into_iter()
+                    .map(|(id, name)| dto::GroupReferenceView { id, name })
+                    .collect(),
+                roles,
+            })
+        })
+        .await
+}
+
 pub async fn model_delete(
     context: &ApiContext,
     request: dto::ModelDeleteRequest,

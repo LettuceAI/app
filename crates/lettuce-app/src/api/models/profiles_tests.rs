@@ -717,3 +717,206 @@ async fn rereview_catalog_unsupported_image_declaration_is_typed_and_writes_noth
     );
     std::fs::remove_dir_all(root).ok();
 }
+
+async fn usage_of(context: &crate::api::ApiContext, id: &str) -> dto::ModelUsage {
+    crate::api::model_usage(
+        context,
+        dto::ModelUsageRequest {
+            model_id: id.into(),
+        },
+    )
+    .await
+    .expect("usage")
+}
+
+#[tokio::test]
+async fn model_usage_reports_exactly_what_delete_changes() {
+    let h = harness(Reply::Text("Hello."));
+    let context = &h.context;
+    let used = crate::api::model_save(context, draft(context, "usage-used"))
+        .await
+        .expect("used");
+    let mut other_request = draft(context, "usage-other");
+    other_request.model.display_name = "Other".into();
+    let other = crate::api::model_save(context, other_request)
+        .await
+        .expect("other");
+
+    let character = crate::api::character_get(
+        context,
+        dto::CharacterGetRequest {
+            character_id: h.character_id.to_string(),
+        },
+    )
+    .await
+    .expect("character");
+    let copy = crate::api::character_duplicate(
+        context,
+        dto::CharacterDuplicateRequest {
+            character_id: character.id.clone(),
+            client_operation_id: "usage-copy".into(),
+        },
+    )
+    .await
+    .expect("copy");
+    let group = crate::api::group_save(
+        context,
+        dto::GroupSaveRequest {
+            group_id: None,
+            draft: dto::GroupDraft {
+                name: "Usage group".into(),
+                chat_mode: dto::GroupChatMode::Conversation,
+                persona: dto::LibraryPersonaSelection::Inherit,
+                speaker_selection: dto::SpeakerSelectionMethod::Heuristic,
+                memory_policy: dto::LibraryMemoryPolicy::Manual,
+                disable_character_lorebooks: false,
+                group_conversation_prompt_id: None,
+                group_roleplay_prompt_id: None,
+                presentation: character.draft.presentation.chat_appearance.clone(),
+                members: vec![
+                    dto::LibraryGroupMember {
+                        character_id: character.id.clone(),
+                        ordinal: 0,
+                        muted: false,
+                        model_profile_override: Some(used.id.clone()),
+                    },
+                    dto::LibraryGroupMember {
+                        character_id: copy.id.clone(),
+                        ordinal: 1,
+                        muted: false,
+                        model_profile_override: Some(used.id.clone()),
+                    },
+                ],
+                background_asset_id: None,
+                starting_scene: None,
+            },
+            expected_revision: None,
+            client_operation_id: "usage-group".into(),
+        },
+    )
+    .await
+    .expect("group");
+    let mut edited = character.draft.clone();
+    edited.defaults.model_profile_id = Some(used.id.clone());
+    crate::api::character_save(
+        context,
+        dto::CharacterSaveRequest {
+            character_id: Some(character.id.clone()),
+            draft: edited,
+            expected_revision: Some(character.revision),
+            client_operation_id: "usage-character".into(),
+        },
+    )
+    .await
+    .expect("character save");
+    let settings = crate::api::settings_get(context).await.expect("settings");
+    crate::api::settings_update(
+        context,
+        dto::SettingsUpdateRequest {
+            expected_revision: settings.revision,
+            patch: dto::SettingsPatch::Selections {
+                default_model: Some(dto::IdChange::Set {
+                    id: used.id.clone(),
+                }),
+                default_prompt: None,
+                dynamic_memory_model: Some(dto::IdChange::Set {
+                    id: used.id.clone(),
+                }),
+                group_speaker_model: None,
+            },
+        },
+    )
+    .await
+    .expect("selections");
+
+    let usage = usage_of(context, &used.id).await;
+    assert_eq!(
+        usage.characters,
+        vec![dto::CharacterReferenceView {
+            id: character.id.clone(),
+            name: character.draft.profile.name.clone(),
+        }]
+    );
+    assert_eq!(
+        usage.groups,
+        vec![dto::GroupReferenceView {
+            id: group.id.clone(),
+            name: "Usage group".into(),
+        }]
+    );
+    assert_eq!(
+        usage.roles,
+        vec![dto::ModelRole::Default, dto::ModelRole::DynamicMemory]
+    );
+    assert_eq!(
+        usage_of(context, &other.id).await,
+        dto::ModelUsage {
+            characters: Vec::new(),
+            groups: Vec::new(),
+            roles: Vec::new(),
+        }
+    );
+
+    crate::api::model_delete(
+        context,
+        dto::ModelDeleteRequest {
+            model_id: used.id.clone(),
+            expected_revision: used.revision,
+            client_operation_id: "usage-delete".into(),
+        },
+    )
+    .await
+    .expect("delete");
+    assert_eq!(
+        crate::api::model_usage(
+            context,
+            dto::ModelUsageRequest {
+                model_id: used.id.clone()
+            }
+        )
+        .await
+        .expect_err("deleted")
+        .code,
+        ApiErrorCode::NotFound
+    );
+    let after = crate::api::settings_get(context).await.expect("settings");
+    assert_ne!(after.default_model_profile_id, Some(used.id.clone()));
+    assert_eq!(after.dynamic_memory_model_profile_id, None);
+    assert_eq!(
+        crate::api::character_get(
+            context,
+            dto::CharacterGetRequest {
+                character_id: character.id
+            }
+        )
+        .await
+        .expect("character")
+        .draft
+        .defaults
+        .model_profile_id,
+        None
+    );
+    assert!(
+        crate::api::group_get(context, dto::GroupGetRequest { group_id: group.id })
+            .await
+            .expect("group")
+            .draft
+            .members
+            .iter()
+            .all(|member| member.model_profile_override.is_none())
+    );
+}
+
+#[tokio::test]
+async fn model_usage_of_an_unknown_model_is_not_found() {
+    let h = harness(Reply::Text("Hello."));
+    let error = crate::api::model_usage(
+        &h.context,
+        dto::ModelUsageRequest {
+            model_id: lettuce_types::ModelProfileId::new().to_string(),
+        },
+    )
+    .await
+    .expect_err("unknown");
+    assert_eq!(error.code, ApiErrorCode::NotFound);
+}

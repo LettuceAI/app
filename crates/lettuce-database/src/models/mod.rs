@@ -8,7 +8,7 @@ pub use local_llm_adapter::LlmGenerationMetric;
 pub use local_model_jobs_adapter::{LocalModelJobRecord, LocalModelOperation};
 
 pub(crate) mod provider_control_adapter;
-pub use provider_control_adapter::account_secret_records;
+pub use provider_control_adapter::{ModelUsageRecord, account_secret_records};
 #[cfg(test)]
 mod model_control_tests;
 
