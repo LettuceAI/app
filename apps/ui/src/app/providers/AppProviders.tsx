@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ThemeProvider } from "@lettuceai/crisp";
+import { ConfirmHost, ThemeProvider, Toaster } from "@lettuceai/crisp";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { MotionConfig } from "framer-motion";
 import type { i18n } from "i18next";
@@ -37,6 +37,8 @@ export function AppProviders({ i18n, api, queryClient, children }: AppProvidersP
       <QueryClientProvider client={queryClient}>
         <AppEventBridge api={api} queryClient={queryClient} />
         {children}
+        <Toaster />
+        <ConfirmHost />
       </QueryClientProvider>
     </ShellProviders>
   );

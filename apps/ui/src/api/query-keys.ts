@@ -11,6 +11,18 @@ export const queryKeys = {
     detail: (conversationId: string) => [...queryKeys.conversations.all, "detail", conversationId] as const,
     messages: (conversationId: string) => [...queryKeys.conversations.detail(conversationId), "messages"] as const,
   },
+  characters: {
+    all: ["characters"] as const,
+    list: () => [...queryKeys.characters.all, "list"] as const,
+  },
+  home: {
+    all: ["home"] as const,
+    characters: () => [...queryKeys.home.all, "characters"] as const,
+  },
+  media: {
+    all: ["media"] as const,
+    avatarGradient: (assetId: string) => [...queryKeys.media.all, "avatar-gradient", assetId] as const,
+  },
   settings: {
     all: ["settings"] as const,
     detail: () => ["settings", "detail"] as const,
@@ -47,7 +59,19 @@ type AppEventInvalidations = {
 
 /** Which cached queries an application event makes stale; each key invalidates everything under it. */
 export const appEventInvalidations: AppEventInvalidations = {
-  generation_settled: (event) => [queryKeys.conversations.lists(), queryKeys.conversations.detail(event.conversation_id)],
+  generation_settled: (event) => [
+    queryKeys.conversations.lists(),
+    queryKeys.home.characters(),
+    queryKeys.conversations.detail(event.conversation_id),
+  ],
+  conversation_changed: (event) => [
+    queryKeys.conversations.lists(),
+    queryKeys.home.characters(),
+    queryKeys.conversations.detail(event.conversation_id),
+  ],
+  conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
+  character_changed: () => [queryKeys.characters.all, queryKeys.home.characters()],
+  database_reloaded: () => [[]],
   settings_changed: (event) => event.section === "ui_state"
     ? [queryKeys.settings.all, queryKeys.app.status()]
     : [queryKeys.settings.all],

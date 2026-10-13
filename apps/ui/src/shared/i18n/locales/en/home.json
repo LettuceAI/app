@@ -1,0 +1,93 @@
+{
+  "title": "Chats",
+  "homeTitle": "Home",
+  "characters": "Characters",
+  "search": "Search chats",
+  "searchCharacters": "Search characters",
+  "count": "{{shown}} of {{total}}",
+  "noDescription": "No description yet",
+  "lastChat": "Last chat {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Continue chat",
+  "empty": {
+    "title": "No characters yet",
+    "body": "Create someone to talk to, or import a character card from your disk."
+  },
+  "noMatch": {
+    "title": "Nothing matches “{{query}}”",
+    "body": "Try a name, or a word from a character's description.",
+    "clear": "Clear search"
+  },
+  "view": {
+    "label": "View",
+    "current": "View: {{view}}",
+    "home": "Home",
+    "list": "List",
+    "hero": "Hero"
+  },
+  "layout": {
+    "title": "Layout",
+    "body": "How Chats shows your characters.",
+    "current": "Layout: {{layout}}",
+    "list": {
+      "title": "List",
+      "body": "Every character as a card, the way they look today"
+    },
+    "gallery": {
+      "title": "Gallery",
+      "body": "Portraits in a grid, for a big cast"
+    },
+    "hero": {
+      "title": "Hero",
+      "body": "Your latest chat up top, the rest below"
+    },
+    "recent": {
+      "title": "Recent",
+      "body": "Every chat, newest first, with the line it stopped on"
+    }
+  },
+  "recent": {
+    "today": "Today",
+    "week": "This week",
+    "earlier": "Earlier",
+    "empty": "No chats yet"
+  },
+  "menu": {
+    "cardStyle": "Card style",
+    "cardRow": "Row, switch to banner",
+    "cardBanner": "Banner, switch to row",
+    "export": "Export",
+    "exportBody": "As a character card",
+    "hide": "Hide from Chats",
+    "hideBody": "Stays in your library",
+    "delete": "Delete character",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteBody": "The character and their one-to-one chats are deleted. This cannot be undone.",
+    "noChats": "No chats yet"
+  },
+  "export": {
+    "title": "Export format",
+    "body": "Choose a format",
+    "done": "Saved as {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Unified Entity Card (.uec) format (recommended)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (latest spec)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (Tavern spec)."
+    }
+  },
+  "chatMenu": {
+    "rename": "Rename",
+    "renameTitle": "Rename chat",
+    "save": "Save",
+    "delete": "Delete chat",
+    "deleteTitle": "Delete {{title}}?",
+    "deleteBody": "The character stays; this story goes."
+  }
+}

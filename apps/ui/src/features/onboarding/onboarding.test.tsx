@@ -54,7 +54,7 @@ describe("gate", () => {
       path: "/welcome",
       calls: { appStatus: () => ({ status: "ok", data: completedStatus }) },
     });
-    await screen.findByText(completedStatus.version);
+    await screen.findByRole("heading", { name: "Home" });
     expect(history.location.pathname).toBe("/");
   });
 

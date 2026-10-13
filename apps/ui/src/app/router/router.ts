@@ -8,6 +8,7 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { ApiClient } from "@/api/client";
+import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
 import { WelcomeBackPage } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
@@ -35,15 +36,15 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: AppShell,
 });
 
-const statusRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: StatusPage });
+const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage });
 const welcomeRoute = createRoute({ getParentRoute: () => rootRoute, path: welcomePath, component: OnboardingPage });
 const welcomeBackRoute = createRoute({ getParentRoute: () => rootRoute, path: welcomeBackPath, component: WelcomeBackPage });
 const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups", component: NavigationPage });
 const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover", component: NavigationPage });
 const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library", component: NavigationPage });
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: NavigationPage });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: StatusPage });
 
-const routeTree = rootRoute.addChildren([statusRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;

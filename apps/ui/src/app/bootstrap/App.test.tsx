@@ -11,13 +11,13 @@ const completedStatus = { ...mockAppStatus, ui_state: { onboarding: { completed:
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
-async function renderApp(options: MockTransportOptions = {}, language: "en" | "cimode" = "en") {
+async function renderApp(options: MockTransportOptions = {}, language: "en" | "cimode" = "en", path = "/settings") {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       ...options,
       calls: { appStatus: () => ({ status: "ok", data: completedStatus }), ...options.calls },
     }),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries: [path] }),
     i18n: await createTestI18n(language),
   });
   await act(async () => {
