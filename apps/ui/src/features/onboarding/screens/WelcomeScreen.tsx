@@ -1,7 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import { Button, cn, icon } from "@lettuceai/crisp";
-import { lettuce } from "../assets";
+import { lettuceLogo } from "@/shared/assets";
 import { useOnboarding } from "../flow/context";
 
 export function WelcomeScreen({ onOtherOptions }: { onOtherOptions: () => void }) {
@@ -12,7 +12,7 @@ export function WelcomeScreen({ onOtherOptions }: { onOtherOptions: () => void }
   return (
     <div className={cn("flex h-full flex-col justify-end", !phone && "max-w-2xl")}>
       <span className="mb-6 flex items-center gap-2.5">
-        <img src={lettuce} alt="" className="h-8 w-8" />
+        <img src={lettuceLogo} alt="" className="h-8 w-8" />
         <span className="text-lg font-semibold tracking-tight text-fg">{common("app.name")}</span>
       </span>
       <h1 className={cn("font-bold tracking-[-0.03em] text-fg", phone ? "text-[2.5rem] leading-[1.08]" : "text-7xl leading-[1.02]")}>

@@ -8,7 +8,7 @@ import { Button, cn, fileSize, icon, motion as m, Surface, useCompactLayout } fr
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
 import type { RequiredModel } from "@/api/generated/bindings";
-import { lettuce } from "./assets";
+import { lettuceLogo } from "@/shared/assets";
 import { Backdrop } from "./components/Backdrop";
 import { StatusList, type StatusRow } from "./components/StatusList";
 import { finishedStages, migrationStages, stageCompletion, useLegacyMigration } from "./data/migration";
@@ -187,7 +187,7 @@ export function WelcomeBackPage() {
               transition={{ duration: 1.2, ease }}
             />
           </svg>
-          <img src={lettuce} alt="" className="absolute inset-0 m-auto h-10 w-10" />
+          <img src={lettuceLogo} alt="" className="absolute inset-0 m-auto h-10 w-10" />
         </div>
         <div className="mt-8">{title(t("migrate.title"))}</div>
         <p className="mt-3 text-lg text-fg-2">{t("migrate.body")}</p>
@@ -243,7 +243,7 @@ export function WelcomeBackPage() {
     ),
     upgrade: center(
       <>
-        <img src={lettuce} alt="" className="h-14 w-14" />
+        <img src={lettuceLogo} alt="" className="h-14 w-14" />
         <div className="mt-7">{title(t("upgrade.title"))}</div>
         <p className="mt-4 max-w-md text-lg leading-relaxed text-fg-2">
           {t("upgrade.body", { version: legacy?.type === "requires_legacy_upgrade" ? legacy.required_app_version : "" })}
