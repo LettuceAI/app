@@ -38,6 +38,9 @@ export const queryKeys = {
     all: ["models"] as const,
     list: () => [...queryKeys.models.all, "list"] as const,
   },
+  audioProviders: { all: ["audio-providers"] as const },
+  localModels: { all: ["local-models"] as const },
+  loras: { all: ["loras"] as const },
   embedding: {
     all: ["embedding"] as const,
     status: () => [...queryKeys.embedding.all, "status"] as const,
@@ -71,10 +74,11 @@ export const appEventInvalidations: AppEventInvalidations = {
   ],
   conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
   character_changed: () => [queryKeys.characters.all, queryKeys.home.characters()],
+  models_changed: () => [queryKeys.models.all, queryKeys.providers.all, queryKeys.settings.all, queryKeys.localModels.all],
   database_reloaded: () => [[]],
   settings_changed: (event) => event.section === "ui_state"
     ? [queryKeys.settings.all, queryKeys.app.status()]
-    : [queryKeys.settings.all],
+    : [queryKeys.settings.all, queryKeys.providers.all, queryKeys.audioProviders.all, queryKeys.models.all],
   content_filter_hit: () => [queryKeys.settings.filterLog()],
   job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id)],
 };

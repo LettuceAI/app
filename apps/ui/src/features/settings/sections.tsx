@@ -86,7 +86,7 @@ export const settingsGroups: readonly SettingsGroup[] = [
 ];
 
 /** The sections that have a page so far; the rest are listed but cannot be opened yet. */
-export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set(["about"]);
+export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set(["about", "providers", "models"]);
 
 export function isSettingsSection(value: string): value is SettingsSectionId {
   return (settingsSectionIds as readonly string[]).includes(value);

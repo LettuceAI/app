@@ -29,11 +29,11 @@ afterEach(() => {
 });
 
 describe("settings routes", () => {
-  it("lists every group and opens About, the only section built so far", async () => {
+  it("lists every group and opens About", async () => {
     const runtime = await renderAt("/settings", "android");
     expect(await screen.findByText("Intelligence")).toBeTruthy();
     expect(screen.getByText("Danger zone")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Providers/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /Providers/ }).hasAttribute("disabled")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: /About/ }));
     expect(await screen.findByText("Standard")).toBeTruthy();
     expect(runtime.router.state.location.pathname).toBe("/settings/about");
@@ -49,7 +49,7 @@ describe("settings routes", () => {
   });
 
   it("does not find a section that has no page, or one that does not exist", async () => {
-    await renderAt("/settings/providers");
+    await renderAt("/settings/prompts");
     expect(await screen.findByText("Nothing here")).toBeTruthy();
     cleanup();
     await renderAt("/settings/nope");
@@ -78,7 +78,7 @@ describe("settings routes", () => {
     expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
     expect(screen.queryByText("Chats you start show up here.")).toBeNull();
     expect(screen.getByRole("button", { name: "About" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("button", { name: "Providers" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Providers" }).hasAttribute("disabled")).toBe(false);
     expect(runtime.router.state.location.pathname).toBe("/settings/about");
   });
 
