@@ -131,3 +131,29 @@ it("boots when persisting the detected device locale fails", async () => {
   });
   expect(runtime.i18n).toBeTruthy();
 });
+
+
+it("does not show the startup connection screen when navigating with cached app status", async () => {
+  const appStatus = vi.fn(() => ({ status: "ok" as const, data: completedStatus }));
+  const runtime = await renderApp({ calls: { appStatus } });
+  await screen.findAllByText(completedStatus.version);
+  const pendingScreens: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node.textContent?.includes("Connecting to the app…")) pendingScreens.push(node.textContent);
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    await act(async () => { await runtime.router.navigate({ to: "/groups" }); });
+    await act(async () => { await runtime.router.navigate({ to: "/settings/$section", params: { section: "providers" } }); });
+    await act(async () => { await runtime.router.navigate({ to: "/settings/$section", params: { section: "models" } }); });
+    await act(async () => { await runtime.router.navigate({ to: "/settings/$section", params: { section: "about" } }); });
+    expect(pendingScreens).toEqual([]);
+    expect(appStatus).toHaveBeenCalledTimes(1);
+  } finally {
+    observer.disconnect();
+  }
+});

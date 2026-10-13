@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
+import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
@@ -26,13 +27,20 @@ export interface RouterContext {
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  beforeLoad: async ({ context, location }) => {
-    const status = await context.queryClient.ensureQueryData({
-      ...appStatusQuery(context.api),
-      revalidateIfStale: true,
-    });
-    const target = onboardingRedirect({ completed: onboardingCompleted(status), legacy: legacyMigrationOffered(status) }, location.pathname);
-    if (target) throw redirect({ to: target, replace: true });
+  beforeLoad: ({ context, location }) => {
+    const query = appStatusQuery(context.api);
+    const checkGate = (status: AppStatus) => {
+      const target = onboardingRedirect({ completed: onboardingCompleted(status), legacy: legacyMigrationOffered(status) }, location.pathname);
+      if (target) throw redirect({ to: target, replace: true });
+    };
+    const cached = context.queryClient.getQueryData(query.queryKey);
+    if (cached) {
+      // Keep navigation synchronous once connected. Refresh invalidated status in
+      // the background, just as ensureQueryData's revalidateIfStale did before.
+      void context.queryClient.prefetchQuery(query);
+      return checkGate(cached);
+    }
+    return context.queryClient.ensureQueryData(query).then(checkGate);
   },
   component: AppShell,
 });
@@ -66,7 +74,8 @@ export function createAppRouter(context: RouterContext, options: AppRouterOption
     defaultErrorComponent: RouteErrorState,
     defaultNotFoundComponent: RouteNotFound,
     defaultPendingComponent: PendingScreen,
-    defaultPendingMs: 0,
+    defaultPendingMs: 150,
+    defaultPendingMinMs: 0,
     ...(options.history ? { history: options.history } : {}),
   });
 }
