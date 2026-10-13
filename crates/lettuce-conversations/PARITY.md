@@ -16,6 +16,7 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 - The verified direct and group dynamic-memory tool scenarios are pinned in `fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`.
 - A group conversation keeps one prompt choice per chat mode, like legacy's two session columns picked by chat type (`old-code/src-tauri/src/storage_manager/group_sessions.rs:2453-2499`).
 - At least one member must stay active, as legacy refused muting every member (`group_sessions.rs:2316-2325`); the rule covers removing a member too.
+- A protected group profile document may retain an empty or all-muted stored cast after character deletion (`old-code/src-tauri/src/storage_manager/characters.rs:1088`). New group creation and live launch validation keep their membership requirements. Legacy history import restores its historical participants before validating the conversation, so deleted speakers never make their transcript disappear (user decision 2026-10-13).
 - Adding a character that was removed before enables its kept row, as legacy kept participation rows and reused them on re-add (`group_sessions.rs:1984-2028`).
 - The member list, muted flags and member models are owned separately, like legacy's `characterIds`, `mutedCharacterIds` and `characterModelOverrides` override keys (`group_sessions.rs:510-615`).
 

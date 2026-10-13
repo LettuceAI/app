@@ -156,3 +156,5 @@ files_inspect returns ChatTemplate and ModelFile for entity files, Lorebook for 
 The file command adapter exposes import_preview, import_commit and the seven entity export commands through one context snapshot each. It forwards FileSource and FileTarget DTOs, including format choices and typed warnings; the application owns parsing, replay, jobs, media and protected publication. Export commands take no operation IDs.
 
 Entity export targets are required on desktop and absent on Android. Android uses the existing pending-file writer in Download/LettuceAI, and the application returns its published URI without changing the plugin collision suffix.
+
+Desktop chrome uses Crisp's title bar. Windows and Linux create a transparent undecorated window so the UI can clip its rounded frame; macOS uses an opaque decorated window with an overlay title bar and native traffic lights. The main-window capability permits minimize, toggle maximize, close, dragging and edge resizing. A native restart is required after changing these window flags.
