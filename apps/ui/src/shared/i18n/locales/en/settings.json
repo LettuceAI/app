@@ -105,7 +105,18 @@
     }
   },
   "about": {
-    "information": "Information",
+    "information": "Details",
+    "website": "Website",
+    "github": "GitHub",
+    "discord": "Discord",
+    "linksUnavailable": "External links are not available in this build.",
+    "updates": "Software updates",
+    "updatesUnavailable": "Update checks are not available in this build.",
+    "checkNow": "Check now",
+    "automaticUpdates": "Check automatically",
+    "automaticUpdatesBody": "Not available yet",
+    "license": "Free and open source under the AGPL-3.0 licence.",
+    "credits": "Made by the LettuceAI community.",
     "version": "Version",
     "build": "Build",
     "channel": "Channel",
@@ -117,8 +128,7 @@
     "dev": "Development build",
     "release": "Stable release",
     "resetOnboarding": "Reset onboarding",
-    "versionLine": "Version {{version}} · {{build}}",
-    "tagline": "Your stories, your characters. Chats stay on your device, and you choose which AI writes the replies.",
+    "versionLine": "Version {{version}} · {{build}} build",
     "resetOnboardingBody": "Go through the first-run setup again"
   }
 }
