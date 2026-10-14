@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, CodeXml, Globe, MessagesSquare, RefreshCw, RotateCcw } from "lucide-react";
-import { Button, icon, IconButton, LoadingState, Switch, useCompactLayout } from "@lettuceai/crisp";
+import { ArrowLeft, ArrowUpRight, Bug, Check, ClipboardCopy, CodeXml, Globe, MessagesSquare, RefreshCw, RotateCcw } from "lucide-react";
+import { Button, confirm, icon, IconButton, ListGroup, ListRow, ListRowButton, LoadingState, Switch, useCompactLayout } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -19,19 +19,38 @@ export function AboutPage() {
   const compact = useCompactLayout();
   const tabs = compact || status.data?.platform === "android" || status.data?.platform === "ios";
   const [resetting, setResetting] = useState(false);
-  const links = [
-    { label: t("about.website"), icon: <Globe size={icon.sm} /> },
-    { label: t("about.github"), icon: <CodeXml size={icon.sm} /> },
-    { label: t("about.discord"), icon: <MessagesSquare size={icon.sm} /> },
-  ];
-  const details = status.data ? [
-    [t("about.version"), status.data.version],
-    [t("about.build"), t(`about.variant.${status.data.build_variant}`)],
-    [t("about.channel"), import.meta.env.DEV ? t("about.dev") : t("about.release")],
-    [t("about.platform"), common(`platform.${status.data.platform}`)],
-  ] : [];
+  const [copied, setCopied] = useState<"version" | "details" | null>(null);
+
+  const external = <ArrowUpRight size={icon.md} className="text-fg-4" />;
+  const facts = status.data
+    ? [
+        [t("about.version"), status.data.version],
+        [t("about.build"), t(`about.variant.${status.data.build_variant}`)],
+        [t("about.channel"), import.meta.env.DEV ? t("about.dev") : t("about.release")],
+        [t("about.platform"), common(`platform.${status.data.platform}`)],
+      ]
+    : [];
+
+  const copy = async (what: "version" | "details") => {
+    if (!status.data) return;
+    const text = what === "version" ? status.data.version : facts.map(([label, value]) => `${label}: ${value}`).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(what);
+      window.setTimeout(() => setCopied((current) => (current === what ? null : current)), 1600);
+    } catch {
+      setCopied(null);
+    }
+  };
 
   const resetOnboarding = async () => {
+    const sure = await confirm({
+      title: t("about.resetOnboardingTitle"),
+      message: t("about.resetOnboardingBody"),
+      confirmLabel: t("about.resetOnboarding"),
+      cancelLabel: common("actions.cancel"),
+    });
+    if (!sure) return;
     setResetting(true);
     try {
       await api.call("appUiStateUpdate", { patch: { onboarding: null, legacyMigration: null } });
@@ -44,79 +63,110 @@ export function AboutPage() {
 
   return (
     <main className="h-full min-h-0 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-6 pb-9">
-        <div className={`relative flex items-center justify-center ${tabs ? "pb-2 pt-4" : "pb-2 pt-10"}`}>
-          {tabs && (
-            <IconButton label={t("back")} shape="round" className="absolute left-0" onClick={() => void navigate({ to: "/settings" })}>
-              <ArrowLeft size={icon.lg} />
-            </IconButton>
-          )}
-          <h1 className="text-base font-medium text-fg-3">{t("sections.about.title")}</h1>
+      {tabs && (
+        <div className="flex items-center gap-2 px-4 pb-1 pt-4">
+          <IconButton label={t("back")} shape="round" onClick={() => void navigate({ to: "/settings" })}>
+            <ArrowLeft size={icon.lg} />
+          </IconButton>
+          <h1 className="text-lg font-semibold text-fg">{t("sections.about.title")}</h1>
         </div>
+      )}
+      <div className={`@container mx-auto w-full max-w-4xl pb-12 ${tabs ? "px-4 pt-4" : "px-10 pt-14"}`}>
         {status.isPending ? (
           <LoadingState label={common("status.loading")} />
         ) : status.isError ? (
           <FailureState error={status.error} onRetry={() => void status.refetch()} />
         ) : (
           <>
-            <header className={`flex flex-col items-center text-center ${tabs ? "pb-6 pt-4" : "pb-7 pt-5"}`}>
-              <img src={lettuceLogo} alt="" className={tabs ? "h-16 w-16" : "h-20 w-20"} />
-              <h2 className={`mt-4 font-semibold tracking-[-0.035em] text-fg ${tabs ? "text-3xl" : "text-4xl"}`}>{common("app.name")}</h2>
-              <p className="mt-1.5 text-sm tabular-nums text-fg-3">
-                {t("about.versionLine", { version: status.data.version, build: t(`about.variant.${status.data.build_variant}`) })}
-              </p>
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-1" aria-describedby="about-links-unavailable">
-                {links.map((link) => (
-                  <Button key={link.label} variant="ghost" size="sm" leading={link.icon} className="px-2.5 text-fg-2" disabled title={t("notYet")}>
-                    {link.label}
-                  </Button>
-                ))}
+            <header className="flex flex-col items-center gap-5 pb-10 text-center @[34rem]:flex-row @[34rem]:gap-7 @[34rem]:text-left">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[1.75rem] border border-line bg-surface-1 shadow-raised">
+                <img src={lettuceLogo} alt="" className="h-14 w-14" />
               </div>
-              <p id="about-links-unavailable" className="mt-1 text-xs text-fg-3">{t("about.linksUnavailable")}</p>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-4xl font-semibold tracking-[-0.035em] text-fg">{common("app.name")}</h2>
+                <p className="mt-2 max-w-md text-[15px] leading-relaxed text-fg-2">{t("about.tagline")}</p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2 @[34rem]:justify-start">
+                  <button
+                    type="button"
+                    onClick={() => void copy("version")}
+                    title={t("about.copyVersion")}
+                    className="flex h-8 items-center gap-2 rounded-full border border-line bg-surface-1 px-3 text-sm tabular-nums text-fg-2 transition-colors hover:bg-fill hover:text-fg"
+                  >
+                    {t("about.versionChip", { version: status.data.version })}
+                    {copied === "version" ? <Check size={icon.sm} className="text-accent" /> : <ClipboardCopy size={icon.sm} className="text-fg-3" />}
+                  </button>
+                  <span className="text-sm text-fg-3">
+                    {t("about.buildLine", { build: t(`about.variant.${status.data.build_variant}`), platform: common(`platform.${status.data.platform}`) })}
+                  </span>
+                </div>
+              </div>
             </header>
 
-            <div className="mx-auto max-w-lg">
-              <section aria-label={t("about.updates")} className="border-y border-line">
-                <div className="flex items-center gap-3 py-6">
+            <div className="space-y-7">
+              <ListGroup>
+                <div className="flex items-center gap-4 px-4 py-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-fill-2 text-fg-3">
+                    <RefreshCw size={icon.md} />
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-base font-medium text-fg">{t("about.updates")}</p>
-                    <p id="about-updates-unavailable" className="mt-1 text-xs leading-relaxed text-fg-3">{t("about.updatesUnavailable")}</p>
+                    <p id="about-updates-unavailable" className="mt-0.5 text-sm text-fg-3">{t("about.updatesUnavailable")}</p>
                   </div>
-                  <Button variant="secondary" size="sm" disabled leading={<RefreshCw size={icon.sm} />} aria-describedby="about-updates-unavailable">
-                    {t("about.checkNow")}
-                  </Button>
+                  <Button variant="secondary" size="sm" disabled aria-describedby="about-updates-unavailable">{t("about.checkNow")}</Button>
                 </div>
-                <div className="flex items-center justify-between gap-5 border-t border-line py-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-fg">{t("about.automaticUpdates")}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-fg-3">{t("about.automaticUpdatesBody")}</p>
-                  </div>
-                  <Switch checked={false} onChange={() => {}} disabled aria-label={t("about.automaticUpdates")} />
-                </div>
-              </section>
+                <ListRow
+                  title={t("about.automaticUpdates")}
+                  description={t("about.automaticUpdatesBody")}
+                  trailing={<Switch checked={false} onChange={() => {}} disabled aria-label={t("about.automaticUpdates")} />}
+                />
+                <ListRowButton title={t("about.whatsNew")} description={t("about.whatsNewBody", { version: status.data.version })} chevron={false} trailing={external} disabled />
+              </ListGroup>
 
-              <section aria-labelledby="about-details" className="pt-5">
-                <h3 id="about-details" className="mb-2 text-xs font-medium text-fg-3">{t("about.information")}</h3>
-                <dl>
-                  {details.map(([label, value]) => (
-                    <div key={label} className="flex items-baseline justify-between gap-5 py-2 text-sm">
-                      <dt className="text-fg-3">{label}</dt>
-                      <dd className="text-right tabular-nums text-fg-2">{value}</dd>
+              <div className="grid gap-7 @[48rem]:grid-cols-[minmax(0,1fr)_17rem] @[48rem]:items-start">
+                <ListGroup label={t("about.community")} aria-describedby="about-links-unavailable">
+                  <ListRowButton icon={<Globe size={icon.lg} />} title={t("about.website")} description={t("about.websiteBody")} chevron={false} trailing={external} disabled />
+                  <ListRowButton icon={<MessagesSquare size={icon.lg} />} title={t("about.discord")} description={t("about.discordBody")} chevron={false} trailing={external} disabled />
+                  <ListRowButton icon={<CodeXml size={icon.lg} />} title={t("about.sourceCode")} description={t("about.sourceCodeBody")} chevron={false} trailing={external} disabled />
+                  <ListRowButton icon={<Bug size={icon.lg} />} title={t("about.reportProblem")} description={t("about.reportProblemBody")} chevron={false} trailing={external} disabled />
+                  <p id="about-links-unavailable" className="px-4 py-3 text-xs text-fg-3">{t("about.linksUnavailable")}</p>
+                </ListGroup>
+
+                <div className="space-y-7">
+                  <section aria-labelledby="about-build" className="space-y-2">
+                    <h3 id="about-build" className="px-1 text-2xs font-medium uppercase tracking-[0.18em] text-fg-3">{t("about.information")}</h3>
+                    <div className="overflow-hidden rounded-xl border border-line bg-surface-1">
+                      <dl className="divide-y divide-line">
+                        {facts.map(([label, value]) => (
+                          <div key={label} className="flex items-baseline justify-between gap-4 px-4 py-2.5 text-sm">
+                            <dt className="text-fg-3">{label}</dt>
+                            <dd className="font-medium tabular-nums text-fg">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      <button
+                        type="button"
+                        onClick={() => void copy("details")}
+                        className="flex w-full items-center justify-center gap-2 border-t border-line px-4 py-2.5 text-sm text-fg-2 transition-colors hover:bg-fill hover:text-fg"
+                      >
+                        {copied === "details" ? <Check size={icon.sm} className="text-accent" /> : <ClipboardCopy size={icon.sm} />}
+                        {copied === "details" ? t("about.copied") : t("about.copyDetails")}
+                      </button>
                     </div>
-                  ))}
-                </dl>
-              </section>
+                  </section>
 
-              <div className="mt-5 flex items-center justify-between gap-4 border-t border-line py-5">
-                <p className="text-xs leading-relaxed text-fg-3">{t("about.resetOnboardingBody")}</p>
-                <Button variant="ghost" size="sm" leading={<RotateCcw size={icon.sm} />} loading={resetting} onClick={() => void resetOnboarding()}>
-                  {t("about.resetOnboarding")}
-                </Button>
+                  <ListGroup label={t("about.troubleshooting")}>
+                    <ListRowButton
+                      icon={<RotateCcw size={icon.lg} />}
+                      title={t("about.resetOnboarding")}
+                      description={t("about.resetOnboardingHint")}
+                      disabled={resetting}
+                      onClick={() => void resetOnboarding()}
+                    />
+                  </ListGroup>
+                </div>
               </div>
-              <footer className="border-t border-line pt-5 text-center text-xs leading-relaxed text-fg-3">
-                <p>{t("about.license")}</p>
-                <p className="mt-1">{t("about.credits")}</p>
-              </footer>
+
+              <p className="pt-2 text-center text-xs leading-relaxed text-fg-3">{t("about.credits")}</p>
             </div>
           </>
         )}

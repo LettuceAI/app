@@ -12,7 +12,7 @@ import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
-import { builtSettingsSections, isSettingsSection, SettingsIndexPage, SettingsSectionPage } from "@/features/settings";
+import { builtSettingsSections, isSettingsSection, ModelEditorPage, SettingsIndexPage, SettingsSectionPage } from "@/features/settings";
 import { WelcomeBackPage } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
 import { RouteNotFound } from "../error-boundaries/RouteNotFound";
@@ -61,7 +61,10 @@ const settingsSectionRoute = createRoute({
   component: SettingsSectionPage,
 });
 
-const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute, settingsSectionRoute]);
+const newModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/new", component: ModelEditorPage });
+const editModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/$modelId", component: ModelEditorPage });
+
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;

@@ -54,7 +54,7 @@ export function AppShell() {
   const inSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const settingsMode = inSettings && !tabs;
   const backToApp: NavDestination<Destination> = { id: "chats", label: t("navigation.backToApp"), icon: <ArrowLeft size={icon.lg} /> };
-  const section = pathname.startsWith("/settings/") ? pathname.slice("/settings/".length) : "";
+  const section = pathname.startsWith("/settings/") ? pathname.slice("/settings/".length).split("/")[0] ?? "" : "";
   useEffect(() => {
     if (settingsMode && pathname === "/settings") void navigate({ to: "/settings/$section", params: { section: "about" }, replace: true });
   }, [settingsMode, pathname, navigate]);
@@ -81,6 +81,7 @@ export function AppShell() {
         </>
       ) : (
         <CrispAppShell
+          className={!tabs && !sidebarOpen ? "[&_nav_.scrollbar-thin]:[scrollbar-width:none] [&_nav_.scrollbar-thin::-webkit-scrollbar]:hidden" : ""}
           items={tabs ? [...items, settings] : settingsMode ? [backToApp] : items}
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}

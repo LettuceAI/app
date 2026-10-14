@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -20,8 +21,6 @@ import {
 import {
   Badge,
   Button,
-  confirm,
-  Field,
   icon,
   IconButton,
   Input,
@@ -33,20 +32,19 @@ import {
   MenuItem,
   MenuTrigger,
   Page,
-  Select,
   Sheet,
   Text,
 } from "@lettuceai/crisp";
-import type { ModelView, ProviderAccountView, RemoteModelContract } from "@/api/generated/bindings";
+import type { ModelView, ProviderAccountView } from "@/api/generated/bindings";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { ApiClient } from "@/api/client";
 import { queryKeys } from "@/api/query-keys";
-import { defaultModelName, ModelMark, ProviderSelect, providerLogo, vendorOf } from "@/entities/provider";
-import { minimalModelConfig } from "@/entities/model";
+import { ModelMark, providerLogo, vendorOf } from "@/entities/provider";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
 import { ModelTools } from "./ModelTools";
+import { deleteModelWithUsage } from "./model-actions";
 
 const modelListViews = ["all", "provider", "providerColumns"] as const;
 type ModelListView = (typeof modelListViews)[number];
@@ -73,7 +71,7 @@ function isLocalProvider(account: ProviderAccountView | undefined): boolean {
 
 export function ModelsPage() {
   const { t } = useTranslation("settings");
-  const { t: common } = useTranslation("common");
+  const navigate = useNavigate();
   const api = useSettingsApi();
   const { phone, back } = useSettingsLayout();
   const { accounts } = useProviderData();
@@ -89,9 +87,7 @@ export function ModelsPage() {
     setMenuOpen(value !== null);
     if (value) setSelectedMenu(value);
   };
-  const [editor, setEditor] = useState<ModelView | "new" | null>(null);
   const [tool, setTool] = useState<"browse" | "runtime" | "loras" | null>(null);
-  const closingEditor = useClosingValue(editor);
   const closingTool = useClosingValue(tool);
   const provider = (model: ModelView) => accounts.data?.find((p) => p.id === model.provider_account_id);
   const query = search.trim().toLocaleLowerCase();
@@ -153,7 +149,7 @@ export function ModelsPage() {
           ) : undefined
         }
         chevron={!isDefault}
-        onClick={() => openMenu(model)}
+        onClick={() => void navigate({ to: "/settings/models/$modelId", params: { modelId: model.id } })}
         onContextMenu={(event) => {
           event.preventDefault();
           openMenu(model);
@@ -166,25 +162,7 @@ export function ModelsPage() {
       await fn();
       setMenu(null);
     });
-  const confirmDelete = (model: ModelView) => {
-    void (async () => {
-      const sure = await confirm({
-        title: t("models.deleteTitle", { name: model.display_name }),
-        message: t("models.deleteWarning"),
-        confirmLabel: t("manage.confirmDelete"),
-        cancelLabel: common("actions.cancel"),
-        destructive: true,
-      });
-      if (!sure) return;
-      run(() =>
-        api.call("modelDelete", {
-          model_id: model.id,
-          expected_revision: model.revision,
-          client_operation_id: crypto.randomUUID(),
-        }),
-      );
-    })();
-  };
+  const confirmDelete = (model: ModelView) => run(() => deleteModelWithUsage(api, model, t));
   const viewIcon =
     group === "providerColumns" ? (
       <Columns2 size={icon.lg} />
@@ -194,6 +172,8 @@ export function ModelsPage() {
       <List size={icon.lg} />
     );
   const viewTitle = group === "providerColumns" ? "models.providerColumns" : group === "provider" ? "models.byProvider" : "models.allModels";
+
+
   return (
     <>
       <Page
@@ -241,7 +221,7 @@ export function ModelsPage() {
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <Button variant="tonal" size="sm" className="ml-1" leading={<Plus size={icon.sm} />} onClick={() => setEditor("new")}>
+            <Button variant="tonal" size="sm" className="ml-1" leading={<Plus size={icon.sm} />} onClick={() => void navigate({ to: "/settings/models/new" })}>
               {t("manage.add")}
             </Button>
           </div>
@@ -366,7 +346,7 @@ export function ModelsPage() {
               title={t("manage.edit")}
               description={t("models.editHint")}
               onClick={() => {
-                setEditor(menu);
+                void navigate({ to: "/settings/models/$modelId", params: { modelId: menu.id } });
                 setMenu(null);
               }}
             />
@@ -439,15 +419,6 @@ export function ModelsPage() {
           </ListGroup>
         )}
       </Sheet>
-      {closingEditor.shown && (
-        <ModelEditor
-          key={closingEditor.session}
-          open={editor !== null}
-          model={closingEditor.shown === "new" ? null : closingEditor.shown}
-          accounts={accounts.data ?? []}
-          onClose={() => setEditor(null)}
-        />
-      )}
       {closingTool.shown && (
         <ModelTools key={closingTool.session} open={tool !== null} tool={closingTool.shown} onClose={() => setTool(null)} />
       )}
@@ -476,179 +447,4 @@ function modelCapabilities(model: ModelView): ModelCapability[] {
 function modelFileLabel(model: ModelView): string {
   const id = model.external_model_id;
   return /[\\/]/.test(id) ? (id.split(/[\\/]/).pop() ?? id) : id;
-}
-
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-type Scope = "text" | "image" | "audio";
-
-function scopesOf(modalities: string[] | null | undefined): Scope[] {
-  return (modalities ?? ["text"]).filter((m): m is Scope => ["text", "image", "audio"].includes(m));
-}
-
-function ModelEditor({
-  open,
-  model,
-  accounts,
-  onClose,
-}: {
-  open: boolean;
-  model: ModelView | null;
-  accounts: ProviderAccountView[];
-  onClose: () => void;
-}) {
-  const { phone } = useSettingsLayout();
-  const { t } = useTranslation("settings");
-  const api = useSettingsApi();
-  const action = useSettingsAction();
-  const [accountId, setAccountId] = useState(model?.provider_account_id ?? accounts[0]?.id ?? "");
-  const [externalId, setExternalId] = useState(model?.external_model_id ?? "");
-  const [name, setName] = useState(model?.display_name ?? "");
-  const local = isLocalProvider(accounts.find((p) => p.id === accountId));
-  const [threads, setThreads] = useState(String(record(model?.config.llama_cpp).threads ?? ""));
-  const [gpuLayers, setGpuLayers] = useState(String(record(model?.config.llama_cpp).gpu_layers ?? ""));
-  const [remote, setRemote] = useState<RemoteModelContract | null>(null);
-  const [temperature, setTemperature] = useState(String(record(model?.config.chat_parameters).temperature ?? ""));
-  const available = useQuery({
-    queryKey: queryKeys.providers.models(accountId),
-    queryFn: () => api.call("providerModels", { account_id: accountId }),
-    enabled: Boolean(accountId),
-  });
-  const save = () =>
-    action.mutate(async () => {
-      const config: Record<string, unknown> = structuredClone(model?.config ?? minimalModelConfig);
-      config.chat_parameters = {
-        ...record(record(config).chat_parameters),
-        temperature: temperature === "" ? null : Number(temperature),
-      };
-      if (local) {
-        config.llama_cpp = {
-          ...record(config.llama_cpp),
-          threads: threads === "" ? null : Number(threads),
-          gpu_layers: gpuLayers === "" ? null : Number(gpuLayers),
-        };
-      }
-      await api.call("modelSave", {
-        model: {
-          id: model?.id ?? null,
-          provider_account_id: accountId,
-          external_model_id: externalId.trim(),
-          display_name: name.trim() || externalId.trim(),
-          kind: model?.kind ?? "chat",
-          config,
-          input_scopes: remote ? scopesOf(remote.input_modalities) : (model?.input_scopes ?? ["text"]),
-          output_scopes: remote ? scopesOf(remote.output_modalities) : (model?.output_scopes ?? ["text"]),
-          remote_metadata: remote,
-        },
-        expected_revision: model?.revision ?? null,
-        client_operation_id: crypto.randomUUID(),
-      });
-      onClose();
-    });
-  const invalid =
-    !accountId ||
-    !externalId.trim() ||
-    (temperature !== "" && (!Number.isFinite(Number(temperature)) || Number(temperature) < 0));
-  return (
-    <Sheet
-      open={open}
-      onClose={() => {
-        if (!action.isPending) onClose();
-      }}
-      title={t(model ? "models.edit" : "models.new")}
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" disabled={action.isPending} onClick={onClose}>
-            {t("manage.cancel")}
-          </Button>
-          <Button loading={action.isPending} disabled={invalid} onClick={save}>
-            {t("manage.save")}
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        {action.isError && <FailureState error={action.error} size="sm" />}
-        {accounts.length === 0 && <Text>{t("models.noProviders")}</Text>}
-        <Field label={t("models.provider")}>
-          <ProviderSelect
-            value={accountId || null}
-            compact={phone}
-            aria-label={t("models.provider")}
-            providers={accounts.map((p) => ({
-              id: p.id,
-              name: p.label,
-              kind: p.provider_kind,
-              ...(p.base_url ? { meta: p.base_url } : {}),
-            }))}
-            onChange={(value) => {
-              if (value) {
-                setAccountId(value);
-                setRemote(null);
-                setExternalId("");
-              }
-            }}
-          />
-        </Field>
-        {available.isFetching && <LoadingState />}
-        {available.isError && (
-          <FailureState error={available.error} size="sm" onRetry={() => void available.refetch()} />
-        )}
-        {available.data && (
-          <Field label={t("models.catalog")}>
-            <Select
-              value={remote?.id ?? ""}
-              options={[
-                { value: "", label: t("models.manual") },
-                ...available.data.map((p) => ({ value: p.id, label: p.display_name ?? p.id })),
-              ]}
-              onChange={(e) => {
-                const selected = available.data.find((p) => p.id === e.target.value) ?? null;
-                setRemote(selected);
-                if (selected) {
-                  setExternalId(selected.id);
-                  setName(defaultModelName(selected.display_name, selected.id));
-                }
-              }}
-            />
-          </Field>
-        )}
-        <Field label={t("models.id")}>
-          <Input
-            value={externalId}
-            onChange={(e) => {
-              setExternalId(e.target.value);
-              setRemote(null);
-            }}
-          />
-        </Field>
-        <Field label={t("providers.label")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        {local && (
-          <>
-            <Field label={t("models.threads")}>
-              <Input type="number" min={1} step={1} value={threads} onChange={(e) => setThreads(e.target.value)} />
-            </Field>
-            <Field label={t("models.gpuLayers")}>
-              <Input type="number" min={0} step={1} value={gpuLayers} onChange={(e) => setGpuLayers(e.target.value)} />
-            </Field>
-          </>
-        )}
-        <Field label={t("models.temperature")} hint={t("models.temperatureHint")}>
-          <Input
-            type="number"
-            min={0}
-            step={0.1}
-            value={temperature}
-            onChange={(e) => setTemperature(e.target.value)}
-          />
-        </Field>
-      </div>
-    </Sheet>
-  );
 }

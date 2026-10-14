@@ -1,0 +1,1551 @@
+{
+  "chat_parameters": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 32,
+    "max_output_tokens": 256,
+    "context_length": 4096,
+    "frequency_penalty": 0.2,
+    "presence_penalty": 0.3,
+    "repetition_penalty": 1.1,
+    "reasoning_mode": "enabled",
+    "reasoning_effort": "high",
+    "reasoning_budget_tokens": 128,
+    "prompt_caching": {
+      "enabled": {
+        "retention": "one_hour"
+      }
+    },
+    "send_thinking_state": true,
+    "ollama": {
+      "num_ctx": 4096,
+      "num_predict": 256,
+      "num_keep": 10,
+      "num_batch": 32,
+      "num_gpu": 1,
+      "num_thread": 8,
+      "tfs_z": 1.0,
+      "typical_p": 0.9,
+      "min_p": 0.1,
+      "mirostat": 2,
+      "mirostat_tau": 5.0,
+      "mirostat_eta": 0.1,
+      "seed": 42,
+      "stop": [
+        "STOP"
+      ]
+    },
+    "openrouter": {
+      "pinned_provider": "provider"
+    }
+  },
+  "feature_parameters": {
+    "dynamic_memory": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "companion_memory": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "companion_soul_writer": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "lorebook_entry_generator": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "lorebook_generator": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "scene_writer": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "help_me_reply": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "group_speaker_selection": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    },
+    "creation_helper": {
+      "parameters": {
+        "temperature": {
+          "kind": "set",
+          "value": 0.7
+        },
+        "top_p": {
+          "kind": "set",
+          "value": 0.8
+        },
+        "top_k": {
+          "kind": "set",
+          "value": 32
+        },
+        "max_output_tokens": {
+          "kind": "set",
+          "value": 256
+        },
+        "context_length": {
+          "kind": "set",
+          "value": 4096
+        },
+        "frequency_penalty": {
+          "kind": "set",
+          "value": 0.2
+        },
+        "presence_penalty": {
+          "kind": "set",
+          "value": 0.3
+        },
+        "repetition_penalty": {
+          "kind": "set",
+          "value": 1.1
+        },
+        "reasoning_mode": {
+          "kind": "set",
+          "value": "enabled"
+        },
+        "reasoning_effort": {
+          "kind": "set",
+          "value": "high"
+        },
+        "reasoning_budget_tokens": {
+          "kind": "set",
+          "value": 128
+        },
+        "prompt_caching": {
+          "kind": "set",
+          "value": {
+            "enabled": {
+              "retention": "one_hour"
+            }
+          }
+        },
+        "send_thinking_state": {
+          "kind": "set",
+          "value": true
+        },
+        "ollama": {
+          "num_ctx": {
+            "kind": "set",
+            "value": 4096
+          },
+          "num_predict": {
+            "kind": "set",
+            "value": 256
+          },
+          "num_keep": {
+            "kind": "set",
+            "value": 10
+          },
+          "num_batch": {
+            "kind": "set",
+            "value": 32
+          },
+          "num_gpu": {
+            "kind": "set",
+            "value": 1
+          },
+          "num_thread": {
+            "kind": "set",
+            "value": 8
+          },
+          "tfs_z": {
+            "kind": "set",
+            "value": 1.0
+          },
+          "typical_p": {
+            "kind": "set",
+            "value": 0.9
+          },
+          "min_p": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "mirostat": {
+            "kind": "set",
+            "value": 2
+          },
+          "mirostat_tau": {
+            "kind": "set",
+            "value": 5.0
+          },
+          "mirostat_eta": {
+            "kind": "set",
+            "value": 0.1
+          },
+          "seed": {
+            "kind": "set",
+            "value": 42
+          },
+          "stop": {
+            "kind": "set",
+            "value": [
+              "STOP"
+            ]
+          }
+        }
+      },
+      "llama_sampler": {
+        "profile": "balanced",
+        "order": [
+          "penalties",
+          "top_k",
+          "top_p",
+          "min_p",
+          "typical",
+          "xtc",
+          "temp"
+        ],
+        "min_p": 0.1,
+        "typical_p": 0.9,
+        "repeat_penalty": 1.1,
+        "n_pen_range": 64,
+        "dry_multiplier": 0.8,
+        "dry_base": 1.75,
+        "dry_allowed_length": 2,
+        "dry_penalty_last_n": 128,
+        "dry_sequence_breakers": [
+          "\n"
+        ],
+        "xtc_probability": 0.1,
+        "xtc_threshold": 0.2,
+        "seed": 42,
+        "adaptive_target": 0.8,
+        "adaptive_decay": 0.9
+      }
+    }
+  },
+  "llama_cpp": {
+    "gpu_layers": 12,
+    "multi_gpu_enabled": true,
+    "gpu_device_ids": [
+      0,
+      1
+    ],
+    "gpu_distribution_mode": "manual",
+    "gpu_manual_layers": [
+      {
+        "device_id": 0,
+        "layers": 8
+      },
+      {
+        "device_id": 1,
+        "layers": 4
+      }
+    ],
+    "cpu_layers": 2,
+    "kv_placement": "split",
+    "main_gpu": 0,
+    "single_gpu_device_id": 1,
+    "priority_vram_limit_bytes": 1073741824,
+    "threads": 8,
+    "threads_batch": 4,
+    "rope_freq_base": 10000.0,
+    "rope_freq_scale": 1.0,
+    "offload_kqv": true,
+    "batch_size": 256,
+    "ubatch_size": 128,
+    "kv_type": null,
+    "kv_type_k": "q8_0",
+    "kv_type_v": "f16",
+    "flash_attention": "enabled",
+    "swa_full": true,
+    "chat_template_override": "Authored template",
+    "chat_template_preset": "chatml",
+    "raw_completion_fallback": false,
+    "strict_mode": true,
+    "mtp_enabled": true,
+    "mtp_placement": "cpu",
+    "mtp_draft_tokens": 4,
+    "dflash_enabled": true,
+    "dflash_draft_tokens": 4,
+    "dflash_min_probability": 0.5,
+    "streaming_enabled": true,
+    "force_gemma4_reasoning": true,
+    "sampler": {
+      "profile": "balanced",
+      "order": [
+        "penalties",
+        "top_k",
+        "top_p",
+        "min_p",
+        "typical",
+        "xtc",
+        "temp"
+      ],
+      "min_p": 0.1,
+      "typical_p": 0.9,
+      "repeat_penalty": 1.1,
+      "n_pen_range": 64,
+      "dry_multiplier": 0.8,
+      "dry_base": 1.75,
+      "dry_allowed_length": 2,
+      "dry_penalty_last_n": 128,
+      "dry_sequence_breakers": [
+        "\n"
+      ],
+      "xtc_probability": 0.1,
+      "xtc_threshold": 0.2,
+      "seed": 42,
+      "adaptive_target": 0.8,
+      "adaptive_decay": 0.9
+    },
+    "mmproj_path": "/models/mmproj.gguf",
+    "mtp_model_path": "/models/mtp.gguf",
+    "dflash_model_path": "/models/dflash.gguf"
+  },
+  "stable_diffusion": {
+    "steps": 27,
+    "cfg_scale": 7.0,
+    "sampler": "euler",
+    "scheduler": "normal",
+    "seed": 42,
+    "negative_prompt": "Authored negative",
+    "denoising_strength": 0.7,
+    "image_cfg_scale": 1.5,
+    "distilled_guidance": 3.5,
+    "eta": 0.1,
+    "flow_shift": 1.2,
+    "size": "512x512",
+    "vae_tiling_enabled": true,
+    "vae_tile_size_x": 256,
+    "vae_tile_size_y": 256,
+    "vae_tile_overlap": 0.25,
+    "auto_resize_reference_images": true,
+    "increase_reference_index": true,
+    "hires_enabled": true,
+    "hires_upscaler": "nearest",
+    "hires_scale": 2.0,
+    "hires_width": 1024,
+    "hires_height": 1024,
+    "hires_steps": 10,
+    "hires_denoising_strength": 0.4,
+    "slg_scale": 2.5,
+    "slg_layers": "7,8,9",
+    "slg_layer_start": 0.1,
+    "slg_layer_end": 0.8,
+    "cache_mode": "easycache",
+    "cache_option": "option",
+    "offload_mode": "mixed",
+    "extra_prompt": "Authored extra",
+    "prompt_writer_instructions": "Authored instructions",
+    "cpp": {
+      "profile_id": "flux-2",
+      "variant_id": "q4",
+      "max_reference_images": 4,
+      "supports_lora": true,
+      "supports_text_to_image": true,
+      "supports_image_edit": true,
+      "recommended_for_scenes": true,
+      "requires_reference_image": false,
+      "text_encoder_path": "/models/encoder.gguf",
+      "vae_path": "/models/vae.safetensors",
+      "vision_encoder_path": "/models/vision.gguf",
+      "runtime_release": "r1",
+      "runtime_asset": "linux.tar.gz",
+      "runtime_backend": "vulkan"
+    },
+    "base_loras": [
+      {
+        "path": "/loras/detail.safetensors",
+        "multiplier": 0.7,
+        "is_high_noise": false,
+        "keywords": [
+          "detail"
+        ]
+      }
+    ]
+  },
+  "capabilities": {
+    "format_version": 1,
+    "evidence": {
+      "source": "user_override",
+      "source_version": 1,
+      "observed_at": 5
+    },
+    "input_modalities": {
+      "text": "supported",
+      "image": "supported",
+      "audio": "unsupported"
+    },
+    "output_modalities": {
+      "text": "supported",
+      "image": "unsupported",
+      "audio": "unsupported"
+    },
+    "streaming": "supported",
+    "tools": "supported",
+    "structured_output": "supported",
+    "reasoning": "supported",
+    "prompt_cache": "supported",
+    "context_length": 4096,
+    "max_visible_output_tokens": 256,
+    "max_total_completion_tokens": 512,
+    "parameter_support": {
+      "temperature": "supported",
+      "top_p": "supported",
+      "top_k": "supported",
+      "frequency_penalty": "supported",
+      "presence_penalty": "supported",
+      "repetition_penalty": "supported"
+    }
+  }
+}

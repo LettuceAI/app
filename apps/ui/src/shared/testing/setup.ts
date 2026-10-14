@@ -15,6 +15,7 @@ Object.defineProperty(window, "matchMedia", {
   }),
 });
 Object.defineProperty(Element.prototype, "scrollTo", { value: () => {}, writable: true, configurable: true });
+Object.defineProperty(Element.prototype, "scrollIntoView", { value: () => {}, writable: true, configurable: true });
 
 class ResizeObserverStub {
   observe() {}

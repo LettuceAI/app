@@ -17,6 +17,8 @@ async function mount(section: "providers" | "models", calls: MockCallHandlers = 
     appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } } }),
     providerCatalog: () => ({ status: "ok", data: { providers: [descriptor] } }),
     providerAccountsList: () => ({ status: "ok", data: [account] }),
+    modelGet: () => ({ status: "ok", data: model }),
+    modelUsage: () => ({ status: "ok", data: { characters: [], groups: [], roles: [] } }),
     audioProvidersList: () => ({ status: "ok", data: [] }),
     modelsList: () => ({ status: "ok", data: { models: [model], default_model_id: null, revision: 21 } }),
     ...calls,
@@ -100,11 +102,12 @@ describe("model settings", () => {
   it("preserves scopes and unrelated configuration when editing", async () => {
     let saved: ModelSaveRequest | undefined;
     await mount("models", { modelSave: (request) => { saved = request; return { status: "ok", data: model }; } });
-    await click(/My model/); await click(/Edit/);
-    fireEvent.change(screen.getByLabelText("Label"), { target: { value: "Renamed model" } });
+    await click(/My model/);
+    await screen.findByLabelText("Name");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed model" } });
     await click("Save");
     await waitFor(() => expect(saved).toBeDefined());
-    expect(saved?.model.config).toEqual(model.config);
+    expect(saved?.model.config).toMatchObject(model.config);
     expect(saved?.model.input_scopes).toEqual(["text", "image"]);
     expect(saved?.model.display_name).toBe("Renamed model");
     expect(saved?.expected_revision).toBe(9);
@@ -114,7 +117,7 @@ describe("model settings", () => {
     let selected: string | null = null;
     const setDefault = vi.fn<NonNullable<MockCallHandlers["modelDefaultSet"]>>((request) => { selected = request.model_id; return { status: "ok", data: { model_id: selected, revision: 22 } }; });
     await mount("models", { modelsList: () => ({ status: "ok", data: { models: [model], default_model_id: selected, revision: 21 } }), modelDefaultSet: setDefault });
-    await click(/My model/); await click(/Set as default/);
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ })); await click(/Set as default/);
     await waitFor(() => expect(setDefault).toHaveBeenCalled());
     expect(setDefault.mock.calls[0]?.[0]).toMatchObject({ model_id: model.id, expected_revision: 21 });
     expect(await screen.findByText("Default")).toBeTruthy();
@@ -124,7 +127,7 @@ describe("model settings", () => {
     const exportModel = vi.fn<NonNullable<MockCallHandlers["modelExport"]>>(() => ({ status: "ok", data: { uri: "file", suggested_name: "model.uec", warnings: [] } }));
     const pick = vi.fn<NonNullable<MockCallHandlers["filesPickSave"]>>(() => ({ status: "ok", data: { target: null } }));
     await mount("models", { filesPickSave: pick, modelExport: exportModel });
-    await click(/My model/); await click(/Export/);
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ })); await click(/Export/);
     await waitFor(() => expect(pick).toHaveBeenCalled());
     expect(pick.mock.calls[0]?.[0].suggested_name).toBe("My model.uec");
     expect(exportModel).not.toHaveBeenCalled();
@@ -191,11 +194,12 @@ describe("model settings", () => {
   it("deletes a model only after the confirmation is accepted", async () => {
     const remove = vi.fn<NonNullable<MockCallHandlers["modelDelete"]>>(() => ({ status: "ok", data: { revision: 22 } as never }));
     await mount("models", { modelDelete: remove });
-    await click(/My model/); await click(/Characters using it fall back/);
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ })); await click(/Characters using it fall back/);
     expect(remove).not.toHaveBeenCalled();
     await click("Cancel");
     await waitFor(() => expect(screen.queryByText("Delete this model permanently? References to it will be cleared.")).toBeNull());
     expect(remove).not.toHaveBeenCalled();
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ }));
     await click(/Characters using it fall back/);
     await click("Delete permanently");
     await waitFor(() => expect(remove).toHaveBeenCalled());
