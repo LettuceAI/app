@@ -16,24 +16,14 @@ export const commands = {
 	syncForkResolve: (request: SyncForkResolveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("sync_fork_resolve", { request })),
 	legacyConflictDismiss: (request: LegacyConflictDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("legacy_conflict_dismiss", { request })),
 	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError>(__TAURI_INVOKE("llm_metrics_list", { request })),
-	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<{
-	id: string,
-	created_at: number,
-	summary: unknown,
-	samples: unknown[] | null,
-} | null, ApiError>(__TAURI_INVOKE("llm_metrics_get", { request })),
-	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<{
-	id: string,
-	created_at: number,
-	summary: unknown,
-	samples: unknown[] | null,
-} | null, ApiError>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
+	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<LlmMetricView | null, ApiError>(__TAURI_INVOKE("llm_metrics_get", { request })),
+	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<LlmMetricView | null, ApiError>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
 	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError>(__TAURI_INVOKE("llm_metrics_clear", { request })),
 	appUsageDays: () => typedError<AppUsageDaysView, ApiError>(__TAURI_INVOKE("app_usage_days")),
 	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError>(__TAURI_INVOKE("usage_clear_before", { request })),
-	usageQuery: (request: UsageQueryRequest) => typedError<UsagePage, ApiError>(__TAURI_INVOKE("usage_query", { request })),
+	usageQuery: (request: UsageQueryRequest_Deserialize) => typedError<UsagePage, ApiError>(__TAURI_INVOKE("usage_query", { request })),
 	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError>(__TAURI_INVOKE("usage_stats", { request })),
-	usageExportCsv: (request: UsageExportCsvRequest) => typedError<null, ApiError>(__TAURI_INVOKE("usage_export_csv", { request })),
+	usageExportCsv: (request: UsageExportCsvRequest_Deserialize) => typedError<null, ApiError>(__TAURI_INVOKE("usage_export_csv", { request })),
 	usageRecalculateCosts: (request: UsageRecalculateCostsRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("usage_recalculate_costs", { request })),
 	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
 	storageOptimize: (request: StorageOptimizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("storage_optimize", { request })),
@@ -66,7 +56,7 @@ export const commands = {
 	conversationBranchToCharacter: (request: ConversationGroupCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_to_character", { request })),
 	conversationBranchDirectToCharacter: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_direct_to_character", { request })),
 	conversationBranchDirectToGroup: (request: ConversationGroupCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_direct_to_group", { request })),
-	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
+	conversationMessages: (request: ConversationMessagesRequest_Deserialize) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
 	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
 	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("messages_delete_after", { request })),
@@ -94,30 +84,18 @@ export const commands = {
 	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot, ApiError>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
 	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
 	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError>(__TAURI_INVOKE("conversation_participation_stats", { request })),
-	messageCompanionEffect: (request: MessageCompanionEffectRequest) => typedError<{
-	status: CompanionEffectStatus,
-	summary: string | null,
-	relationship: RelationshipChange,
-	felt: EmotionChange,
-	expressed: EmotionChange,
-	blocked: EmotionChange,
-	signals_added: string[],
-	signals_removed: string[],
-	memories_added: string[],
-	memories_updated: string[],
-	memories_superseded: string[],
-} | null, ApiError>(__TAURI_INVOKE("message_companion_effect", { request })),
+	messageCompanionEffect: (request: MessageCompanionEffectRequest) => typedError<MessageCompanionEffect | null, ApiError>(__TAURI_INVOKE("message_companion_effect", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
 	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError>(__TAURI_INVOKE("conversation_launch_group", { request })),
 	conversationSettingsGet: (request: ConversationSettingsGetRequest) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_get", { request })),
-	conversationSettingsUpdate: (request: ConversationSettingsUpdateRequest) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_update", { request })),
+	conversationSettingsUpdate: (request: ConversationSettingsUpdateRequest_Deserialize) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_update", { request })),
 	conversationRename: (request: ConversationRenameRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_rename", { request })),
 	conversationArchive: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_archive", { request })),
 	conversationRestore: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_restore", { request })),
 	conversationDelete: (request: ConversationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("conversation_delete", { request })),
 	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_add", { request })),
 	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
-	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
+	charactersList: (request: CharactersListRequest_Deserialize) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
 	characterGet: (request: CharacterGetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_get", { request })),
 	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_save", { request })),
@@ -127,7 +105,7 @@ export const commands = {
 	characterMediaSet: (request: CharacterMediaSetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_media_set", { request })),
 	personaMediaSet: (request: PersonaMediaSetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_media_set", { request })),
 	personaGet: (request: PersonaGetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_get", { request })),
-	personasList: (request: PersonasListRequest) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
+	personasList: (request: PersonasListRequest_Deserialize) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
 	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_save", { request })),
 	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
 	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
@@ -194,8 +172,8 @@ export const commands = {
 	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
 	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
 	importPreview: (request: ImportPreviewRequest) => typedError<ImportPreview_Serialize, ApiError>(__TAURI_INVOKE("import_preview", { request })),
-	importCommit: (request: ImportCommitRequest) => typedError<ImportCommitResult, ApiError>(__TAURI_INVOKE("import_commit", { request })),
-	characterExport: (request: CharacterExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("character_export", { request })),
+	importCommit: (request: ImportCommitRequest_Deserialize) => typedError<ImportCommitResult, ApiError>(__TAURI_INVOKE("import_commit", { request })),
+	characterExport: (request: CharacterExportRequest_Deserialize) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("character_export", { request })),
 	personaExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("persona_export", { request })),
 	lorebookExport: (request: LorebookExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("lorebook_export", { request })),
 	promptExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("prompt_export", { request })),
@@ -228,7 +206,7 @@ export const commands = {
 	localModelsDirGet: () => typedError<LocalModelsDir, ApiError>(__TAURI_INVOKE("local_models_dir_get")),
 	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("local_models_dir_set", { request })),
 	localFileRunnability: (request: LocalFileRunnabilityRequest) => typedError<LocalFileRunnability, ApiError>(__TAURI_INVOKE("local_file_runnability", { request })),
-	imageGenerate: (request: ImageGenerateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_generate", { request })),
+	imageGenerate: (request: ImageGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_generate", { request })),
 	imageUpscale: (request: ImageUpscaleRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_upscale", { request })),
 	imageCapabilities: (request: ImageCapabilitiesRequest) => typedError<ImageCapabilities, ApiError>(__TAURI_INVOKE("image_capabilities", { request })),
 	playgroundHistoryList: (request: PlaygroundHistoryListRequest) => typedError<PlaygroundHistoryPage, ApiError>(__TAURI_INVOKE("playground_history_list", { request })),
@@ -243,7 +221,7 @@ export const commands = {
 	sdModelsInstalled: () => typedError<SdInstalledModels, ApiError>(__TAURI_INVOKE("sd_models_installed")),
 	sdModelUninstall: (request: SdModelUninstallRequest) => typedError<SdUninstallOutcome, ApiError>(__TAURI_INVOKE("sd_model_uninstall", { request })),
 	sdModelRepair: (request: SdModelRepairRequest) => typedError<SdModelRepaired, ApiError>(__TAURI_INVOKE("sd_model_repair", { request })),
-	sdRunnability: (request: SdRunnabilityRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_runnability", { request })),
+	sdRunnability: (request: SdRunnabilityRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_runnability", { request })),
 	sdBundleRunnability: (request: SdBundleRunnabilityRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_bundle_runnability", { request })),
 	sdComputePolicyGet: (request: SdRuntimeRef) => typedError<SdComputePolicyInfo, ApiError>(__TAURI_INVOKE("sd_compute_policy_get", { request })),
 	sdComputePolicySave: (request: SdComputePolicySaveRequest) => typedError<SdComputePolicyInfo, ApiError>(__TAURI_INVOKE("sd_compute_policy_save", { request })),
@@ -287,7 +265,7 @@ export const commands = {
 	hfAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("hf_auth_clear")),
 	memoryGet: (request: ConversationRequest) => typedError<MemoryView, ApiError>(__TAURI_INVOKE("memory_get", { request })),
 	memoryAdd: (request: MemoryAddRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_add", { request })),
-	memoryUpdate: (request: MemoryUpdateRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_update", { request })),
+	memoryUpdate: (request: MemoryUpdateRequest_Deserialize) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_update", { request })),
 	memoryDelete: (request: MemoryDeleteRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_delete", { request })),
 	memoryPin: (request: MemoryPinRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_pin", { request })),
 	memorySetTemperature: (request: MemoryTemperatureRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_set_temperature", { request })),
@@ -307,7 +285,7 @@ export const commands = {
 	companionNotesUpsert: (request: CompanionNoteUpsertRequest) => typedError<CompanionNoteView, ApiError>(__TAURI_INVOKE("companion_notes_upsert", { request })),
 	companionNotesDelete: (request: CompanionNoteDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("companion_notes_delete", { request })),
 	companionNotesActivePreview: (request: CompanionNotesActivePreviewRequest) => typedError<CompanionNoteView[], ApiError>(__TAURI_INVOKE("companion_notes_active_preview", { request })),
-	embeddingInstall: (request: EmbeddingInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("embedding_install", { request })),
+	embeddingInstall: (request: EmbeddingInstallRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("embedding_install", { request })),
 	companionEmotionInstall: () => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("companion_emotion_install")),
 	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError>(__TAURI_INVOKE("embedding_status")),
 	embeddingChoose: (request: EmbeddingModelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("embedding_choose", { request })),
@@ -333,7 +311,7 @@ export const commands = {
 	userVoicesList: () => typedError<UserVoiceView[], ApiError>(__TAURI_INVOKE("user_voices_list")),
 	userVoiceUpdate: (request: UserVoiceUpdateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_update", { request })),
 	userVoiceDelete: (request: UserVoiceRequest) => typedError<null, ApiError>(__TAURI_INVOKE("user_voice_delete", { request })),
-	asrLearningExport: (request: AsrLearningExportRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_learning_export", { request })),
+	asrLearningExport: (request: AsrLearningExportRequest_Deserialize) => typedError<null, ApiError>(__TAURI_INVOKE("asr_learning_export", { request })),
 	audioProviderCreate: (request: AudioProviderCreateRequest) => typedError<AudioProviderView, ApiError>(__TAURI_INVOKE("audio_provider_create", { request })),
 	userVoiceCreate: (request: UserVoiceCreateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_create", { request })),
 	asrVocabularySave: (request: AsrVocabularySaveRequest) => typedError<AsrVocabularyView, ApiError>(__TAURI_INVOKE("asr_vocabulary_save", { request })),
@@ -342,20 +320,11 @@ export const commands = {
 	asrSuggestionIgnore: (request: AsrSuggestionWriteRequest) => typedError<AsrIgnoredSuggestionView, ApiError>(__TAURI_INVOKE("asr_suggestion_ignore", { request })),
 	asrVoiceExampleSave: (request: AsrVoiceExampleSaveRequest) => typedError<AsrVoiceExampleView, ApiError>(__TAURI_INVOKE("asr_voice_example_save", { request })),
 	asrLearningImport: (request: AsrLearningImportRequest) => typedError<AsrLearningImportView, ApiError>(__TAURI_INVOKE("asr_learning_import", { request })),
-	asrVocabularyList: (request: AsrLearningFilter) => typedError<AsrVocabularyView[], ApiError>(__TAURI_INVOKE("asr_vocabulary_list", { request })),
-	asrCorrectionsList: (request: AsrLearningFilter) => typedError<AsrCorrectionView[], ApiError>(__TAURI_INVOKE("asr_corrections_list", { request })),
-	asrIgnoredSuggestionsList: (request: AsrLearningFilter) => typedError<AsrIgnoredSuggestionView[], ApiError>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
-	asrVoiceExamplesList: (request: AsrLearningFilter) => typedError<AsrVoiceExampleView[], ApiError>(__TAURI_INVOKE("asr_voice_examples_list", { request })),
-	asrVoiceExampleSuggest: (request: AsrLearningItemRequest) => typedError<{
-	wrong: string,
-	correct: string,
-	language: string | null,
-	scope: string,
-	confidence: number | null,
-	accepted_count: number,
-	rejected_count: number,
-	seen_count: number,
-} | null, ApiError>(__TAURI_INVOKE("asr_voice_example_suggest", { request })),
+	asrVocabularyList: (request: AsrLearningFilter_Deserialize) => typedError<AsrVocabularyView[], ApiError>(__TAURI_INVOKE("asr_vocabulary_list", { request })),
+	asrCorrectionsList: (request: AsrLearningFilter_Deserialize) => typedError<AsrCorrectionView[], ApiError>(__TAURI_INVOKE("asr_corrections_list", { request })),
+	asrIgnoredSuggestionsList: (request: AsrLearningFilter_Deserialize) => typedError<AsrIgnoredSuggestionView[], ApiError>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
+	asrVoiceExamplesList: (request: AsrLearningFilter_Deserialize) => typedError<AsrVoiceExampleView[], ApiError>(__TAURI_INVOKE("asr_voice_examples_list", { request })),
+	asrVoiceExampleSuggest: (request: AsrLearningItemRequest) => typedError<AsrSuggestionView | null, ApiError>(__TAURI_INVOKE("asr_voice_example_suggest", { request })),
 	asrVocabularyDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_vocabulary_delete", { request })),
 	asrCorrectionDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_correction_delete", { request })),
 	asrVoiceExampleDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_voice_example_delete", { request })),
@@ -372,23 +341,23 @@ export const commands = {
 	ttsVoiceDesignModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_voice_design_models", { request })),
 	ttsCacheStats: () => typedError<TtsCacheStats, ApiError>(__TAURI_INVOKE("tts_cache_stats")),
 	ttsCacheClear: () => typedError<null, ApiError>(__TAURI_INVOKE("tts_cache_clear")),
-	ttsSynthesize: (request: TtsSynthesizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("tts_synthesize", { request })),
-	messageSpeak: (request: MessageSpeakRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_speak", { request })),
+	ttsSynthesize: (request: TtsSynthesizeRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("tts_synthesize", { request })),
+	messageSpeak: (request: MessageSpeakRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_speak", { request })),
 	whisperCatalog: () => typedError<WhisperCatalog, ApiError>(__TAURI_INVOKE("whisper_catalog")),
 	whisperModelsList: () => typedError<WhisperInstalledModels, ApiError>(__TAURI_INVOKE("whisper_models_list")),
 	whisperDownload: (request: WhisperModelRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("whisper_download", { request })),
 	whisperDelete: (request: WhisperModelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_delete", { request })),
-	whisperPreload: (request: WhisperPreloadRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_preload", { request })),
+	whisperPreload: (request: WhisperPreloadRequest_Deserialize) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_preload", { request })),
 	whisperClearCache: () => typedError<WhisperCacheCleared, ApiError>(__TAURI_INVOKE("whisper_clear_cache")),
 	whisperDictationModelSet: (request: DictationModelSetRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_dictation_model_set", { request })),
-	transcribeFile: (request: TranscribeFileRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("transcribe_file", { request })),
+	transcribeFile: (request: TranscribeFileRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("transcribe_file", { request })),
 	dictationStart: (request: DictationStartRequest) => typedError<DictationStarted, ApiError>(__TAURI_INVOKE("dictation_start", { request })),
-	dictationStop: (request: DictationStopRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("dictation_stop", { request })),
+	dictationStop: (request: DictationStopRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("dictation_stop", { request })),
 	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("dictation_cancel", { request })),
 	certificatesList: () => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_list")),
 	providerAccountSave: (request: ProviderAccountSaveRequest) => typedError<ProviderAccountView, ApiError>(__TAURI_INVOKE("provider_account_save", { request })),
 	providerAccountDelete: (request: ProviderAccountDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("provider_account_delete", { request })),
-	providerModels: (request: ProviderModelsRequest) => typedError<RemoteModelContract[], ApiError>(__TAURI_INVOKE("provider_models", { request })),
+	providerModels: (request: ProviderModelsRequest) => typedError<RemoteModelContract_Serialize[], ApiError>(__TAURI_INVOKE("provider_models", { request })),
 	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError>(__TAURI_INVOKE("provider_model_verify", { request })),
 	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_import", { request })),
 	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_remove", { request })),
@@ -399,7 +368,7 @@ export const commands = {
 	contentFilterClear: () => typedError<null, ApiError>(__TAURI_INVOKE("content_filter_clear")),
 	modelsList: () => typedError<ModelsView, ApiError>(__TAURI_INVOKE("models_list")),
 	modelGet: (request: ModelGetRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_get", { request })),
-	modelSave: (request: ModelSaveRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_save", { request })),
+	modelSave: (request: ModelSaveRequest_Deserialize) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_save", { request })),
 	modelDelete: (request: ModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("model_delete", { request })),
 	modelUsage: (request: ModelUsageRequest) => typedError<ModelUsage, ApiError>(__TAURI_INVOKE("model_usage", { request })),
 	modelDuplicate: (request: ModelDuplicateRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_duplicate", { request })),
@@ -416,7 +385,7 @@ export const commands = {
 
 /** Events */
 export const events = {
-	appEvent: makeEvent<AppEvent>("app-event"),
+	appEvent: makeEvent<AppEvent, AppEvent>("app-event"),
 };
 
 /* Types */
@@ -586,15 +555,30 @@ export type AsrIgnoredSuggestionView = {
 	updated_at: number,
 };
 
-export type AsrLearningExportRequest = {
+export type AsrLearningExportRequest = AsrLearningExportRequest_Serialize | AsrLearningExportRequest_Deserialize;
+
+export type AsrLearningExportRequest_Deserialize = {
 	target: FileTarget,
-	filter?: AsrLearningFilter,
+	filter?: AsrLearningFilter_Deserialize,
 };
 
-export type AsrLearningFilter = {
+export type AsrLearningExportRequest_Serialize = {
+	target: FileTarget,
+	filter: AsrLearningFilter_Serialize,
+};
+
+export type AsrLearningFilter = AsrLearningFilter_Serialize | AsrLearningFilter_Deserialize;
+
+export type AsrLearningFilter_Deserialize = {
 	language?: string | null,
 	scopes?: string[],
 	user_approved_only?: boolean | null,
+};
+
+export type AsrLearningFilter_Serialize = {
+	language: string | null,
+	scopes: string[],
+	user_approved_only: boolean | null,
 };
 
 export type AsrLearningImportRequest = {
@@ -913,9 +897,18 @@ export type CharacterDuplicateRequest = {
 
 export type CharacterExportFormat = "uec" | "v3" | "v2";
 
-export type CharacterExportRequest = {
+export type CharacterExportRequest = CharacterExportRequest_Serialize | CharacterExportRequest_Deserialize;
+
+export type CharacterExportRequest_Deserialize = {
 	id: string,
 	include_learned?: boolean,
+	format: CharacterExportFormat,
+	target: FileTarget | null,
+};
+
+export type CharacterExportRequest_Serialize = {
+	id: string,
+	include_learned: boolean,
 	format: CharacterExportFormat,
 	target: FileTarget | null,
 };
@@ -1041,7 +1034,17 @@ export type CharacterView_Serialize = {
 	updated_at: number,
 };
 
-export type CharactersListRequest = {
+export type CharactersListRequest = CharactersListRequest_Serialize | CharactersListRequest_Deserialize;
+
+export type CharactersListRequest_Deserialize = {
+	cursor: string | null,
+	limit: number | null,
+	query?: string | null,
+	sort?: LibrarySort | null,
+	search_nickname?: boolean,
+};
+
+export type CharactersListRequest_Serialize = {
 	cursor: string | null,
 	limit: number | null,
 	query?: string | null,
@@ -1487,10 +1490,29 @@ export type ConversationMessagesAroundRequest = {
  *  with `before_cursor` older ones, with `after_cursor` newer ones (at most
  *  one cursor).
  */
-export type ConversationMessagesRequest = {
+export type ConversationMessagesRequest = ConversationMessagesRequest_Serialize | ConversationMessagesRequest_Deserialize;
+
+/**
+ *  A page of the selected branch: without cursors the newest messages,
+ *  with `before_cursor` older ones, with `after_cursor` newer ones (at most
+ *  one cursor).
+ */
+export type ConversationMessagesRequest_Deserialize = {
 	conversation_id: string,
 	before_cursor: string | null,
 	after_cursor?: string | null,
+	limit: number | null,
+};
+
+/**
+ *  A page of the selected branch: without cursors the newest messages,
+ *  with `before_cursor` older ones, with `after_cursor` newer ones (at most
+ *  one cursor).
+ */
+export type ConversationMessagesRequest_Serialize = {
+	conversation_id: string,
+	before_cursor: string | null,
+	after_cursor: string | null,
 	limit: number | null,
 };
 
@@ -1603,7 +1625,10 @@ export type ConversationSettingsGetRequest = {
 };
 
 /**  The fields a settings update changes; an absent field is kept. */
-export type ConversationSettingsPatch = {
+export type ConversationSettingsPatch = ConversationSettingsPatch_Serialize | ConversationSettingsPatch_Deserialize;
+
+/**  The fields a settings update changes; an absent field is kept. */
+export type ConversationSettingsPatch_Deserialize = {
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
 	roleplay_prompt: ChoiceChange | null,
@@ -1623,14 +1648,47 @@ export type ConversationSettingsPatch = {
 	reset_member_models?: boolean,
 };
 
-export type ConversationSettingsUpdateRequest = {
+/**  The fields a settings update changes; an absent field is kept. */
+export type ConversationSettingsPatch_Serialize = {
+	persona: ChoiceChange | null,
+	prompt: ChoiceChange | null,
+	roleplay_prompt: ChoiceChange | null,
+	lorebooks: LorebooksChange | null,
+	model: IdChange | null,
+	background: BackgroundChange | null,
+	scene: IdChange | null,
+	/**  Trimmed; blank removes the note. */
+	author_note: string | null,
+	speaker_selection: SpeakerSelectionChange | null,
+	memory: MemoryModeChange | null,
+	chat_mode: ChatModeChange | null,
+	disable_character_lorebooks: FlagChange | null,
+	/**  The members and their muted flags follow the group again. */
+	reset_members: boolean,
+	/**  The members' models follow the group again. */
+	reset_member_models: boolean,
+};
+
+export type ConversationSettingsUpdateRequest = ConversationSettingsUpdateRequest_Serialize | ConversationSettingsUpdateRequest_Deserialize;
+
+export type ConversationSettingsUpdateRequest_Deserialize = {
 	conversation_id: string,
 	/**
 	 *  The settings revision the change was made against; none when the chat
 	 *  has no settings of its own yet.
 	 */
 	expected_settings_revision: number | null,
-	patch: ConversationSettingsPatch,
+	patch: ConversationSettingsPatch_Deserialize,
+};
+
+export type ConversationSettingsUpdateRequest_Serialize = {
+	conversation_id: string,
+	/**
+	 *  The settings revision the change was made against; none when the chat
+	 *  has no settings of its own yet.
+	 */
+	expected_settings_revision: number | null,
+	patch: ConversationSettingsPatch_Serialize,
 };
 
 /**
@@ -1783,10 +1841,26 @@ export type DictationStarted = {
  *  Ends a capture and transcribes it. `model_id` defaults to the dictation
  *  model.
  */
-export type DictationStopRequest = {
+export type DictationStopRequest = DictationStopRequest_Serialize | DictationStopRequest_Deserialize;
+
+/**
+ *  Ends a capture and transcribes it. `model_id` defaults to the dictation
+ *  model.
+ */
+export type DictationStopRequest_Deserialize = {
 	capture_id: string,
 	model_id: string | null,
-	options?: TranscribeOptions,
+	options?: TranscribeOptions_Deserialize,
+};
+
+/**
+ *  Ends a capture and transcribes it. `model_id` defaults to the dictation
+ *  model.
+ */
+export type DictationStopRequest_Serialize = {
+	capture_id: string,
+	model_id: string | null,
+	options: TranscribeOptions_Serialize,
 };
 
 /**  An image model file on disk below the image models folders. */
@@ -1818,9 +1892,16 @@ export type EmbeddingComparison = {
 
 export type EmbeddingFamily = "lettuce_emb_v4" | "lettuce_eidos_v5";
 
-export type EmbeddingInstallRequest = {
+export type EmbeddingInstallRequest = EmbeddingInstallRequest_Serialize | EmbeddingInstallRequest_Deserialize;
+
+export type EmbeddingInstallRequest_Deserialize = {
 	family: EmbeddingFamily,
 	enable_dynamic_memory?: boolean,
+};
+
+export type EmbeddingInstallRequest_Serialize = {
+	family: EmbeddingFamily,
+	enable_dynamic_memory: boolean,
 };
 
 export type EmbeddingModelRequest = {
@@ -2665,14 +2746,20 @@ export type ImageFailureKind = "cancelled" | "local_unsupported" | "outdated_reg
  *  One image generation. `request_id` is the idempotency key: repeating the
  *  request returns its job, another request under the same id is `Conflict`.
  */
-export type ImageGenerateRequest = {
+export type ImageGenerateRequest = ImageGenerateRequest_Serialize | ImageGenerateRequest_Deserialize;
+
+/**
+ *  One image generation. `request_id` is the idempotency key: repeating the
+ *  request returns its job, another request under the same id is `Conflict`.
+ */
+export type ImageGenerateRequest_Deserialize = {
 	request_id: string,
 	model_id: string,
 	prompt: string,
-	settings?: ImageSettings,
+	settings?: ImageSettings_Deserialize,
 	input_images?: string[],
 	mask_image?: string | null,
-	loras?: ImageLora[],
+	loras?: ImageLora_Deserialize[],
 	size?: string | null,
 	quality?: string | null,
 	style?: string | null,
@@ -2682,11 +2769,41 @@ export type ImageGenerateRequest = {
 	output: ImageOutput,
 };
 
-export type ImageLora = {
+/**
+ *  One image generation. `request_id` is the idempotency key: repeating the
+ *  request returns its job, another request under the same id is `Conflict`.
+ */
+export type ImageGenerateRequest_Serialize = {
+	request_id: string,
+	model_id: string,
+	prompt: string,
+	settings: ImageSettings_Serialize,
+	input_images: string[],
+	mask_image: string | null,
+	loras: ImageLora_Serialize[],
+	size: string | null,
+	quality: string | null,
+	style: string | null,
+	count: number | null,
+	source: ImageRequestSource,
+	attribution: ImageAttribution,
+	output: ImageOutput,
+};
+
+export type ImageLora = ImageLora_Serialize | ImageLora_Deserialize;
+
+export type ImageLora_Deserialize = {
 	path: string,
 	multiplier: number | null,
 	is_high_noise?: boolean,
 	keywords?: string[],
+};
+
+export type ImageLora_Serialize = {
+	path: string,
+	multiplier: number | null,
+	is_high_noise: boolean,
+	keywords: string[],
 };
 
 export type ImageOffloadMode = "auto" | "gpu" | "mixed";
@@ -2716,7 +2833,14 @@ export type ImageRequestSource = "direct" | "playground" | "creation_helper";
  *  out keeps the model's value. `base_loras` replaces the model's base LoRAs
  *  (an empty list drops them).
  */
-export type ImageSettings = {
+export type ImageSettings = ImageSettings_Serialize | ImageSettings_Deserialize;
+
+/**
+ *  The sampling settings a request lays over its model's own; a field left
+ *  out keeps the model's value. `base_loras` replaces the model's base LoRAs
+ *  (an empty list drops them).
+ */
+export type ImageSettings_Deserialize = {
 	steps?: number | null,
 	cfg_scale?: number | null,
 	sampler?: string | null,
@@ -2751,7 +2875,50 @@ export type ImageSettings = {
 	offload_mode?: ImageOffloadMode | null,
 	extra_prompt?: string | null,
 	prompt_writer_instructions?: string | null,
-	base_loras?: ImageLora[] | null,
+	base_loras?: ImageLora_Deserialize[] | null,
+};
+
+/**
+ *  The sampling settings a request lays over its model's own; a field left
+ *  out keeps the model's value. `base_loras` replaces the model's base LoRAs
+ *  (an empty list drops them).
+ */
+export type ImageSettings_Serialize = {
+	steps: number | null,
+	cfg_scale: number | null,
+	sampler: string | null,
+	scheduler: string | null,
+	seed: number | null,
+	negative_prompt: string | null,
+	denoising_strength: number | null,
+	image_cfg_scale: number | null,
+	distilled_guidance: number | null,
+	eta: number | null,
+	flow_shift: number | null,
+	size: string | null,
+	vae_tiling_enabled: boolean | null,
+	vae_tile_size_x: number | null,
+	vae_tile_size_y: number | null,
+	vae_tile_overlap: number | null,
+	auto_resize_reference_images: boolean | null,
+	increase_reference_index: boolean | null,
+	hires_enabled: boolean | null,
+	hires_upscaler: string | null,
+	hires_scale: number | null,
+	hires_width: number | null,
+	hires_height: number | null,
+	hires_steps: number | null,
+	hires_denoising_strength: number | null,
+	slg_scale: number | null,
+	slg_layers: string | null,
+	slg_layer_start: number | null,
+	slg_layer_end: number | null,
+	cache_mode: ImageCacheMode | null,
+	cache_option: string | null,
+	offload_mode: ImageOffloadMode | null,
+	extra_prompt: string | null,
+	prompt_writer_instructions: string | null,
+	base_loras: ImageLora_Serialize[] | null,
 };
 
 /**
@@ -2776,9 +2943,16 @@ export type ImageUpscaled = {
 	history_id: string | null,
 };
 
-export type ImportBundledLorebook = {
+export type ImportBundledLorebook = ImportBundledLorebook_Serialize | ImportBundledLorebook_Deserialize;
+
+export type ImportBundledLorebook_Deserialize = {
 	lorebook: ImportLorebookMetadata,
 	entries?: ImportLorebookEntry[],
+};
+
+export type ImportBundledLorebook_Serialize = {
+	lorebook: ImportLorebookMetadata,
+	entries: ImportLorebookEntry[],
 };
 
 export type ImportCharacterContent = ImportCharacterContent_Serialize | ImportCharacterContent_Deserialize;
@@ -2800,11 +2974,11 @@ export type ImportCharacterContent_Deserialize = {
 	defaultModelId: string | null,
 	mode?: string | null,
 	companion?: unknown | null,
-	companionScheduledNotes?: ImportScheduledNote[],
-	companionSharedMemory?: ImportSharedMemory | null,
+	companionScheduledNotes?: ImportScheduledNote_Deserialize[],
+	companionSharedMemory?: ImportSharedMemory_Deserialize | null,
 	memoryType?: string | null,
 	activeLorebookIds?: string[],
-	lorebooks?: ImportBundledLorebook[],
+	lorebooks?: ImportBundledLorebook_Deserialize[],
 	promptTemplateId: string | null,
 	voiceConfig: unknown | null,
 	voiceAutoplay: boolean | null,
@@ -2834,13 +3008,13 @@ export type ImportCharacterContent_Serialize = {
 	scenes: ImportScene_Serialize[],
 	defaultSceneId: string | null,
 	defaultModelId: string | null,
-	mode?: string | null,
-	companion?: unknown | null,
-	companionScheduledNotes?: ImportScheduledNote[],
-	companionSharedMemory?: ImportSharedMemory | null,
+	mode?: string,
+	companion?: unknown,
+	companionScheduledNotes?: ImportScheduledNote_Serialize[],
+	companionSharedMemory?: ImportSharedMemory_Serialize,
 	memoryType: string | null,
 	activeLorebookIds: string[],
-	lorebooks: ImportBundledLorebook[],
+	lorebooks: ImportBundledLorebook_Serialize[],
 	promptTemplateId: string | null,
 	voiceConfig: unknown | null,
 	voiceAutoplay: boolean | null,
@@ -2852,13 +3026,22 @@ export type ImportCharacterContent_Serialize = {
 	customTextColor: string | null,
 	customTextSecondary: string | null,
 	chatTemplates: ImportStarter_Serialize[],
-	defaultChatTemplateId?: string | null,
+	defaultChatTemplateId?: string,
 };
 
-export type ImportCommitRequest = {
+export type ImportCommitRequest = ImportCommitRequest_Serialize | ImportCommitRequest_Deserialize;
+
+export type ImportCommitRequest_Deserialize = {
 	source: FileSource,
 	digest: string,
-	options: ImportOptions,
+	options: ImportOptions_Deserialize,
+	client_operation_id: string,
+};
+
+export type ImportCommitRequest_Serialize = {
+	source: FileSource,
+	digest: string,
+	options: ImportOptions_Serialize,
 	client_operation_id: string,
 };
 
@@ -2897,12 +3080,21 @@ export type ImportLorebookMetadata = {
 	updatedAt: number,
 };
 
-export type ImportOptions = {
+export type ImportOptions = ImportOptions_Serialize | ImportOptions_Deserialize;
+
+export type ImportOptions_Deserialize = {
 	character_id?: string | null,
 	speakers?: { [key in string]: string },
 };
 
-export type ImportPersonaContent = {
+export type ImportOptions_Serialize = {
+	character_id: string | null,
+	speakers: { [key in string]: string },
+};
+
+export type ImportPersonaContent = ImportPersonaContent_Serialize | ImportPersonaContent_Deserialize;
+
+export type ImportPersonaContent_Deserialize = {
 	title: string,
 	description: string,
 	nickname: string | null,
@@ -2911,13 +3103,22 @@ export type ImportPersonaContent = {
 	activeLorebookIds?: string[],
 };
 
+export type ImportPersonaContent_Serialize = {
+	title: string,
+	description: string,
+	nickname: string | null,
+	isDefault: boolean | null,
+	avatarCrop: ImportCrop | null,
+	activeLorebookIds: string[],
+};
+
 export type ImportPreview = ImportPreview_Serialize | ImportPreview_Deserialize;
 
 export type ImportPreviewContent = ImportPreviewContent_Serialize | ImportPreviewContent_Deserialize;
 
-export type ImportPreviewContent_Deserialize = ({ kind: "character"; content: ImportCharacterContent_Deserialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null; lorebooks_disabled: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; model_kind: ModelKindContract; model_file_required: boolean; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
+export type ImportPreviewContent_Deserialize = { kind: "character"; content: ImportCharacterContent_Deserialize } | { kind: "persona"; content: ImportPersonaContent_Deserialize } | { kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] } | { kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean } | { kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null; lorebooks_disabled: boolean } | { kind: "model"; model_kind: ModelKindContract; model_file_required: boolean; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown } | { kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean };
 
-export type ImportPreviewContent_Serialize = ({ kind: "character"; content: ImportCharacterContent_Serialize }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "persona"; content: ImportPersonaContent }) & { condense?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] }) & { condense?: never; content?: never; display_name?: never; group?: never; input_scopes?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean }) & { content?: never; display_name?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; scene_id?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null; lorebooks_disabled: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; group?: never; input_scopes?: never; keyword_detection_mode?: never; message_count?: never; model_file_required?: never; model_kind?: never; output_scopes?: never; provider_id?: never; provider_label?: never; purpose?: never; settings?: never; speakers?: never; title?: never } | ({ kind: "model"; model_kind: ModelKindContract; model_file_required: boolean; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown }) & { condense?: never; content?: never; entries?: never; group?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; message_count?: never; messages?: never; prompt_template_id?: never; purpose?: never; scene_id?: never; speakers?: never; title?: never } | ({ kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean }) & { condense?: never; content?: never; display_name?: never; entries?: never; input_scopes?: never; keyword_detection_mode?: never; lorebook_ids_override?: never; lorebooks_disabled?: never; messages?: never; model_file_required?: never; model_kind?: never; name?: never; output_scopes?: never; prompt_template_id?: never; provider_id?: never; provider_label?: never; purpose?: never; scene_id?: never; settings?: never };
+export type ImportPreviewContent_Serialize = { kind: "character"; content: ImportCharacterContent_Serialize } | { kind: "persona"; content: ImportPersonaContent_Serialize } | { kind: "lorebook"; name: string; keyword_detection_mode: ImportKeywordDetection; entries: ImportLorebookEntry[] } | { kind: "prompt"; name: string; purpose: PromptKind; entries: ImportPromptEntry[]; condense: boolean } | { kind: "chat_template"; name: string; messages: ImportTemplateMessage[]; scene_id: string | null; prompt_template_id: string | null; lorebook_ids_override: string[] | null; lorebooks_disabled: boolean } | { kind: "model"; model_kind: ModelKindContract; model_file_required: boolean; name: string; provider_id: string; provider_label: string; display_name: string; input_scopes: string[]; output_scopes: string[]; settings: unknown } | { kind: "chat"; title: string; speakers: string[]; message_count: number; group: boolean };
 
 export type ImportPreviewRequest = {
 	source: FileSource,
@@ -2971,8 +3172,8 @@ export type ImportSceneVariant_Deserialize = {
 export type ImportSceneVariant_Serialize = {
 	id: string,
 	content: string,
-	direction?: string | null,
-	createdAt?: number | null,
+	direction?: string,
+	createdAt?: number,
 };
 
 export type ImportScene_Deserialize = {
@@ -2987,13 +3188,15 @@ export type ImportScene_Deserialize = {
 export type ImportScene_Serialize = {
 	id: string,
 	content: string,
-	direction?: string | null,
-	createdAt?: number | null,
+	direction?: string,
+	createdAt?: number,
 	selectedVariantId: string | null,
 	variants: ImportSceneVariant_Serialize[],
 };
 
-export type ImportScheduledNote = {
+export type ImportScheduledNote = ImportScheduledNote_Serialize | ImportScheduledNote_Deserialize;
+
+export type ImportScheduledNote_Deserialize = {
 	id?: string | null,
 	characterId?: string | null,
 	label?: string,
@@ -3007,7 +3210,23 @@ export type ImportScheduledNote = {
 	updatedAt?: number,
 };
 
-export type ImportSharedMemory = {
+export type ImportScheduledNote_Serialize = {
+	id: string | null,
+	characterId: string | null,
+	label: string,
+	content: string,
+	availableAt: number,
+	expiresAt: number | null,
+	recurrence: string,
+	recurrenceWindowMs: number | null,
+	enabled: boolean,
+	createdAt: number,
+	updatedAt: number,
+};
+
+export type ImportSharedMemory = ImportSharedMemory_Serialize | ImportSharedMemory_Deserialize;
+
+export type ImportSharedMemory_Deserialize = {
 	memories?: unknown,
 	memorySummary?: string | null,
 	memorySummaryTokenCount?: number,
@@ -3019,6 +3238,20 @@ export type ImportSharedMemory = {
 	relationshipStates?: unknown,
 	createdAt?: number,
 	updatedAt?: number,
+};
+
+export type ImportSharedMemory_Serialize = {
+	memories: unknown,
+	memorySummary: string | null,
+	memorySummaryTokenCount: number,
+	memoryToolEvents: unknown,
+	memoryStatus: string | null,
+	memoryError: string | null,
+	memoryProgressStep: number | null,
+	soulGrowth: unknown,
+	relationshipStates: unknown,
+	createdAt: number,
+	updatedAt: number,
 };
 
 export type ImportStarter = ImportStarter_Serialize | ImportStarter_Deserialize;
@@ -3040,7 +3273,7 @@ export type ImportStarter_Serialize = {
 	id: string,
 	name: string,
 	messages: ImportStarterMessage[],
-	createdAt?: number | null,
+	createdAt?: number,
 };
 
 export type ImportTemplateMessage = {
@@ -3889,9 +4122,9 @@ export type LibraryWidgetImageSource = { kind: "character_avatar" } | { kind: "p
 
 export type LibraryWidgetNode = LibraryWidgetNode_Serialize | LibraryWidgetNode_Deserialize;
 
-export type LibraryWidgetNode_Deserialize = ({ type: "divider"; id: string; design: LibraryWidgetDesign | null; style: LibraryDividerStyle | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; title?: never; variant?: never } | ({ type: "box"; id: string; design: LibraryWidgetDesign | null; variant: LibraryBoxVariant | null; title: string | null; description: string | null; children: LibraryWidgetNode_Deserialize[] }) & { action?: never; character_id?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never } | ({ type: "character_info"; id: string; design: LibraryWidgetDesign | null; character_id: string | null }) & { action?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "persona_info"; id: string; design: LibraryWidgetDesign | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "scratch_pad"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; content: string | null }) & { action?: never; character_id?: never; children?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "image"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; source: LibraryWidgetImageSource; shape: LibraryWidgetImageShape | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; show_date?: never; show_seconds?: never; snippets?: never; stats?: never; style?: never; variant?: never } | ({ type: "selector"; id: string; design: LibraryWidgetDesign | null; kind: LibrarySelectorKind; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "button"; id: string; design: LibraryWidgetDesign | null; action: LibraryButtonAction; title: string | null; description: string | null }) & { character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "stat_tracker"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; stats: LibraryWidgetStat_Deserialize[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; style?: never; variant?: never } | ({ type: "quick_snippets"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; snippets: LibraryWidgetSnippet[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "dice"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; notation: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "memory"; id: string; design: LibraryWidgetDesign | null; title: string | null; limit: number | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "companion_state"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "session_info"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "author_note"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "time"; id: string; design: LibraryWidgetDesign | null; title: string | null; hour_format: LibraryHourFormat | null; show_seconds: boolean | null; show_date: boolean | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; kind?: never; limit?: never; notation?: never; shape?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never };
+export type LibraryWidgetNode_Deserialize = { type: "divider"; id: string; design: LibraryWidgetDesign | null; style: LibraryDividerStyle | null } | { type: "box"; id: string; design: LibraryWidgetDesign | null; variant: LibraryBoxVariant | null; title: string | null; description: string | null; children: LibraryWidgetNode_Deserialize[] } | { type: "character_info"; id: string; design: LibraryWidgetDesign | null; character_id: string | null } | { type: "persona_info"; id: string; design: LibraryWidgetDesign | null } | { type: "scratch_pad"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; content: string | null } | { type: "image"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; source: LibraryWidgetImageSource; shape: LibraryWidgetImageShape | null } | { type: "selector"; id: string; design: LibraryWidgetDesign | null; kind: LibrarySelectorKind; title: string | null; description: string | null } | { type: "button"; id: string; design: LibraryWidgetDesign | null; action: LibraryButtonAction; title: string | null; description: string | null } | { type: "stat_tracker"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; stats: LibraryWidgetStat_Deserialize[] } | { type: "quick_snippets"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; snippets: LibraryWidgetSnippet[] } | { type: "dice"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; notation: string | null } | { type: "memory"; id: string; design: LibraryWidgetDesign | null; title: string | null; limit: number | null } | { type: "companion_state"; id: string; design: LibraryWidgetDesign | null; title: string | null } | { type: "session_info"; id: string; design: LibraryWidgetDesign | null; title: string | null } | { type: "author_note"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null } | { type: "time"; id: string; design: LibraryWidgetDesign | null; title: string | null; hour_format: LibraryHourFormat | null; show_seconds: boolean | null; show_date: boolean | null };
 
-export type LibraryWidgetNode_Serialize = ({ type: "divider"; id: string; design: LibraryWidgetDesign | null; style: LibraryDividerStyle | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; title?: never; variant?: never } | ({ type: "box"; id: string; design: LibraryWidgetDesign | null; variant: LibraryBoxVariant | null; title: string | null; description: string | null; children: LibraryWidgetNode_Serialize[] }) & { action?: never; character_id?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never } | ({ type: "character_info"; id: string; design: LibraryWidgetDesign | null; character_id: string | null }) & { action?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "persona_info"; id: string; design: LibraryWidgetDesign | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; title?: never; variant?: never } | ({ type: "scratch_pad"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; content: string | null }) & { action?: never; character_id?: never; children?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "image"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; source: LibraryWidgetImageSource; shape: LibraryWidgetImageShape | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; show_date?: never; show_seconds?: never; snippets?: never; stats?: never; style?: never; variant?: never } | ({ type: "selector"; id: string; design: LibraryWidgetDesign | null; kind: LibrarySelectorKind; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "button"; id: string; design: LibraryWidgetDesign | null; action: LibraryButtonAction; title: string | null; description: string | null }) & { character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "stat_tracker"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; stats: LibraryWidgetStat_Serialize[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; style?: never; variant?: never } | ({ type: "quick_snippets"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; snippets: LibraryWidgetSnippet[] }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "dice"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; notation: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "memory"; id: string; design: LibraryWidgetDesign | null; title: string | null; limit: number | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "companion_state"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "session_info"; id: string; design: LibraryWidgetDesign | null; title: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "author_note"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null }) & { action?: never; character_id?: never; children?: never; content?: never; hour_format?: never; kind?: never; limit?: never; notation?: never; shape?: never; show_date?: never; show_seconds?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never } | ({ type: "time"; id: string; design: LibraryWidgetDesign | null; title: string | null; hour_format: LibraryHourFormat | null; show_seconds: boolean | null; show_date: boolean | null }) & { action?: never; character_id?: never; children?: never; content?: never; description?: never; kind?: never; limit?: never; notation?: never; shape?: never; snippets?: never; source?: never; stats?: never; style?: never; variant?: never };
+export type LibraryWidgetNode_Serialize = { type: "divider"; id: string; design: LibraryWidgetDesign | null; style: LibraryDividerStyle | null } | { type: "box"; id: string; design: LibraryWidgetDesign | null; variant: LibraryBoxVariant | null; title: string | null; description: string | null; children: LibraryWidgetNode_Serialize[] } | { type: "character_info"; id: string; design: LibraryWidgetDesign | null; character_id: string | null } | { type: "persona_info"; id: string; design: LibraryWidgetDesign | null } | { type: "scratch_pad"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; content: string | null } | { type: "image"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; source: LibraryWidgetImageSource; shape: LibraryWidgetImageShape | null } | { type: "selector"; id: string; design: LibraryWidgetDesign | null; kind: LibrarySelectorKind; title: string | null; description: string | null } | { type: "button"; id: string; design: LibraryWidgetDesign | null; action: LibraryButtonAction; title: string | null; description: string | null } | { type: "stat_tracker"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; stats: LibraryWidgetStat_Serialize[] } | { type: "quick_snippets"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; snippets: LibraryWidgetSnippet[] } | { type: "dice"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null; notation: string | null } | { type: "memory"; id: string; design: LibraryWidgetDesign | null; title: string | null; limit: number | null } | { type: "companion_state"; id: string; design: LibraryWidgetDesign | null; title: string | null } | { type: "session_info"; id: string; design: LibraryWidgetDesign | null; title: string | null } | { type: "author_note"; id: string; design: LibraryWidgetDesign | null; title: string | null; description: string | null } | { type: "time"; id: string; design: LibraryWidgetDesign | null; title: string | null; hour_format: LibraryHourFormat | null; show_seconds: boolean | null; show_date: boolean | null };
 
 export type LibraryWidgetSnippet = {
 	id: string,
@@ -3945,10 +4178,15 @@ export type LlamaContextInfo = {
 	selected_gpu_device_ids: number[] | null,
 	per_device_vram: LlamaDeviceMemory[] | null,
 	estimated_placement: LlamaPlacement | null,
+	memory_fit: LlamaMemoryFit[],
 };
 
 export type LlamaContextInfoRequest = {
 	target: LlamaModelTarget,
+	context_length: number | null,
+	batch_size: number | null,
+	flash_attention: SettingsLlamaFlashAttention | null,
+	swa_full: boolean | null,
 };
 
 /**  A GPU (or accelerator) llama.cpp can offload to. */
@@ -3984,6 +4222,16 @@ export type LlamaGpuLayers = {
 };
 
 export type LlamaKvPlacement = "auto" | "split" | "system_ram" | "pin";
+
+export type LlamaMemoryFit = {
+	gpu: boolean,
+	devices: string[],
+	capacity_bytes: number,
+	available_bytes: number,
+	model_bytes: number,
+	context_bytes: number,
+	working_bytes: number,
+};
 
 /**  A model file, or a saved llama.cpp model's file. */
 export type LlamaModelFile = { type: "file"; model: FileSource } | { type: "saved"; model_profile_id: string };
@@ -4750,7 +4998,7 @@ export type MemoryBlockedReason = { type: "owed_rewind_failed"; code: MemoryRewi
 
 export type MemoryCategory = "character_trait" | "relationship" | "plot_event" | "world_detail" | "preference" | "other" | "milestone" | "boundary" | "profile" | "routine" | "episodic" | "emotional_snapshot";
 
-export type MemoryCategoryChange = { type: "keep" } | { type: "set"; value: MemoryCategory | null };
+export type MemoryCategoryChange = { type: "keep" } | { type: "set"; value?: MemoryCategory | null };
 
 export type MemoryCycleAction = {
 	kind: MemoryCycleActionKind,
@@ -4846,7 +5094,7 @@ export type MemoryMode = "manual" | "dynamic" | "disabled";
 
 export type MemoryModeChange = { type: "set"; mode: MemoryMode } | { type: "reset" };
 
-export type MemoryObservedAtChange = { type: "keep" } | { type: "set"; value: number | null };
+export type MemoryObservedAtChange = { type: "keep" } | { type: "set"; value?: number | null };
 
 export type MemoryOrigin = "user" | "model" | "import";
 
@@ -4928,12 +5176,24 @@ export type MemoryTriggerRequest = {
 	client_operation_id: string,
 };
 
-export type MemoryUpdateRequest = {
+export type MemoryUpdateRequest = MemoryUpdateRequest_Serialize | MemoryUpdateRequest_Deserialize;
+
+export type MemoryUpdateRequest_Deserialize = {
 	conversation_id: string,
 	memory_id: string,
 	text: string | null,
 	category?: MemoryCategoryChange,
 	observed_at?: MemoryObservedAtChange,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemoryUpdateRequest_Serialize = {
+	conversation_id: string,
+	memory_id: string,
+	text: string | null,
+	category: MemoryCategoryChange,
+	observed_at: MemoryObservedAtChange,
 	expected_revision: number,
 	client_operation_id: string,
 };
@@ -5120,11 +5380,20 @@ export type MessageSceneSelectRequest = {
 	client_operation_id: string,
 };
 
-export type MessageSpeakRequest = {
+export type MessageSpeakRequest = MessageSpeakRequest_Serialize | MessageSpeakRequest_Deserialize;
+
+export type MessageSpeakRequest_Deserialize = {
 	request_id: string,
 	message_id: string,
 	voice_override: MessageVoiceOverride | null,
 	swap_places?: boolean,
+};
+
+export type MessageSpeakRequest_Serialize = {
+	request_id: string,
+	message_id: string,
+	voice_override: MessageVoiceOverride | null,
+	swap_places: boolean,
 };
 
 export type MessageVoiceOverride = { type: "user_voice"; voice_id: string } | { type: "provider"; provider_id: string; voice_id: string; model_id: string | null; prompt: string | null };
@@ -5181,7 +5450,9 @@ export type ModelGetRequest = {
 	model_id: string,
 };
 
-export type ModelInput = {
+export type ModelInput = ModelInput_Serialize | ModelInput_Deserialize;
+
+export type ModelInput_Deserialize = {
 	id: string | null,
 	provider_account_id: string,
 	external_model_id: string,
@@ -5190,7 +5461,19 @@ export type ModelInput = {
 	config: { [key in string]: unknown },
 	input_scopes: ModelModality[],
 	output_scopes: ModelModality[],
-	remote_metadata: RemoteModelContract | null,
+	remote_metadata: RemoteModelContract_Deserialize | null,
+};
+
+export type ModelInput_Serialize = {
+	id: string | null,
+	provider_account_id: string,
+	external_model_id: string,
+	display_name: string,
+	kind: ModelKindContract,
+	config: { [key in string]: unknown },
+	input_scopes: ModelModality[],
+	output_scopes: ModelModality[],
+	remote_metadata: RemoteModelContract_Serialize | null,
 };
 
 export type ModelKindContract = "chat" | "image" | "embedding" | "speech";
@@ -5208,8 +5491,16 @@ export type ModelModality = "text" | "image" | "audio";
 
 export type ModelRole = "default" | "dynamic_memory" | "group_speaker";
 
-export type ModelSaveRequest = {
-	model: ModelInput,
+export type ModelSaveRequest = ModelSaveRequest_Serialize | ModelSaveRequest_Deserialize;
+
+export type ModelSaveRequest_Deserialize = {
+	model: ModelInput_Deserialize,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type ModelSaveRequest_Serialize = {
+	model: ModelInput_Serialize,
 	expected_revision: number | null,
 	client_operation_id: string,
 };
@@ -5502,12 +5793,22 @@ export type PersonaView_Serialize = {
 	updated_at: number,
 };
 
-export type PersonasListRequest = {
+export type PersonasListRequest = PersonasListRequest_Serialize | PersonasListRequest_Deserialize;
+
+export type PersonasListRequest_Deserialize = {
 	cursor: string | null,
 	limit: number | null,
 	query: string | null,
 	sort: LibrarySort | null,
 	search_nickname?: boolean,
+};
+
+export type PersonasListRequest_Serialize = {
+	cursor: string | null,
+	limit: number | null,
+	query: string | null,
+	sort: LibrarySort | null,
+	search_nickname: boolean,
 };
 
 export type PlaygroundEntry = {
@@ -6009,7 +6310,9 @@ export type RelationshipChange = {
 	stability: number | null,
 };
 
-export type RemoteModelContract = {
+export type RemoteModelContract = RemoteModelContract_Serialize | RemoteModelContract_Deserialize;
+
+export type RemoteModelContract_Deserialize = {
 	id: string,
 	display_name: string | null,
 	description: string | null,
@@ -6019,6 +6322,19 @@ export type RemoteModelContract = {
 	supported_endpoints: string[] | null,
 	input_price: number | null,
 	cache_read_price?: number | null,
+	output_price: number | null,
+};
+
+export type RemoteModelContract_Serialize = {
+	id: string,
+	display_name: string | null,
+	description: string | null,
+	context_length: number | null,
+	input_modalities: string[] | null,
+	output_modalities: string[] | null,
+	supported_endpoints: string[] | null,
+	input_price: number | null,
+	cache_read_price: number | null,
 	output_price: number | null,
 };
 
@@ -6283,7 +6599,13 @@ export type SdRunnability = {
  *  A catalog fit test on an engine build; unset fields take the profile's
  *  defaults. Installed variants are tested by running the engine.
  */
-export type SdRunnabilityRequest = {
+export type SdRunnabilityRequest = SdRunnabilityRequest_Serialize | SdRunnabilityRequest_Deserialize;
+
+/**
+ *  A catalog fit test on an engine build; unset fields take the profile's
+ *  defaults. Installed variants are tested by running the engine.
+ */
+export type SdRunnabilityRequest_Deserialize = {
 	profile_id: string,
 	variant_id: string,
 	runtime_release: string,
@@ -6291,7 +6613,32 @@ export type SdRunnabilityRequest = {
 	width: number | null,
 	height: number | null,
 	reference_image_count: number | null,
-	loras: ImageLora[],
+	loras: ImageLora_Deserialize[],
+	prompt: string | null,
+	negative_prompt: string | null,
+	sample_steps: number | null,
+	cfg_scale: number | null,
+	seed: number | null,
+	sample_method: string | null,
+	batch_count: number | null,
+	/**  Runs every sample step instead of a one-step probe. */
+	full_execution: boolean,
+	client_operation_id: string,
+};
+
+/**
+ *  A catalog fit test on an engine build; unset fields take the profile's
+ *  defaults. Installed variants are tested by running the engine.
+ */
+export type SdRunnabilityRequest_Serialize = {
+	profile_id: string,
+	variant_id: string,
+	runtime_release: string,
+	runtime_asset: string,
+	width: number | null,
+	height: number | null,
+	reference_image_count: number | null,
+	loras: ImageLora_Serialize[],
 	prompt: string | null,
 	negative_prompt: string | null,
 	sample_steps: number | null,
@@ -6710,9 +7057,9 @@ export type SettingsOpenRouterOptions = {
 
 export type SettingsPatch = SettingsPatch_Serialize | SettingsPatch_Deserialize;
 
-export type SettingsPatch_Deserialize = ({ section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null }) & { changes?: never; context_length?: never; default_model?: never; default_prompt?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; max_tokens?: never; model_version?: never; value?: never } | ({ section: "dynamic_memory"; value: SettingsDynamicMemorySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_sampler"; enabled: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "help_me_reply"; value: SettingsHelpMeReplySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "image_generation"; value: SettingsImageGenerationSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "embedding"; value: SettingsEmbeddingSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; developer_mode_enabled?: never; enabled?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never };
+export type SettingsPatch_Deserialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
 
-export type SettingsPatch_Serialize = ({ section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null }) & { changes?: never; context_length?: never; default_model?: never; default_prompt?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; max_tokens?: never; model_version?: never; value?: never } | ({ section: "dynamic_memory"; value: SettingsDynamicMemorySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "dynamic_memory_sampler"; enabled: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "help_me_reply"; value: SettingsHelpMeReplySettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "image_generation"; value: SettingsImageGenerationSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "embedding"; value: SettingsEmbeddingSettings }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never } | ({ section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; context_length?: never; default_model?: never; default_prompt?: never; developer_mode_enabled?: never; dynamic_memory_model?: never; enabled?: never; group_speaker_model?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never } | ({ section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null }) & { analytics_enabled?: never; auto_download_character_card_avatars?: never; changes?: never; context_length?: never; developer_mode_enabled?: never; enabled?: never; keep_model_loaded?: never; kv_cache_type?: never; lorebook_scan_depth?: never; manual_mode_context_window?: never; max_tokens?: never; model_version?: never; pure_mode?: never; update_checks_enabled?: never; value?: never };
+export type SettingsPatch_Serialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
 
 export type SettingsPromptCacheRetention = "in_memory" | "five_minutes" | "one_hour" | "twenty_four_hours";
 
@@ -6812,13 +7159,7 @@ export type SettingsUiAccessibilitySettings_Deserialize = {
 	hapticIntensity?: SettingsUiAccessibilitySettingsHapticIntensity,
 };
 
-export type SettingsUiAccessibilitySettings_Serialize = {
-	send?: SettingsUiAccessibilitySound_Serialize,
-	success?: SettingsUiAccessibilitySound_Serialize,
-	failure?: SettingsUiAccessibilitySound_Serialize,
-	haptics?: boolean,
-	hapticIntensity?: SettingsUiAccessibilitySettingsHapticIntensity,
-};
+export type SettingsUiAccessibilitySettings_Serialize = Record<string, never>;
 
 export type SettingsUiAccessibilitySound = SettingsUiAccessibilitySound_Serialize | SettingsUiAccessibilitySound_Deserialize;
 
@@ -6827,10 +7168,7 @@ export type SettingsUiAccessibilitySound_Deserialize = {
 	volume?: number | null,
 };
 
-export type SettingsUiAccessibilitySound_Serialize = {
-	enabled?: boolean,
-	volume?: number | null,
-};
+export type SettingsUiAccessibilitySound_Serialize = Record<string, never>;
 
 export type SettingsUiChatAppearanceSettings = SettingsUiChatAppearanceSettings_Serialize | SettingsUiChatAppearanceSettings_Deserialize;
 
@@ -6863,10 +7201,7 @@ export type SettingsUiChatAppearanceSettingsChatWidgetSlots_Deserialize = {
 	right?: SettingsWidgetNode[],
 };
 
-export type SettingsUiChatAppearanceSettingsChatWidgetSlots_Serialize = {
-	left?: SettingsWidgetNode[],
-	right?: SettingsWidgetNode[],
-};
+export type SettingsUiChatAppearanceSettingsChatWidgetSlots_Serialize = Record<string, never>;
 
 export type SettingsUiChatAppearanceSettingsFontSize = "small" | "medium" | "large" | "xlarge";
 
@@ -6954,61 +7289,7 @@ export type SettingsUiChatAppearanceSettings_Deserialize = {
 	textMode?: SettingsUiChatAppearanceSettingsTextMode,
 };
 
-export type SettingsUiChatAppearanceSettings_Serialize = {
-	fontSize?: SettingsUiChatAppearanceSettingsFontSize,
-	lineSpacing?: SettingsUiChatAppearanceSettingsLineSpacing,
-	bubbleStyle?: SettingsUiChatAppearanceSettingsBubbleStyle,
-	bubbleRadius?: SettingsUiChatAppearanceSettingsBubbleRadius,
-	bubbleMaxWidth?: SettingsUiChatAppearanceSettingsBubbleMaxWidth,
-	bubblePadding?: SettingsUiChatAppearanceSettingsBubblePadding,
-	showMessageAuthor?: boolean,
-	showMessageTimestamp?: boolean,
-	timestampFormat?: SettingsUiChatAppearanceSettingsTimestampFormat,
-	messageHeaderPlacement?: SettingsUiChatAppearanceSettingsMessageHeaderPlacement,
-	showMessageModel?: boolean,
-	showMessageInputTokens?: boolean,
-	showMessageOutputTokens?: boolean,
-	showMessageTotalTokens?: boolean,
-	showMessageTtft?: boolean,
-	showMessageTokensPerSecond?: boolean,
-	showMessageMtp?: boolean,
-	messageInfoPlacement?: SettingsUiChatAppearanceSettingsMessageInfoPlacement,
-	messageInfoSize?: SettingsUiChatAppearanceSettingsMessageInfoSize,
-	messageGap?: SettingsUiChatAppearanceSettingsMessageGap,
-	avatarShape?: SettingsUiChatAppearanceSettingsAvatarShape,
-	avatarSize?: SettingsUiChatAppearanceSettingsAvatarSize,
-	chatColumnWidth?: SettingsUiChatAppearanceSettingsChatColumnWidth,
-	chatColumnWidthPx?: number | null,
-	chatColumnAlign?: SettingsUiChatAppearanceSettingsChatColumnAlign,
-	chatHeaderMoves?: boolean,
-	chatFooterMoves?: boolean,
-	participantsBarEnabled?: boolean,
-	participantsBarAvatarSize?: SettingsUiChatAppearanceSettingsParticipantsBarAvatarSize,
-	participantsBarAvatarShape?: SettingsUiChatAppearanceSettingsParticipantsBarAvatarShape,
-	participantsBarBackground?: SettingsUiChatAppearanceSettingsParticipantsBarBackground,
-	participantsBarGap?: SettingsUiChatAppearanceSettingsParticipantsBarGap,
-	participantsBarAlign?: SettingsUiChatAppearanceSettingsParticipantsBarAlign,
-	participantsBarHintPosition?: SettingsUiChatAppearanceSettingsParticipantsBarHintPosition,
-	chatWidgetAreaEnabled?: boolean,
-	chatWidgetCenterMode?: SettingsUiChatAppearanceSettingsChatWidgetCenterMode,
-	chatWidgetSlots?: SettingsUiChatAppearanceSettingsChatWidgetSlots_Serialize,
-	userBubbleColor?: SettingsUiChatAppearanceSettingsUserBubbleColor,
-	assistantBubbleColor?: SettingsUiChatAppearanceSettingsAssistantBubbleColor,
-	userBubbleColorHex?: string,
-	assistantBubbleColorHex?: string,
-	footerInputColorHex?: string,
-	messageTextColorHex?: string,
-	plainTextColorHex?: string,
-	italicTextColorHex?: string,
-	quotedTextColorHex?: string,
-	inlineCodeTextColorHex?: string,
-	transparentHeader?: boolean,
-	backgroundDim?: number | null,
-	backgroundBlur?: number | null,
-	bubbleBlur?: SettingsUiChatAppearanceSettingsBubbleBlur,
-	bubbleOpacity?: number | null,
-	textMode?: SettingsUiChatAppearanceSettingsTextMode,
-};
+export type SettingsUiChatAppearanceSettings_Serialize = Record<string, never>;
 
 export type SettingsUiChatsViewMode = "hero" | "gallery" | "list";
 
@@ -7022,13 +7303,7 @@ export type SettingsUiCustomColorPreset_Deserialize = {
 	createdAt?: number | null,
 };
 
-export type SettingsUiCustomColorPreset_Serialize = {
-	id?: string,
-	name?: string,
-	colors?: SettingsUiCustomColors_Serialize,
-	settingsCardOpacity?: number | null,
-	createdAt?: number | null,
-};
+export type SettingsUiCustomColorPreset_Serialize = Record<string, never>;
 
 export type SettingsUiCustomColors = SettingsUiCustomColors_Serialize | SettingsUiCustomColors_Deserialize;
 
@@ -7047,20 +7322,7 @@ export type SettingsUiCustomColors_Deserialize = {
 	nav?: string,
 };
 
-export type SettingsUiCustomColors_Serialize = {
-	surface?: string,
-	surfaceEl?: string,
-	fg?: string,
-	appText?: string,
-	appTextMuted?: string,
-	appTextSubtle?: string,
-	accent?: string,
-	danger?: string,
-	warning?: string,
-	info?: string,
-	secondary?: string,
-	nav?: string,
-};
+export type SettingsUiCustomColors_Serialize = Record<string, never>;
 
 export type SettingsUiGroupChatsViewMode = "classic" | "detailed";
 
@@ -7074,11 +7336,7 @@ export type SettingsUiLlamaSamplerPreset_Deserialize = {
 	stages?: SettingsLlamaSamplerStage[],
 };
 
-export type SettingsUiLlamaSamplerPreset_Serialize = {
-	id?: string,
-	name?: string,
-	stages?: SettingsLlamaSamplerStage[],
-};
+export type SettingsUiLlamaSamplerPreset_Serialize = Record<string, never>;
 
 export type SettingsUiNavAlign = "start" | "center" | "end";
 
@@ -7248,9 +7506,9 @@ export type SyncConflictResolveRequest = {
 
 export type SyncConflictValue = SyncConflictValue_Serialize | SyncConflictValue_Deserialize;
 
-export type SyncConflictValue_Deserialize = { type: "character"; value: CharacterView_Deserialize } | { type: "persona"; value: PersonaView_Deserialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | ({ type: "deleted" }) & { value?: never };
+export type SyncConflictValue_Deserialize = { type: "character"; value: CharacterView_Deserialize } | { type: "persona"; value: PersonaView_Deserialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | { type: "deleted" };
 
-export type SyncConflictValue_Serialize = { type: "character"; value: CharacterView_Serialize } | { type: "persona"; value: PersonaView_Serialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | ({ type: "deleted" }) & { value?: never };
+export type SyncConflictValue_Serialize = { type: "character"; value: CharacterView_Serialize } | { type: "persona"; value: PersonaView_Serialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | { type: "deleted" };
 
 export type SyncConflictView = SyncConflictView_Serialize | SyncConflictView_Deserialize;
 
@@ -7373,11 +7631,32 @@ export type TokensCountRequest = {
  *  repeating the request returns its job, another request under the same id
  *  is `Conflict`. `model_id` defaults to the dictation model.
  */
-export type TranscribeFileRequest = {
+export type TranscribeFileRequest = TranscribeFileRequest_Serialize | TranscribeFileRequest_Deserialize;
+
+/**
+ *  Transcribes a picked audio file or a managed asset URL (such as a saved
+ *  dictation returned after admission failure). `request_id` is the idempotency key:
+ *  repeating the request returns its job, another request under the same id
+ *  is `Conflict`. `model_id` defaults to the dictation model.
+ */
+export type TranscribeFileRequest_Deserialize = {
 	request_id: string,
 	source: FileSource,
 	model_id: string | null,
-	options?: TranscribeOptions,
+	options?: TranscribeOptions_Deserialize,
+};
+
+/**
+ *  Transcribes a picked audio file or a managed asset URL (such as a saved
+ *  dictation returned after admission failure). `request_id` is the idempotency key:
+ *  repeating the request returns its job, another request under the same id
+ *  is `Conflict`. `model_id` defaults to the dictation model.
+ */
+export type TranscribeFileRequest_Serialize = {
+	request_id: string,
+	source: FileSource,
+	model_id: string | null,
+	options: TranscribeOptions_Serialize,
 };
 
 /**
@@ -7385,7 +7664,14 @@ export type TranscribeFileRequest = {
  *  uses the defaults: the conversation and global vocabularies, GPU and a
  *  model that stays loaded.
  */
-export type TranscribeOptions = {
+export type TranscribeOptions = TranscribeOptions_Serialize | TranscribeOptions_Deserialize;
+
+/**
+ *  What a transcription asks of Whisper beyond the audio. A chat dictation
+ *  uses the defaults: the conversation and global vocabularies, GPU and a
+ *  model that stays loaded.
+ */
+export type TranscribeOptions_Deserialize = {
 	language?: string | null,
 	scopes?: string[],
 	initial_prompt?: string | null,
@@ -7394,6 +7680,22 @@ export type TranscribeOptions = {
 	threads?: number | null,
 	run?: WhisperRunOptions,
 	keep_model_loaded?: boolean,
+};
+
+/**
+ *  What a transcription asks of Whisper beyond the audio. A chat dictation
+ *  uses the defaults: the conversation and global vocabularies, GPU and a
+ *  model that stays loaded.
+ */
+export type TranscribeOptions_Serialize = {
+	language: string | null,
+	scopes: string[],
+	initial_prompt: string | null,
+	translate: boolean,
+	detect_language: boolean,
+	threads: number | null,
+	run: WhisperRunOptions,
+	keep_model_loaded: boolean,
 };
 
 export type TranscriptSegment = {
@@ -7439,7 +7741,9 @@ export type TtsModelsRequest = {
 	provider_type: AudioProviderType,
 };
 
-export type TtsSynthesizeRequest = {
+export type TtsSynthesizeRequest = TtsSynthesizeRequest_Serialize | TtsSynthesizeRequest_Deserialize;
+
+export type TtsSynthesizeRequest_Deserialize = {
 	request_id: string,
 	provider_id: string,
 	model_id: string,
@@ -7447,6 +7751,16 @@ export type TtsSynthesizeRequest = {
 	prompt: string | null,
 	text: string,
 	retained?: boolean,
+};
+
+export type TtsSynthesizeRequest_Serialize = {
+	request_id: string,
+	provider_id: string,
+	model_id: string,
+	voice_id: string,
+	prompt: string | null,
+	text: string,
+	retained: boolean,
 };
 
 export type UiPreferenceChange = UiPreferenceChange_Serialize | UiPreferenceChange_Deserialize;
@@ -7469,13 +7783,31 @@ export type UsageDateRange = {
 	end: number | null,
 };
 
-export type UsageExportCsvRequest = {
-	filters: UsageFilters,
+export type UsageExportCsvRequest = UsageExportCsvRequest_Serialize | UsageExportCsvRequest_Deserialize;
+
+export type UsageExportCsvRequest_Deserialize = {
+	filters: UsageFilters_Deserialize,
 	target: FileTarget,
 };
 
-export type UsageFilters = {
+export type UsageExportCsvRequest_Serialize = {
+	filters: UsageFilters_Serialize,
+	target: FileTarget,
+};
+
+export type UsageFilters = UsageFilters_Serialize | UsageFilters_Deserialize;
+
+export type UsageFilters_Deserialize = {
 	range?: UsageDateRange,
+	provider_kind: string | null,
+	model_id: string | null,
+	character_id: string | null,
+	operation_kind: string | null,
+	status: UsageStatus | null,
+};
+
+export type UsageFilters_Serialize = {
+	range: UsageDateRange,
 	provider_kind: string | null,
 	model_id: string | null,
 	character_id: string | null,
@@ -7496,8 +7828,17 @@ export type UsagePage = {
 	next_cursor: string | null,
 };
 
-export type UsageQueryRequest = {
-	filters: UsageFilters,
+export type UsageQueryRequest = UsageQueryRequest_Serialize | UsageQueryRequest_Deserialize;
+
+export type UsageQueryRequest_Deserialize = {
+	filters: UsageFilters_Deserialize,
+	sort: UsageSort,
+	cursor: string | null,
+	limit: number,
+};
+
+export type UsageQueryRequest_Serialize = {
+	filters: UsageFilters_Serialize,
 	sort: UsageSort,
 	cursor: string | null,
 	limit: number,
@@ -7675,9 +8016,16 @@ export type WhisperModelRequest = {
 	model_id: string,
 };
 
-export type WhisperPreloadRequest = {
+export type WhisperPreloadRequest = WhisperPreloadRequest_Serialize | WhisperPreloadRequest_Deserialize;
+
+export type WhisperPreloadRequest_Deserialize = {
 	model_id: string | null,
 	run?: WhisperRunOptions,
+};
+
+export type WhisperPreloadRequest_Serialize = {
+	model_id: string | null,
+	run: WhisperRunOptions,
 };
 
 /**
@@ -7733,20 +8081,20 @@ async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; dat
 
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
-function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deserialize?: (payload: any) => T) {
-    const mapEvent = (cb: __TAURI_EVENT.EventCallback<T>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
-    const mapPayload = (payload: T) => serialize ? serialize(payload) : payload;
+function makeEvent<TListen, TEmit = TListen>(name: string, serialize?: (payload: TEmit) => unknown, deserialize?: (payload: any) => TListen) {
+    const mapEvent = (cb: __TAURI_EVENT.EventCallback<TListen>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
+    const mapPayload = (payload: TEmit) => serialize ? serialize(payload) : payload;
 
     const base = {
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.once(name, mapEvent(cb)),
-        emit: ((payload: T) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
+        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
+        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.once(name, mapEvent(cb)),
+        emit: ((payload: TEmit) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>
     };
 
     const fn = (target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window) => ({
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => target.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => target.once(name, mapEvent(cb)),
-        emit: ((payload: T) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
+        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.listen(name, mapEvent(cb)),
+        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.once(name, mapEvent(cb)),
+        emit: ((payload: TEmit) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>
     });
 
     return Object.assign(fn, base);

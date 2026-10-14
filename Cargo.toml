@@ -90,14 +90,16 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 rand = "0.8"
 sha1_smol = "1"
 sha2 = "0.10"
-specta = { version = "=2.0.0-rc.25", features = ["derive"] }
-specta-typescript = "=0.0.12"
-tauri = "=2.12.2"
-tauri-build = { version = "=2.7.1", default-features = false }
-tauri-plugin-android-fs = { version = "=29.0.0", default-features = false }
-tauri-plugin-dialog = "=2.7.1"
-tauri-plugin-single-window = "=1.2.0"
-tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+specta-typescript = "=0.0.13"
+tauri = { version = "=3.0.0-alpha.4", default-features = false }
+tauri-runtime-cef = "=3.0.0-alpha.5"
+tauri-runtime-wry = "=3.0.0-alpha.4"
+tauri-build = { version = "=3.0.0-alpha.3", default-features = false }
+tauri-plugin-android-fs = { path = "../tauri-plugin-android-fs", default-features = false }
+tauri-plugin-dialog = { version = "=3.0.0-alpha.3", default-features = false, features = ["xdg-portal"] }
+tauri-plugin-single-window = { path = "../tauri-plugin-single-window" }
+tauri-specta = { path = "../tauri-specta", features = ["derive", "typescript"] }
 tar = "0.4"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "half", "ndarray"] }
 tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }
@@ -114,3 +116,17 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[patch.crates-io]
+tauri = { path = "../tauri/crates/tauri" }
+tauri-build = { path = "../tauri/crates/tauri-build" }
+tauri-codegen = { path = "../tauri/crates/tauri-codegen" }
+tauri-macros = { path = "../tauri/crates/tauri-macros" }
+tauri-runtime = { path = "../tauri/crates/tauri-runtime" }
+tauri-runtime-cef = { path = "../tauri/crates/tauri-runtime-cef" }
+tauri-utils = { path = "../tauri/crates/tauri-utils" }
+specta = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
+specta-macros = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
+specta-serde = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
+specta-typescript = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
+specta-util = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }

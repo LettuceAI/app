@@ -15,9 +15,9 @@ pub(crate) const ASSET_SCHEME: &str = "lettuce-asset";
 
 /// Where the webview reaches the asset scheme; every `AssetRef::url` is this
 /// followed by the asset id.
-#[cfg(any(windows, target_os = "android"))]
+#[cfg(any(desktop, target_os = "android"))]
 pub(crate) const ASSET_URL_BASE: &str = "http://lettuce-asset.localhost/";
-#[cfg(not(any(windows, target_os = "android")))]
+#[cfg(not(any(desktop, target_os = "android")))]
 pub(crate) const ASSET_URL_BASE: &str = "lettuce-asset://localhost/";
 
 /// Serves `ASSET_URL_BASE<asset_id>` with the asset's bytes and MIME type.

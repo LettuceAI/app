@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg_attr(desktop, tauri_runtime_cef::cef_entry_point)]
 fn main() {
     #[cfg(target_os = "linux")]
     webkit_safe_defaults();

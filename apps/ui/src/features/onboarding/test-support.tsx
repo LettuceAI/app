@@ -8,7 +8,7 @@ import type {
   ModelView,
   ProviderAccountView,
   ProviderDescriptorContract,
-  RemoteModelContract,
+  RemoteModelContract_Serialize,
 } from "@/api/generated/bindings";
 import { createTestI18n } from "@/shared/testing/i18n";
 
@@ -53,8 +53,9 @@ export const catalog: ProviderDescriptorContract[] = [
   descriptor({ kind: "custom", display_name: "Custom (OpenAI-format)", default_endpoint: null, endpoint_editable: true, api_key: "optional", verifies_key: false, lists_models: false }),
 ];
 
-export function remoteModel(overrides: Partial<RemoteModelContract> & { id: string }): RemoteModelContract {
+export function remoteModel(overrides: Partial<RemoteModelContract_Serialize> & { id: string }): RemoteModelContract_Serialize {
   return {
+    cache_read_price: null,
     display_name: null,
     description: null,
     context_length: 128000,

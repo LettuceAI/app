@@ -399,7 +399,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
 
 /// Writes the TypeScript bindings to `path`, ending in exactly one newline.
 pub fn export_bindings(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    specta_builder::<tauri::Wry>().export(Typescript::default(), path)?;
+    specta_builder::<tauri::DynRuntime>().export(Typescript::default(), path)?;
     let text = std::fs::read_to_string(path)?;
     let text = text
         .lines()
