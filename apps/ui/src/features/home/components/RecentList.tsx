@@ -8,7 +8,7 @@ import type { CharacterSummary, ConversationSummary } from "@/api/generated/bind
 import { FailureState } from "@/shared/ui/FailureState";
 import { byRecency, recentChatsQuery } from "../data/recent";
 
-function RecentRow({ chat, character, onMenu, held }: { chat: ConversationSummary; character: CharacterSummary | null; onMenu: () => void; held: boolean }) {
+function RecentRow({ chat, character, onOpen, onMenu, held }: { chat: ConversationSummary; character: CharacterSummary | null; onOpen: () => void; onMenu: () => void; held: boolean }) {
   const { i18n } = useTranslation("home");
   const name = character?.name ?? chat.title;
   const press = useLongPress(onMenu);
@@ -17,6 +17,7 @@ function RecentRow({ chat, character, onMenu, held }: { chat: ConversationSummar
       type="button"
       aria-haspopup="dialog"
       {...press.handlers}
+      onClick={press.guardClick(onOpen)}
       className={cn("touch-target flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors motion-instant", held ? "bg-fill-2" : "hover:bg-fill")}
     >
       {character ? (
@@ -41,12 +42,14 @@ export function RecentList({
   api,
   characters,
   search,
+  onOpen,
   onMenu,
   heldId,
 }: {
   api: ApiClient;
   characters: ReadonlyMap<string, CharacterSummary>;
   search: string;
+  onOpen: (chat: ConversationSummary) => void;
   onMenu: (chat: ConversationSummary, character: CharacterSummary | null) => void;
   heldId: string | null;
 }) {
@@ -88,7 +91,7 @@ export function RecentList({
         <section key={entry.group} aria-label={t(`recent.${entry.group}`)}>
           <h2 className="px-3 pb-1 text-sm font-medium text-fg-3">{t(`recent.${entry.group}`)}</h2>
           {entry.chats.map((chat) => (
-            <RecentRow key={chat.id} chat={chat} character={characterOf(chat)} held={chat.id === heldId} onMenu={() => onMenu(chat, characterOf(chat))} />
+            <RecentRow key={chat.id} chat={chat} character={characterOf(chat)} held={chat.id === heldId} onOpen={() => onOpen(chat)} onMenu={() => onMenu(chat, characterOf(chat))} />
           ))}
         </section>
       ))}

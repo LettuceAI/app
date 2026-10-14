@@ -10,6 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
+import { ChatBranchesPage, ChatMemoryPage, ConversationPage } from "@/features/conversations";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
 import { builtSettingsSections, isSettingsSection, ModelEditorPage, SettingsIndexPage, SettingsSectionPage } from "@/features/settings";
@@ -61,10 +62,26 @@ const settingsSectionRoute = createRoute({
   component: SettingsSectionPage,
 });
 
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat/$conversationId",
+  validateSearch: (search: Record<string, unknown>): { panel?: "settings" } => (search.panel === "settings" ? { panel: "settings" } : {}),
+  component: ConversationPage,
+});
+const chatSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat/$conversationId/settings",
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/chat/$conversationId", params: { conversationId: params.conversationId }, search: { panel: "settings" }, replace: true });
+  },
+});
+const chatMemoryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/chat/$conversationId/memory", component: ChatMemoryPage });
+const chatBranchesRoute = createRoute({ getParentRoute: () => rootRoute, path: "/chat/$conversationId/branches", component: ChatBranchesPage });
+
 const newModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/new", component: ModelEditorPage });
 const editModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/$modelId", component: ModelEditorPage });
 
-const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;
@@ -84,6 +101,12 @@ export function createAppRouter(context: RouterContext, options: AppRouterOption
 }
 
 export type AppRouter = ReturnType<typeof createAppRouter>;
+
+declare module "@tanstack/history" {
+  interface HistoryState {
+    panelPushed?: boolean;
+  }
+}
 
 declare module "@tanstack/react-router" {
   interface Register {

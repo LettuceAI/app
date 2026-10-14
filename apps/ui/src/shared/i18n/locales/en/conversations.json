@@ -1,0 +1,454 @@
+{
+  "header": {
+    "back": "Back",
+    "memories": "Memories, {{count}}",
+    "memoriesBusy": "Memories, reading the latest reply",
+    "search": "Search messages",
+    "options": "Chat options",
+    "onDevice": "On device",
+    "noModel": "No model set",
+    "untitled": "Chat"
+  },
+  "search": {
+    "placeholder": "Search this chat",
+    "done": "Done",
+    "previous": "Previous match",
+    "next": "Next match",
+    "position": "{{index}} of {{total}}",
+    "none": "No matches"
+  },
+  "timeline": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "loadingOlder": "Loading earlier messages",
+    "empty": "No messages yet",
+    "jumpToLatest": "Jump to latest"
+  },
+  "composer": {
+    "placeholder": "Message {{name}}…"
+  },
+  "message": {
+    "image": "Attached image",
+    "titleAssistant": "{{name}}'s message",
+    "titleUser": "Your message",
+    "titleScene": "Scene",
+    "titleSystem": "System message",
+    "audio": "Audio clip",
+    "video": "Video file",
+    "document": "Document"
+  },
+  "menu": {
+    "copy": "Copy text",
+    "edit": "Edit",
+    "regenerate": "Regenerate",
+    "regenerateHint": "Keeps this version, swipe to compare",
+    "regenerateBusy": "Wait for the current reply to finish",
+    "pin": "Pin",
+    "pinHint": "The character always keeps it in mind",
+    "unpin": "Unpin",
+    "rewind": "Rewind to here",
+    "rewindHint_one": "Removes the {{count}} message after it",
+    "rewindHint_other": "Removes the {{count}} messages after it",
+    "delete": "Delete message",
+    "deleteHint": "Unpin it first",
+    "stats": {
+      "model": "Model",
+      "reply": "Reply",
+      "replyTokens": "{{count}} tokens",
+      "speed": "Speed",
+      "speedValue": "{{value}} tokens/s",
+      "firstToken": "First token",
+      "firstTokenValue": "{{value}} s",
+      "prompt": "Prompt",
+      "promptTokens": "{{count}} tokens"
+    }
+  },
+  "edit": {
+    "title": "Edit message",
+    "assistantHint": "{{name}}'s words, as the story will remember them",
+    "field": "Message text",
+    "save": "Save"
+  },
+  "confirm": {
+    "cancel": "Cancel",
+    "rewindTitle": "Rewind to this message?",
+    "rewindBody_one": "The {{count}} message after it is removed, and the story picks up from here.",
+    "rewindBody_other": "The {{count}} messages after it are removed, and the story picks up from here.",
+    "rewind": "Rewind",
+    "deleteTitle": "Delete this message?",
+    "deleteBodyVersions": "All {{count}} versions of it are removed from the chat.",
+    "deleteBody": "It's removed from the chat and from what the character remembers.",
+    "delete": "Delete"
+  },
+  "banner": {
+    "modelRequired": "This chat needs a model that isn't installed.",
+    "modelNamed": "This chat needs the {{model}} model, which isn't installed.",
+    "modelsMissing": "This chat needs a model that isn't installed: {{models}}.",
+    "openModels": "Open models",
+    "memoryBlocked": "Memory is paused because an earlier rewind couldn't be finished.",
+    "memoryRetry": "Try again",
+    "memoryRetryStill": "It still couldn't be finished.",
+    "memoryRetried": "Memory is back on track",
+    "swapActive": "Swap places is on",
+    "endSwap": "End swap"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "emotion"
+  },
+  "failure": {
+    "title": "The reply didn't finish",
+    "retry": "Try again",
+    "code": {
+      "invalid_conversation": "This conversation can't be written to right now.",
+      "missing_model": "No model is set for this chat. Pick one in the chat options or add one in Models.",
+      "context_unavailable": "The conversation couldn't be prepared for the model.",
+      "speaker_unavailable": "Nobody is available to reply.",
+      "provider_unavailable": "The model couldn't be reached. Check the connection and the provider.",
+      "provider_rejected": "The provider turned the request down. Try another model or check your account.",
+      "empty_output": "The model sent back nothing.",
+      "timed_out": "The model took too long to answer.",
+      "recovery_unavailable": "The reply was interrupted and can't be recovered.",
+      "embedding_unavailable": "The embedding model needed for memory isn't available.",
+      "internal": "The app ran into an internal error.",
+      "database_write_fenced": "The app is busy saving data. Try again in a moment."
+    }
+  },
+  "loading": {
+    "loading": "Loading {{model}}, {{percent}}%",
+    "retrying": "Trying another way to load {{model}}, {{percent}}%",
+    "loaded": "{{model}} is ready",
+    "failed": "Couldn't load {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Faster decoding is off while images are in the chat.",
+    "kv_cache_moved_to_ram": "The context cache didn't fit in video memory and moved to system memory."
+  },
+  "toast": {
+    "copied": "Copied",
+    "copyFailed": "Couldn't reach the clipboard",
+    "pinned": "Pinned. It stays in the character's memory",
+    "unpinned": "Unpinned",
+    "edited": "Message updated",
+    "deleted": "Message deleted",
+    "rewound_one": "Rewound {{count}} message",
+    "rewound_other": "Rewound {{count}} messages",
+    "launchFailed": "Couldn't start the chat",
+    "mediaImageUnsupported": "This chat's model can't read images. Remove them or pick another model.",
+    "mediaAudioUnsupported": "This chat's model can't listen to audio. Remove it or pick another model."
+  },
+  "crisp": {
+    "composerPlaceholder": "Message…",
+    "composerMessage": "Message",
+    "composerStop": "Stop generating",
+    "composerSend": "Send message",
+    "composerSending": "Sending",
+    "composerContinue": "Let the character continue",
+    "messageScene": "Scene",
+    "messageSystem": "System",
+    "messagePinned": "Pinned",
+    "messageMenuTitle": "Message",
+    "messageReasoning": "Thought process",
+    "messageTyping": "Typing",
+    "sheetClose": "Close",
+    "bannerDismiss": "Dismiss",
+    "alertDismiss": "Dismiss",
+    "composerAddAttachment": "Add content",
+    "composerCancelRecording": "Cancel recording",
+    "composerRecordVoice": "Record voice",
+    "composerStopAndTranscribe": "Stop and transcribe",
+    "composerTranscribing": "Transcribing",
+    "composerRecording": "Recording {{elapsed}}",
+    "composerAttachment": "Attachment",
+    "composerFile": "File",
+    "composerAttachmentRemove": "Remove {{name}}"
+  },
+  "placeholder": {
+    "memoryTitle": "Chat memory",
+    "branchesTitle": "Branches"
+  },
+  "streaming": {
+    "imagePrompt": "Writing the image prompt"
+  },
+  "tools": {
+    "title": "Add content",
+    "helpMeReply": "Help me reply",
+    "helpMeReplyHint": "Let the model suggest what to say",
+    "persona": "Persona",
+    "background": "Chat background",
+    "backgroundHidden": "Hidden",
+    "backgroundOwn": "Set for this chat",
+    "backgroundDefault": "Using the default",
+    "backgroundNone": "No background",
+    "note": "Author's note",
+    "noteActive": "Active for this chat",
+    "noteInactive": "Private direction for replies",
+    "dice": "Dice",
+    "diceHint": "Roll dice and add the result to your message",
+    "swap": "Swap places",
+    "swapHint": "Chat as the character and let the model reply as your persona",
+    "swapOn": "Swap places (on)",
+    "swapOnHint": "You are chatting as the character. Tap to turn it off",
+    "uploadImage": "Upload image",
+    "uploadImageHint": "Attach an image to your message",
+    "uploadAudio": "Upload audio",
+    "uploadAudioHint": "Attach an audio clip to your message"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "No persona",
+    "default": "Default",
+    "search": "Search personas",
+    "noMatch": "No personas match",
+    "emptyTitle": "No personas yet",
+    "emptyBody": "Create one in the library to speak as someone specific.",
+    "loading": "Loading personas",
+    "loadFailed": "Couldn't load personas",
+    "retry": "Try again"
+  },
+  "background": {
+    "title": "Chat background",
+    "current": "Current background",
+    "currentOwn": "Set for this chat",
+    "currentDefault": "The default background",
+    "choose": "Choose an image",
+    "replace": "Replace the image",
+    "chooseHint": "Only for this chat",
+    "useDefault": "Use the default",
+    "useDefaultHint": "Go back to the scene or character background"
+  },
+  "note": {
+    "title": "Author's note",
+    "inlineTitle": "Inline editor",
+    "inlineHint": "Show the author's note above the message box for quick edits",
+    "inlineToggle": "Show inline author note editor",
+    "inlineField": "Inline author's note",
+    "inlineEdit": "Edit inline author's note",
+    "inlinePlaceholder": "Add an author's note...",
+    "saving": "Saving...",
+    "hint": "A private direction the model follows in this chat",
+    "placeholder": "Write an author's note that steers the model",
+    "save": "Save",
+    "clear": "Remove",
+    "count_one": "{{count}} character",
+    "count_other": "{{count}} characters",
+    "willRemove": "The note will be removed on save",
+    "none": "No note saved"
+  },
+  "dice": {
+    "title": "Dice",
+    "hint": "Roll dice and add the result to your message",
+    "notation": "Dice notation",
+    "roll": "Roll",
+    "invalid": "Use a notation like 1d20 or 2d6+3",
+    "tapToRoll": "Roll to see a result",
+    "insert": "Insert into message",
+    "recent": "Recent",
+    "clear": "Clear"
+  },
+  "help": {
+    "title": "Help me reply",
+    "draftPrompt": "You have a draft message. How would you like to proceed?",
+    "useMyText": "Use my text as base",
+    "useMyTextHint": "Expand and improve your draft",
+    "writeNew": "Write something new",
+    "writeNewHint": "Generate a fresh reply",
+    "resultTitle": "Suggested reply",
+    "regenerate": "Try again",
+    "use": "Use this",
+    "writing": "Writing your reply...",
+    "thinking": "Thinking before writing...",
+    "callError": {
+      "model_required": "Pick a model for Help me reply in settings.",
+      "model_unavailable": "The Help me reply model couldn't be loaded.",
+      "busy": "The app is busy. Try again in a moment.",
+      "unavailable": "It isn't available right now."
+    },
+    "error": {
+      "failed": "Help me reply failed.",
+      "help_me_reply_disabled": "Help me reply is turned off in settings.",
+      "help_me_reply_no_history": "There is nothing to reply to yet.",
+      "help_me_reply_no_model": "Pick a model for Help me reply in settings.",
+      "help_me_reply_no_reply": "The model didn't write a reply."
+    }
+  },
+  "mic": {
+    "error": {
+      "noModel": "Install a speech recognition model to dictate.",
+      "permission": "Microphone access is blocked. Allow it in your system settings.",
+      "noMicrophone": "No microphone was found.",
+      "noAudio": "Nothing was recorded.",
+      "busy": "Another recording is in progress.",
+      "unsupported": "This device can't record from a microphone.",
+      "failed": "The recording couldn't be transcribed."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Chat settings",
+      "persona": "Persona",
+      "model": "Model",
+      "lorebooks": "Lorebooks",
+      "background": "Chat background",
+      "note": "Author's note",
+      "history": "Chat history",
+      "notes": "Scheduled notes",
+      "starters": "New chat",
+      "advanced": "Model settings"
+    },
+    "back": "Back",
+    "reset": "Reset",
+    "loading": "Loading",
+    "loadFailed": "Couldn't load",
+    "source": {
+      "conversation": "This chat only",
+      "group": "From the group",
+      "character": "From the character",
+      "launch": "From how the chat started",
+      "app_default": "App default"
+    },
+    "meta": {
+      "messages_one": "{{count}} message",
+      "messages_other": "{{count}} messages",
+      "active": "Active {{date}}"
+    },
+    "sections": {
+      "chat": "This chat",
+      "memory": "Memory",
+      "companion": "Companion",
+      "actions": "Chat",
+      "generation": "Generation",
+      "lorebooks": "Lorebooks"
+    },
+    "model": {
+      "title": "Model",
+      "none": "No model set",
+      "search": "Search models",
+      "useDefault": "Use the character default",
+      "useDefaultHint": "Follow the character, then the app default",
+      "remoteTitle": "Use a remote model?",
+      "remoteBody": "This chat will be sent to {{provider}} for every reply.",
+      "use": "Use this model",
+      "unknown": "Unknown model"
+    },
+    "lorebooks": {
+      "title": "Lorebooks",
+      "count_one": "{{count}} lorebook",
+      "count_other": "{{count}} lorebooks",
+      "none": "There are no lorebooks yet.",
+      "useDefault": "Use the default lorebooks",
+      "useDefaultHint": "Follow the character's lorebooks",
+      "useCharacter": "Use the character's lorebooks"
+    },
+    "background": {
+      "set": "Image set"
+    },
+    "memory": {
+      "mode": "Memory mode",
+      "modes": {
+        "manual": "Manual",
+        "dynamic": "Dynamic",
+        "disabled": "Off"
+      },
+      "open": "Open memories",
+      "items_one": "{{count}} memory",
+      "items_other": "{{count}} memories",
+      "summaryTokens_one": "{{count}} summary token",
+      "summaryTokens_other": "{{count}} summary tokens",
+      "off": "Memory is off for this chat"
+    },
+    "notes": {
+      "title": "Scheduled notes",
+      "rowHint": "Reminders the companion sees at set times",
+      "hint": "Notes belong to the character and show up in every chat with them.",
+      "empty": "No scheduled notes yet.",
+      "add": "Add a note",
+      "untitled": "Untitled note",
+      "label": "Label",
+      "labelPlaceholder": "Label (optional)",
+      "content": "Note",
+      "contentPlaceholder": "What should the companion know?",
+      "startsOn": "Starts on",
+      "stopsOn": "Stops on (optional)",
+      "repeats": "Repeats",
+      "windowHours": "Visible for (hours)",
+      "enabled": "Enabled",
+      "enabledHint": "Turn a note off without deleting it",
+      "deleteTitle": "Delete this note?",
+      "deleteBody": "It can't be undone.",
+      "recurrence": {
+        "none": "Once",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "yearly": "Yearly"
+      }
+    },
+    "history": {
+      "untitled": "Untitled chat",
+      "search": "Search chats",
+      "noMatch": "No chats match",
+      "empty": "No chats yet",
+      "meta_one": "{{count}} message · {{date}}",
+      "meta_other": "{{count}} messages · {{date}}",
+      "current": "Current",
+      "archived": "Archived",
+      "actions": "Actions for {{title}}",
+      "rename": "Rename",
+      "export": "Export",
+      "archive": "Archive",
+      "restore": "Restore",
+      "delete": "Delete"
+    },
+    "starters": {
+      "hint": "Start from one of the character's chat templates.",
+      "none": "Start without a template"
+    },
+    "rename": {
+      "field": "Chat title",
+      "save": "Save title",
+      "open": "Rename chat"
+    },
+    "delete": {
+      "title": "Delete this chat?",
+      "body": "{{title}} and all its messages will be removed. This can't be undone.",
+      "confirm": "Delete"
+    },
+    "export": {
+      "done": "Chat exported"
+    },
+    "duplicate": {
+      "done": "Chat duplicated"
+    },
+    "actions": {
+      "newChat": "New chat",
+      "newChatHint": "Start another conversation with this character",
+      "history": "Chat history",
+      "historyHint": "Open, rename or delete earlier chats",
+      "branches": "Branches",
+      "branchesHint": "Switch between the directions this chat took",
+      "duplicate": "Duplicate chat",
+      "duplicateHint": "Make a copy with all its messages",
+      "export": "Export chat",
+      "exportHint": "Save the conversation as a file",
+      "import": "Import a chat log",
+      "importHint": "Bring a conversation in from a file",
+      "archive": "Archive chat",
+      "archiveHint": "Hide it from the list, keep everything",
+      "restore": "Restore chat",
+      "restoreHint": "Bring it back to the list",
+      "delete": "Delete chat",
+      "deleteHint": "Remove it and its messages for good"
+    },
+    "generation": {
+      "title": "Model settings",
+      "hint": "Values set here apply to this chat only. Anything left empty follows the model, then the app.",
+      "noModel": "This chat has no model, so only the app defaults apply.",
+      "resetAll": "Reset all",
+      "discard": "Discard",
+      "inherited": "Following the model and app settings",
+      "count_one": "{{count}} value changed for this chat",
+      "count_other": "{{count}} values changed for this chat"
+    }
+  }
+}

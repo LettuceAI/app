@@ -6,6 +6,7 @@ import { ArrowLeft, Compass, House, Library, MessageSquare, Settings, Users } fr
 import { useTranslation } from "react-i18next";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { WindowEdge } from "@/api/window-controls";
+import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { isSettingsSection, SidebarSettings } from "@/features/settings";
 import { CreateSheet } from "./CreateSheet";
@@ -38,8 +39,10 @@ export function AppShell() {
   const { controller, expanded, failed, perform } = useWindowController(platform);
   const welcome = pathname === "/welcome" || pathname === "/welcome-back";
   const tabs = compact || mobile;
+  const bare = welcome || (tabs && pathname.startsWith("/chat/"));
   const [sidebarOpen, setSidebarOpen] = useSidebarExpanded(api);
   const [createOpen, setCreateOpen] = useState(false);
+  const chats = useChatNavigation();
   const [chatMenu, setChatMenu] = useState<ChatMenuTarget | null>(null);
   const first: NavDestination<Destination> = tabs
     ? { id: "chats", label: t("navigation.chats"), icon: <MessageSquare size={icon.lg} /> }
@@ -72,16 +75,16 @@ export function AppShell() {
   ) : null;
   return (
     <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), navCreate: t("navigation.create"), navCollapse: t("navigation.collapse"), navCollapseSidebar: t("navigation.collapseSidebar"), navExpandSidebar: t("navigation.expandSidebar"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
-    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-clip bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
       {failed && <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">{t("window.failed")}</p>}
-      {welcome ? (
+      {bare ? (
         <>
           {titleBar}
-          <div className="relative min-h-0 flex-1"><Outlet /></div>
+          <div className="relative min-h-0 flex-1 overflow-clip"><Outlet /></div>
         </>
       ) : (
         <CrispAppShell
-          className={!tabs && !sidebarOpen ? "[&_nav_.scrollbar-thin]:[scrollbar-width:none] [&_nav_.scrollbar-thin::-webkit-scrollbar]:hidden" : ""}
+          className={cn("overflow-clip", !tabs && !sidebarOpen && "[&_nav_.scrollbar-thin]:[scrollbar-width:none] [&_nav_.scrollbar-thin::-webkit-scrollbar]:hidden")}
           items={tabs ? [...items, settings] : settingsMode ? [backToApp] : items}
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}
@@ -94,7 +97,7 @@ export function AppShell() {
             } : {
               onCreate: () => setCreateOpen(true),
               createLabel: t("navigation.create"),
-              navSection: <SidebarRecents api={api} heldId={chatMenu?.chat.id ?? null} onMenu={setChatMenu} />,
+              navSection: <SidebarRecents api={api} onOpen={(chat) => chats.openConversation(chat.id)} heldId={chatMenu?.chat.id ?? null} onMenu={setChatMenu} />,
             }),
           })}
           titleBar={titleBar}

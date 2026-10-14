@@ -9,7 +9,7 @@ import { homeCharactersQuery } from "../data/home-characters";
 import { byRecency, recentChatsQuery } from "../data/recent";
 import type { ChatMenuTarget } from "./ChatMenu";
 
-function SidebarChat({ chat, character, held, onMenu }: { chat: ConversationSummary; character: CharacterSummary | null; held: boolean; onMenu: () => void }) {
+function SidebarChat({ chat, character, held, onOpen, onMenu }: { chat: ConversationSummary; character: CharacterSummary | null; held: boolean; onOpen: () => void; onMenu: () => void }) {
   const press = useLongPress(onMenu);
   const name = character?.name ?? chat.title;
   return (
@@ -18,6 +18,7 @@ function SidebarChat({ chat, character, held, onMenu }: { chat: ConversationSumm
       aria-haspopup="dialog"
       title={`${name} · ${chat.title}`}
       {...press.handlers}
+      onClick={press.guardClick(onOpen)}
       className={cn(
         "flex h-9 w-full items-center overflow-hidden rounded-lg text-left text-sm transition-colors motion-instant",
         held ? "bg-fill-2 text-fg" : "text-fg-2 hover:bg-fill hover:text-fg",
@@ -32,7 +33,7 @@ function SidebarChat({ chat, character, held, onMenu }: { chat: ConversationSumm
 }
 
 /** Active chats in the desktop sidebar, newest first and grouped by when; more load as the end scrolls into view. */
-export function SidebarRecents({ api, onMenu, heldId }: { api: ApiClient; onMenu: (target: ChatMenuTarget) => void; heldId: string | null }) {
+export function SidebarRecents({ api, onOpen, onMenu, heldId }: { api: ApiClient; onOpen: (chat: ConversationSummary) => void; onMenu: (target: ChatMenuTarget) => void; heldId: string | null }) {
   const { t } = useTranslation("home");
   const open = useNavExpanded();
   const reduced = useReducedMotion();
@@ -78,7 +79,7 @@ export function SidebarRecents({ api, onMenu, heldId }: { api: ApiClient; onMenu
             <AnimatePresence mode="popLayout" initial={false}>
               {entry.chats.map((chat) => (
                 <motion.div key={chat.id} layout exit={{ opacity: 0 }} transition={m.settle}>
-                  <SidebarChat chat={chat} character={characterOf(chat)} held={chat.id === heldId} onMenu={() => onMenu({ chat, character: characterOf(chat) })} />
+                  <SidebarChat chat={chat} character={characterOf(chat)} held={chat.id === heldId} onOpen={() => onOpen(chat)} onMenu={() => onMenu({ chat, character: characterOf(chat) })} />
                 </motion.div>
               ))}
             </AnimatePresence>

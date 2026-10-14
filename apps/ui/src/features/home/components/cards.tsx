@@ -10,11 +10,12 @@ import type { HomeCharacter } from "../data/home-characters";
 const coverFocus = "50% 32%";
 
 export interface MenuProps {
+  onOpen: () => void;
   onMenu: () => void;
   held: boolean;
 }
 
-export function GalleryCard({ home, onMenu, held }: { home: HomeCharacter } & MenuProps) {
+export function GalleryCard({ home, onOpen, onMenu, held }: { home: HomeCharacter } & MenuProps) {
   const { t, i18n } = useTranslation("home");
   const { character } = home;
   const press = useLongPress(onMenu);
@@ -26,12 +27,13 @@ export function GalleryCard({ home, onMenu, held }: { home: HomeCharacter } & Me
       meta={home.latest ? relativeTime(home.latest.updated_at, undefined, i18n.language) : undefined}
       aria-haspopup="dialog"
       {...press.handlers}
+      onClick={press.guardClick(onOpen)}
       className={cn(held && "ring-2 ring-inset ring-fg/40")}
     />
   );
 }
 
-function Cover({ api, home, image, className, children, onMenu, held }: { api: ApiClient; home: HomeCharacter; image?: string | null; className: string; children: ReactNode } & MenuProps) {
+function Cover({ api, home, image, className, children, onMenu, held }: { api: ApiClient; home: HomeCharacter; image?: string | null; className: string; children: ReactNode } & Omit<MenuProps, "onOpen">) {
   const colors = useCardColors(api, home.character);
   const press = useLongPress(onMenu);
   const banner = image ?? home.character.banner?.url ?? null;
@@ -44,7 +46,7 @@ function Cover({ api, home, image, className, children, onMenu, held }: { api: A
   );
 }
 
-export function HeroCard({ api, home, compact, onMenu, held }: { api: ApiClient; home: HomeCharacter; compact: boolean } & MenuProps) {
+export function HeroCard({ api, home, compact, onOpen, onMenu, held }: { api: ApiClient; home: HomeCharacter; compact: boolean } & MenuProps) {
   const { t, i18n } = useTranslation("home");
   const { character } = home;
   const lastChat = home.latest ? t("lastChat", { when: relativeTime(home.latest.updated_at, undefined, i18n.language).toLowerCase() }) : null;
@@ -61,7 +63,7 @@ export function HeroCard({ api, home, compact, onMenu, held }: { api: ApiClient;
             </div>
           </div>
           <p className="line-clamp-2 text-sm text-fg-2">{description}</p>
-          <Button variant="primary" className="w-full" leading={<MessageSquare size={icon.md} />}>
+          <Button variant="primary" className="w-full" onClick={onOpen} leading={<MessageSquare size={icon.md} />}>
             {t("continueChat")}
           </Button>
         </div>
@@ -75,7 +77,7 @@ export function HeroCard({ api, home, compact, onMenu, held }: { api: ApiClient;
               <p className="mt-2 line-clamp-2 text-base text-fg-2">{description}</p>
             </div>
           </div>
-          <Button variant="primary" size="lg" leading={<MessageSquare size={icon.md} />}>
+          <Button variant="primary" size="lg" onClick={onOpen} leading={<MessageSquare size={icon.md} />}>
             {t("continueChat")}
           </Button>
         </div>
@@ -85,7 +87,7 @@ export function HeroCard({ api, home, compact, onMenu, held }: { api: ApiClient;
 }
 
 /** The chat you were last in, with its character's art: where the desktop home starts. */
-export function ContinueCard({ api, home, chat, onMenu, held }: { api: ApiClient; home: HomeCharacter; chat: ConversationSummary } & MenuProps) {
+export function ContinueCard({ api, home, chat, onOpen, onMenu, held }: { api: ApiClient; home: HomeCharacter; chat: ConversationSummary } & MenuProps) {
   const { t, i18n } = useTranslation("home");
   const { character } = home;
   return (
@@ -99,7 +101,7 @@ export function ContinueCard({ api, home, chat, onMenu, held }: { api: ApiClient
             {chat.last_message_preview && <p className="mt-2 line-clamp-2 text-base leading-snug text-fg-2"><InlineMarkdown>{chat.last_message_preview}</InlineMarkdown></p>}
           </div>
         </div>
-        <Button variant="primary" size="lg" leading={<MessageSquare size={icon.md} />}>
+        <Button variant="primary" size="lg" onClick={onOpen} leading={<MessageSquare size={icon.md} />}>
           {t("continueChat")}
         </Button>
       </div>

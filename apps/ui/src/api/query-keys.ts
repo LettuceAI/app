@@ -11,6 +11,10 @@ export const queryKeys = {
     detail: (conversationId: string) => [...queryKeys.conversations.all, "detail", conversationId] as const,
     messages: (conversationId: string) => [...queryKeys.conversations.detail(conversationId), "messages"] as const,
   },
+  memory: {
+    all: ["memory"] as const,
+    detail: (conversationId: string) => [...queryKeys.memory.all, conversationId] as const,
+  },
   characters: {
     all: ["characters"] as const,
     list: () => [...queryKeys.characters.all, "list"] as const,
@@ -73,6 +77,8 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.conversations.detail(event.conversation_id),
   ],
   conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
+  memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id)],
+  required_models_changed: () => [queryKeys.conversations.all],
   character_changed: () => [queryKeys.characters.all, queryKeys.home.characters()],
   models_changed: () => [queryKeys.models.all, queryKeys.providers.all, queryKeys.settings.all, queryKeys.localModels.all],
   database_reloaded: () => [[]],

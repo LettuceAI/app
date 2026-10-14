@@ -25,7 +25,13 @@ export function downloadPhaseOf(job: JobView): DownloadPhase {
  * Follows a job until it settles, reporting each view, and resolves with the settled one. `jobWatch` answers with the
  * job as it is when the watch attaches; every later change arrives as an event.
  */
-export function watchJob(api: ApiClient, jobId: string, onJob: (job: JobView) => void, signal: AbortSignal): Promise<JobView> {
+export function watchJob(
+  api: ApiClient,
+  jobId: string,
+  onJob: (job: JobView) => void,
+  signal: AbortSignal,
+  onText?: (text: string | null, reasoning: string | null) => void,
+): Promise<JobView> {
   return new Promise((resolve, reject) => {
     const stream = new AbortController();
     let settled = false;
@@ -59,6 +65,7 @@ export function watchJob(api: ApiClient, jobId: string, onJob: (job: JobView) =>
         [{ job_id: jobId }],
         (event) => {
           if ("job" in event) apply(event.job);
+          else if (event.type === "text_delta" && !settled) onText?.(event.text, event.reasoning);
         },
         { signal: stream.signal },
       )

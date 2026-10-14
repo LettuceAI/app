@@ -7,11 +7,12 @@ import { useCardColors } from "../data/gradient";
 export interface HomeCharacterCardProps {
   api: ApiClient;
   character: CharacterSummary;
+  onOpen: () => void;
   onMenu: () => void;
   held: boolean;
 }
 
-export function HomeCharacterCard({ api, character, onMenu, held }: HomeCharacterCardProps) {
+export function HomeCharacterCard({ api, character, onOpen, onMenu, held }: HomeCharacterCardProps) {
   const { t } = useTranslation("home");
   const colors = useCardColors(api, character);
   const press = useLongPress(onMenu);
@@ -26,6 +27,7 @@ export function HomeCharacterCard({ api, character, onMenu, held }: HomeCharacte
       variant={character.card_style === "banner" ? "banner" : "row"}
       aria-haspopup="dialog"
       {...press.handlers}
+      onClick={press.guardClick(onOpen)}
       className={cn(held && "ring-2 ring-fg/40")}
     />
   );

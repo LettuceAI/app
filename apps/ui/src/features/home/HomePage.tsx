@@ -21,6 +21,7 @@ import {
   Skeleton,
   useCompactLayout,
 } from "@lettuceai/crisp";
+import { useChatNavigation } from "@/features/conversations";
 import { FailureState } from "@/shared/ui/FailureState";
 import { ContinueCard, GalleryCard, HeroCard } from "./components/cards";
 import { CharacterMenu } from "./components/CharacterMenu";
@@ -69,6 +70,7 @@ export function HomePage() {
   const [layoutSheet, setLayoutSheet] = useState(false);
   const [menuFor, setMenuFor] = useState<HomeCharacter | null>(null);
   const [chatMenu, setChatMenu] = useState<ChatMenuTarget | null>(null);
+  const chats = useChatNavigation();
   const [desktopView, setDesktopView] = useDesktopView(api);
   const [phoneLayout, setPhoneLayout] = usePhoneLayout(api);
   const characters = useQuery(homeCharactersQuery(api));
@@ -79,9 +81,9 @@ export function HomePage() {
   const layout = phone ? phoneLayout : desktopView === "home" ? "gallery" : desktopView;
   const count = all ? (searching ? t("count", { shown: shown.length, total: all.length }) : String(all.length)) : undefined;
 
-  const characterMenu = (home: HomeCharacter) => ({ onMenu: () => setMenuFor(home), held: menuFor?.character.id === home.character.id });
+  const characterMenu = (home: HomeCharacter) => ({ onOpen: () => void chats.openCharacter(home.character.id, home.latest?.id ?? null), onMenu: () => setMenuFor(home), held: menuFor?.character.id === home.character.id });
   const recent = (
-    <RecentList api={api} characters={byId} search={query} heldId={chatMenu?.chat.id ?? null} onMenu={(chat, character) => setChatMenu({ chat, character })} />
+    <RecentList api={api} characters={byId} search={query} onOpen={(chat) => chats.openConversation(chat.id)} heldId={chatMenu?.chat.id ?? null} onMenu={(chat, character) => setChatMenu({ chat, character })} />
   );
   const menus = (
     <>
@@ -188,6 +190,7 @@ export function HomePage() {
               home={continuing}
               chat={continuing.latest}
               held={chatMenu?.chat.id === continuing.latest.id}
+              onOpen={() => chats.openConversation(continuing.latest!.id)}
               onMenu={() => continuing.latest && setChatMenu({ chat: continuing.latest, character: continuing.character })}
             />
           )
