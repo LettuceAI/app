@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { LlamaContextInfoRequest, LlamaSettingsDraft, SettingsModelSettingsLayer } from "@/api/generated/bindings";
 import { useSettingsApi } from "./data";
-import { effectiveField, resolvedKvSettings, type ModelConfig } from "./model-config";
+import { effectiveField, resolvedKvSettings, type ModelConfig } from "@/entities/model/model-config";
 
 function llamaDraft(config: ModelConfig, defaults: SettingsModelSettingsLayer | undefined): LlamaSettingsDraft {
   const s = { ...defaults?.llama_cpp, ...Object.fromEntries(Object.entries(config.llama_cpp).filter(([, value]) => value != null)) } as ModelConfig["llama_cpp"];

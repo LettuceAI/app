@@ -2,7 +2,7 @@ import type { SettingsModelSettingsLayer } from "@/api/generated/bindings";
 import { describe, expect, it } from "vitest";
 import { runtimeFieldDefault } from "./model-editor-defaults";
 import full from "./fixtures/model-profile-config.json";
-import { effectiveField, featureKeys, parseModelConfig, readField, resetFeature, serializeModelConfig, writeField } from "./model-config";
+import { effectiveField, featureKeys, parseModelConfig, readField, resetFeature, serializeModelConfig, writeField } from "@/entities/model/model-config";
 
 it("round-trips every model setting from the Rust entity-file example in its stored encoding", () => {
   expect(serializeModelConfig(parseModelConfig(full))).toEqual(full);

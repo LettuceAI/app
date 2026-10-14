@@ -11,7 +11,7 @@ import { FailureState } from "@/shared/ui/FailureState";
 import { EditorRow } from "@/shared/ui/EditorRow";
 import { SliderValue } from "@/shared/ui/SliderValue";
 import { useSettingsApi } from "./data";
-import { effectiveField, readField, writeField, type ModelConfig, type ModelLora } from "./model-config";
+import { effectiveField, readField, writeField, type ModelConfig, type ModelLora } from "@/entities/model/model-config";
 
 export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false, contextEditor = false, splitOnly = false, devicesOnly = false, layersOnly = false }: { path: string; config: ModelConfig; defaults: SettingsModelSettingsLayer | undefined; onChange: (value: ModelConfig) => void; gpu?: boolean; contextEditor?: boolean; splitOnly?: boolean; devicesOnly?: boolean; layersOnly?: boolean }) {
   const { t, i18n } = useTranslation("settings");

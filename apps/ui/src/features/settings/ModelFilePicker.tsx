@@ -11,7 +11,7 @@ import { queryKeys } from "@/api/query-keys";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "./data";
-import type { EditorKind } from "./model-editor-sections";
+import type { EditorKind } from "@/entities/model/model-editor-sections";
 
 export interface PickedModel { id: string; name: string | null; remote?: RemoteModelContract; installed?: SdInstalledModel }
 export function ModelFilePicker({ open, accountId, kind, providerKind, providerName, selectedId, onClose, onPick }: {

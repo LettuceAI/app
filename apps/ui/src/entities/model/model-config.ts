@@ -243,3 +243,40 @@ export function effectiveField(config: ModelConfig, defaults: SettingsModelSetti
   }
   return defaultOf(defaults, field.store, field.key);
 }
+
+function isPlain(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeDeep(base: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(over)) {
+    if (value === null || value === undefined) continue;
+    const current = out[key];
+    out[key] = isPlain(value) && isPlain(current) ? mergeDeep(current, value) : value;
+  }
+  return out;
+}
+
+export type SettingsLayerParts = Pick<SettingsModelSettingsLayer, "chat_parameters" | "llama_cpp" | "stable_diffusion">;
+
+export function layerOf(config: Pick<ModelConfig, "chat_parameters" | "llama_cpp" | "stable_diffusion">): SettingsLayerParts {
+  return structuredClone({ chat_parameters: config.chat_parameters, llama_cpp: config.llama_cpp, stable_diffusion: config.stable_diffusion }) as unknown as SettingsLayerParts;
+}
+
+/** Lays `over` on top of `base`, leaving a value of `base` wherever `over` has none. */
+export function mergeLayers(base: SettingsModelSettingsLayer | undefined, over: Partial<SettingsLayerParts> | undefined): SettingsModelSettingsLayer {
+  const merged = mergeDeep(record(base ?? {}), record(over ?? {}));
+  return { chat_parameters: record(merged.chat_parameters), llama_cpp: record(merged.llama_cpp), stable_diffusion: record(merged.stable_diffusion) } as unknown as SettingsModelSettingsLayer;
+}
+
+function leaves(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  if (isPlain(value)) return Object.values(value).reduce<number>((sum, entry) => sum + leaves(entry), 0);
+  return 1;
+}
+
+/** How many chat and llama.cpp values a layer sets. */
+export function overrideCount(layer: Partial<SettingsLayerParts> | null | undefined): number {
+  return leaves(layer?.chat_parameters) + leaves(layer?.llama_cpp);
+}

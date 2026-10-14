@@ -8,7 +8,7 @@ import { EditorRow } from "@/shared/ui/EditorRow";
 import { FailureState } from "@/shared/ui/FailureState";
 import { JinjaEditor } from "@/shared/ui/JinjaEditor";
 import { useSettingsApi } from "./data";
-import { effectiveField, readField, writeField, type ModelConfig } from "./model-config";
+import { effectiveField, readField, writeField, type ModelConfig } from "@/entities/model/model-config";
 
 export function ModelTemplate({ path, config, defaults, onChange }: { path: string; config: ModelConfig; defaults: SettingsModelSettingsLayer | undefined; onChange: (config: ModelConfig) => void }) {
   const { t } = useTranslation("settings");

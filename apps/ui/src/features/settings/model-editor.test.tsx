@@ -6,7 +6,7 @@ import type { ModelSaveRequest, ModelView, ProviderAccountView, SettingsView } f
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
-import { formatSequences } from "./model-editor-sequences";
+import { formatSequences } from "@/entities/model/model-editor-sequences";
 import full from "./fixtures/model-profile-config.json";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));

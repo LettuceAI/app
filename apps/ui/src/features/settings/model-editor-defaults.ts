@@ -1,7 +1,7 @@
 import type { ImageBundleProfile, SettingsModelSettingsLayer } from "@/api/generated/bindings";
-import { effectiveField, type Layer, type ModelConfig } from "./model-config";
-import type { EditorKind } from "./model-editor-sections";
-import type { FieldId } from "./model-editor-fields";
+import { effectiveField, type Layer, type ModelConfig } from "@/entities/model/model-config";
+import type { EditorKind } from "@/entities/model/model-editor-sections";
+import type { FieldId } from "@/entities/model/model-editor-fields";
 
 const profiles = {
   balanced: { temperature: 0.8, topP: 0.95, topK: 40, llamaMinP: 0.05, llamaTypicalP: 1, frequencyPenalty: 0.15, presencePenalty: 0 },
