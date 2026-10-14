@@ -365,6 +365,10 @@ pub struct PersonasListRequest {
     pub sort: Option<LibrarySort>,
     #[serde(default)]
     pub search_nickname: bool,
+    /// Also matches the persona's description, as the picker does; the
+    /// library matches titles only.
+    #[serde(default)]
+    pub search_description: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -373,6 +377,7 @@ pub struct PersonasListRequest {
 pub struct PersonaSummary {
     pub id: String,
     pub title: String,
+    pub description: String,
     pub nickname: Option<String>,
     pub avatar: Option<crate::AssetRef>,
 }

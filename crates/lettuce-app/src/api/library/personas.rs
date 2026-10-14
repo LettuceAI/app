@@ -184,6 +184,7 @@ pub async fn personas_list(
                     include_archived: false,
                     sort: crate::api::mapping::library_sort(request.sort),
                     search_nickname: request.search_nickname,
+                    search_description: request.search_description,
                 },
                 lettuce_types::PageRequest {
                     cursor: request.cursor,
@@ -201,6 +202,7 @@ pub async fn personas_list(
                     .map(|persona| dto::PersonaSummary {
                         id: persona.id.to_string(),
                         title: persona.title,
+                        description: persona.description,
                         nickname: persona.nickname,
                         avatar: persona
                             .media

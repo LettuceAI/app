@@ -20,7 +20,12 @@ mod messages_tests;
 pub(super) mod scenes;
 #[cfg(test)]
 mod scenes_tests;
+mod send_media;
+#[cfg(test)]
+mod send_media_tests;
 pub(super) mod settings;
+#[cfg(test)]
+mod settings_model_tests;
 #[cfg(test)]
 mod settings_tests;
 pub(super) mod turns;
@@ -34,13 +39,13 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
     BeginGeneration, ConversationBackground, ConversationKind, ConversationKindTag,
     ConversationLifecycle, ConversationOverview, ConversationOverviewReader, ConversationQuery,
-    ConversationReader, ConversationRepositoryError, GenerationInput, IdempotencyKey, MessageDraft,
-    MessagePart, MessageRole, MessageVisibility, OperationKind, OperationToken, ParticipantRole,
-    ParticipantSource, SendConversation, ValidationError,
+    ConversationReader, ConversationRepositoryError, GenerationInput, IdempotencyKey,
+    MediaAssetRole, MessageDraft, MessagePart, MessageRole, MessageVisibility, OperationKind,
+    OperationToken, ParticipantRole, ParticipantSource, SendConversation, ValidationError,
 };
 use lettuce_jobs::{CancellationReason, handle::CancellationToken};
 use lettuce_types::{
-    CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationStarterId,
+    AssetId, CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationStarterId,
     GenerationTurnId, GroupId, PageRequest, SceneId, TimestampMillis,
 };
 
@@ -493,11 +498,22 @@ fn message_page(
     })
 }
 
-fn send_digest(conversation_id: ConversationId, text: &str) -> Result<ContentHash, ApiError> {
+fn send_digest(
+    conversation_id: ConversationId,
+    media: &[AssetId],
+    swap_roles: bool,
+    text: &str,
+) -> Result<ContentHash, ApiError> {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"lettuce-api-conversation-send-v1\0");
+    hasher.update(b"lettuce-api-conversation-send-v2\0");
     hasher.update(conversation_id.to_string().as_bytes());
     hasher.update(b"\0");
+    hasher.update(&(media.len() as u64).to_le_bytes());
+    for id in media {
+        hasher.update(id.to_string().as_bytes());
+        hasher.update(b"\0");
+    }
+    hasher.update(&[u8::from(swap_roles)]);
     hasher.update(text.as_bytes());
     ContentHash::parse(hasher.finalize().to_hex().as_str())
         .map_err(|_| api_error(ApiErrorCode::Internal, "send digest is not a content hash"))
@@ -537,16 +553,19 @@ where
         + 'static,
 {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
-    if request.text.trim().is_empty() {
+    let media = self::send_media::parse_media(&request.media)?;
+    if request.text.trim().is_empty() && media.is_empty() {
         return Err(invalid_field("text", "the message text is blank"));
     }
     let key = operation_key(request.client_operation_id)?;
+    let swap_roles = request.swap_places;
     let text = request.text;
     let replay = {
         let operation = OperationToken {
             key: key.clone(),
-            request_digest: send_digest(conversation_id, &text)?,
+            request_digest: send_digest(conversation_id, &media, swap_roles, &text)?,
         };
+        let media = media.clone();
         context
             .blocking(move |context| {
                 let record = ConversationReader::operation_record(
@@ -564,7 +583,23 @@ where
                         ))
                     }
                     Some(_) => Ok(true),
-                    None => Ok(false),
+                    None => {
+                        let database = context.backend().database();
+                        let kinds = self::send_media::attachment_kinds(database, &media)?;
+                        if !kinds.is_empty() {
+                            let conversation = ConversationReader::get(database, conversation_id)
+                                .map_err(IntoApiError::into_api_error)?
+                                .conversation;
+                            if matches!(conversation.kind, ConversationKind::Direct(_)) {
+                                self::send_media::require_input_modalities(
+                                    database,
+                                    &conversation,
+                                    &kinds,
+                                )?;
+                            }
+                        }
+                        Ok(false)
+                    }
                 }
             })
             .await?
@@ -595,7 +630,7 @@ where
                 })?;
             let operation = OperationToken {
                 key,
-                request_digest: send_digest(conversation_id, &text)?,
+                request_digest: send_digest(conversation_id, &media, swap_roles, &text)?,
             };
             if let Some(record) = ConversationReader::operation_record(
                 database,
@@ -611,6 +646,21 @@ where
                     "client_operation_id was already used for a different send",
                 ));
             }
+            if !replay
+                && !media.is_empty()
+                && matches!(conversation.kind, ConversationKind::Group(_))
+            {
+                let kinds = self::send_media::attachment_kinds(database, &media)?;
+                self::send_media::require_input_modalities(database, &conversation, &kinds)?;
+            }
+            let mut parts = Vec::with_capacity(media.len() + 1);
+            if !text.trim().is_empty() {
+                parts.push(MessagePart::Text { text });
+            }
+            parts.extend(media.iter().map(|asset_id| MessagePart::MediaAsset {
+                asset_id: *asset_id,
+                role: MediaAssetRole::Attachment,
+            }));
             let command = SendConversation {
                 conversation_id,
                 branch_id: conversation.active_branch_id,
@@ -619,12 +669,12 @@ where
                 message: MessageDraft {
                     role: MessageRole::User,
                     author_participant_id: Some(user.id),
-                    parts: vec![MessagePart::Text { text }],
+                    parts,
                     visibility: MessageVisibility::Visible,
                     pinned: false,
                     scene_edited: false,
                 },
-                swap_roles: false,
+                swap_roles,
             };
             let emotion = context.emotion();
             let begun = match CompanionTurnCoordinator::new(database, Some(emotion.as_ref()))

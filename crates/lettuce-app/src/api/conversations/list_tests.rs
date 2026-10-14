@@ -98,6 +98,8 @@ async fn send(harness: &Harness, conversation_id: &str, key: &str, text: &str) {
         dto::ConversationSendRequest {
             conversation_id: conversation_id.into(),
             text: text.into(),
+            media: Vec::new(),
+            swap_places: false,
             client_operation_id: key.into(),
         },
         Arc::new(NoStream),

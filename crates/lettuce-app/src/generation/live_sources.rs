@@ -7,8 +7,8 @@ use lettuce_characters::{
 };
 use lettuce_conversations::{
     Conversation, ConversationKind, ConversationParticipant, GroupChatModeSnapshot,
-    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, MemorySettingsSnapshot, ParticipantSource,
-    SettingProvenance, SnapshotSelection,
+    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, MemorySettingsSnapshot, ParticipantRole,
+    ParticipantSource, SettingProvenance, SnapshotSelection,
 };
 use lettuce_types::{CharacterId, ModelProfileId};
 
@@ -313,4 +313,101 @@ fn default_persona<S: PersonaRepository + ?Sized>(
         .get_default_snapshot()?
         .persona
         .filter(|persona| persona.status == LifecycleStatus::Active))
+}
+
+/// How a group speaker's model resolves.
+pub(crate) enum MemberResolution {
+    Snapshot(lettuce_conversations::ModelSelectionSnapshot),
+    Profile(ModelProfileId),
+    Effective,
+    NoCharacter,
+}
+
+/// Resolves a group speaker's model: `member_model`, then for a live choice
+/// the character's default and the app default, then the conversation's
+/// effective model.
+pub(crate) fn resolve_member_model<E>(
+    conversation: &Conversation,
+    participant: &ConversationParticipant,
+    profile: Option<&GroupProfile>,
+    character_default: impl FnOnce(CharacterId) -> Result<Option<ModelProfileId>, E>,
+    app_default: impl FnOnce() -> Result<Option<ModelProfileId>, E>,
+) -> Result<MemberResolution, E> {
+    Ok(match member_model(conversation, participant, profile) {
+        MemberModel::Snapshot(model) => MemberResolution::Snapshot(model),
+        MemberModel::Profile(id) => MemberResolution::Profile(id),
+        MemberModel::Live => {
+            let ParticipantSource::Character(character_id) = participant.source else {
+                return Ok(MemberResolution::NoCharacter);
+            };
+            let character = character_default(character_id)?;
+            let app = app_default()?;
+            character
+                .or(app)
+                .map_or(MemberResolution::Effective, MemberResolution::Profile)
+        }
+    })
+}
+
+/// The model each speaker of the conversation would answer with now, `None`
+/// where no model resolves. A group's speakers are its enabled, unmuted
+/// characters.
+pub(crate) fn speaker_models<S: CharacterRepository + GroupRepository + ?Sized>(
+    sources: &S,
+    conversation: &Conversation,
+    app_default: Option<ModelProfileId>,
+) -> Result<Vec<Option<ModelProfileId>>, RepositoryError> {
+    let character_default = |character_id: CharacterId| {
+        CharacterRepository::get(sources, character_id).map(|character| {
+            character.and_then(|character| character.character.defaults.model_profile_id)
+        })
+    };
+    match &conversation.kind {
+        ConversationKind::Direct(details) => {
+            let own = conversation
+                .current_settings
+                .as_ref()
+                .filter(|settings| settings.model_provenance == SettingProvenance::CurrentOverride);
+            if let Some(model) = own.and_then(|settings| settings.model_override.as_ref()) {
+                return Ok(vec![Some(model.source_id)]);
+            }
+            Ok(vec![
+                character_default(details.character.source_id)?.or(app_default),
+            ])
+        }
+        ConversationKind::Group(_) => {
+            let live = live_group(sources, conversation)?;
+            let profile = live.as_ref().and_then(|live| live.profile.as_ref());
+            let mut models = Vec::new();
+            for participant in conversation.participants.iter().filter(|participant| {
+                participant.role == ParticipantRole::Character
+                    && participant.enabled
+                    && !participant.muted
+            }) {
+                models.push(
+                    match resolve_member_model(
+                        conversation,
+                        participant,
+                        profile,
+                        character_default,
+                        || Ok(app_default),
+                    )? {
+                        MemberResolution::Snapshot(model) => Some(model.source_id),
+                        MemberResolution::Profile(id) => Some(id),
+                        MemberResolution::Effective => {
+                            lettuce_conversations::resolve_effective_settings(
+                                conversation,
+                                Some(participant.id),
+                            )
+                            .ok()
+                            .and_then(|settings| settings.model)
+                            .map(|model| model.source_id)
+                        }
+                        MemberResolution::NoCharacter => None,
+                    },
+                );
+            }
+            Ok(models)
+        }
+    }
 }

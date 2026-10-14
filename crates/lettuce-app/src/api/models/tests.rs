@@ -203,6 +203,8 @@ async fn send(harness: &Harness, conversation_id: &str, key: &str) -> Result<(),
         dto::ConversationSendRequest {
             conversation_id: conversation_id.into(),
             text: "Hello there".into(),
+            media: Vec::new(),
+            swap_places: false,
             client_operation_id: key.into(),
         },
         Arc::new(NoStream),
@@ -430,6 +432,8 @@ async fn an_accepted_send_replays_after_its_model_is_removed() {
         dto::ConversationSendRequest {
             conversation_id: conversation_id.clone(),
             text: "Something else".into(),
+            media: Vec::new(),
+            swap_places: false,
             client_operation_id: "replay-send".into(),
         },
         Arc::new(NoStream),

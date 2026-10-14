@@ -89,6 +89,22 @@ pub(crate) fn settings_view(
         },
     };
     let background = background(context, &conversation, profile);
+    let model_settings = match &conversation.kind {
+        ConversationKind::Direct(_) => Some(
+            super::super::app::settings::convert(
+                own.map(|settings| settings.model_settings.clone())
+                    .unwrap_or_default(),
+                "model_settings",
+            )
+            .map_err(|_| {
+                api_error(
+                    ApiErrorCode::Internal,
+                    "the stored model settings could not be read",
+                )
+            })?,
+        ),
+        ConversationKind::Group(_) => None,
+    };
     let view = match &conversation.kind {
         ConversationKind::Direct(details) => {
             let character = CharacterRepository::get(database, details.character.source_id)
@@ -189,6 +205,7 @@ pub(crate) fn settings_view(
                 disable_character_lorebooks: None,
                 speaker_selection: None,
                 members: None,
+                model_settings,
             }
         }
         ConversationKind::Group(details) => {
@@ -315,6 +332,7 @@ pub(crate) fn settings_view(
                     ),
                 }),
                 members: Some(members(context, &conversation, live)?),
+                model_settings,
             }
         }
     };
@@ -755,6 +773,19 @@ fn settings_change(
                 dto::FlagChange::Set { value } => Change::Set(value),
                 dto::FlagChange::Reset => Change::Reset,
             }),
+        model_settings: patch
+            .model_settings
+            .map(|layer| {
+                super::super::app::settings::validate_sampler_finite(&layer)
+                    .map_err(|error| invalid_field("model_settings", error.message))?;
+                let layer: lettuce_models::ModelSettingsLayer =
+                    super::super::app::settings::convert(layer, "model_settings")?;
+                layer
+                    .validate()
+                    .map_err(|error| invalid_field("model_settings", error.to_string()))?;
+                Ok::<_, ApiError>(layer)
+            })
+            .transpose()?,
         follow_group_members: patch.reset_members,
         follow_group_member_models: patch.reset_member_models,
     })

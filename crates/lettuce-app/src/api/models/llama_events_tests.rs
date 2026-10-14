@@ -421,6 +421,8 @@ async fn a_local_turn_completes_when_the_ui_discards_every_event() {
         lettuce_contracts::ConversationSendRequest {
             conversation_id: chat,
             text: "Hi".into(),
+            media: Vec::new(),
+            swap_places: false,
             client_operation_id: "unwatched-local-send".into(),
         },
         Arc::new(DiscardingStream),

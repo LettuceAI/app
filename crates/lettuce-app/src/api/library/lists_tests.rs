@@ -209,6 +209,7 @@ async fn persona_library_lists_use_creation_order_and_return_the_default_singlet
     .await
     .expect("first page");
     assert_eq!(page.items[0].id, first.id.to_string());
+    assert_eq!(page.items[0].description, "First");
     assert_eq!(page.default_persona.persona_id, Some(first.id.to_string()));
     assert_eq!(page.default_persona.revision, selected.revision.get());
     let next = personas_list(
@@ -221,6 +222,7 @@ async fn persona_library_lists_use_creation_order_and_return_the_default_singlet
     .await
     .expect("next page");
     assert_eq!(next.items[0].id, second.id.to_string());
+    assert_eq!(next.items[0].description, "Second");
     let sorted = personas_list(
         &harness.context,
         dto::PersonasListRequest {
@@ -268,6 +270,78 @@ fn existing_character_picker_requests_keep_their_wire_shape() {
     assert_eq!(request.query, None);
     assert_eq!(request.sort, None);
     assert!(!request.search_nickname);
+}
+
+#[tokio::test]
+async fn persona_search_matches_descriptions_with_unicode_case_and_literal_wildcards() {
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let mut ids = Vec::new();
+    for (title, description, created) in [
+        ("First", "An ÉCLAIR enthusiast with 100%_focus", 1),
+        ("Second", "Éclair explorer", 2),
+        ("Other", "A quiet reader", 3),
+    ] {
+        let persona = PersonaRepository::create(
+            database,
+            Persona::new(
+                PersonaId::new(),
+                title.into(),
+                description.into(),
+                TimestampMillis::new(created),
+            )
+            .expect("persona"),
+        )
+        .expect("create");
+        ids.push(persona.id.to_string());
+    }
+    let titles_only = personas_list(
+        &harness.context,
+        dto::PersonasListRequest {
+            query: Some("eclair".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("library search");
+    assert!(titles_only.items.is_empty());
+    let request = dto::PersonasListRequest {
+        query: Some("e\u{301}CLAIR".into()),
+        limit: Some(1),
+        search_description: true,
+        ..Default::default()
+    };
+    let first = personas_list(&harness.context, request.clone())
+        .await
+        .expect("first matching page");
+    assert_eq!(first.items[0].id, ids[0]);
+    assert_eq!(
+        first.items[0].description,
+        "An ÉCLAIR enthusiast with 100%_focus"
+    );
+    let second = personas_list(
+        &harness.context,
+        dto::PersonasListRequest {
+            cursor: first.next_cursor,
+            ..request
+        },
+    )
+    .await
+    .expect("next matching page");
+    assert_eq!(second.items[0].id, ids[1]);
+    assert!(second.next_cursor.is_none());
+    let literal = personas_list(
+        &harness.context,
+        dto::PersonasListRequest {
+            query: Some("100%_".into()),
+            search_description: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("literal pattern");
+    assert_eq!(literal.items.len(), 1);
+    assert_eq!(literal.items[0].id, ids[0]);
 }
 
 #[tokio::test]

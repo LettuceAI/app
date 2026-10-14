@@ -497,8 +497,25 @@ pub struct MessageCount {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MessagePartView {
-    Text { text: String },
-    Media { asset: AssetRef, role: MediaRole },
+    Text {
+        text: String,
+    },
+    /// `kind` is what the asset holds; none when the asset row is gone.
+    Media {
+        asset: AssetRef,
+        role: MediaRole,
+        kind: Option<MediaPartKind>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MediaPartKind {
+    Image,
+    Audio,
+    Video,
+    Document,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -624,8 +641,15 @@ pub struct MessagePage {
 pub struct ConversationSendRequest {
     pub conversation_id: String,
     pub text: String,
-    /// Idempotency key: repeating a send with the same key and text returns
-    /// the first send's result.
+    /// Attachment asset ids from `assets_ingest`, in the order attached. The
+    /// text may be blank only when there are attachments.
+    #[serde(default)]
+    pub media: Vec<String>,
+    /// Swaps the speakers' places for this turn, as a regenerate does.
+    #[serde(default)]
+    pub swap_places: bool,
+    /// Idempotency key: repeating a send with the same key, text, media and
+    /// swap returns the first send's result.
     pub client_operation_id: String,
 }
 
@@ -1026,7 +1050,7 @@ pub struct ConversationSettingsGetRequest {
 /// Every setting of a chat with its current value and where it comes from.
 /// A field whose source is `conversation` is the chat's own and can be
 /// reset. Group-only fields are none for a one-to-one chat.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationSettingsView {
@@ -1054,6 +1078,9 @@ pub struct ConversationSettingsView {
     pub disable_character_lorebooks: Option<SettingFlag>,
     pub speaker_selection: Option<SettingSpeakerSelection>,
     pub members: Option<GroupMembersSettings>,
+    /// The sampler and runtime settings a one-to-one chat overrides; empty
+    /// when it follows the model and app settings.
+    pub model_settings: Option<crate::SettingsModelSettingsLayer>,
 }
 
 /// Name a source, turn the setting off, or reset it to what the chat
@@ -1126,7 +1153,7 @@ pub enum SpeakerSelectionChange {
 }
 
 /// The fields a settings update changes; an absent field is kept.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationSettingsPatch {
@@ -1143,6 +1170,9 @@ pub struct ConversationSettingsPatch {
     pub memory: Option<MemoryModeChange>,
     pub chat_mode: Option<ChatModeChange>,
     pub disable_character_lorebooks: Option<FlagChange>,
+    /// Replaces the chat's own layer; an empty layer clears it.
+    #[serde(default)]
+    pub model_settings: Option<crate::SettingsModelSettingsLayer>,
     /// The members and their muted flags follow the group again.
     #[serde(default)]
     pub reset_members: bool,
@@ -1151,7 +1181,7 @@ pub struct ConversationSettingsPatch {
     pub reset_member_models: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationSettingsUpdateRequest {

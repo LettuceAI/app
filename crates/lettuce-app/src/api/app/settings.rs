@@ -35,7 +35,10 @@ pub(super) fn finish_committed<T>(result: T, refresh: impl FnOnce() -> Result<()
     result
 }
 
-fn convert<S: Serialize, T: DeserializeOwned>(value: S, field: &str) -> Result<T, ApiError> {
+pub(in crate::api) fn convert<S: Serialize, T: DeserializeOwned>(
+    value: S,
+    field: &str,
+) -> Result<T, ApiError> {
     serde_json::to_value(value)
         .map_err(|_| invalid_field(field, "setting cannot be represented"))
         .and_then(|value| {
@@ -457,7 +460,9 @@ fn finite(values: impl IntoIterator<Item = Option<f64>>, field: &str) -> Result<
     }
 }
 
-fn validate_sampler_finite(value: &dto::SettingsModelSettingsLayer) -> Result<(), ApiError> {
+pub(in crate::api) fn validate_sampler_finite(
+    value: &dto::SettingsModelSettingsLayer,
+) -> Result<(), ApiError> {
     finite(
         [
             value.chat_parameters.temperature,

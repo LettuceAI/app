@@ -216,6 +216,22 @@ pub(crate) const fn group_chat_mode(mode: GroupChatModeSnapshot) -> dto::GroupCh
     }
 }
 
+fn media_part_kind(
+    context: &ApiContext,
+    asset_id: lettuce_types::AssetId,
+) -> Option<dto::MediaPartKind> {
+    let asset = lettuce_media::MediaAssetRepository::get(context.backend().database(), asset_id)
+        .inspect_err(|error| tracing::warn!(%error, %asset_id, "media asset kind unreadable"))
+        .ok()
+        .flatten()?;
+    Some(match asset.kind.blob_kind() {
+        lettuce_media::MediaKind::Image => dto::MediaPartKind::Image,
+        lettuce_media::MediaKind::Audio => dto::MediaPartKind::Audio,
+        lettuce_media::MediaKind::Video => dto::MediaPartKind::Video,
+        lettuce_media::MediaKind::Document => dto::MediaPartKind::Document,
+    })
+}
+
 /// The text and media parts a message shows, and its reasoning.
 pub(crate) fn part_views(
     context: &ApiContext,
@@ -231,6 +247,7 @@ pub(crate) fn part_views(
             MessagePart::MediaAsset { asset_id, role } => parts.push(dto::MessagePartView::Media {
                 asset: context.asset_ref(*asset_id),
                 role: media_role(*role),
+                kind: media_part_kind(context, *asset_id),
             }),
             MessagePart::ReasoningSummary { text } => reasoning.push(text.as_str()),
             MessagePart::ToolCall { .. }

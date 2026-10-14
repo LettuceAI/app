@@ -2486,7 +2486,7 @@ fn insert_user_message(
                     now.get(),
                 ],
             )
-            .map_err(kernel::map_constraint)?;
+            .map_err(kernel::map_media_ref)?;
     }
     transaction
         .execute(
@@ -7411,6 +7411,46 @@ mod tests {
                 })
                 .expect("count");
             assert_eq!(count, expected, "unexpected rows in {table}");
+        }
+    }
+
+    #[test]
+    fn a_send_naming_a_missing_asset_is_an_invalid_media_reference_and_writes_no_message() {
+        let fixture = direct_fixture();
+        let command = send_command(
+            &fixture,
+            "send-missing-asset",
+            "cd",
+            vec![MessagePart::MediaAsset {
+                asset_id: AssetId::new(),
+                role: lettuce_conversations::MediaAssetRole::Attachment,
+            }],
+        );
+        let result = begin_send_with_hook(
+            fixture.database.as_ref(),
+            &command,
+            TimestampMillis::new(20),
+            |_, _, _| Ok(()),
+        );
+        assert_eq!(
+            result,
+            Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::InvalidReference { field: "media" }
+            ))
+        );
+        let connection = fixture.database.connection().expect("connection");
+        for table in [
+            "conversation_messages",
+            "conversation_message_revisions",
+            "revision_media_refs",
+            "conversation_turns",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            assert_eq!(count, 0, "unexpected rows in {table}");
         }
     }
 

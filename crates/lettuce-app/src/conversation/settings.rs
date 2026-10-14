@@ -47,7 +47,7 @@ pub enum BackgroundChange {
 /// A conversation settings change in ids and plain values. `None` keeps a
 /// field. An empty lorebook selection turns the conversation's lorebooks
 /// off; a blank author note removes it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConversationSettingsChange {
     pub persona: Option<Choice<PersonaId>>,
     /// The one-to-one prompt, or a group's conversation-mode prompt.
@@ -63,6 +63,9 @@ pub struct ConversationSettingsChange {
     pub memory: Option<Change<MemoryModeSnapshot>>,
     pub chat_mode: Option<Change<GroupChatModeSnapshot>>,
     pub disable_character_lorebooks: Option<Change<bool>>,
+    /// Replaces the conversation's own model settings; an empty layer
+    /// clears them.
+    pub model_settings: Option<lettuce_models::ModelSettingsLayer>,
     /// The members and their muted flags follow the group again.
     pub follow_group_members: bool,
     /// The members' models follow the group again.
@@ -209,6 +212,9 @@ impl Builder<'_> {
         )?;
         group_only("members", change.follow_group_members)?;
         group_only("member_models", change.follow_group_member_models)?;
+        if change.model_settings.is_some() && group {
+            return Err(invalid("model_settings"));
+        }
         let mut patch = CurrentConversationSettingsPatch::default();
         if let Some(choice) = change.persona {
             patch.persona = match choice {
@@ -295,6 +301,9 @@ impl Builder<'_> {
         }
         if let Some(change) = &change.disable_character_lorebooks {
             patch.disable_character_lorebooks = value_patch(change);
+        }
+        if let Some(layer) = &change.model_settings {
+            patch.model_settings = PatchValue::Set(layer.clone());
         }
         patch.follow_group_members = change.follow_group_members;
         patch.follow_group_member_models = change.follow_group_member_models;

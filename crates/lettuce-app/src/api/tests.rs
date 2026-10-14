@@ -580,6 +580,8 @@ pub(super) async fn send(
         dto::ConversationSendRequest {
             conversation_id: conversation_id.into(),
             text: text.into(),
+            media: Vec::new(),
+            swap_places: false,
             client_operation_id: key.into(),
         },
         stream,
@@ -1334,6 +1336,8 @@ async fn a_job_created_but_not_yet_attached_is_skipped_not_failed() {
         dto::ConversationSendRequest {
             conversation_id: conversation_id.clone(),
             text: "Hi".into(),
+            media: Vec::new(),
+            swap_places: false,
             client_operation_id: "attach-race-1".into(),
         },
         stream.clone(),
@@ -1384,6 +1388,8 @@ async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
     let request = dto::ConversationSendRequest {
         conversation_id: conversation_id.clone(),
         text: "Hi".into(),
+        media: Vec::new(),
+        swap_places: false,
         client_operation_id: "unschedulable-1".into(),
     };
     let error = super::conversations::send_with(

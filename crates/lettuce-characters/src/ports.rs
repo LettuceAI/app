@@ -240,6 +240,7 @@ pub struct PersonaSearch {
     pub include_archived: bool,
     pub sort: LibrarySort,
     pub search_nickname: bool,
+    pub search_description: bool,
 }
 
 impl Default for PersonaSearch {
@@ -249,6 +250,7 @@ impl Default for PersonaSearch {
             include_archived: false,
             sort: LibrarySort::UpdatedDesc,
             search_nickname: true,
+            search_description: false,
         }
     }
 }

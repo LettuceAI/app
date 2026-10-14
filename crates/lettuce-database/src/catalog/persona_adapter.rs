@@ -1038,7 +1038,12 @@ impl PersonaRepository for Database {
         use lettuce_characters::LibrarySort;
 
         let query = canonical_title(request.text.trim());
-        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, canonical_title(request.text.trim()), request.search_nickname, request.include_archived, "persona"))?;
+        let scope_text = if request.search_description {
+            format!("\0{query}")
+        } else {
+            query.clone()
+        };
+        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, scope_text.clone(), request.search_nickname, request.include_archived, "persona"))?;
         let limit = usize::from(page.limit.get()).max(1);
         let pattern = format!(
             "%{}%",
@@ -1053,9 +1058,19 @@ impl PersonaRepository for Database {
             LibrarySort::Name => ("normalized_title", ">", "ASC"),
         };
         let sql = format!(
-            "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
+            "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR (?7 AND persona_search_key(description) LIKE ?2 ESCAPE '\\') OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
         );
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        connection
+            .create_scalar_function(
+                "persona_search_key",
+                1,
+                rusqlite::functions::FunctionFlags::SQLITE_UTF8
+                    | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC
+                    | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
+                |context| Ok(canonical_title(&context.get::<String>(0)?)),
+            )
+            .map_err(db_error)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1068,7 +1083,8 @@ impl PersonaRepository for Database {
                     cursor.as_ref().map(|value| &value.0),
                     cursor.as_ref().map(|value| &value.1),
                     i64::try_from(limit + 1).unwrap_or(i64::MAX),
-                    request.search_nickname
+                    request.search_nickname,
+                    request.search_description
                 ],
                 |row| parse_id(row.get(0)?),
             )
@@ -1093,7 +1109,7 @@ impl PersonaRepository for Database {
                         LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
                         LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
                         LibrarySort::Name => serde_json::json!(canonical_title(&item.title)),
-                    }, item.id.to_string(), (request.sort, canonical_title(request.text.trim()), request.search_nickname, request.include_archived, "persona"))
+                    }, item.id.to_string(), (request.sort, scope_text.clone(), request.search_nickname, request.include_archived, "persona"))
                 })
                 .transpose()?
         } else {

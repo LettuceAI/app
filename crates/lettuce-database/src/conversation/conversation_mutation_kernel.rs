@@ -22,6 +22,7 @@ use crate::{
 };
 
 const SQLITE_CONSTRAINT_TRIGGER: i32 = 1811;
+const SQLITE_CONSTRAINT_FOREIGNKEY: i32 = 787;
 
 /// Trigger `RAISE(ABORT, …)` strings declared by migration 0008. A firing
 /// trigger means the caller asked for a state the aggregate forbids, so it is
@@ -76,6 +77,19 @@ pub(crate) fn map_constraint(error: rusqlite::Error) -> ConversationRepositoryEr
         return ConversationRepositoryError::Conflict;
     }
     slice::db(error)
+}
+
+/// A media reference whose asset no longer exists is an invalid media
+/// reference, not a storage fault.
+pub(crate) fn map_media_ref(error: rusqlite::Error) -> ConversationRepositoryError {
+    if let rusqlite::Error::SqliteFailure(code, _) = &error
+        && code.extended_code == SQLITE_CONSTRAINT_FOREIGNKEY
+    {
+        return ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidReference { field: "media" },
+        );
+    }
+    map_constraint(error)
 }
 
 pub(crate) fn operation_kind_name(value: OperationKind) -> &'static str {

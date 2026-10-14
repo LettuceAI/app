@@ -70,7 +70,7 @@ export const commands = {
 	conversationPinnedMessages: (request: ConversationPinnedMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_pinned_messages", { request })),
 	conversationMessageCount: (request: ConversationRequest) => typedError<MessageCount, ApiError>(__TAURI_INVOKE("conversation_message_count", { request })),
 	conversationMessagesAround: (request: ConversationMessagesAroundRequest) => typedError<MessageWindow, ApiError>(__TAURI_INVOKE("conversation_messages_around", { request })),
-	conversationSend: (request: ConversationSendRequest, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
+	conversationSend: (request: ConversationSendRequest_Deserialize, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
 	conversationRegenerate: (request: ConversationRegenerateRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_regenerate", { request, onEvent })),
 	conversationContinue: (request: ConversationContinueRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_continue", { request, onEvent })),
 	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
@@ -1610,12 +1610,38 @@ export type ConversationSearchRequest = {
 	limit: number | null,
 };
 
-export type ConversationSendRequest = {
+export type ConversationSendRequest = ConversationSendRequest_Serialize | ConversationSendRequest_Deserialize;
+
+export type ConversationSendRequest_Deserialize = {
 	conversation_id: string,
 	text: string,
 	/**
-	 *  Idempotency key: repeating a send with the same key and text returns
-	 *  the first send's result.
+	 *  Attachment asset ids from `assets_ingest`, in the order attached. The
+	 *  text may be blank only when there are attachments.
+	 */
+	media?: string[],
+	/**  Swaps the speakers' places for this turn, as a regenerate does. */
+	swap_places?: boolean,
+	/**
+	 *  Idempotency key: repeating a send with the same key, text, media and
+	 *  swap returns the first send's result.
+	 */
+	client_operation_id: string,
+};
+
+export type ConversationSendRequest_Serialize = {
+	conversation_id: string,
+	text: string,
+	/**
+	 *  Attachment asset ids from `assets_ingest`, in the order attached. The
+	 *  text may be blank only when there are attachments.
+	 */
+	media: string[],
+	/**  Swaps the speakers' places for this turn, as a regenerate does. */
+	swap_places: boolean,
+	/**
+	 *  Idempotency key: repeating a send with the same key, text, media and
+	 *  swap returns the first send's result.
 	 */
 	client_operation_id: string,
 };
@@ -1642,6 +1668,8 @@ export type ConversationSettingsPatch_Deserialize = {
 	memory: MemoryModeChange | null,
 	chat_mode: ChatModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
+	/**  Replaces the chat's own layer; an empty layer clears it. */
+	model_settings?: SettingsModelSettingsLayer | null,
 	/**  The members and their muted flags follow the group again. */
 	reset_members?: boolean,
 	/**  The members' models follow the group again. */
@@ -1663,6 +1691,8 @@ export type ConversationSettingsPatch_Serialize = {
 	memory: MemoryModeChange | null,
 	chat_mode: ChatModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
+	/**  Replaces the chat's own layer; an empty layer clears it. */
+	model_settings: SettingsModelSettingsLayer | null,
 	/**  The members and their muted flags follow the group again. */
 	reset_members: boolean,
 	/**  The members' models follow the group again. */
@@ -1721,6 +1751,11 @@ export type ConversationSettingsView = {
 	disable_character_lorebooks: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
 	members: GroupMembersSettings | null,
+	/**
+	 *  The sampler and runtime settings a one-to-one chat overrides; empty
+	 *  when it follows the model and app settings.
+	 */
+	model_settings: SettingsModelSettingsLayer | null,
 };
 
 /**  What a conversation was started from. */
@@ -4970,6 +5005,8 @@ export type MediaLibraryRetention = "persistent" | "library" | "temporary";
 
 export type MediaLibraryRole = "image" | "audio";
 
+export type MediaPartKind = "image" | "audio" | "video" | "document";
+
 export type MediaReferenceKind = "character" | "persona" | "group" | "scene" | "conversation" | "creation" | "speech" | "image" | "memory" | "companion" | "model" | "settings" | "lorebook" | "prompt" | "job" | "legacy_import" | "sync" | "usage" | "transfer";
 
 export type MediaReferenceView = {
@@ -5308,7 +5345,9 @@ export type MessagePage = {
 	next_cursor: string | null,
 };
 
-export type MessagePartView = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole };
+export type MessagePartView = { type: "text"; text: string } |
+/**  `kind` is what the asset holds; none when the asset row is gone. */
+{ type: "media"; asset: AssetRef; role: MediaRole; kind: MediaPartKind | null };
 
 export type MessagePinRequest = {
 	conversation_id: string,
@@ -5767,6 +5806,7 @@ export type PersonaSaveRequest_Serialize = {
 export type PersonaSummary = {
 	id: string,
 	title: string,
+	description: string,
 	nickname: string | null,
 	avatar: AssetRef | null,
 };
@@ -5801,6 +5841,11 @@ export type PersonasListRequest_Deserialize = {
 	query: string | null,
 	sort: LibrarySort | null,
 	search_nickname?: boolean,
+	/**
+	 *  Also matches the persona's description, as the picker does; the
+	 *  library matches titles only.
+	 */
+	search_description?: boolean,
 };
 
 export type PersonasListRequest_Serialize = {
@@ -5809,6 +5854,11 @@ export type PersonasListRequest_Serialize = {
 	query: string | null,
 	sort: LibrarySort | null,
 	search_nickname: boolean,
+	/**
+	 *  Also matches the persona's description, as the picker does; the
+	 *  library matches titles only.
+	 */
+	search_description: boolean,
 };
 
 export type PlaygroundEntry = {

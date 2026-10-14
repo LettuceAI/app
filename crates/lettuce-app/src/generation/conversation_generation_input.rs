@@ -1500,34 +1500,32 @@ where
             .ok_or(ConversationGenerationInputError::SpeakerUnavailable)?;
         let live = crate::generation::live_sources::live_group(self.repository, conversation)
             .map_err(|_| unavailable())?;
-        let model_profile_id = match crate::generation::live_sources::member_model(
+        let resolution = crate::generation::live_sources::resolve_member_model(
             conversation,
             participant,
             live.as_ref().and_then(|live| live.profile.as_ref()),
-        ) {
-            crate::generation::live_sources::MemberModel::Snapshot(model) => return Ok(model),
-            crate::generation::live_sources::MemberModel::Profile(id) => id,
-            crate::generation::live_sources::MemberModel::Live => {
-                let lettuce_conversations::ParticipantSource::Character(character_id) =
-                    participant.source
-                else {
-                    return Err(ConversationGenerationInputError::SpeakerUnavailable);
-                };
-                let character = CharacterRepository::get(self.repository, character_id)
-                    .map_err(|_| unavailable())?;
-                let app_default = lettuce_settings::GlobalSettingsStore::load(self.repository)
-                    .map_err(ConversationGenerationInputError::Settings)?
-                    .default_model_profile_id;
-                match character.and_then(|character| character.character.defaults.model_profile_id)
-                {
-                    Some(id) => id,
-                    None => match app_default {
-                        Some(id) => id,
-                        None => {
-                            return effective.ok_or(ConversationGenerationInputError::MissingModel);
-                        }
-                    },
-                }
+            |character_id| {
+                CharacterRepository::get(self.repository, character_id)
+                    .map(|character| {
+                        character
+                            .and_then(|character| character.character.defaults.model_profile_id)
+                    })
+                    .map_err(|_| unavailable())
+            },
+            || {
+                lettuce_settings::GlobalSettingsStore::load(self.repository)
+                    .map(|stored| stored.default_model_profile_id)
+                    .map_err(ConversationGenerationInputError::Settings)
+            },
+        )?;
+        let model_profile_id = match resolution {
+            crate::generation::live_sources::MemberResolution::Snapshot(model) => return Ok(model),
+            crate::generation::live_sources::MemberResolution::Profile(id) => id,
+            crate::generation::live_sources::MemberResolution::Effective => {
+                return effective.ok_or(ConversationGenerationInputError::MissingModel);
+            }
+            crate::generation::live_sources::MemberResolution::NoCharacter => {
+                return Err(ConversationGenerationInputError::SpeakerUnavailable);
             }
         };
         self.live_model_for(
