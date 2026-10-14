@@ -11,16 +11,17 @@ use crate::context::{
 };
 use crate::engine::using_rocm_backend;
 use crate::hardware::{
-    get_aligned_per_device_vram, get_available_memory_bytes, get_available_vram_bytes,
+    get_aligned_per_device_vram, get_available_memory_bytes, get_available_vram_bytes, get_total_memory_bytes, list_gpu_devices,
 };
 use crate::llama::{
     LlamaRuntimeError, estimate_mtp_gpu_reserve_bytes, load_kv_geometry, load_model_metadata,
-    load_offload_costs, plan_smart_gpu_offload, shared_backend,
+    load_offload_costs, shared_backend,
 };
 use crate::mtp::model_has_mtp;
 use crate::offload::{
     FlashAttentionPolicy, KvCacheTypes, OffloadRequest, compute_recommended_context_for_gpu_layers,
     drafter_reserve_path, plan_multi_gpu_distribution, reserve_device_vram, select_mtp_gpu_device,
+    OffloadModel, estimate_memory_footprints,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,6 +33,10 @@ pub struct GpuLayerAssignment {
 #[derive(Clone, Debug, Default)]
 pub struct ContextInfoRequest {
     pub model_path: String,
+    pub context_length: Option<u32>,
+    pub batch_size: Option<u32>,
+    pub flash_attention: Option<FlashAttentionPolicy>,
+    pub swa_full: Option<bool>,
     pub llama_offload_kqv: Option<bool>,
     pub llama_kv_type: Option<String>,
     pub llama_kv_type_k: Option<String>,
@@ -78,6 +83,18 @@ pub struct LlamaCppContextInfo {
     pub selected_gpu_device_ids: Option<Vec<usize>>,
     pub per_device_vram: Option<Vec<PerDeviceVram>>,
     pub estimated_placement: Option<EstimatedPlacement>,
+    pub memory_fit: Vec<MemoryFit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemoryFit {
+    pub gpu: bool,
+    pub devices: Vec<String>,
+    pub capacity_bytes: u64,
+    pub available_bytes: u64,
+    pub model_bytes: u64,
+    pub context_bytes: u64,
+    pub working_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -118,6 +135,10 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
 
     let metadata = load_model_metadata(&model_path)?;
     let max_ctx = metadata.max_context_length.max(1);
+    let n_batch = request.batch_size.unwrap_or(512).max(1);
+    let flash_policy = request.flash_attention.unwrap_or_else(flash_attention_policy);
+    let costs = load_offload_costs(&model_path);
+    let geometry = load_kv_geometry(&model_path).map(|geometry| geometry.with_swa_full(request.swa_full.unwrap_or(true)));
     let available_memory_bytes = get_available_memory_bytes();
     let selected_gpu_device_ids = request.llama_gpu_device_ids.unwrap_or_default();
     let multi_gpu_active = request.llama_multi_gpu_enabled == Some(true)
@@ -198,14 +219,15 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
     } else {
         None
     };
+    let offload_model = OffloadModel { metadata, costs: costs.as_ref(), geometry: geometry.as_ref() };
     let offload_request = OffloadRequest {
         available_memory_bytes,
         available_vram_bytes,
-        requested_context: None,
-        n_batch: 512,
+        requested_context: request.context_length,
+        n_batch,
         resolved_offload_kqv,
         kv_types,
-        flash_attention_policy: flash_attention_policy(),
+        flash_attention_policy: flash_policy,
         sidecar_vram_reserve_bytes,
         bundled_mtp_draft,
     };
@@ -218,7 +240,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
     } else if !supports_gpu_offload {
         0
     } else {
-        plan_smart_gpu_offload(&model_path, offload_request)?.estimated_gpu_layers
+        crate::offload::plan_smart_gpu_offload(offload_model, offload_request, |_, _| None).estimated_gpu_layers
     };
     let recommended_context_length = if resolved_gpu_layers == 0 || !supports_gpu_offload {
         compute_cpu_safe_recommended_context_for_metadata(
@@ -230,9 +252,9 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
     } else {
         compute_recommended_context_for_gpu_layers(
             &metadata,
-            load_offload_costs(&model_path).as_ref(),
-            load_kv_geometry(&model_path).as_ref(),
-            512,
+            costs.as_ref(),
+            geometry.as_ref(),
+            n_batch,
             available_memory_bytes,
             available_vram_bytes,
             resolved_gpu_layers,
@@ -285,7 +307,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
                 None,
             )
         } else {
-            let plan = plan_smart_gpu_offload(&model_path, offload_request)?;
+            let plan = crate::offload::plan_smart_gpu_offload(offload_model, offload_request, |_, _| None);
             plan_multi_gpu_distribution(
                 dist_mode,
                 &distribution_device_free,
@@ -301,7 +323,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
         (
             Some(
                 aligned_per_device_vram
-                    .into_iter()
+                    .iter().copied()
                     .map(|(index, free, total)| PerDeviceVram {
                         index,
                         memory_free: free,
@@ -318,6 +340,31 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
         (None, None)
     };
 
+    let gpu_layers = estimated_placement.as_ref().map_or(resolved_gpu_layers, |placement| placement.total_gpu_layers);
+    let (ram, gpu) = estimate_memory_footprints(
+        OffloadModel { metadata, costs: costs.as_ref(), geometry: geometry.as_ref() },
+        OffloadRequest { requested_context: request.context_length.or(recommended_context_length), ..offload_request },
+        gpu_layers,
+    );
+    let mut memory_fit = Vec::new();
+    if let Some(available) = available_memory_bytes.filter(|_| ram.used_bytes() > 0) {
+        memory_fit.push(MemoryFit { gpu: false, devices: Vec::new(), capacity_bytes: get_total_memory_bytes(), available_bytes: available, model_bytes: ram.model_bytes, context_bytes: ram.context_bytes, working_bytes: ram.working_bytes });
+    }
+    if let Some(available) = available_vram_bytes.filter(|_| gpu.used_bytes() > 0) {
+        let devices = list_gpu_devices();
+        let selected: Vec<_> = if multi_gpu_active {
+            devices.iter().filter(|device| selected_gpu_device_ids.contains(&device.index)).collect()
+        } else if let Some(id) = request.llama_single_gpu_device_id {
+            devices.iter().filter(|device| device.index == id).collect()
+        } else {
+            devices.iter().max_by_key(|device| device.memory_free).into_iter().collect()
+        };
+        let capacity = selected.iter().fold(0u64, |sum, device| sum.saturating_add(device.memory_total));
+        if capacity > 0 {
+            memory_fit.push(MemoryFit { gpu: true, devices: selected.iter().map(|device| device.name.clone()).collect(), capacity_bytes: capacity, available_bytes: available, model_bytes: gpu.model_bytes, context_bytes: gpu.context_bytes, working_bytes: gpu.working_bytes });
+        }
+    }
+
     Ok(LlamaCppContextInfo {
         max_context_length: max_ctx,
         recommended_context_length,
@@ -330,6 +377,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
         selected_gpu_device_ids: multi_gpu_active.then_some(selected_gpu_device_ids),
         per_device_vram,
         estimated_placement,
+        memory_fit,
     })
 }
 
@@ -359,13 +407,17 @@ mod tests {
             return;
         };
         let info = context_info(ContextInfoRequest {
-            model_path: path,
+            model_path: path.clone(),
             llama_kv_type: Some("q8_0".into()),
+            context_length: Some(16384),
             ..ContextInfoRequest::default()
         })
         .expect("estimate");
         println!("{info:?}");
         assert!(info.max_context_length > 0);
         assert!(info.recommended_context_length.is_some());
+        assert!(!info.memory_fit.is_empty());
+        let selected = context_info(ContextInfoRequest { model_path: path, context_length: Some(32768), llama_kv_type: Some("q8_0".into()), ..ContextInfoRequest::default() }).expect("selected context estimate");
+        assert!(selected.memory_fit.iter().map(|fit| fit.context_bytes).sum::<u64>() >= info.memory_fit.iter().map(|fit| fit.context_bytes).sum::<u64>());
     }
 }

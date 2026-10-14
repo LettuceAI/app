@@ -128,3 +128,5 @@ Ignored tests compare greedy DFlash output with plain generation on a counting p
 Ignored tests run against real files: `LETTUCE_PLAN_MODEL` prints the offload plan, an engine test loads a model on the CPU, and the generation path has been checked on a real model for CPU generation, prompt-cache reuse and MTP.
 
 Host notices retain the requesting inference id, like model load progress and heartbeats, so the application routes each signal to its live turn or job. KV fallback notice deduplication remains in the engine and resets with the loaded model.
+
+The editor fit estimate returns RAM and GPU model, KV and working-memory byte counts for its selected context, effective micro-batch, flash-attention and sliding-window cache settings. It uses the existing offload costs, KV geometry and compute-reserve formulas without allocating a GPU compute buffer for slider edits. The values are estimates, not measured allocations. Hardware capacity and available bytes are reported separately, so already occupied memory is included in the UI total and remaining budget.

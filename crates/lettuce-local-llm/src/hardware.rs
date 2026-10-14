@@ -36,6 +36,12 @@ pub fn get_available_memory_bytes() -> Option<u64> {
     Some(sys.available_memory())
 }
 
+pub fn get_total_memory_bytes() -> u64 {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    sys.total_memory()
+}
+
 fn ggml_available_vram_bytes() -> Option<u64> {
     let mut max_free: u64 = 0;
     unsafe {

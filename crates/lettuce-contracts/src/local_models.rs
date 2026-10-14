@@ -106,11 +106,15 @@ pub enum LlamaModelTarget {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct LlamaContextInfoRequest {
     pub target: LlamaModelTarget,
+    pub context_length: Option<u32>,
+    pub batch_size: Option<u32>,
+    pub flash_attention: Option<crate::SettingsLlamaFlashAttention>,
+    pub swa_full: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +136,24 @@ pub struct LlamaPlacement {
     pub per_device_layers: Vec<u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LlamaMemoryFit {
+    pub gpu: bool,
+    pub devices: Vec<String>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub capacity_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub available_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub model_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub context_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub working_bytes: u64,
+}
+
 /// How a model fits this machine with the given settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -151,6 +173,7 @@ pub struct LlamaContextInfo {
     pub selected_gpu_device_ids: Option<Vec<u32>>,
     pub per_device_vram: Option<Vec<LlamaDeviceMemory>>,
     pub estimated_placement: Option<LlamaPlacement>,
+    pub memory_fit: Vec<LlamaMemoryFit>,
 }
 
 /// A model file, or a saved llama.cpp model's file.
@@ -403,4 +426,26 @@ pub enum ModelLoadStatus {
 pub struct ModelLoadGpuProgress {
     pub label: String,
     pub percent: u8,
+}
+
+#[cfg(test)]
+mod memory_fit_tests {
+    use super::{LlamaContextInfoRequest, LlamaMemoryFit};
+
+    #[test]
+    fn existing_context_requests_remain_valid() {
+        let request: LlamaContextInfoRequest = serde_json::from_value(serde_json::json!({
+            "target": { "type": "draft", "model": { "uri": "/model.gguf" }, "settings": {} }
+        })).expect("existing request");
+        assert_eq!(request.context_length, None);
+        assert_eq!(request.batch_size, None);
+        assert_eq!(request.swa_full, None);
+    }
+
+    #[test]
+    fn memory_fit_preserves_byte_counts_above_u32() {
+        let fit = LlamaMemoryFit { gpu: true, devices: vec!["GPU".into()], capacity_bytes: 24 << 30, available_bytes: 20 << 30, model_bytes: 5 << 30, context_bytes: 2 << 30, working_bytes: 1 << 30 };
+        let json = serde_json::to_value(&fit).expect("serialize fit");
+        assert_eq!(serde_json::from_value::<LlamaMemoryFit>(json).expect("deserialize fit"), fit);
+    }
 }

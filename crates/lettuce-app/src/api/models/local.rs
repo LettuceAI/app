@@ -342,6 +342,14 @@ fn context_info_request(
     let device = |id: u32| usize::try_from(id).unwrap_or(usize::MAX);
     lettuce_local_llm::context_info::ContextInfoRequest {
         model_path: file.model_path,
+        context_length: None,
+        batch_size: settings.batch_size,
+        flash_attention: settings.flash_attention.map(|policy| match policy {
+            lettuce_models::LlamaFlashAttention::Auto => lettuce_local_llm::offload::FlashAttentionPolicy::Auto,
+            lettuce_models::LlamaFlashAttention::Enabled => lettuce_local_llm::offload::FlashAttentionPolicy::Enabled,
+            lettuce_models::LlamaFlashAttention::Disabled => lettuce_local_llm::offload::FlashAttentionPolicy::Disabled,
+        }),
+        swa_full: settings.swa_full,
         llama_offload_kqv: settings.offload_kqv,
         llama_kv_type: settings.kv_type.and_then(kv_type_name),
         llama_kv_type_k: settings.kv_type_k.and_then(kv_type_name),
@@ -428,10 +436,25 @@ pub async fn llama_context_info(
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         use lettuce_local_llm::context_info::ContextInfoError;
+        if request.context_length == Some(0) {
+            return Err(invalid_field("context_length", "context length must be positive"));
+        }
+        if request.batch_size == Some(0) {
+            return Err(invalid_field("batch_size", "batch size must be positive"));
+        }
         let file = llama_target(context, request.target).await?;
+        let mut estimate = context_info_request(file);
+        estimate.context_length = request.context_length;
+        estimate.batch_size = request.batch_size.or(estimate.batch_size);
+        estimate.flash_attention = request.flash_attention.map(|policy| match policy {
+            dto::SettingsLlamaFlashAttention::Auto => lettuce_local_llm::offload::FlashAttentionPolicy::Auto,
+            dto::SettingsLlamaFlashAttention::Enabled => lettuce_local_llm::offload::FlashAttentionPolicy::Enabled,
+            dto::SettingsLlamaFlashAttention::Disabled => lettuce_local_llm::offload::FlashAttentionPolicy::Disabled,
+        }).or(estimate.flash_attention);
+        estimate.swa_full = request.swa_full.or(estimate.swa_full);
         let info = context
             .backend()
-            .llama_context_info(context_info_request(file))
+            .llama_context_info(estimate)
             .await
             .map_err(|error| match error {
                 crate::LocalLlamaCommandError::ContextInfo(ContextInfoError::EmptyPath) => {
@@ -443,6 +466,7 @@ pub async fn llama_context_info(
                 error => api_error(ApiErrorCode::Unavailable, error.to_string()),
             })?;
         Ok(dto::LlamaContextInfo {
+            memory_fit: info.memory_fit.into_iter().map(|fit| dto::LlamaMemoryFit { gpu: fit.gpu, devices: fit.devices, capacity_bytes: fit.capacity_bytes, available_bytes: fit.available_bytes, model_bytes: fit.model_bytes, context_bytes: fit.context_bytes, working_bytes: fit.working_bytes }).collect(),
             max_context_length: info.max_context_length,
             recommended_context_length: info.recommended_context_length,
             available_memory_bytes: info.available_memory_bytes,
