@@ -93,7 +93,6 @@ sha2 = "0.10"
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 specta-typescript = "=0.0.13"
 tauri = { version = "=3.0.0-alpha.4", default-features = false }
-tauri-runtime-cef = "=3.0.0-alpha.5"
 tauri-runtime-wry = "=3.0.0-alpha.4"
 tauri-build = { version = "=3.0.0-alpha.3", default-features = false }
 tauri-plugin-android-fs = { path = "../tauri-plugin-android-fs", default-features = false }
@@ -123,7 +122,6 @@ tauri-build = { path = "../tauri/crates/tauri-build" }
 tauri-codegen = { path = "../tauri/crates/tauri-codegen" }
 tauri-macros = { path = "../tauri/crates/tauri-macros" }
 tauri-runtime = { path = "../tauri/crates/tauri-runtime" }
-tauri-runtime-cef = { path = "../tauri/crates/tauri-runtime-cef" }
 tauri-utils = { path = "../tauri/crates/tauri-utils" }
 specta = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
 specta-macros = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }

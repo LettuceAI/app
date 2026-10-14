@@ -23,24 +23,6 @@ pub use events::AppEvent;
 /// The workers `api::startup` started, stopped on exit.
 struct Workers(Mutex<Option<ApiWorkers>>);
 
-#[cfg(desktop)]
-fn desktop_runtime() -> tauri_runtime_cef::Cef {
-    #[cfg(debug_assertions)]
-    if let Some(port) = std::env::var("LETTUCE_CEF_DEBUG_PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .filter(|port| *port >= 1024)
-    {
-        return tauri_runtime_cef::Cef::default().remote_debugging(
-            tauri_runtime_cef::RemoteDebugging::Port {
-                port,
-                allowed_origins: Vec::new(),
-            },
-        );
-    }
-    tauri_runtime_cef::Cef::default()
-}
-
 /// Builds and runs the app until its last window closes; on Android and
 /// iOS this is the mobile entry point.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -51,11 +33,7 @@ pub fn run() {
         tracing::warn!(%error, "TypeScript bindings could not be exported");
     }
     let invoke_handler = builder.invoke_handler();
-    let app = tauri::Builder::default();
-    #[cfg(desktop)]
-    let app = app.runtime(desktop_runtime());
-    #[cfg(mobile)]
-    let app = app.runtime(tauri_runtime_wry::Wry::default());
+    let app = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
     #[cfg(desktop)]
     let app = app
         .plugin(tauri_plugin_single_window::init())
