@@ -530,6 +530,27 @@ where
         if let Some(replay) = runner.replay_terminal(work)? {
             return Ok(replay);
         }
+        let turn = ConversationReader::get_turn(self.repository, work.turn_id)?;
+        if turn.status == GenerationTurnStatus::Created {
+            if work.handle.cancellation_token().is_cancelled() {
+                return Err(ConversationGenerationRunError::Cancelled {
+                    evidence: crate::GenerationUsageEvidence::None,
+                });
+            }
+            runner.stage(
+                &turn,
+                work,
+                GenerationTurnStatus::Preparing,
+                &operation_token(
+                    work.conversation_id,
+                    work.turn_id,
+                    work.attempt_id,
+                    work.handle.id(),
+                    ConversationGenerationOperation::StagePreparing,
+                ),
+                now,
+            )?;
+        }
         if let Some(input) = self
             .durable_generation_input(work, runtime.stream_sink)
             .map_err(ConversationGenerationInputError::into_run_error)?
@@ -1448,7 +1469,13 @@ where
                     == lettuce_conversations::SettingProvenance::CurrentOverride
             });
         if overridden {
-            return effective.ok_or(ConversationGenerationInputError::MissingModel);
+            let selected = effective.ok_or(ConversationGenerationInputError::MissingModel)?;
+            return self.live_model_for(
+                conversation.id,
+                selected.source_id,
+                Some(selected),
+                persist_snapshot,
+            );
         }
         let character = CharacterRepository::get(self.repository, details.character.source_id)
             .map_err(|_| {
@@ -1519,7 +1546,14 @@ where
             },
         )?;
         let model_profile_id = match resolution {
-            crate::generation::live_sources::MemberResolution::Snapshot(model) => return Ok(model),
+            crate::generation::live_sources::MemberResolution::Snapshot(model) => {
+                return self.live_model_for(
+                    conversation.id,
+                    model.source_id,
+                    Some(model),
+                    persist_snapshot,
+                );
+            }
             crate::generation::live_sources::MemberResolution::Profile(id) => id,
             crate::generation::live_sources::MemberResolution::Effective => {
                 return effective.ok_or(ConversationGenerationInputError::MissingModel);
@@ -1666,16 +1700,19 @@ where
             .resolved_model
             .clone()
             .filter(|_| turn.status != lettuce_conversations::GenerationTurnStatus::Recovering);
-        let model = match recorded_model.or(turn.requested_model_override.clone()) {
-            Some(model) => model,
-            None => self.live_chat_model(
+        let model = if let Some(model) = recorded_model {
+            model
+        } else if let Some(model) = turn.requested_model_override.clone() {
+            self.live_model_for(aggregate.conversation.id, model.source_id, Some(model), true)?
+        } else {
+            self.live_chat_model(
                 &aggregate.conversation,
                 settings.model,
                 selected_speaker
                     .as_ref()
                     .map(|speaker| speaker.participant_id),
                 true,
-            )?,
+            )?
         };
         let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?

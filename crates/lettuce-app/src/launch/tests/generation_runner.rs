@@ -691,6 +691,90 @@ async fn a_direct_chat_follows_the_live_default_model_on_each_turn() {
 }
 
 #[tokio::test]
+async fn conversation_model_overrides_follow_current_profile_revisions() {
+    for group in [false, true] {
+        let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let database = backend.database();
+        let scenario = if group {
+            group_scenario(&backend, "edited-override", lettuce_characters::SpeakerSelection::RoundRobin, true).0
+        } else {
+            scenario_with_resolvable_profile(database, false, "edited-override", true)
+        };
+        database.update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: scenario.conversation_id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: IdempotencyKey::new("pin-edited-model").expect("key"),
+                        request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        model_override: lettuce_conversations::PatchValue::Set(scenario.model.clone()),
+                        ..Default::default()
+                    },
+                }, Vec::new(),
+            ).expect("prepared model override"),
+            TimestampMillis::new(1_011),
+        ).expect("select model in chat");
+        let mut profile = ModelProfileRepository::get(database, scenario.model.source_id)
+            .expect("model").expect("model exists");
+        let previous = profile.revision;
+        profile.config.chat_parameters.temperature = Some(0.25);
+        let saved = ModelProfileRepository::upsert(database, profile, Some(previous)).expect("edit model");
+        let mut account = ProviderAccountRepository::get(database, scenario.model.provider_account_id)
+            .expect("account").expect("account exists");
+        let account_revision = account.revision;
+        account.label = "Edited provider".into();
+        let account = ProviderAccountRepository::upsert(database, account, Some(account_revision))
+            .expect("edit provider");
+        let inference = scripted(vec![text_outcome("edited-override", "Updated settings.", 12, 3)]);
+        let engine = ScenarioEmbeddingEngine;
+        let clock = FakeClock::new(TimestampMillis::new(1_020));
+        let outcome = backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+            .execute(execution_request(&scenario, CancellationToken::new()), &clock)
+            .await.expect("execute generation");
+        let ConversationGenerationExecutionOutcome::Settled(
+            ConversationGenerationSettledWork::Succeeded { result, .. },
+        ) = outcome else { panic!("an edited selected model still generates: {outcome:?}"); };
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].profile.chat_profile.model_revision, saved.revision);
+        assert_eq!(requests[0].profile.chat_profile.provider_account_revision, account.revision);
+        assert_eq!(requests[0].profile.chat_profile.parameters.temperature, Some(0.25));
+        assert_eq!(result.turn.resolved_model.as_ref().map(|model| model.source_revision), Some(saved.revision));
+    }
+}
+
+#[tokio::test]
+async fn preparation_failure_settles_created_turn_instead_of_requeueing() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = scenario_with_resolvable_profile(database, false, "preparation-failure", true);
+    let mut account = ProviderAccountRepository::get(database, scenario.model.provider_account_id)
+        .expect("account").expect("account exists");
+    let revision = account.revision;
+    account.enabled = false;
+    ProviderAccountRepository::upsert(database, account, Some(revision)).expect("disable account");
+    let inference = scripted(Vec::new());
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
+    let outcome = runner.execute(execution_request(&scenario, CancellationToken::new()), &clock)
+        .await.expect("execute generation");
+    let ConversationGenerationExecutionOutcome::Settled(
+        ConversationGenerationSettledWork::Failed { job, .. },
+    ) = outcome else { panic!("preparation failure must settle once: {outcome:?}"); };
+    assert_eq!(job.state, JobState::Failed);
+    let turn = ConversationReader::get_turn(database, scenario.turn_id).expect("turn");
+    assert_eq!(turn.status, GenerationTurnStatus::Failed);
+    assert_eq!(turn.failure, Some(GenerationFailureCode::MissingModel));
+    assert!(lettuce_conversations::ConversationOverviewReader::live_turn(database, scenario.conversation_id).expect("live turn").is_none());
+    assert!(inference.requests.lock().expect("requests").is_empty());
+    assert!(runner.next_queued(&ResourceAvailability::all(), TimestampMillis::new(1_021)).expect("next queued").is_none());
+}
+
+#[tokio::test]
 async fn reply_images_are_stored_as_message_assets_and_an_image_only_reply_finalizes() {
     use base64::Engine as _;
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};

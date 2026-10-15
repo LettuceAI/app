@@ -1090,7 +1090,7 @@ impl<
         })
     }
 
-    fn stage(
+    pub(super) fn stage(
         &self,
         turn: &GenerationTurn,
         work: &ConversationGenerationClaimedWork,
