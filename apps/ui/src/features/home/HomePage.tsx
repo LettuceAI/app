@@ -15,6 +15,7 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuSeparator,
   MenuTrigger,
   motion as m,
   Page,
@@ -22,7 +23,10 @@ import {
   useCompactLayout,
 } from "@lettuceai/crisp";
 import { useChatNavigation } from "@/features/conversations";
+import { appStatusQuery } from "@/api/app-status-query";
 import { FailureState } from "@/shared/ui/FailureState";
+import { MobileSettingsButton } from "@/shared/ui/MobileSettingsButton";
+import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages";
 import { ContinueCard, GalleryCard, HeroCard } from "./components/cards";
 import { CharacterMenu } from "./components/CharacterMenu";
 import { ChatMenu, type ChatMenuTarget } from "./components/ChatMenu";
@@ -64,7 +68,8 @@ function Cards({ items, render }: { items: readonly HomeCharacter[]; render: (ho
 export function HomePage() {
   const { t } = useTranslation("home");
   const api = useRouteContext({ from: "__root__", select: (context) => context.api });
-  const phone = useCompactLayout();
+  const { data: status } = useQuery(appStatusQuery(api));
+  const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
   const mainRef = useRef<HTMLElement>(null);
   const [query, setQuery] = useState("");
   const [layoutSheet, setLayoutSheet] = useState(false);
@@ -72,6 +77,7 @@ export function HomePage() {
   const [chatMenu, setChatMenu] = useState<ChatMenuTarget | null>(null);
   const chats = useChatNavigation();
   const [desktopView, setDesktopView] = useDesktopView(api);
+  const detailSidebar = useSidebarOnDetailPages(api);
   const [phoneLayout, setPhoneLayout] = usePhoneLayout(api);
   const characters = useQuery(homeCharactersQuery(api));
   const all = characters.data;
@@ -164,6 +170,10 @@ export function HomePage() {
             {t(`view.${view}`)}
           </MenuItem>
         ))}
+        <MenuSeparator />
+        <MenuItem selected={detailSidebar.enabled} disabled={detailSidebar.pending} onSelect={() => detailSidebar.set(!detailSidebar.enabled)}>
+          {t("view.detailSidebar")}
+        </MenuItem>
       </MenuContent>
     </Menu>
   );
@@ -176,7 +186,7 @@ export function HomePage() {
         searchValue={query}
         onSearchChange={setQuery}
         searchPlaceholder={t("searchCharacters")}
-        actions={viewSwitch}
+        actions={<>{viewSwitch}<MobileSettingsButton /></>}
         mainRef={mainRef}
         padding="none"
         contentClassName="space-y-8 px-6 pb-10 pt-2"
@@ -218,13 +228,13 @@ export function HomePage() {
       padding="none"
       contentClassName={cn("pb-10 pt-1", phone ? "px-3" : "px-6")}
       actions={
-        phone ? (
+        <>{phone ? (
           <IconButton label={t("layout.current", { layout: t(`layout.${phoneLayout}.title`) })} onClick={() => setLayoutSheet(true)}>
             {layoutIcons[phoneLayout]}
           </IconButton>
         ) : (
           viewSwitch
-        )
+        )}<MobileSettingsButton /></>
       }
     >
       {body}

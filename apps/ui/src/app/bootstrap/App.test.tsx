@@ -70,8 +70,14 @@ describe("status placeholder", () => {
   });
 
   it("keeps every destination reachable on mobile without desktop window controls", async () => {
-    await renderApp({ calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, platform: "android" } }) } });
-    expect(await screen.findByRole("button", { name: "Settings" })).toBeTruthy();
+    const runtime = await renderApp({ calls: { appStatus: () => ({ status: "ok", data: { ...completedStatus, platform: "android" } }) } }, "en", "/");
+    fireEvent.click(await screen.findByRole("button", { name: "Groups" }));
+    expect(await screen.findByRole("heading", { name: "Groups" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back to app" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/"));
     expect(screen.getByRole("button", { name: "Chats" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Close window" })).toBeNull();
   });

@@ -6,6 +6,7 @@ import { ArrowLeft, Compass, House, Library, MessageSquare, Settings, Users } fr
 import { useTranslation } from "react-i18next";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { WindowEdge } from "@/api/window-controls";
+import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages";
 import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { isSettingsSection, SidebarSettings } from "@/features/settings";
@@ -39,7 +40,9 @@ export function AppShell() {
   const { controller, expanded, failed, perform } = useWindowController(platform);
   const welcome = pathname === "/welcome" || pathname === "/welcome-back";
   const tabs = compact || mobile;
-  const bare = welcome || (tabs && pathname.startsWith("/chat/"));
+  const { enabled: sidebarOnDetailPages } = useSidebarOnDetailPages(api);
+  const mainScreen = Object.entries(destinations).some(([id, path]) => id !== "settings" && pathname === path);
+  const navigationHidden = !mainScreen && (tabs || !sidebarOnDetailPages);
   const [sidebarOpen, setSidebarOpen] = useSidebarExpanded(api);
   const [createOpen, setCreateOpen] = useState(false);
   const chats = useChatNavigation();
@@ -55,7 +58,7 @@ export function AppShell() {
   ];
   const settings: NavDestination<Destination> = { id: "settings", label: t("navigation.settings"), icon: <Settings size={icon.lg} /> };
   const inSettings = pathname === "/settings" || pathname.startsWith("/settings/");
-  const settingsMode = inSettings && !tabs;
+  const settingsMode = inSettings && !tabs && sidebarOnDetailPages;
   const backToApp: NavDestination<Destination> = { id: "chats", label: t("navigation.backToApp"), icon: <ArrowLeft size={icon.lg} /> };
   const section = pathname.startsWith("/settings/") ? pathname.slice("/settings/".length).split("/")[0] ?? "" : "";
   useEffect(() => {
@@ -77,19 +80,19 @@ export function AppShell() {
     <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), navCreate: t("navigation.create"), navCollapse: t("navigation.collapse"), navCollapseSidebar: t("navigation.collapseSidebar"), navExpandSidebar: t("navigation.expandSidebar"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
     <div className={cn("relative flex h-full min-h-0 flex-col overflow-clip bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
       {failed && <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">{t("window.failed")}</p>}
-      {bare ? (
+      {welcome ? (
         <>
           {titleBar}
-          <div className="relative min-h-0 flex-1 overflow-clip"><Outlet /></div>
+          <div className="@container relative min-h-0 flex-1 overflow-clip"><Outlet /></div>
         </>
       ) : (
         <CrispAppShell
           className={cn("overflow-clip", !tabs && !sidebarOpen && "[&_nav_.scrollbar-thin]:[scrollbar-width:none] [&_nav_.scrollbar-thin::-webkit-scrollbar]:hidden")}
-          items={tabs ? [...items, settings] : settingsMode ? [backToApp] : items}
+          items={settingsMode ? [backToApp] : items}
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}
           onChange={(id) => { void navigate({ to: id === "settings" && settingsMode ? "/" : destinations[id] }); }}
-          navStyle={tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
+          navStyle={navigationHidden ? "header" : tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
           {...(tabs ? {} : {
             onNavToggle: () => setSidebarOpen(!sidebarOpen),
             ...(settingsMode ? {

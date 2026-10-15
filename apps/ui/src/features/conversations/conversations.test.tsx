@@ -344,6 +344,24 @@ describe("conversation screen", () => {
     expect(await screen.findByLabelText("Main navigation")).toBeTruthy();
   });
 
+  it("keeps the message draft when the viewport switches navigation layouts", async () => {
+    let compact = false;
+    const listeners = new Set<() => void>();
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: compact && query.includes("max-width"), media: query, onchange: null,
+      addEventListener: (_type: string, listener: unknown) => { listeners.add(listener as () => void); },
+      removeEventListener: (_type: string, listener: unknown) => { listeners.delete(listener as () => void); },
+      addListener() {}, removeListener() {}, dispatchEvent: () => false,
+    }));
+    await open();
+    const field = await screen.findByPlaceholderText("Message Cassian…");
+    fireEvent.change(field, { target: { value: "Keep my unfinished reply" } });
+    for (const next of [true, false]) {
+      act(() => { compact = next; for (const listener of [...listeners]) listener(); });
+      expect(await screen.findByPlaceholderText("Message Cassian…")).toHaveProperty("value", "Keep my unfinished reply");
+    }
+  });
+
   it("opens the memory page from the header", async () => {
     const runtime = await open();
     fireEvent.click(await screen.findByRole("button", { name: /^Memories/ }));

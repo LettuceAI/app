@@ -15,7 +15,8 @@ export function useSettingsLayout() {
   const compact = useCompactLayout();
   const { data } = useQuery(appStatusQuery(api));
   const phone = compact || data?.platform === "android" || data?.platform === "ios";
-  return { phone, back: phone ? { onBack: () => void navigate({ to: "/settings" }), backLabel: t("title") } : {} };
+  const standalone = phone || data?.ui_state.sidebarOnDetailPages === false;
+  return { phone, standalone, back: standalone ? { onBack: () => void navigate({ to: "/settings" }), backLabel: t("title") } : {} };
 }
 export function useProviderData() {
   const api = useSettingsApi();

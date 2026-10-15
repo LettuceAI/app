@@ -3,11 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowUpRight, Bug, Check, ClipboardCopy, CodeXml, Globe, MessagesSquare, RefreshCw, RotateCcw } from "lucide-react";
-import { Button, confirm, icon, IconButton, ListGroup, ListRow, ListRowButton, LoadingState, Switch, useCompactLayout } from "@lettuceai/crisp";
+import { Button, confirm, icon, IconButton, ListGroup, ListRow, ListRowButton, LoadingState, Switch } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
 import { FailureState } from "@/shared/ui/FailureState";
 import { lettuceLogo } from "@/shared/assets";
+import { useSettingsLayout } from "./data";
 
 export function AboutPage() {
   const { t } = useTranslation("settings");
@@ -16,8 +17,7 @@ export function AboutPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const status = useQuery(appStatusQuery(api));
-  const compact = useCompactLayout();
-  const tabs = compact || status.data?.platform === "android" || status.data?.platform === "ios";
+  const { standalone: tabs } = useSettingsLayout();
   const [resetting, setResetting] = useState(false);
   const [copied, setCopied] = useState<"version" | "details" | null>(null);
 
