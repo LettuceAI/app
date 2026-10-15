@@ -12,6 +12,7 @@ import { ChatBanners, ChatComposer, type ComposerHandle } from "./components/Cha
 import { ChatTools, type ToolPanel } from "./components/ChatTools";
 import { ChatHeader } from "./components/ChatHeader";
 import { InlineAuthorNoteBar } from "./components/InlineAuthorNoteBar";
+import { GenerationProgressToast } from "./components/GenerationProgressToast";
 import { ChatSettingsPanel } from "./components/settings/ChatSettingsPanel";
 import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
@@ -346,6 +347,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
 
   return (
     <CrispStringsProvider strings={strings} locale={i18n.language}>
+      <GenerationProgressToast store={generation.store} />
       <Surface image={background} scrim="soft" className={cn("h-full overflow-clip", !background && "bg-surface")}>
         <div className="relative flex h-full min-h-0 flex-col">
           <ChatHeader

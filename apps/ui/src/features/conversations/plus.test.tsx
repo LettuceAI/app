@@ -102,6 +102,8 @@ describe("chat plus menu and microphone", () => {
     const field = screen.getByRole("textbox", { name: "Inline author's note" });
     fireEvent.change(field, { target: { value: "  Stay curious  " } });
     expect(update).not.toHaveBeenCalled();
+    fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+    expect(update).not.toHaveBeenCalled();
     fireEvent.keyDown(field, { key: "Enter" });
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0]?.[0]).toMatchObject({ expected_settings_revision: 2, patch: { author_note: "Stay curious" } });

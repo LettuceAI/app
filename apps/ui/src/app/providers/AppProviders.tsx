@@ -37,7 +37,7 @@ export function AppProviders({ i18n, api, queryClient, children }: AppProvidersP
       <QueryClientProvider client={queryClient}>
         <AppEventBridge api={api} queryClient={queryClient} />
         {children}
-        <Toaster />
+        <Toaster position="top-center" />
         <ConfirmHost />
       </QueryClientProvider>
     </ShellProviders>

@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
+import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApiClient } from "@/api/client";
 import type { ConversationSettingsView, ConversationView, GenerationEvent, TimelineMessage } from "@/api/generated/bindings";
@@ -77,6 +78,7 @@ async function open(setup: Setup = {}) {
 }
 
 afterEach(() => {
+  toast.dismiss();
   cleanup();
 });
 
@@ -89,6 +91,83 @@ async function typeAndSend(text: string) {
 const accepted = { status: "ok" as const, data: { user_message_id: "u1", turn_id: "t1" } };
 
 describe("conversation screen", () => {
+  it("updates one top progress toast during model loading and removes it when ready", async () => {
+    let emitEvent: (event: GenerationEvent) => void = () => {};
+    await open({ streams: {
+      conversationSend: (_args, emit) => {
+        emitEvent = emit;
+        emit({ type: "started", turn_id: "t1" });
+        emit({ type: "model_loading", turn_id: "t1", stage: "gpu_offload", status: "loading", percent: 25, model_name: "Gemma.gguf", gpus: null });
+        return accepted;
+      },
+    } });
+    await typeAndSend("Hi");
+    const progress = await screen.findByRole("progressbar");
+    expect(progress.getAttribute("aria-valuenow")).toBe("25");
+    expect(progress.closest("[data-sonner-toaster]")?.getAttribute("data-y-position")).toBe("top");
+    expect(screen.queryByText("Loading Gemma.gguf, 25%")).toBeNull();
+    expect(screen.queryByRole("status", { name: "Typing" })).toBeNull();
+    await act(async () => {
+      emitEvent({ type: "model_loading", turn_id: "t1", stage: "gpu_offload", status: "loading", percent: 95, model_name: "Gemma.gguf", gpus: null });
+    });
+    expect(screen.getAllByRole("progressbar")).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("95"));
+    await act(async () => {
+      emitEvent({ type: "model_loading", turn_id: "t1", stage: "gpu_offload", status: "loaded", percent: 100, model_name: "Gemma.gguf", gpus: null });
+    });
+    await waitFor(() => expect(screen.queryByRole("progressbar")).toBeNull());
+    expect(screen.getByRole("status", { name: "Typing" })).toBeTruthy();
+  });
+
+  it("pauses the cursor for an image prompt and resumes it for visible text", async () => {
+    let emitEvent: (event: GenerationEvent) => void = () => {};
+    await open({ streams: {
+      conversationSend: (_args, emit) => {
+        emitEvent = emit;
+        emit({ type: "started", turn_id: "t1" });
+        emit({ type: "delta", turn_id: "t1", text: "He nods.", reasoning: null });
+        return accepted;
+      },
+    } });
+    await typeAndSend("Hi");
+    const cursor = () => document.querySelector('span[aria-hidden="true"].animate-pulse');
+    expect(cursor()).not.toBeNull();
+    await act(async () => {
+      emitEvent({ type: "delta", turn_id: "t1", text: "<img>a sunny street", reasoning: null });
+    });
+    expect(await screen.findByText("Writing the image prompt")).toBeTruthy();
+    expect(screen.getByText("Writing the image prompt").closest("[data-sonner-toaster]")).not.toBeNull();
+    expect(screen.getByText("He nods.")).toBeTruthy();
+    expect(screen.queryByText(/a sunny street/)).toBeNull();
+    expect(cursor()).toBeNull();
+    await act(async () => {
+      emitEvent({ type: "delta", turn_id: "t1", text: "</img> Then he waits.", reasoning: null });
+    });
+    await waitFor(() => expect(screen.queryByText("Writing the image prompt")).toBeNull());
+    expect(screen.getByText("He nods. Then he waits.")).toBeTruthy();
+    expect(cursor()).not.toBeNull();
+  });
+
+  it.each(["failed", "cancelled", "unmount"] as const)("dismisses generation progress on %s", async (ending) => {
+    let emitEvent: (event: GenerationEvent) => void = () => {};
+    const runtime = await open({ streams: {
+      conversationSend: (_args, emit) => {
+        emitEvent = emit;
+        emit({ type: "started", turn_id: "t1" });
+        emit({ type: "delta", turn_id: "t1", text: "He nods. <img>sunny", reasoning: null });
+        return accepted;
+      },
+    } });
+    await typeAndSend("Hi");
+    expect(await screen.findByText("Writing the image prompt")).toBeTruthy();
+    await act(async () => {
+      if (ending === "unmount") await runtime.router.navigate({ to: "/" });
+      else if (ending === "failed") emitEvent({ type: "failed", turn_id: "t1", code: "provider_unavailable" });
+      else emitEvent({ type: "cancelled", turn_id: "t1" });
+    });
+    await waitFor(() => expect(screen.queryByText("Writing the image prompt")).toBeNull());
+  });
+
   it("puts streamed deltas into one visible bubble before the reply is stored", async () => {
     let stored = [message("a1", "assistant", "Sit down.")];
     let emitEvent: (event: GenerationEvent) => void = () => {};

@@ -1,5 +1,11 @@
 # LettuceAI UI parity
 
+Model loading and image-prompt preparation use a top-center progress toast instead of inline assistant-message status (user decision, 2026-10-15). The streaming cursor pauses during the hidden image directive and resumes after it closes. Model readiness, generation settlement and leaving the conversation dismiss the progress toast; ordinary notifications share the top-center host.
+
+The inline author note is a compact single-line preview above the composer, with no heading or secondary row (user clarification, 2026-10-15). Long notes truncate without increasing its height. Editing opens a one-row Crisp Textarea that grows to four visible rows before scrolling; desktop Enter, Shift+Enter, Escape and blur-save behavior are retained. The compact phone preview retains the library's 44px touch target.
+
+The composer's outer border stays neutral when its message input or inline author note receives focus (user decision, 2026-10-15).
+
 Memory mode belongs in character settings only. Chat settings expose memory management and recovery notices without a mode selector or chat-level mode reset (user decision, 2026-10-15). Legacy's character editor exposes the mode at `old-code/src/ui/pages/characters/EditCharacter.tsx:2090-2143`; the rewrite's character settings screen is still pending.
 
 Chat history searches titles and message previews, filters active/archived chats, sorts by activity date, and displays ten chats per page (user decision, 2026-10-15). "Last used" uses the existing `ConversationSummary.updated_at`; a separate last-opened timestamp is not available. Search and display pagination use the complete character-summary cache, whose backend cursors are still fetched eagerly. Desktop item actions remain context menus; compact layouts use a bottom Sheet.

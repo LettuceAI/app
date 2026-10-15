@@ -42,10 +42,6 @@ const emptyText: GenerationText = { text: "", reasoning: "", loading: null, imag
 
 type Listener = () => void;
 
-/**
- * Where one conversation's running generation lives. The page reads `meta`, which changes a handful of
- * times per reply; the streaming bubble alone reads `text`, which changes on every delta and load tick.
- */
 export class GenerationStore {
   private meta: GenerationMeta = idleMeta;
   private directive = sceneDirectiveState();
@@ -95,7 +91,11 @@ export class GenerationStore {
   }
 
   setLoading(loading: ModelLoading) {
-    if (this.meta.active) this.setText({ ...this.text, loading });
+    if (!this.meta.active) return;
+    this.setText({
+      ...this.text,
+      loading: loading.status === "loaded" || loading.status === "failed" ? null : loading,
+    });
   }
 
   appendDelta(text: string | null, reasoning: string | null) {
@@ -103,8 +103,8 @@ export class GenerationStore {
     this.setText({
       text: this.text.text + (text ? visibleDelta(this.directive, text) : ""),
       reasoning: this.text.reasoning + (reasoning ?? ""),
-      loading: text ? null : this.text.loading,
-      imagePrompt: this.directive.seen,
+      loading: null,
+      imagePrompt: this.directive.inside,
     });
   }
 

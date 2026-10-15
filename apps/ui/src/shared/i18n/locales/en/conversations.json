@@ -115,6 +115,10 @@
     }
   },
   "loading": {
+    "toast": {
+      "loading": "Loading model",
+      "retrying": "Retrying model load"
+    },
     "loading": "Loading {{model}}, {{percent}}%",
     "retrying": "Trying another way to load {{model}}, {{percent}}%",
     "loaded": "{{model}} is ready",
@@ -224,7 +228,7 @@
     "inlineToggle": "Show inline author note editor",
     "inlineField": "Inline author's note",
     "inlineEdit": "Edit inline author's note",
-    "inlinePlaceholder": "Add an author's note...",
+    "inlinePlaceholder": "Add an author's note",
     "saving": "Saving...",
     "hint": "A private direction the model follows in this chat",
     "placeholder": "Write an author's note that steers the model",
