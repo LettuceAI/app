@@ -23,6 +23,7 @@ use crate::offload::{
     drafter_reserve_path, plan_multi_gpu_distribution, reserve_device_vram, select_mtp_gpu_device,
     OffloadModel, estimate_memory_footprints,
 };
+use crate::request::resolve_kv_offload;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuLayerAssignment {
@@ -201,24 +202,11 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
     } else {
         0
     };
-    let kv_placement_offload_kqv: Option<bool> = if multi_gpu_active {
-        match request.llama_kv_placement.as_deref() {
-            Some("split" | "pin") => Some(true),
-            Some("systemRam") => Some(false),
-            _ => None,
-        }
-    } else {
-        None
-    };
-    let resolved_offload_kqv = if let Some(placement) = kv_placement_offload_kqv {
-        Some(placement)
-    } else if request.llama_offload_kqv.is_some() {
-        request.llama_offload_kqv
-    } else if !supports_gpu_offload || using_rocm_backend() {
-        Some(false)
-    } else {
-        None
-    };
+    let resolved_offload_kqv = resolve_kv_offload(
+        request.llama_kv_placement.as_deref(),
+        request.llama_offload_kqv,
+    )
+    .or_else(|| (!supports_gpu_offload || using_rocm_backend()).then_some(false));
     let offload_model = OffloadModel { metadata, costs: costs.as_ref(), geometry: geometry.as_ref() };
     let offload_request = OffloadRequest {
         available_memory_bytes,
@@ -337,7 +325,13 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
             }),
         )
     } else {
-        (None, None)
+        (
+            None,
+            Some(EstimatedPlacement {
+                total_gpu_layers: resolved_gpu_layers,
+                per_device_layers: vec![resolved_gpu_layers],
+            }),
+        )
     };
 
     let gpu_layers = estimated_placement.as_ref().map_or(resolved_gpu_layers, |placement| placement.total_gpu_layers);

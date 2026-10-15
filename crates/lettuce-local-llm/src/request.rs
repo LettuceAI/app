@@ -674,9 +674,35 @@ pub fn prompt_cache_reuse_blocked(pos_min: i32, resume_at: i32, n_swa: u32) -> b
     pos_min >= 0 && resume_at > 0 && pos_min > resume_at.saturating_sub(n_swa).max(0)
 }
 
+#[must_use]
+pub fn resolve_kv_offload(placement: Option<&str>, offload_kqv: Option<bool>) -> Option<bool> {
+    match placement {
+        Some("pin" | "split") => Some(true),
+        Some("systemRam") => Some(false),
+        _ => offload_kqv,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_kv_placement_overrides_the_attention_offload_flag() {
+        for offload in [None, Some(false), Some(true)] {
+            assert_eq!(resolve_kv_offload(Some("pin"), offload), Some(true));
+            assert_eq!(resolve_kv_offload(Some("split"), offload), Some(true));
+            assert_eq!(resolve_kv_offload(Some("systemRam"), offload), Some(false));
+        }
+    }
+
+    #[test]
+    fn automatic_kv_placement_preserves_the_attention_offload_flag() {
+        for offload in [None, Some(false), Some(true)] {
+            assert_eq!(resolve_kv_offload(Some("auto"), offload), offload);
+            assert_eq!(resolve_kv_offload(None, offload), offload);
+        }
+    }
 
     fn request_with_messages(messages: Vec<Value>) -> LlamaGenerationRequest {
         LlamaGenerationRequest {

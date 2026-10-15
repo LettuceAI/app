@@ -42,3 +42,7 @@ Facts about how `lettuce-local-llm` relates to the legacy app (2.2.x). The crate
 - DSpark note: DeepSeek's Qwen3-4B block-7 drafter barely drafts terse counting, upstream included, which is why its live test uses a 64-token explanation.
 
 The host notice envelope now carries the request id for application routing. The notice itself and the once-per-load KV fallback rule remain unchanged (`old-code/src-tauri/src/llama_cpp/mod.rs:2598-2607,3544-3556`; `old-code/src-tauri/src/llama_cpp/desktop/engine.rs:1399-1441`). No permanent model-path deduplication is added.
+
+Explicit KV placement now controls attention/KV offload on a single GPU as well as multiple GPUs. Pin and Split enable offload; System RAM disables it; Automatic retains the explicit offload flag and existing platform defaults. Legacy gated placement behind multi-GPU (`old-code/src-tauri/src/llama_cpp/mod.rs:1698-1733`) and ignored it when choosing the final context attempts (`:3067-3078`). Preview planning and context creation now share the placement resolution; CPU and OOM fallbacks remain unchanged. Sizing formulas are unchanged.
+
+The context-info response exposes the already resolved single-GPU layer count through estimated_placement, including a zero-layer result for CPU execution. This lets the model editor render GPU/CPU distribution without changing the offload planner or sizing formulas. Multi-GPU placement remains aligned to selected_gpu_device_ids.

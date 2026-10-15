@@ -1201,6 +1201,36 @@ mod tests {
     }
 
     #[test]
+    fn explicit_kv_placement_controls_estimated_cache_memory() {
+        let metadata = large_context_metadata();
+        let model = OffloadModel { metadata, costs: None, geometry: None };
+        for (placement, offload, on_gpu) in [
+            ("pin", false, true),
+            ("split", false, true),
+            ("systemRam", true, false),
+            ("auto", false, false),
+        ] {
+            let request = OffloadRequest {
+                available_memory_bytes: Some(16 * 1024 * 1024 * 1024),
+                available_vram_bytes: Some(12 * 1024 * 1024 * 1024),
+                requested_context: Some(8192),
+                n_batch: 512,
+                resolved_offload_kqv: crate::request::resolve_kv_offload(Some(placement), Some(offload)),
+                kv_types: KvCacheTypes::uniform(Some("f16")),
+                flash_attention_policy: FlashAttentionPolicy::Auto,
+                sidecar_vram_reserve_bytes: 0,
+                bundled_mtp_draft: false,
+            };
+            let (ram, gpu) = estimate_memory_footprints(model, request, metadata.offload_layer_count());
+            assert_eq!(gpu.context_bytes > 0, on_gpu, "{placement}");
+            assert_eq!(ram.context_bytes > 0, !on_gpu, "{placement}");
+            let (cpu, gpu) = estimate_memory_footprints(model, request, 0);
+            assert!(cpu.context_bytes > 0);
+            assert_eq!(gpu.context_bytes, 0);
+        }
+    }
+
+    #[test]
     fn full_sliding_window_cache_is_reflected_in_memory_fit() {
         let geometry = KvCacheGeometry::new(vec![KvLayerGeometry { n_head_kv: 8, n_embd_head_k: 128, n_embd_head_v: 128, is_swa: true }], 1024).expect("geometry");
         let full = geometry.clone().with_swa_full(true);

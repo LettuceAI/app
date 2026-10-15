@@ -62,7 +62,7 @@ use crate::prompt::{
 use crate::request::{
     IncrementalStopMatcher, LlamaGenerationRequest, ResolvedRuntime, ResolvedSampling,
     TextContextShape, cache_eviction_count, common_token_prefix, prompt_cache_reuse_blocked,
-    should_flush_stream,
+    resolve_kv_offload, should_flush_stream,
 };
 use crate::sampler::{
     ResolvedSamplerConfig, build_sampler, flash_attention_policy_label, kv_type_label,
@@ -1184,36 +1184,20 @@ impl Run<'_> {
         if native_fit_request && !hot_context_resident {
             worker.engine.unload()?;
         }
-        let mut kv_main_gpu: Option<i32> = None;
-        let kv_placement_offload_kqv: Option<bool> = if multi_gpu_active {
-            match rt.kv_placement.as_deref() {
-                Some("split") => Some(true),
-                Some("systemRam") => Some(false),
-                Some("pin") => {
-                    kv_main_gpu = rt.main_gpu.and_then(|id| {
-                        usize::try_from(id).ok().and_then(|id| {
-                            rt.gpu_device_ids
-                                .iter()
-                                .position(|device| *device == id)
-                                .map(|position| position as i32)
-                        })
-                    });
-                    Some(true)
-                }
-                _ => None,
-            }
+        let kv_main_gpu = if multi_gpu_active && rt.kv_placement.as_deref() == Some("pin") {
+            rt.main_gpu.and_then(|id| {
+                usize::try_from(id).ok().and_then(|id| {
+                    rt.gpu_device_ids
+                        .iter()
+                        .position(|device| *device == id)
+                        .map(|position| position as i32)
+                })
+            })
         } else {
             None
         };
-        let resolved_offload_kqv = if let Some(placement) = kv_placement_offload_kqv {
-            Some(placement)
-        } else if rt.offload_kqv.is_some() {
-            rt.offload_kqv
-        } else if rt.mtp_enabled && !media_requested || using_rocm_backend() {
-            Some(false)
-        } else {
-            None
-        };
+        let resolved_offload_kqv = resolve_kv_offload(rt.kv_placement.as_deref(), rt.offload_kqv)
+            .or_else(|| ((rt.mtp_enabled && !media_requested) || using_rocm_backend()).then_some(false));
         let flash_policy = if let Some(policy) = rt.flash_attention {
             policy
         } else if using_rocm_backend() {
@@ -1891,14 +1875,8 @@ impl Run<'_> {
             || !engine.supports_gpu_offload;
         let runtime_offload_kqv = if cpu_runtime_active {
             Some(false)
-        } else if let Some(placement) = kv_placement_offload_kqv {
-            Some(placement)
-        } else if rt.offload_kqv.is_some() {
-            rt.offload_kqv
-        } else if rt.mtp_enabled && !media_requested || using_rocm_backend() {
-            Some(false)
         } else {
-            None
+            resolved_offload_kqv
         };
         let shape = model_shape(model);
         let raw_recommended_ctx = compute_recommended_context(
@@ -1978,11 +1956,7 @@ impl Run<'_> {
             ),
             (
                 "llamaKvPlacement",
-                json!(multi_gpu_active.then(|| {
-                    rt.kv_placement
-                        .clone()
-                        .unwrap_or_else(|| "auto".to_string())
-                })),
+                json!(rt.kv_placement.as_deref().unwrap_or("auto")),
             ),
             (
                 "llamaMainGpu",
@@ -2188,13 +2162,7 @@ impl Run<'_> {
             )));
         }
 
-        let preferred_offload_kqv = if let Some(explicit) = rt.offload_kqv {
-            Some(explicit)
-        } else if rt.mtp_enabled && !media_requested || using_rocm_backend() {
-            Some(false)
-        } else {
-            Some(engine.supports_gpu_offload)
-        };
+        let preferred_offload_kqv = runtime_offload_kqv.or(Some(engine.supports_gpu_offload));
         let requested_ctx_size = ctx_size;
         let initial_batch = ctx_size.min(batch_size_limit).max(1);
         let mut resolved_ctx_size = ctx_size;
