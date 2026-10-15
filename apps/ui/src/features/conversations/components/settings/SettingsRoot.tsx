@@ -5,8 +5,7 @@ import {
   NotebookPen, Sparkles, SlidersHorizontal, Trash2, Upload, User, GitBranch,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Alert, Avatar, Button, confirm, icon, IconButton, Input, ListGroup, ListRow, ListRowButton, LoadingState, Segmented, Switch, toast } from "@lettuceai/crisp";
-import type { MemoryMode } from "@/api/generated/bindings";
+import { Alert, Avatar, Button, confirm, icon, IconButton, Input, ListGroup, ListRow, ListRowButton, LoadingState, Switch, toast } from "@lettuceai/crisp";
 import { overrideCount } from "@/entities/model/model-config";
 import { queryKeys } from "@/api/query-keys";
 import { startDirectChat } from "../../data/actions";
@@ -16,9 +15,7 @@ import { characterChatsQuery, characterQuery, effectivePersonaId, lorebooksQuery
 import { useChatModels } from "../../data/use-models";
 import { formatTime } from "../../data/messages";
 import type { PanelCtx } from "./context";
-import { ControlRow, SettingRow } from "./SettingRow";
-
-const memoryModes: readonly MemoryMode[] = ["manual", "dynamic", "disabled"];
+import { SettingRow } from "./SettingRow";
 
 export interface SettingsRootProps {
   ctx: PanelCtx;
@@ -189,7 +186,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
           value={lorebooks.isPending ? t("settings.loading") : t("settings.lorebooks.count", { count: settings.lorebooks.ids.length })}
           source={settings.lorebooks.source}
           disabled={ctx.busy}
-          onOpen={() => ctx.open("lorebooks")}
+          onOpen={() => ctx.openSheet("lorebooks")}
           onReset={() => void ctx.save({ lorebooks: { type: "reset" } })}
         />
         {settings.disable_character_lorebooks && (
@@ -214,31 +211,13 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
       </ListGroup>
 
       <section className="space-y-3">
-        <ListGroup label={t("settings.sections.memory")}>
-          <ControlRow
-            title={t("settings.memory.mode")}
-            description={t(`settings.source.${settings.memory.source}`)}
-            control={
-              <>
-                {settings.memory.source === "conversation" && <Button variant="ghost" size="sm" disabled={ctx.busy} onClick={() => void ctx.save({ memory: { type: "reset" } })}>{t("settings.reset")}</Button>}
-                <Segmented
-                  size="sm"
-                  aria-label={t("settings.memory.mode")}
-                  value={settings.memory.mode}
-                  onChange={(mode) => void ctx.save({ memory: { type: "set", mode } })}
-                  options={memoryModes.map((value) => ({ value, label: t(`settings.memory.modes.${value}`) }))}
-                />
-              </>
-            }
-          />
-        </ListGroup>
         {view.memory_blocked && (
           <Alert tone="warning" title={t("banner.memoryBlocked")} action={<Button variant="secondary" size="sm" onClick={retryMemory}>{t("banner.memoryRetry")}</Button>} />
         )}
         {view.missing_models.includes("embedding") && (
           <Alert tone="warning" title={t("banner.modelNamed", { model: t("requiredModel.embedding") })} action={<Button variant="secondary" size="sm" onClick={onModelsSettings}>{t("banner.openModels")}</Button>} />
         )}
-        <ListGroup>
+        <ListGroup label={t("settings.sections.memory")}>
           <ListRowButton
             icon={<Sparkles size={icon.lg} />}
             title={t("settings.memory.open")}

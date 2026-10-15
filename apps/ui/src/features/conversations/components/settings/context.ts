@@ -4,9 +4,9 @@ import type { ConversationSettingsPatch_Deserialize, ConversationSettingsView, C
 import type { ConversationServices } from "../../data/actions";
 
 export type PanelView =
-  | "root" | "lorebooks" | "history" | "notes" | "starters" | "advanced";
+  | "root" | "history" | "notes" | "starters" | "advanced";
 
-export type PanelSheet = "persona" | "model" | "background" | "note";
+export type PanelSheet = "persona" | "model" | "background" | "note" | "lorebooks" | "history_actions";
 
 export interface PanelCtx {
   api: ApiClient;
@@ -17,10 +17,13 @@ export interface PanelCtx {
   settings: ConversationSettingsView | undefined;
   characterId: string | null;
   busy: boolean;
+  activeSheet: PanelSheet | null;
+  footerTarget: HTMLDivElement | null;
   save: (change: Partial<ConversationSettingsPatch_Deserialize>) => Promise<boolean>;
   run: <T>(task: () => Promise<T>) => Promise<T | undefined>;
   open: (view: PanelView) => void;
   openSheet: (sheet: PanelSheet) => void;
+  closeSheet: () => void;
   back: () => void;
   close: () => void;
   home: () => void;

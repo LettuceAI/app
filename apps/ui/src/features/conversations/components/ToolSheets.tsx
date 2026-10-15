@@ -29,7 +29,7 @@ function PersonaRow({ leading, title, detail, badge, selected, onClick }: { lead
           <span className="truncate text-base font-medium text-fg">{title}</span>
           {badge}
         </span>
-        {detail && <span className="mt-0.5 line-clamp-2 block text-sm text-fg-3">{detail}</span>}
+        {detail && <span className="mt-0.5 line-clamp-2 text-sm text-fg-3">{detail}</span>}
       </span>
       {selected && <Check size={icon.md} className="shrink-0 text-accent" />}
     </button>

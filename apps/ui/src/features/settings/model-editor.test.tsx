@@ -502,7 +502,7 @@ describe("model editor page", () => {
     expect(await screen.findByText("Compatibility")).toBeTruthy();
     expect(await screen.findByRole("combobox", { name: "Effort" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("switch", { name: "Let the model think" }));
-    expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "Effort" })).toBeNull());
     expect(screen.getByRole("switch", { name: "Always send the thinking setting" })).toBeTruthy();
   });
 
@@ -525,7 +525,7 @@ describe("model editor page", () => {
     await click("Save");
     await waitFor(() => expect(saved?.model.config).toMatchObject({ chat_parameters: { prompt_caching: { enabled: { retention: "one_hour" } } } }));
     fireEvent.click(await screen.findByRole("switch", { name: "Cache the prompt" }));
-    expect(screen.queryByRole("combobox", { name: "Keep for" })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "Keep for" })).toBeNull());
   });
 
 });

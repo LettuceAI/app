@@ -385,6 +385,19 @@
       }
     },
     "history": {
+      "filter": "Filter chats",
+      "filters": {
+        "all": "All",
+        "active": "Active",
+        "archived": "Archived"
+      },
+      "sort": "Sort chats",
+      "sorts": {
+        "recent": "Last used",
+        "oldest": "Oldest first"
+      },
+      "results_one": "{{formattedCount}} chat",
+      "results_other": "{{formattedCount}} chats",
       "untitled": "Untitled chat",
       "search": "Search chats",
       "noMatch": "No chats match",
@@ -442,7 +455,8 @@
     },
     "generation": {
       "title": "Model settings",
-      "hint": "Values set here apply to this chat only. Anything left empty follows the model, then the app.",
+      "scope": "For this chat only",
+      "hint": "Unset values follow the model, then the app defaults.",
       "noModel": "This chat has no model, so only the app defaults apply.",
       "resetAll": "Reset all",
       "discard": "Discard",

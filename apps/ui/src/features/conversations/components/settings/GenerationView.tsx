@@ -1,11 +1,14 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, icon, ListGroup, LoadingState } from "@lettuceai/crisp";
 import type { ProviderAccountView, SettingsModelSettingsLayer } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { ModelMark } from "@/entities/model/PickerModelMark";
 import { ModelEditorField } from "@/entities/model/ModelEditorField";
+import { ModelEditorReveal } from "@/entities/model/ModelEditorReveal";
 import { effectiveField, layerOf, mergeLayers, overrideCount, parseModelConfig, type ModelConfig } from "@/entities/model/model-config";
 import { editorFields, type FieldId } from "@/entities/model/model-editor-fields";
 import { editorSections, type EditorKind } from "@/entities/model/model-editor-sections";
@@ -60,59 +63,70 @@ export function GenerationView({ ctx }: { ctx: PanelCtx }) {
   };
   const sections = editorSections(kind, false).filter((section) => sectionsFor[kind].includes(section.id));
   const empty = parseModelConfig({ ...(modelConfig ?? {}), chat_parameters: {}, llama_cpp: {}, stable_diffusion: {}, feature_parameters: {} });
+  const field = (id: FieldId) => <ModelEditorField
+    key={id}
+    kind={kind}
+    runtimeDefault={undefined}
+    id={id}
+    config={config}
+    defaults={inherited}
+    layer="chat"
+    compact
+    disabled={ctx.busy}
+    onChange={setDraft}
+    onFile={noop}
+    onInvalid={(key, value) => setInvalid((state) => ({ ...state, [key]: value }))}
+  />;
 
   return (
-    <div className="space-y-6 pb-4">
-      <p className="text-sm text-fg-muted">{t("settings.generation.hint")}</p>
-      {!model && <p className="text-sm text-fg-muted">{t("settings.generation.noModel")}</p>}
-      {sections.map((section) => (
-        <div key={section.id} className="space-y-3">
-          <p className="text-xs font-semibold text-fg-3">{settingsText(`modelEditor.sections.${section.id}` as never)}</p>
-          {section.groups.map((group, index) => {
-            const toggled = group.toggle ? effectiveField(config, inherited, "chat", editorFields[group.toggle]) : true;
-            return (
-              <ListGroup key={index} label={group.label ? settingsText(`modelEditor.groups.${group.label}` as never) : undefined}>
-                {group.toggle && <ModelEditorField kind={kind} runtimeDefault={undefined} id={group.toggle} config={config} defaults={inherited} layer="chat" onChange={setDraft} onFile={noop} onInvalid={noop} />}
-                {(!group.toggle || toggled === true || toggled === "enabled") && (
-                  <>
-                    {group.fields.filter(supports).map((id) => (
-                      <Fragment key={id}>
-                        <ModelEditorField
-                          kind={kind}
-                          runtimeDefault={undefined}
-                          id={id}
-                          config={config}
-                          defaults={inherited}
-                          layer="chat"
-                          onChange={setDraft}
-                          onFile={noop}
-                          onInvalid={(key, value) => setInvalid((state) => ({ ...state, [key]: value }))}
-                        />
-                      </Fragment>
-                    ))}
-                  </>
-                )}
-              </ListGroup>
-            );
-          })}
-        </div>
-      ))}
-      <div className="sticky bottom-0 flex flex-wrap gap-2 border-t border-line bg-surface py-3">
-        <Button variant="ghost" leading={<RotateCcw size={icon.sm} />} disabled={ctx.busy || count === 0} onClick={() => {
+    <div className="@container space-y-6 pb-2">
+      <div className="space-y-3">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            {model && <ModelMark modelId={model.external_model_id} providerKind={account?.provider_kind ?? null} />}
+            <div className="min-w-0">
+              {model && <p className="truncate text-sm font-medium text-fg" title={model.display_name}>{model.display_name}</p>}
+              <p className="text-xs text-fg-3">{t("settings.generation.scope")}</p>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" leading={<RotateCcw size={icon.sm} />} disabled={ctx.busy || count === 0} onClick={() => {
             setDraft(empty);
             setInvalid({});
           }}>{t("settings.generation.resetAll")}</Button>
-        <div className="flex-1" />
-        <Button variant="secondary" disabled={ctx.busy || !dirty} onClick={() => {
+        </div>
+        <p className="text-sm text-fg-3">{t(model ? "settings.generation.hint" : "settings.generation.noModel")}</p>
+      </div>
+      <fieldset disabled={ctx.busy} className="min-w-0 space-y-6">
+        {sections.map((section) => (
+          <div key={section.id} className="space-y-5">
+            {section.groups.map((group, index) => {
+              const fields = group.fields.filter(supports);
+              if (!group.toggle && fields.length === 0) return null;
+              const toggled = group.toggle ? effectiveField(config, inherited, "chat", editorFields[group.toggle]) : true;
+              return (
+                <ListGroup key={index} label={settingsText((group.label ? `modelEditor.groups.${group.label}` : `modelEditor.sections.${section.id}`) as never)}>
+                  {group.toggle && field(group.toggle)}
+                  {group.toggle ? <ModelEditorReveal open={toggled === true || toggled === "enabled"}>{fields.map(field)}</ModelEditorReveal> : fields.map(field)}
+                </ListGroup>
+              );
+            })}
+          </div>
+        ))}
+      </fieldset>
+      {ctx.footerTarget && createPortal(<div className="flex min-h-8 items-center gap-2">
+        <p className={dirty ? "sr-only @sm:not-sr-only @sm:mr-auto @sm:min-w-0 @sm:flex-1 @sm:truncate @sm:text-sm @sm:text-fg-3" : "text-xs text-fg-3"} role="status">{dirty ? settingsText("modelEditor.unsaved") : count > 0 ? t("settings.generation.count", { count }) : t("settings.generation.inherited")}</p>
+        {dirty && <>
+          <Button variant="ghost" className="flex-1 @sm:flex-none" disabled={ctx.busy} onClick={() => {
             setDraft(null);
             setInvalid({});
           }}>{t("settings.generation.discard")}</Button>
-        <Button variant="primary" disabled={ctx.busy || !dirty || hasInvalid} onClick={() => void ctx.save({ model_settings: layerOf(config) }).then((ok) => {
+          <Button variant="primary" className="flex-1 @sm:flex-none" loading={ctx.busy} disabled={ctx.busy || hasInvalid} onClick={() => void ctx.save({ model_settings: layerOf(config) }).then((ok) => {
             if (!ok) return;
             setDraft(null);
             setInvalid({});
           })}>{t("note.save")}</Button>
-      </div>
+        </>}
+      </div>, ctx.footerTarget)}
     </div>
   );
 }

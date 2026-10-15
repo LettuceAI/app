@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import { cn } from "@lettuceai/crisp";
 
-export function EditorRow({ label, hint, children, overridden, onReset, resetLabel, stack, inline }: {
-  label: string; hint?: ReactNode; children: ReactNode; overridden?: boolean; onReset?: () => void; resetLabel?: string; stack?: boolean; inline?: boolean;
+export function EditorRow({ label, hint, children, overridden, onReset, resetLabel, stack, inline, compact = false }: {
+  label: string; hint?: ReactNode; children: ReactNode; overridden?: boolean; onReset?: () => void; resetLabel?: string; stack?: boolean; inline?: boolean; compact?: boolean;
 }) {
-  return <div className={cn("flex gap-x-6 gap-y-2.5 px-4 py-3", inline ? "items-center" : stack ? "flex-col" : "flex-col @[36rem]:flex-row @[36rem]:items-center")}>
+  return <div className={cn("flex gap-x-6 gap-y-2.5 px-4 py-3", inline ? "items-center" : stack ? "flex-col" : compact ? "flex-row items-center" : "flex-col @[36rem]:flex-row @[36rem]:items-center")}>
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1.5">
         <span className="text-sm font-medium text-fg">{label}</span>
@@ -13,6 +13,6 @@ export function EditorRow({ label, hint, children, overridden, onReset, resetLab
       </div>
       {hint && <div className="mt-0.5 text-xs text-fg-3">{hint}</div>}
     </div>
-    <div className={cn("min-w-0 shrink-0", inline ? undefined : stack ? "w-full" : "w-full @[36rem]:w-64")}>{children}</div>
+    <div className={cn("min-w-0 shrink-0", inline ? undefined : stack ? "w-full" : compact ? "w-36 @sm:w-64" : "w-full @[36rem]:w-64")}>{children}</div>
   </div>;
 }

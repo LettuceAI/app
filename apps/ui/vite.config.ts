@@ -8,6 +8,7 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
+    dedupe: ["react", "react-dom", "framer-motion"],
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },

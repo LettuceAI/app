@@ -8,12 +8,13 @@ import { SliderValue } from "@/shared/ui/SliderValue";
 import type { SettingsModelSettingsLayer } from "@/api/generated/bindings";
 import { effectiveField, readField, writeField, type Layer, type ModelConfig } from "./model-config";
 import { SamplerOrder } from "./SamplerOrder";
+import { ModelEditorReveal } from "./ModelEditorReveal";
 import { formatSequences, parseSequences } from "./model-editor-sequences";
 import type { EditorKind } from "./model-editor-sections";
 import { editorFields, type EditorField, type FieldId } from "./model-editor-fields";
 
-export function ModelEditorField({ id, config, defaults, layer, onChange, onFile, onInvalid, options, kind, runtimeDefault, disabled = false, disabledOptions = [], loading = false }: {
-  kind: EditorKind; runtimeDefault: unknown;
+export function ModelEditorField({ id, config, defaults, layer, onChange, onFile, onInvalid, options, kind, runtimeDefault, compact = false, disabled = false, disabledOptions = [], loading = false }: {
+  kind: EditorKind; runtimeDefault: unknown; compact?: boolean;
   id: FieldId; config: ModelConfig; defaults: SettingsModelSettingsLayer | undefined; layer: Layer;
   options?: { value: string; label: string; disabled?: boolean }[] | undefined;
   disabled?: boolean; disabledOptions?: readonly string[]; loading?: boolean;
@@ -38,12 +39,12 @@ export function ModelEditorField({ id, config, defaults, layer, onChange, onFile
     const enabled = value !== null && typeof value === "object" && "enabled" in value;
     const retention = enabled ? (value as { enabled: { retention: string } }).enabled.retention : "five_minutes";
     return <>
-      <EditorRow label={label} hint={hint} inline overridden={own.overridden} onReset={() => set(undefined)} resetLabel={t("modelEditor.resetField", { field: label })}>
+      <EditorRow compact={compact} label={label} hint={hint} inline overridden={own.overridden} onReset={() => set(undefined)} resetLabel={t("modelEditor.resetField", { field: label })}>
         <Switch aria-label={label} checked={enabled} onChange={(checked) => set(checked ? { enabled: { retention } } : "disabled")} />
       </EditorRow>
-      {enabled && <EditorRow label={t("modelEditor.keepFor")}>
+      <ModelEditorReveal open={enabled}><EditorRow compact={compact} label={t("modelEditor.keepFor")}>
         <SelectMenuField aria-label={t("modelEditor.keepFor")} value={retention} options={(spec.options ?? []).filter((option) => option && option !== "disabled").map((option) => ({ value: option, label: optionLabel(option) }))} onChange={(next) => { if (next) set({ enabled: { retention: next } }); }} />
-      </EditorRow>}
+      </EditorRow></ModelEditorReveal>
     </>;
   }
   let control;
@@ -84,7 +85,7 @@ export function ModelEditorField({ id, config, defaults, layer, onChange, onFile
     const props = { "aria-label": label, value: typeof own.value === "string" ? own.value : "", placeholder: i18n.exists(placeholderKey, { ns: "settings" }) ? emptyLabel : typeof value === "string" ? value : "", onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(event.target.value || undefined) };
     control = spec.multiline ? <textarea {...props} className="min-h-24 w-full resize-y rounded-xl border border-line bg-fill px-3.5 py-2.5 text-sm" /> : <Input {...props} />;
   }
-  return <fieldset disabled={disabled} className={disabled ? "min-w-0 opacity-50" : "min-w-0"}><EditorRow label={label} hint={hint} overridden={own.overridden} onReset={() => { set(undefined); setResetVersion((version) => version + 1); onInvalid(`${layer}.${id}`, false); }} resetLabel={t("modelEditor.resetField", { field: label })} stack={spec.multiline || spec.type === "order"} inline={spec.type === "switch" || spec.type === "reasoning"}>{control}</EditorRow></fieldset>;
+  return <fieldset disabled={disabled} className={disabled ? "min-w-0 opacity-50" : "min-w-0"}><EditorRow compact={compact} label={label} hint={hint} overridden={own.overridden} onReset={() => { set(undefined); setResetVersion((version) => version + 1); onInvalid(`${layer}.${id}`, false); }} resetLabel={t("modelEditor.resetField", { field: label })} stack={spec.multiline || spec.type === "order"} inline={spec.type === "switch" || spec.type === "reasoning"}>{control}</EditorRow></fieldset>;
 }
 
 function StringArray({ value, label, placeholder, onChange, onInvalid }: { value: string[] | undefined; label: string; placeholder: string; onChange: (value: unknown) => void; onInvalid: (invalid: boolean) => void }) {

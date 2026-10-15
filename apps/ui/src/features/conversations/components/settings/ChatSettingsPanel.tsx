@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
@@ -12,6 +12,7 @@ import { personasQuery } from "../../data/queries";
 import { effectivePersonaId } from "../../data/settings-queries";
 import { BackgroundSheet, NoteSheet, PersonaSheet } from "../ToolSheets";
 import { ModelSheet } from "./ModelSheet";
+import { LorebooksSheet } from "./LorebooksSheet";
 import { PanelViews } from "./PanelViews";
 import type { PanelCtx, PanelSheet, PanelView } from "./context";
 import { SettingsRoot } from "./SettingsRoot";
@@ -44,6 +45,11 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
   const [direction, setDirection] = useState<1 | -1>(1);
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState<PanelSheet | null>(null);
+  const [footerTarget, setFooterTarget] = useState<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const resetViewScroll = useCallback((node: HTMLDivElement | null) => {
+    if (node && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, []);
   if (!props.open && (stack.length > 1 || sheet !== null)) {
     setStack(["root"]);
     setSheet(null);
@@ -74,6 +80,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
     setStack((previous) => [...previous, next]);
   }, []);
   const openSheet = useCallback((next: PanelSheet) => setSheet(next), []);
+  const closeSheet = useCallback(() => setSheet(null), []);
   const back = useCallback(() => {
     setDirection(-1);
     setStack((previous) => (previous.length > 1 ? previous.slice(0, -1) : previous));
@@ -86,7 +93,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
   }, [onClose]);
 
   const ctx: PanelCtx = {
-    api, queryClient, services, conversationId, view, settings: settings.data, characterId: props.characterId, busy, save, run, open, openSheet, back, close, home: props.onHome,
+    api, queryClient, services, conversationId, view, settings: settings.data, characterId: props.characterId, busy, activeSheet: sheet, footerTarget, save, run, open, openSheet, closeSheet, back, close, home: props.onHome,
     goTo: (id, replace) => {
       setStack(["root"]);
       onOpenChat(id, replace);
@@ -109,17 +116,21 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
     <Sheet
       open={props.open}
       onClose={close}
+      dismissible={sheet === null}
+      scrollRef={scrollRef}
+      footer={current === "advanced" ? <div ref={setFooterTarget} className="@container" /> : undefined}
       title={t(`settings.views.${current}`)}
       size="lg"
       placement={phone ? "bottom" : "side"}
       {...(phone ? { detents: [1] as const } : {})}
       {...(phone || stack.length > 1
-        ? { leftAction: <IconButton label={t("settings.back")} shape="round" onClick={stack.length > 1 ? back : close}><ArrowLeft size={icon.lg} /></IconButton> }
+        ? { leftAction: <IconButton label={t("settings.back")} size="sm" shape="round" onClick={stack.length > 1 ? back : close}><ArrowLeft size={icon.lg} /></IconButton> }
         : {})}
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={current}
+          ref={resetViewScroll}
           initial={{ opacity: 0, x: direction * 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: direction * -24 }}
@@ -155,6 +166,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
         onSave={(note) => void save({ author_note: note }).then((ok) => ok && setSheet(null))}
       />
       <ModelSheet ctx={ctx} open={props.open && sheet === "model"} onClose={() => setSheet(null)} />
+      <LorebooksSheet ctx={ctx} open={props.open && sheet === "lorebooks"} onClose={() => setSheet(null)} />
     </>
   );
 }

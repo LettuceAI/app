@@ -19,6 +19,7 @@ import { runtimeFieldDefault } from "./model-editor-defaults";
 import { editorFields, type FieldId } from "@/entities/model/model-editor-fields";
 import { editorSections, type EditorKind } from "@/entities/model/model-editor-sections";
 import { ModelEditorField } from "@/entities/model/ModelEditorField";
+import { ModelEditorReveal } from "@/entities/model/ModelEditorReveal";
 import { ModelComponentPicker, ModelFilePicker, type PickedModel } from "./ModelFilePicker";
 import { LlamaRuntimeInfo, ModelLoras, OpenRouterEndpoints } from "./ModelEditorRuntime";
 import { ModelTemplate } from "./ModelTemplate";
@@ -224,10 +225,10 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
       const enabled = group.toggle ? effectiveField(draft.config, defaults, activeLayer, editorFields[group.toggle]) ?? runtimeDefault(group.toggle) : true;
       return <ListGroup key={index} label={group.label ? t(`modelEditor.groups.${group.label}` as never) : undefined}>
         {group.toggle && field(group.toggle)}
-        {(!group.toggle || enabled === true || enabled === "enabled") && <>
+        <ModelEditorReveal open={!group.toggle || enabled === true || enabled === "enabled"}>
           {section === "gpu" && group.toggle && <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu devicesOnly />}
           {group.fields.filter(supports).map((id) => <Fragment key={id}>{id === "llamaGpuLayers" ? <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu layersOnly /> : id === "llamaChatTemplateOverride" ? <ModelTemplate path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} /> : field(id)}</Fragment>)}
-        </>}
+        </ModelEditorReveal>
       </ListGroup>;
     })}
     {section === "routing" && <OpenRouterEndpoints externalId={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} />}

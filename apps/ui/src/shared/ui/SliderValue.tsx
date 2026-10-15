@@ -21,7 +21,7 @@ export function SliderValue({ value, text, overridden, min, max, step, label, on
     onChange={(event) => { edited.current = true; setDraft(event.target.value); }} onBlur={commit}
     onKeyDown={(event) => {
       if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
-      if (event.key === "Escape") { event.preventDefault(); cancelled.current = true; setDraft(null); event.currentTarget.blur(); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancelled.current = true; setDraft(null); event.currentTarget.blur(); }
     }}
     className={cn("h-8 rounded-md border border-transparent bg-transparent px-1.5 text-right text-sm tabular-nums outline-none hover:border-line hover:bg-fill focus:border-accent focus:bg-surface-1 focus:text-fg", value === undefined ? "w-24" : "w-14", overridden ? "text-fg" : "text-fg-3")} />;
 }

@@ -1,17 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  Badge, Button, confirm, icon, IconButton, Input, ListGroup, ListRowButton, LoadingState, Menu, MenuContent, MenuItem, MenuTrigger, SearchField, toast,
+  Badge, Button, confirm, FilterBar, icon, IconButton, Input, ListGroup, ListRowButton, LoadingState, Menu, MenuContent, MenuItem, MenuTrigger, Pagination, SearchField, Sheet, toast, useCompactLayout,
 } from "@lettuceai/crisp";
-import type { ConversationSummary } from "@/api/generated/bindings";
+import type { ConversationSummary, LifecycleFilter } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { exportChat, removeChat, renameChat, setArchived } from "../../data/chat-actions";
-import { formatTime } from "../../data/messages";
 import { characterChatsQuery, characterQuery } from "../../data/settings-queries";
 import { startDirectChat } from "../../data/actions";
 import type { PanelCtx } from "./context";
+
+const historyPageSize = 10;
+const historyFilters: readonly LifecycleFilter[] = ["all", "active", "archived"];
+const historySorts = ["recent", "oldest"] as const;
 
 function RenameRow({ initial, onSave, onCancel, busy }: { initial: string; onSave: (title: string) => void; onCancel: () => void; busy: boolean }) {
   const { t } = useTranslation("conversations");
@@ -36,15 +39,30 @@ function RenameRow({ initial, onSave, onCancel, busy }: { initial: string; onSav
 
 export function HistoryView({ ctx }: { ctx: PanelCtx }) {
   const { t, i18n } = useTranslation("conversations");
+  const { activeSheet, closeSheet } = ctx;
+  const phone = useCompactLayout();
   const chats = useQuery(characterChatsQuery(ctx.api, ctx.conversationId, ctx.characterId));
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<LifecycleFilter>("all");
+  const [sort, setSort] = useState<(typeof historySorts)[number]>("recent");
+  const [page, setPage] = useState(1);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [actions, setActions] = useState<ConversationSummary | null>(null);
+  useEffect(() => {
+    if (!phone && activeSheet === "history_actions") closeSheet();
+  }, [phone, activeSheet, closeSheet]);
   const needle = query.trim().toLowerCase();
+  const shown = (chats.data ?? [])
+    .filter((chat) => !needle || chat.title.toLowerCase().includes(needle) || (chat.last_message_preview ?? "").toLowerCase().includes(needle))
+    .filter((chat) => filter === "all" || chat.archived === (filter === "archived"))
+    .sort((a, b) => (sort === "recent" ? b.updated_at - a.updated_at : a.updated_at - b.updated_at) || a.id.localeCompare(b.id));
+  const pageCount = Math.max(1, Math.ceil(shown.length / historyPageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visible = shown.slice((currentPage - 1) * historyPageSize, currentPage * historyPageSize);
+  if (chats.isSuccess && page !== currentPage) setPage(currentPage);
   if (chats.isPending) return <LoadingState />;
   if (chats.isError) return <FailureState error={chats.error} onRetry={() => void chats.refetch()} />;
-  const shown = chats.data
-    .filter((chat) => !needle || chat.title.toLowerCase().includes(needle) || (chat.last_message_preview ?? "").toLowerCase().includes(needle))
-    .sort((a, b) => b.updated_at - a.updated_at);
+  const date = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" });
 
   const remove = async (chat: ConversationSummary) => {
     const sure = await confirm({
@@ -65,12 +83,29 @@ export function HistoryView({ ctx }: { ctx: PanelCtx }) {
 
   return (
     <div className="space-y-3 pb-1">
-      {chats.data.length > 4 && <SearchField value={query} onChange={setQuery} placeholder={t("settings.history.search")} aria-label={t("settings.history.search")} />}
+      <SearchField value={query} onChange={(value) => { setQuery(value); setPage(1); }} placeholder={t("settings.history.search")} aria-label={t("settings.history.search")} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FilterBar
+          aria-label={t("settings.history.filter")}
+          options={historyFilters.map((value) => ({ value, label: t(`settings.history.filters.${value}`) }))}
+          value={filter}
+          onChange={(value) => { setFilter(value); setPage(1); }}
+        />
+        <Menu>
+          <MenuTrigger>
+            <Button variant="secondary" size="sm" aria-label={t("settings.history.sort")} trailing={<ChevronDown size={icon.sm} />}>{t(`settings.history.sorts.${sort}`)}</Button>
+          </MenuTrigger>
+          <MenuContent align="end">
+            {historySorts.map((value) => <MenuItem key={value} selected={sort === value} onSelect={() => { setSort(value); setPage(1); }}>{t(`settings.history.sorts.${value}`)}</MenuItem>)}
+          </MenuContent>
+        </Menu>
+      </div>
+      <p role="status" className="text-xs text-fg-3">{t("settings.history.results", { count: shown.length, formattedCount: new Intl.NumberFormat(i18n.language).format(shown.length) })}</p>
       {shown.length === 0 ? (
-        <p className="py-6 text-center text-sm text-fg-muted">{needle ? t("settings.history.noMatch") : t("settings.history.empty")}</p>
+        <p className="py-6 text-center text-sm text-fg-muted">{needle || filter !== "all" ? t("settings.history.noMatch") : t("settings.history.empty")}</p>
       ) : (
         <ListGroup>
-          {shown.map((chat) =>
+          {visible.map((chat) =>
             renaming === chat.id ? (
               <RenameRow
                 key={chat.id}
@@ -86,7 +121,7 @@ export function HistoryView({ ctx }: { ctx: PanelCtx }) {
                   description={
                     <span className="block">
                       {chat.last_message_preview && <span className="block truncate">{chat.last_message_preview}</span>}
-                      <span className="block text-xs text-fg-3">{t("settings.history.meta", { count: chat.message_count, date: formatTime(chat.updated_at, i18n.language) })}</span>
+                      <span className="block text-xs text-fg-3">{t("settings.history.meta", { count: chat.message_count, date: date.format(chat.updated_at) })}</span>
                     </span>
                   }
                   trailing={
@@ -99,26 +134,84 @@ export function HistoryView({ ctx }: { ctx: PanelCtx }) {
                   className="min-w-0 flex-1"
                   onClick={() => (chat.id === ctx.conversationId ? ctx.back() : ctx.goTo(chat.id, false))}
                 />
-                <Menu>
-                  <MenuTrigger>
-                    <IconButton label={t("settings.history.actions", { title: chat.title })} className="mr-2 shrink-0"><MoreHorizontal size={icon.md} /></IconButton>
-                  </MenuTrigger>
-                  <MenuContent align="end">
-                    <MenuItem icon={<Pencil size={icon.md} />} onSelect={() => setRenaming(chat.id)}>{t("settings.history.rename")}</MenuItem>
-                    <MenuItem icon={<Download size={icon.md} />} onSelect={() => void exportOne(chat)}>{t("settings.history.export")}</MenuItem>
-                    <MenuItem
-                      icon={chat.archived ? <ArchiveRestore size={icon.md} /> : <Archive size={icon.md} />}
-                      onSelect={() => void ctx.run(() => setArchived(ctx.api, ctx.queryClient, chat.id, !chat.archived))}
-                    >
-                      {chat.archived ? t("settings.history.restore") : t("settings.history.archive")}
-                    </MenuItem>
-                    <MenuItem danger icon={<Trash2 size={icon.md} />} onSelect={() => void remove(chat)}>{t("settings.history.delete")}</MenuItem>
-                  </MenuContent>
-                </Menu>
+                {phone ? <IconButton
+                  label={t("settings.history.actions", { title: chat.title })}
+                  className="mr-2 shrink-0"
+                  disabled={ctx.busy}
+                  onClick={() => {
+                    setActions(chat);
+                    ctx.openSheet("history_actions");
+                  }}
+                ><MoreHorizontal size={icon.md} /></IconButton> : (
+                  <Menu>
+                    <MenuTrigger>
+                      <IconButton label={t("settings.history.actions", { title: chat.title })} className="mr-2 shrink-0"><MoreHorizontal size={icon.md} /></IconButton>
+                    </MenuTrigger>
+                    <MenuContent align="end">
+                      <MenuItem icon={<Pencil size={icon.md} />} onSelect={() => setRenaming(chat.id)}>{t("settings.history.rename")}</MenuItem>
+                      <MenuItem icon={<Download size={icon.md} />} onSelect={() => void exportOne(chat)}>{t("settings.history.export")}</MenuItem>
+                      <MenuItem
+                        icon={chat.archived ? <ArchiveRestore size={icon.md} /> : <Archive size={icon.md} />}
+                        onSelect={() => void ctx.run(() => setArchived(ctx.api, ctx.queryClient, chat.id, !chat.archived))}
+                      >
+                        {chat.archived ? t("settings.history.restore") : t("settings.history.archive")}
+                      </MenuItem>
+                      <MenuItem danger icon={<Trash2 size={icon.md} />} onSelect={() => void remove(chat)}>{t("settings.history.delete")}</MenuItem>
+                    </MenuContent>
+                  </Menu>
+                )}
               </div>
             ),
           )}
         </ListGroup>
+      )}
+      <Pagination page={currentPage} pageCount={pageCount} onChange={setPage} className="flex-wrap justify-center" />
+      {phone && actions && (
+        <Sheet open={ctx.activeSheet === "history_actions"} onClose={ctx.closeSheet} size="sm" title={t("settings.history.actions", { title: actions.title || t("settings.history.untitled") })} dismissible={!ctx.busy}>
+          <ListGroup>
+            <ListRowButton
+              icon={<Pencil size={icon.md} />}
+              title={t("settings.history.rename")}
+              chevron={false}
+              disabled={ctx.busy}
+              onClick={() => {
+                ctx.closeSheet();
+                setRenaming(actions.id);
+              }}
+            />
+            <ListRowButton
+              icon={<Download size={icon.md} />}
+              title={t("settings.history.export")}
+              chevron={false}
+              disabled={ctx.busy}
+              onClick={() => {
+                ctx.closeSheet();
+                void exportOne(actions);
+              }}
+            />
+            <ListRowButton
+              icon={actions.archived ? <ArchiveRestore size={icon.md} /> : <Archive size={icon.md} />}
+              title={actions.archived ? t("settings.history.restore") : t("settings.history.archive")}
+              chevron={false}
+              disabled={ctx.busy}
+              onClick={() => {
+                ctx.closeSheet();
+                void ctx.run(() => setArchived(ctx.api, ctx.queryClient, actions.id, !actions.archived));
+              }}
+            />
+            <ListRowButton
+              icon={<Trash2 size={icon.md} />}
+              title={t("settings.history.delete")}
+              tone="danger"
+              chevron={false}
+              disabled={ctx.busy}
+              onClick={() => {
+                ctx.closeSheet();
+                void remove(actions);
+              }}
+            />
+          </ListGroup>
+        </Sheet>
       )}
     </div>
   );
