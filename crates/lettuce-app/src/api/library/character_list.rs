@@ -20,6 +20,7 @@ pub async fn characters_list(
                     include_archived: false,
                     sort: mapping::library_sort(request.sort),
                     search_nickname: request.search_nickname,
+                    search_description: request.search_description,
                 },
                 PageRequest {
                     cursor: request.cursor,

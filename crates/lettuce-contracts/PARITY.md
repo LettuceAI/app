@@ -84,3 +84,9 @@ Android entity exports omit FileTarget and return the published URI from the exi
 LorebookExportFormat replaces Usc with Uec for UEC 3 output. Legacy's export menu selected USC or World Info (`old-code/src/ui/components/LorebookExportMenu.tsx:5-33`), and its editor closed the menu after download and displayed export failures (`old-code/src/ui/pages/library/StandaloneLorebookEditor.tsx:757-776`). World Info output and USC input remain supported.
 
 UEC 3 removes the prompt, starter template and model export format selectors. Legacy offered template JSON/USC (`old-code/src/ui/pages/characters/ChatTemplateListPage.tsx:76-96`) and model JSON/USC (`old-code/src/ui/pages/settings/ModelsPage.tsx:219-241`); these remain import formats. Model previews now identify the kind and an unpicked local model file. A missing provider account is NotFound rather than a placeholder profile.
+
+Library listing adds optional search_description on CharactersListRequest and optional query on MediaLibraryListRequest. Omitted fields retain existing behavior; all results still use bounded pages and opaque scoped cursors.
+
+Library image references add an optional preview URL without changing asset identities or original URLs. Audio and document references do not offer image previews.
+
+Library usage discovery is an explicit list projection with default full-reference behavior and a separate typed on-demand read. Asset identities and mutation contracts are unchanged.

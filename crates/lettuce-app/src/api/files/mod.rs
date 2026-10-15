@@ -1,4 +1,5 @@
 pub(super) mod assets;
+pub(super) mod previews;
 pub(super) mod file_kind;
 #[cfg(test)]
 mod pick_tests;

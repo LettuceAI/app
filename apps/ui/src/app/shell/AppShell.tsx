@@ -10,6 +10,7 @@ import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages"
 import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { isSettingsSection, SidebarSettings } from "@/features/settings";
+import { LibraryCreateSheet } from "@/features/library";
 import { CreateSheet } from "./CreateSheet";
 import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, type Destination } from "./navigation";
@@ -92,6 +93,7 @@ export function AppShell() {
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}
           onChange={(id) => { void navigate({ to: id === "settings" && settingsMode ? "/" : destinations[id] }); }}
+          {...(tabs && pathname === "/library" ? { onCreate: () => setCreateOpen(true), createLabel: t("navigation.create") } : {})}
           navStyle={navigationHidden ? "header" : tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
           {...(tabs ? {} : {
             onNavToggle: () => setSidebarOpen(!sidebarOpen),
@@ -108,7 +110,7 @@ export function AppShell() {
           <Outlet />
         </CrispAppShell>
       )}
-      <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onDiscover={() => { void navigate({ to: destinations.discover }); }} />
+      {pathname === "/library" ? <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} /> : <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onDiscover={() => { void navigate({ to: destinations.discover }); }} />}
       <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
       {controller && desktop && windowPlatform !== "macos" && !expanded && resizeEdges.map(([edge, className]) => (
         <div key={edge} aria-hidden className={cn("absolute z-50 touch-none", className)} onPointerDown={(event) => {

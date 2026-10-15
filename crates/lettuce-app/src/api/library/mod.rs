@@ -1,3 +1,4 @@
+pub(super) mod counts;
 pub(super) mod bindings;
 #[cfg(test)]
 mod bindings_tests;

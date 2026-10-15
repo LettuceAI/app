@@ -202,10 +202,25 @@ impl Database {
         lettuce_types::Page<lettuce_media::MediaLibraryEntry>,
         lettuce_media::MediaLibraryError,
     > {
+        self.media_library_search(role, "", request, true)
+    }
+
+    pub fn media_library_search(
+        &self,
+        role: Option<lettuce_media::MediaKind>,
+        query: &str,
+        request: lettuce_types::PageRequest,
+        include_references: bool,
+    ) -> Result<
+        lettuce_types::Page<lettuce_media::MediaLibraryEntry>,
+        lettuce_media::MediaLibraryError,
+    > {
         use lettuce_media::{MediaKind, MediaLibraryEntry, MediaLibraryError};
         if role.is_some_and(|kind| !matches!(kind, MediaKind::Image | MediaKind::Audio)) {
             return Err(MediaLibraryError::InvalidData);
         }
+        let query = query.trim().to_lowercase();
+        let pattern = format!("%{}%", query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
         let cursor = request
             .cursor
             .as_deref()
@@ -216,6 +231,7 @@ impl Database {
                     serde_json::from_slice(&bytes).map_err(|_| MediaLibraryError::InvalidCursor)?;
                 if cursor.version != 1
                     || cursor.role != role
+                    || cursor.query != query
                     || cursor.id.parse::<lettuce_types::AssetId>().is_err()
                 {
                     return Err(MediaLibraryError::InvalidCursor);
@@ -230,13 +246,22 @@ impl Database {
         });
         let limit = usize::from(lettuce_types::PageLimit::new(request.limit.get()).get());
         let mut connection = self.connection().map_err(|_| MediaLibraryError::Storage)?;
+        connection.create_scalar_function(
+            "media_library_search_key", 1,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
+            |context| Ok(context.get::<String>(0)?.to_lowercase()),
+        ).map_err(library_sql_error)?;
         let transaction = connection
             .transaction()
             .map_err(|_| MediaLibraryError::Storage)?;
-        let ids: Vec<String> = transaction.prepare("SELECT id FROM media_assets WHERE blob_kind IN ('image','audio') AND (?1 IS NULL OR blob_kind=?1) AND (?2 IS NULL OR updated_at<?2 OR (updated_at=?2 AND id>?3)) ORDER BY updated_at DESC,id ASC LIMIT ?4")
-            .and_then(|mut statement| statement.query_map(rusqlite::params![role_name,cursor.as_ref().map(|cursor| cursor.updated_at),cursor.as_ref().map(|cursor| cursor.id.as_str()),i64::try_from(limit+1).map_err(|_| rusqlite::Error::InvalidQuery)?], |row| row.get(0))?.collect()).map_err(library_sql_error)?;
+        let ids: Vec<String> = transaction.prepare("SELECT id FROM media_assets WHERE blob_kind IN ('image','audio') AND (?1 IS NULL OR blob_kind=?1) AND media_library_search_key(COALESCE(json_extract(provenance_json,'$.source_label'),id)) LIKE ?5 ESCAPE '\\' AND (?2 IS NULL OR updated_at<?2 OR (updated_at=?2 AND id>?3)) ORDER BY updated_at DESC,id ASC LIMIT ?4")
+            .and_then(|mut statement| statement.query_map(rusqlite::params![role_name,cursor.as_ref().map(|cursor| cursor.updated_at),cursor.as_ref().map(|cursor| cursor.id.as_str()),i64::try_from(limit+1).map_err(|_| rusqlite::Error::InvalidQuery)?,pattern], |row| row.get(0))?.collect()).map_err(library_sql_error)?;
         let has_more = ids.len() > limit;
-        let probes = references::probes(&transaction).map_err(media_library_error)?;
+        let probes = if include_references {
+            references::probes(&transaction).map_err(media_library_error)?
+        } else {
+            Vec::new()
+        };
         let mut items = Vec::with_capacity(limit);
         for id in ids.into_iter().take(limit) {
             let asset_id = id.parse().map_err(|_| MediaLibraryError::InvalidData)?;
@@ -267,6 +292,7 @@ impl Database {
                 &serde_json::to_vec(&MediaLibraryCursor {
                     version: 1,
                     role,
+                    query: query.clone(),
                     updated_at: last.asset.updated_at.get(),
                     id: last.asset.id.to_string(),
                 })
@@ -406,6 +432,8 @@ impl Database {
 struct MediaLibraryCursor {
     version: u32,
     role: Option<lettuce_media::MediaKind>,
+    #[serde(default)]
+    query: String,
     updated_at: i64,
     id: String,
 }

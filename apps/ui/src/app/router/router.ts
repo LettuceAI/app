@@ -11,6 +11,7 @@ import { appStatusQuery } from "@/api/app-status-query";
 import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { ChatBranchesPage, ChatMemoryPage, ConversationPage } from "@/features/conversations";
+import { LibraryPage, validateLibrarySearch } from "@/features/library";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
 import { builtSettingsSections, isSettingsSection, ModelEditorPage, SettingsIndexPage, SettingsSectionPage } from "@/features/settings";
@@ -51,7 +52,7 @@ const welcomeRoute = createRoute({ getParentRoute: () => rootRoute, path: welcom
 const welcomeBackRoute = createRoute({ getParentRoute: () => rootRoute, path: welcomeBackPath, component: WelcomeBackPage });
 const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups", component: NavigationPage });
 const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover", component: NavigationPage });
-const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library", component: NavigationPage });
+const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library", component: LibraryPage, validateSearch: validateLibrarySearch });
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsIndexPage });
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -105,6 +106,7 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 declare module "@tanstack/history" {
   interface HistoryState {
     panelPushed?: boolean;
+    libraryOverlayPushed?: boolean;
   }
 }
 

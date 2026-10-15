@@ -1409,7 +1409,8 @@ impl CharacterRepository for Database {
         use lettuce_characters::LibrarySort;
 
         let query = canonical_name(request.text.trim());
-        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"))?;
+        let scope_text = if request.search_description { format!("\0{query}") } else { query.clone() };
+        let cursor = cursor_decode(page.cursor.as_deref(), (request.sort, scope_text.clone(), request.search_nickname, request.include_archived, "character"))?;
         let limit = usize::from(page.limit.get()).max(1);
         let pattern = format!(
             "%{}%",
@@ -1424,9 +1425,17 @@ impl CharacterRepository for Database {
             LibrarySort::Name => ("normalized_name", ">", "ASC"),
         };
         let sql = format!(
-            "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
+            "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\') OR (?7 AND character_search_description(profile_json) LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
         );
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        connection.create_scalar_function(
+            "character_search_description", 1,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
+            |context| {
+                let profile: CharacterProfile = decode(context.get::<String>(0)?, PROFILE_VERSION)?;
+                Ok(canonical_name(&format!("{} {}", profile.description.unwrap_or_default(), profile.definition.unwrap_or_default())))
+            },
+        ).map_err(db_error)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1439,7 +1448,8 @@ impl CharacterRepository for Database {
                     cursor.as_ref().map(|value| &value.0),
                     cursor.as_ref().map(|value| &value.1),
                     i64::try_from(limit + 1).unwrap_or(i64::MAX),
-                    request.search_nickname
+                    request.search_nickname,
+                    request.search_description
                 ],
                 |row| parse_id(row.get(0)?),
             )
@@ -1460,7 +1470,7 @@ impl CharacterRepository for Database {
                         LibrarySort::CreatedAsc => serde_json::json!(item.created_at.get()),
                         LibrarySort::UpdatedDesc => serde_json::json!(item.updated_at.get()),
                         LibrarySort::Name => serde_json::json!(canonical_name(&item.profile.name)),
-                    }, item.id.to_string(), (request.sort, canonical_name(request.text.trim()), request.search_nickname, request.include_archived, "character"))
+                    }, item.id.to_string(), (request.sort, scope_text.clone(), request.search_nickname, request.include_archived, "character"))
                 })
                 .transpose()?
         } else {
@@ -5062,6 +5072,33 @@ mod smoke_tests {
             changed.character.revision,
             created.character.revision.next().expect("revision")
         );
+    }
+
+    #[test]
+    fn description_search_is_paged_and_cursor_scoped() {
+        let database = Database::open_in_memory().expect("database");
+        for name in ["First", "Second"] {
+            let mut plan = graph_fixture(&database).0;
+            plan.character.id = CharacterId::new();
+            plan.character.profile.name = name.into();
+            plan.character.profile.description = Some("Hidden SÄILOR 100%".into());
+            plan.scenes.clear();
+            plan.variants.clear();
+            plan.starters.clear();
+            plan.character.defaults = CharacterDefaults::default();
+            plan.character.media = CharacterMedia::default();
+            CharacterRepository::create(&database, plan).expect("create");
+        }
+        let search = CharacterSearch { text: "säilor 100%".into(), search_description: true, ..Default::default() };
+        let first = CharacterRepository::search(&database, search.clone(), PageRequest { cursor: None, limit: PageLimit::new(1) }).expect("search");
+        assert_eq!(first.items.len(), 1);
+        let cursor = first.next_cursor.expect("next");
+        let second = CharacterRepository::search(&database, search.clone(), PageRequest { cursor: Some(cursor.clone()), limit: PageLimit::new(1) }).expect("next page");
+        assert_eq!(second.items.len(), 1);
+        assert_ne!(first.items[0].id, second.items[0].id);
+        assert!(second.next_cursor.is_none());
+        assert!(CharacterRepository::search(&database, CharacterSearch { search_description: false, ..search.clone() }, PageRequest { cursor: Some(cursor), limit: PageLimit::new(1) }).is_err());
+        assert!(CharacterRepository::search(&database, CharacterSearch { search_description: false, ..search }, PageRequest::default()).expect("names only").items.is_empty());
     }
 
     #[test]

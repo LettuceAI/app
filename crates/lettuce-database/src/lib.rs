@@ -40,6 +40,7 @@ mod purge;
 pub use models::*;
 pub use legacy::*;
 pub use purge::{PurgeError, PurgeNotice, PurgeNoticeEntity, PurgeNoticeReason, PurgeReceipt};
+pub use catalog::library_counts::LibraryCounts;
 pub use catalog::source_delete::{SourceDeleteError, SourceDeletion};
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};

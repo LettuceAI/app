@@ -34,6 +34,16 @@ pub async fn media_library_list(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn media_references(
+    context: State<'_, ApiContextSlot>,
+    request: dto::MediaReferencesRequest,
+) -> Result<Vec<dto::MediaReferenceView>, ApiError> {
+    let context = context.snapshot()?;
+    api::media_references(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn media_library_remove(
     context: State<'_, ApiContextSlot>,
     request: dto::MediaLibraryRemoveRequest,

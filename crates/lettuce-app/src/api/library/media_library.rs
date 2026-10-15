@@ -244,14 +244,16 @@ pub async fn media_library_list(
             let page = context
                 .backend()
                 .database()
-                .media_library_page(
+                .media_library_search(
                     role,
+                    request.query.as_deref().unwrap_or_default(),
                     lettuce_types::PageRequest {
                         cursor: request.cursor,
                         limit: lettuce_types::PageLimit::new(
                             u16::try_from(request.limit.unwrap_or(50)).unwrap_or(u16::MAX),
                         ),
                     },
+                    request.include_references.unwrap_or(true),
                 )
                 .map_err(|error| {
                     let mut error = library_error(String::new(), error);
@@ -300,7 +302,11 @@ pub async fn media_library_list(
                     }
                 };
                 items.push(dto::MediaLibraryItem {
-                    asset: context.asset_ref(entry.asset.id),
+                    asset: if entry.blob.kind == lettuce_media::MediaKind::Image {
+                        context.image_asset_ref(entry.asset.id)
+                    } else {
+                        context.asset_ref(entry.asset.id)
+                    },
                     role,
                     asset_kind,
                     retention,
@@ -326,6 +332,18 @@ pub async fn media_library_list(
             })
         })
         .await
+}
+
+pub async fn media_references(
+    context: &ApiContext,
+    request: dto::MediaReferencesRequest,
+) -> Result<Vec<dto::MediaReferenceView>, ApiError> {
+    let id: AssetId = parse_id(&request.asset_id, "asset_id")?;
+    context.blocking(move |context| {
+        context.backend().database().media_references(id)
+            .map(|references| references.into_iter().map(reference_view).collect())
+            .map_err(|error| library_error(request.asset_id, error))
+    }).await
 }
 
 pub async fn media_save_to(

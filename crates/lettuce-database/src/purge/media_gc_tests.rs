@@ -617,6 +617,20 @@ fn missing_media_is_not_reported_as_having_no_references() {
 }
 
 #[test]
+fn metadata_only_media_pages_keep_usage_available_on_demand_and_guard_removal() {
+    let database = Database::open_in_memory().expect("database");
+    let (_, pending, _) = pending_import_assignment(&database, "partial");
+    let page = database.media_library_search(Some(MediaKind::Image), "", lettuce_types::PageRequest {
+        cursor: None, limit: lettuce_types::PageLimit::new(32),
+    }, false).expect("metadata page");
+    let entry = page.items.iter().find(|entry| entry.asset.id == pending).expect("asset");
+    assert!(entry.references.is_empty());
+    let references = database.media_references(pending).expect("usage");
+    assert!(references.iter().any(|reference| reference.kind == lettuce_media::MediaReferenceKind::LegacyImport));
+    assert!(matches!(database.remove_media_library_asset(pending, lettuce_types::RequestId::new(), "remove", TimestampMillis::new(20)), Err(lettuce_media::MediaLibraryError::InUse(_))));
+}
+
+#[test]
 fn removed_imported_media_leaves_an_immutable_snapshot_without_holding_catalog_rows() {
     use lettuce_transfer::LegacyImportRepository;
     let database = Database::open_in_memory().expect("database");
@@ -960,4 +974,42 @@ fn storage_media_snapshot_is_read_only_and_has_one_entry_per_blob() {
     assert!(migrations > 0);
     assert!(Database::media_storage_objects_in_file(&root.join("missing.db")).is_err());
     assert!(!root.join("missing.db").exists());
+}
+
+
+#[test]
+fn media_library_search_is_bounded_and_query_scoped() {
+    let database = Database::open_in_memory().expect("database");
+    let (first_id, _) = asset(&database, 'a', RetentionClass::Library);
+    let (second_id, _) = asset(&database, 'b', RetentionClass::Library);
+    let (other, _) = asset(&database, 'c', RetentionClass::Library);
+    let connection = database.connection().expect("connection");
+    for id in [first_id, second_id] {
+        connection.execute("UPDATE media_assets SET provenance_json=json_set(provenance_json,'$.source_label','SÄILOR 100%') WHERE id=?1", [id.to_string()]).expect("label");
+    }
+    drop(connection);
+    let first = database.media_library_search(Some(MediaKind::Image), "säilor 100%", lettuce_types::PageRequest { cursor: None, limit: lettuce_types::PageLimit::new(1) }, true).expect("search");
+    assert_eq!(first.items.len(), 1);
+    assert_ne!(first.items[0].asset.id, other);
+    let cursor = first.next_cursor.expect("next");
+    let next = database.media_library_search(Some(MediaKind::Image), "säilor 100%", lettuce_types::PageRequest { cursor: Some(cursor.clone()), limit: lettuce_types::PageLimit::new(1) }, true).expect("next page");
+    assert_eq!(next.items.len(), 1);
+    assert_ne!(first.items[0].asset.id, next.items[0].asset.id);
+    assert!(next.next_cursor.is_none());
+    assert!(matches!(database.media_library_search(Some(MediaKind::Image), "other", lettuce_types::PageRequest { cursor: Some(cursor), limit: lettuce_types::PageLimit::new(1) }, true), Err(lettuce_media::MediaLibraryError::InvalidCursor)));
+}
+
+#[test]
+fn library_counts_include_media_without_reading_a_page() {
+    let database = Database::open_in_memory().expect("database");
+    for _ in 0..25 {
+        asset(&database, 'a', RetentionClass::Library);
+    }
+    let counts = database.library_counts().expect("counts");
+    assert_eq!(counts.images, 25);
+    assert_eq!(counts.audio, 0);
+    let page = database.media_library_page(Some(MediaKind::Image), lettuce_types::PageRequest { cursor: None, limit: lettuce_types::PageLimit::new(1) }).expect("one item");
+    assert_eq!(page.items.len(), 1);
+    assert!(page.next_cursor.is_some());
+    assert_eq!(database.library_counts().expect("counts"), counts);
 }

@@ -1,3 +1,4 @@
+pub(crate) mod library_counts;
 pub(crate) mod character_adapter;
 pub(crate) mod character_file_adapter;
 pub(crate) mod creation_adapter;

@@ -713,3 +713,9 @@ Conversation settings expose the chat's own model settings layer (legacy session
 Persona search matches descriptions only when the request sets `search_description` (the picker does, as `old-code/src/ui/pages/group-chats/components/settings/PersonaSelector.tsx:261-267`); the library searches titles (and nicknames when asked), as `LibraryPage.tsx:81-84`. A group chat has no model settings layer: the view returns none and a patch naming it is refused as `model_settings`.
 
 Explicit conversation and one-turn model overrides retain the selected model id and refresh its model/account revisions before admission, matching legacy live model selection (`old-code/src-tauri/src/chat_manager/persistence/storage.rs:411-431`). An admitted request keeps its frozen snapshot. Generation enters Preparing before fallible input preparation so an invalid profile settles as a failed turn instead of requeueing indefinitely.
+
+Library uses backend search before paging rather than downloading every cursor for client filtering. Character description/definition search is an opt-in extension to the legacy name filter; media source-label search is also optional. Existing callers and stored data are unchanged.
+
+Library grids request on-demand static image previews through the existing asset scheme. Preview generation is bounded and cached in memory, with no new stored assets or schema. Original bytes remain available for detail views and export; animated previews show their first frame.
+
+Media grids opt out of eager usage discovery and request references when opening an action sheet. Default callers still receive references; GC, retention and guarded removal use the same reference rules.

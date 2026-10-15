@@ -524,6 +524,8 @@ async fn partial_import_missing_a_stage_keeps_media_through_gc_and_api_remove_un
     let page = crate::api::media_library_list(
         &h.context,
         dto::MediaLibraryListRequest {
+            include_references: None,
+            query: None,
             kind: Some(dto::MediaLibraryRole::Image),
             cursor: None,
             limit: Some(1),
@@ -532,7 +534,7 @@ async fn partial_import_missing_a_stage_keeps_media_through_gc_and_api_remove_un
     .await
     .expect("library includes temporary media");
     assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].asset, h.context.asset_ref(object.asset.id));
+    assert_eq!(page.items[0].asset, h.context.image_asset_ref(object.asset.id));
     assert_eq!(
         page.items[0].retention,
         dto::MediaLibraryRetention::Temporary
@@ -543,6 +545,16 @@ async fn partial_import_missing_a_stage_keeps_media_through_gc_and_api_remove_un
             .iter()
             .any(|reference| reference.owner_id == run.to_string())
     );
+    let metadata = crate::api::media_library_list(&h.context, dto::MediaLibraryListRequest {
+        include_references: Some(false), query: None, kind: Some(dto::MediaLibraryRole::Image), cursor: None, limit: Some(32),
+    }).await.expect("metadata page");
+    assert!(metadata.items.iter().all(|entry| entry.references.is_empty()));
+    let usage = crate::api::media_references(&h.context, dto::MediaReferencesRequest { asset_id: object.asset.id.to_string() })
+        .await.expect("usage on demand");
+    assert_eq!(usage, page.items[0].references);
+    let missing = crate::api::media_references(&h.context, dto::MediaReferencesRequest { asset_id: lettuce_types::AssetId::new().to_string() })
+        .await.expect_err("missing asset");
+    assert_eq!(missing.code, ApiErrorCode::NotFound);
     let fingerprint = ContentHash::parse(fingerprint).expect("fingerprint");
     h.context
         .backend()
@@ -665,6 +677,8 @@ async fn missing_library_object_fails_typed_and_failed_unlink_replays() {
     let error = crate::api::media_library_list(
         &h.context,
         dto::MediaLibraryListRequest {
+            include_references: None,
+            query: None,
             kind: None,
             cursor: None,
             limit: None,

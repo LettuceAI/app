@@ -331,3 +331,11 @@ pub async fn persona_media_set(
     let context = context.snapshot()?;
     api::persona_media_set(&context, request).await
 }
+
+
+#[tauri::command]
+#[specta::specta]
+pub async fn library_counts(context: State<'_, ApiContextSlot>) -> Result<lettuce_contracts::LibraryCounts, ApiError> {
+    let context = context.snapshot()?;
+    api::library_counts(&context).await
+}

@@ -162,3 +162,7 @@ The file command adapter exposes import_preview, import_commit and the seven ent
 Entity export targets are required on desktop and absent on Android. Android uses the existing pending-file writer in Download/LettuceAI, and the application returns its published URI without changing the plugin collision suffix.
 
 Desktop chrome uses Crisp's title bar. Windows and Linux create a transparent undecorated window so the UI can clip its rounded frame; macOS uses an opaque decorated window with an overlay title bar and native traffic lights. The main-window capability permits minimize, toggle maximize, close, dragging and edge resizing. A native restart is required after changing these window flags.
+
+The asset scheme also serves the API-provided `?preview=512` image URLs through `read_asset_preview`. Preview responses are whole static WebP images; byte ranges continue to apply to original URLs. Successful media responses use a private one-day browser cache, while failed reads use `no-store`.
+
+The media_references command forwards an on-demand usage read to the application API. Library list requests may explicitly omit eager references; media removal keeps its existing guarded command.

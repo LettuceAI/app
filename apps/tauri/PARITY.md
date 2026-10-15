@@ -67,3 +67,7 @@ Entity import and export adapters carry paths and typed preview data instead of 
 Android entity exports omit FileTarget and return the published URI from the existing pending Download/LettuceAI flow, including collision suffixes. Legacy wrote to Downloads and returned its path (old-code/src-tauri/src/storage_manager/entity_transfer/mod.rs:4048-4094). Desktop exports require a selected FileTarget.
 
 Entity exports keep no durable publication state. A process crash can leave a desktop `lettuce-backup-<uuid>.partial` beside the selected target or an Android pending entry in Download/LettuceAI. Startup does not sweep these interrupted entity exports; cleanup and recovery remain deferred. The shared temporary prefix is retained for the Android publication adapter.
+
+The existing asset scheme serves bounded image previews separately from originals and supplies private cache headers. Original image export and audio range responses retain their existing paths.
+
+Media usage has a typed read wrapper for action sheets, so grids can request catalog metadata without scanning every record for each tile.

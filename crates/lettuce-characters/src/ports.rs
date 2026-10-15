@@ -221,6 +221,7 @@ pub struct CharacterSearch {
     pub include_archived: bool,
     pub sort: LibrarySort,
     pub search_nickname: bool,
+    pub search_description: bool,
 }
 
 impl Default for CharacterSearch {
@@ -230,6 +231,7 @@ impl Default for CharacterSearch {
             include_archived: false,
             sort: LibrarySort::UpdatedDesc,
             search_nickname: true,
+            search_description: false,
         }
     }
 }

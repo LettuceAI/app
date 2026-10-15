@@ -25,6 +25,7 @@ async function renderShell(options: MockTransportOptions = {}, uiState: Record<s
       ...options,
       calls: {
         appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: uiState } }),
+        libraryCounts: () => ({ status: "ok", data: { characters: 0, personas: 0, lorebooks: 0, images: 0, audio: 0 } }),
         charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
@@ -51,7 +52,7 @@ describe("primary navigation", () => {
       appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android", ui_state } }),
     } }, ui_state, path);
     const navigation = await screen.findByRole("navigation", { name: "Main navigation" });
-    expect(within(navigation).getAllByRole("button")).toHaveLength(4);
+    expect(within(navigation).getAllByRole("button")).toHaveLength(path === "/library" ? 5 : 4);
     expect(within(navigation).queryByRole("button", { name: "Settings" })).toBeNull();
     const settings = screen.getByRole("button", { name: "Settings" });
     const header = settings.closest("header");

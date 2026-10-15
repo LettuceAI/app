@@ -5,7 +5,7 @@ use tauri::{
     http::{
         Request, Response, StatusCode, Uri,
         header::{
-            ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
+            ACCEPT_RANGES, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
             X_CONTENT_TYPE_OPTIONS,
         },
     },
@@ -37,6 +37,7 @@ pub(crate) fn handle<R: Runtime>(
         return;
     };
     let asset_id = asset_id(request.uri());
+    let preview = request.uri().query() == Some("preview=512");
     let range = request
         .headers()
         .get(RANGE)
@@ -44,8 +45,12 @@ pub(crate) fn handle<R: Runtime>(
         .and_then(parse_range)
         .unwrap_or(AssetRange::Whole);
     tauri::async_runtime::spawn(async move {
-        let read = api::read_asset(&api_context, &asset_id, range).await;
-        responder.respond(response(read, range != AssetRange::Whole));
+        let read = if preview {
+            api::read_asset_preview(&api_context, &asset_id).await
+        } else {
+            api::read_asset(&api_context, &asset_id, range).await
+        };
+        responder.respond(response(read, !preview && range != AssetRange::Whole));
     });
 }
 
@@ -86,6 +91,7 @@ fn response(read: Result<AssetRead, ApiError>, ranged: bool) -> Response<Vec<u8>
         Ok(AssetRead::Bytes(asset)) => {
             let len = asset.bytes.len() as u64;
             let builder = builder
+                .header(CACHE_CONTROL, "private, max-age=86400")
                 .header(CONTENT_TYPE, asset.mime_type)
                 .header(CONTENT_LENGTH, len);
             if ranged {
@@ -113,6 +119,7 @@ fn response(read: Result<AssetRead, ApiError>, ranged: bool) -> Response<Vec<u8>
         Err(error) => {
             tracing::debug!(code = ?error.code, message = %error.message, "asset request failed");
             builder
+                .header(CACHE_CONTROL, "no-store")
                 .status(match error.code {
                     ApiErrorCode::NotFound => StatusCode::NOT_FOUND,
                     ApiErrorCode::InvalidInput => StatusCode::BAD_REQUEST,
@@ -155,6 +162,7 @@ mod tests {
             ("http://lettuce-asset.localhost/abc", "abc"),
             ("lettuce-asset://abc", "abc"),
             ("lettuce-asset://localhost/abc/", "abc"),
+            ("lettuce-asset://localhost/abc?preview=512", "abc"),
         ] {
             assert_eq!(asset_id(&uri.parse().expect("uri")), expected);
         }
@@ -233,6 +241,7 @@ mod tests {
         assert_eq!(header(&response, "content-type"), Some("image/png"));
         assert_eq!(header(&response, "accept-ranges"), Some("bytes"));
         assert_eq!(header(&response, "x-content-type-options"), Some("nosniff"));
+        assert_eq!(header(&response, "cache-control"), Some("private, max-age=86400"));
         assert_eq!(response.body(), &vec![1, 2, 3]);
     }
 
@@ -250,6 +259,7 @@ mod tests {
         assert_eq!(whole.status(), StatusCode::OK);
         assert_eq!(header(&whole, "content-length"), Some("2"));
         assert_eq!(header(&whole, "content-range"), None);
+        assert_eq!(header(&whole, "cache-control"), Some("private, max-age=86400"));
         let unsatisfiable = response(Ok(AssetRead::Unsatisfiable { total_len: 2 }), true);
         assert_eq!(unsatisfiable.status(), StatusCode::RANGE_NOT_SATISFIABLE);
         assert_eq!(header(&unsatisfiable, "content-range"), Some("bytes */2"));
@@ -274,5 +284,6 @@ mod tests {
             response(Err(error(ApiErrorCode::Unavailable)), false).status(),
             StatusCode::SERVICE_UNAVAILABLE
         );
+        assert_eq!(header(&response(Err(error(ApiErrorCode::NotFound)), false), "cache-control"), Some("no-store"));
     }
 }

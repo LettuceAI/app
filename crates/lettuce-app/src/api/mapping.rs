@@ -66,7 +66,7 @@ pub(crate) fn character_summary(
     dto::CharacterSummary {
         id: character.id.to_string(),
         name: profile.name.clone(),
-        avatar: character_avatar(character).map(|asset_id| context.asset_ref(asset_id)),
+        avatar: character_avatar(character).map(|asset_id| context.image_asset_ref(asset_id)),
         banner: character_media(character, CharacterMediaSlot::Banner)
             .map(|asset_id| context.asset_ref(asset_id)),
         description,

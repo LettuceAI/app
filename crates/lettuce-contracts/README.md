@@ -109,7 +109,7 @@ Usage clearing carries a timestamp cutoff and client operation id and returns th
 
 Storage file contracts expose basenames, creation kind and time, size, active status and deletion availability. Explicit deletion carries a client operation id; database-file error details name only the requested basename, with no native path.
 
-Media library requests filter image or audio and carry an opaque cursor and page limit. Items return asset URLs, known catalog metadata, retention and reference domains with opaque identities. Removal takes a client operation id and reports InUse with the references that prevent it; no native media path or bytes enter these contracts.
+Media library requests filter image or audio, accept an optional source-label query and carry an opaque cursor and page limit. Character listing can opt into description/definition search through search_description; older callers keep name/nickname behavior. Items return asset URLs, known catalog metadata, retention and reference domains with opaque identities. Removal takes a client operation id and reports InUse with the references that prevent it; no native media path or bytes enter these contracts.
 
 Storage optimization takes an operation id and returns JobAccepted. Its terminal job result is StorageOptimized; checkpoint contention, kept-file refusal and storage failure have distinct failure reasons.
 
@@ -148,3 +148,9 @@ LorebookExportFormat selects WorldInfo or Uec. Uec writes one UEC 3 JSON file wi
 Entity prompt, starter template and model export requests have one UEC 3 output and therefore no format selector. Persona export remains UEC. Model previews carry the profile kind and a flag for a local model file that must be picked; provider account resolution failures are typed NotFound errors. Lorebooks retain World Info as their additional output format.
 
 Character export accepts include_learned, defaulting to false, for UEC 3; Character Card V2 and V3 ignore it. UEC 3 previews expose typed authored character and persona drafts, complete prompt entries, ordered enabled bindings, bundled dependency descriptors and the learned-state flag. No preview contains embedded media bytes.
+
+LibraryCounts returns the five category totals without entity or media payloads. All in the UI sums characters, personas and lorebooks.
+
+`AssetRef.preview_url` is an optional host-provided URL for a static image thumbnail. Library image and entity artwork references offer it; `url` always retains the original asset. Consumers fall back to `url` when no preview is offered.
+
+MediaLibraryListRequest.include_references defaults to true when absent. Explicit false requests metadata and an empty references list. MediaReferencesRequest names one asset for authoritative on-demand usage reads.

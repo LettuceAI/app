@@ -1650,6 +1650,7 @@ async fn assets_are_read_whole_or_by_range_with_urls_from_the_host_base() {
         dto::AssetRef {
             asset_id: id.clone(),
             url: format!("test-asset://host/{id}"),
+            preview_url: None,
         }
     );
     let _ = std::fs::remove_dir_all(&root);

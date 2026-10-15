@@ -33,11 +33,13 @@ pub use app::{
     app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
 };
 pub use files::assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
+pub use files::previews::read_asset_preview;
 pub use conversations::branches::{
     conversation_branch_delete, conversation_branch_fork, conversation_branch_rename,
     conversation_branch_select, conversation_branches,
 };
 pub use library::character_list::characters_list;
+pub use library::counts::library_counts;
 pub use companion::{
     companion_notes_active_preview, companion_notes_delete, companion_notes_list,
     companion_notes_upsert, companion_soul_get, companion_soul_growth_clear,
@@ -213,7 +215,7 @@ pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
 pub use app::reset::{AppResetHost, app_data_reset};
 pub use app::storage::{storage_database_file_delete, storage_database_files_list, storage_summary};
 
-pub use library::media_library::{media_library_list, media_library_remove, media_save_to};
+pub use library::media_library::{media_library_list, media_library_remove, media_references, media_save_to};
 
 
 

@@ -209,7 +209,7 @@ pub async fn personas_list(
                             .links
                             .iter()
                             .find(|link| link.slot == lettuce_characters::PersonaMediaSlot::Avatar)
-                            .map(|link| context.asset_ref(link.asset_id)),
+                            .map(|link| context.image_asset_ref(link.asset_id)),
                     })
                     .collect(),
                 next_cursor: page.next_cursor,

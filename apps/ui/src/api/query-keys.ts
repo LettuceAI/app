@@ -19,12 +19,16 @@ export const queryKeys = {
     all: ["characters"] as const,
     list: () => [...queryKeys.characters.all, "list"] as const,
   },
+  library: { all: ["library"] as const, counts: () => ["library", "counts"] as const },
+  personas: { all: ["personas"] as const, list: () => ["personas", "list"] as const },
+  lorebooks: { all: ["lorebooks"] as const, list: () => ["lorebooks", "list"] as const },
   home: {
     all: ["home"] as const,
     characters: () => [...queryKeys.home.all, "characters"] as const,
   },
   media: {
     all: ["media"] as const,
+    library: () => [...queryKeys.media.all, "library"] as const,
     avatarGradient: (assetId: string) => [...queryKeys.media.all, "avatar-gradient", assetId] as const,
   },
   settings: {
@@ -69,6 +73,8 @@ export const appEventInvalidations: AppEventInvalidations = {
   generation_settled: (event) => [
     queryKeys.conversations.lists(),
     queryKeys.home.characters(),
+    queryKeys.media.library(),
+    queryKeys.library.counts(),
     queryKeys.conversations.detail(event.conversation_id),
   ],
   conversation_changed: (event) => [
@@ -79,14 +85,16 @@ export const appEventInvalidations: AppEventInvalidations = {
   conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
   memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id)],
   required_models_changed: () => [queryKeys.conversations.all],
-  character_changed: () => [queryKeys.characters.all, queryKeys.home.characters()],
+  character_changed: () => [queryKeys.characters.all, queryKeys.home.characters(), queryKeys.library.all, queryKeys.media.library()],
+  persona_changed: () => [queryKeys.personas.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
+  lorebooks_changed: () => [queryKeys.lorebooks.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
   models_changed: () => [queryKeys.models.all, queryKeys.providers.all, queryKeys.settings.all, queryKeys.localModels.all],
   database_reloaded: () => [[]],
   settings_changed: (event) => event.section === "ui_state"
     ? [queryKeys.settings.all, queryKeys.app.status()]
     : [queryKeys.settings.all, queryKeys.providers.all, queryKeys.audioProviders.all, queryKeys.models.all],
   content_filter_hit: () => [queryKeys.settings.filterLog()],
-  job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id)],
+  job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id), ...(event.job.state === "succeeded" ? [queryKeys.media.library(), queryKeys.library.counts()] : [])],
 };
 
 /** The keys to invalidate for `event`; an event type the table does not know invalidates nothing. */

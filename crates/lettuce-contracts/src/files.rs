@@ -183,6 +183,18 @@ pub struct MediaLibraryListRequest {
     pub kind: Option<MediaLibraryRole>,
     pub cursor: Option<String>,
     pub limit: Option<u32>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub query: Option<String>,
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub include_references: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MediaReferencesRequest {
+    pub asset_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

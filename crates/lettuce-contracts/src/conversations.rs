@@ -872,6 +872,9 @@ pub struct CharactersListRequest {
     #[serde(default)]
     #[cfg_attr(feature = "specta", specta(optional))]
     pub search_nickname: bool,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub search_description: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

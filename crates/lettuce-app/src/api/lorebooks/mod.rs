@@ -66,7 +66,7 @@ fn summary(context: &ApiContext, book: &Lorebook) -> dto::LorebookSummary {
             DetectionPolicy::RecentMessageWindow => dto::LorebookDetection::RecentMessages,
             DetectionPolicy::LatestUserMessage => dto::LorebookDetection::LatestUserMessage,
         },
-        icon: book.icon_asset_id.map(|asset| context.asset_ref(asset)),
+        icon: book.icon_asset_id.map(|asset| context.image_asset_ref(asset)),
         revision: book.revision.get(),
         created_at: book.created_at.get(),
         updated_at: book.updated_at.get(),

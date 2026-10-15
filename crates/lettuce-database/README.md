@@ -450,3 +450,9 @@ Entity file imports reuse ApiOperationTransaction. Character and persona aggrega
 UEC 3 imports reuse the scoped lorebook, prompt, persona and starter writers inside the entity operation receipt transaction. Persona plans preserve disabled lorebook bindings through the existing binding mutation path. Portable LoRA hints reuse image_loras discovery and an exact unique filename query; no transfer-specific storage is added.
 
 UEC 3 resolves portable LoRA file hints through an unfiltered SHA-256 file lookup and a unique exact filename lookup on the existing library repository. The metadata cache lookup keeps its discovery-data filter, so recording a new file cannot hide cached metadata for identical content.
+
+Library character description/definition and media source-label searches filter before applying the keyset page limit. Query text and search mode are part of cursor scope; neither path materializes the full library for UI search.
+
+The library_counts read model returns active character/persona/lorebook counts and all image/audio asset counts in one SQLite statement. It does not load records or media references.
+
+media_library_search can omit usage discovery for metadata-only pages. The existing media_references reader supplies usage on demand; media_library_page keeps its full-reference behavior. Omitting usage bypasses reference-probe construction and per-asset cross-table scans without changing catalog ordering or cursor scope.

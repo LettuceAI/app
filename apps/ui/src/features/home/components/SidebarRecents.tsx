@@ -38,7 +38,7 @@ export function SidebarRecents({ api, onOpen, onMenu, heldId }: { api: ApiClient
   const open = useNavExpanded();
   const reduced = useReducedMotion();
   const chats = useInfiniteQuery(recentChatsQuery(api));
-  const characters = useQuery(homeCharactersQuery(api));
+  const characters = useQuery({ ...homeCharactersQuery(api), enabled: false });
   const [openedAt] = useState(() => Date.now());
   const end = useRef<HTMLDivElement>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = chats;

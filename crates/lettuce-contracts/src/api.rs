@@ -331,12 +331,15 @@ pub enum ApiEvent {
     },
 }
 
-/// A stored media asset and the URL the host serves it at; the UI loads
-/// `url` as is and never builds one.
+/// A stored media asset, its original URL and an optional image preview URL.
+/// The UI uses host-provided URLs as is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct AssetRef {
     pub asset_id: String,
     pub url: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub preview_url: Option<String>,
 }

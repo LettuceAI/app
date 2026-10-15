@@ -787,3 +787,9 @@ Character model and voice-profile hints resolve uniquely by name, provider and e
 Character files contain only active scenes. A starter or character default that points to an archived scene exports a null scene reference and a named warning. Scene lifecycle status remains outside the card format.
 
 JSON and character file pickers include `.uec`. Android filters accept JSON and generic binary MIME types because public entity exports use application/octet-stream; import inspection determines the actual entity kind from the document envelope.
+
+Library listing keeps UI payloads bounded: characters_list optionally matches descriptions/definitions, and media_library_list optionally matches source labels. Both search before keyset paging, preserve existing defaults, and reject a cursor reused with another search scope.
+
+Image references used by Library carry a separate `preview_url`. `read_asset_preview` checks the ready source, decodes with a 128 MiB allocation limit, applies orientation and returns a static WebP no larger than 512 pixels on either side. Two decodes can run at once. A context-local, content-hash-keyed LRU keeps at most 256 entries and 32 MiB of encoded previews; database rebind creates a fresh cache. Originals, exports and stored media records are unchanged.
+
+media_library_list accepts include_references (omitted means true). Library grids request false and get catalog metadata without scanning other records for usage. media_references exposes the existing authoritative usage reader for one asset; removal continues to check usage in its existing transaction.

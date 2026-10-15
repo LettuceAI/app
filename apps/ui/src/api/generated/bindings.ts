@@ -5,387 +5,389 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	syncShareStart: () => typedError<SyncSharing, ApiError>(__TAURI_INVOKE("sync_share_start")),
-	syncShareApprove: (request: SyncShareApproveRequest) => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_share_approve", { request })),
-	syncShareBegin: () => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_share_begin")),
-	syncConnect: (request: SyncConnectRequest) => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_connect", { request })),
-	syncStop: () => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_stop")),
-	syncStatus: () => typedError<SyncStatus, ApiError>(__TAURI_INVOKE("sync_status")),
-	syncConflictsList: () => typedError<SyncConflictsList_Serialize, ApiError>(__TAURI_INVOKE("sync_conflicts_list")),
-	syncConflictResolve: (request: SyncConflictResolveRequest) => typedError<SyncConflictResolution, ApiError>(__TAURI_INVOKE("sync_conflict_resolve", { request })),
-	syncForkResolve: (request: SyncForkResolveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("sync_fork_resolve", { request })),
-	legacyConflictDismiss: (request: LegacyConflictDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("legacy_conflict_dismiss", { request })),
-	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError>(__TAURI_INVOKE("llm_metrics_list", { request })),
-	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<LlmMetricView | null, ApiError>(__TAURI_INVOKE("llm_metrics_get", { request })),
-	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<LlmMetricView | null, ApiError>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
-	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError>(__TAURI_INVOKE("llm_metrics_clear", { request })),
-	appUsageDays: () => typedError<AppUsageDaysView, ApiError>(__TAURI_INVOKE("app_usage_days")),
-	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError>(__TAURI_INVOKE("usage_clear_before", { request })),
-	usageQuery: (request: UsageQueryRequest_Deserialize) => typedError<UsagePage, ApiError>(__TAURI_INVOKE("usage_query", { request })),
-	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError>(__TAURI_INVOKE("usage_stats", { request })),
-	usageExportCsv: (request: UsageExportCsvRequest_Deserialize) => typedError<null, ApiError>(__TAURI_INVOKE("usage_export_csv", { request })),
-	usageRecalculateCosts: (request: UsageRecalculateCostsRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("usage_recalculate_costs", { request })),
-	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError>(__TAURI_INVOKE("storage_database_files_list")),
-	storageOptimize: (request: StorageOptimizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("storage_optimize", { request })),
-	storageSummary: () => typedError<StorageSummary, ApiError>(__TAURI_INVOKE("storage_summary")),
-	appDataReset: (request: AppDataResetRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("app_data_reset", { request })),
-	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("storage_database_file_delete", { request })),
-	mediaSaveTo: (request: MediaSaveToRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_save_to", { request })),
-	mediaLibraryList: (request: MediaLibraryListRequest) => typedError<MediaLibraryPage, ApiError>(__TAURI_INVOKE("media_library_list", { request })),
-	mediaLibraryRemove: (request: MediaLibraryRemoveRequest) => typedError<null, ApiError>(__TAURI_INVOKE("media_library_remove", { request })),
-	logsList: () => typedError<LogsList, ApiError>(__TAURI_INVOKE("logs_list")),
-	logsDiagnosticsReport: () => typedError<string, ApiError>(__TAURI_INVOKE("logs_diagnostics_report")),
-	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError>(__TAURI_INVOKE("log_read_page", { request })),
-	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_search", { request })),
-	logRelevantLines: (request: LogRelevantLinesRequest) => typedError<LogSearchView, ApiError>(__TAURI_INVOKE("log_relevant_lines", { request })),
-	logDelete: (request: LogNameRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_delete", { request })),
-	logsClear: () => typedError<null, ApiError>(__TAURI_INVOKE("logs_clear")),
-	logExport: (request: LogExportRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_export", { request })),
-	logAppend: (request: LogAppendRequest) => typedError<null, ApiError>(__TAURI_INVOKE("log_append", { request })),
-	conversationsList: (request: ConversationsListRequest) => typedError<ConversationPage, ApiError>(__TAURI_INVOKE("conversations_list", { request })),
-	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
-	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
-	conversationOpen: (request: ConversationOpenRequest) => typedError<ConversationView, ApiError>(__TAURI_INVOKE("conversation_open", { request })),
-	conversationBranches: (request: ConversationRequest) => typedError<ConversationBranchList, ApiError>(__TAURI_INVOKE("conversation_branches", { request })),
-	conversationBranchFork: (request: ConversationBranchForkRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_fork", { request })),
-	conversationBranchRename: (request: ConversationBranchRenameRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_rename", { request })),
-	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_select", { request })),
-	conversationBranchDelete: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_delete", { request })),
-	conversationDuplicate: (request: ConversationDuplicateRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_duplicate", { request })),
-	conversationBranchToCharacterFromMessage: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_to_character_from_message", { request })),
-	conversationBranchToCharacter: (request: ConversationGroupCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_to_character", { request })),
-	conversationBranchDirectToCharacter: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_direct_to_character", { request })),
-	conversationBranchDirectToGroup: (request: ConversationGroupCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_direct_to_group", { request })),
-	conversationMessages: (request: ConversationMessagesRequest_Deserialize) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
-	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
-	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
-	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("messages_delete_after", { request })),
-	memoryRewindRetry: (request: MemoryRewindRetryRequest) => typedError<MemoryRewindRetryOutcome, ApiError>(__TAURI_INVOKE("memory_rewind_retry", { request })),
-	messagePin: (request: MessagePinRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_pin", { request })),
-	messageCandidateSelect: (request: MessageCandidateSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_candidate_select", { request })),
-	messageSceneSelect: (request: MessageSceneSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_scene_select", { request })),
-	messageRevisions: (request: MessageHistoryRequest) => typedError<MessageRevisionPage, ApiError>(__TAURI_INVOKE("message_revisions", { request })),
-	messageCandidates: (request: MessageHistoryRequest) => typedError<MessageCandidatePage, ApiError>(__TAURI_INVOKE("message_candidates", { request })),
-	conversationSearch: (request: ConversationSearchRequest) => typedError<SearchHitPage, ApiError>(__TAURI_INVOKE("conversation_search", { request })),
-	conversationPinnedMessages: (request: ConversationPinnedMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_pinned_messages", { request })),
-	conversationMessageCount: (request: ConversationRequest) => typedError<MessageCount, ApiError>(__TAURI_INVOKE("conversation_message_count", { request })),
-	conversationMessagesAround: (request: ConversationMessagesAroundRequest) => typedError<MessageWindow, ApiError>(__TAURI_INVOKE("conversation_messages_around", { request })),
-	conversationSend: (request: ConversationSendRequest_Deserialize, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
-	conversationRegenerate: (request: ConversationRegenerateRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_regenerate", { request, onEvent })),
-	conversationContinue: (request: ConversationContinueRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_continue", { request, onEvent })),
-	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
-	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("conversation_add_user_message", { request })),
-	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
-	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
-	messageSceneImageApprove: (request: MessageSceneImageApproveRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_scene_image_approve", { request })),
-	messageSceneImageDismiss: (request: MessageSceneRequest) => typedError<null, ApiError>(__TAURI_INVOKE("message_scene_image_dismiss", { request })),
-	messageSceneImageGenerate: (request: MessageSceneImageGenerateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_scene_image_generate", { request })),
-	messageScenePromptGenerate: (request: MessageScenePromptGenerateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_scene_prompt_generate", { request })),
-	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot, ApiError>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
-	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
-	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError>(__TAURI_INVOKE("conversation_participation_stats", { request })),
-	messageCompanionEffect: (request: MessageCompanionEffectRequest) => typedError<MessageCompanionEffect | null, ApiError>(__TAURI_INVOKE("message_companion_effect", { request })),
-	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
-	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError>(__TAURI_INVOKE("conversation_launch_group", { request })),
-	conversationSettingsGet: (request: ConversationSettingsGetRequest) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_get", { request })),
-	conversationSettingsUpdate: (request: ConversationSettingsUpdateRequest_Deserialize) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_update", { request })),
-	conversationRename: (request: ConversationRenameRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_rename", { request })),
-	conversationArchive: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_archive", { request })),
-	conversationRestore: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_restore", { request })),
-	conversationDelete: (request: ConversationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("conversation_delete", { request })),
-	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_add", { request })),
-	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
-	charactersList: (request: CharactersListRequest_Deserialize) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
-	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary, ApiError>(__TAURI_INVOKE("character_duplicate", { request })),
-	characterGet: (request: CharacterGetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_get", { request })),
-	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_save", { request })),
-	characterArchive: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_archive", { request })),
-	characterRestore: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_restore", { request })),
-	characterDelete: (request: CharacterDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("character_delete", { request })),
-	characterMediaSet: (request: CharacterMediaSetRequest) => typedError<CharacterView_Serialize, ApiError>(__TAURI_INVOKE("character_media_set", { request })),
-	personaMediaSet: (request: PersonaMediaSetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_media_set", { request })),
-	personaGet: (request: PersonaGetRequest) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_get", { request })),
-	personasList: (request: PersonasListRequest_Deserialize) => typedError<PersonaPage, ApiError>(__TAURI_INVOKE("personas_list", { request })),
-	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError>(__TAURI_INVOKE("persona_save", { request })),
-	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_set", { request })),
-	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError>(__TAURI_INVOKE("persona_default_clear", { request })),
-	groupsList: (request: GroupsListRequest) => typedError<GroupPage_Serialize, ApiError>(__TAURI_INVOKE("groups_list", { request })),
-	groupGet: (request: GroupGetRequest) => typedError<GroupView_Serialize, ApiError>(__TAURI_INVOKE("group_get", { request })),
-	groupSave: (request: GroupSaveRequest_Deserialize) => typedError<GroupView_Serialize, ApiError>(__TAURI_INVOKE("group_save", { request })),
-	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("group_delete", { request })),
-	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("persona_delete", { request })),
-	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("character_lorebooks_list", { request })),
-	characterLorebooksBind: (request: CharacterLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_bind", { request })),
-	characterLorebooksUnbind: (request: CharacterLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_unbind", { request })),
-	characterLorebooksEnable: (request: CharacterLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_enable", { request })),
-	characterLorebooksReorder: (request: CharacterLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("character_lorebooks_reorder", { request })),
-	personaLorebooksList: (request: PersonaLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("persona_lorebooks_list", { request })),
-	personaLorebooksBind: (request: PersonaLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_bind", { request })),
-	personaLorebooksUnbind: (request: PersonaLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_unbind", { request })),
-	personaLorebooksEnable: (request: PersonaLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_enable", { request })),
-	personaLorebooksReorder: (request: PersonaLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("persona_lorebooks_reorder", { request })),
-	groupLorebooksList: (request: GroupLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError>(__TAURI_INVOKE("group_lorebooks_list", { request })),
-	groupLorebooksBind: (request: GroupLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_bind", { request })),
-	groupLorebooksUnbind: (request: GroupLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_unbind", { request })),
-	groupLorebooksEnable: (request: GroupLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_enable", { request })),
-	groupLorebooksReorder: (request: GroupLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError>(__TAURI_INVOKE("group_lorebooks_reorder", { request })),
-	promptsList: (request: PromptsListRequest) => typedError<PromptPage, ApiError>(__TAURI_INVOKE("prompts_list", { request })),
-	promptPlaceholders: (request: PromptPlaceholdersRequest) => typedError<PromptPlaceholders, ApiError>(__TAURI_INVOKE("prompt_placeholders", { request })),
-	promptValidate: (request: PromptValidateRequest) => typedError<PromptValidation, ApiError>(__TAURI_INVOKE("prompt_validate", { request })),
-	promptGet: (request: PromptGetRequest) => typedError<PromptView, ApiError>(__TAURI_INVOKE("prompt_get", { request })),
-	promptCreate: (request: PromptCreateRequest) => typedError<PromptView, ApiError>(__TAURI_INVOKE("prompt_create", { request })),
-	promptUpdate: (request: PromptUpdateRequest) => typedError<PromptView, ApiError>(__TAURI_INVOKE("prompt_update", { request })),
-	promptDelete: (request: PromptDeleteRequest) => typedError<SourceDeleteResult, ApiError>(__TAURI_INVOKE("prompt_delete", { request })),
-	promptBuiltinReset: (request: PromptBuiltinResetRequest) => typedError<PromptBuiltinResetResult, ApiError>(__TAURI_INVOKE("prompt_builtin_reset", { request })),
-	promptAppDefaultSet: (request: PromptAppDefaultSetRequest) => typedError<PromptAppDefault, ApiError>(__TAURI_INVOKE("prompt_app_default_set", { request })),
-	promptPreview: (request: PromptPreviewRequest) => typedError<PromptPreview, ApiError>(__TAURI_INVOKE("prompt_preview", { request })),
-	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage, ApiError>(__TAURI_INVOKE("lorebooks_list", { request })),
-	lorebookGet: (request: LorebookGetRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_get", { request })),
-	lorebookCreate: (request: LorebookCreateRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_create", { request })),
-	lorebookUpdateMetadata: (request: LorebookUpdateMetadataRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_update_metadata", { request })),
-	lorebookEntriesMutate: (request: LorebookEntriesMutateRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_entries_mutate", { request })),
-	lorebookArchive: (request: LorebookRevisionRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_archive", { request })),
-	lorebookRestore: (request: LorebookRevisionRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_restore", { request })),
-	lorebookDelete: (request: LorebookRevisionRequest) => typedError<SourceDeleteResult, ApiError>(__TAURI_INVOKE("lorebook_delete", { request })),
-	tokensCount: (request: TokensCountRequest) => typedError<TokensCount, ApiError>(__TAURI_INVOKE("tokens_count", { request })),
-	lorebookTriggerPreview: (request: LorebookTriggerPreviewRequest) => typedError<LorebookTriggerPreview, ApiError>(__TAURI_INVOKE("lorebook_trigger_preview", { request })),
-	lorebookEntryDraft: (request: LorebookEntryDraftRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_entry_draft", { request })),
-	lorebookKeywordsDraft: (request: LorebookKeywordsDraftRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_keywords_draft", { request })),
-	lorebookProjectCreate: (request: LorebookProjectCreateRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_create", { request })),
-	lorebookProjectGet: (request: LorebookProjectGetRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_get", { request })),
-	lorebookProjectsList: (request: LorebookProjectsListRequest) => typedError<LorebookProjectPage, ApiError>(__TAURI_INVOKE("lorebook_projects_list", { request })),
-	lorebookProjectPlan: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_plan", { request })),
-	lorebookProjectOutlineUpdate: (request: LorebookProjectOutlineUpdateRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_outline_update", { request })),
-	lorebookProjectOutlineApprove: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_outline_approve", { request })),
-	lorebookProjectDraftUpdate: (request: LorebookProjectDraftUpdateRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_draft_update", { request })),
-	lorebookProjectDraftSetApproved: (request: LorebookProjectDraftApprovalRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_draft_set_approved", { request })),
-	lorebookProjectCoherenceApply: (request: LorebookProjectCoherenceApplyRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_coherence_apply", { request })),
-	lorebookProjectCancel: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_cancel", { request })),
-	lorebookGeneratorDefaults: () => typedError<LorebookGeneratorDefaults, ApiError>(__TAURI_INVOKE("lorebook_generator_defaults")),
-	lorebookProjectDraftNext: (request: LorebookProjectJobRequest) => typedError<LorebookProjectBatchAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_draft_next", { request })),
-	lorebookProjectRefine: (request: LorebookProjectRefineRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_refine", { request })),
-	lorebookProjectCoherence: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_coherence", { request })),
-	lorebookProjectCommit: (request: LorebookProjectCommitRequest) => typedError<LorebookProjectCommitView, ApiError>(__TAURI_INVOKE("lorebook_project_commit", { request })),
-	jobsList: (request: JobsListRequest) => typedError<JobPage, ApiError>(__TAURI_INVOKE("jobs_list", { request })),
-	jobGet: (request: JobGetRequest) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_get", { request })),
-	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("job_cancel", { request })),
-	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
-	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
-	importPreview: (request: ImportPreviewRequest) => typedError<ImportPreview_Serialize, ApiError>(__TAURI_INVOKE("import_preview", { request })),
-	importCommit: (request: ImportCommitRequest_Deserialize) => typedError<ImportCommitResult, ApiError>(__TAURI_INVOKE("import_commit", { request })),
-	characterExport: (request: CharacterExportRequest_Deserialize) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("character_export", { request })),
-	personaExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("persona_export", { request })),
-	lorebookExport: (request: LorebookExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("lorebook_export", { request })),
-	promptExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("prompt_export", { request })),
-	chatTemplateExport: (request: ChatTemplateExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("chat_template_export", { request })),
-	modelExport: (request: ModelExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("model_export", { request })),
-	chatExport: (request: ChatExportRequest) => typedError<EntityExportResult, ApiError>(__TAURI_INVOKE("chat_export", { request })),
-	backupInspect: (request: BackupInspectRequest) => typedError<BackupHeaderView, ApiError>(__TAURI_INVOKE("backup_inspect", { request })),
-	backupExport: (request: BackupExportRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("backup_export", { request })),
-	backupsList: () => typedError<BackupIndexView[], ApiError>(__TAURI_INVOKE("backups_list")),
-	backupForget: (request: BackupMutationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("backup_forget", { request })),
-	backupDelete: (request: BackupMutationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("backup_delete", { request })),
-	backupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("backup_restore", { request })),
-	legacyBackupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("legacy_backup_restore", { request })),
-	legacyDatabaseImport: (request: LegacyDatabaseImportRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("legacy_database_import", { request })),
-	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef, ApiError>(__TAURI_INVOKE("assets_ingest", { request })),
-	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError>(__TAURI_INVOKE("files_pick_open", { request })),
-	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError>(__TAURI_INVOKE("files_pick_save", { request })),
-	appStatus: () => typedError<AppStatus, ApiError>(__TAURI_INVOKE("app_status")),
-	legacyState: () => typedError<LegacyState, ApiError>(__TAURI_INVOKE("legacy_state")),
-	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError>(__TAURI_INVOKE("app_ui_state_update", { request })),
-	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError>(__TAURI_INVOKE("purge_notices_list")),
-	purgeNoticeDismiss: (request: PurgeNoticeDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("purge_notice_dismiss", { request })),
-	llamaDevices: () => typedError<LlamaDeviceList, ApiError>(__TAURI_INVOKE("llama_devices")),
-	llamaContextInfo: (request: LlamaContextInfoRequest) => typedError<LlamaContextInfo, ApiError>(__TAURI_INVOKE("llama_context_info", { request })),
-	llamaChatTemplate: (request: LlamaChatTemplateRequest) => typedError<LlamaChatTemplate, ApiError>(__TAURI_INVOKE("llama_chat_template", { request })),
-	llamaUnload: () => typedError<null, ApiError>(__TAURI_INVOKE("llama_unload")),
-	localModelsList: () => typedError<LocalModelList, ApiError>(__TAURI_INVOKE("local_models_list")),
-	localModelDelete: (request: LocalModelDeleteRequest) => typedError<LocalModelDeleted, ApiError>(__TAURI_INVOKE("local_model_delete", { request })),
-	localModelAdopt: (request: LocalModelAdoptRequest) => typedError<LocalModelAdopted, ApiError>(__TAURI_INVOKE("local_model_adopt", { request })),
-	localModelsDirGet: () => typedError<LocalModelsDir, ApiError>(__TAURI_INVOKE("local_models_dir_get")),
-	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("local_models_dir_set", { request })),
-	localFileRunnability: (request: LocalFileRunnabilityRequest) => typedError<LocalFileRunnability, ApiError>(__TAURI_INVOKE("local_file_runnability", { request })),
-	imageGenerate: (request: ImageGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_generate", { request })),
-	imageUpscale: (request: ImageUpscaleRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_upscale", { request })),
-	imageCapabilities: (request: ImageCapabilitiesRequest) => typedError<ImageCapabilities, ApiError>(__TAURI_INVOKE("image_capabilities", { request })),
-	playgroundHistoryList: (request: PlaygroundHistoryListRequest) => typedError<PlaygroundHistoryPage, ApiError>(__TAURI_INVOKE("playground_history_list", { request })),
-	playgroundHistoryDelete: (request: PlaygroundHistoryDeleteRequest) => typedError<PlaygroundHistoryDeleted, ApiError>(__TAURI_INVOKE("playground_history_delete", { request })),
-	sdCatalog: () => typedError<SdCatalog, ApiError>(__TAURI_INVOKE("sd_catalog")),
-	sdRuntimeReleases: () => typedError<SdRuntimeReleases, ApiError>(__TAURI_INVOKE("sd_runtime_releases")),
-	sdRuntimeInstall: (request: SdRuntimeInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_runtime_install", { request })),
-	sdRuntimeInventory: () => typedError<SdRuntimeInventory, ApiError>(__TAURI_INVOKE("sd_runtime_inventory")),
-	sdRuntimeSwitch: (request: SdRuntimeRef) => typedError<null, ApiError>(__TAURI_INVOKE("sd_runtime_switch", { request })),
-	sdRuntimeDelete: (request: SdRuntimeRef) => typedError<null, ApiError>(__TAURI_INVOKE("sd_runtime_delete", { request })),
-	sdModelInstall: (request: SdModelInstallRequest) => typedError<SdModelInstallStarted, ApiError>(__TAURI_INVOKE("sd_model_install", { request })),
-	sdModelsInstalled: () => typedError<SdInstalledModels, ApiError>(__TAURI_INVOKE("sd_models_installed")),
-	sdModelUninstall: (request: SdModelUninstallRequest) => typedError<SdUninstallOutcome, ApiError>(__TAURI_INVOKE("sd_model_uninstall", { request })),
-	sdModelRepair: (request: SdModelRepairRequest) => typedError<SdModelRepaired, ApiError>(__TAURI_INVOKE("sd_model_repair", { request })),
-	sdRunnability: (request: SdRunnabilityRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_runnability", { request })),
-	sdBundleRunnability: (request: SdBundleRunnabilityRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_bundle_runnability", { request })),
-	sdComputePolicyGet: (request: SdRuntimeRef) => typedError<SdComputePolicyInfo, ApiError>(__TAURI_INVOKE("sd_compute_policy_get", { request })),
-	sdComputePolicySave: (request: SdComputePolicySaveRequest) => typedError<SdComputePolicyInfo, ApiError>(__TAURI_INVOKE("sd_compute_policy_save", { request })),
-	sdDetectModelFile: (request: SdDetectModelFileRequest) => typedError<SdDetectedModelFile, ApiError>(__TAURI_INVOKE("sd_detect_model_file", { request })),
-	sdDiskUsage: () => typedError<SdDiskUsage, ApiError>(__TAURI_INVOKE("sd_disk_usage")),
-	sdComponentLibrary: () => typedError<SdComponentLibrary, ApiError>(__TAURI_INVOKE("sd_component_library")),
-	sdUpscalersList: () => typedError<SdUpscalerInventory, ApiError>(__TAURI_INVOKE("sd_upscalers_list")),
-	sdUpscalersInstall: () => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_upscalers_install")),
-	sdUpscalersRemove: (request: SdUpscalerRemoveRequest) => typedError<SdUpscalerInventory, ApiError>(__TAURI_INVOKE("sd_upscalers_remove", { request })),
-	lorasList: (request: LorasListRequest) => typedError<LoraList, ApiError>(__TAURI_INVOKE("loras_list", { request })),
-	lorasImport: (request: LorasImportRequest) => typedError<InstalledLora, ApiError>(__TAURI_INVOKE("loras_import", { request })),
-	lorasDelete: (request: LorasDeleteRequest) => typedError<LoraDeleted, ApiError>(__TAURI_INVOKE("loras_delete", { request })),
-	lorasUpdateKeywords: (request: LorasUpdateKeywordsRequest) => typedError<LoraKeywordDiscovery, ApiError>(__TAURI_INVOKE("loras_update_keywords", { request })),
-	loraKeywordsDiscover: (request: LoraKeywordsDiscoverRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lora_keywords_discover", { request })),
-	hfImageBundleProfiles: () => typedError<ImageBundleProfiles, ApiError>(__TAURI_INVOKE("hf_image_bundle_profiles")),
-	hfImageBundleSearch: (request: HfImageBundleSearchRequest) => typedError<HfImageBundleSearchResults, ApiError>(__TAURI_INVOKE("hf_image_bundle_search", { request })),
-	hfImageBundleFiles: (request: HfImageBundleFilesRequest) => typedError<HfImageBundleFiles, ApiError>(__TAURI_INVOKE("hf_image_bundle_files", { request })),
-	hfImageBundleInstall: (request: HfImageBundleInstallRequest) => typedError<ImageBundleAccepted, ApiError>(__TAURI_INVOKE("hf_image_bundle_install", { request })),
-	hfImageBundleRetry: (request: HfImageBundleRetryRequest) => typedError<ImageBundleRetried, ApiError>(__TAURI_INVOKE("hf_image_bundle_retry", { request })),
-	hfImageBundleRetryRegistration: (request: HfImageBundleRetryRequest) => typedError<ImageBundleRegistered, ApiError>(__TAURI_INVOKE("hf_image_bundle_retry_registration", { request })),
-	imageModelsDownloaded: () => typedError<DownloadedImageModels, ApiError>(__TAURI_INVOKE("image_models_downloaded")),
-	civitaiSearch: (request: CivitaiSearchRequest) => typedError<CivitaiSearchPage, ApiError>(__TAURI_INVOKE("civitai_search", { request })),
-	civitaiModel: (request: CivitaiModelRequest) => typedError<CivitaiModelDetail, ApiError>(__TAURI_INVOKE("civitai_model", { request })),
-	civitaiAuthStatus: () => typedError<CivitaiAuthStatus, ApiError>(__TAURI_INVOKE("civitai_auth_status")),
-	civitaiAuthSave: (request: CivitaiAuthSaveRequest) => typedError<CivitaiAuthStatus, ApiError>(__TAURI_INVOKE("civitai_auth_save", { request })),
-	civitaiAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("civitai_auth_clear")),
-	civitaiLoraDownload: (request: CivitaiLoraDownloadRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("civitai_lora_download", { request })),
-	avatarPrompt: (request: AvatarPromptRequest) => typedError<AvatarPrompt, ApiError>(__TAURI_INVOKE("avatar_prompt", { request })),
-	avatarGradient: (request: AvatarGradientRequest) => typedError<AvatarGradient, ApiError>(__TAURI_INVOKE("avatar_gradient", { request })),
-	imageDesignReference: (request: ImageDesignReferenceRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_design_reference", { request })),
-	hfSearch: (request: HfSearchRequest) => typedError<HfSearchResults, ApiError>(__TAURI_INVOKE("hf_search", { request })),
-	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo, ApiError>(__TAURI_INVOKE("hf_model_files", { request })),
-	hfReadme: (request: HfReadmeRequest) => typedError<HfReadme, ApiError>(__TAURI_INVOKE("hf_readme", { request })),
-	hfAuthor: (request: HfAuthorRequest) => typedError<HfAuthor, ApiError>(__TAURI_INVOKE("hf_author", { request })),
-	hfAvatars: (request: HfAvatarsRequest) => typedError<HfAvatars, ApiError>(__TAURI_INVOKE("hf_avatars", { request })),
-	hfRunnability: (request: HfRunnabilityRequest) => typedError<HfRunnability, ApiError>(__TAURI_INVOKE("hf_runnability", { request })),
-	hfRecommendation: (request: HfRecommendationRequest) => typedError<HfRecommendation, ApiError>(__TAURI_INVOKE("hf_recommendation", { request })),
-	hfDownload: (request: HfDownloadRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("hf_download", { request })),
-	hfAuthStatus: () => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_status")),
-	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_save", { request })),
-	hfAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("hf_auth_clear")),
-	memoryGet: (request: ConversationRequest) => typedError<MemoryView, ApiError>(__TAURI_INVOKE("memory_get", { request })),
-	memoryAdd: (request: MemoryAddRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_add", { request })),
-	memoryUpdate: (request: MemoryUpdateRequest_Deserialize) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_update", { request })),
-	memoryDelete: (request: MemoryDeleteRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_delete", { request })),
-	memoryPin: (request: MemoryPinRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_pin", { request })),
-	memorySetTemperature: (request: MemoryTemperatureRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_set_temperature", { request })),
-	memorySummaryUpdate: (request: MemorySummaryUpdateRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_summary_update", { request })),
-	memoryTrigger: (request: MemoryTriggerRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("memory_trigger", { request })),
-	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("memory_retry", { request })),
-	memorySkip: (request: MemorySkipRequest) => typedError<null, ApiError>(__TAURI_INVOKE("memory_skip", { request })),
-	memoryCycles: (request: MemoryCyclesRequest) => typedError<MemoryCyclePage, ApiError>(__TAURI_INVOKE("memory_cycles", { request })),
-	memoryCycleRevert: (request: MemoryCycleRevertRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_cycle_revert", { request })),
-	memoryErrorDismiss: (request: MemoryErrorDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("memory_error_dismiss", { request })),
-	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError>(__TAURI_INVOKE("companion_soul_get", { request })),
-	companionSoulGrowthClear: (request: CompanionSoulGrowthClearRequest) => typedError<number, ApiError>(__TAURI_INVOKE("companion_soul_growth_clear", { request })),
-	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
-	companionSoulGrowthLock: (request: CompanionSoulGrowthLockRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_soul_growth_lock", { request })),
-	companionSoulWriterRun: (request: CompanionSoulWriterRunRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("companion_soul_writer_run", { request })),
-	companionNotesList: (request: CompanionNotesRequest) => typedError<CompanionNoteView[], ApiError>(__TAURI_INVOKE("companion_notes_list", { request })),
-	companionNotesUpsert: (request: CompanionNoteUpsertRequest) => typedError<CompanionNoteView, ApiError>(__TAURI_INVOKE("companion_notes_upsert", { request })),
-	companionNotesDelete: (request: CompanionNoteDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("companion_notes_delete", { request })),
-	companionNotesActivePreview: (request: CompanionNotesActivePreviewRequest) => typedError<CompanionNoteView[], ApiError>(__TAURI_INVOKE("companion_notes_active_preview", { request })),
-	embeddingInstall: (request: EmbeddingInstallRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("embedding_install", { request })),
-	companionEmotionInstall: () => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("companion_emotion_install")),
-	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError>(__TAURI_INVOKE("embedding_status")),
-	embeddingChoose: (request: EmbeddingModelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("embedding_choose", { request })),
-	embeddingRemove: (request: EmbeddingModelRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("embedding_remove", { request })),
-	embeddingCompare: (request: EmbeddingCompareRequest) => typedError<EmbeddingComparison, ApiError>(__TAURI_INVOKE("embedding_compare", { request })),
-	embeddingUnload: () => typedError<null, ApiError>(__TAURI_INVOKE("embedding_unload")),
-	companionEmotionStatus: () => typedError<ThymosStatus, ApiError>(__TAURI_INVOKE("companion_emotion_status")),
-	companionEmotionRemove: () => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_emotion_remove")),
-	kokoroInventory: (request: KokoroInventoryRequest) => typedError<KokoroInventory, ApiError>(__TAURI_INVOKE("kokoro_inventory", { request })),
-	kokoroVariants: () => typedError<KokoroVariantView[], ApiError>(__TAURI_INVOKE("kokoro_variants")),
-	kokoroVoicesInstalled: () => typedError<KokoroInstalledVoiceView[], ApiError>(__TAURI_INVOKE("kokoro_voices_installed")),
-	kokoroVoicesAvailable: () => typedError<KokoroAvailableVoiceView[], ApiError>(__TAURI_INVOKE("kokoro_voices_available")),
-	kokoroInstallModel: (request: KokoroVariantRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("kokoro_install_model", { request })),
-	kokoroInstallVoices: (request: KokoroVoicesInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("kokoro_install_voices", { request })),
-	kokoroUninstallModel: (request: KokoroVariantRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("kokoro_uninstall_model", { request })),
-	kokoroUninstallVoice: (request: KokoroVoiceRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("kokoro_uninstall_voice", { request })),
-	kokoroBlend: (request: KokoroBlendRequest) => typedError<KokoroBlendView, ApiError>(__TAURI_INVOKE("kokoro_blend", { request })),
-	kokoroPhonemize: (request: KokoroPhonemizeRequest) => typedError<KokoroPhonemizationView, ApiError>(__TAURI_INVOKE("kokoro_phonemize", { request })),
-	kokoroTokenizePreview: (request: KokoroTokenizePreviewRequest) => typedError<KokoroPhonemizationView, ApiError>(__TAURI_INVOKE("kokoro_tokenize_preview", { request })),
-	audioProvidersList: () => typedError<AudioProviderView[], ApiError>(__TAURI_INVOKE("audio_providers_list")),
-	audioProviderUpdate: (request: AudioProviderUpdateRequest) => typedError<AudioProviderView, ApiError>(__TAURI_INVOKE("audio_provider_update", { request })),
-	audioProviderDelete: (request: AudioProviderDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("audio_provider_delete", { request })),
-	userVoicesList: () => typedError<UserVoiceView[], ApiError>(__TAURI_INVOKE("user_voices_list")),
-	userVoiceUpdate: (request: UserVoiceUpdateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_update", { request })),
-	userVoiceDelete: (request: UserVoiceRequest) => typedError<null, ApiError>(__TAURI_INVOKE("user_voice_delete", { request })),
-	asrLearningExport: (request: AsrLearningExportRequest_Deserialize) => typedError<null, ApiError>(__TAURI_INVOKE("asr_learning_export", { request })),
-	audioProviderCreate: (request: AudioProviderCreateRequest) => typedError<AudioProviderView, ApiError>(__TAURI_INVOKE("audio_provider_create", { request })),
-	userVoiceCreate: (request: UserVoiceCreateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_create", { request })),
-	asrVocabularySave: (request: AsrVocabularySaveRequest) => typedError<AsrVocabularyView, ApiError>(__TAURI_INVOKE("asr_vocabulary_save", { request })),
-	asrCorrectionSave: (request: AsrCorrectionSaveRequest) => typedError<AsrCorrectionView, ApiError>(__TAURI_INVOKE("asr_correction_save", { request })),
-	asrSuggestionApprove: (request: AsrSuggestionWriteRequest) => typedError<AsrCorrectionView, ApiError>(__TAURI_INVOKE("asr_suggestion_approve", { request })),
-	asrSuggestionIgnore: (request: AsrSuggestionWriteRequest) => typedError<AsrIgnoredSuggestionView, ApiError>(__TAURI_INVOKE("asr_suggestion_ignore", { request })),
-	asrVoiceExampleSave: (request: AsrVoiceExampleSaveRequest) => typedError<AsrVoiceExampleView, ApiError>(__TAURI_INVOKE("asr_voice_example_save", { request })),
-	asrLearningImport: (request: AsrLearningImportRequest) => typedError<AsrLearningImportView, ApiError>(__TAURI_INVOKE("asr_learning_import", { request })),
-	asrVocabularyList: (request: AsrLearningFilter_Deserialize) => typedError<AsrVocabularyView[], ApiError>(__TAURI_INVOKE("asr_vocabulary_list", { request })),
-	asrCorrectionsList: (request: AsrLearningFilter_Deserialize) => typedError<AsrCorrectionView[], ApiError>(__TAURI_INVOKE("asr_corrections_list", { request })),
-	asrIgnoredSuggestionsList: (request: AsrLearningFilter_Deserialize) => typedError<AsrIgnoredSuggestionView[], ApiError>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
-	asrVoiceExamplesList: (request: AsrLearningFilter_Deserialize) => typedError<AsrVoiceExampleView[], ApiError>(__TAURI_INVOKE("asr_voice_examples_list", { request })),
-	asrVoiceExampleSuggest: (request: AsrLearningItemRequest) => typedError<AsrSuggestionView | null, ApiError>(__TAURI_INVOKE("asr_voice_example_suggest", { request })),
-	asrVocabularyDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_vocabulary_delete", { request })),
-	asrCorrectionDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_correction_delete", { request })),
-	asrVoiceExampleDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_voice_example_delete", { request })),
-	asrSuggestions: (request: AsrSuggestionsRequest) => typedError<AsrSuggestionView[], ApiError>(__TAURI_INVOKE("asr_suggestions", { request })),
-	audioProviderVerify: (request: AudioProviderVerifyRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("audio_provider_verify", { request })),
-	audioProviderCredentialStatus: (request: AudioProviderRequest) => typedError<AudioProviderCredentialStatus, ApiError>(__TAURI_INVOKE("audio_provider_credential_status", { request })),
-	audioProviderApiKeyRotate: (request: AudioProviderApiKeyRotateRequest) => typedError<AudioProviderCredentialStatus, ApiError>(__TAURI_INVOKE("audio_provider_api_key_rotate", { request })),
-	audioProviderVoices: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices", { request })),
-	audioProviderVoicesSearch: (request: AudioProviderVoiceSearchRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_search", { request })),
-	voiceDesignPreview: (request: VoiceDesignPreviewRequest) => typedError<VoiceDesignPreviewView[], ApiError>(__TAURI_INVOKE("voice_design_preview", { request })),
-	voiceDesignCreate: (request: VoiceDesignCreateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("voice_design_create", { request })),
-	audioProviderVoicesRefresh: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_refresh", { request })),
-	ttsModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_models", { request })),
-	ttsVoiceDesignModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_voice_design_models", { request })),
-	ttsCacheStats: () => typedError<TtsCacheStats, ApiError>(__TAURI_INVOKE("tts_cache_stats")),
-	ttsCacheClear: () => typedError<null, ApiError>(__TAURI_INVOKE("tts_cache_clear")),
-	ttsSynthesize: (request: TtsSynthesizeRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("tts_synthesize", { request })),
-	messageSpeak: (request: MessageSpeakRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_speak", { request })),
-	whisperCatalog: () => typedError<WhisperCatalog, ApiError>(__TAURI_INVOKE("whisper_catalog")),
-	whisperModelsList: () => typedError<WhisperInstalledModels, ApiError>(__TAURI_INVOKE("whisper_models_list")),
-	whisperDownload: (request: WhisperModelRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("whisper_download", { request })),
-	whisperDelete: (request: WhisperModelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_delete", { request })),
-	whisperPreload: (request: WhisperPreloadRequest_Deserialize) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_preload", { request })),
-	whisperClearCache: () => typedError<WhisperCacheCleared, ApiError>(__TAURI_INVOKE("whisper_clear_cache")),
-	whisperDictationModelSet: (request: DictationModelSetRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_dictation_model_set", { request })),
-	transcribeFile: (request: TranscribeFileRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("transcribe_file", { request })),
-	dictationStart: (request: DictationStartRequest) => typedError<DictationStarted, ApiError>(__TAURI_INVOKE("dictation_start", { request })),
-	dictationStop: (request: DictationStopRequest_Deserialize) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("dictation_stop", { request })),
-	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("dictation_cancel", { request })),
-	certificatesList: () => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_list")),
-	providerAccountSave: (request: ProviderAccountSaveRequest) => typedError<ProviderAccountView, ApiError>(__TAURI_INVOKE("provider_account_save", { request })),
-	providerAccountDelete: (request: ProviderAccountDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("provider_account_delete", { request })),
-	providerModels: (request: ProviderModelsRequest) => typedError<RemoteModelContract_Serialize[], ApiError>(__TAURI_INVOKE("provider_models", { request })),
-	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError>(__TAURI_INVOKE("provider_model_verify", { request })),
-	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_import", { request })),
-	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_remove", { request })),
-	settingsGet: () => typedError<SettingsView, ApiError>(__TAURI_INVOKE("settings_get")),
-	settingsUpdate: (request: SettingsCommandInput<SettingsUpdateRequest_Deserialize>) => typedError<SettingsView, ApiError>(__TAURI_INVOKE("settings_update", { request })),
-	settingsSamplerDefaultsUpdate: (request: SettingsCommandInput<SettingsSamplerDefaultsUpdateRequest>) => typedError<SettingsView, ApiError>(__TAURI_INVOKE("settings_sampler_defaults_update", { request })),
-	contentFilterLog: () => typedError<ContentFilterLogView, ApiError>(__TAURI_INVOKE("content_filter_log")),
-	contentFilterClear: () => typedError<null, ApiError>(__TAURI_INVOKE("content_filter_clear")),
-	modelsList: () => typedError<ModelsView, ApiError>(__TAURI_INVOKE("models_list")),
-	modelGet: (request: ModelGetRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_get", { request })),
-	modelSave: (request: ModelSaveRequest_Deserialize) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_save", { request })),
-	modelDelete: (request: ModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("model_delete", { request })),
-	modelUsage: (request: ModelUsageRequest) => typedError<ModelUsage, ApiError>(__TAURI_INVOKE("model_usage", { request })),
-	modelDuplicate: (request: ModelDuplicateRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_duplicate", { request })),
-	modelDefaultSet: (request: ModelDefaultSetRequest) => typedError<ModelDefaultView, ApiError>(__TAURI_INVOKE("model_default_set", { request })),
-	providerNanogptUsage: (request: ProviderNanoGptUsageRequest) => typedError<NanoGptUsageView, ApiError>(__TAURI_INVOKE("provider_nanogpt_usage", { request })),
-	providerCatalog: () => typedError<ProviderCatalogContract, ApiError>(__TAURI_INVOKE("provider_catalog")),
-	providerAccountsList: () => typedError<ProviderAccountView[], ApiError>(__TAURI_INVOKE("provider_accounts_list")),
-	providerVerify: (request: ProviderVerifyRequest) => typedError<ProviderVerified, ApiError>(__TAURI_INVOKE("provider_verify", { request })),
-	providerOpenrouterEndpoints: (request: ProviderOpenRouterEndpointsRequest) => typedError<ProviderOpenRouterEndpoint[], ApiError>(__TAURI_INVOKE("provider_openrouter_endpoints", { request })),
-	ollamaModelsList: (request: OllamaModelsRequest) => typedError<OllamaModelList, ApiError>(__TAURI_INVOKE("ollama_models_list", { request })),
-	ollamaModelDelete: (request: OllamaModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("ollama_model_delete", { request })),
-	ollamaPull: (request: OllamaPullRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("ollama_pull", { request })),
+	syncShareStart: () => typedError<SyncSharing, ApiError_Serialize>(__TAURI_INVOKE("sync_share_start")),
+	syncShareApprove: (request: SyncShareApproveRequest) => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_share_approve", { request })),
+	syncShareBegin: () => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_share_begin")),
+	syncConnect: (request: SyncConnectRequest) => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_connect", { request })),
+	syncStop: () => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_stop")),
+	syncStatus: () => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_status")),
+	syncConflictsList: () => typedError<SyncConflictsList_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_conflicts_list")),
+	syncConflictResolve: (request: SyncConflictResolveRequest) => typedError<SyncConflictResolution, ApiError_Serialize>(__TAURI_INVOKE("sync_conflict_resolve", { request })),
+	syncForkResolve: (request: SyncForkResolveRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("sync_fork_resolve", { request })),
+	legacyConflictDismiss: (request: LegacyConflictDismissRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("legacy_conflict_dismiss", { request })),
+	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_list", { request })),
+	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<LlmMetricView | null, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_get", { request })),
+	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<LlmMetricView | null, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
+	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_clear", { request })),
+	appUsageDays: () => typedError<AppUsageDaysView, ApiError_Serialize>(__TAURI_INVOKE("app_usage_days")),
+	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError_Serialize>(__TAURI_INVOKE("usage_clear_before", { request })),
+	usageQuery: (request: UsageQueryRequest_Deserialize) => typedError<UsagePage, ApiError_Serialize>(__TAURI_INVOKE("usage_query", { request })),
+	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError_Serialize>(__TAURI_INVOKE("usage_stats", { request })),
+	usageExportCsv: (request: UsageExportCsvRequest_Deserialize) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("usage_export_csv", { request })),
+	usageRecalculateCosts: (request: UsageRecalculateCostsRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("usage_recalculate_costs", { request })),
+	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError_Serialize>(__TAURI_INVOKE("storage_database_files_list")),
+	storageOptimize: (request: StorageOptimizeRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("storage_optimize", { request })),
+	storageSummary: () => typedError<StorageSummary, ApiError_Serialize>(__TAURI_INVOKE("storage_summary")),
+	appDataReset: (request: AppDataResetRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("app_data_reset", { request })),
+	storageDatabaseFileDelete: (request: DatabaseFileDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("storage_database_file_delete", { request })),
+	mediaSaveTo: (request: MediaSaveToRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("media_save_to", { request })),
+	mediaLibraryList: (request: MediaLibraryListRequest_Deserialize) => typedError<MediaLibraryPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("media_library_list", { request })),
+	mediaReferences: (request: MediaReferencesRequest) => typedError<MediaReferenceView[], ApiError_Serialize>(__TAURI_INVOKE("media_references", { request })),
+	mediaLibraryRemove: (request: MediaLibraryRemoveRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("media_library_remove", { request })),
+	logsList: () => typedError<LogsList, ApiError_Serialize>(__TAURI_INVOKE("logs_list")),
+	logsDiagnosticsReport: () => typedError<string, ApiError_Serialize>(__TAURI_INVOKE("logs_diagnostics_report")),
+	logReadPage: (request: LogReadPageRequest) => typedError<LogPageView, ApiError_Serialize>(__TAURI_INVOKE("log_read_page", { request })),
+	logSearch: (request: LogSearchRequest) => typedError<LogSearchView, ApiError_Serialize>(__TAURI_INVOKE("log_search", { request })),
+	logRelevantLines: (request: LogRelevantLinesRequest) => typedError<LogSearchView, ApiError_Serialize>(__TAURI_INVOKE("log_relevant_lines", { request })),
+	logDelete: (request: LogNameRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_delete", { request })),
+	logsClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("logs_clear")),
+	logExport: (request: LogExportRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_export", { request })),
+	logAppend: (request: LogAppendRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_append", { request })),
+	conversationsList: (request: ConversationsListRequest) => typedError<ConversationPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversations_list", { request })),
+	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
+	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
+	conversationOpen: (request: ConversationOpenRequest) => typedError<ConversationView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_open", { request })),
+	conversationBranches: (request: ConversationRequest) => typedError<ConversationBranchList, ApiError_Serialize>(__TAURI_INVOKE("conversation_branches", { request })),
+	conversationBranchFork: (request: ConversationBranchForkRequest) => typedError<ConversationBranchChanged, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_fork", { request })),
+	conversationBranchRename: (request: ConversationBranchRenameRequest) => typedError<ConversationBranchChanged, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_rename", { request })),
+	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_select", { request })),
+	conversationBranchDelete: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_delete", { request })),
+	conversationDuplicate: (request: ConversationDuplicateRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_duplicate", { request })),
+	conversationBranchToCharacterFromMessage: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_to_character_from_message", { request })),
+	conversationBranchToCharacter: (request: ConversationGroupCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_to_character", { request })),
+	conversationBranchDirectToCharacter: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_direct_to_character", { request })),
+	conversationBranchDirectToGroup: (request: ConversationGroupCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_direct_to_group", { request })),
+	conversationMessages: (request: ConversationMessagesRequest_Deserialize) => typedError<MessagePage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_messages", { request })),
+	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_edit", { request })),
+	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("message_delete", { request })),
+	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("messages_delete_after", { request })),
+	memoryRewindRetry: (request: MemoryRewindRetryRequest) => typedError<MemoryRewindRetryOutcome, ApiError_Serialize>(__TAURI_INVOKE("memory_rewind_retry", { request })),
+	messagePin: (request: MessagePinRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_pin", { request })),
+	messageCandidateSelect: (request: MessageCandidateSelectRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_candidate_select", { request })),
+	messageSceneSelect: (request: MessageSceneSelectRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_scene_select", { request })),
+	messageRevisions: (request: MessageHistoryRequest) => typedError<MessageRevisionPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_revisions", { request })),
+	messageCandidates: (request: MessageHistoryRequest) => typedError<MessageCandidatePage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_candidates", { request })),
+	conversationSearch: (request: ConversationSearchRequest) => typedError<SearchHitPage, ApiError_Serialize>(__TAURI_INVOKE("conversation_search", { request })),
+	conversationPinnedMessages: (request: ConversationPinnedMessagesRequest) => typedError<MessagePage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_pinned_messages", { request })),
+	conversationMessageCount: (request: ConversationRequest) => typedError<MessageCount, ApiError_Serialize>(__TAURI_INVOKE("conversation_message_count", { request })),
+	conversationMessagesAround: (request: ConversationMessagesAroundRequest) => typedError<MessageWindow_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_messages_around", { request })),
+	conversationSend: (request: ConversationSendRequest_Deserialize, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
+	conversationRegenerate: (request: ConversationRegenerateRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_regenerate", { request, onEvent })),
+	conversationContinue: (request: ConversationContinueRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_continue", { request, onEvent })),
+	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
+	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_add_user_message", { request })),
+	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("generation_cancel", { request })),
+	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
+	messageSceneImageApprove: (request: MessageSceneImageApproveRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_approve", { request })),
+	messageSceneImageDismiss: (request: MessageSceneRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_dismiss", { request })),
+	messageSceneImageGenerate: (request: MessageSceneImageGenerateRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_generate", { request })),
+	messageScenePromptGenerate: (request: MessageScenePromptGenerateRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_prompt_generate", { request })),
+	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
+	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError_Serialize>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
+	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError_Serialize>(__TAURI_INVOKE("conversation_participation_stats", { request })),
+	messageCompanionEffect: (request: MessageCompanionEffectRequest) => typedError<MessageCompanionEffect | null, ApiError_Serialize>(__TAURI_INVOKE("message_companion_effect", { request })),
+	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError_Serialize>(__TAURI_INVOKE("conversation_launch_direct", { request })),
+	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError_Serialize>(__TAURI_INVOKE("conversation_launch_group", { request })),
+	conversationSettingsGet: (request: ConversationSettingsGetRequest) => typedError<ConversationSettingsView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_settings_get", { request })),
+	conversationSettingsUpdate: (request: ConversationSettingsUpdateRequest_Deserialize) => typedError<ConversationSettingsView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_settings_update", { request })),
+	conversationRename: (request: ConversationRenameRequest) => typedError<ConversationRevisions, ApiError_Serialize>(__TAURI_INVOKE("conversation_rename", { request })),
+	conversationArchive: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError_Serialize>(__TAURI_INVOKE("conversation_archive", { request })),
+	conversationRestore: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError_Serialize>(__TAURI_INVOKE("conversation_restore", { request })),
+	conversationDelete: (request: ConversationRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("conversation_delete", { request })),
+	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError_Serialize>(__TAURI_INVOKE("conversation_participant_add", { request })),
+	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError_Serialize>(__TAURI_INVOKE("conversation_participant_update", { request })),
+	charactersList: (request: CharactersListRequest_Deserialize) => typedError<CharacterPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("characters_list", { request })),
+	libraryCounts: () => typedError<LibraryCounts, ApiError_Serialize>(__TAURI_INVOKE("library_counts")),
+	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_duplicate", { request })),
+	characterGet: (request: CharacterGetRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_get", { request })),
+	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_save", { request })),
+	characterArchive: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_archive", { request })),
+	characterRestore: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_restore", { request })),
+	characterDelete: (request: CharacterDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("character_delete", { request })),
+	characterMediaSet: (request: CharacterMediaSetRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_media_set", { request })),
+	personaMediaSet: (request: PersonaMediaSetRequest) => typedError<PersonaView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("persona_media_set", { request })),
+	personaGet: (request: PersonaGetRequest) => typedError<PersonaView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("persona_get", { request })),
+	personasList: (request: PersonasListRequest_Deserialize) => typedError<PersonaPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("personas_list", { request })),
+	personaSave: (request: PersonaSaveRequest_Deserialize) => typedError<PersonaView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("persona_save", { request })),
+	personaDefaultSet: (request: PersonaDefaultSetRequest) => typedError<PersonaDefaultView, ApiError_Serialize>(__TAURI_INVOKE("persona_default_set", { request })),
+	personaDefaultClear: (request: PersonaDefaultClearRequest) => typedError<PersonaDefaultView, ApiError_Serialize>(__TAURI_INVOKE("persona_default_clear", { request })),
+	groupsList: (request: GroupsListRequest) => typedError<GroupPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("groups_list", { request })),
+	groupGet: (request: GroupGetRequest) => typedError<GroupView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("group_get", { request })),
+	groupSave: (request: GroupSaveRequest_Deserialize) => typedError<GroupView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("group_save", { request })),
+	groupDelete: (request: GroupDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("group_delete", { request })),
+	personaDelete: (request: PersonaDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("persona_delete", { request })),
+	characterLorebooksList: (request: CharacterLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError_Serialize>(__TAURI_INVOKE("character_lorebooks_list", { request })),
+	characterLorebooksBind: (request: CharacterLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("character_lorebooks_bind", { request })),
+	characterLorebooksUnbind: (request: CharacterLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("character_lorebooks_unbind", { request })),
+	characterLorebooksEnable: (request: CharacterLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("character_lorebooks_enable", { request })),
+	characterLorebooksReorder: (request: CharacterLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("character_lorebooks_reorder", { request })),
+	personaLorebooksList: (request: PersonaLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError_Serialize>(__TAURI_INVOKE("persona_lorebooks_list", { request })),
+	personaLorebooksBind: (request: PersonaLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("persona_lorebooks_bind", { request })),
+	personaLorebooksUnbind: (request: PersonaLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("persona_lorebooks_unbind", { request })),
+	personaLorebooksEnable: (request: PersonaLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("persona_lorebooks_enable", { request })),
+	personaLorebooksReorder: (request: PersonaLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("persona_lorebooks_reorder", { request })),
+	groupLorebooksList: (request: GroupLorebooksListRequest) => typedError<LibraryLorebookBinding[], ApiError_Serialize>(__TAURI_INVOKE("group_lorebooks_list", { request })),
+	groupLorebooksBind: (request: GroupLorebookBindRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("group_lorebooks_bind", { request })),
+	groupLorebooksUnbind: (request: GroupLorebookUnbindRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("group_lorebooks_unbind", { request })),
+	groupLorebooksEnable: (request: GroupLorebookEnableRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("group_lorebooks_enable", { request })),
+	groupLorebooksReorder: (request: GroupLorebookReorderRequest) => typedError<LibraryLorebookMutationResult, ApiError_Serialize>(__TAURI_INVOKE("group_lorebooks_reorder", { request })),
+	promptsList: (request: PromptsListRequest) => typedError<PromptPage, ApiError_Serialize>(__TAURI_INVOKE("prompts_list", { request })),
+	promptPlaceholders: (request: PromptPlaceholdersRequest) => typedError<PromptPlaceholders, ApiError_Serialize>(__TAURI_INVOKE("prompt_placeholders", { request })),
+	promptValidate: (request: PromptValidateRequest) => typedError<PromptValidation, ApiError_Serialize>(__TAURI_INVOKE("prompt_validate", { request })),
+	promptGet: (request: PromptGetRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_get", { request })),
+	promptCreate: (request: PromptCreateRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_create", { request })),
+	promptUpdate: (request: PromptUpdateRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_update", { request })),
+	promptDelete: (request: PromptDeleteRequest) => typedError<SourceDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_delete", { request })),
+	promptBuiltinReset: (request: PromptBuiltinResetRequest) => typedError<PromptBuiltinResetResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_builtin_reset", { request })),
+	promptAppDefaultSet: (request: PromptAppDefaultSetRequest) => typedError<PromptAppDefault, ApiError_Serialize>(__TAURI_INVOKE("prompt_app_default_set", { request })),
+	promptPreview: (request: PromptPreviewRequest) => typedError<PromptPreview, ApiError_Serialize>(__TAURI_INVOKE("prompt_preview", { request })),
+	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebooks_list", { request })),
+	lorebookGet: (request: LorebookGetRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_get", { request })),
+	lorebookCreate: (request: LorebookCreateRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_create", { request })),
+	lorebookUpdateMetadata: (request: LorebookUpdateMetadataRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_update_metadata", { request })),
+	lorebookEntriesMutate: (request: LorebookEntriesMutateRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_entries_mutate", { request })),
+	lorebookArchive: (request: LorebookRevisionRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_archive", { request })),
+	lorebookRestore: (request: LorebookRevisionRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_restore", { request })),
+	lorebookDelete: (request: LorebookRevisionRequest) => typedError<SourceDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("lorebook_delete", { request })),
+	tokensCount: (request: TokensCountRequest) => typedError<TokensCount, ApiError_Serialize>(__TAURI_INVOKE("tokens_count", { request })),
+	lorebookTriggerPreview: (request: LorebookTriggerPreviewRequest) => typedError<LorebookTriggerPreview, ApiError_Serialize>(__TAURI_INVOKE("lorebook_trigger_preview", { request })),
+	lorebookEntryDraft: (request: LorebookEntryDraftRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_entry_draft", { request })),
+	lorebookKeywordsDraft: (request: LorebookKeywordsDraftRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_keywords_draft", { request })),
+	lorebookProjectCreate: (request: LorebookProjectCreateRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_create", { request })),
+	lorebookProjectGet: (request: LorebookProjectGetRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_get", { request })),
+	lorebookProjectsList: (request: LorebookProjectsListRequest) => typedError<LorebookProjectPage, ApiError_Serialize>(__TAURI_INVOKE("lorebook_projects_list", { request })),
+	lorebookProjectPlan: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_plan", { request })),
+	lorebookProjectOutlineUpdate: (request: LorebookProjectOutlineUpdateRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_outline_update", { request })),
+	lorebookProjectOutlineApprove: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_outline_approve", { request })),
+	lorebookProjectDraftUpdate: (request: LorebookProjectDraftUpdateRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_draft_update", { request })),
+	lorebookProjectDraftSetApproved: (request: LorebookProjectDraftApprovalRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_draft_set_approved", { request })),
+	lorebookProjectCoherenceApply: (request: LorebookProjectCoherenceApplyRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_coherence_apply", { request })),
+	lorebookProjectCancel: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_cancel", { request })),
+	lorebookGeneratorDefaults: () => typedError<LorebookGeneratorDefaults, ApiError_Serialize>(__TAURI_INVOKE("lorebook_generator_defaults")),
+	lorebookProjectDraftNext: (request: LorebookProjectJobRequest) => typedError<LorebookProjectBatchAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_draft_next", { request })),
+	lorebookProjectRefine: (request: LorebookProjectRefineRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_refine", { request })),
+	lorebookProjectCoherence: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_coherence", { request })),
+	lorebookProjectCommit: (request: LorebookProjectCommitRequest) => typedError<LorebookProjectCommitView, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_commit", { request })),
+	jobsList: (request: JobsListRequest) => typedError<JobPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("jobs_list", { request })),
+	jobGet: (request: JobGetRequest) => typedError<JobView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("job_get", { request })),
+	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("job_cancel", { request })),
+	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent_Deserialize>) => typedError<JobView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("job_watch", { request, onEvent })),
+	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError_Serialize>(__TAURI_INVOKE("files_inspect", { request })),
+	importPreview: (request: ImportPreviewRequest) => typedError<ImportPreview_Serialize, ApiError_Serialize>(__TAURI_INVOKE("import_preview", { request })),
+	importCommit: (request: ImportCommitRequest_Deserialize) => typedError<ImportCommitResult, ApiError_Serialize>(__TAURI_INVOKE("import_commit", { request })),
+	characterExport: (request: CharacterExportRequest_Deserialize) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("character_export", { request })),
+	personaExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("persona_export", { request })),
+	lorebookExport: (request: LorebookExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("lorebook_export", { request })),
+	promptExport: (request: EntityExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_export", { request })),
+	chatTemplateExport: (request: ChatTemplateExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("chat_template_export", { request })),
+	modelExport: (request: ModelExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("model_export", { request })),
+	chatExport: (request: ChatExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("chat_export", { request })),
+	backupInspect: (request: BackupInspectRequest) => typedError<BackupHeaderView, ApiError_Serialize>(__TAURI_INVOKE("backup_inspect", { request })),
+	backupExport: (request: BackupExportRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("backup_export", { request })),
+	backupsList: () => typedError<BackupIndexView[], ApiError_Serialize>(__TAURI_INVOKE("backups_list")),
+	backupForget: (request: BackupMutationRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("backup_forget", { request })),
+	backupDelete: (request: BackupMutationRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("backup_delete", { request })),
+	backupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("backup_restore", { request })),
+	legacyBackupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("legacy_backup_restore", { request })),
+	legacyDatabaseImport: (request: LegacyDatabaseImportRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("legacy_database_import", { request })),
+	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef_Serialize, ApiError_Serialize>(__TAURI_INVOKE("assets_ingest", { request })),
+	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_open", { request })),
+	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_save", { request })),
+	appStatus: () => typedError<AppStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("app_status")),
+	legacyState: () => typedError<LegacyState_Serialize, ApiError_Serialize>(__TAURI_INVOKE("legacy_state")),
+	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError_Serialize>(__TAURI_INVOKE("app_ui_state_update", { request })),
+	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError_Serialize>(__TAURI_INVOKE("purge_notices_list")),
+	purgeNoticeDismiss: (request: PurgeNoticeDismissRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("purge_notice_dismiss", { request })),
+	llamaDevices: () => typedError<LlamaDeviceList, ApiError_Serialize>(__TAURI_INVOKE("llama_devices")),
+	llamaContextInfo: (request: LlamaContextInfoRequest) => typedError<LlamaContextInfo, ApiError_Serialize>(__TAURI_INVOKE("llama_context_info", { request })),
+	llamaChatTemplate: (request: LlamaChatTemplateRequest) => typedError<LlamaChatTemplate, ApiError_Serialize>(__TAURI_INVOKE("llama_chat_template", { request })),
+	llamaUnload: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("llama_unload")),
+	localModelsList: () => typedError<LocalModelList, ApiError_Serialize>(__TAURI_INVOKE("local_models_list")),
+	localModelDelete: (request: LocalModelDeleteRequest) => typedError<LocalModelDeleted, ApiError_Serialize>(__TAURI_INVOKE("local_model_delete", { request })),
+	localModelAdopt: (request: LocalModelAdoptRequest) => typedError<LocalModelAdopted, ApiError_Serialize>(__TAURI_INVOKE("local_model_adopt", { request })),
+	localModelsDirGet: () => typedError<LocalModelsDir, ApiError_Serialize>(__TAURI_INVOKE("local_models_dir_get")),
+	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("local_models_dir_set", { request })),
+	localFileRunnability: (request: LocalFileRunnabilityRequest) => typedError<LocalFileRunnability, ApiError_Serialize>(__TAURI_INVOKE("local_file_runnability", { request })),
+	imageGenerate: (request: ImageGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_generate", { request })),
+	imageUpscale: (request: ImageUpscaleRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_upscale", { request })),
+	imageCapabilities: (request: ImageCapabilitiesRequest) => typedError<ImageCapabilities, ApiError_Serialize>(__TAURI_INVOKE("image_capabilities", { request })),
+	playgroundHistoryList: (request: PlaygroundHistoryListRequest) => typedError<PlaygroundHistoryPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("playground_history_list", { request })),
+	playgroundHistoryDelete: (request: PlaygroundHistoryDeleteRequest) => typedError<PlaygroundHistoryDeleted, ApiError_Serialize>(__TAURI_INVOKE("playground_history_delete", { request })),
+	sdCatalog: () => typedError<SdCatalog, ApiError_Serialize>(__TAURI_INVOKE("sd_catalog")),
+	sdRuntimeReleases: () => typedError<SdRuntimeReleases, ApiError_Serialize>(__TAURI_INVOKE("sd_runtime_releases")),
+	sdRuntimeInstall: (request: SdRuntimeInstallRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("sd_runtime_install", { request })),
+	sdRuntimeInventory: () => typedError<SdRuntimeInventory, ApiError_Serialize>(__TAURI_INVOKE("sd_runtime_inventory")),
+	sdRuntimeSwitch: (request: SdRuntimeRef) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("sd_runtime_switch", { request })),
+	sdRuntimeDelete: (request: SdRuntimeRef) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("sd_runtime_delete", { request })),
+	sdModelInstall: (request: SdModelInstallRequest) => typedError<SdModelInstallStarted, ApiError_Serialize>(__TAURI_INVOKE("sd_model_install", { request })),
+	sdModelsInstalled: () => typedError<SdInstalledModels, ApiError_Serialize>(__TAURI_INVOKE("sd_models_installed")),
+	sdModelUninstall: (request: SdModelUninstallRequest) => typedError<SdUninstallOutcome, ApiError_Serialize>(__TAURI_INVOKE("sd_model_uninstall", { request })),
+	sdModelRepair: (request: SdModelRepairRequest) => typedError<SdModelRepaired, ApiError_Serialize>(__TAURI_INVOKE("sd_model_repair", { request })),
+	sdRunnability: (request: SdRunnabilityRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("sd_runnability", { request })),
+	sdBundleRunnability: (request: SdBundleRunnabilityRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("sd_bundle_runnability", { request })),
+	sdComputePolicyGet: (request: SdRuntimeRef) => typedError<SdComputePolicyInfo, ApiError_Serialize>(__TAURI_INVOKE("sd_compute_policy_get", { request })),
+	sdComputePolicySave: (request: SdComputePolicySaveRequest) => typedError<SdComputePolicyInfo, ApiError_Serialize>(__TAURI_INVOKE("sd_compute_policy_save", { request })),
+	sdDetectModelFile: (request: SdDetectModelFileRequest) => typedError<SdDetectedModelFile, ApiError_Serialize>(__TAURI_INVOKE("sd_detect_model_file", { request })),
+	sdDiskUsage: () => typedError<SdDiskUsage, ApiError_Serialize>(__TAURI_INVOKE("sd_disk_usage")),
+	sdComponentLibrary: () => typedError<SdComponentLibrary, ApiError_Serialize>(__TAURI_INVOKE("sd_component_library")),
+	sdUpscalersList: () => typedError<SdUpscalerInventory, ApiError_Serialize>(__TAURI_INVOKE("sd_upscalers_list")),
+	sdUpscalersInstall: () => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("sd_upscalers_install")),
+	sdUpscalersRemove: (request: SdUpscalerRemoveRequest) => typedError<SdUpscalerInventory, ApiError_Serialize>(__TAURI_INVOKE("sd_upscalers_remove", { request })),
+	lorasList: (request: LorasListRequest) => typedError<LoraList, ApiError_Serialize>(__TAURI_INVOKE("loras_list", { request })),
+	lorasImport: (request: LorasImportRequest) => typedError<InstalledLora, ApiError_Serialize>(__TAURI_INVOKE("loras_import", { request })),
+	lorasDelete: (request: LorasDeleteRequest) => typedError<LoraDeleted, ApiError_Serialize>(__TAURI_INVOKE("loras_delete", { request })),
+	lorasUpdateKeywords: (request: LorasUpdateKeywordsRequest) => typedError<LoraKeywordDiscovery, ApiError_Serialize>(__TAURI_INVOKE("loras_update_keywords", { request })),
+	loraKeywordsDiscover: (request: LoraKeywordsDiscoverRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lora_keywords_discover", { request })),
+	hfImageBundleProfiles: () => typedError<ImageBundleProfiles, ApiError_Serialize>(__TAURI_INVOKE("hf_image_bundle_profiles")),
+	hfImageBundleSearch: (request: HfImageBundleSearchRequest) => typedError<HfImageBundleSearchResults, ApiError_Serialize>(__TAURI_INVOKE("hf_image_bundle_search", { request })),
+	hfImageBundleFiles: (request: HfImageBundleFilesRequest) => typedError<HfImageBundleFiles, ApiError_Serialize>(__TAURI_INVOKE("hf_image_bundle_files", { request })),
+	hfImageBundleInstall: (request: HfImageBundleInstallRequest) => typedError<ImageBundleAccepted, ApiError_Serialize>(__TAURI_INVOKE("hf_image_bundle_install", { request })),
+	hfImageBundleRetry: (request: HfImageBundleRetryRequest) => typedError<ImageBundleRetried, ApiError_Serialize>(__TAURI_INVOKE("hf_image_bundle_retry", { request })),
+	hfImageBundleRetryRegistration: (request: HfImageBundleRetryRequest) => typedError<ImageBundleRegistered, ApiError_Serialize>(__TAURI_INVOKE("hf_image_bundle_retry_registration", { request })),
+	imageModelsDownloaded: () => typedError<DownloadedImageModels, ApiError_Serialize>(__TAURI_INVOKE("image_models_downloaded")),
+	civitaiSearch: (request: CivitaiSearchRequest) => typedError<CivitaiSearchPage, ApiError_Serialize>(__TAURI_INVOKE("civitai_search", { request })),
+	civitaiModel: (request: CivitaiModelRequest) => typedError<CivitaiModelDetail, ApiError_Serialize>(__TAURI_INVOKE("civitai_model", { request })),
+	civitaiAuthStatus: () => typedError<CivitaiAuthStatus, ApiError_Serialize>(__TAURI_INVOKE("civitai_auth_status")),
+	civitaiAuthSave: (request: CivitaiAuthSaveRequest) => typedError<CivitaiAuthStatus, ApiError_Serialize>(__TAURI_INVOKE("civitai_auth_save", { request })),
+	civitaiAuthClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("civitai_auth_clear")),
+	civitaiLoraDownload: (request: CivitaiLoraDownloadRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("civitai_lora_download", { request })),
+	avatarPrompt: (request: AvatarPromptRequest) => typedError<AvatarPrompt, ApiError_Serialize>(__TAURI_INVOKE("avatar_prompt", { request })),
+	avatarGradient: (request: AvatarGradientRequest) => typedError<AvatarGradient, ApiError_Serialize>(__TAURI_INVOKE("avatar_gradient", { request })),
+	imageDesignReference: (request: ImageDesignReferenceRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_design_reference", { request })),
+	hfSearch: (request: HfSearchRequest) => typedError<HfSearchResults, ApiError_Serialize>(__TAURI_INVOKE("hf_search", { request })),
+	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo, ApiError_Serialize>(__TAURI_INVOKE("hf_model_files", { request })),
+	hfReadme: (request: HfReadmeRequest) => typedError<HfReadme, ApiError_Serialize>(__TAURI_INVOKE("hf_readme", { request })),
+	hfAuthor: (request: HfAuthorRequest) => typedError<HfAuthor, ApiError_Serialize>(__TAURI_INVOKE("hf_author", { request })),
+	hfAvatars: (request: HfAvatarsRequest) => typedError<HfAvatars, ApiError_Serialize>(__TAURI_INVOKE("hf_avatars", { request })),
+	hfRunnability: (request: HfRunnabilityRequest) => typedError<HfRunnability, ApiError_Serialize>(__TAURI_INVOKE("hf_runnability", { request })),
+	hfRecommendation: (request: HfRecommendationRequest) => typedError<HfRecommendation, ApiError_Serialize>(__TAURI_INVOKE("hf_recommendation", { request })),
+	hfDownload: (request: HfDownloadRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("hf_download", { request })),
+	hfAuthStatus: () => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_status")),
+	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_save", { request })),
+	hfAuthClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_clear")),
+	memoryGet: (request: ConversationRequest) => typedError<MemoryView, ApiError_Serialize>(__TAURI_INVOKE("memory_get", { request })),
+	memoryAdd: (request: MemoryAddRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_add", { request })),
+	memoryUpdate: (request: MemoryUpdateRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_update", { request })),
+	memoryDelete: (request: MemoryDeleteRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_delete", { request })),
+	memoryPin: (request: MemoryPinRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_pin", { request })),
+	memorySetTemperature: (request: MemoryTemperatureRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_set_temperature", { request })),
+	memorySummaryUpdate: (request: MemorySummaryUpdateRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_summary_update", { request })),
+	memoryTrigger: (request: MemoryTriggerRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_trigger", { request })),
+	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_retry", { request })),
+	memorySkip: (request: MemorySkipRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_skip", { request })),
+	memoryCycles: (request: MemoryCyclesRequest) => typedError<MemoryCyclePage, ApiError_Serialize>(__TAURI_INVOKE("memory_cycles", { request })),
+	memoryCycleRevert: (request: MemoryCycleRevertRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_cycle_revert", { request })),
+	memoryErrorDismiss: (request: MemoryErrorDismissRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_error_dismiss", { request })),
+	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_get", { request })),
+	companionSoulGrowthClear: (request: CompanionSoulGrowthClearRequest) => typedError<number, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_clear", { request })),
+	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
+	companionSoulGrowthLock: (request: CompanionSoulGrowthLockRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_lock", { request })),
+	companionSoulWriterRun: (request: CompanionSoulWriterRunRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_writer_run", { request })),
+	companionNotesList: (request: CompanionNotesRequest) => typedError<CompanionNoteView[], ApiError_Serialize>(__TAURI_INVOKE("companion_notes_list", { request })),
+	companionNotesUpsert: (request: CompanionNoteUpsertRequest) => typedError<CompanionNoteView, ApiError_Serialize>(__TAURI_INVOKE("companion_notes_upsert", { request })),
+	companionNotesDelete: (request: CompanionNoteDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("companion_notes_delete", { request })),
+	companionNotesActivePreview: (request: CompanionNotesActivePreviewRequest) => typedError<CompanionNoteView[], ApiError_Serialize>(__TAURI_INVOKE("companion_notes_active_preview", { request })),
+	embeddingInstall: (request: EmbeddingInstallRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("embedding_install", { request })),
+	companionEmotionInstall: () => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("companion_emotion_install")),
+	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError_Serialize>(__TAURI_INVOKE("embedding_status")),
+	embeddingChoose: (request: EmbeddingModelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("embedding_choose", { request })),
+	embeddingRemove: (request: EmbeddingModelRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("embedding_remove", { request })),
+	embeddingCompare: (request: EmbeddingCompareRequest) => typedError<EmbeddingComparison, ApiError_Serialize>(__TAURI_INVOKE("embedding_compare", { request })),
+	embeddingUnload: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("embedding_unload")),
+	companionEmotionStatus: () => typedError<ThymosStatus, ApiError_Serialize>(__TAURI_INVOKE("companion_emotion_status")),
+	companionEmotionRemove: () => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_emotion_remove")),
+	kokoroInventory: (request: KokoroInventoryRequest) => typedError<KokoroInventory, ApiError_Serialize>(__TAURI_INVOKE("kokoro_inventory", { request })),
+	kokoroVariants: () => typedError<KokoroVariantView[], ApiError_Serialize>(__TAURI_INVOKE("kokoro_variants")),
+	kokoroVoicesInstalled: () => typedError<KokoroInstalledVoiceView[], ApiError_Serialize>(__TAURI_INVOKE("kokoro_voices_installed")),
+	kokoroVoicesAvailable: () => typedError<KokoroAvailableVoiceView[], ApiError_Serialize>(__TAURI_INVOKE("kokoro_voices_available")),
+	kokoroInstallModel: (request: KokoroVariantRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("kokoro_install_model", { request })),
+	kokoroInstallVoices: (request: KokoroVoicesInstallRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("kokoro_install_voices", { request })),
+	kokoroUninstallModel: (request: KokoroVariantRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("kokoro_uninstall_model", { request })),
+	kokoroUninstallVoice: (request: KokoroVoiceRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("kokoro_uninstall_voice", { request })),
+	kokoroBlend: (request: KokoroBlendRequest) => typedError<KokoroBlendView, ApiError_Serialize>(__TAURI_INVOKE("kokoro_blend", { request })),
+	kokoroPhonemize: (request: KokoroPhonemizeRequest) => typedError<KokoroPhonemizationView, ApiError_Serialize>(__TAURI_INVOKE("kokoro_phonemize", { request })),
+	kokoroTokenizePreview: (request: KokoroTokenizePreviewRequest) => typedError<KokoroPhonemizationView, ApiError_Serialize>(__TAURI_INVOKE("kokoro_tokenize_preview", { request })),
+	audioProvidersList: () => typedError<AudioProviderView[], ApiError_Serialize>(__TAURI_INVOKE("audio_providers_list")),
+	audioProviderUpdate: (request: AudioProviderUpdateRequest) => typedError<AudioProviderView, ApiError_Serialize>(__TAURI_INVOKE("audio_provider_update", { request })),
+	audioProviderDelete: (request: AudioProviderDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("audio_provider_delete", { request })),
+	userVoicesList: () => typedError<UserVoiceView[], ApiError_Serialize>(__TAURI_INVOKE("user_voices_list")),
+	userVoiceUpdate: (request: UserVoiceUpdateRequest) => typedError<UserVoiceView, ApiError_Serialize>(__TAURI_INVOKE("user_voice_update", { request })),
+	userVoiceDelete: (request: UserVoiceRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("user_voice_delete", { request })),
+	asrLearningExport: (request: AsrLearningExportRequest_Deserialize) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("asr_learning_export", { request })),
+	audioProviderCreate: (request: AudioProviderCreateRequest) => typedError<AudioProviderView, ApiError_Serialize>(__TAURI_INVOKE("audio_provider_create", { request })),
+	userVoiceCreate: (request: UserVoiceCreateRequest) => typedError<UserVoiceView, ApiError_Serialize>(__TAURI_INVOKE("user_voice_create", { request })),
+	asrVocabularySave: (request: AsrVocabularySaveRequest) => typedError<AsrVocabularyView, ApiError_Serialize>(__TAURI_INVOKE("asr_vocabulary_save", { request })),
+	asrCorrectionSave: (request: AsrCorrectionSaveRequest) => typedError<AsrCorrectionView, ApiError_Serialize>(__TAURI_INVOKE("asr_correction_save", { request })),
+	asrSuggestionApprove: (request: AsrSuggestionWriteRequest) => typedError<AsrCorrectionView, ApiError_Serialize>(__TAURI_INVOKE("asr_suggestion_approve", { request })),
+	asrSuggestionIgnore: (request: AsrSuggestionWriteRequest) => typedError<AsrIgnoredSuggestionView, ApiError_Serialize>(__TAURI_INVOKE("asr_suggestion_ignore", { request })),
+	asrVoiceExampleSave: (request: AsrVoiceExampleSaveRequest) => typedError<AsrVoiceExampleView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("asr_voice_example_save", { request })),
+	asrLearningImport: (request: AsrLearningImportRequest) => typedError<AsrLearningImportView, ApiError_Serialize>(__TAURI_INVOKE("asr_learning_import", { request })),
+	asrVocabularyList: (request: AsrLearningFilter_Deserialize) => typedError<AsrVocabularyView[], ApiError_Serialize>(__TAURI_INVOKE("asr_vocabulary_list", { request })),
+	asrCorrectionsList: (request: AsrLearningFilter_Deserialize) => typedError<AsrCorrectionView[], ApiError_Serialize>(__TAURI_INVOKE("asr_corrections_list", { request })),
+	asrIgnoredSuggestionsList: (request: AsrLearningFilter_Deserialize) => typedError<AsrIgnoredSuggestionView[], ApiError_Serialize>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
+	asrVoiceExamplesList: (request: AsrLearningFilter_Deserialize) => typedError<AsrVoiceExampleView_Serialize[], ApiError_Serialize>(__TAURI_INVOKE("asr_voice_examples_list", { request })),
+	asrVoiceExampleSuggest: (request: AsrLearningItemRequest) => typedError<AsrSuggestionView | null, ApiError_Serialize>(__TAURI_INVOKE("asr_voice_example_suggest", { request })),
+	asrVocabularyDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("asr_vocabulary_delete", { request })),
+	asrCorrectionDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("asr_correction_delete", { request })),
+	asrVoiceExampleDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("asr_voice_example_delete", { request })),
+	asrSuggestions: (request: AsrSuggestionsRequest) => typedError<AsrSuggestionView[], ApiError_Serialize>(__TAURI_INVOKE("asr_suggestions", { request })),
+	audioProviderVerify: (request: AudioProviderVerifyRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("audio_provider_verify", { request })),
+	audioProviderCredentialStatus: (request: AudioProviderRequest) => typedError<AudioProviderCredentialStatus, ApiError_Serialize>(__TAURI_INVOKE("audio_provider_credential_status", { request })),
+	audioProviderApiKeyRotate: (request: AudioProviderApiKeyRotateRequest) => typedError<AudioProviderCredentialStatus, ApiError_Serialize>(__TAURI_INVOKE("audio_provider_api_key_rotate", { request })),
+	audioProviderVoices: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError_Serialize>(__TAURI_INVOKE("audio_provider_voices", { request })),
+	audioProviderVoicesSearch: (request: AudioProviderVoiceSearchRequest) => typedError<AudioVoiceView[], ApiError_Serialize>(__TAURI_INVOKE("audio_provider_voices_search", { request })),
+	voiceDesignPreview: (request: VoiceDesignPreviewRequest) => typedError<VoiceDesignPreviewView_Serialize[], ApiError_Serialize>(__TAURI_INVOKE("voice_design_preview", { request })),
+	voiceDesignCreate: (request: VoiceDesignCreateRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("voice_design_create", { request })),
+	audioProviderVoicesRefresh: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError_Serialize>(__TAURI_INVOKE("audio_provider_voices_refresh", { request })),
+	ttsModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError_Serialize>(__TAURI_INVOKE("tts_models", { request })),
+	ttsVoiceDesignModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError_Serialize>(__TAURI_INVOKE("tts_voice_design_models", { request })),
+	ttsCacheStats: () => typedError<TtsCacheStats, ApiError_Serialize>(__TAURI_INVOKE("tts_cache_stats")),
+	ttsCacheClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("tts_cache_clear")),
+	ttsSynthesize: (request: TtsSynthesizeRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("tts_synthesize", { request })),
+	messageSpeak: (request: MessageSpeakRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_speak", { request })),
+	whisperCatalog: () => typedError<WhisperCatalog, ApiError_Serialize>(__TAURI_INVOKE("whisper_catalog")),
+	whisperModelsList: () => typedError<WhisperInstalledModels, ApiError_Serialize>(__TAURI_INVOKE("whisper_models_list")),
+	whisperDownload: (request: WhisperModelRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("whisper_download", { request })),
+	whisperDelete: (request: WhisperModelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("whisper_delete", { request })),
+	whisperPreload: (request: WhisperPreloadRequest_Deserialize) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("whisper_preload", { request })),
+	whisperClearCache: () => typedError<WhisperCacheCleared, ApiError_Serialize>(__TAURI_INVOKE("whisper_clear_cache")),
+	whisperDictationModelSet: (request: DictationModelSetRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("whisper_dictation_model_set", { request })),
+	transcribeFile: (request: TranscribeFileRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("transcribe_file", { request })),
+	dictationStart: (request: DictationStartRequest) => typedError<DictationStarted, ApiError_Serialize>(__TAURI_INVOKE("dictation_start", { request })),
+	dictationStop: (request: DictationStopRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("dictation_stop", { request })),
+	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("dictation_cancel", { request })),
+	certificatesList: () => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_list")),
+	providerAccountSave: (request: ProviderAccountSaveRequest) => typedError<ProviderAccountView, ApiError_Serialize>(__TAURI_INVOKE("provider_account_save", { request })),
+	providerAccountDelete: (request: ProviderAccountDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("provider_account_delete", { request })),
+	providerModels: (request: ProviderModelsRequest) => typedError<RemoteModelContract_Serialize[], ApiError_Serialize>(__TAURI_INVOKE("provider_models", { request })),
+	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError_Serialize>(__TAURI_INVOKE("provider_model_verify", { request })),
+	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_import", { request })),
+	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_remove", { request })),
+	settingsGet: () => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_get")),
+	settingsUpdate: (request: SettingsCommandInput<SettingsUpdateRequest_Deserialize>) => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_update", { request })),
+	settingsSamplerDefaultsUpdate: (request: SettingsCommandInput<SettingsSamplerDefaultsUpdateRequest>) => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_sampler_defaults_update", { request })),
+	contentFilterLog: () => typedError<ContentFilterLogView, ApiError_Serialize>(__TAURI_INVOKE("content_filter_log")),
+	contentFilterClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("content_filter_clear")),
+	modelsList: () => typedError<ModelsView, ApiError_Serialize>(__TAURI_INVOKE("models_list")),
+	modelGet: (request: ModelGetRequest) => typedError<ModelView, ApiError_Serialize>(__TAURI_INVOKE("model_get", { request })),
+	modelSave: (request: ModelSaveRequest_Deserialize) => typedError<ModelView, ApiError_Serialize>(__TAURI_INVOKE("model_save", { request })),
+	modelDelete: (request: ModelDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("model_delete", { request })),
+	modelUsage: (request: ModelUsageRequest) => typedError<ModelUsage, ApiError_Serialize>(__TAURI_INVOKE("model_usage", { request })),
+	modelDuplicate: (request: ModelDuplicateRequest) => typedError<ModelView, ApiError_Serialize>(__TAURI_INVOKE("model_duplicate", { request })),
+	modelDefaultSet: (request: ModelDefaultSetRequest) => typedError<ModelDefaultView, ApiError_Serialize>(__TAURI_INVOKE("model_default_set", { request })),
+	providerNanogptUsage: (request: ProviderNanoGptUsageRequest) => typedError<NanoGptUsageView, ApiError_Serialize>(__TAURI_INVOKE("provider_nanogpt_usage", { request })),
+	providerCatalog: () => typedError<ProviderCatalogContract, ApiError_Serialize>(__TAURI_INVOKE("provider_catalog")),
+	providerAccountsList: () => typedError<ProviderAccountView[], ApiError_Serialize>(__TAURI_INVOKE("provider_accounts_list")),
+	providerVerify: (request: ProviderVerifyRequest) => typedError<ProviderVerified, ApiError_Serialize>(__TAURI_INVOKE("provider_verify", { request })),
+	providerOpenrouterEndpoints: (request: ProviderOpenRouterEndpointsRequest) => typedError<ProviderOpenRouterEndpoint[], ApiError_Serialize>(__TAURI_INVOKE("provider_openrouter_endpoints", { request })),
+	ollamaModelsList: (request: OllamaModelsRequest) => typedError<OllamaModelList, ApiError_Serialize>(__TAURI_INVOKE("ollama_models_list", { request })),
+	ollamaModelDelete: (request: OllamaModelDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("ollama_model_delete", { request })),
+	ollamaPull: (request: OllamaPullRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("ollama_pull", { request })),
 };
 
 /** Events */
 export const events = {
-	appEvent: makeEvent<AppEvent, AppEvent>("app-event"),
+	appEvent: makeEvent<AppEvent_Serialize, AppEvent_Deserialize>("app-event"),
 };
 
 /* Types */
@@ -393,11 +395,7 @@ export const events = {
  *  The error every API call returns. `message` is English diagnostic text
  *  for logs.
  */
-export type ApiError = {
-	code: ApiErrorCode,
-	message: string,
-	details: ApiErrorDetails | null,
-};
+export type ApiError = ApiError_Serialize | ApiError_Deserialize;
 
 /**
  *  Stable error category the frontend localizes; the message never reaches
@@ -407,12 +405,36 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "dictation_active" } | { type: "sync"; reason: SyncFailure } | { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
+export type ApiErrorDetails = ApiErrorDetails_Serialize | ApiErrorDetails_Deserialize;
+
+export type ApiErrorDetails_Deserialize = { type: "dictation_active" } | { type: "sync"; reason: SyncFailure } | { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
 /**
  *  The database this process opened was kept by a cutover (restore or
  *  reset) and accepts no writes; the app must restart on the active one.
  */
-{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "missing_models"; missing_models: RequiredModel[] } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef_Deserialize } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "missing_models"; missing_models: RequiredModel[] } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+/**  A prompt write is missing placeholders its kind requires. */
+{ type: "prompt_missing_placeholders"; placeholders: string[] } |
+/**  A built-in prompt the app needs cannot be deleted. */
+{ type: "prompt_protected" } |
+/**  The prompt a feature setting selects cannot be used. */
+{ type: "configured_prompt_unavailable"; prompt_id: string; reason: ConfiguredPromptProblem } |
+/**
+ *  The model a lorebook generator setting selects cannot be used, or no
+ *  model generates text.
+ */
+{ type: "lorebook_model_unavailable"; reason: LorebookModelProblem } |
+/**  The app's built-in runtime text could not be read. */
+{ type: "runtime_text_unavailable" } |
+/**  A lorebook project already has a writer batch running. */
+{ type: "lorebook_batch_running"; job_ids: string[] };
+
+export type ApiErrorDetails_Serialize = { type: "dictation_active" } | { type: "sync"; reason: SyncFailure } | { type: "backup"; reason: BackupFailureReason } | { type: "legacy_database"; reason: LegacyDatabaseFailure } |
+/**
+ *  The database this process opened was kept by a cutover (restore or
+ *  reset) and accepts no writes; the app must restart on the active one.
+ */
+{ type: "database_write_fenced" } | { type: "app_data_reset"; stage: AppDataResetStage; kept_file: string | null } | { type: "logs"; reason: LogFailureReason } | { type: "app_usage_storage" } | { type: "metrics_unavailable" } | { type: "usage_storage" } | { type: "database_files"; file: string | null } | { type: "storage_summary"; section: string } | { type: "media_in_use"; asset_id: string; references: MediaReferenceView[] } | { type: "media"; asset_id: string | null; reason: MediaFailureReason } | { type: "settings"; reason: SettingsFailureReason } | { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef_Serialize } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "missing_models"; missing_models: RequiredModel[] } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -430,6 +452,26 @@ export type ApiErrorDetails = { type: "dictation_active" } | { type: "sync"; rea
 { type: "lorebook_batch_running"; job_ids: string[] };
 
 /**
+ *  The error every API call returns. `message` is English diagnostic text
+ *  for logs.
+ */
+export type ApiError_Deserialize = {
+	code: ApiErrorCode,
+	message: string,
+	details: ApiErrorDetails_Deserialize | null,
+};
+
+/**
+ *  The error every API call returns. `message` is English diagnostic text
+ *  for logs.
+ */
+export type ApiError_Serialize = {
+	code: ApiErrorCode,
+	message: string,
+	details: ApiErrorDetails_Serialize | null,
+};
+
+/**
  *  Application-wide events the host broadcasts to every window.
  *  `ConversationChanged` follows a committed write to the conversation (lists
  *  and open views re-read it), `ConversationRemoved` its purge, and
@@ -438,9 +480,51 @@ export type ApiErrorDetails = { type: "dictation_active" } | { type: "sync"; rea
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent = ApiEvent_Serialize | ApiEvent_Deserialize;
+
+/**
+ *  Application-wide events the host broadcasts to every window.
+ *  `ConversationChanged` follows a committed write to the conversation (lists
+ *  and open views re-read it), `ConversationRemoved` its purge, and
+ *  `RequiredModelsChanged` an optional model's install, switch, removal or
+ *  adoption (open views re-read their missing models). `MessageEffectSettled`
+ *  and `MessageSceneImageChanged` follow a message's companion effect and
+ *  scene image follow-up.
+ */
+export type ApiEvent_Deserialize = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus_Deserialize } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError_Deserialize } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
-{ type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
+{ type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView_Deserialize } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
+/**
+ *  What `memory_get` shows for the conversation changed: its items,
+ *  summary, revision, cycle, approval or dismissal state. Every chat that
+ *  shares the memory gets one.
+ */
+{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } |
+/**
+ *  The companion effect of a reply settled (`message_companion_effect`
+ *  reads it).
+ */
+{ type: "message_effect_settled"; conversation_id: string; message_id: string } |
+/**  A reply's scene image follow-up changed state. */
+{ type: "message_scene_image_changed"; conversation_id: string; message_id: string } |
+/**
+ *  The input level of a running dictation in thousandths, from 0 to
+ *  1000. Sent only while it captures, at most about every 50 ms.
+ */
+{ type: "dictation_level"; capture_id: string; level: number };
+
+/**
+ *  Application-wide events the host broadcasts to every window.
+ *  `ConversationChanged` follows a committed write to the conversation (lists
+ *  and open views re-read it), `ConversationRemoved` its purge, and
+ *  `RequiredModelsChanged` an optional model's install, switch, removal or
+ *  adoption (open views re-read their missing models). `MessageEffectSettled`
+ *  and `MessageSceneImageChanged` follow a message's companion effect and
+ *  scene image follow-up.
+ */
+export type ApiEvent_Serialize = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus_Serialize } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError_Serialize } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+/**  Device record writes use "device"; device UI state uses "ui_state". */
+{ type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView_Serialize } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that
@@ -469,18 +553,38 @@ export type AppDataResetRequest = {
 export type AppDataResetStage = "preflight" | "workers" | "database" | "webview_storage" | "restart";
 
 /**  The application-wide event every window receives. */
-export type AppEvent = ApiEvent;
+export type AppEvent = AppEvent_Serialize | AppEvent_Deserialize;
+
+/**  The application-wide event every window receives. */
+export type AppEvent_Deserialize = ApiEvent_Deserialize;
+
+/**  The application-wide event every window receives. */
+export type AppEvent_Serialize = ApiEvent_Serialize;
 
 export type AppPlatform = "windows" | "macos" | "linux" | "android" | "ios" | "other";
 
-export type AppStatus = {
+export type AppStatus = AppStatus_Serialize | AppStatus_Deserialize;
+
+export type AppStatus_Deserialize = {
 	version: string,
 	build_variant: BuildVariant,
 	platform: AppPlatform,
 	ui_state: { [key in string]: unknown },
 	/**  A database from the previous app version was found on this device. */
 	legacy_database_detected: boolean,
-	legacy_state: LegacyState,
+	legacy_state: LegacyState_Deserialize,
+	unresolved_sync_conflicts: number,
+	purge_notices: number,
+};
+
+export type AppStatus_Serialize = {
+	version: string,
+	build_variant: BuildVariant,
+	platform: AppPlatform,
+	ui_state: { [key in string]: unknown },
+	/**  A database from the previous app version was found on this device. */
+	legacy_database_detected: boolean,
+	legacy_state: LegacyState_Serialize,
 	unresolved_sync_conflicts: number,
 	purge_notices: number,
 };
@@ -655,9 +759,24 @@ export type AsrVoiceExampleSaveRequest = {
 	correction_id: string | null,
 };
 
-export type AsrVoiceExampleView = {
+export type AsrVoiceExampleView = AsrVoiceExampleView_Serialize | AsrVoiceExampleView_Deserialize;
+
+export type AsrVoiceExampleView_Deserialize = {
 	id: string,
-	audio: AssetRef,
+	audio: AssetRef_Deserialize,
+	expected_text: string,
+	whisper_output: string | null,
+	language: string | null,
+	scope: string,
+	vocabulary_term_id: string | null,
+	correction_id: string | null,
+	created_at: number,
+	updated_at: number,
+};
+
+export type AsrVoiceExampleView_Serialize = {
+	id: string,
+	audio: AssetRef_Serialize,
 	expected_text: string,
 	whisper_output: string | null,
 	language: string | null,
@@ -672,12 +791,29 @@ export type AsrVoiceExampleView = {
 export type AssetIngestRole = "avatar" | "background" | "attachment" | "voice_example" | "reference_image";
 
 /**
- *  A stored media asset and the URL the host serves it at; the UI loads
- *  `url` as is and never builds one.
+ *  A stored media asset, its original URL and an optional image preview URL.
+ *  The UI uses host-provided URLs as is.
  */
-export type AssetRef = {
+export type AssetRef = AssetRef_Serialize | AssetRef_Deserialize;
+
+/**
+ *  A stored media asset, its original URL and an optional image preview URL.
+ *  The UI uses host-provided URLs as is.
+ */
+export type AssetRef_Deserialize = {
 	asset_id: string,
 	url: string,
+	preview_url?: string | null,
+};
+
+/**
+ *  A stored media asset, its original URL and an optional image preview URL.
+ *  The UI uses host-provided URLs as is.
+ */
+export type AssetRef_Serialize = {
+	asset_id: string,
+	url: string,
+	preview_url?: string | null,
 };
 
 export type AssetsIngestRequest = {
@@ -967,8 +1103,15 @@ export type CharacterMediaSetRequest = {
 	client_operation_id: string,
 };
 
-export type CharacterPage = {
-	items: CharacterSummary[],
+export type CharacterPage = CharacterPage_Serialize | CharacterPage_Deserialize;
+
+export type CharacterPage_Deserialize = {
+	items: CharacterSummary_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type CharacterPage_Serialize = {
+	items: CharacterSummary_Serialize[],
 	next_cursor: string | null,
 };
 
@@ -993,12 +1136,33 @@ export type CharacterSaveRequest_Serialize = {
 	client_operation_id: string,
 };
 
-export type CharacterSummary = {
+export type CharacterSummary = CharacterSummary_Serialize | CharacterSummary_Deserialize;
+
+export type CharacterSummary_Deserialize = {
 	id: string,
 	name: string,
-	avatar: AssetRef | null,
+	avatar: AssetRef_Deserialize | null,
 	/**  The wide banner image, when the character has one. */
-	banner: AssetRef | null,
+	banner: AssetRef_Deserialize | null,
+	/**
+	 *  The description, or the definition when there is none, trimmed and
+	 *  cut to at most 400 characters; absent when both are blank.
+	 */
+	description: string | null,
+	card_style: LibraryCardStyle,
+	gradient: CharacterCardGradient,
+	/**  The revision a save, archive or delete passes as expected. */
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type CharacterSummary_Serialize = {
+	id: string,
+	name: string,
+	avatar: AssetRef_Serialize | null,
+	/**  The wide banner image, when the character has one. */
+	banner: AssetRef_Serialize | null,
 	/**
 	 *  The description, or the definition when there is none, trimmed and
 	 *  cut to at most 400 characters; absent when both are blank.
@@ -1018,7 +1182,7 @@ export type CharacterView_Deserialize = {
 	id: string,
 	archived: boolean,
 	draft: CharacterDraft_Deserialize,
-	assets: AssetRef[],
+	assets: AssetRef_Deserialize[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -1028,7 +1192,7 @@ export type CharacterView_Serialize = {
 	id: string,
 	archived: boolean,
 	draft: CharacterDraft_Serialize,
-	assets: AssetRef[],
+	assets: AssetRef_Serialize[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -1042,6 +1206,7 @@ export type CharactersListRequest_Deserialize = {
 	query?: string | null,
 	sort?: LibrarySort | null,
 	search_nickname?: boolean,
+	search_description?: boolean,
 };
 
 export type CharactersListRequest_Serialize = {
@@ -1050,6 +1215,7 @@ export type CharactersListRequest_Serialize = {
 	query?: string | null,
 	sort?: LibrarySort | null,
 	search_nickname?: boolean,
+	search_description?: boolean,
 };
 
 export type ChatExportRequest = {
@@ -1521,8 +1687,17 @@ export type ConversationOpenRequest = {
 };
 
 /**  Conversations, most recently updated first. */
-export type ConversationPage = {
-	items: ConversationSummary[],
+export type ConversationPage = ConversationPage_Serialize | ConversationPage_Deserialize;
+
+/**  Conversations, most recently updated first. */
+export type ConversationPage_Deserialize = {
+	items: ConversationSummary_Deserialize[],
+	next_cursor: string | null,
+};
+
+/**  Conversations, most recently updated first. */
+export type ConversationPage_Serialize = {
+	items: ConversationSummary_Serialize[],
 	next_cursor: string | null,
 };
 
@@ -1726,7 +1901,14 @@ export type ConversationSettingsUpdateRequest_Serialize = {
  *  A field whose source is `conversation` is the chat's own and can be
  *  reset. Group-only fields are none for a one-to-one chat.
  */
-export type ConversationSettingsView = {
+export type ConversationSettingsView = ConversationSettingsView_Serialize | ConversationSettingsView_Deserialize;
+
+/**
+ *  Every setting of a chat with its current value and where it comes from.
+ *  A field whose source is `conversation` is the chat's own and can be
+ *  reset. Group-only fields are none for a one-to-one chat.
+ */
+export type ConversationSettingsView_Deserialize = {
 	conversation_id: string,
 	kind: ConversationKind,
 	title: string,
@@ -1744,7 +1926,44 @@ export type ConversationSettingsView = {
 	roleplay_prompt: SettingChoice | null,
 	lorebooks: SettingChoices,
 	model: SettingChoice,
-	background: SettingBackground,
+	background: SettingBackground_Deserialize,
+	scene: SettingChoice,
+	memory: SettingMemory,
+	chat_mode: SettingChatMode | null,
+	disable_character_lorebooks: SettingFlag | null,
+	speaker_selection: SettingSpeakerSelection | null,
+	members: GroupMembersSettings | null,
+	/**
+	 *  The sampler and runtime settings a one-to-one chat overrides; empty
+	 *  when it follows the model and app settings.
+	 */
+	model_settings: SettingsModelSettingsLayer | null,
+};
+
+/**
+ *  Every setting of a chat with its current value and where it comes from.
+ *  A field whose source is `conversation` is the chat's own and can be
+ *  reset. Group-only fields are none for a one-to-one chat.
+ */
+export type ConversationSettingsView_Serialize = {
+	conversation_id: string,
+	kind: ConversationKind,
+	title: string,
+	revision: number,
+	/**
+	 *  The revision a settings update passes; none until the chat has
+	 *  settings of its own.
+	 */
+	settings_revision: number | null,
+	author_note: string | null,
+	persona: SettingChoice,
+	/**  The one-to-one prompt, or a group's conversation-mode prompt. */
+	prompt: SettingChoice,
+	/**  A group's roleplay-mode prompt. */
+	roleplay_prompt: SettingChoice | null,
+	lorebooks: SettingChoices,
+	model: SettingChoice,
+	background: SettingBackground_Serialize,
 	scene: SettingChoice,
 	memory: SettingMemory,
 	chat_mode: SettingChatMode | null,
@@ -1761,16 +1980,18 @@ export type ConversationSettingsView = {
 /**  What a conversation was started from. */
 export type ConversationSource = { type: "direct"; character_id: string } | { type: "group"; group_id: string };
 
-export type ConversationSummary = {
+export type ConversationSummary = ConversationSummary_Serialize | ConversationSummary_Deserialize;
+
+export type ConversationSummary_Deserialize = {
 	id: string,
 	kind: ConversationKind,
 	title: string,
-	avatars: AssetRef[],
+	avatars: AssetRef_Deserialize[],
 	/**
 	 *  The background the chat shows: its own, else its scene's, else its
 	 *  character's or group's; absent when it hides one or has none.
 	 */
-	background: AssetRef | null,
+	background: AssetRef_Deserialize | null,
 	/**  The revision a rename, archive or delete passes as expected. */
 	revision: number,
 	/**
@@ -1791,15 +2012,76 @@ export type ConversationSummary = {
 	memory_blocked: MemoryBlockedReason | null,
 };
 
-export type ConversationView = {
+export type ConversationSummary_Serialize = {
+	id: string,
+	kind: ConversationKind,
+	title: string,
+	avatars: AssetRef_Serialize[],
+	/**
+	 *  The background the chat shows: its own, else its scene's, else its
+	 *  character's or group's; absent when it hides one or has none.
+	 */
+	background: AssetRef_Serialize | null,
+	/**  The revision a rename, archive or delete passes as expected. */
+	revision: number,
+	/**
+	 *  The newest visible message's text on the selected branch, at most 400
+	 *  characters.
+	 */
+	last_message_preview: string | null,
+	updated_at: number,
+	archived: boolean,
+	source: ConversationSource,
+	/**  Visible messages on the selected branch, system notes excluded. */
+	message_count: number,
+	/**  Group chats only. */
+	chat_mode: GroupChatMode | null,
+	/**  Optional models the chat needs that are not installed. */
+	missing_models: RequiredModel[],
+	/**  Why the chat's dynamic memory is stopped, when it is. */
+	memory_blocked: MemoryBlockedReason | null,
+};
+
+export type ConversationView = ConversationView_Serialize | ConversationView_Deserialize;
+
+export type ConversationView_Deserialize = {
 	id: string,
 	origin_conversation_id: string | null,
 	origin_message_id: string | null,
 	kind: ConversationKind,
 	title: string,
-	participants: ParticipantView[],
+	participants: ParticipantView_Deserialize[],
 	branch: BranchHead,
-	messages: MessagePage,
+	messages: MessagePage_Deserialize,
+	/**  The turn still running or queued, if any; a send waits for it. */
+	pending_turn_id: string | null,
+	can_send: boolean,
+	/**
+	 *  The conversation revision a later change passes as its expected
+	 *  revision.
+	 */
+	revision: number,
+	/**  The revision of the chat's own settings, once it has any. */
+	settings_revision: number | null,
+	archived: boolean,
+	source: ConversationSource,
+	/**  Group chats only. */
+	chat_mode: GroupChatMode | null,
+	/**  Optional models the chat needs that are not installed. */
+	missing_models: RequiredModel[],
+	/**  Why the chat's dynamic memory is stopped, when it is. */
+	memory_blocked: MemoryBlockedReason | null,
+};
+
+export type ConversationView_Serialize = {
+	id: string,
+	origin_conversation_id: string | null,
+	origin_message_id: string | null,
+	kind: ConversationKind,
+	title: string,
+	participants: ParticipantView_Serialize[],
+	branch: BranchHead,
+	messages: MessagePage_Serialize,
 	/**  The turn still running or queued, if any; a send waits for it. */
 	pending_turn_id: string | null,
 	can_send: boolean,
@@ -2031,8 +2313,19 @@ export type FilesPicked = {
 
 export type FlagChange = { type: "set"; value: boolean } | { type: "reset" };
 
-export type GeneratedImage = {
-	asset: AssetRef,
+export type GeneratedImage = GeneratedImage_Serialize | GeneratedImage_Deserialize;
+
+export type GeneratedImage_Deserialize = {
+	asset: AssetRef_Deserialize,
+	mime_type: string,
+	width: number | null,
+	height: number | null,
+	/**  Text the provider returned with the image. */
+	text: string | null,
+};
+
+export type GeneratedImage_Serialize = {
+	asset: AssetRef_Serialize,
 	mime_type: string,
 	width: number | null,
 	height: number | null,
@@ -2208,7 +2501,7 @@ export type GroupView_Deserialize = {
 	id: string,
 	archived: boolean,
 	draft: GroupDraft_Deserialize,
-	assets: AssetRef[],
+	assets: AssetRef_Deserialize[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -2218,7 +2511,7 @@ export type GroupView_Serialize = {
 	id: string,
 	archived: boolean,
 	draft: GroupDraft_Serialize,
-	assets: AssetRef[],
+	assets: AssetRef_Serialize[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -2849,12 +3142,24 @@ export type ImageOutput = { kind: "retained" } | { kind: "preview"; expires_at: 
 export type ImagePhase = "starting" | "loading" | "sampling" | "queued" | "generating" | "retrying" | "cancelled";
 
 /**  What a running local generation reports, streamed with `job_watch`. */
-export type ImageProgress = {
+export type ImageProgress = ImageProgress_Serialize | ImageProgress_Deserialize;
+
+/**  What a running local generation reports, streamed with `job_watch`. */
+export type ImageProgress_Deserialize = {
 	phase: ImagePhase,
 	step: number | null,
 	total_steps: number | null,
 	queue_position: number | null,
-	preview_asset: AssetRef | null,
+	preview_asset: AssetRef_Deserialize | null,
+};
+
+/**  What a running local generation reports, streamed with `job_watch`. */
+export type ImageProgress_Serialize = {
+	phase: ImagePhase,
+	step: number | null,
+	total_steps: number | null,
+	queue_position: number | null,
+	preview_asset: AssetRef_Serialize | null,
 };
 
 /**
@@ -2970,8 +3275,20 @@ export type ImageUpscaleRequest = {
 };
 
 /**  The upscaled image and the playground entry that records it. */
-export type ImageUpscaled = {
-	asset: AssetRef,
+export type ImageUpscaled = ImageUpscaled_Serialize | ImageUpscaled_Deserialize;
+
+/**  The upscaled image and the playground entry that records it. */
+export type ImageUpscaled_Deserialize = {
+	asset: AssetRef_Deserialize,
+	mime_type: string,
+	width: number | null,
+	height: number | null,
+	history_id: string | null,
+};
+
+/**  The upscaled image and the playground entry that records it. */
+export type ImageUpscaled_Serialize = {
+	asset: AssetRef_Serialize,
 	mime_type: string,
 	width: number | null,
 	height: number | null,
@@ -3371,14 +3688,48 @@ export type JobCancelRequest = {
  *  The stream `job_watch` attaches. It starts with the job's current state;
  *  `Completed`, `Failed` and `Cancelled` are the last event.
  */
-export type JobEvent = { type: "model_loading"; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } |
+export type JobEvent = JobEvent_Serialize | JobEvent_Deserialize;
+
+/**
+ *  The stream `job_watch` attaches. It starts with the job's current state;
+ *  `Completed`, `Failed` and `Cancelled` are the last event.
+ */
+export type JobEvent_Deserialize = { type: "model_loading"; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView_Deserialize } | { type: "text_delta"; text: string | null; reasoning: string | null } |
 /**  A running local image generation's progress. */
-{ type: "image_progress"; progress: ImageProgress } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
+{ type: "image_progress"; progress: ImageProgress_Deserialize } | { type: "completed"; job: JobView_Deserialize } | { type: "failed"; job: JobView_Deserialize } | { type: "cancelled"; job: JobView_Deserialize };
+
+/**
+ *  The stream `job_watch` attaches. It starts with the job's current state;
+ *  `Completed`, `Failed` and `Cancelled` are the last event.
+ */
+export type JobEvent_Serialize = { type: "model_loading"; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView_Serialize } | { type: "text_delta"; text: string | null; reasoning: string | null } |
+/**  A running local image generation's progress. */
+{ type: "image_progress"; progress: ImageProgress_Serialize } | { type: "completed"; job: JobView_Serialize } | { type: "failed"; job: JobView_Serialize } | { type: "cancelled"; job: JobView_Serialize };
 
 export type JobFailureCode = "cancelled" | "invalid_input" | "authentication" | "capability_unavailable" | "integrity_failure" | "resource_unavailable" | "lease_lost" | "worker_failed" | "storage_failure" | "safety_refusal" | "timed_out" | "unknown";
 
-export type JobFailureDto = {
-	entity_import: ApiError | null,
+export type JobFailureDto = JobFailureDto_Serialize | JobFailureDto_Deserialize;
+
+export type JobFailureDto_Deserialize = {
+	entity_import: ApiError_Deserialize | null,
+	code: JobFailureCode,
+	retryable: boolean,
+	/**  What a chat feature job needs the user to change. */
+	reason: JobFailureReason | null,
+	/**  The optional model whose absence failed the job. */
+	model: RequiredModel | null,
+	/**  Why Hugging Face refused a download. */
+	hugging_face: HfFailure | null,
+	/**  Why an Ollama pull failed. */
+	ollama: OllamaFailure | null,
+	/**  Why an image job failed. */
+	image: ImageFailure | null,
+	/**  Why a speech job failed. */
+	speech: SpeechFailure | null,
+};
+
+export type JobFailureDto_Serialize = {
+	entity_import: ApiError_Serialize | null,
 	code: JobFailureCode,
 	retryable: boolean,
 	/**  What a chat feature job needs the user to change. */
@@ -3404,8 +3755,15 @@ export type JobGetRequest = {
 
 export type JobKindDto = "artifact_install" | "artifact_verify" | "runtime_prepare" | "model_load" | "memory_extraction" | "memory_consolidation" | "companion_growth" | "companion_consolidation" | "companion_soul_writer" | "conversation_generation" | "vector_index_build" | "creation_run" | "image_generate" | "media_transform" | "transfer_import" | "transfer_export" | "backup_export" | "backup_restore" | "sync_session" | "speech_transcribe" | "speech_synthesize" | "speech_voice_create" | "embedding_benchmark" | "maintenance" | "model_pull" | "models_folder_move";
 
-export type JobPage = {
-	items: JobView[],
+export type JobPage = JobPage_Serialize | JobPage_Deserialize;
+
+export type JobPage_Deserialize = {
+	items: JobView_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type JobPage_Serialize = {
+	items: JobView_Serialize[],
 	next_cursor: string | null,
 };
 
@@ -3433,7 +3791,14 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "backup_exported"; backup: BackupIndexView; warnings: BackupWarning[] } | { type: "backup_restored"; kept_file: string; warnings: BackupWarning[] } | { type: "usage_costs_updated"; priced: number; cleared: number } | { type: "storage_optimized" } | { type: "app_data_reset"; kept_file: string } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
+export type JobResultDto = JobResultDto_Serialize | JobResultDto_Deserialize;
+
+/**
+ *  What a finished job produced, where the job kind has a typed result.
+ *  `ModelInstalled` names a downloaded model's path and, when the download
+ *  asked for one, the llama.cpp model it became.
+ */
+export type JobResultDto_Deserialize = { type: "backup_exported"; backup: BackupIndexView; warnings: BackupWarning[] } | { type: "backup_restored"; kept_file: string; warnings: BackupWarning[] } | { type: "usage_costs_updated"; priced: number; cleared: number } | { type: "storage_optimized" } | { type: "app_data_reset"; kept_file: string } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef_Deserialize } | { type: "transcription"; transcription: TranscriptionView_Deserialize } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
 /**
  *  The Soul draft a Soul writer job produced, which the caller merges
  *  into its unsaved draft.
@@ -3450,7 +3815,33 @@ export type JobResultDto = { type: "backup_exported"; backup: BackupIndexView; w
 /**  The lorebook project a planner, writer or coherence job advanced. */
 { type: "lorebook_project"; project_id: string } |
 /**  The images an image generation job stored. */
-{ type: "image_generation"; images: GeneratedImage[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } |
+{ type: "image_generation"; images: GeneratedImage_Deserialize[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled_Deserialize } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } |
+/**  What an image bundle install ended in. */
+{ type: "image_bundle"; bundle_id: string; state: ImageBundleState; model_id: string | null; setup_error: string | null };
+
+/**
+ *  What a finished job produced, where the job kind has a typed result.
+ *  `ModelInstalled` names a downloaded model's path and, when the download
+ *  asked for one, the llama.cpp model it became.
+ */
+export type JobResultDto_Serialize = { type: "backup_exported"; backup: BackupIndexView; warnings: BackupWarning[] } | { type: "backup_restored"; kept_file: string; warnings: BackupWarning[] } | { type: "usage_costs_updated"; priced: number; cleared: number } | { type: "storage_optimized" } | { type: "app_data_reset"; kept_file: string } | { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef_Serialize } | { type: "transcription"; transcription: TranscriptionView_Serialize } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
+/**
+ *  The Soul draft a Soul writer job produced, which the caller merges
+ *  into its unsaved draft.
+ */
+{ type: "companion_soul_draft"; draft: CompanionSoulDraft } |
+/**  The text a help-me-reply or scene prompt job wrote, cleaned. */
+{ type: "generated_text"; text: string } |
+/**  The entry a lorebook entry draft job wrote; nothing is saved. */
+{ type: "lorebook_entry_draft"; draft: LorebookEntryDraftResult } |
+/**  The lorebook entry draft job found nothing worth an entry. */
+{ type: "lorebook_no_entry"; reason: string | null } |
+/**  The keywords a keyword draft job proposed. */
+{ type: "lorebook_keywords"; keywords: string[] } |
+/**  The lorebook project a planner, writer or coherence job advanced. */
+{ type: "lorebook_project"; project_id: string } |
+/**  The images an image generation job stored. */
+{ type: "image_generation"; images: GeneratedImage_Serialize[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled_Serialize } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } |
 /**  What an image bundle install ended in. */
 { type: "image_bundle"; bundle_id: string; state: ImageBundleState; model_id: string | null; setup_error: string | null };
 
@@ -3471,7 +3862,9 @@ export type JobSubjectDto = {
 
 export type JobSubjectKindDto = "conversation" | "group" | "memory_space" | "creation_project" | "artifact_install" | "image_request" | "transfer_plan" | "backup" | "peer" | "speech_request" | "runtime" | "model_profile" | "maintenance" | "provider_model";
 
-export type JobView = {
+export type JobView = JobView_Serialize | JobView_Deserialize;
+
+export type JobView_Deserialize = {
 	id: string,
 	kind: JobKindDto,
 	subject: JobSubjectDto,
@@ -3480,8 +3873,21 @@ export type JobView = {
 	progress: JobProgressDto,
 	created_at: number,
 	updated_at: number,
-	failure: JobFailureDto | null,
-	result: JobResultDto | null,
+	failure: JobFailureDto_Deserialize | null,
+	result: JobResultDto_Deserialize | null,
+};
+
+export type JobView_Serialize = {
+	id: string,
+	kind: JobKindDto,
+	subject: JobSubjectDto,
+	subject_detail: JobSubjectDetail | null,
+	state: JobStateDto,
+	progress: JobProgressDto,
+	created_at: number,
+	updated_at: number,
+	failure: JobFailureDto_Serialize | null,
+	result: JobResultDto_Serialize | null,
 };
 
 export type JobWatchRequest = {
@@ -3603,19 +4009,44 @@ export type KokoroVoicesInstallRequest = {
 };
 
 /**  A character's or group's newest conversation, archived included. */
-export type LatestConversation = {
-	/**  The character or group id. */
-	source_id: string,
-	conversation: ConversationSummary,
+export type LatestConversation = LatestConversation_Serialize | LatestConversation_Deserialize;
+
+/**
+ *  One newest conversation per character or group, most recently updated
+ *  first.
+ */
+export type LatestConversationPage = LatestConversationPage_Serialize | LatestConversationPage_Deserialize;
+
+/**
+ *  One newest conversation per character or group, most recently updated
+ *  first.
+ */
+export type LatestConversationPage_Deserialize = {
+	items: LatestConversation_Deserialize[],
+	next_cursor: string | null,
 };
 
 /**
  *  One newest conversation per character or group, most recently updated
  *  first.
  */
-export type LatestConversationPage = {
-	items: LatestConversation[],
+export type LatestConversationPage_Serialize = {
+	items: LatestConversation_Serialize[],
 	next_cursor: string | null,
+};
+
+/**  A character's or group's newest conversation, archived included. */
+export type LatestConversation_Deserialize = {
+	/**  The character or group id. */
+	source_id: string,
+	conversation: ConversationSummary_Deserialize,
+};
+
+/**  A character's or group's newest conversation, archived included. */
+export type LatestConversation_Serialize = {
+	/**  The character or group id. */
+	source_id: string,
+	conversation: ConversationSummary_Serialize,
 };
 
 export type LatestConversationsRequest = {
@@ -3681,7 +4112,11 @@ export type LegacyDatabaseImportRequest = {
 	client_operation_id: string,
 };
 
-export type LegacyState = { type: "absent" } | { type: "failed"; error: ApiError } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
+export type LegacyState = LegacyState_Serialize | LegacyState_Deserialize;
+
+export type LegacyState_Deserialize = { type: "absent" } | { type: "failed"; error: ApiError_Deserialize } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
+
+export type LegacyState_Serialize = { type: "absent" } | { type: "failed"; error: ApiError_Serialize } | { type: "ready"; schema_version: number } | { type: "requires_legacy_upgrade"; reason: LegacyUpgradeReason; required_app_version: string };
 
 export type LegacyUpgradeReason = { type: "bin_storage" } | { type: "schema"; found: number };
 
@@ -3943,6 +4378,14 @@ export type LibraryChatWidgetSlots_Deserialize = {
 export type LibraryChatWidgetSlots_Serialize = {
 	left: LibraryWidgetNode_Serialize[],
 	right: LibraryWidgetNode_Serialize[],
+};
+
+export type LibraryCounts = {
+	characters: number,
+	personas: number,
+	lorebooks: number,
+	images: number,
+	audio: number,
 };
 
 export type LibraryCrop = {
@@ -4716,8 +5159,15 @@ export type LorebookMetadataInput = {
 
 export type LorebookModelProblem = "configured_model_missing" | "configured_model_not_text" | "no_text_model";
 
-export type LorebookPage = {
-	items: LorebookSummary[],
+export type LorebookPage = LorebookPage_Serialize | LorebookPage_Deserialize;
+
+export type LorebookPage_Deserialize = {
+	items: LorebookSummary_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type LorebookPage_Serialize = {
+	items: LorebookSummary_Serialize[],
 	next_cursor: string | null,
 };
 
@@ -4851,10 +5301,18 @@ export type LorebookProjectRevisionRequest = {
  */
 export type LorebookProjectSourceInput = { type: "text"; label: string; text: string } | { type: "document"; asset_id: string };
 
-export type LorebookProjectSourceView = {
+export type LorebookProjectSourceView = LorebookProjectSourceView_Serialize | LorebookProjectSourceView_Deserialize;
+
+export type LorebookProjectSourceView_Deserialize = {
 	source_id: string,
 	label: string,
-	document: AssetRef | null,
+	document: AssetRef_Deserialize | null,
+};
+
+export type LorebookProjectSourceView_Serialize = {
+	source_id: string,
+	label: string,
+	document: AssetRef_Serialize | null,
 };
 
 export type LorebookProjectStage = "created" | "planning" |
@@ -4869,13 +5327,15 @@ export type LorebookProjectSummary = {
 	updated_at: number,
 };
 
-export type LorebookProjectView = {
+export type LorebookProjectView = LorebookProjectView_Serialize | LorebookProjectView_Deserialize;
+
+export type LorebookProjectView_Deserialize = {
 	project_id: string,
 	brief: string,
 	lorebook_name: string | null,
 	target_count: number,
 	stage: LorebookProjectStage,
-	sources: LorebookProjectSourceView[],
+	sources: LorebookProjectSourceView_Deserialize[],
 	outline: LorebookPlanView[],
 	drafts: LorebookDraftView[],
 	coherence_changes: LorebookCoherenceChangeView[],
@@ -4883,7 +5343,27 @@ export type LorebookProjectView = {
 	/**  The jobs still queued or running for the project. */
 	active_job_ids: string[],
 	/**  Why the last planner job failed, while the stage is `PlanFailed`. */
-	plan_failure: JobFailureDto | null,
+	plan_failure: JobFailureDto_Deserialize | null,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type LorebookProjectView_Serialize = {
+	project_id: string,
+	brief: string,
+	lorebook_name: string | null,
+	target_count: number,
+	stage: LorebookProjectStage,
+	sources: LorebookProjectSourceView_Serialize[],
+	outline: LorebookPlanView[],
+	drafts: LorebookDraftView[],
+	coherence_changes: LorebookCoherenceChangeView[],
+	commit: LorebookProjectCommitView | null,
+	/**  The jobs still queued or running for the project. */
+	active_job_ids: string[],
+	/**  Why the last planner job failed, while the stage is `PlanFailed`. */
+	plan_failure: JobFailureDto_Serialize | null,
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -4914,12 +5394,25 @@ export type LorebookSourceTier = { type: "conversation" } | { type: "character";
 
 export type LorebookStatus = "active" | "archived";
 
-export type LorebookSummary = {
+export type LorebookSummary = LorebookSummary_Serialize | LorebookSummary_Deserialize;
+
+export type LorebookSummary_Deserialize = {
 	id: string,
 	name: string,
 	status: LorebookStatus,
 	detection: LorebookDetection,
-	icon: AssetRef | null,
+	icon: AssetRef_Deserialize | null,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type LorebookSummary_Serialize = {
+	id: string,
+	name: string,
+	status: LorebookStatus,
+	detection: LorebookDetection,
+	icon: AssetRef_Serialize | null,
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -4945,8 +5438,15 @@ export type LorebookUpdateMetadataRequest = {
 	metadata: LorebookMetadataInput,
 };
 
-export type LorebookView = {
-	lorebook: LorebookSummary,
+export type LorebookView = LorebookView_Serialize | LorebookView_Deserialize;
+
+export type LorebookView_Deserialize = {
+	lorebook: LorebookSummary_Deserialize,
+	entries: LorebookEntryView[],
+};
+
+export type LorebookView_Serialize = {
+	lorebook: LorebookSummary_Serialize,
 	entries: LorebookEntryView[],
 };
 
@@ -4968,8 +5468,10 @@ export type MediaFailureReason = "host_unavailable" | "asset_missing" | "blob_mi
 
 export type MediaLibraryAssetKind = "avatar_original" | "background_image" | "illustration" | "lorebook_icon" | "message_image" | "message_audio" | "generated_image" | "synthesized_speech" | "other_image" | "other_audio" | "source_document";
 
-export type MediaLibraryItem = {
-	asset: AssetRef,
+export type MediaLibraryItem = MediaLibraryItem_Serialize | MediaLibraryItem_Deserialize;
+
+export type MediaLibraryItem_Deserialize = {
+	asset: AssetRef_Deserialize,
 	role: MediaLibraryRole,
 	asset_kind: MediaLibraryAssetKind,
 	retention: MediaLibraryRetention,
@@ -4985,14 +5487,50 @@ export type MediaLibraryItem = {
 	references: MediaReferenceView[],
 };
 
-export type MediaLibraryListRequest = {
+export type MediaLibraryItem_Serialize = {
+	asset: AssetRef_Serialize,
+	role: MediaLibraryRole,
+	asset_kind: MediaLibraryAssetKind,
+	retention: MediaLibraryRetention,
+	expires_at: number | null,
+	mime_type: string,
+	byte_size: number,
+	width: number | null,
+	height: number | null,
+	duration_ms: number | null,
+	source_label: string | null,
+	created_at: number,
+	updated_at: number,
+	references: MediaReferenceView[],
+};
+
+export type MediaLibraryListRequest = MediaLibraryListRequest_Serialize | MediaLibraryListRequest_Deserialize;
+
+export type MediaLibraryListRequest_Deserialize = {
 	kind: MediaLibraryRole | null,
 	cursor: string | null,
 	limit: number | null,
+	query?: string | null,
+	include_references?: boolean | null,
 };
 
-export type MediaLibraryPage = {
-	items: MediaLibraryItem[],
+export type MediaLibraryListRequest_Serialize = {
+	kind: MediaLibraryRole | null,
+	cursor: string | null,
+	limit: number | null,
+	query?: string | null,
+	include_references?: boolean | null,
+};
+
+export type MediaLibraryPage = MediaLibraryPage_Serialize | MediaLibraryPage_Deserialize;
+
+export type MediaLibraryPage_Deserialize = {
+	items: MediaLibraryItem_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type MediaLibraryPage_Serialize = {
+	items: MediaLibraryItem_Serialize[],
 	next_cursor: string | null,
 };
 
@@ -5012,6 +5550,10 @@ export type MediaReferenceKind = "character" | "persona" | "group" | "scene" | "
 export type MediaReferenceView = {
 	kind: MediaReferenceKind,
 	owner_id: string,
+};
+
+export type MediaReferencesRequest = {
+	asset_id: string,
 };
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
@@ -5242,8 +5784,15 @@ export type MemoryView = {
 	revision: number,
 };
 
-export type MessageCandidatePage = {
-	items: MessageCandidateView[],
+export type MessageCandidatePage = MessageCandidatePage_Serialize | MessageCandidatePage_Deserialize;
+
+export type MessageCandidatePage_Deserialize = {
+	items: MessageCandidateView_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type MessageCandidatePage_Serialize = {
+	items: MessageCandidateView_Serialize[],
 	next_cursor: string | null,
 };
 
@@ -5257,11 +5806,24 @@ export type MessageCandidateSelectRequest = {
 };
 
 /**  One generated reply variant as it was generated, in variant order. */
-export type MessageCandidateView = {
+export type MessageCandidateView = MessageCandidateView_Serialize | MessageCandidateView_Deserialize;
+
+/**  One generated reply variant as it was generated, in variant order. */
+export type MessageCandidateView_Deserialize = {
 	id: string,
 	index: number,
 	author_participant_id: string | null,
-	parts: MessagePartView[],
+	parts: MessagePartView_Deserialize[],
+	reasoning: string | null,
+	created_at: number,
+};
+
+/**  One generated reply variant as it was generated, in variant order. */
+export type MessageCandidateView_Serialize = {
+	id: string,
+	index: number,
+	author_participant_id: string | null,
+	parts: MessagePartView_Serialize[],
 	reasoning: string | null,
 	created_at: number,
 };
@@ -5270,8 +5832,23 @@ export type MessageCandidateView = {
  *  A changed message as the chat shows it and the conversation revision the
  *  change left.
  */
-export type MessageChanged = {
-	message: TimelineMessage,
+export type MessageChanged = MessageChanged_Serialize | MessageChanged_Deserialize;
+
+/**
+ *  A changed message as the chat shows it and the conversation revision the
+ *  change left.
+ */
+export type MessageChanged_Deserialize = {
+	message: TimelineMessage_Deserialize,
+	revision: number,
+};
+
+/**
+ *  A changed message as the chat shows it and the conversation revision the
+ *  change left.
+ */
+export type MessageChanged_Serialize = {
+	message: TimelineMessage_Serialize,
 	revision: number,
 };
 
@@ -5340,14 +5917,37 @@ export type MessageHistoryRequest = {
  *  `next_cursor` loads the page before it, or after it for a page read with
  *  `after_cursor` or a pinned-message page.
  */
-export type MessagePage = {
-	items: TimelineMessage[],
+export type MessagePage = MessagePage_Serialize | MessagePage_Deserialize;
+
+/**
+ *  One page of visible messages in conversation order, oldest first;
+ *  `next_cursor` loads the page before it, or after it for a page read with
+ *  `after_cursor` or a pinned-message page.
+ */
+export type MessagePage_Deserialize = {
+	items: TimelineMessage_Deserialize[],
 	next_cursor: string | null,
 };
 
-export type MessagePartView = { type: "text"; text: string } |
+/**
+ *  One page of visible messages in conversation order, oldest first;
+ *  `next_cursor` loads the page before it, or after it for a page read with
+ *  `after_cursor` or a pinned-message page.
+ */
+export type MessagePage_Serialize = {
+	items: TimelineMessage_Serialize[],
+	next_cursor: string | null,
+};
+
+export type MessagePartView = MessagePartView_Serialize | MessagePartView_Deserialize;
+
+export type MessagePartView_Deserialize = { type: "text"; text: string } |
 /**  `kind` is what the asset holds; none when the asset row is gone. */
-{ type: "media"; asset: AssetRef; role: MediaRole; kind: MediaPartKind | null };
+{ type: "media"; asset: AssetRef_Deserialize; role: MediaRole; kind: MediaPartKind | null };
+
+export type MessagePartView_Serialize = { type: "text"; text: string } |
+/**  `kind` is what the asset holds; none when the asset row is gone. */
+{ type: "media"; asset: AssetRef_Serialize; role: MediaRole; kind: MediaPartKind | null };
 
 export type MessagePinRequest = {
 	conversation_id: string,
@@ -5362,16 +5962,37 @@ export type MessagePromptSnapshotRequest = {
 	message_id: string,
 };
 
-export type MessageRevisionPage = {
-	items: MessageRevisionView[],
+export type MessageRevisionPage = MessageRevisionPage_Serialize | MessageRevisionPage_Deserialize;
+
+export type MessageRevisionPage_Deserialize = {
+	items: MessageRevisionView_Deserialize[],
+	next_cursor: string | null,
+};
+
+export type MessageRevisionPage_Serialize = {
+	items: MessageRevisionView_Serialize[],
 	next_cursor: string | null,
 };
 
 /**  One saved version of a message's content, oldest first. */
-export type MessageRevisionView = {
+export type MessageRevisionView = MessageRevisionView_Serialize | MessageRevisionView_Deserialize;
+
+/**  One saved version of a message's content, oldest first. */
+export type MessageRevisionView_Deserialize = {
 	id: string,
 	sequence: number,
-	parts: MessagePartView[],
+	parts: MessagePartView_Deserialize[],
+	reasoning: string | null,
+	authored_at: number,
+	/**  The reply variant this edit rewrote. */
+	supersedes_candidate_id: string | null,
+};
+
+/**  One saved version of a message's content, oldest first. */
+export type MessageRevisionView_Serialize = {
+	id: string,
+	sequence: number,
+	parts: MessagePartView_Serialize[],
 	reasoning: string | null,
 	authored_at: number,
 	/**  The reply variant this edit rewrote. */
@@ -5442,8 +6063,26 @@ export type MessageVoiceOverride = { type: "user_voice"; voice_id: string } | { 
  *  continues with older messages and `after_cursor` with newer ones, as
  *  `ConversationMessagesRequest` cursors; none means that side is done.
  */
-export type MessageWindow = {
-	items: TimelineMessage[],
+export type MessageWindow = MessageWindow_Serialize | MessageWindow_Deserialize;
+
+/**
+ *  Visible messages in conversation order, oldest first. `before_cursor`
+ *  continues with older messages and `after_cursor` with newer ones, as
+ *  `ConversationMessagesRequest` cursors; none means that side is done.
+ */
+export type MessageWindow_Deserialize = {
+	items: TimelineMessage_Deserialize[],
+	before_cursor: string | null,
+	after_cursor: string | null,
+};
+
+/**
+ *  Visible messages in conversation order, oldest first. `before_cursor`
+ *  continues with older messages and `after_cursor` with newer ones, as
+ *  `ConversationMessagesRequest` cursors; none means that side is done.
+ */
+export type MessageWindow_Serialize = {
+	items: TimelineMessage_Serialize[],
 	before_cursor: string | null,
 	after_cursor: string | null,
 };
@@ -5650,12 +6289,22 @@ export type ParticipantSettings = {
 	model: SettingChoice,
 };
 
-export type ParticipantView = {
+export type ParticipantView = ParticipantView_Serialize | ParticipantView_Deserialize;
+
+export type ParticipantView_Deserialize = {
 	id: string,
 	role: ParticipantRole,
 	name: string,
 	character_id: string | null,
-	avatar: AssetRef | null,
+	avatar: AssetRef_Deserialize | null,
+};
+
+export type ParticipantView_Serialize = {
+	id: string,
+	role: ParticipantRole,
+	name: string,
+	character_id: string | null,
+	avatar: AssetRef_Serialize | null,
 };
 
 /**  One character's share of the replies on the selected branch. */
@@ -5781,8 +6430,16 @@ export type PersonaMediaSetRequest = {
 
 export type PersonaMediaSlot = "avatar" | "design_reference";
 
-export type PersonaPage = {
-	items: PersonaSummary[],
+export type PersonaPage = PersonaPage_Serialize | PersonaPage_Deserialize;
+
+export type PersonaPage_Deserialize = {
+	items: PersonaSummary_Deserialize[],
+	next_cursor: string | null,
+	default_persona: PersonaDefaultView,
+};
+
+export type PersonaPage_Serialize = {
+	items: PersonaSummary_Serialize[],
 	next_cursor: string | null,
 	default_persona: PersonaDefaultView,
 };
@@ -5803,12 +6460,22 @@ export type PersonaSaveRequest_Serialize = {
 	client_operation_id: string,
 };
 
-export type PersonaSummary = {
+export type PersonaSummary = PersonaSummary_Serialize | PersonaSummary_Deserialize;
+
+export type PersonaSummary_Deserialize = {
 	id: string,
 	title: string,
 	description: string,
 	nickname: string | null,
-	avatar: AssetRef | null,
+	avatar: AssetRef_Deserialize | null,
+};
+
+export type PersonaSummary_Serialize = {
+	id: string,
+	title: string,
+	description: string,
+	nickname: string | null,
+	avatar: AssetRef_Serialize | null,
 };
 
 export type PersonaView = PersonaView_Serialize | PersonaView_Deserialize;
@@ -5817,7 +6484,7 @@ export type PersonaView_Deserialize = {
 	id: string,
 	archived: boolean,
 	draft: PersonaDraft_Deserialize,
-	assets: AssetRef[],
+	assets: AssetRef_Deserialize[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -5827,7 +6494,7 @@ export type PersonaView_Serialize = {
 	id: string,
 	archived: boolean,
 	draft: PersonaDraft_Serialize,
-	assets: AssetRef[],
+	assets: AssetRef_Serialize[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -5861,7 +6528,9 @@ export type PersonasListRequest_Serialize = {
 	search_description: boolean,
 };
 
-export type PlaygroundEntry = {
+export type PlaygroundEntry = PlaygroundEntry_Serialize | PlaygroundEntry_Deserialize;
+
+export type PlaygroundEntry_Deserialize = {
 	id: string,
 	origin: PlaygroundOrigin,
 	job_id: string | null,
@@ -5878,7 +6547,27 @@ export type PlaygroundEntry = {
 	failure: ImageFailure | null,
 	/**  The entry whose image this one upscaled, when it is an upscale. */
 	upscale_of: string | null,
-	images: PlaygroundImage[],
+	images: PlaygroundImage_Deserialize[],
+};
+
+export type PlaygroundEntry_Serialize = {
+	id: string,
+	origin: PlaygroundOrigin,
+	job_id: string | null,
+	created_at: number,
+	provider_kind: string,
+	model_id: string | null,
+	model_name: string,
+	prompt: string,
+	negative_prompt: string | null,
+	seed: number | null,
+	/**  The generation parameters as JSON text. */
+	params_json: string,
+	status: PlaygroundStatus,
+	failure: ImageFailure | null,
+	/**  The entry whose image this one upscaled, when it is an upscale. */
+	upscale_of: string | null,
+	images: PlaygroundImage_Serialize[],
 };
 
 export type PlaygroundHistoryDeleteRequest = {
@@ -5897,16 +6586,35 @@ export type PlaygroundHistoryListRequest = {
 	before: number | null,
 };
 
-export type PlaygroundHistoryPage = {
-	entries: PlaygroundEntry[],
+export type PlaygroundHistoryPage = PlaygroundHistoryPage_Serialize | PlaygroundHistoryPage_Deserialize;
+
+export type PlaygroundHistoryPage_Deserialize = {
+	entries: PlaygroundEntry_Deserialize[],
 };
 
-export type PlaygroundImage = {
+export type PlaygroundHistoryPage_Serialize = {
+	entries: PlaygroundEntry_Serialize[],
+};
+
+export type PlaygroundImage = PlaygroundImage_Serialize | PlaygroundImage_Deserialize;
+
+export type PlaygroundImage_Deserialize = {
 	/**
 	 *  The stored image; `None` for an imported image whose file was not
 	 *  carried over.
 	 */
-	asset: AssetRef | null,
+	asset: AssetRef_Deserialize | null,
+	mime_type: string | null,
+	width: number | null,
+	height: number | null,
+};
+
+export type PlaygroundImage_Serialize = {
+	/**
+	 *  The stored image; `None` for an imported image whose file was not
+	 *  carried over.
+	 */
+	asset: AssetRef_Serialize | null,
 	mime_type: string | null,
 	width: number | null,
 	height: number | null,
@@ -6028,9 +6736,16 @@ export type PromptInput = {
 
 export type PromptKind = "direct_chat" | "companion_chat" | "group_chat_roleplay" | "group_chat_conversational" | "dynamic_memory_summarizer" | "dynamic_memory_manager" | "reply_helper_roleplay" | "reply_helper_conversational" | "lorebook_entry_writer" | "lorebook_keyword_generator" | "lorebook_generator_planner" | "lorebook_generator_writer" | "lorebook_generator_refine" | "lorebook_generator_coherence" | "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" | "companion_soul_writer" | "companion_growthcycle" | "companion_consolidation" | "runtime_text";
 
-export type PromptMessage = {
+export type PromptMessage = PromptMessage_Serialize | PromptMessage_Deserialize;
+
+export type PromptMessage_Deserialize = {
 	role: MessageRole,
-	parts: PromptPart[],
+	parts: PromptPart_Deserialize[],
+};
+
+export type PromptMessage_Serialize = {
+	role: MessageRole,
+	parts: PromptPart_Serialize[],
 };
 
 /**
@@ -6064,7 +6779,11 @@ export type PromptParameters = {
 	repetition_penalty: number | null,
 };
 
-export type PromptPart = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole } | { type: "tool_call"; name: string; arguments: string } | { type: "tool_result"; name: string; output: string };
+export type PromptPart = PromptPart_Serialize | PromptPart_Deserialize;
+
+export type PromptPart_Deserialize = { type: "text"; text: string } | { type: "media"; asset: AssetRef_Deserialize; role: MediaRole } | { type: "tool_call"; name: string; arguments: string } | { type: "tool_result"; name: string; output: string };
+
+export type PromptPart_Serialize = { type: "text"; text: string } | { type: "media"; asset: AssetRef_Serialize; role: MediaRole } | { type: "tool_call"; name: string; arguments: string } | { type: "tool_result"; name: string; output: string };
 
 export type PromptPlaceholders = {
 	kind: PromptKind,
@@ -6128,7 +6847,14 @@ export type PromptSectionsUnavailable = "predates_breakdown";
  *  it was sent. The sections are recorded with it, so they show what was
  *  sent even when the character, persona or lorebooks changed since.
  */
-export type PromptSnapshot = {
+export type PromptSnapshot = PromptSnapshot_Serialize | PromptSnapshot_Deserialize;
+
+/**
+ *  The request a reply was generated from, exactly as it was recorded when
+ *  it was sent. The sections are recorded with it, so they show what was
+ *  sent even when the character, persona or lorebooks changed since.
+ */
+export type PromptSnapshot_Deserialize = {
 	prompt: HistoricalSourceView | null,
 	lorebooks: HistoricalSourceView[],
 	turn_id: string,
@@ -6137,7 +6863,27 @@ export type PromptSnapshot = {
 	model: PromptModel,
 	streaming: boolean,
 	parameters: PromptParameters,
-	messages: PromptMessage[],
+	messages: PromptMessage_Deserialize[],
+	budget: PromptBudget,
+	sections: PromptSection[] | null,
+	sections_unavailable: PromptSectionsUnavailable | null,
+};
+
+/**
+ *  The request a reply was generated from, exactly as it was recorded when
+ *  it was sent. The sections are recorded with it, so they show what was
+ *  sent even when the character, persona or lorebooks changed since.
+ */
+export type PromptSnapshot_Serialize = {
+	prompt: HistoricalSourceView | null,
+	lorebooks: HistoricalSourceView[],
+	turn_id: string,
+	candidate_id: string,
+	operation: PromptOperation,
+	model: PromptModel,
+	streaming: boolean,
+	parameters: PromptParameters,
+	messages: PromptMessage_Serialize[],
 	budget: PromptBudget,
 	sections: PromptSection[] | null,
 	sections_unavailable: PromptSectionsUnavailable | null,
@@ -6798,8 +7544,24 @@ export type SendAccepted = {
  *  The background the chat shows: an image, hidden, or (neither) whatever
  *  the scene, character or group shows.
  */
-export type SettingBackground = {
-	asset: AssetRef | null,
+export type SettingBackground = SettingBackground_Serialize | SettingBackground_Deserialize;
+
+/**
+ *  The background the chat shows: an image, hidden, or (neither) whatever
+ *  the scene, character or group shows.
+ */
+export type SettingBackground_Deserialize = {
+	asset: AssetRef_Deserialize | null,
+	hidden: boolean,
+	source: SettingSource,
+};
+
+/**
+ *  The background the chat shows: an image, hidden, or (neither) whatever
+ *  the scene, character or group shows.
+ */
+export type SettingBackground_Serialize = {
+	asset: AssetRef_Serialize | null,
 	hidden: boolean,
 	source: SettingSource,
 };
@@ -7556,9 +8318,9 @@ export type SyncConflictResolveRequest = {
 
 export type SyncConflictValue = SyncConflictValue_Serialize | SyncConflictValue_Deserialize;
 
-export type SyncConflictValue_Deserialize = { type: "character"; value: CharacterView_Deserialize } | { type: "persona"; value: PersonaView_Deserialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | { type: "deleted" };
+export type SyncConflictValue_Deserialize = { type: "character"; value: CharacterView_Deserialize } | { type: "persona"; value: PersonaView_Deserialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView_Deserialize } | { type: "prompt"; value: PromptView } | { type: "deleted" };
 
-export type SyncConflictValue_Serialize = { type: "character"; value: CharacterView_Serialize } | { type: "persona"; value: PersonaView_Serialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView } | { type: "prompt"; value: PromptView } | { type: "deleted" };
+export type SyncConflictValue_Serialize = { type: "character"; value: CharacterView_Serialize } | { type: "persona"; value: PersonaView_Serialize } | { type: "persona_default"; value: PersonaDefaultView } | { type: "lorebook"; value: LorebookView_Serialize } | { type: "prompt"; value: PromptView } | { type: "deleted" };
 
 export type SyncConflictView = SyncConflictView_Serialize | SyncConflictView_Deserialize;
 
@@ -7645,15 +8407,39 @@ export type SyncSharing = {
 	pin: string,
 };
 
-export type SyncStatus = { type: "idle" } | { type: "sharing"; addresses: string[]; port: number; pin: string } | { type: "pending_approval"; device_name: string } | { type: "pending_start"; device_name: string } | { type: "connecting" } | { type: "syncing"; phase: SyncPhase; progress: SyncProgress } | { type: "completed"; counts: SyncCounts; conflicts: number; forks: number } | { type: "failed"; reason: ApiError };
+export type SyncStatus = SyncStatus_Serialize | SyncStatus_Deserialize;
+
+export type SyncStatus_Deserialize = { type: "idle" } | { type: "sharing"; addresses: string[]; port: number; pin: string } | { type: "pending_approval"; device_name: string } | { type: "pending_start"; device_name: string } | { type: "connecting" } | { type: "syncing"; phase: SyncPhase; progress: SyncProgress } | { type: "completed"; counts: SyncCounts; conflicts: number; forks: number } | { type: "failed"; reason: ApiError_Deserialize };
+
+export type SyncStatus_Serialize = { type: "idle" } | { type: "sharing"; addresses: string[]; port: number; pin: string } | { type: "pending_approval"; device_name: string } | { type: "pending_start"; device_name: string } | { type: "connecting" } | { type: "syncing"; phase: SyncPhase; progress: SyncProgress } | { type: "completed"; counts: SyncCounts; conflicts: number; forks: number } | { type: "failed"; reason: ApiError_Serialize };
 
 export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
 
-export type TimelineMessage = {
+export type TimelineMessage = TimelineMessage_Serialize | TimelineMessage_Deserialize;
+
+export type TimelineMessage_Deserialize = {
 	id: string,
 	role: MessageRole,
 	author_participant_id: string | null,
-	parts: MessagePartView[],
+	parts: MessagePartView_Deserialize[],
+	reasoning: string | null,
+	created_at: number,
+	/**  The shown reply variant's ordinal; set on generated replies only. */
+	candidate_index: number | null,
+	candidate_count: number,
+	pinned: boolean,
+	/**
+	 *  The scene image the reply asked for, or that was asked of it, until
+	 *  its image is on the message or the user dismissed it.
+	 */
+	scene_image: SceneImageView | null,
+};
+
+export type TimelineMessage_Serialize = {
+	id: string,
+	role: MessageRole,
+	author_participant_id: string | null,
+	parts: MessagePartView_Serialize[],
 	reasoning: string | null,
 	created_at: number,
 	/**  The shown reply variant's ordinal; set on generated replies only. */
@@ -7758,9 +8544,30 @@ export type TranscriptSegment = {
  *  What a finished transcription job produced: the raw text, the text after
  *  the user's corrections, and the audio it came from.
  */
-export type TranscriptionView = {
+export type TranscriptionView = TranscriptionView_Serialize | TranscriptionView_Deserialize;
+
+/**
+ *  What a finished transcription job produced: the raw text, the text after
+ *  the user's corrections, and the audio it came from.
+ */
+export type TranscriptionView_Deserialize = {
 	request_id: string,
-	audio: AssetRef | null,
+	audio: AssetRef_Deserialize | null,
+	model_id: string,
+	raw_text: string,
+	text: string,
+	detected_language: string | null,
+	segments: TranscriptSegment[],
+	applied_corrections: AppliedCorrectionView[],
+};
+
+/**
+ *  What a finished transcription job produced: the raw text, the text after
+ *  the user's corrections, and the audio it came from.
+ */
+export type TranscriptionView_Serialize = {
+	request_id: string,
+	audio: AssetRef_Serialize | null,
 	model_id: string,
 	raw_text: string,
 	text: string,
@@ -8021,9 +8828,17 @@ export type VoiceDesignPreviewRequest = {
 	num_previews: number | null,
 };
 
-export type VoiceDesignPreviewView = {
+export type VoiceDesignPreviewView = VoiceDesignPreviewView_Serialize | VoiceDesignPreviewView_Deserialize;
+
+export type VoiceDesignPreviewView_Deserialize = {
 	generated_voice_id: string,
-	audio: AssetRef,
+	audio: AssetRef_Deserialize,
+	duration_secs: number | null,
+};
+
+export type VoiceDesignPreviewView_Serialize = {
+	generated_voice_id: string,
+	audio: AssetRef_Serialize,
 	duration_secs: number | null,
 };
 

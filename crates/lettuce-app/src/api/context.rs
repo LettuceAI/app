@@ -110,6 +110,7 @@ struct ApiContextInner {
     quota_images: Arc<dyn ImageProviderPort>,
     image: super::image::ImageApiState,
     speech: super::speech::SpeechApiState,
+    image_previews: super::files::previews::ImagePreviewState,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -276,6 +277,7 @@ impl ApiContext {
                 quota_images,
                 image: super::image::ImageApiState::default(),
                 speech: super::speech::SpeechApiState::default(),
+                image_previews: super::files::previews::ImagePreviewState::default(),
             }),
         };
         let _ = quota_signal.set(context.downgrade());
@@ -624,7 +626,21 @@ impl ApiContext {
         lettuce_contracts::AssetRef {
             url: format!("{}{asset_id}", self.inner.parts.asset_url_base),
             asset_id,
+            preview_url: None,
         }
+    }
+
+    pub(crate) fn image_asset_ref(
+        &self,
+        asset_id: lettuce_types::AssetId,
+    ) -> lettuce_contracts::AssetRef {
+        let mut asset = self.asset_ref(asset_id);
+        asset.preview_url = Some(format!("{}?preview=512", asset.url));
+        asset
+    }
+
+    pub(super) fn image_previews(&self) -> &super::files::previews::ImagePreviewState {
+        &self.inner.image_previews
     }
 
     pub(crate) fn downgrade(&self) -> WeakApiContext {
