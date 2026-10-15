@@ -52,7 +52,7 @@ oxlint enforces the import rules: `@tauri-apps/*` may only be imported inside `s
 
 `bun install` installs the dependencies. `cargo tauri dev` in `apps/tauri` starts `bun run dev` here and opens the app on the Vite server at port 1420; `cargo tauri build` runs `bun run build` and bundles `dist/`. On a mobile device the Tauri CLI sets `TAURI_DEV_HOST`, and the dev server then listens on that host with hot reload on port 1421.
 
-`bun run dev` alone serves the UI in a plain browser at `http://localhost:1420` with the mock transport. `bun run check` runs the type check, the linter and the tests; `bun run build` type-checks and writes the production bundle to `dist/`. The build targets ES2023, which every webview Tauri 2 runs on (WebView2 on Windows, WKWebView on macOS and iOS, WebKitGTK on Linux, the system WebView on Android) supports.
+`bun run dev` alone serves the UI in a plain browser at `http://localhost:1420` with the mock transport. Bun 1.4.3 or newer is required. `bun run typecheck` uses Bun's built-in type checker through `bun --check`, which follows both projects referenced by `tsconfig.json`. The explicit flag bypasses this package's `check` script. `bun run check` runs the type check, the linter and the tests; `bun run build` runs the same type check and writes the production bundle to `dist/`. TypeScript remains installed for editor tooling. The build targets ES2023, which every webview Tauri 2 runs on (WebView2 on Windows, WKWebView on macOS and iOS, WebKitGTK on Linux, the system WebView on Android) supports.
 
 `index.html` must not contain an inline `<style>` or script, because the shell's content security policy would then drop `'unsafe-inline'` and break React style attributes.
 

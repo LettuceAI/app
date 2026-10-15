@@ -1,0 +1,52 @@
+{
+  "name": "lettuceai",
+  "version": "0.1.0",
+  "description": "A local-first AI roleplay app for desktop and mobile.",
+  "private": true,
+  "type": "module",
+  "author": "MegalithOfficial",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://www.lettuceai.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LettuceAI/mobile-app.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LettuceAI/mobile-app/issues"
+  },
+  "keywords": ["ai", "roleplay", "chat", "tauri"],
+  "packageManager": "bun@1.4.3",
+  "scripts": {
+    "setup": "bun install --frozen-lockfile && cd apps/ui && bun install --frozen-lockfile",
+    "tauri": "cd apps/ui && bun run tauri",
+    "dev": "bun run tauri dev",
+    "dev:cuda": "bun scripts/cuda.ts dev",
+    "dev:vulkan": "bun run tauri dev --features vulkan",
+    "dev:metal": "bun run tauri dev --features metal",
+    "dev:ui": "cd apps/ui && bun run dev",
+    "build": "bun run tauri build",
+    "build:cuda": "bun scripts/cuda.ts build",
+    "build:vulkan": "bun run tauri build --features vulkan",
+    "build:metal": "bun run tauri build --features metal",
+    "build:ui": "cd apps/ui && bun run build",
+    "preview": "cd apps/ui && bun run preview",
+    "typecheck": "bun run typecheck:scripts && bun run typecheck:ui",
+    "typecheck:scripts": "bun --check",
+    "typecheck:ui": "cd apps/ui && bun run typecheck",
+    "lint": "cd apps/ui && bun run lint",
+    "test": "cd apps/ui && bun run test",
+    "check": "bun run typecheck:scripts && bun run check:ui",
+    "check:ui": "cd apps/ui && bun run check",
+    "check:rust": "cargo check --workspace",
+    "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
+    "test:rust": "cargo test --workspace",
+    "check:architecture": "bash scripts/check-architecture.sh",
+    "check:all": "bun run check && bun run check:rust && bun run lint:rust && bun run test:rust && bun run check:architecture",
+    "bindings:generate": "cargo run -p lettuce-tauri --bin export-bindings"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}

@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "tauri": "cd ../tauri && tauri",
-    "build": "tsc -b && vite build",
+    "build": "bun run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b",
+    "typecheck": "bun --check",
     "lint": "oxlint --deny-warnings --ignore-pattern 'test/lint-fixtures/**' src test",
     "test": "vitest run",
     "check": "bun run typecheck && bun run lint && bun run test"
