@@ -1,11 +1,12 @@
 import { ModelMemoryFit } from "./ModelMemoryFit";
+import { ModelLayerPlacement } from "./ModelLayerPlacement";
 import { useLlamaContext } from "./model-editor-runtime-data";
 import { SelectMenuField } from "@/shared/ui/SelectMenuField";
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Button, IconButton, Input, ListGroup, ListRowButton, LoadingState, Sheet, Slider, Switch, Text, fileSize, icon, useCompactLayout } from "@lettuceai/crisp";
+import { Button, IconButton, Input, ListGroup, ListRowButton, LoadingState, Sheet, Skeleton, Slider, Switch, Text, fileSize, icon, useCompactLayout } from "@lettuceai/crisp";
 import type { SettingsModelSettingsLayer } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { EditorRow } from "@/shared/ui/EditorRow";
@@ -13,7 +14,7 @@ import { SliderValue } from "@/shared/ui/SliderValue";
 import { useSettingsApi } from "./data";
 import { effectiveField, readField, writeField, type ModelConfig, type ModelLora } from "@/entities/model/model-config";
 
-export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false, contextEditor = false, splitOnly = false, devicesOnly = false, layersOnly = false }: { path: string; config: ModelConfig; defaults: SettingsModelSettingsLayer | undefined; onChange: (value: ModelConfig) => void; gpu?: boolean; contextEditor?: boolean; splitOnly?: boolean; devicesOnly?: boolean; layersOnly?: boolean }) {
+export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false, contextEditor = false, splitOnly = false, devicesOnly = false, layersOnly = false, cpuLayers = false }: { path: string; config: ModelConfig; defaults: SettingsModelSettingsLayer | undefined; onChange: (value: ModelConfig) => void; gpu?: boolean; contextEditor?: boolean; splitOnly?: boolean; devicesOnly?: boolean; layersOnly?: boolean; cpuLayers?: boolean }) {
   const { t, i18n } = useTranslation("settings");
   const api = useSettingsApi();
   const info = useLlamaContext(path, config, defaults);
@@ -41,21 +42,24 @@ export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false
     const own = readField(config, "chat", field.store, field.key);
     const value = effectiveField(config, defaults, "chat", field);
     const maximum = result?.max_gpu_layers;
-    const disabled = result?.supports_gpu_offload === false;
-    const count = disabled ? 0 : typeof value === "number" ? value : result?.estimated_placement?.total_gpu_layers;
-    const label = t("modelEditor.fields.llamaGpuLayers");
+    const disabled = result?.supports_gpu_offload === false || cpuLayers && maximum == null;
+    const gpuCount = result?.supports_gpu_offload === false ? 0 : typeof value === "number" ? Math.min(maximum ?? value, Math.max(0, value)) : result?.estimated_placement?.total_gpu_layers;
+    const count = cpuLayers ? maximum != null && gpuCount != null ? Math.max(0, maximum - gpuCount) : undefined : gpuCount;
+    const setCount = (count: number) => write("gpu_layers", cpuLayers && maximum != null ? maximum - count : count);
+    const label = t(cpuLayers ? "modelEditor.fields.llamaCpuLayers" : "modelEditor.fields.llamaGpuLayers");
     return <fieldset disabled={disabled} className={disabled ? "min-w-0 opacity-50" : "min-w-0"}><EditorRow label={label} overridden={own.overridden} onReset={() => write("gpu_layers", undefined)} resetLabel={t("modelEditor.resetField", { field: label })}>
-      {maximum != null && count != null ? <div className="flex items-center gap-3"><Slider aria-label={label} min={0} max={maximum} step={1} value={count} onChange={(value) => write("gpu_layers", value)} className="min-w-0 flex-1" /><SliderValue label={t("modelEditor.valueLabel", { field: label })} min={0} max={maximum} step={1} value={count} text={count === maximum ? t("modelEditor.allLayers") : String(count)} overridden={own.overridden} onCommit={(value) => write("gpu_layers", value)} /></div> : <Input aria-label={label} type="number" min={0} max={maximum ?? 512} value={own.value === undefined ? "" : String(own.value)} placeholder={t("modelEditor.automatic")} onChange={(event) => write("gpu_layers", event.target.value === "" ? undefined : Number(event.target.value))} />}
+      {maximum != null && count != null ? <div className="flex items-center gap-3"><Slider aria-label={label} min={0} max={maximum} step={1} value={count} onChange={setCount} className="min-w-0 flex-1" /><SliderValue label={t("modelEditor.valueLabel", { field: label })} min={0} max={maximum} step={1} value={count} text={count === maximum ? t("modelEditor.allLayers") : String(count)} overridden={own.overridden} onCommit={setCount} /></div> : <Input aria-label={label} type="number" min={0} max={maximum ?? 512} value={cpuLayers || own.value === undefined ? "" : String(own.value)} placeholder={t("modelEditor.automatic")} onChange={(event) => event.target.value === "" ? write("gpu_layers", undefined) : setCount(Number(event.target.value))} />}
     </EditorRow></fieldset>;
   }
-  return <div className={contextEditor ? "overflow-hidden rounded-xl border border-line bg-surface-1" : "space-y-3"}>
-    {contextEditor && <div className="mb-3 border-b border-line"><EditorRow label={contextLabel} hint={limit ? t("modelEditor.contextLimit", { value: compactContext(limit) }) : undefined} overridden={contextOwn.overridden} onReset={() => setContext(undefined)} resetLabel={t("modelEditor.resetField", { field: contextLabel })}>
+  if (splitOnly && result) return <ModelLayerPlacement info={result} devices={devices.data?.devices ?? []} singleDeviceId={config.llama_cpp.single_gpu_device_id ?? defaults?.llama_cpp.single_gpu_device_id} />;
+  return <div aria-busy={info.isPending} className={contextEditor ? "overflow-hidden rounded-xl border border-line bg-surface-1" : "space-y-3"}>
+    {contextEditor && <div className="mb-3 border-b border-line"><EditorRow label={contextLabel} hint={limit ? t("modelEditor.contextLimit", { value: compactContext(limit) }) : info.isPending ? <Skeleton className="h-3 w-40" /> : undefined} overridden={contextOwn.overridden} onReset={() => setContext(undefined)} resetLabel={t("modelEditor.resetField", { field: contextLabel })}>
       {limit && contextValue !== undefined ? <div className="flex items-center gap-3">
         <Slider aria-label={contextLabel} aria-valuetext={compactContext(contextValue)} value={sliderValue ?? contextValue} min={sliderMinimum} max={limit} step={sliderStep} onChange={setContext} className="min-w-0 flex-1" />
         <SliderValue label={t("modelEditor.valueLabel", { field: contextLabel })} value={contextValue} text={compactContext(contextValue)} overridden={contextOwn.overridden} min={1} max={limit} step={1} onCommit={setContext} />
-      </div> : info.isPending ? <LoadingState /> : <Input aria-label={contextLabel} type="number" min={1} max={4294967295} step={1} value={typeof context === "number" ? String(context) : ""} onChange={(event) => { if (event.target.value === "") setContext(undefined); else if (event.target.validity.valid) setContext(Number(event.target.value)); }} />}
+      </div> : info.isPending ? <div className="flex h-8 items-center gap-3"><Skeleton className="h-2 min-w-0 flex-1 rounded-full" /><Skeleton className="h-4 w-14" /></div> : <Input aria-label={contextLabel} type="number" min={1} max={4294967295} step={1} value={typeof context === "number" ? String(context) : ""} onChange={(event) => { if (event.target.value === "") setContext(undefined); else if (event.target.validity.valid) setContext(Number(event.target.value)); }} />}
     </EditorRow></div>}
-    {info.isPending && !contextEditor && <LoadingState />}
+    {info.isPending && !devicesOnly && <RuntimeMemorySkeleton contextEditor={contextEditor} splitOnly={splitOnly} />}
     {info.isError && <FailureState error={info.error} onRetry={() => void info.refetch()} size="sm" />}
     {!devicesOnly && result && <div className={`space-y-3 rounded-xl bg-fill px-4 py-3 ${contextEditor ? "mx-4 mb-3" : ""}`}>
       {!splitOnly && result.memory_fit?.map((fit, index) => <ModelMemoryFit key={index} fit={fit} cacheType={cacheType} />)}
@@ -67,13 +71,7 @@ export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false
         <p className="text-xs text-fg-3">{contextEditor ? <><span className="text-fg-2">{t("modelEditor.recommendedCompact", { value: compactContext(result.recommended_context_length) })}</span> {t(result.memory_fit?.some((fit) => fit.gpu && fit.context_bytes > 0) ? "modelEditor.recommendedGpuHint" : "modelEditor.recommendedRamHint")}</> : t("modelEditor.recommended", { count: result.recommended_context_length })}</p>
         {contextValue !== result.recommended_context_length && <Button size="sm" variant="secondary" onClick={() => setContext(result.recommended_context_length ?? undefined)}>{contextEditor ? t("modelEditor.useContext", { value: compactContext(result.recommended_context_length) }) : t("modelEditor.useRecommended")}</Button>}
       </div>}
-      {gpu && result.estimated_placement && result.estimated_placement.total_gpu_layers > 0 && <div className="flex h-8 overflow-hidden rounded-lg">
-        {result.estimated_placement.per_device_layers.map((layers, index) => layers > 0 && <div key={index} className="flex min-w-0 items-center gap-1.5 border-r border-line bg-accent/80 px-2.5 text-xs text-accent-fg" style={{ flexGrow: layers, flexBasis: 0 }}>
-          <span className="block truncate">{devices.data?.devices.find((device) => device.index === index)?.name ?? String(index)}</span>
-          <span>{t("modelEditor.layers", { count: layers })}</span>
-        </div>)}
-        {result.max_gpu_layers !== null && result.max_gpu_layers > result.estimated_placement.total_gpu_layers && <div className="flex min-w-0 items-center gap-1.5 bg-fill-2 px-2.5 text-xs" style={{ flexGrow: result.max_gpu_layers - result.estimated_placement.total_gpu_layers, flexBasis: 0 }}><span>{t("modelEditor.groups.cpu")}</span><span>{t("modelEditor.layers", { count: result.max_gpu_layers - result.estimated_placement.total_gpu_layers })}</span></div>}
-      </div>}
+      {gpu && <ModelLayerPlacement info={result} devices={devices.data?.devices ?? []} singleDeviceId={config.llama_cpp.single_gpu_device_id ?? defaults?.llama_cpp.single_gpu_device_id} />}
     </div>}
     {gpu && !splitOnly && <>
       {devices.isError && <FailureState error={devices.error} onRetry={() => void devices.refetch()} size="sm" />}
@@ -88,6 +86,25 @@ export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false
           }} />
         </EditorRow>}
       </div>)}</div>
+    </>}
+  </div>;
+}
+
+function RuntimeMemorySkeleton({ contextEditor, splitOnly }: { contextEditor: boolean; splitOnly: boolean }) {
+  const { t } = useTranslation("settings");
+  return <div role="status" aria-label={t("modelEditor.loadingMemory")} className={`space-y-3 rounded-xl bg-fill px-4 py-3 ${contextEditor ? "mx-4 mb-3" : ""}`}>
+    <span className="sr-only">{t("modelEditor.loadingMemory")}</span>
+    {splitOnly ? <Skeleton shape="block" className="h-8 w-full" /> : <>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-2"><Skeleton className="h-3 w-40 max-w-full" /><Skeleton className="h-6 w-20" /></div>
+        <Skeleton className="h-3 w-28 shrink-0" />
+      </div>
+      <Skeleton className="h-3 w-48 max-w-full" />
+      <Skeleton className="h-2 w-full rounded-full" />
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 @[36rem]:grid-cols-3">
+        {Array.from({ length: 5 }, (_, index) => <div key={index} className="flex items-start gap-1.5"><Skeleton shape="circle" className="mt-1 h-2 w-2 shrink-0" /><div className="min-w-0 space-y-1.5"><Skeleton className="h-3 w-20 max-w-full" /><Skeleton className="h-3 w-12" /></div></div>)}
+      </div>
+      <div className="flex min-h-8 items-center border-t border-line pt-3"><Skeleton className="h-3 w-3/4" /></div>
     </>}
   </div>;
 }

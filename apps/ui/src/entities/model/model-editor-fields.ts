@@ -264,11 +264,6 @@ export const editorFields = {
       "pin"
     ]
   },
-  "llamaOffloadKqv": {
-    "store": "llama",
-    "key": "offload_kqv",
-    "type": "switch"
-  },
   "llamaSwaFull": {
     "store": "llama",
     "key": "swa_full",

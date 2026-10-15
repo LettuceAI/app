@@ -1,7 +1,7 @@
 import type { FieldId } from "./model-editor-fields";
 
 export type EditorKind = "cloud" | "ollama" | "local" | "image";
-export interface EditorGroup { label?: string; fields: FieldId[]; toggle?: FieldId }
+export interface EditorGroup { label?: string; fields: FieldId[]; toggle?: FieldId; area?: "gpu" }
 export interface EditorSection { id: string; groups: EditorGroup[]; perFeature?: boolean }
 const common: FieldId[] = ["temperature", "topP", "topK", "maxOutputTokens"];
 const penalties: FieldId[] = ["frequencyPenalty", "presencePenalty"];
@@ -40,12 +40,18 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
       group("dry", ["llamaDryMultiplier", "llamaDryBase", "llamaDryAllowedLength", "llamaDryPenaltyLastN", "llamaDrySequenceBreakers"]),
       group("xtc", ["llamaXtcProbability", "llamaXtcThreshold"]),
       group("adaptive", ["llamaAdaptiveTarget", "llamaAdaptiveDecay"]),
+      group("reasoning", ["reasoningEnabled", "forceGemma4Reasoning"]),
     ], true),
-    section("memory", [{ fields: ["contextLength"] }, group("kv", ["llamaKvType", "llamaKvTypeK", "llamaKvTypeV", "llamaKvPlacement", "llamaOffloadKqv", "llamaSwaFull", "llamaFlashAttention"])]),
-    section("gpu", [{ fields: ["llamaGpuLayers", "llamaCpuLayers"] }, { label: "multipleGpus", toggle: "llamaMultiGpuEnabled", fields: ["llamaGpuDistributionMode", "llamaMainGpu", "llamaPriorityVramLimitBytes"] }, group("singleGpu", ["llamaSingleGpuDeviceId"])]),
+    section("memory", [
+      { fields: ["contextLength"] },
+      group("kv", ["llamaKvType", "llamaKvTypeK", "llamaKvTypeV", "llamaKvPlacement", "llamaSwaFull", "llamaFlashAttention"]),
+      { area: "gpu", fields: ["llamaGpuLayers", "llamaCpuLayers"] },
+      { area: "gpu", label: "multipleGpus", toggle: "llamaMultiGpuEnabled", fields: ["llamaGpuDistributionMode", "llamaMainGpu", "llamaPriorityVramLimitBytes"] },
+      { area: "gpu", label: "singleGpu", fields: ["llamaSingleGpuDeviceId"] },
+    ]),
     section("performance", [group("cpu", ["llamaThreads", "llamaThreadsBatch"]), group("batching", ["llamaBatchSize", "llamaUbatchSize"]), group("rope", ["llamaRopeFreqBase", "llamaRopeFreqScale"])]),
     section("speculative", [{ label: "mtp", toggle: "llamaMtpEnabled", fields: ["llamaMtpModelPath", "llamaMtpDraftTokens", "llamaMtpPlacement"] }, { label: "dflash", toggle: "llamaDflashEnabled", fields: ["llamaDflashModelPath", "llamaDflashDraftTokens", "llamaDflashMinProbability"] }]),
-    section("template", [group("template", ["llamaChatTemplatePreset", "llamaChatTemplateOverride"]), group("vision", ["llamaMmprojPath"]), group("reasoning", ["reasoningEnabled", "forceGemma4Reasoning"]), group("output", ["llamaStreamingEnabled", "llamaRawCompletionFallback", "llamaStrictMode"])]),
+    section("template", [group("template", ["llamaChatTemplatePreset", "llamaChatTemplateOverride"]), group("vision", ["llamaMmprojPath"]), group("output", ["llamaStreamingEnabled", "llamaRawCompletionFallback", "llamaStrictMode"])]),
   ];
   return [
     section("generation", [{ fields: common }, group("penalties", penalties)], true),

@@ -13,18 +13,19 @@ import { formatSequences, parseSequences } from "./model-editor-sequences";
 import type { EditorKind } from "./model-editor-sections";
 import { editorFields, type EditorField, type FieldId } from "./model-editor-fields";
 
-export function ModelEditorField({ id, config, defaults, layer, onChange, onFile, onInvalid, options, kind, runtimeDefault, compact = false, disabled = false, disabledOptions = [], loading = false }: {
+export function ModelEditorField({ id, config, defaults, layer, onChange, onFile, onInvalid, options, kind, runtimeDefault, compact = false, disabled = false, disabledOptions = [], loading = false, multiGpuAvailable = true }: {
   kind: EditorKind; runtimeDefault: unknown; compact?: boolean;
   id: FieldId; config: ModelConfig; defaults: SettingsModelSettingsLayer | undefined; layer: Layer;
   options?: { value: string; label: string; disabled?: boolean }[] | undefined;
-  disabled?: boolean; disabledOptions?: readonly string[]; loading?: boolean;
+  disabled?: boolean; disabledOptions?: readonly string[]; loading?: boolean; multiGpuAvailable?: boolean;
   onChange: (config: ModelConfig) => void; onFile: (id: FieldId) => void; onInvalid: (key: string, invalid: boolean) => void;
 }) {
   const { t, i18n } = useTranslation("settings");
   const [resetVersion, setResetVersion] = useState(0);
   const spec: EditorField = editorFields[id];
+  const multiGpu = multiGpuAvailable && effectiveField(config, defaults, layer, editorFields.llamaMultiGpuEnabled) === true;
   const own = id === "llamaKvType" && (config.llama_cpp.kv_type_k != null || config.llama_cpp.kv_type_v != null) ? { value: "split", overridden: true } : readField(config, layer, spec.store, spec.key);
-  const value = effectiveField(config, defaults, layer, spec) ?? runtimeDefault ?? (id === "frequencyPenalty" || id === "presencePenalty" ? 0 : id === "temperature" ? 0.8 : id === "topP" ? 1 : undefined);
+  const value = id === "llamaSingleGpuDeviceId" && disabled && options?.length === 1 ? options[0]?.value : effectiveField(config, defaults, layer, spec) ?? runtimeDefault ?? (id === "frequencyPenalty" || id === "presencePenalty" ? 0 : id === "temperature" ? 0.8 : id === "topP" ? 1 : undefined);
   const placeholderKey = `modelEditor.placeholders.${id}`;
   const emptyLabel = i18n.exists(placeholderKey, { ns: "settings" }) ? t(placeholderKey as never) : t(id === "topK" ? "modelEditor.off" : id === "llamaSeed" || id === "sdSeed" || id === "ollamaSeed" ? "modelEditor.random" : kind === "cloud" || kind === "ollama" ? "modelEditor.providerDefault" : "modelEditor.automatic");
   const label = t(`modelEditor.fields.${id}`);
@@ -33,7 +34,8 @@ export function ModelEditorField({ id, config, defaults, layer, onChange, onFile
   const set = (next: unknown) => { if (!disabled) onChange(writeField(config, layer, spec.store, spec.key, next, defaults)); };
   const fallback = value === undefined ? emptyLabel : typeof value === "boolean" ? t(value ? "modelEditor.on" : "modelEditor.off") : String(value);
   const hintKey = `modelEditor.hints.${id}`;
-  const hint = i18n.exists(hintKey, { ns: "settings" }) ? t(hintKey as never) : undefined;
+  const autoKvOffload = id === "llamaKvPlacement" && (value === undefined || value === "auto") ? effectiveField(config, defaults, layer, { store: "llama", key: "offload_kqv" }) : undefined;
+  const hint = id === "llamaKvPlacement" && disabledOptions.includes("pin") ? t("modelEditor.gpuUnavailable") : typeof autoKvOffload === "boolean" ? t(autoKvOffload ? "modelEditor.automaticKvGpu" : "modelEditor.automaticKvRam") : i18n.exists(hintKey, { ns: "settings" }) ? t(hintKey as never) : undefined;
   const optionLabel = (option: string) => t(`modelEditor.options.${id}.${option}` as never);
   if (spec.type === "caching") {
     const enabled = value !== null && typeof value === "object" && "enabled" in value;
@@ -65,12 +67,12 @@ export function ModelEditorField({ id, config, defaults, layer, onChange, onFile
   } else if (spec.type === "switch" || spec.type === "reasoning") {
     control = <div className="flex justify-end"><Switch checked={spec.type === "reasoning" ? value === "enabled" : value === true} onChange={(checked) => set(spec.type === "reasoning" ? checked ? "enabled" : "disabled" : checked)} aria-label={label} /></div>;
   } else if (spec.type === "select") {
-    const values = [...(spec.options ?? [])];
+    const values = id === "llamaKvPlacement" ? multiGpu ? ["auto", "system_ram", "pin", "split"] : ["auto", "system_ram", "pin"] : [...(spec.options ?? [])];
     const hasAuto = values.includes("auto");
-    const selected = value === undefined ? hasAuto ? "auto" : "" : String(value);
+    const selected = id === "llamaKvPlacement" && !multiGpu && value === "split" ? "pin" : value === undefined ? hasAuto ? "auto" : "" : String(value);
     if (id === "llamaKvType") values.push("split");
     if (selected && !values.includes(selected)) values.push(selected);
-    control = <SelectMenuField disabled={disabled} placeholder={emptyLabel} aria-label={label} value={selected} options={[...(hasAuto ? [] : [{ value: "", label: emptyLabel }]), ...values.filter(Boolean).map((v) => ({ value: v, label: id === "llamaKvType" && v === "split" ? t("modelEditor.separateKv") : spec.options?.includes(v) ? optionLabel(v) : v, disabled: disabledOptions.includes(v) }))]} onChange={(value) => {
+    control = <SelectMenuField disabled={disabled} placeholder={emptyLabel} aria-label={label} value={selected} options={[...(hasAuto ? [] : [{ value: "", label: emptyLabel }]), ...values.filter(Boolean).map((v) => ({ value: v, label: id === "llamaKvPlacement" && !multiGpu && v === "pin" ? t("modelEditor.kvGpu") : id === "llamaKvType" && v === "split" ? t("modelEditor.separateKv") : spec.options?.includes(v) ? optionLabel(v) : v, disabled: disabledOptions.includes(v) }))]} onChange={(value) => {
       const v = value ?? "";
       if (disabledOptions.includes(v)) return;
       set(v === "" ? undefined : id === "ollamaMirostat" ? Number(v) : v);

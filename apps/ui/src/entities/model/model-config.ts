@@ -228,7 +228,12 @@ export function defaultOf(defaults: SettingsModelSettingsLayer | undefined, stor
   return source[key] ?? undefined;
 }
 
-export function effectiveField(config: ModelConfig, defaults: SettingsModelSettingsLayer | undefined, layer: Layer, field: { store: Store; key: string }) {
+export function effectiveField(config: ModelConfig, defaults: SettingsModelSettingsLayer | undefined, layer: Layer, field: { store: Store; key: string }): unknown {
+  if (field.store === "llama" && field.key === "offload_kqv") {
+    const placement = effectiveField(config, defaults, layer, { store: "llama", key: "kv_placement" });
+    if (placement === "pin" || placement === "split") return true;
+    if (placement === "system_ram") return false;
+  }
   if (field.store === "llama" && ["kv_type", "kv_type_k", "kv_type_v"].includes(field.key)) {
     const kv = resolvedKvSettings(config, defaults);
     const k = kv.kv_type_k ?? kv.kv_type ?? "f16";

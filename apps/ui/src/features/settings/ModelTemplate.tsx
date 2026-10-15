@@ -37,7 +37,7 @@ export function ModelTemplate({ path, config, defaults, onChange }: { path: stri
       <CopyButton value={code} label={t("modelEditor.templateCopy")} copiedLabel={t("modelEditor.templateCopied")} variant="ghost" disabled={!code} />
       {shown === "edit" ? <><Button variant="ghost" onClick={() => setMode(null)}>{t("manage.cancel")}</Button><Button onClick={apply}>{t("modelEditor.templateApply")}</Button></> : <Button disabled={!template.data} onClick={() => edit(template.data?.template ?? "")}>{t("modelEditor.templateUseCustom")}</Button>}
     </div>}>
-      {shown === "view" && template.isPending && <LoadingState />}
+      {shown === "view" && template.isPending && <LoadingState className="min-w-0 flex-1" />}
       {shown === "view" && template.isError && <FailureState error={template.error} onRetry={() => void template.refetch()} />}
       {(shown === "edit" || template.data) && <JinjaEditor label={shown === "edit" ? label : t("modelEditor.templateTitle")} value={code} readOnly={shown !== "edit"} onChange={setDraft} />}
     </Sheet>

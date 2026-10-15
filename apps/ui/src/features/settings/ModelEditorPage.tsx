@@ -17,12 +17,13 @@ import { changedCount, effectiveField, featureKeys, parseModelConfig, resetFeatu
 import { useLlamaContext } from "./model-editor-runtime-data";
 import { runtimeFieldDefault } from "./model-editor-defaults";
 import { editorFields, type FieldId } from "@/entities/model/model-editor-fields";
-import { editorSections, type EditorKind } from "@/entities/model/model-editor-sections";
+import { editorSections, type EditorGroup, type EditorKind } from "@/entities/model/model-editor-sections";
 import { ModelEditorField } from "@/entities/model/ModelEditorField";
 import { ModelEditorReveal } from "@/entities/model/ModelEditorReveal";
 import { ModelComponentPicker, ModelFilePicker, type PickedModel } from "./ModelFilePicker";
 import { LlamaRuntimeInfo, ModelLoras, OpenRouterEndpoints } from "./ModelEditorRuntime";
 import { ModelTemplate } from "./ModelTemplate";
+import { ModelEditorColumns } from "./ModelEditorColumns";
 import { deleteModelWithUsage, exportModel } from "./model-actions";
 
 export function ModelEditorPage() {
@@ -70,20 +71,27 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
   const localFile = kind === "local" || (kind === "image" && account?.provider_kind === "sdcpp");
   const externalLabel = localFile ? draft.externalId.split(/[\\/]/).at(-1) ?? draft.externalId : draft.externalId;
   const headerMeta = localFile ? account?.label : [account?.label, draft.externalId].filter(Boolean).join(" · ");
+  const contextInfo = useLlamaContext(draft.externalId, draft.config, defaults, kind === "local");
+  const devices = useQuery({ queryKey: ["llama", "devices"], queryFn: () => api.call("llamaDevices"), enabled: kind === "local" });
+  const gpuUnavailable = kind === "local" && (contextInfo.data?.supports_gpu_offload === false || devices.data?.devices.length === 0);
+  const showGpu = kind === "local" && !devices.isPending && !gpuUnavailable;
+  const multiGpuAvailable = (devices.data?.devices.filter((device) => device.device_type !== "IntegratedGpu").length ?? 0) >= 2;
   const sections = editorSections(kind, account?.provider_kind === "openrouter").filter((item) => {
     if (kind === "cloud" && descriptor && item.id === "reasoning") return descriptor.reasoning !== "none" && draft.config.capabilities.reasoning !== "unsupported";
     if (kind === "cloud" && descriptor && item.id === "caching") return descriptor.prompt_caching !== "none" && draft.config.capabilities.prompt_cache !== "unsupported";
     if (kind === "image" && item.id === "loras") return draft.config.stable_diffusion.cpp?.supports_lora !== false;
     return true;
   });
-  const contextInfo = useLlamaContext(draft.externalId, draft.config, defaults, kind === "local");
-  const gpuUnavailable = kind === "local" && contextInfo.data?.supports_gpu_offload === false;
-  const devices = useQuery({ queryKey: ["llama", "devices"], queryFn: () => api.call("llamaDevices"), enabled: kind === "local" && section === "gpu" });
   const imageOptions = useQuery({ queryKey: ["image", "capabilities", draft.accountId, draft.externalId], queryFn: () => api.call("imageCapabilities", { target: { type: "provider", provider_kind: account!.provider_kind, model: draft.externalId || null } }), enabled: kind === "image" && Boolean(account) });
   const upscalers = useQuery({ queryKey: ["sd", "upscalers"], queryFn: () => api.call("sdUpscalersList"), enabled: kind === "image" && section === "hires" });
   const imageProfiles = useQuery({ queryKey: ["image", "profiles"], queryFn: () => api.call("hfImageBundleProfiles"), enabled: kind === "image" });
   const imageProfile = imageProfiles.data?.profiles.find((profile) => profile.id === draft.config.stable_diffusion.cpp?.profile_id);
   const current = sections.find((item) => item.id === section);
+  const hasDeviceOverview = kind === "local" && Boolean(draft.externalId);
+  const isSecondaryGroup = (group: EditorGroup) => group.area === "gpu" || section === "generation" && (group.label === "sampler" || group.label === "dry");
+  const secondaryGroups = current?.groups.filter(isSecondaryGroup) ?? [];
+  const hasSecondary = section === "memory" ? showGpu : secondaryGroups.length > 0;
+  const wideEditor = current ? hasSecondary : hasDeviceOverview;
   const activeLayer = current?.perFeature ? layer : "chat";
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) || Object.values(invalid).some(Boolean);
   const update = (patch: Partial<Draft>) => setDraft((value) => ({ ...value, ...patch }));
@@ -149,8 +157,8 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
     const values = id === "sdSize" ? imageOptions.data?.sizes : id === "sdSampler" ? imageOptions.data?.samplers : id === "sdScheduler" ? imageOptions.data?.schedulers : id === "sdHiresUpscaler" ? upscalers.data?.hires_upscaler_names : undefined;
     return values?.length ? values.map((value) => ({ value, label: id === "sdSize" ? value.replace("x", "×") : value })) : undefined;
   };
-  const runtimeDefault = (id: FieldId) => id === "llamaOffloadKqv" && contextInfo.data?.supports_gpu_offload === false ? false : runtimeFieldDefault(kind, id, draft.config, defaults, activeLayer, imageProfile) ?? (id === "sdSize" ? imageOptions.data?.default_size ?? undefined : undefined);
-  const field = (id: FieldId) => <ModelEditorField loading={pickingField === id} kind={kind} runtimeDefault={runtimeDefault(id)} disabled={(pickingField !== null && editorFields[id].type === "file") || gpuUnavailable && ["llamaCpuLayers", "llamaMultiGpuEnabled", "llamaGpuDistributionMode", "llamaMainGpu", "llamaPriorityVramLimitBytes", "llamaSingleGpuDeviceId", "llamaOffloadKqv"].includes(id)} disabledOptions={gpuUnavailable ? id === "llamaKvPlacement" ? ["split", "pin"] : id === "llamaMtpPlacement" ? ["gpu"] : [] : []} options={fieldOptions(id)} key={`${resetVersion}.${activeLayer}.${id}`} id={id} config={draft.config} defaults={defaults} layer={activeLayer} onChange={setConfig} onFile={(key) => void pickFieldFile(key)} onInvalid={(key, value) => setInvalid((state) => ({ ...state, [key]: value }))} />;
+  const runtimeDefault = (id: FieldId) => runtimeFieldDefault(kind, id, draft.config, defaults, activeLayer, imageProfile) ?? (id === "sdSize" ? imageOptions.data?.default_size ?? undefined : undefined);
+  const field = (id: FieldId) => <ModelEditorField loading={pickingField === id} kind={kind} runtimeDefault={runtimeDefault(id)} multiGpuAvailable={multiGpuAvailable} disabled={id === "llamaSingleGpuDeviceId" && devices.data?.devices.length === 1 || (pickingField !== null && editorFields[id].type === "file") || gpuUnavailable && ["llamaCpuLayers", "llamaMultiGpuEnabled", "llamaGpuDistributionMode", "llamaMainGpu", "llamaPriorityVramLimitBytes", "llamaSingleGpuDeviceId"].includes(id)} disabledOptions={gpuUnavailable ? id === "llamaKvPlacement" ? ["split", "pin"] : id === "llamaMtpPlacement" ? ["gpu"] : [] : []} options={fieldOptions(id)} key={`${resetVersion}.${activeLayer}.${id}`} id={id} config={draft.config} defaults={defaults} layer={activeLayer} onChange={setConfig} onFile={(key) => void pickFieldFile(key)} onInvalid={(key, value) => setInvalid((state) => ({ ...state, [key]: value }))} />;
   const supports = (id: FieldId) => {
     if (id === "llamaKvTypeK" || id === "llamaKvTypeV") return effectiveField(draft.config, defaults, "chat", editorFields.llamaKvType) === "split";
     if (kind === "image") {
@@ -164,7 +172,7 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
     const parameters = descriptor.parameters as unknown as Record<string, boolean>;
     return !(key in parameters) || parameters[key] !== false;
   };
-  const overview = <div className="space-y-6">
+  const overview = <ModelEditorColumns primary={<>
     {accounts.length === 0 && <Text>{t("models.noProviders")}</Text>}
     <ListGroup>
       <EditorRow label={t("models.provider")}><ProviderSelect value={draft.accountId || null} compact={phone} aria-label={t("models.provider")} providers={accounts.map((entry) => {
@@ -194,8 +202,7 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
         return <EditorRow key={scope} label={t(`modelEditor.${scope}`)} hint={scope === "text" ? undefined : t(`modelEditor.scopeHints.${direction}.${scope}` as never)} inline><Switch aria-label={t("modelEditor.scopeLabel", { direction: t(`modelEditor.${key}`), scope: t(`modelEditor.${scope}`) })} checked={draft[key].includes(scope)} disabled={draft.config.capabilities[key === "inputs" ? "input_modalities" : "output_modalities"][scope] === "unsupported"} onChange={(checked) => update({ [key]: checked ? [...draft[key], scope] : draft[key].filter((value) => value !== scope), remote: null })} /></EditorRow>;
       })}
     </ListGroup>)}
-    {kind === "local" && draft.externalId && <ListGroup label={t("modelEditor.onDevice")}><div className="px-4 py-3"><LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} /></div></ListGroup>}
-  </div>;
+  </>} secondary={hasDeviceOverview ? <ListGroup label={t("modelEditor.onDevice")}><div className="px-4 py-3"><LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} /></div></ListGroup> : undefined} secondaryLabel={t("modelEditor.onDevice")} />;
   const featurePicker = <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-1 px-4 py-3">
     <div className="min-w-0 flex-1 basis-48"><p className="text-sm font-medium">{t("modelEditor.settingsFor")}</p><p className="mt-0.5 text-xs text-fg-3">{t(layer === "chat" ? "modelEditor.chatHint" : "modelEditor.featureHint")}</p></div>
     <Menu>
@@ -217,20 +224,29 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
     </Menu>
     {layer !== "chat" && changedCount(draft.config, layer) > 0 && <Button variant="ghost" size="sm" leading={<RotateCcw size={icon.sm} />} onClick={() => { setConfig(resetFeature(draft.config, layer)); setResetVersion((value) => value + 1); setInvalid((values) => Object.fromEntries(Object.entries(values).filter(([key]) => !key.startsWith(`${layer}.`)))); }}>{t("modelEditor.reset")}</Button>}
   </div>;
+  const renderGroup = (group: EditorGroup, index: number) => {
+    if (group.toggle === "llamaMultiGpuEnabled" && !multiGpuAvailable) return null;
+    if (section === "memory" && group.fields.includes("contextLength")) return <LlamaRuntimeInfo key={index} path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} contextEditor />;
+    const enabled = group.toggle ? effectiveField(draft.config, defaults, activeLayer, editorFields[group.toggle]) ?? runtimeDefault(group.toggle) : true;
+    return <ListGroup key={index} label={group.label ? t(`modelEditor.groups.${group.label}` as never) : undefined}>
+      {group.toggle && field(group.toggle)}
+      <ModelEditorReveal open={!group.toggle || enabled === true || enabled === "enabled"}>
+        {group.area === "gpu" && group.toggle && <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu devicesOnly />}
+        {group.fields.filter(supports).map((id) => <Fragment key={id}>{(id === "llamaGpuLayers" || id === "llamaCpuLayers") ? <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu layersOnly cpuLayers={id === "llamaCpuLayers"} /> : id === "llamaChatTemplateOverride" ? <ModelTemplate path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} /> : field(id)}</Fragment>)}
+      </ModelEditorReveal>
+    </ListGroup>;
+  };
   const body = current ? <div className="space-y-6">
-    {current.perFeature && featurePicker}
-    {section === "gpu" && (gpuUnavailable ? <Text variant="hint">{t("modelEditor.gpuUnavailable")}</Text> : <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu splitOnly />)}
-    {current.groups.map((group, index) => {
-      if (section === "memory" && index === 0) return <LlamaRuntimeInfo key={index} path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} contextEditor />;
-      const enabled = group.toggle ? effectiveField(draft.config, defaults, activeLayer, editorFields[group.toggle]) ?? runtimeDefault(group.toggle) : true;
-      return <ListGroup key={index} label={group.label ? t(`modelEditor.groups.${group.label}` as never) : undefined}>
-        {group.toggle && field(group.toggle)}
-        <ModelEditorReveal open={!group.toggle || enabled === true || enabled === "enabled"}>
-          {section === "gpu" && group.toggle && <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu devicesOnly />}
-          {group.fields.filter(supports).map((id) => <Fragment key={id}>{id === "llamaGpuLayers" ? <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu layersOnly /> : id === "llamaChatTemplateOverride" ? <ModelTemplate path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} /> : field(id)}</Fragment>)}
-        </ModelEditorReveal>
-      </ListGroup>;
-    })}
+    {(current.groups.length > 0 || current.perFeature) && <ModelEditorColumns primary={<>
+      {current.perFeature && featurePicker}
+      {current.groups.filter((group) => !isSecondaryGroup(group)).map(renderGroup)}
+    </>} secondary={hasSecondary ? <>
+      {section === "memory" && <>
+        <LlamaRuntimeInfo path={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} gpu splitOnly />
+        {devices.isError && <FailureState error={devices.error} onRetry={() => void devices.refetch()} size="sm" />}
+      </>}
+      {secondaryGroups.map(renderGroup)}
+    </> : undefined} secondaryLabel={section === "memory" ? t("modelEditor.sections.gpu") : undefined} />}
     {section === "routing" && <OpenRouterEndpoints externalId={draft.externalId} config={draft.config} defaults={defaults} onChange={setConfig} />}
     {section === "loras" && <ListGroup><div className="px-4 py-3"><ModelLoras config={draft.config} onChange={setConfig} /></div></ListGroup>}
   </div> : overview;
@@ -241,7 +257,7 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
     if (item.id === "prompt") return { id: item.id, summary: t(valueOf("sdNegativePrompt") ? "modelEditor.negativeSet" : "modelEditor.noNegative") };
     const summaryFields: Record<string, FieldId[]> = {
       generation: kind === "image" ? ["sdSize", "sdSteps"] : kind === "local" ? ["temperature", "llamaSamplerProfile"] : ["temperature", "maxOutputTokens"],
-      memory: ["contextLength", "llamaKvType"], gpu: ["llamaGpuLayers"], performance: ["llamaThreads", "llamaBatchSize"],
+      memory: ["contextLength", "llamaKvType"], performance: ["llamaThreads", "llamaBatchSize"],
       speculative: ["llamaMtpEnabled", "llamaDflashEnabled"], template: ["llamaChatTemplatePreset"], speed: ["sdCacheMode", "sdVaeTilingEnabled"],
     };
     const first = summaryFields[item.id] ?? item.groups.flatMap((group) => [...(group.toggle ? [group.toggle] : []), ...group.fields]).slice(0, 2);
@@ -268,11 +284,11 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
     <MenuSeparator /><MenuItem icon={<Trash2 size={icon.sm} />} danger onSelect={() => action.mutate(async () => { if (await deleteModelWithUsage(api, savedModel, t)) back(); })}>{t("manage.delete")}</MenuItem>
   </MenuContent></Menu>;
   return <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
       <AppBar title={phone && section !== "overview" ? navLabel(section) : <span className="flex items-center gap-3">{account && <ProviderMark kind={account.provider_kind} name={account.label} />}{title}</span>} meta={section === "overview" || !phone ? headerMeta : undefined} scrollRef={scrollRef} onBack={phone && section !== "overview" ? () => setSection("overview") : () => void leave()} backLabel={phone && section !== "overview" ? title : t("sections.models.title")} actions={phone && section !== "overview" ? undefined : more || undefined} />
-      <form ref={formRef} onSubmit={(event) => { event.preventDefault(); save(); }} className={phone ? "px-4 pb-[calc(7rem+var(--safe-bottom,0px))]" : "flex gap-8 px-8 pb-28"}>
+      <form ref={formRef} onSubmit={(event) => { event.preventDefault(); save(); }} className={phone ? "px-4 pb-[calc(7rem+var(--safe-bottom,0px))]" : "flex gap-6 px-6 pb-28"}>
         {!phone && <nav aria-label={t("modelEditor.nav")} className="sticky top-4 w-52 shrink-0 self-start"><ul className="space-y-0.5">{nav.map((item) => <li key={item.id}><button type="button" disabled={item.id !== "overview" && !draft.externalId} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)} className={`w-full rounded-lg px-3 py-2 text-left disabled:opacity-40 ${section === item.id ? "bg-fill-2 text-fg" : "text-fg-2 hover:bg-fill"}`}><span className="block text-sm font-medium">{navLabel(item.id)}</span><span className="block truncate text-xs text-fg-3">{item.summary}</span></button></li>)}</ul></nav>}
-        <div className="@container min-w-0 max-w-2xl flex-1 space-y-4">
+        <div className={`@container min-w-0 flex-1 space-y-4 ${wideEditor ? "max-w-[85.5rem]" : "max-w-2xl"}`}>
           {action.isError && <FailureState error={action.error} />}
           {defaultsError !== undefined && <FailureState error={defaultsError} onRetry={retryDefaults} size="sm" />}
           {fileError !== null && <FailureState error={fileError} size="sm" />}

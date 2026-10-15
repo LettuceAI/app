@@ -11,6 +11,7 @@ import full from "./fixtures/model-profile-config.json";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 const account: ProviderAccountView = { id: "provider", provider_kind: "openrouter", protocol: "open_ai_compatible", label: "My provider", base_url: null, enabled: true, streaming_enabled: true, allow_invalid_tls: false, api_key_set: true, config: {}, revision: 1, created_at: 0, updated_at: 0 };
+const gpuDevices = [0, 1].map((index) => ({ index, name: `GPU ${index}`, description: "", backend: "CUDA", device_type: "Gpu", memory_free: 8 * 1024 ** 3, memory_total: 8 * 1024 ** 3 }));
 const model: ModelView = { id: "model", provider_account_id: account.id, display_name: "Editor model", external_model_id: "vendor/model", kind: "chat", input_scopes: ["text", "image"], output_scopes: ["text"], config: full, revision: 9, created_at: 0, updated_at: 0 };
 const settings = { sampler_defaults: { chat_parameters: { temperature: 0.65 }, llama_cpp: { sampler: {} }, stable_diffusion: { cpp: {} } }, revision: 1 } as unknown as SettingsView;
 async function mount(path = "/settings/models/model", calls: MockCallHandlers = {}, phone = false) {
@@ -19,6 +20,7 @@ async function mount(path = "/settings/models/model", calls: MockCallHandlers = 
     appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }),
     providerAccountsList: () => ({ status: "ok", data: [account] }), providerCatalog: () => ({ status: "ok", data: { providers: [] } }),
     providerModels: () => ({ status: "ok", data: [] }), modelGet: () => ({ status: "ok", data: model }),
+    llamaDevices: () => ({ status: "ok", data: { devices: gpuDevices } }),
     modelsList: () => ({ status: "ok", data: { models: [model], default_model_id: null, revision: 1 } }), settingsGet: () => ({ status: "ok", data: settings }),
     modelUsage: () => ({ status: "ok", data: { characters: [{ id: "c", name: "Alice" }], groups: [{ id: "g", name: "Story group" }], roles: ["default", "dynamic_memory", "group_speaker"] } }),
     ...calls,
@@ -186,6 +188,31 @@ describe("model editor page", () => {
     expect(saved?.model.external_model_id).toBe("/models/example.gguf");
     expect(saved?.model.display_name).toBe("My custom model");
   });
+  it.each([false, true])("shows a context skeleton until memory estimates arrive (phone: %s)", async (phone) => {
+    let release: (() => void) | undefined;
+    const ready = new Promise<void>((resolve) => { release = resolve; });
+    await mount(undefined, {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
+      modelGet: () => ({ status: "ok", data: { ...model, external_model_id: "/models/example.gguf", config: { ...full, chat_parameters: {}, llama_cpp: {} } } }),
+      llamaContextInfo: async () => {
+        await ready;
+        return { status: "ok", data: { max_context_length: 32768, recommended_context_length: 6144, available_memory_bytes: null, available_vram_bytes: 12 * 1024 ** 3, model_size_bytes: 5 * 1024 ** 3, layer_count: 32, max_gpu_layers: 33, supports_gpu_offload: true, selected_gpu_device_ids: [], per_device_vram: null, estimated_placement: null, memory_fit: [{ gpu: true, devices: ["Actual GPU"], capacity_bytes: 12 * 1024 ** 3, available_bytes: 12 * 1024 ** 3, model_bytes: 5 * 1024 ** 3, context_bytes: 1024 ** 3, working_bytes: 512 * 1024 ** 2 }] } };
+      },
+    }, phone);
+    await click(/^Context & memory/);
+    const loading = await screen.findByRole("status", { name: "Loading context and memory estimates" });
+    expect(loading.closest("[aria-busy=true]")).toBeTruthy();
+    expect(screen.queryByRole("slider", { name: "Context length" })).toBeNull();
+    expect(screen.queryByRole("spinbutton", { name: "Context length" })).toBeNull();
+    expect(screen.queryByText("Loading...")).toBeNull();
+    act(() => release?.());
+    expect(await screen.findByRole("slider", { name: "Context length" })).toHaveProperty("value", "6144");
+    expect(await screen.findByText(/Actual GPU.*total/)).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Loading context and memory estimates" })).toBeNull();
+    expect(loading.isConnected).toBe(false);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  });
+
   it("keeps an exact context recommendation and clamps typed values to the model limit", async () => {
     let saved: ModelSaveRequest | undefined;
     await mount(undefined, {
@@ -269,16 +296,57 @@ describe("model editor page", () => {
     expect((saved?.model.config.llama_cpp as Record<string, unknown> | undefined)?.kv_type_k).toBeUndefined();
     expect((saved?.model.config.llama_cpp as Record<string, unknown> | undefined)?.kv_type_v).toBeUndefined();
   });
+  it.each([false, true])("updates the single GPU and CPU layer distribution with either slider (phone: %s)", async (phone) => {
+    let saved: ModelSaveRequest | undefined;
+    await mount(undefined, {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
+      modelGet: () => ({ status: "ok", data: { ...model, config: { ...full, llama_cpp: { gpu_layers: 24, multi_gpu_enabled: false } } } }),
+      modelSave: (request) => { saved = request; return { status: "ok", data: { ...model, config: request.model.config } }; },
+      llamaDevices: () => ({ status: "ok", data: { devices: [{ index: 3, name: "CUDA device 3", description: "", backend: "CUDA", device_type: "Gpu", memory_free: 8 * 1024 ** 3, memory_total: 8 * 1024 ** 3 }] } }),
+      llamaContextInfo: (request) => {
+        const layers = request.target.type === "draft" ? request.target.settings.gpu_layers ?? 24 : 24;
+        return { status: "ok", data: { max_context_length: 32768, recommended_context_length: 6144, available_memory_bytes: null, available_vram_bytes: null, model_size_bytes: null, layer_count: 32, max_gpu_layers: 33, supports_gpu_offload: true, selected_gpu_device_ids: null, per_device_vram: null, estimated_placement: { total_gpu_layers: layers, per_device_layers: [layers] }, memory_fit: [] } };
+      },
+    }, phone);
+    await click(/^Context & memory/);
+    const bar = await screen.findByRole("img", { name: "Estimated GPU layer distribution" });
+    expect(bar.textContent).toContain("CUDA device 3");
+    expect(bar.textContent).toContain("24 layers");
+    expect(bar.textContent).toContain("CPU · 9 layers");
+    expect(screen.queryByRole("button", { name: /^GPU/ })).toBeNull();
+    expect(screen.getByRole("region", { name: "GPU" }).contains(bar)).toBe(true);
+    expect(screen.queryByRole("switch", { name: "Use more than one GPU" })).toBeNull();
+    const device = await screen.findByRole("combobox", { name: "Run on" });
+    expect(device.textContent).toContain("CUDA device 3");
+    expect(device.matches(":disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    const slider = await screen.findByRole("slider", { name: "GPU layers" });
+    const cpu = screen.getByRole("slider", { name: "Keep on the CPU" });
+    expect(cpu).toHaveProperty("value", "9");
+    fireEvent.change(slider, { target: { value: "0" } });
+    await waitFor(() => expect(bar.textContent).toBe("CPU · 33 layers"));
+    expect(cpu).toHaveProperty("value", "33");
+    fireEvent.change(slider, { target: { value: "33" } });
+    await waitFor(() => expect(bar.textContent).toBe("CUDA device 3 · 33 layers"));
+    expect(bar.textContent).not.toContain("CPU");
+    expect(cpu).toHaveProperty("value", "0");
+    fireEvent.change(cpu, { target: { value: "5" } });
+    expect(slider).toHaveProperty("value", "28");
+    await waitFor(() => expect(bar.textContent).toContain("CPU · 5 layers"));
+    await click("Save");
+    await waitFor(() => expect(saved?.model.config).toMatchObject({ llama_cpp: { gpu_layers: 28 } }));
+    expect(saved?.model.config.llama_cpp).not.toHaveProperty("cpu_layers");
+  });
   it("groups GPU controls, converts GiB to bytes and preserves the other settings", async () => {
     let saved: ModelSaveRequest | undefined;
     await mount(undefined, {
       providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
       modelGet: () => ({ status: "ok", data: { ...model, config: { ...full, llama_cpp: { ...full.llama_cpp, multi_gpu_enabled: false } } } }),
       llamaContextInfo: () => ({ status: "ok", data: { max_context_length: 32768, recommended_context_length: 6144, available_memory_bytes: null, available_vram_bytes: null, model_size_bytes: null, layer_count: 32, max_gpu_layers: 33, supports_gpu_offload: true, selected_gpu_device_ids: [], per_device_vram: null, estimated_placement: { total_gpu_layers: 24, per_device_layers: [24] }, memory_fit: [] } }),
-      llamaDevices: () => ({ status: "ok", data: { devices: [] } }),
+      llamaDevices: () => ({ status: "ok", data: { devices: gpuDevices } }),
       modelSave: (request) => { saved = request; return { status: "ok", data: { ...model, config: request.model.config } }; },
     });
-    await click(/^GPU/);
+    await click(/^Context & memory/);
     expect((await screen.findByRole("slider", { name: "GPU layers" })).getAttribute("max")).toBe("33");
     expect(screen.getByRole("slider", { name: "GPU layers" }).matches(":disabled")).toBe(false);
     expect(screen.queryByLabelText("Distribution")).toBeNull();
@@ -288,32 +356,77 @@ describe("model editor page", () => {
     await click("Save");
     await waitFor(() => expect(saved?.model.config).toMatchObject({ llama_cpp: { multi_gpu_enabled: true, priority_vram_limit_bytes: 13421772800 } }));
   });
-  it("disables GPU controls and GPU placement choices on a CPU backend without changing saved settings", async () => {
+  it.each([false, true])("uses one KV placement control on a single GPU (phone: %s)", async (phone) => {
+    let saved: ModelSaveRequest | undefined;
     await mount(undefined, {
       providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
-      llamaDevices: () => ({ status: "ok", data: { devices: [] } }),
+      modelGet: () => ({ status: "ok", data: { ...model, config: { ...full, llama_cpp: { kv_placement: "split", offload_kqv: false, multi_gpu_enabled: false } } } }),
+      llamaContextInfo: () => ({ status: "ok", data: { max_context_length: 32768, recommended_context_length: 6144, available_memory_bytes: null, available_vram_bytes: null, model_size_bytes: null, layer_count: 32, max_gpu_layers: 33, supports_gpu_offload: true, selected_gpu_device_ids: [], per_device_vram: null, estimated_placement: null, memory_fit: [] } }),
+      modelSave: (request) => { saved = request; return { status: "ok", data: { ...model, config: request.model.config } }; },
+    }, phone);
+    await click(/^Context & memory/);
+    const placement = await screen.findByRole("combobox", { name: "KV cache placement" });
+    expect(placement.textContent).toContain("GPU");
+    expect(screen.queryByRole("switch", { name: "Offload attention to the GPU" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    fireEvent.click(placement);
+    expect(await screen.findByRole("option", { name: "Automatic" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "System RAM" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "GPU" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Split with layers" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Pin to one GPU" })).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: "System RAM" }));
+    await click("Save");
+    await waitFor(() => expect(saved?.model.config).toMatchObject({ llama_cpp: { kv_placement: "system_ram", offload_kqv: false, multi_gpu_enabled: false } }));
+    fireEvent.click(placement);
+    fireEvent.click(await screen.findByRole("option", { name: "Automatic" }));
+    expect(await screen.findByText("Uses system RAM")).toBeTruthy();
+    await click("Discard");
+    expect((await screen.findByRole("combobox", { name: "KV cache placement" })).textContent).toContain("System RAM");
+  });
+  it("shows detailed KV placement only with multiple GPUs and restores a saved split choice", async () => {
+    await mount(undefined, {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
+      modelGet: () => ({ status: "ok", data: { ...model, config: { ...full, llama_cpp: { kv_placement: "split", multi_gpu_enabled: false } } } }),
+      llamaContextInfo: () => ({ status: "ok", data: { max_context_length: 32768, recommended_context_length: 6144, available_memory_bytes: null, available_vram_bytes: null, model_size_bytes: null, layer_count: 32, max_gpu_layers: 33, supports_gpu_offload: true, selected_gpu_device_ids: [], per_device_vram: null, estimated_placement: null, memory_fit: [] } }),
+      llamaDevices: () => ({ status: "ok", data: { devices: gpuDevices } }),
+    });
+    await click(/^Context & memory/);
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading context and memory estimates" })).toBeNull());
+    expect(screen.queryByRole("img", { name: "Estimated GPU layer distribution" })).toBeNull();
+    fireEvent.click(await screen.findByRole("switch", { name: "Use more than one GPU" }));
+    const placement = await screen.findByRole("combobox", { name: "KV cache placement" });
+    expect(placement.textContent).toContain("Split with layers");
+    fireEvent.click(placement);
+    expect(await screen.findByRole("option", { name: "Pin to one GPU" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Split with layers" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "GPU" })).toBeNull();
+    fireEvent.keyDown(placement, { key: "Escape" });
+    await click("Discard");
+    expect((await screen.findByRole("combobox", { name: "KV cache placement" })).textContent).toContain("GPU");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save" })).toBeNull());
+  });
+  it("hides the GPU section and disables GPU placement on a CPU backend without changing saved settings", async () => {
+    await mount(undefined, {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
+      llamaDevices: () => ({ status: "ok", data: { devices: gpuDevices } }),
       llamaContextInfo: () => ({ status: "ok", data: { max_context_length: 131072, recommended_context_length: 16384, available_memory_bytes: null, available_vram_bytes: null, model_size_bytes: null, layer_count: 32, max_gpu_layers: 33, supports_gpu_offload: false, selected_gpu_device_ids: null, per_device_vram: null, estimated_placement: null, memory_fit: [] } }),
     });
     await click(/^Context & memory/);
-    const offload = await screen.findByRole("switch", { name: "Offload attention to the GPU" });
-    expect(offload.matches(":disabled")).toBe(true);
-    fireEvent.click(await screen.findByRole("combobox", { name: "Placement" }));
+    expect(screen.queryByRole("switch", { name: "Offload attention to the GPU" })).toBeNull();
+    fireEvent.click(await screen.findByRole("combobox", { name: "KV cache placement" }));
     expect(await screen.findByRole("option", { name: "Automatic" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Auto" })).toBeNull();
     expect((await screen.findByRole("option", { name: "Split with layers" })).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("option", { name: "Pin to one GPU" }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("option", { name: "System RAM" }).getAttribute("aria-disabled")).not.toBe("true");
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "Placement" }), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "KV cache placement" }), { key: "Escape" });
     fireEvent.click(screen.getByRole("combobox", { name: "Flash attention" }));
     expect(await screen.findByRole("option", { name: "Automatic" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Auto" })).toBeNull();
     fireEvent.keyDown(screen.getByRole("combobox", { name: "Flash attention" }), { key: "Escape" });
-    await click(/^GPU/);
-    expect(await screen.findByText("GPU acceleration is unavailable in this build.")).toBeTruthy();
-    expect((await screen.findByRole("slider", { name: "GPU layers" })).matches(":disabled")).toBe(true);
-    expect(screen.getByRole("spinbutton", { name: "Keep on the CPU" }).matches(":disabled")).toBe(true);
-    expect(screen.getByRole("switch", { name: "Use more than one GPU" }).matches(":disabled")).toBe(true);
-    expect((screen.getByRole("combobox", { name: "Run on" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /^GPU/ })).toBeNull();
+    expect(screen.queryByRole("region", { name: "GPU" })).toBeNull();
     await waitFor(() => expect(screen.queryByRole("button", { name: "Save" })).toBeNull());
     await click(/^Speculative decoding/);
     await screen.findByRole("switch", { name: "Use MTP" });
@@ -322,6 +435,17 @@ describe("model editor page", () => {
     expect(screen.getByRole("option", { name: "CPU" }).getAttribute("aria-disabled")).not.toBe("true");
     expect(screen.queryByRole("option", { name: "Auto" })).toBeNull();
     expect(screen.getByRole("option", { name: "Automatic" })).toBeTruthy();
+  });
+  it("hides the GPU section when no GPU devices are available", async () => {
+    await mount(undefined, {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
+      llamaDevices: () => ({ status: "ok", data: { devices: [] } }),
+    });
+    await screen.findByRole("button", { name: /^Context & memory/ });
+    expect(screen.queryByRole("button", { name: /^GPU/ })).toBeNull();
+    await click(/^Context & memory/);
+    expect(screen.queryByRole("region", { name: "GPU" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
   it("keeps native file picking busy inside its field and clears it on cancel or selection", async () => {
     let release: (() => void) | undefined;

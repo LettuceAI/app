@@ -88,3 +88,24 @@ it("resolves the entire KV group from one layer and displays shared types in K a
   expect(effectiveField(custom, undefined, "chat", { store: "llama", key: "kv_type" })).toBe("split");
   expect(writeField(custom, "chat", "llama", "kv_type", "f16").llama_cpp).toEqual({ kv_type: "f16" });
 });
+
+it.each([
+  ["pin", false, true],
+  ["split", false, true],
+  ["system_ram", true, false],
+  ["auto", false, false],
+  ["auto", true, true],
+] as const)("resolves KV placement %s before the offload switch (%s)", (placement, offload, expected) => {
+  const config = parseModelConfig(full);
+  config.llama_cpp = { kv_placement: placement, offload_kqv: offload };
+  expect(effectiveField(config, undefined, "chat", { store: "llama", key: "offload_kqv" })).toBe(expected);
+  expect(config.llama_cpp.offload_kqv).toBe(offload);
+});
+
+it("uses inherited KV placement without rewriting the model offload setting", () => {
+  const config = parseModelConfig(full);
+  config.llama_cpp = { offload_kqv: false };
+  const defaults = { llama_cpp: { kv_placement: "pin" } } as unknown as SettingsModelSettingsLayer;
+  expect(effectiveField(config, defaults, "chat", { store: "llama", key: "offload_kqv" })).toBe(true);
+  expect(config.llama_cpp).toEqual({ offload_kqv: false });
+});

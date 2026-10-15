@@ -16,7 +16,7 @@ const local: Partial<Record<FieldId, unknown>> = {
   llamaDrySequenceBreakers: ["\n", ":", "\"", "*"], llamaXtcProbability: 0, llamaXtcThreshold: 0.1,
   llamaAdaptiveTarget: 0, llamaAdaptiveDecay: 0.95,
   samplerOrder: ["penalties", "grammar", "top_k", "top_p", "min_p", "dry", "typical", "xtc", "temp", "adaptive_p"],
-  llamaKvPlacement: "auto", llamaFlashAttention: "auto", llamaSwaFull: true, llamaOffloadKqv: true,
+  llamaKvPlacement: "auto", llamaFlashAttention: "auto", llamaSwaFull: true,
   llamaKvType: "f16", llamaKvTypeK: "f16", llamaKvTypeV: "f16", llamaBatchSize: 512,
   llamaMtpEnabled: false, llamaDflashEnabled: false, llamaMtpDraftTokens: 4, llamaDflashDraftTokens: 4,
   llamaDflashMinProbability: 0.55, llamaMtpPlacement: "auto", llamaMultiGpuEnabled: false,
