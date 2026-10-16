@@ -43,5 +43,7 @@ runs:
           echo "RUSTC_WRAPPER=sccache"
           echo "CMAKE_C_COMPILER_LAUNCHER=sccache"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache"
-          echo "CMAKE_CUDA_COMPILER_LAUNCHER=sccache"
+          # nvcc is intentionally NOT wrapped with sccache: under CUDA 13.x sccache
+          # fails to launch nvcc ("Missing cubin file output" / signal 126), which
+          # breaks the CUDA builds. C/C++/Rust caching stays enabled.
         } >> "$GITHUB_ENV"
