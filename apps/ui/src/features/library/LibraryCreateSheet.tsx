@@ -24,6 +24,7 @@ export function LibraryCreateSheet({ api, open, onClose }: { api: ApiClient; ope
   const create = (kind: EntryKind) => {
     onClose();
     if (kind === "character") void navigate({ to: "/characters/new" });
+    else if (kind === "persona") void navigate({ to: "/personas/new" });
     else void navigate({ to: "/library", search: { create: kind } });
   };
   return (

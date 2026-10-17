@@ -45,8 +45,8 @@ export function IdentityStep({ api, form, update, onImport, importing, onModeLoa
       {image ? <div className="relative overflow-hidden rounded-xl ring-1 ring-inset ring-line-2">
         <img src={image.url} alt={title} className="h-36 w-full object-cover @2xl:h-52" />
         <div className="absolute right-2 top-2 flex gap-1.5">
-          <Button size="sm" variant="tonal" disabled={busy} onClick={() => void choose(slot)}>{t("identity.changeAvatar")}</Button>
-          <IconButton label={t("identity.remove")} size="sm" variant="tonal" disabled={busy} onClick={() => update((current) => withImage(current, slot, null))}><Trash2 size={icon.sm} /></IconButton>
+          <Button size="sm" variant="overlay" disabled={busy} onClick={() => void choose(slot)}>{t("identity.changeAvatar")}</Button>
+          <IconButton label={t("identity.remove")} size="sm" variant="overlay" disabled={busy} onClick={() => update((current) => withImage(current, slot, null))}><Trash2 size={icon.sm} /></IconButton>
         </div>
       </div> : <Button variant="secondary" block disabled={busy} className="h-36 whitespace-normal border-dashed bg-surface-1 @2xl:h-52" leading={<ImageIcon size={icon.xl} />} onClick={() => void choose(slot)}>{t("identity.chooseImage")}</Button>}
     </Field>;

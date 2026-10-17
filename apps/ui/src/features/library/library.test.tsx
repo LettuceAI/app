@@ -140,16 +140,17 @@ describe("library operations", () => {
     expect(await screen.findByPlaceholderText("Character name")).toBeTruthy();
   });
 
-  it("creates a persona through the real draft contract and returns to its filter", async () => {
+  it("creates a persona through the wizard and returns to its filter", async () => {
     const save = vi.fn<NonNullable<MockCallHandlers["personaSave"]>>((request) => ok({ id: "new", archived: false, draft: { ...request.draft }, assets: [], revision: 1, created_at: 1, updated_at: 1 }));
     const { runtime } = await setup({ personaSave: save }, "/library?create=persona");
-    const name = await screen.findByRole("textbox", { name: "Name" });
-    fireEvent.change(name, { target: { value: "Wren" } });
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/personas/new"));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "Wren" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Description" }), { target: { value: "Travelling scribe" } });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Create$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to extras" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create persona" }));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ persona_id: null, expected_revision: null, draft: expect.objectContaining({ title: "Wren", description: "Travelling scribe" }) })));
-    await waitFor(() => expect(runtime.router.state.location.search.create).toBeUndefined());
-    expect(screen.getByRole("radio", { name: /Personas/ }).getAttribute("aria-checked")).toBe("true");
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+    expect((await screen.findByRole("radio", { name: /Personas/ })).getAttribute("aria-checked")).toBe("true");
   });
 
   it("sets the default persona with the default-record revision", async () => {

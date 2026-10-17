@@ -11,6 +11,7 @@ import { appStatusQuery } from "@/api/app-status-query";
 import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage } from "@/features/characters";
+import { CreatePersonaPage } from "@/features/personas";
 import { ChatBranchesPage, ChatMemoryPage, ConversationPage } from "@/features/conversations";
 import { LibraryPage, validateLibrarySearch } from "@/features/library";
 import { HomePage } from "@/features/home";
@@ -60,9 +61,11 @@ const libraryRoute = createRoute({
   validateSearch: validateLibrarySearch,
   beforeLoad: ({ search }) => {
     if (search.create === "character") throw redirect({ to: "/characters/new", replace: true });
+    if (search.create === "persona") throw redirect({ to: "/personas/new", replace: true });
   },
 });
 const newCharacterRoute = createRoute({ getParentRoute: () => rootRoute, path: "/characters/new", component: CreateCharacterPage });
+const newPersonaRoute = createRoute({ getParentRoute: () => rootRoute, path: "/personas/new", component: CreatePersonaPage });
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsIndexPage });
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -92,7 +95,7 @@ const chatBranchesRoute = createRoute({ getParentRoute: () => rootRoute, path: "
 const newModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/new", component: ModelEditorPage });
 const editModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/$modelId", component: ModelEditorPage });
 
-const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, newCharacterRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, newCharacterRoute, newPersonaRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;
@@ -117,6 +120,7 @@ declare module "@tanstack/history" {
   interface HistoryState {
     panelPushed?: boolean;
     libraryOverlayPushed?: boolean;
+    libraryKind?: "character" | "persona" | "lorebook";
   }
 }
 

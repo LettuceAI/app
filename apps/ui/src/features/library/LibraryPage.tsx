@@ -40,7 +40,10 @@ export function LibraryPage() {
   const routeKey = useLocation({ select: (location) => location.state.__TSR_key });
   const mainRef = useRef<HTMLElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(() => {
+    const kind = router.state.location.state.libraryKind;
+    return kind ? kindFilters[kind] : "all";
+  });
   const [query, setQuery] = useState("");
   const [term, setTerm] = useState("");
   const [createMenu, setCreateMenu] = useState(false);
@@ -74,6 +77,7 @@ export function LibraryPage() {
   const changeFilter = (next: Filter) => { setFilter(next); mainRef.current?.scrollTo({ top: 0 }); };
   const open = (next: LibrarySearch) => {
     if (next.create === "character") void navigate({ to: "/characters/new" });
+    else if (next.create === "persona") void navigate({ to: "/personas/new" });
     else void navigate({ to: "/library", search: next, state: { libraryOverlayPushed: true }, resetScroll: false });
   };
   const close = () => { if (pushed) router.history.back(); else void navigate({ to: "/library", search: {}, replace: true, resetScroll: false }); };

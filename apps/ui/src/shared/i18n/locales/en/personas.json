@@ -1,0 +1,57 @@
+{
+  "create": {
+    "title": "New persona",
+    "back": "Back",
+    "create": "Create persona",
+    "created": "{{name}} created",
+    "imported": "Persona imported",
+    "unattached_one": "{{count}} lorebook couldn't be attached. Attach it from the persona's settings.",
+    "unattached_other": "{{count}} lorebooks couldn't be attached. Attach them from the persona's settings.",
+    "defaultFailed": "{{name}} was created but couldn't be made the default.",
+    "discardTitle": "Discard this persona?",
+    "discardBody": "What you entered so far is lost.",
+    "discard": "Discard",
+    "keepEditing": "Keep editing",
+    "continueTo": "Continue to {{step}}"
+  },
+  "steps": {
+    "identity": "Identity",
+    "extras": "Extras"
+  },
+  "identity": {
+    "chooseAvatar": "Choose image",
+    "removeAvatar": "Remove",
+    "name": "Name",
+    "namePlaceholder": "Professional writer",
+    "nameHint": "Who you are in chats",
+    "nickname": "Nickname",
+    "nicknamePlaceholder": "What characters call you",
+    "nicknameHint": "Optional. Used in chats instead of the name.",
+    "default": "Use as default",
+    "defaultBody": "New chats start with this persona",
+    "import": "Import from a file",
+    "importBody": "Import a persona exported from LettuceAI.",
+    "chooseFile": "Choose file"
+  },
+  "about": {
+    "description": "Description",
+    "descriptionPlaceholder": "How characters should address you, your background, preferences and style",
+    "descriptionHint": "Use {{user}} for this persona and {{char}} for the character.",
+    "words_one": "{{count}} word",
+    "words_other": "{{count}} words"
+  },
+  "extras": {
+    "body": "Everything here is optional.",
+    "design": "Design note",
+    "designPlaceholder": "Short hair, round glasses, a long grey coat",
+    "designHint": "How you look, in a few words. Used for generated scene images.",
+    "references": "Reference images",
+    "referencesHint": "A few images that show how you look.",
+    "addReference": "Add image",
+    "removeReference": "Remove image",
+    "lorebooks": "Lorebooks",
+    "lorebooksNone": "None",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_other": "{{count}} lorebooks"
+  }
+}

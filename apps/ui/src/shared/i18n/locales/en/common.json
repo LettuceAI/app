@@ -65,6 +65,8 @@
     "description": "Someone new to talk to.",
     "character": "Create a character",
     "characterBody": "Name, look, personality and opening scenes",
+    "persona": "Create a persona",
+    "personaBody": "Who you are in chats",
     "import": "Import a card",
     "importBody": "PNG or JSON character card",
     "imported": "Character imported",
