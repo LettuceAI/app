@@ -82,5 +82,14 @@
       "local": "Local",
       "custom": "Custom"
     }
+  },
+  "designReferences": {
+    "note": "Design note",
+    "notePlaceholder": "Short hair, round glasses, a long grey coat",
+    "noteHint": "Appearance in a few words. Used for generated scene images.",
+    "images": "Reference images",
+    "imagesHint": "A few images that show the look.",
+    "add": "Add image",
+    "remove": "Remove image"
   }
 }

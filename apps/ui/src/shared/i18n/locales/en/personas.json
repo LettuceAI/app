@@ -42,13 +42,6 @@
   },
   "extras": {
     "body": "Everything here is optional.",
-    "design": "Design note",
-    "designPlaceholder": "Short hair, round glasses, a long grey coat",
-    "designHint": "How you look, in a few words. Used for generated scene images.",
-    "references": "Reference images",
-    "referencesHint": "A few images that show how you look.",
-    "addReference": "Add image",
-    "removeReference": "Remove image",
     "lorebooks": "Lorebooks",
     "lorebooksNone": "None",
     "lorebooksCount_one": "{{count}} lorebook",

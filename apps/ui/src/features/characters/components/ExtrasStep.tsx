@@ -2,6 +2,8 @@ import { useState } from "react";
 import { BookOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Field, icon, Input, ListGroup, ListRowButton, TagInput, Textarea } from "@lettuceai/crisp";
+import { DesignReferences } from "@/shared/ui/DesignReferences";
+import { withReferences } from "../data/form";
 import { LorebookChoiceSheet } from "./Pickers";
 import type { StepProps } from "./step-props";
 
@@ -42,6 +44,13 @@ export function ExtrasStep({ api, form, update }: StepProps) {
       </Field>
         </div>
       </div>
+      <DesignReferences
+        api={api}
+        note={profile.design_description ?? ""}
+        onNoteChange={(design_description) => setProfile({ design_description })}
+        references={form.references}
+        onReferencesChange={(change) => update((current) => withReferences(current, change(current.references)))}
+      />
       <LorebookChoiceSheet api={api} open={picking} value={form.lorebookIds} onChange={(lorebookIds) => update((current) => ({ ...current, lorebookIds }))} onClose={() => setPicking(false)} />
     </div>
   );

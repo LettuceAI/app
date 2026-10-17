@@ -342,6 +342,28 @@ describe("character creation", () => {
     expect((screen.getByRole("textbox", { name: "Opening message" }) as HTMLTextAreaElement).value).toBe("An opening");
   });
 
+  it("saves the design note and reference images from Extras", async () => {
+    const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ({ status: "ok" as const, data: saved(request) }));
+    await renderCreate({
+      characterSave: save,
+      filesPickOpen: () => ({ status: "ok", data: { sources: [{ uri: "/tmp/ref.png" }] } }),
+      assetsIngest: () => ({ status: "ok", data: { asset_id: "ref", url: "https://example.test/ref.png" } }),
+    });
+    await fillRequired();
+    fireEvent.click(continueButton());
+    fireEvent.change(await screen.findByRole("textbox", { name: "Design note" }), { target: { value: " Grey coat " } });
+    fireEvent.click(screen.getByRole("button", { name: "Add image" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove image" }));
+    expect(screen.queryByRole("button", { name: "Remove image" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add image" }));
+    await screen.findByRole("button", { name: "Remove image" });
+    fireEvent.click(screen.getByRole("button", { name: "Create character" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const draft = save.mock.calls[0]![0].draft;
+    expect(draft.profile.design_description).toBe(" Grey coat ");
+    expect(draft.media).toEqual([{ asset_id: "ref", slot: "design_reference", ordinal: 0 }]);
+  });
+
   it("picks the memory policy from the dynamic memory setting", async () => {
     await renderCreate({ settingsGet: () => ({ status: "ok", data: { global: { dynamic_memory: { enabled: true } } } as never }) });
     await fillRequired();

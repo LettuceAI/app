@@ -11,11 +11,12 @@ export type CreateStep = (typeof createSteps)[number];
 export interface CharacterForm {
   draft: CharacterDraft;
   images: Partial<Record<LibraryCharacterMediaSlot, AssetRef>>;
+  references: AssetRef[];
   lorebookIds: string[];
 }
 
 export function newForm(draft: CharacterDraft): CharacterForm {
-  return { draft, images: {}, lorebookIds: [] };
+  return { draft, images: {}, references: [], lorebookIds: [] };
 }
 
 /** Puts `asset` in `slot`, replacing what was there, or empties the slot. */
@@ -29,6 +30,14 @@ export function withImage(form: CharacterForm, slot: LibraryCharacterMediaSlot, 
     delete images[slot];
   }
   return { ...form, draft: { ...form.draft, media }, images };
+}
+
+export function withReferences(form: CharacterForm, references: AssetRef[]): CharacterForm {
+  const media = [
+    ...form.draft.media.filter((link) => link.slot !== "design_reference"),
+    ...references.map((asset, ordinal) => ({ asset_id: asset.asset_id, slot: "design_reference" as const, ordinal })),
+  ];
+  return { ...form, references, draft: { ...form.draft, media } };
 }
 
 /** Empty strings become null, the way the backend stores an unset text. */
