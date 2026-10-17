@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { MessageSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Avatar, Button, cn, icon, InlineMarkdown, MediaCard, relativeTime, Surface, useLongPress } from "@lettuceai/crisp";
+import { Avatar, Button, cn, icon, InlineMarkdown, MediaCard, relativeTime, Surface, tintFromName, useLongPress } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { ConversationSummary } from "@/api/generated/bindings";
 import { useCardColors } from "../data/gradient";
@@ -37,9 +37,10 @@ function Cover({ api, home, image, className, children, onMenu, held }: { api: A
   const colors = useCardColors(api, home.character);
   const press = useLongPress(onMenu);
   const banner = image ?? home.character.banner?.url ?? null;
+  const tint = colors?.css ?? (home.character.avatar ? null : tintFromName(home.character.name).background);
   return (
     <div {...press.handlers} className={cn("overflow-hidden rounded-3xl ring-1 ring-inset ring-line-2", held && "ring-2 ring-fg/40")}>
-      <Surface image={banner} imagePosition={coverFocus} tint={banner ? null : (colors?.css ?? null)} scrim="auto" className={cn("flex items-end", className)}>
+      <Surface image={banner} imagePosition={coverFocus} tint={banner ? null : tint} scrim="auto" className={cn("flex items-end", className)}>
         {children}
       </Surface>
     </div>
