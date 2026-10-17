@@ -62,6 +62,65 @@ async fn character_editor_get_save_preserves_full_draft_and_replays() {
 }
 
 #[tokio::test]
+async fn character_draft_default_creates_a_character_once_named() {
+    let harness = harness(Reply::Text("reply"));
+    let mut draft = character_draft_default(None).await.expect("default draft");
+    assert_eq!(draft.profile.name, "");
+    assert_eq!(
+        draft.defaults.interaction_mode,
+        dto::LibraryInteractionMode::Roleplay
+    );
+    assert!(draft.media.is_empty() && draft.scenes.is_empty() && draft.starters.is_empty());
+    draft.profile.name = "Fresh character".into();
+    draft.profile.definition = Some("A new definition".into());
+    let created = character_save(
+        &harness.context,
+        dto::CharacterSaveRequest {
+            character_id: None,
+            draft: draft.clone(),
+            expected_revision: None,
+            client_operation_id: "create-from-default".into(),
+        },
+    )
+    .await
+    .expect("create");
+    assert_eq!(created.draft, draft);
+    assert_eq!(created.revision, 1);
+}
+
+#[tokio::test]
+async fn character_draft_default_companion_uses_domain_defaults_without_creating_a_character() {
+    let draft = character_draft_default(Some(dto::LibraryInteractionMode::Companion))
+        .await
+        .expect("companion draft");
+    assert_eq!(
+        draft.defaults.interaction_mode,
+        dto::LibraryInteractionMode::Companion
+    );
+    let fixture: dto::CharacterDraft = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../apps/ui/src/features/characters/fixtures/default-companion-draft.json",
+    )))
+    .expect("companion fixture");
+    assert_eq!(draft, fixture);
+    let config = draft.defaults.companion_soul.expect("companion config");
+    assert_eq!(
+        config,
+        crate::api::companion::config_view(&lettuce_companions::CompanionSoulConfig::default()),
+    );
+    assert!(draft.profile.name.is_empty());
+    assert!(draft.scenes.is_empty());
+    assert!(
+        character_draft_default(Some(dto::LibraryInteractionMode::Roleplay))
+            .await
+            .expect("roleplay draft")
+            .defaults
+            .companion_soul
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn character_editor_companion_switch_requires_models_without_partial_writes() {
     let harness = harness(Reply::Text("reply"));
     let before = character_get(

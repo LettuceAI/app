@@ -25,12 +25,15 @@ async function setup(calls: MockCallHandlers = {}, path = "/library") {
   const transport = createMockTransport({ calls: {
     appStatus: () => ok({ ...mockAppStatus, ui_state: { onboarding: { completed: true } } }),
     libraryCounts: () => ok({ characters: 1, personas: 1, lorebooks: 0, images: 1, audio: 0 }),
+    characterDraftDefault: () => ok(newCharacterDraft("", "")),
+    settingsGet: () => ok({ global: { dynamic_memory: { enabled: false } } } as never),
     charactersList: (request) => ok({ items: !request.query || `${character.name} ${character.description}`.toLowerCase().includes(request.query.toLowerCase()) ? [character] : [], next_cursor: null }),
     personasList: (request) => ok({ ...personas, items: personas.items.filter((item) => !request.query || `${item.title} ${item.description}`.toLowerCase().includes(request.query.toLowerCase())) }),
     lorebooksList: () => ok({ items: [], next_cursor: null }),
     mediaLibraryList: (request) => ok({ items: request.kind === "audio" ? [] : [image], next_cursor: null }),
     mediaReferences: () => ok([]),
     conversationsLatestByCharacter: () => ok({ items: [], next_cursor: null }),
+    conversationsList: () => ok({ items: [], next_cursor: null }),
     ...calls,
   } });
   const runtime = await createAppRuntime({ transport, history: createMemoryHistory({ initialEntries: [path] }), i18n: await createTestI18n("en") });
@@ -109,6 +112,34 @@ describe("library design port", () => {
 });
 
 describe("library operations", () => {
+  it.each(["all", "characters"])("opens the character wizard from the empty %s filter", async (filter) => {
+    const { runtime } = await setup({
+      charactersList: () => ok({ items: [], next_cursor: null }),
+      personasList: () => ok({ ...personas, items: [] }),
+    });
+    if (filter === "characters") fireEvent.click(await screen.findByRole("radio", { name: /Characters/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create character" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/new"));
+    expect(await screen.findByPlaceholderText("Character name")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("opens the character wizard from the library Create menu", async () => {
+    const { runtime } = await setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    const menu = await screen.findByRole("dialog");
+    fireEvent.click(within(menu).getByRole("button", { name: /^Character/ }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/new"));
+    expect(await screen.findByPlaceholderText("Character name")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("redirects old character-create links to the wizard", async () => {
+    const { runtime } = await setup({}, "/library?create=character");
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/new"));
+    expect(await screen.findByPlaceholderText("Character name")).toBeTruthy();
+  });
+
   it("creates a persona through the real draft contract and returns to its filter", async () => {
     const save = vi.fn<NonNullable<MockCallHandlers["personaSave"]>>((request) => ok({ id: "new", archived: false, draft: { ...request.draft }, assets: [], revision: 1, created_at: 1, updated_at: 1 }));
     const { runtime } = await setup({ personaSave: save }, "/library?create=persona");

@@ -110,7 +110,7 @@ export function AppShell() {
           <Outlet />
         </CrispAppShell>
       )}
-      {pathname === "/library" ? <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} /> : <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onDiscover={() => { void navigate({ to: destinations.discover }); }} />}
+      {pathname === "/library" ? <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} /> : <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onCreate={() => { void navigate({ to: "/characters/new" }); }} onDiscover={() => { void navigate({ to: destinations.discover }); }} />}
       <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
       {controller && desktop && windowPlatform !== "macos" && !expanded && resizeEdges.map(([edge, className]) => (
         <div key={edge} aria-hidden className={cn("absolute z-50 touch-none", className)} onPointerDown={(event) => {

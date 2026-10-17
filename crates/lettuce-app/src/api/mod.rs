@@ -233,7 +233,9 @@ pub use library::persona_default::{persona_default_set, persona_default_clear};
 
 
 
-pub use library::characters::{character_archive, character_get, character_restore, character_save};
+pub use library::characters::{
+    character_archive, character_draft_default, character_get, character_restore, character_save,
+};
 
 
 pub use library::groups::{group_get, group_save, groups_list};

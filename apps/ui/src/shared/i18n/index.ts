@@ -1,5 +1,6 @@
 import { createInstance, type i18n } from "i18next";
 import { initReactI18next } from "react-i18next";
+import characters from "./locales/en/characters.json";
 import common from "./locales/en/common.json";
 import conversations from "./locales/en/conversations.json";
 import home from "./locales/en/home.json";
@@ -11,7 +12,7 @@ import welcomeBack from "./locales/en/welcome-back.json";
 export const defaultNamespace = "common";
 
 export const resources = {
-  en: { common, conversations, home, library, onboarding, settings, "welcome-back": welcomeBack },
+  en: { characters, common, conversations, home, library, onboarding, settings, "welcome-back": welcomeBack },
 } as const;
 
 export type Language = keyof typeof resources;

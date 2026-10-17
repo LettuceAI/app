@@ -63,6 +63,8 @@
   "create": {
     "title": "Create",
     "description": "Someone new to talk to.",
+    "character": "Create a character",
+    "characterBody": "Name, look, personality and opening scenes",
     "import": "Import a card",
     "importBody": "PNG or JSON character card",
     "imported": "Character imported",

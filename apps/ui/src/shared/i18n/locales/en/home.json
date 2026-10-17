@@ -11,7 +11,8 @@
   "continueChat": "Continue chat",
   "empty": {
     "title": "No characters yet",
-    "body": "Create someone to talk to, or import a character card from your disk."
+    "body": "Create someone to talk to, or import a character card from your disk.",
+    "create": "Create a character"
   },
   "noMatch": {
     "title": "Nothing matches “{{query}}”",

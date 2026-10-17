@@ -1,4 +1,4 @@
-import type { AppEvent } from "./generated/bindings";
+import type { AppEvent, LibraryInteractionMode, PromptKind } from "./generated/bindings";
 
 export const queryKeys = {
   app: {
@@ -18,6 +18,11 @@ export const queryKeys = {
   characters: {
     all: ["characters"] as const,
     list: () => [...queryKeys.characters.all, "list"] as const,
+    draftDefault: (mode: LibraryInteractionMode = "roleplay") => [...queryKeys.characters.all, "draft-default", mode] as const,
+  },
+  prompts: {
+    all: ["prompts"] as const,
+    list: (kind: PromptKind) => [...queryKeys.prompts.all, "list", kind] as const,
   },
   library: { all: ["library"] as const, counts: () => ["library", "counts"] as const },
   personas: { all: ["personas"] as const, list: () => ["personas", "list"] as const },
@@ -94,6 +99,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     ? [queryKeys.settings.all, queryKeys.app.status()]
     : [queryKeys.settings.all, queryKeys.providers.all, queryKeys.audioProviders.all, queryKeys.models.all],
   content_filter_hit: () => [queryKeys.settings.filterLog()],
+  prompts_changed: () => [queryKeys.prompts.all],
   job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id), ...(event.job.state === "succeeded" ? [queryKeys.media.library(), queryKeys.library.counts()] : [])],
 };
 

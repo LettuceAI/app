@@ -112,6 +112,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::library::library_counts,
             commands::library::character_duplicate,
             commands::library::character_get,
+            commands::library::character_draft_default,
             commands::library::character_save,
             commands::library::character_archive,
             commands::library::character_restore,

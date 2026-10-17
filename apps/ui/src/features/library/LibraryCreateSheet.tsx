@@ -21,7 +21,11 @@ export function LibraryCreateSheet({ api, open, onClose }: { api: ApiClient; ope
     onClose();
     void refreshLibrary(queryClient);
   } });
-  const create = (kind: EntryKind) => { onClose(); void navigate({ to: "/library", search: { create: kind } }); };
+  const create = (kind: EntryKind) => {
+    onClose();
+    if (kind === "character") void navigate({ to: "/characters/new" });
+    else void navigate({ to: "/library", search: { create: kind } });
+  };
   return (
     <Sheet open={open} onClose={() => { if (!mutation.isPending) onClose(); }} size="sm" title={t("create.title")} description={t("create.description")}>
       <div className="space-y-4 pb-1">

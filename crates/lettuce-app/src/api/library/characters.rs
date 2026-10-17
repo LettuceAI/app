@@ -1,5 +1,6 @@
 use lettuce_characters::{
-    CharacterDetails, CharacterRepository, CreateCharacterPlan, InteractionMode,
+    CharacterDefaults, CharacterDetails, CharacterPresentationV1, CharacterRepository,
+    CreateCharacterPlan, InteractionMode,
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_types::{CharacterId, TimestampMillis};
@@ -149,6 +150,48 @@ fn plan_from(
         variants: details.variants,
         starters: details.starters,
     })
+}
+
+/// The draft a new character starts from: an empty profile with the
+/// library's default settings and presentation.
+pub async fn character_draft_default(
+    mode: Option<dto::LibraryInteractionMode>,
+) -> Result<dto::CharacterDraft, ApiError> {
+    let mut draft = default_draft().map_err(|_| mapping_error())?;
+    if mode == Some(dto::LibraryInteractionMode::Companion) {
+        draft.defaults.interaction_mode = dto::LibraryInteractionMode::Companion;
+        draft.defaults.companion_soul = Some(crate::api::companion::config_view(
+            &lettuce_companions::CompanionSoulConfig::default(),
+        ));
+    }
+    Ok(draft)
+}
+
+fn default_draft() -> Result<dto::CharacterDraft, serde_json::Error> {
+    serde_json::from_value(serde_json::json!({
+        "profile": {
+            "name": "",
+            "nickname": null,
+            "description": null,
+            "definition": null,
+            "design_description": null,
+            "scenario": null,
+        },
+        "provenance": {
+            "creator": null,
+            "creator_notes": null,
+            "localized_creator_notes": {},
+            "sources": [],
+            "tags": [],
+        },
+        "defaults": serde_json::to_value(CharacterDefaults::default())?,
+        "media": [],
+        "presentation": serde_json::to_value(CharacterPresentationV1::default())?,
+        "image_recommendation": null,
+        "scenes": [],
+        "variants": [],
+        "starters": [],
+    }))
 }
 
 pub async fn character_get(

@@ -100,6 +100,7 @@ export const commands = {
 	libraryCounts: () => typedError<LibraryCounts, ApiError_Serialize>(__TAURI_INVOKE("library_counts")),
 	characterDuplicate: (request: CharacterDuplicateRequest) => typedError<CharacterSummary_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_duplicate", { request })),
 	characterGet: (request: CharacterGetRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_get", { request })),
+	characterDraftDefault: (mode: LibraryInteractionMode | null) => typedError<CharacterDraft_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_draft_default", { mode })),
 	characterSave: (request: CharacterSaveRequest_Deserialize) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_save", { request })),
 	characterArchive: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_archive", { request })),
 	characterRestore: (request: CharacterLifecycleRequest) => typedError<CharacterView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("character_restore", { request })),

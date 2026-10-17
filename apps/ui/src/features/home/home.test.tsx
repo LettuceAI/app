@@ -20,12 +20,13 @@ function chat(updatedAt: number, archived = false): ConversationSummary {
   return { updated_at: updatedAt, archived } as ConversationSummary;
 }
 
-async function renderHome(characters: CharacterSummary[], latest: { source_id: string; conversation: ConversationSummary }[] = []) {
+async function renderHome(characters: CharacterSummary[], latest: { source_id: string; conversation: ConversationSummary }[] = [], view: "home" | "list" = "home") {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       calls: {
-        appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }),
+        appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true }, homeDesktopView: view } } }),
         charactersList: () => ({ status: "ok", data: { items: characters, next_cursor: null } }),
+        conversationsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsLatestByCharacter: () => ({ status: "ok", data: { items: latest, next_cursor: null } }),
       },
     }),
@@ -72,6 +73,12 @@ describe("home characters", () => {
     expect(await screen.findByText("1 of 2")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Bram")).toBeNull());
     expect(screen.getByText("Aria")).toBeTruthy();
+  });
+
+  it("keeps gradients disabled on saved character cards", async () => {
+    await renderHome([character("off", "No tint", { gradient: { type: "none" } })], [], "list");
+    const card = (await screen.findByText("No tint")).closest("button")!;
+    expect((card.firstElementChild as HTMLElement).style.background).toBe("var(--color-surface-1)");
   });
 
   it("suggests an export file name the way the backend names exports", () => {

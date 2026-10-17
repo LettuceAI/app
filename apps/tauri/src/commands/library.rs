@@ -244,6 +244,14 @@ pub async fn character_get(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn character_draft_default(
+    mode: Option<lettuce_contracts::LibraryInteractionMode>,
+) -> Result<lettuce_contracts::CharacterDraft, ApiError> {
+    api::character_draft_default(mode).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn character_save(
     context: State<'_, ApiContextSlot>,
     request: lettuce_contracts::CharacterSaveRequest,

@@ -72,7 +72,10 @@ export function LibraryPage() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetching, isFetchNextPageError, fetchNextPage, pages, filter, typing]);
   const changeFilter = (next: Filter) => { setFilter(next); mainRef.current?.scrollTo({ top: 0 }); };
-  const open = (next: LibrarySearch) => { void navigate({ to: "/library", search: next, state: { libraryOverlayPushed: true }, resetScroll: false }); };
+  const open = (next: LibrarySearch) => {
+    if (next.create === "character") void navigate({ to: "/characters/new" });
+    else void navigate({ to: "/library", search: next, state: { libraryOverlayPushed: true }, resetScroll: false });
+  };
   const close = () => { if (pushed) router.history.back(); else void navigate({ to: "/library", search: {}, replace: true, resetScroll: false }); };
   const activeEntry = entries.find((entry) => entry.kind === search.kind && entry.id === search.item);
   const activeMedia = pictures.find((item) => item.asset.asset_id === search.media);

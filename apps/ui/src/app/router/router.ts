@@ -10,6 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
+import { CreateCharacterPage } from "@/features/characters";
 import { ChatBranchesPage, ChatMemoryPage, ConversationPage } from "@/features/conversations";
 import { LibraryPage, validateLibrarySearch } from "@/features/library";
 import { HomePage } from "@/features/home";
@@ -52,7 +53,16 @@ const welcomeRoute = createRoute({ getParentRoute: () => rootRoute, path: welcom
 const welcomeBackRoute = createRoute({ getParentRoute: () => rootRoute, path: welcomeBackPath, component: WelcomeBackPage });
 const groupsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups", component: NavigationPage });
 const discoverRoute = createRoute({ getParentRoute: () => rootRoute, path: "/discover", component: NavigationPage });
-const libraryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/library", component: LibraryPage, validateSearch: validateLibrarySearch });
+const libraryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/library",
+  component: LibraryPage,
+  validateSearch: validateLibrarySearch,
+  beforeLoad: ({ search }) => {
+    if (search.create === "character") throw redirect({ to: "/characters/new", replace: true });
+  },
+});
+const newCharacterRoute = createRoute({ getParentRoute: () => rootRoute, path: "/characters/new", component: CreateCharacterPage });
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsIndexPage });
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -82,7 +92,7 @@ const chatBranchesRoute = createRoute({ getParentRoute: () => rootRoute, path: "
 const newModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/new", component: ModelEditorPage });
 const editModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/$modelId", component: ModelEditorPage });
 
-const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, newCharacterRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;

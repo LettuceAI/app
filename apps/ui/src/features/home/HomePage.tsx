@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRouteContext } from "@tanstack/react-router";
+import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { GalleryVerticalEnd, House, List, Search, User } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -70,6 +70,7 @@ export function HomePage() {
   const api = useRouteContext({ from: "__root__", select: (context) => context.api });
   const { data: status } = useQuery(appStatusQuery(api));
   const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
+  const navigate = useNavigate();
   const mainRef = useRef<HTMLElement>(null);
   const [query, setQuery] = useState("");
   const [layoutSheet, setLayoutSheet] = useState(false);
@@ -133,7 +134,12 @@ export function HomePage() {
         action={<Button variant="secondary" onClick={() => setQuery("")}>{t("noMatch.clear")}</Button>}
       />
     ) : (
-      <EmptyState icon={<User size={icon.xl} />} title={t("empty.title")} description={t("empty.body")} />
+      <EmptyState
+        icon={<User size={icon.xl} />}
+        title={t("empty.title")}
+        description={t("empty.body")}
+        action={<Button variant="primary" onClick={() => void navigate({ to: "/characters/new" })}>{t("empty.create")}</Button>}
+      />
     );
   } else if (layout === "gallery") {
     body = (

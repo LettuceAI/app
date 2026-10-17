@@ -6,8 +6,8 @@ import { queryKeys } from "@/api/query-keys";
 
 export interface CardColors {
   css: string;
-  fg: string;
-  fgMuted: string;
+  fg: string | null;
+  fgMuted: string | null;
 }
 
 const lightText = { fg: "#ffffff", fgMuted: "rgba(255, 255, 255, 0.7)" };
@@ -44,6 +44,7 @@ export function useCardColors(api: ApiClient, character: CharacterSummary): Card
   const { gradient, avatar } = character;
   const fromAvatar = gradient.type === "avatar" && avatar !== null;
   const avatarGradient = useQuery({ ...avatarGradientQuery(api, avatar?.asset_id ?? ""), enabled: fromAvatar });
+  if (gradient.type === "none") return { css: "var(--color-surface-1)", fg: null, fgMuted: null };
   if (gradient.type === "custom") {
     const auto = textOnColors(gradient.colors);
     return { css: customGradientCss(gradient.colors), fg: gradient.text_color ?? auto.fg, fgMuted: gradient.text_secondary ?? auto.fgMuted };
