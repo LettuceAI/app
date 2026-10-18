@@ -12,7 +12,7 @@ type GradientMode = "off" | "auto" | "custom";
 const fallbackColors = ["#4f46e5", "#7c3aed"];
 const middleColor = "#a855f7";
 
-export function GradientSettings({ api, form, update }: StepProps) {
+export function GradientSettings({ api, form, update, inline = false }: StepProps & { inline?: boolean }) {
   const { t } = useTranslation("characters");
   const queryClient = useQueryClient();
   const id = useId();
@@ -42,8 +42,8 @@ export function GradientSettings({ api, form, update }: StepProps) {
   </div>;
 
   return <>
-    <EditorRow label={t("identity.gradient")} hint={t("identity.gradientBody")}>
-      <Segmented<GradientMode> block aria-label={t("identity.gradient")} value={mode} options={[{ value: "off", label: t("identity.gradientOff") }, { value: "auto", label: t("identity.gradientAuto") }, { value: "custom", label: t("identity.gradientCustom") }]} onChange={selectMode} />
+    <EditorRow label={t("identity.gradient")} hint={t("identity.gradientBody")} inline={inline}>
+      <Segmented<GradientMode> block={!inline} size={inline ? "sm" : "md"} aria-label={t("identity.gradient")} value={mode} options={[{ value: "off", label: t("identity.gradientOff") }, { value: "auto", label: t("identity.gradientAuto") }, { value: "custom", label: t("identity.gradientCustom") }]} onChange={selectMode} />
     </EditorRow>
     {mode === "custom" && <>
       {colorField(0, t("identity.gradientStart"))}

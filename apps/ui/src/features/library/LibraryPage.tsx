@@ -125,7 +125,7 @@ export function LibraryPage() {
       </Page>
       {retained?.type === "entry" && <EntryMenu key={retained.key} api={api} entry={retained.entry} defaultPersona={defaultPersona} open={active?.type === "entry"} onClose={close} />}
       {retained?.type === "media" && <MediaMenu key={retained.key} api={api} item={retained.item} entries={entries} open={active?.type === "media"} onClose={close} />}
-      {retained?.type === "create" && <EntryEditor key={retained.key} api={api} kind={retained.kind} open={active?.type === "create"} onClose={close} onCreated={(kind) => { setQuery(""); setTerm(""); changeFilter(kindFilters[kind]); }} />}
+      {retained?.type === "create" && retained.kind !== "character" && <EntryEditor key={retained.key} api={api} kind={retained.kind} open={active?.type === "create"} onClose={close} onCreated={(kind) => { setQuery(""); setTerm(""); changeFilter(kindFilters[kind]); }} />}
       <LibraryCreateSheet api={api} open={createMenu} onClose={() => setCreateMenu(false)} />
     </>
   );

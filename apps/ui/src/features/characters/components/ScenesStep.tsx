@@ -10,6 +10,7 @@ interface ScenesStepProps extends StepProps {
   editorOpen: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  mode?: "create" | "edit";
 }
 
 function SceneEditor({ form, update, scene, phone, onRemove, warning }: StepProps & { scene: SceneDraft; phone: boolean; onRemove: () => void; warning?: ReactNode }) {
@@ -62,12 +63,12 @@ function SceneEditor({ form, update, scene, phone, onRemove, warning }: StepProp
   </div>;
 }
 
-export function ScenesStep({ form, update, phone, editorOpen, selectedId, onSelect, api }: ScenesStepProps) {
+export function ScenesStep({ form, update, phone, editorOpen, selectedId, onSelect, api, mode = "create" }: ScenesStepProps) {
   const { t } = useTranslation("characters");
   const { scenes, defaults } = form.draft;
   const scene = scenes.find((entry) => entry.id === selectedId);
   const emptyCount = scenes.filter((entry) => !hasSceneContent(entry) && (phone || entry.id !== selectedId)).length;
-  const emptyWarning = emptyCount > 0 ? <Alert tone="warning" title={t("scenes.emptyWarning", { count: emptyCount })} description={t("scenes.emptyWarningBody")} /> : null;
+  const emptyWarning = emptyCount > 0 ? <Alert tone="warning" title={t("scenes.emptyWarning", { count: emptyCount })} description={t(mode === "edit" ? "scenes.emptyWarningBodyEdit" : "scenes.emptyWarningBody")} /> : null;
   const add = () => {
     const id = crypto.randomUUID();
     update((current) => withAddedScene(current, { text: "", direction: "" }, id));
@@ -91,7 +92,7 @@ export function ScenesStep({ form, update, phone, editorOpen, selectedId, onSele
 
   if (scenes.length === 0) return <div className="space-y-6">
     <p className="max-w-3xl text-base text-fg-2">{t("scenes.body")}</p>
-    <EmptyState title={t("scenes.empty")} description={t("scenes.emptyBody")} action={<Button variant="tonal" leading={<Plus size={icon.md} />} onClick={add}>{t("scenes.addFirst")}</Button>} />
+    <EmptyState title={t("scenes.empty")} description={t(mode === "edit" ? "scenes.emptyBodyEdit" : "scenes.emptyBody")} action={<Button variant="tonal" leading={<Plus size={icon.md} />} onClick={add}>{t("scenes.addFirst")}</Button>} />
   </div>;
 
   return <div className="space-y-6">

@@ -55,6 +55,7 @@
     "empty": "No chats yet"
   },
   "menu": {
+    "edit": "Edit character",
     "cardStyle": "Card style",
     "cardRow": "Row, switch to banner",
     "cardBanner": "Banner, switch to row",

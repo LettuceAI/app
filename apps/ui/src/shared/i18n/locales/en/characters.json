@@ -127,7 +127,9 @@
     "cancel": "Cancel",
     "emptyWarning_one": "{{count}} empty scene",
     "emptyWarning_other": "{{count}} empty scenes",
-    "emptyWarningBody": "Empty scenes will be skipped when you create this character. Add an opening message to keep them."
+    "emptyWarningBody": "Empty scenes will be skipped when you create this character. Add an opening message to keep them.",
+    "emptyBodyEdit": "Add a scene to give chats a way to begin.",
+    "emptyWarningBodyEdit": "Empty scenes will be skipped when you save. Add an opening message to keep them."
   },
   "extras": {
     "title": "Extras",
@@ -159,5 +161,224 @@
     "promptCustom": "Yours",
     "lorebooks": "Lorebooks",
     "done": "Done"
+  },
+  "edit": {
+    "title": "Character",
+    "back": "Back",
+    "tabs": {
+      "label": "Character sections",
+      "profile": "Profile",
+      "scenes": "Scenes",
+      "chat": "Chat",
+      "look": "Look",
+      "soul": "Soul"
+    },
+    "startChat": "Start chat",
+    "more": "More actions",
+    "export": "Export",
+    "duplicate": "Duplicate",
+    "archive": "Archive",
+    "restore": "Restore",
+    "exported": "Character exported",
+    "exportWarnings_one": "Exported with {{count}} warning",
+    "exportWarnings_other": "Exported with {{count}} warnings",
+    "duplicated": "{{name}} copy added to the library",
+    "archived": "{{name}} archived",
+    "restored": "{{name}} restored",
+    "undo": "Undo",
+    "unsaved": "Unsaved changes",
+    "discard": "Discard",
+    "save": "Save",
+    "saved": "Changes saved",
+    "lorebooksFailed": "Saved, but the lorebooks could not be updated. Try saving again.",
+    "leaveTitle": "Discard your changes?",
+    "leaveBody": "Changes that are not saved are lost.",
+    "leaveDiscard": "Discard",
+    "leaveKeep": "Keep editing"
+  },
+  "voice": {
+    "group": "Voice",
+    "title": "Voice",
+    "none": "None",
+    "noneBody": "Replies are not read aloud",
+    "saved": "Saved voice",
+    "noVoices": "No voices",
+    "noProviders": "No audio providers yet. Add one in Settings.",
+    "autoplay": "Read replies aloud",
+    "autoplayBody": "Plays each reply as it arrives"
+  },
+  "soul": {
+    "identity": "Identity",
+    "feelings": "Feelings",
+    "fields": {
+      "essence": {
+        "label": "Essence",
+        "placeholder": "Who they are underneath the card definition"
+      },
+      "traits": {
+        "label": "Traits",
+        "placeholder": "The few traits that drive how they act"
+      },
+      "backstory": {
+        "label": "Backstory",
+        "placeholder": "What happened to them that still matters"
+      },
+      "appearance": {
+        "label": "Appearance",
+        "placeholder": "How they look and carry themselves"
+      },
+      "goals": {
+        "label": "Goals",
+        "placeholder": "What they want, now and long term"
+      },
+      "likes": {
+        "label": "Likes",
+        "placeholder": "Things they enjoy or seek out"
+      },
+      "voice": {
+        "label": "Inner voice",
+        "placeholder": "How they sound in close conversation"
+      },
+      "relational_style": {
+        "label": "Relational style",
+        "placeholder": "How they attach, trust, retreat and reconnect"
+      },
+      "vulnerabilities": {
+        "label": "Vulnerabilities",
+        "placeholder": "Soft spots and things they rarely say"
+      },
+      "fears": {
+        "label": "Fears",
+        "placeholder": "What unsettles them"
+      },
+      "habits": {
+        "label": "Habits",
+        "placeholder": "Recurring tells, rituals, patterns in how they talk"
+      },
+      "boundaries": {
+        "label": "Boundaries",
+        "placeholder": "Lines they hold, and how they hold them"
+      }
+    },
+    "affectTitle": "Baseline affect",
+    "affectBody": "How they feel by default, before anything happens",
+    "regulationTitle": "Regulation style",
+    "regulationBody": "How they handle and show what they feel",
+    "relationshipTitle": "Where a relationship starts",
+    "relationshipBody": "New chats start here; the relationship moves from there",
+    "affect": {
+      "warmth": "Warmth",
+      "trust": "Trust",
+      "calm": "Calm",
+      "vulnerability": "Vulnerability",
+      "longing": "Longing",
+      "hurt": "Hurt",
+      "tension": "Tension",
+      "irritation": "Irritation",
+      "affection_intensity": "Affection",
+      "reassurance_need": "Reassurance need"
+    },
+    "regulation": {
+      "suppression": "Suppression",
+      "volatility": "Volatility",
+      "recovery_speed": "Recovery speed",
+      "conflict_avoidance": "Conflict avoidance",
+      "reassurance_seeking": "Reassurance seeking",
+      "protest_behavior": "Protest behaviour",
+      "emotional_transparency": "Emotional transparency",
+      "attachment_activation": "Attachment activation",
+      "pride": "Pride"
+    },
+    "relationship": {
+      "closeness": "Closeness",
+      "trust": "Trust",
+      "affection": "Affection",
+      "tension": "Tension"
+    },
+    "styleNotes": "Style notes",
+    "styleNotesHint": "How their replies should read. Added to the companion prompt.",
+    "styleNotesPlaceholder": "Short replies, no emoji, never narrates his own feelings",
+    "acrossChats": "Across chats",
+    "timeAwareness": "Time awareness",
+    "timeAwarenessBody": "New chats send the local time and date their memories",
+    "shareMemory": "Share memory",
+    "shareMemoryBody": "Every chat with them uses one memory",
+    "shareGrowth": "Share how they grow",
+    "shareGrowthBody": "What they learn about themselves carries across chats"
+  },
+  "generateSoul": {
+    "title": "Generate from character",
+    "body": "Drafts a soul from the name, definition and scenes. You review it before anything changes.",
+    "addName": "Add a name first",
+    "addDefinition": "Add a definition first",
+    "generate": "Generate",
+    "direction": "Direction",
+    "directionHint": "Optional steering for the model",
+    "directionPlaceholder": "Lean tsundere: guarded outside, soft once trusted. Less anxious, more pride.",
+    "directionApplyHint": "Edits apply on the next regenerate",
+    "usingModel": "Uses {{model}}. You review and edit before applying.",
+    "generating": "Generating",
+    "stop": "Stop",
+    "failed": "The soul could not be generated.",
+    "reviewTitle": "Review generated soul",
+    "noDifferences": "No differences from current.",
+    "changes_one": "{{count}} change. Edit anything before applying.",
+    "changes_other": "{{count}} changes. Edit anything before applying.",
+    "use": "Use",
+    "useField": "Use {{field}}",
+    "now": "Now: {{value}}",
+    "empty": "empty",
+    "feelings": "Feelings",
+    "useFeelings": "Use all feeling changes",
+    "facts_one": "{{count}} authored fact comes with the identity.",
+    "facts_other": "{{count}} authored facts come with the identity.",
+    "discard": "Discard",
+    "regenerate": "Regenerate",
+    "apply": "Apply",
+    "shift": "{{from}} to {{to}}",
+    "factsCleared": "The authored facts are cleared."
+  },
+  "notes": {
+    "title": "Scheduled notes",
+    "add": "Add a note",
+    "addBody": "Context the companion picks up on a date",
+    "untitled": "Untitled note",
+    "edit": "Edit",
+    "ended": "Ended",
+    "enabledFor": "{{label}} enabled",
+    "newTitle": "New scheduled note",
+    "editTitle": "Edit scheduled note",
+    "label": "Label",
+    "labelPlaceholder": "Birthday",
+    "content": "Content",
+    "contentHint": "The exact text the companion reads once the date arrives.",
+    "contentPlaceholder": "Today is your birthday. You feel a little sentimental about it.",
+    "repeat": "Repeats",
+    "recurrence": {
+      "none": "Once",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "yearly": "Yearly"
+    },
+    "showOn": "Show on",
+    "hideOn": "Hide on",
+    "startsOn": "Starts on",
+    "stopsAfter": "Stops after",
+    "noEnd": "No end",
+    "clearEnd": "Clear",
+    "endBeforeStart": "The end must come after the start.",
+    "window": "Visible for (hours)",
+    "windowHint": "Leave empty to show it until the next repeat.",
+    "enabled": "Enabled",
+    "enabledHint": "Turn off to keep the note without sending it to the model.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Scheduled note saved",
+    "deleted": "Scheduled note deleted",
+    "delete": "Delete note",
+    "deleteTitle": "Delete this note?",
+    "deleteBody": "{{label}} will no longer reach the companion.",
+    "windowInvalid": "Enter a whole number of hours above zero, or leave it empty."
   }
 }

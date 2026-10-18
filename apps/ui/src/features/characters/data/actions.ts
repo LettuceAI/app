@@ -1,7 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { AssetIngestRole, AssetRef } from "@/api/generated/bindings";
+import type { AssetIngestRole, AssetRef, CharacterSummary, CharacterView_Serialize, LibraryLorebookMutationResult } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { characterChanged, lorebookIds } from "./edit";
 import { draftToSave, type CharacterForm } from "./form";
 
 export interface CharacterServices {
@@ -51,4 +52,63 @@ export async function createCharacter(services: CharacterServices, form: Charact
     queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
   ]);
   return { id: created.id, unattached };
+}
+
+export interface EditBaseline {
+  form: CharacterForm;
+  revision: number;
+}
+
+export interface EditSaved {
+  view: CharacterView_Serialize | null;
+  revision: number;
+  lorebooks: string[];
+  lorebooksFailed: boolean;
+}
+
+/** `operationId` makes a retry after a lost reply idempotent; each lorebook step derives its own id from it. */
+export async function saveCharacterEdits(api: ApiClient, characterId: string, baseline: EditBaseline, draft: CharacterForm, operationId: string): Promise<EditSaved> {
+  let view: CharacterView_Serialize | null = null;
+  let revision = baseline.revision;
+  if (characterChanged(draft, baseline.form)) {
+    view = await api.call("characterSave", { character_id: characterId, draft: draftToSave(draft), expected_revision: revision, client_operation_id: operationId });
+    revision = view.revision;
+  }
+  let order = baseline.form.lorebookIds;
+  const target = draft.lorebookIds;
+  let step = 0;
+  const apply = async (call: (clientOperationId: string) => Promise<LibraryLorebookMutationResult>) => {
+    const result = await call(`${operationId}:lorebook:${step++}`);
+    revision = result.owner_revision;
+    order = lorebookIds(result.bindings);
+  };
+  try {
+    for (const id of baseline.form.lorebookIds.filter((entry) => !target.includes(entry))) {
+      await apply((client_operation_id) => api.call("characterLorebooksUnbind", { character_id: characterId, lorebook_id: id, expected_revision: revision, client_operation_id }));
+    }
+    for (const [index, id] of target.entries()) {
+      if (order.includes(id)) continue;
+      await apply((client_operation_id) => api.call("characterLorebooksBind", { character_id: characterId, lorebook_id: id, expected_revision: revision, client_operation_id, target_ordinal: Math.min(index, order.length) }));
+    }
+    for (const [index, id] of target.entries()) {
+      if (order[index] === id) continue;
+      await apply((client_operation_id) => api.call("characterLorebooksReorder", { character_id: characterId, lorebook_id: id, expected_revision: revision, client_operation_id, target_ordinal: index }));
+    }
+  } catch {
+    const [current, bindings] = await Promise.all([api.call("characterGet", { character_id: characterId }), api.call("characterLorebooksList", { character_id: characterId })]);
+    return { view: current, revision: current.revision, lorebooks: lorebookIds(bindings), lorebooksFailed: true };
+  }
+  return { view, revision, lorebooks: order, lorebooksFailed: false };
+}
+
+export function archiveCharacter(api: ApiClient, characterId: string, revision: number): Promise<CharacterView_Serialize> {
+  return api.call("characterArchive", { character_id: characterId, expected_revision: revision, client_operation_id: crypto.randomUUID() });
+}
+
+export function restoreCharacter(api: ApiClient, characterId: string, revision: number): Promise<CharacterView_Serialize> {
+  return api.call("characterRestore", { character_id: characterId, expected_revision: revision, client_operation_id: crypto.randomUUID() });
+}
+
+export function duplicateCharacter(api: ApiClient, characterId: string): Promise<CharacterSummary> {
+  return api.call("characterDuplicate", { character_id: characterId, client_operation_id: crypto.randomUUID() });
 }

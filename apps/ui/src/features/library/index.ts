@@ -2,4 +2,4 @@ export { LibraryPage } from "./LibraryPage";
 export { LibraryCreateSheet } from "./LibraryCreateSheet";
 export { validateLibrarySearch } from "./data/queries";
 export { newPersonaDraft } from "./data/defaults";
-export { refreshLibrary } from "./data/actions";
+export { exportEntry, refreshLibrary } from "./data/actions";

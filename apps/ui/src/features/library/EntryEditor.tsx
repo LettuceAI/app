@@ -6,13 +6,16 @@ import { isApiFailure, type ApiClient } from "@/api/client";
 import { createEntry, refreshLibrary, saveEntry } from "./data/actions";
 import type { EntryKind, EntryView } from "./data/queries";
 
-export function EntryEditor({ api, kind, loaded, open, onClose, onCreated }: { api: ApiClient; kind: EntryKind; loaded?: EntryView; open: boolean; onClose: () => void; onCreated?: (kind: EntryKind) => void }) {
+type EditableKind = Exclude<EntryKind, "character">;
+type EditableView = Exclude<EntryView, { kind: "character" }>;
+
+export function EntryEditor({ api, kind, loaded, open, onClose, onCreated }: { api: ApiClient; kind: EditableKind; loaded?: EditableView; open: boolean; onClose: () => void; onCreated?: (kind: EditableKind) => void }) {
   const { t } = useTranslation("library");
   const { t: common } = useTranslation();
   const queryClient = useQueryClient();
   const [original] = useState(loaded);
-  const [name, setName] = useState(() => original?.kind === "character" ? original.view.draft.profile.name : original?.kind === "persona" ? original.view.draft.title : original?.view.lorebook.name ?? "");
-  const [description, setDescription] = useState(() => original?.kind === "character" ? original.view.draft.profile.description ?? "" : original?.kind === "persona" ? original.view.draft.description : "");
+  const [name, setName] = useState(() => original?.kind === "persona" ? original.view.draft.title : original?.view.lorebook.name ?? "");
+  const [description, setDescription] = useState(() => original?.kind === "persona" ? original.view.draft.description : "");
   const [operationId] = useState(() => crypto.randomUUID());
   const mutation = useMutation({
     mutationFn: async () => {
@@ -36,7 +39,7 @@ export function EntryEditor({ api, kind, loaded, open, onClose, onCreated }: { a
     }>
       <div className="space-y-4">
         <Field label={t("edit.name")}><Input data-autofocus value={name} disabled={mutation.isPending} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") submit(); }} placeholder={t(`edit.placeholder_${kind}`)} /></Field>
-        {kind !== "lorebook" && <Field label={t("edit.description")} hint={t(`edit.hint_${kind}`)}><Textarea rows={4} value={description} disabled={mutation.isPending} onChange={(event) => setDescription(event.target.value)} /></Field>}
+        {kind === "persona" && <Field label={t("edit.description")} hint={t(`edit.hint_${kind}`)}><Textarea rows={4} value={description} disabled={mutation.isPending} onChange={(event) => setDescription(event.target.value)} /></Field>}
         {mutation.isError && <p role="alert" className="text-sm text-danger">{common(`errors.code.${isApiFailure(mutation.error) ? mutation.error.code : "internal"}`)}</p>}
       </div>
     </Sheet>

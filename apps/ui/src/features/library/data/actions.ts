@@ -2,14 +2,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/api/query-keys";
 import { ApiFailure, type ApiClient } from "@/api/client";
 import type { EntityExportResult, ImportCommitResult, MediaLibraryItem } from "@/api/generated/bindings";
-import { newCharacterDraft, newPersonaDraft } from "./defaults";
+import { newPersonaDraft } from "./defaults";
 import type { Entry, EntryKind, EntryView } from "./queries";
 
-export async function saveEntry(api: ApiClient, loaded: EntryView, name: string, description: string, operationId: string) {
-  if (loaded.kind === "character") {
-    const { view } = loaded;
-    return api.call("characterSave", { character_id: view.id, expected_revision: view.revision, client_operation_id: operationId, draft: { ...view.draft, profile: { ...view.draft.profile, name, description } } });
-  }
+export async function saveEntry(api: ApiClient, loaded: Exclude<EntryView, { kind: "character" }>, name: string, description: string, operationId: string) {
   if (loaded.kind === "persona") {
     const { view } = loaded;
     return api.call("personaSave", { persona_id: view.id, expected_revision: view.revision, client_operation_id: operationId, draft: { ...view.draft, title: name, description } });
@@ -17,8 +13,7 @@ export async function saveEntry(api: ApiClient, loaded: EntryView, name: string,
   const { lorebook } = loaded.view;
   return api.call("lorebookUpdateMetadata", { lorebook_id: lorebook.id, expected_revision: lorebook.revision, client_operation_id: operationId, metadata: { name, detection: lorebook.detection, icon_asset_id: lorebook.icon?.asset_id ?? null } });
 }
-export async function createEntry(api: ApiClient, kind: EntryKind, name: string, description: string, operationId: string): Promise<string> {
-  if (kind === "character") return (await api.call("characterSave", { character_id: null, expected_revision: null, client_operation_id: operationId, draft: newCharacterDraft(name, description) })).id;
+export async function createEntry(api: ApiClient, kind: Exclude<EntryKind, "character">, name: string, description: string, operationId: string): Promise<string> {
   if (kind === "persona") return (await api.call("personaSave", { persona_id: null, expected_revision: null, client_operation_id: operationId, draft: newPersonaDraft(name, description) })).id;
   return (await api.call("lorebookCreate", { client_operation_id: operationId, metadata: { name, detection: "recent_messages", icon_asset_id: null }, entries: [] })).lorebook.id;
 }

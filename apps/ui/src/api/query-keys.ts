@@ -52,6 +52,10 @@ export const queryKeys = {
     list: () => [...queryKeys.models.all, "list"] as const,
   },
   audioProviders: { all: ["audio-providers"] as const },
+  companionNotes: {
+    all: ["companion-notes"] as const,
+    list: (characterId: string) => ["companion-notes", "list", characterId] as const,
+  },
   localModels: { all: ["local-models"] as const },
   loras: { all: ["loras"] as const },
   embedding: {

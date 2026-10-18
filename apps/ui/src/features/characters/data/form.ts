@@ -135,8 +135,11 @@ export function draftToSave(form: CharacterForm): CharacterDraft {
   };
 }
 
+export function enteredDraft(draft: CharacterDraft): CharacterDraft {
+  return retainScenes(draft, draft.scenes.filter((scene) => hasSceneContent(scene) || Boolean(scene.direction?.trim())));
+}
+
 /** Whether anything was entered, so leaving would lose work. */
 export function isTouched(form: CharacterForm, start: CharacterDraft): boolean {
-  const entered = (draft: CharacterDraft) => retainScenes(draft, draft.scenes.filter((scene) => hasSceneContent(scene) || Boolean(scene.direction?.trim())));
-  return form.lorebookIds.length > 0 || JSON.stringify(entered(form.draft)) !== JSON.stringify(entered(start));
+  return form.lorebookIds.length > 0 || JSON.stringify(enteredDraft(form.draft)) !== JSON.stringify(enteredDraft(start));
 }

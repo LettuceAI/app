@@ -2,13 +2,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApiClient } from "@/api/client";
-import type { CharacterSummary, CharacterView_Serialize, MediaLibraryItem, PersonaPage } from "@/api/generated/bindings";
+import type { CharacterSummary, CharacterView_Serialize, MediaLibraryItem, PersonaPage, PersonaView_Serialize } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
-import { newCharacterDraft } from "./data/defaults";
-import { exportEntry, importEntry, saveEntry } from "./data/actions";
+import { newCharacterDraft, newPersonaDraft } from "./data/defaults";
+import { exportEntry, importEntry } from "./data/actions";
 import { mediaQuery } from "./data/queries";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
@@ -84,30 +84,16 @@ describe("library design port", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Hunter")).toBeTruthy();
   });
-  it("keeps editor input after failure and fences its original revision", async () => {
-    const save = vi.fn<NonNullable<MockCallHandlers["characterSave"]>>(() => ({ status: "error", error: { code: "conflict", message: "stale", details: null } }));
+  it("opens the character edit page from the entry menu", async () => {
     const view: CharacterView_Serialize = { id: "c1", archived: false, draft: { ...newCharacterDraft("Cassian", "King of Welan"), profile: { ...newCharacterDraft("Cassian", "").profile, definition: "Keep the full definition" } }, assets: [], revision: 7, created_at: 1, updated_at: 1 };
-    await setup({ characterGet: () => ok(view), characterSave: save });
+    const { runtime } = await setup({ characterGet: () => ok(view), characterLorebooksList: () => ok([]) });
     fireEvent.click(await screen.findByRole("button", { name: /Cassian/ }));
-    const edit = await screen.findByRole("button", { name: "Edit character" });
-    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(edit);
-    const input = await screen.findByRole("textbox", { name: "Name" });
-    fireEvent.change(input, { target: { value: "Changed" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
-    expect(await screen.findByText("It changed somewhere else. Reload and try again.")).toBeTruthy();
-    expect((input as HTMLInputElement).value).toBe("Changed");
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 7, draft: expect.objectContaining({ profile: expect.objectContaining({ name: "Changed", definition: "Keep the full definition" }) }) }));
-  });
-  it("preserves every unedited character setting", async () => {
-    const draft = newCharacterDraft("Before", "Old description");
-    draft.provenance.tags = ["Keep this"];
-    draft.defaults.voice_autoplay = true;
-    const view: CharacterView_Serialize = { id: "c1", archived: false, draft, assets: [], revision: 12, created_at: 1, updated_at: 1 };
-    const save = vi.fn<NonNullable<MockCallHandlers["characterSave"]>>(() => ok(view));
-    const api = createApiClient(createMockTransport({ calls: { characterSave: save } }));
-    await saveEntry(api, { kind: "character", view }, "After", "New description", "operation");
-    expect(save).toHaveBeenCalledWith({ character_id: "c1", expected_revision: 12, client_operation_id: "operation", draft: { ...draft, profile: { ...draft.profile, name: "After", description: "New description" } } });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit character" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/c1/edit"));
+    expect(await screen.findByDisplayValue("Cassian")).toBeTruthy();
+    await act(async () => runtime.router.history.back());
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+    expect(runtime.router.state.location.search.item).toBeUndefined();
   });
 });
 
@@ -176,17 +162,17 @@ describe("library operations", () => {
   });
 
   it("browser back closes the menu and reopening resets its nested editor", async () => {
-    const view: CharacterView_Serialize = { id: "c1", archived: false, draft: newCharacterDraft("Cassian", "King of Welan"), assets: [], revision: 7, created_at: 1, updated_at: 1 };
-    const { runtime } = await setup({ characterGet: () => ok(view) });
-    fireEvent.click(await screen.findByRole("button", { name: /Cassian/ }));
-    const edit = await screen.findByRole("button", { name: "Edit character" });
+    const view: PersonaView_Serialize = { id: "p1", archived: false, draft: newPersonaDraft("Hunter", "A quiet observer"), assets: [], revision: 7, created_at: 1, updated_at: 1 };
+    const { runtime } = await setup({ personaGet: () => ok(view) });
+    fireEvent.click(await screen.findByRole("button", { name: /Hunter/ }));
+    const edit = await screen.findByRole("button", { name: "Edit persona" });
     await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(edit);
     expect(await screen.findByRole("textbox", { name: "Name" })).toBeTruthy();
     await act(async () => runtime.router.history.back());
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: /Cassian/ }));
-    expect(await screen.findByRole("button", { name: "Edit character" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Hunter/ }));
+    expect(await screen.findByRole("button", { name: "Edit persona" })).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   });
 });
