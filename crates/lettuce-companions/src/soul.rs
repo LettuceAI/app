@@ -545,11 +545,9 @@ pub fn validate_state(state: &SoulState) -> Result<(), SoulPolicyError> {
             || !(0.0..=1.0).contains(&fact.confidence)
             || !fact.weight.is_finite()
             || !(0.0..=1.0).contains(&fact.weight)
-            || fact.valid_from.get() < 0
-            || fact.created_at.get() < 0
             || fact
                 .valid_until
-                .is_some_and(|until| until.get() < 0 || until.get() <= fact.valid_from.get())
+                .is_some_and(|until| until.get() <= fact.valid_from.get())
             || !ids.insert(fact.id.as_str())
             || fact.source_memory_ids.iter().any(|id| id.trim().is_empty())
             || fact.supersedes.iter().any(|id| id.trim().is_empty())
@@ -1376,5 +1374,40 @@ mod tests {
         .expect("apply");
         assert_eq!(applied.facts.len(), MAX_SUPERSEDED_HISTORY);
         assert_eq!(applied.facts[0].id, "old-1");
+    }
+    #[test]
+    fn growth_at_an_1890_story_time_keeps_the_exact_instants() {
+        let story_time = TimestampMillis::new(-2_520_000_000_000);
+        let state = initial_soul_state(None, story_time).expect("initial state");
+        let change = prepare_growth_change_set(
+            &state,
+            Revision::INITIAL,
+            vec![proposed(
+                "new",
+                SoulCategory::Likes,
+                SoulFactPolicy::Current,
+            )],
+            story_time,
+        )
+        .expect("growth at 1890");
+        let applied = apply_change_set(
+            &state,
+            &SoulChangeSet {
+                recorded_at: TimestampMillis::new(1_700_000_000_000),
+                ..change
+            },
+        )
+        .expect("apply at 1890");
+        assert_eq!(validate_state(&applied), Ok(()));
+        assert_eq!(applied.facts[0].created_at, story_time);
+        assert_eq!(applied.facts[0].valid_from, story_time);
+        assert!(applied.facts[0].is_effective_at(story_time));
+
+        let mut backwards = applied;
+        backwards.facts[0].valid_until = Some(story_time);
+        assert_eq!(
+            validate_state(&backwards),
+            Err(SoulPolicyError::InvalidFact)
+        );
     }
 }

@@ -3664,8 +3664,8 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
             character_id: id,
             label: "Anniversary".into(),
             content: "Remember".into(),
-            available_at: TimestampMillis::new(20),
-            expires_at: Some(TimestampMillis::new(50)),
+            available_at: TimestampMillis::new(-2_520_000_000_000),
+            expires_at: Some(TimestampMillis::new(-2_510_000_000_000)),
             recurrence: ScheduledNoteRecurrence::Yearly,
             recurrence_window_ms: Some(100),
             enabled: false,
@@ -3708,6 +3708,14 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
             .expect("notes")
             .len(),
         1
+    );
+    assert_eq!(
+        plain["entity"]["companion"]["scheduledNotes"][0]["availableAt"],
+        -2_520_000_000_000_i64
+    );
+    assert_eq!(
+        plain["entity"]["companion"]["scheduledNotes"][0]["expiresAt"],
+        -2_510_000_000_000_i64
     );
     assert_eq!(
         plain["entity"]["companion"]["authoredFacts"][0]["confidence"],

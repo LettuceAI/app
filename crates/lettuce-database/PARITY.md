@@ -77,6 +77,7 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 - A deleted character is removed from its groups instead of leaving a dangling id.
 - Legacy `companion_turn_effects` and `sync_v2_conflicts` rows are preserved verbatim in the run's provenance instead of being lost.
 - A purge no longer waits for companion effects that are still processing. They wait for the next memory cycle, which may never come (no embedding model, a cycle interval not reached), so a companion chat with dynamic memory could not be deleted between cycles; a running cycle is still covered by its run attempt. Legacy had no guard at all (`old-code/src-tauri/src/storage_manager/sessions.rs:3794-3816`).
+- `companion_scheduled_notes.available_at` has no lower bound, so a note may start before 1970; legacy stored the time unsigned and clamped it to 1970. `created_at` and `updated_at` keep their non-negative checks.
 
 ## Decisions
 

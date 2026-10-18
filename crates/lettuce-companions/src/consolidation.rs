@@ -114,7 +114,6 @@ impl CompanionConsolidationRun {
             || self.companion_name.trim().is_empty()
             || crate::validate_state(&self.soul).is_err()
             || !consolidation_ready(&self.soul, self.created_at)
-            || self.created_at.get() < 0
         {
             return Err(CompanionConsolidationRunRepositoryError::Invalid);
         }
@@ -128,15 +127,13 @@ impl CompanionConsolidationRun {
 impl CompanionConsolidationProposalCheckpoint {
     pub fn validate(&self) -> Result<(), CompanionConsolidationRunRepositoryError> {
         let mut proposal_ids = std::collections::HashSet::new();
-        if self.reduced_at.get() < 0
-            || self.proposal.core_adjustments.iter().any(|proposal| {
-                proposal.id.trim().is_empty() || !proposal_ids.insert(proposal.id.as_str())
-            })
-            || self
-                .proposal
-                .retire_ids
-                .iter()
-                .any(|id| id.trim().is_empty())
+        if self.proposal.core_adjustments.iter().any(|proposal| {
+            proposal.id.trim().is_empty() || !proposal_ids.insert(proposal.id.as_str())
+        }) || self
+            .proposal
+            .retire_ids
+            .iter()
+            .any(|id| id.trim().is_empty())
         {
             return Err(CompanionConsolidationRunRepositoryError::Invalid);
         }

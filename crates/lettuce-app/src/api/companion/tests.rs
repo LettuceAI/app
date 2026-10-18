@@ -213,6 +213,59 @@ async fn notes_get_api_assigned_ids_and_timestamps_and_distinct_errors() {
 }
 
 #[tokio::test]
+async fn notes_before_1970_round_trip_with_the_exact_instant() {
+    use chrono::TimeZone;
+    let local = |month, day, hour| {
+        chrono::Local
+            .with_ymd_and_hms(1890, month, day, hour, 0, 0)
+            .earliest()
+            .expect("local 1890 time")
+            .timestamp_millis()
+    };
+    let harness = harness(Reply::Text("reply"));
+    let character = companion(&harness, "Victorian", true);
+    let mut request = note(character, "note-1890");
+    request.available_at = local(3, 14, 10);
+    request.expires_at = Some(local(9, 1, 10));
+    request.recurrence = dto::CompanionNoteRecurrence::None;
+    request.recurrence_window_ms = None;
+    let created = companion_notes_upsert(&harness.context, request)
+        .await
+        .expect("create an 1890 note");
+    assert_eq!(created.available_at, local(3, 14, 10));
+    assert_eq!(created.expires_at, Some(local(9, 1, 10)));
+    let listed = companion_notes_list(
+        &harness.context,
+        dto::CompanionNotesRequest {
+            character_id: character.to_string(),
+        },
+    )
+    .await
+    .expect("list");
+    assert_eq!(listed, vec![created.clone()]);
+    let active = companion_notes_active_preview(
+        &harness.context,
+        dto::CompanionNotesActivePreviewRequest {
+            character_id: character.to_string(),
+            as_of: local(5, 1, 12),
+        },
+    )
+    .await
+    .expect("preview at an 1890 time");
+    assert_eq!(active, vec![created]);
+    let mut same = note(character, "note-1890-same");
+    same.available_at = local(3, 14, 10);
+    same.expires_at = Some(local(3, 14, 10));
+    assert_eq!(
+        companion_notes_upsert(&harness.context, same)
+            .await
+            .expect_err("expires when it starts")
+            .code,
+        ApiErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test]
 async fn soul_commands_act_on_the_conversation_soul_or_the_shared_character_soul() {
     for shared in [false, true] {
         let harness = harness(Reply::Text("reply"));

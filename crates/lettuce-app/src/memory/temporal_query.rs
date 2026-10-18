@@ -1,8 +1,7 @@
 use std::sync::OnceLock;
 
 use chrono::{
-    DateTime, Datelike, Duration, Local, LocalResult, NaiveDate, NaiveDateTime, NaiveTime,
-    TimeZone, Utc,
+    DateTime, Datelike, Duration, Local, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone,
 };
 use lettuce_types::TimestampMillis;
 use regex::Regex;
@@ -27,28 +26,39 @@ fn local_datetime(millis: i64) -> DateTime<Local> {
     }
 }
 
-fn local_midnight(date: NaiveDate) -> DateTime<Local> {
-    let naive = date
-        .and_hms_opt(0, 0, 0)
-        .unwrap_or_else(|| NaiveDateTime::new(date, NaiveTime::MIN));
-    match Local.from_local_datetime(&naive) {
-        LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => datetime,
-        LocalResult::None => local_datetime(Utc::now().timestamp_millis().max(0)),
+/// The first existing local instant of `naive`, or of the hour after it when
+/// `naive` falls in a gap.
+fn resolve_local<T>(
+    naive: NaiveDateTime,
+    lookup: impl Fn(&NaiveDateTime) -> LocalResult<T>,
+) -> Option<T> {
+    match lookup(&naive) {
+        LocalResult::Single(value) | LocalResult::Ambiguous(value, _) => Some(value),
+        LocalResult::None => match lookup(&naive.checked_add_signed(Duration::hours(1))?) {
+            LocalResult::Single(value) | LocalResult::Ambiguous(value, _) => Some(value),
+            LocalResult::None => None,
+        },
     }
 }
 
-fn range_from_local_dates(start: NaiveDate, end: NaiveDate) -> TemporalRange {
-    TemporalRange {
-        start: TimestampMillis::new(local_midnight(start).timestamp_millis().max(0)),
-        end: TimestampMillis::new(local_midnight(end).timestamp_millis().max(0)),
-    }
+fn local_midnight(date: NaiveDate) -> Option<DateTime<Local>> {
+    resolve_local(NaiveDateTime::new(date, NaiveTime::MIN), |naive| {
+        Local.from_local_datetime(naive)
+    })
+}
+
+fn range_from_local_dates(start: NaiveDate, end: NaiveDate) -> Option<TemporalRange> {
+    Some(TemporalRange {
+        start: TimestampMillis::new(local_midnight(start)?.timestamp_millis()),
+        end: TimestampMillis::new(local_midnight(end)?.timestamp_millis()),
+    })
 }
 
 fn rolling_range(now: DateTime<Local>, days: i64) -> Option<TemporalRange> {
     let start = now.checked_sub_signed(Duration::try_days(days)?)?;
     Some(TemporalRange {
-        start: TimestampMillis::new(start.timestamp_millis().max(0)),
-        end: TimestampMillis::new(now.timestamp_millis().max(0)),
+        start: TimestampMillis::new(start.timestamp_millis()),
+        end: TimestampMillis::new(now.timestamp_millis()),
     })
 }
 
@@ -61,7 +71,7 @@ fn sub_days(date: NaiveDate, days: i64) -> Option<NaiveDate> {
 }
 
 fn day_range(date: NaiveDate) -> Option<TemporalRange> {
-    Some(range_from_local_dates(date, add_days(date, 1)?))
+    range_from_local_dates(date, add_days(date, 1)?)
 }
 
 fn months_before(today: NaiveDate, amount: i64) -> Option<(i32, u32)> {
@@ -209,32 +219,23 @@ pub(crate) fn detect_temporal_query_range(
     let start_of_week = || sub_days(today, i64::from(today.weekday().num_days_from_monday()));
 
     if normalized.contains("yesterday") {
-        return Some(range_from_local_dates(sub_days(today, 1)?, today));
+        return range_from_local_dates(sub_days(today, 1)?, today);
     }
     if normalized.contains("today") || normalized.contains("tonight") {
         return day_range(today);
     }
     if normalized.contains("last week") {
         let start_of_week = start_of_week()?;
-        return Some(range_from_local_dates(
-            sub_days(start_of_week, 7)?,
-            start_of_week,
-        ));
+        return range_from_local_dates(sub_days(start_of_week, 7)?, start_of_week);
     }
     if normalized.contains("this week") || normalized.contains("earlier this week") {
         let start_of_week = start_of_week()?;
-        return Some(range_from_local_dates(
-            start_of_week,
-            add_days(start_of_week, 7)?,
-        ));
+        return range_from_local_dates(start_of_week, add_days(start_of_week, 7)?);
     }
     if normalized.contains("last month") {
         let start_of_this_month = today.with_day(1)?;
         let start_of_last_month = sub_days(start_of_this_month, 1)?.with_day(1)?;
-        return Some(range_from_local_dates(
-            start_of_last_month,
-            start_of_this_month,
-        ));
+        return range_from_local_dates(start_of_last_month, start_of_this_month);
     }
     if normalized.contains("this month") || normalized.contains("earlier this month") {
         let start_of_this_month = today.with_day(1)?;
@@ -247,22 +248,19 @@ pub(crate) fn detect_temporal_query_range(
                 1,
             )?
         };
-        return Some(range_from_local_dates(
-            start_of_this_month,
-            start_of_next_month,
-        ));
+        return range_from_local_dates(start_of_this_month, start_of_next_month);
     }
     if normalized.contains("last year") {
-        return Some(range_from_local_dates(
+        return range_from_local_dates(
             NaiveDate::from_ymd_opt(today.year() - 1, 1, 1)?,
             NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
-        ));
+        );
     }
     if normalized.contains("this year") || normalized.contains("earlier this year") {
-        return Some(range_from_local_dates(
+        return range_from_local_dates(
             NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
             NaiveDate::from_ymd_opt(today.year() + 1, 1, 1)?,
-        ));
+        );
     }
 
     if let Some(captures) = weekday_regex().captures(&normalized) {
@@ -297,7 +295,7 @@ pub(crate) fn detect_temporal_query_range(
             "week" | "weeks" if anchored => day_range(sub_days(today, amount.checked_mul(7)?)?),
             "week" | "weeks" => {
                 let start = sub_days(start_of_week()?, amount.checked_mul(7)?)?;
-                Some(range_from_local_dates(start, add_days(start, 7)?))
+                range_from_local_dates(start, add_days(start, 7)?)
             }
             "month" | "months" if anchored => {
                 let (year, month) = months_before(today, amount)?;
@@ -312,7 +310,7 @@ pub(crate) fn detect_temporal_query_range(
                 } else {
                     NaiveDate::from_ymd_opt(year, month + 1, 1)?
                 };
-                Some(range_from_local_dates(start, end))
+                range_from_local_dates(start, end)
             }
             "year" | "years" if anchored => {
                 let target_year = today.year().checked_sub(i32::try_from(amount).ok()?)?;
@@ -321,10 +319,10 @@ pub(crate) fn detect_temporal_query_range(
             }
             "year" | "years" => {
                 let target_year = today.year().checked_sub(i32::try_from(amount).ok()?)?;
-                Some(range_from_local_dates(
+                range_from_local_dates(
                     NaiveDate::from_ymd_opt(target_year, 1, 1)?,
                     NaiveDate::from_ymd_opt(target_year.checked_add(1)?, 1, 1)?,
-                ))
+                )
             }
             _ => None,
         };
@@ -347,10 +345,10 @@ pub(crate) fn detect_temporal_query_range(
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Local, TimeZone};
+    use chrono::{Duration, Local, LocalResult, NaiveDate, NaiveDateTime, TimeZone};
     use lettuce_types::TimestampMillis;
 
-    use super::detect_temporal_query_range;
+    use super::{detect_temporal_query_range, resolve_local};
 
     fn local_ms(year: i32, month: u32, day: u32, hour: u32) -> TimestampMillis {
         TimestampMillis::new(
@@ -413,5 +411,56 @@ mod tests {
         assert_eq!(range.end, local_ms(2026, 5, 10, 0));
         assert!(range.contains(local_ms(2026, 5, 9, 23)));
         assert!(!range.contains(local_ms(2026, 5, 10, 0)));
+    }
+
+    #[test]
+    fn calendar_phrases_resolve_against_an_1890_reference() {
+        let reference = local_ms(1890, 3, 14, 12);
+        let yesterday =
+            detect_temporal_query_range("What happened yesterday?", reference).expect("yesterday");
+        assert_eq!(yesterday.start, local_ms(1890, 3, 13, 0));
+        assert_eq!(yesterday.end, local_ms(1890, 3, 14, 0));
+        let last_month =
+            detect_temporal_query_range("what did we do last month", reference).expect("month");
+        assert_eq!(last_month.start, local_ms(1890, 2, 1, 0));
+        assert_eq!(last_month.end, local_ms(1890, 3, 1, 0));
+        let rolling = detect_temporal_query_range("past 3 days", reference).expect("rolling range");
+        assert_eq!(rolling.end, reference);
+        assert_eq!(rolling.start.get(), reference.get() - 3 * 86_400_000);
+        let across = detect_temporal_query_range("last year", local_ms(1970, 6, 1, 12))
+            .expect("range across the epoch");
+        assert_eq!(across.start, local_ms(1969, 1, 1, 0));
+        assert_eq!(across.end, local_ms(1970, 1, 1, 0));
+    }
+
+    #[test]
+    fn a_local_gap_resolves_to_the_next_hour_without_the_real_clock() {
+        let midnight = NaiveDate::from_ymd_opt(1890, 3, 14)
+            .expect("date")
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight");
+        let gap_at_midnight = |naive: &NaiveDateTime| {
+            if *naive == midnight {
+                LocalResult::None
+            } else {
+                LocalResult::Single(*naive)
+            }
+        };
+        assert_eq!(
+            resolve_local(midnight, gap_at_midnight),
+            Some(midnight + Duration::hours(1))
+        );
+        assert_eq!(
+            resolve_local(midnight, |_: &NaiveDateTime| {
+                LocalResult::<NaiveDateTime>::None
+            }),
+            None
+        );
+        assert_eq!(
+            resolve_local(midnight, |naive: &NaiveDateTime| LocalResult::Single(
+                *naive
+            )),
+            Some(midnight)
+        );
     }
 }

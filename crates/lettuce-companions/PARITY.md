@@ -31,6 +31,9 @@ Facts about how `lettuce-companions` relates to the legacy app (2.2.x). The crat
 - `companion_remove_soul_growth` removes an entry by its stable id instead of its list position.
 - `share_soul_growth_across_chats` is new (default on). Its on/off behavior was decided by the user on 2026-09-23.
 - The other legacy `memory` config keys were never read and are recorded as dropped.
+- Story times before 1970 are kept as negative epoch milliseconds: scheduled-note start and end times, the instant a note is checked against, recurrence occurrences, Soul fact times, and growth and consolidation run times stamped from the companion clock. Legacy stored these as u64 and clamped earlier times to 1970 (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:249`). Real-clock bookkeeping (note created and updated times, Soul writer times) stays non-negative. The exact instant 1970-01-01T00:00:00.000Z still acts as the "unset" sentinel for runtime state times (`state.rs:685-704`) and authored fact times (`soul.rs:312-317`).
+- Daily and weekly notes take the most recent occurrence at or before now: when the occurrence on now's date (or week) is later than now, the previous one is used. Legacy returned that later occurrence (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:170-184`), so a note with a recurrence window counted as active before its window opened.
+- Monthly recurrence computes the candidate in the current month. Legacy added the month difference to the start month without carrying into the year (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:188-194`), so a monthly note failed whenever its start month plus the elapsed months passed December (a November note checked in February).
 
 ## Known gaps
 

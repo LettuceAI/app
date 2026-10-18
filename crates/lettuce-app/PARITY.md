@@ -131,6 +131,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ## Deliberate differences from legacy
 
+- Companion story time may lie before 1970. Note upserts and the active-notes preview accept negative epoch milliseconds, and the effective companion time flows unclamped into prompt time values, memory observation lines, temporal memory ranges, scheduled-note activity and Soul growth. Legacy kept these as u64 and clamped earlier times to 1970 (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:249`).
 - Manual memory token counts use null for unknown counts instead of legacy's zero on tokenizer failure (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`). The recount helper uses the memory tokenizer without embedding; conditional derived writes preserve revisions and reject stale text or summary timestamps. A dynamic cycle counts previously unknown manual items before dispatching its summary and manager requests, instead of inheriting legacy's zero fallback.
 
 - The legacy inventory walk follows no symbolic links and leaves out names that cannot form a safe archive path, unlike the legacy exporter.

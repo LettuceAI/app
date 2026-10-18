@@ -145,7 +145,7 @@ CREATE TABLE companion_scheduled_notes (
     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
     label TEXT NOT NULL,
     content TEXT NOT NULL CHECK (length(trim(content)) > 0),
-    available_at INTEGER NOT NULL CHECK (available_at >= 0),
+    available_at INTEGER NOT NULL,
     expires_at INTEGER CHECK (expires_at IS NULL OR expires_at > available_at),
     recurrence TEXT NOT NULL CHECK (recurrence IN ('none', 'daily', 'weekly', 'monthly', 'yearly')),
     recurrence_window_ms INTEGER CHECK (recurrence_window_ms IS NULL OR recurrence_window_ms >= 0),

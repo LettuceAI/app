@@ -209,7 +209,7 @@ The async ports (`ContextAssembler`, `InferencePort`, `UsagePort` and the others
 
 ## Time
 
-`CompanionClockSettings` lets a direct conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking; negative anchors are rejected. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.
+`CompanionClockSettings` lets a direct conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking. An anchor is story time and may lie before 1970 as negative epoch milliseconds; `set_at` is real time and must not be negative. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.
 
 The database stamps each new message of a companion direct chat with this effective time. The application reads it for prompt time values, history timestamps, memory lines, the memory cycle's time awareness and temporal-range retrieval.
 

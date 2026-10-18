@@ -724,10 +724,8 @@ fn scheduled_note(
         character_id,
         label: note.label.clone(),
         content: note.content.clone(),
-        available_at: TimestampMillis::new(note.available_at.max(0)),
-        expires_at: note
-            .expires_at
-            .map(|value| TimestampMillis::new(value.max(0))),
+        available_at: TimestampMillis::new(note.available_at),
+        expires_at: note.expires_at.map(TimestampMillis::new),
         recurrence: match note.recurrence.trim().to_ascii_lowercase().as_str() {
             "daily" => ScheduledNoteRecurrence::Daily,
             "weekly" => ScheduledNoteRecurrence::Weekly,
@@ -1080,5 +1078,26 @@ mod tests {
             .expect("plan");
         assert!(plan.lorebooks.is_empty());
         assert!(plan.character.active_lorebook_ids.is_empty());
+    }
+
+    #[test]
+    fn a_pre_1970_package_note_keeps_its_exact_instants() {
+        let package: CompanionScheduledNotePackage = serde_json::from_value(json!({
+            "content": "The telegram arrives",
+            "availableAt": -2_520_000_000_000_i64,
+            "expiresAt": -2_510_000_000_000_i64,
+            "recurrence": "yearly",
+            "createdAt": 5,
+            "updatedAt": 6
+        }))
+        .expect("package note");
+        let note = scheduled_note(&package, CharacterId::new(), 50, Uuid::from_u128(1))
+            .expect("pre-1970 note");
+        assert_eq!(note.available_at.get(), -2_520_000_000_000);
+        assert_eq!(
+            note.expires_at.map(TimestampMillis::get),
+            Some(-2_510_000_000_000)
+        );
+        assert_eq!(note.recurrence, ScheduledNoteRecurrence::Yearly);
     }
 }

@@ -25,6 +25,7 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 - An explicit speaker missing from the cast is a typed error, never a panic.
 - A group scene override is refused only when the conversation's own chat mode is conversation; before, the launch chat mode decided, which a chat that follows its group into roleplay could no longer use.
 - Every mutation accepts an archived conversation, like legacy where archiving was a list flag only (`old-code/src-tauri/src/storage_manager/sessions.rs:3819-3829`); a user write (send, added user message, continue, regenerate, retry) also restores it to Active in the same transaction, which legacy never did.
+- A Frozen or Ticking anchor may lie before 1970 (negative epoch milliseconds) and is kept exactly; legacy stored the anchor as u64. `set_at` is real time and stays non-negative.
 
 ## History
 

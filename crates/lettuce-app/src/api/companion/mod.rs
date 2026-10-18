@@ -764,9 +764,6 @@ pub async fn companion_notes_upsert(
     if request.content.trim().is_empty() {
         return Err(invalid_field("content", "the note needs content"));
     }
-    if request.available_at < 0 {
-        return Err(invalid_field("available_at", "the start time is not valid"));
-    }
     if request
         .expires_at
         .is_some_and(|expires| expires <= request.available_at)
@@ -847,9 +844,6 @@ pub async fn companion_notes_active_preview(
     request: dto::CompanionNotesActivePreviewRequest,
 ) -> Result<Vec<dto::CompanionNoteView>, ApiError> {
     let character_id: CharacterId = parse_id(&request.character_id, "character_id")?;
-    if request.as_of < 0 {
-        return Err(invalid_field("as_of", "the time is not valid"));
-    }
     context
         .blocking(move |context| {
             let notes = CompanionScheduledNoteRepository::list_scheduled_notes(

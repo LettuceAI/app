@@ -1,6 +1,4 @@
-use chrono::{
-    DateTime, Datelike, Duration, Local, LocalResult, Months, NaiveDate, TimeZone, Timelike,
-};
+use chrono::{DateTime, Datelike, Duration, Local, LocalResult, NaiveDate, TimeZone, Timelike};
 use lettuce_types::{CharacterId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -76,12 +74,11 @@ impl CompanionScheduledNote {
 
     pub fn validate(&self) -> Result<(), CompanionScheduledNoteError> {
         if self.content.is_empty()
-            || self.available_at.get() < 0
             || self.created_at.get() < 0
             || self.updated_at.get() < 0
             || self
                 .expires_at
-                .is_some_and(|expires| expires <= self.available_at || expires.get() < 0)
+                .is_some_and(|expires| expires <= self.available_at)
         {
             return Err(CompanionScheduledNoteError::Invalid);
         }
@@ -93,9 +90,6 @@ pub fn active_scheduled_notes(
     notes: Vec<CompanionScheduledNote>,
     now: TimestampMillis,
 ) -> Result<Vec<CompanionScheduledNote>, CompanionScheduledNoteError> {
-    if now.get() < 0 {
-        return Err(CompanionScheduledNoteError::Invalid);
-    }
     let mut active = Vec::new();
     for note in notes {
         note.validate()?;
@@ -171,7 +165,7 @@ fn timestamp_ms_to_local(
 }
 
 fn local_datetime_to_ms(datetime: DateTime<Local>) -> TimestampMillis {
-    TimestampMillis::new(datetime.timestamp_millis().max(0))
+    TimestampMillis::new(datetime.timestamp_millis())
 }
 
 fn resolve_local_datetime(
@@ -229,6 +223,18 @@ fn yearly_occurrence(
     )
 }
 
+fn shift_month(
+    year: i32,
+    month: u32,
+    delta: i32,
+) -> Result<(i32, u32), CompanionScheduledNoteError> {
+    let total = year
+        .checked_mul(12)
+        .and_then(|months| months.checked_add(month as i32 - 1 + delta))
+        .ok_or(CompanionScheduledNoteError::Invalid)?;
+    Ok((total.div_euclid(12), total.rem_euclid(12) as u32 + 1))
+}
+
 fn monthly_occurrence(
     base: DateTime<Local>,
     year: i32,
@@ -260,12 +266,8 @@ pub fn next_scheduled_note_occurrence(
         ScheduledNoteRecurrence::Daily => occurrence + Duration::days(1),
         ScheduledNoteRecurrence::Weekly => occurrence + Duration::weeks(1),
         ScheduledNoteRecurrence::Monthly => {
-            let target = occurrence
-                .with_day(1)
-                .ok_or(CompanionScheduledNoteError::Invalid)?
-                .checked_add_months(Months::new(1))
-                .ok_or(CompanionScheduledNoteError::Invalid)?;
-            monthly_occurrence(base, target.year(), target.month())?
+            let (year, month) = shift_month(occurrence.year(), occurrence.month(), 1)?;
+            monthly_occurrence(base, year, month)?
         }
         ScheduledNoteRecurrence::Yearly => yearly_occurrence(base, occurrence.year() + 1)?,
     };
@@ -290,30 +292,30 @@ pub fn most_recent_scheduled_note_occurrence(
                 .signed_duration_since(base.date_naive())
                 .num_days()
                 .max(0);
-            base + Duration::days(days)
+            let candidate = base + Duration::days(days);
+            if candidate > now {
+                candidate - Duration::days(1)
+            } else {
+                candidate
+            }
         }
         ScheduledNoteRecurrence::Weekly => {
             let days = now
                 .date_naive()
                 .signed_duration_since(base.date_naive())
                 .num_days();
-            base + Duration::weeks((days / 7).max(0))
+            let candidate = base + Duration::weeks((days / 7).max(0));
+            if candidate > now {
+                candidate - Duration::weeks(1)
+            } else {
+                candidate
+            }
         }
         ScheduledNoteRecurrence::Monthly => {
-            let month_diff =
-                (now.year() - base.year()) * 12 + (now.month() as i32 - base.month() as i32);
-            let mut candidate = monthly_occurrence(
-                base,
-                base.year() + month_diff.div_euclid(12),
-                ((base.month0() as i32 + month_diff.rem_euclid(12)) as u32) + 1,
-            )?;
+            let mut candidate = monthly_occurrence(base, now.year(), now.month())?;
             if candidate > now {
-                let previous = candidate
-                    .with_day(1)
-                    .ok_or(CompanionScheduledNoteError::Invalid)?
-                    .checked_sub_months(Months::new(1))
-                    .ok_or(CompanionScheduledNoteError::Invalid)?;
-                candidate = monthly_occurrence(base, previous.year(), previous.month())?;
+                let (year, month) = shift_month(now.year(), now.month(), -1)?;
+                candidate = monthly_occurrence(base, year, month)?;
             }
             candidate
         }
@@ -451,5 +453,209 @@ mod tests {
             .expect("next weekly occurrence"),
             Some(millis(2026, 5, 8, 9))
         );
+    }
+
+    fn local(year: i32, month: u32, day: u32, hour: u32) -> TimestampMillis {
+        TimestampMillis::new(
+            Local
+                .with_ymd_and_hms(year, month, day, hour, 0, 0)
+                .earliest()
+                .expect("local date")
+                .timestamp_millis(),
+        )
+    }
+
+    #[test]
+    fn pre_1970_notes_validate_and_keep_their_exact_instants() {
+        let mut scheduled = note(local(1890, 3, 14, 10).get());
+        assert!(scheduled.available_at.get() < 0);
+        scheduled.expires_at = Some(local(1890, 6, 1, 10));
+        let normalized = scheduled.clone().normalize().expect("1890 note");
+        assert_eq!(normalized.available_at, scheduled.available_at);
+        assert_eq!(normalized.expires_at, scheduled.expires_at);
+        assert!(is_scheduled_note_active(&normalized, local(1890, 4, 1, 12)).expect("inside"));
+        assert!(!is_scheduled_note_active(&normalized, local(1890, 6, 1, 10)).expect("expired"));
+        assert!(!is_scheduled_note_active(&normalized, local(1890, 3, 14, 9)).expect("before"));
+        assert_eq!(
+            active_scheduled_notes(vec![normalized], local(1890, 4, 1, 12))
+                .expect("active notes")
+                .len(),
+            1
+        );
+        for expires in [scheduled.available_at, local(1890, 3, 1, 10)] {
+            let mut backwards = scheduled.clone();
+            backwards.expires_at = Some(expires);
+            assert_eq!(
+                backwards.validate(),
+                Err(CompanionScheduledNoteError::Invalid)
+            );
+        }
+    }
+
+    #[test]
+    fn recurrence_works_before_and_across_the_epoch() {
+        for (now_year, now_month, now_day) in [(1890, 12, 31), (1975, 12, 31)] {
+            let now = local(now_year, now_month, now_day, 12);
+            assert_eq!(
+                most_recent_scheduled_note_occurrence(
+                    local(1889, 12, 31, 9),
+                    ScheduledNoteRecurrence::Yearly,
+                    now,
+                )
+                .expect("yearly occurrence"),
+                local(now_year, 12, 31, 9)
+            );
+            assert_eq!(
+                most_recent_scheduled_note_occurrence(
+                    local(1889, 1, 31, 9),
+                    ScheduledNoteRecurrence::Monthly,
+                    local(now_year, 2, 28, 12),
+                )
+                .expect("monthly occurrence"),
+                local(now_year, 2, 28, 9)
+            );
+        }
+        const DAY: i64 = 86_400_000;
+        for (base, now, recurrence, expected_days) in [
+            (
+                local(1889, 12, 30, 9),
+                local(1890, 1, 5, 12),
+                ScheduledNoteRecurrence::Daily,
+                6,
+            ),
+            (
+                local(1889, 12, 30, 9),
+                local(1890, 1, 15, 12),
+                ScheduledNoteRecurrence::Weekly,
+                14,
+            ),
+            (
+                local(1969, 12, 25, 9),
+                local(1970, 1, 2, 12),
+                ScheduledNoteRecurrence::Daily,
+                8,
+            ),
+            (
+                local(1969, 12, 25, 9),
+                local(1970, 1, 2, 12),
+                ScheduledNoteRecurrence::Weekly,
+                7,
+            ),
+        ] {
+            assert_eq!(
+                most_recent_scheduled_note_occurrence(base, recurrence, now)
+                    .expect("daily or weekly occurrence"),
+                TimestampMillis::new(base.get() + expected_days * DAY)
+            );
+        }
+        assert_eq!(
+            most_recent_scheduled_note_occurrence(
+                local(1969, 11, 30, 9),
+                ScheduledNoteRecurrence::Monthly,
+                local(1970, 2, 28, 12),
+            )
+            .expect("monthly occurrence across the epoch"),
+            local(1970, 2, 28, 9)
+        );
+        assert_eq!(
+            most_recent_scheduled_note_occurrence(
+                local(2025, 11, 30, 9),
+                ScheduledNoteRecurrence::Monthly,
+                local(2026, 2, 28, 12),
+            )
+            .expect("monthly occurrence across a year end"),
+            local(2026, 2, 28, 9)
+        );
+        let mut yearly = note(local(1889, 12, 31, 9).get());
+        yearly.recurrence = ScheduledNoteRecurrence::Yearly;
+        yearly.recurrence_window_ms = Some(86_400_000);
+        assert!(is_scheduled_note_active(&yearly, local(1890, 12, 31, 12)).expect("anniversary"));
+        assert!(!is_scheduled_note_active(&yearly, local(1890, 12, 30, 12)).expect("day before"));
+        assert!(is_scheduled_note_active(&yearly, local(1975, 12, 31, 12)).expect("after 1970"));
+        assert_eq!(
+            next_scheduled_note_occurrence(
+                yearly.available_at,
+                ScheduledNoteRecurrence::Yearly,
+                local(1969, 12, 31, 9),
+            )
+            .expect("next yearly occurrence"),
+            Some(local(1970, 12, 31, 9))
+        );
+    }
+
+    #[test]
+    fn daily_and_weekly_occurrences_never_lie_after_now() {
+        const DAY: i64 = 86_400_000;
+        for (base, now, recurrence, expected_days) in [
+            (
+                local(2026, 1, 5, 9),
+                local(2026, 1, 7, 8),
+                ScheduledNoteRecurrence::Daily,
+                1,
+            ),
+            (
+                local(2026, 1, 5, 9),
+                local(2026, 1, 19, 8),
+                ScheduledNoteRecurrence::Weekly,
+                7,
+            ),
+            (
+                local(1889, 12, 30, 9),
+                local(1890, 1, 1, 8),
+                ScheduledNoteRecurrence::Daily,
+                1,
+            ),
+            (
+                local(1889, 12, 30, 9),
+                local(1890, 1, 13, 8),
+                ScheduledNoteRecurrence::Weekly,
+                7,
+            ),
+        ] {
+            let occurrence = most_recent_scheduled_note_occurrence(base, recurrence, now)
+                .expect("daily or weekly occurrence");
+            assert!(occurrence <= now);
+            assert_eq!(
+                occurrence,
+                TimestampMillis::new(base.get() + expected_days * DAY)
+            );
+            let mut scheduled = note(base.get());
+            scheduled.recurrence = recurrence;
+            scheduled.recurrence_window_ms = Some(60_000);
+            assert!(!is_scheduled_note_active(&scheduled, now).expect("before the window"));
+        }
+    }
+
+    #[test]
+    fn monthly_step_back_crosses_a_year_end() {
+        assert_eq!(
+            most_recent_scheduled_note_occurrence(
+                local(2026, 1, 31, 9),
+                ScheduledNoteRecurrence::Monthly,
+                local(2026, 3, 1, 8),
+            )
+            .expect("monthly step back"),
+            local(2026, 2, 28, 9)
+        );
+        assert_eq!(
+            most_recent_scheduled_note_occurrence(
+                local(2025, 12, 15, 9),
+                ScheduledNoteRecurrence::Monthly,
+                local(2026, 1, 10, 8),
+            )
+            .expect("monthly step back into December"),
+            local(2025, 12, 15, 9)
+        );
+        assert_eq!(
+            next_scheduled_note_occurrence(
+                local(1889, 12, 15, 9),
+                ScheduledNoteRecurrence::Monthly,
+                local(1889, 12, 15, 9),
+            )
+            .expect("next monthly occurrence"),
+            Some(local(1890, 1, 15, 9))
+        );
+        assert_eq!(shift_month(1890, 1, -1), Ok((1889, 12)));
+        assert_eq!(shift_month(1969, 12, 1), Ok((1970, 1)));
     }
 }

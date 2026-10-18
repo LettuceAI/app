@@ -29,11 +29,8 @@ pub enum CompanionTimeOverride {
 impl CompanionClockSettings {
     pub fn validate(&self) -> Result<(), ValidationError> {
         let invalid = match self.time_override {
-            CompanionTimeOverride::Live => false,
-            CompanionTimeOverride::Frozen { anchor_at } => anchor_at.get() < 0,
-            CompanionTimeOverride::Ticking { anchor_at, set_at } => {
-                anchor_at.get() < 0 || set_at.get() < 0
-            }
+            CompanionTimeOverride::Live | CompanionTimeOverride::Frozen { .. } => false,
+            CompanionTimeOverride::Ticking { set_at, .. } => set_at.get() < 0,
         };
         if invalid {
             return Err(ValidationError::InvalidValue {
@@ -82,8 +79,9 @@ mod tests {
         assert_eq!(clock.effective_now(TimestampMillis::new(550)).get(), 150);
         assert_eq!(clock.effective_now(TimestampMillis::new(450)).get(), 100);
         assert_eq!(clock.validate(), Ok(()));
-        clock.time_override = CompanionTimeOverride::Frozen {
-            anchor_at: TimestampMillis::new(-1),
+        clock.time_override = CompanionTimeOverride::Ticking {
+            anchor_at: TimestampMillis::new(100),
+            set_at: TimestampMillis::new(-1),
         };
         assert_eq!(
             clock.validate(),
@@ -93,5 +91,30 @@ mod tests {
         );
         let old: CompanionClockSettings = serde_json::from_str("{}").expect("old settings");
         assert_eq!(old, CompanionClockSettings::default());
+    }
+
+    #[test]
+    fn frozen_and_ticking_clocks_keep_an_1890_anchor() {
+        let anchor = TimestampMillis::new(-2_519_820_000_000);
+        let set_at = TimestampMillis::new(1_700_000_000_000);
+        let mut clock = CompanionClockSettings {
+            time_awareness_enabled: true,
+            time_override: CompanionTimeOverride::Frozen { anchor_at: anchor },
+        };
+        assert_eq!(clock.validate(), Ok(()));
+        assert_eq!(clock.effective_now(set_at), anchor);
+        clock.time_override = CompanionTimeOverride::Ticking {
+            anchor_at: anchor,
+            set_at,
+        };
+        assert_eq!(clock.validate(), Ok(()));
+        assert_eq!(clock.effective_now(set_at), anchor);
+        assert_eq!(
+            clock.effective_now(TimestampMillis::new(set_at.get() + 90_000)),
+            TimestampMillis::new(anchor.get() + 90_000)
+        );
+        let json = serde_json::to_string(&clock).expect("encode clock");
+        let decoded: CompanionClockSettings = serde_json::from_str(&json).expect("decode clock");
+        assert_eq!(decoded, clock);
     }
 }

@@ -239,4 +239,28 @@ mod tests {
             reference.get()
         );
     }
+
+    #[test]
+    fn time_values_render_an_1890_reference_date() {
+        let reference = TimestampMillis::new(
+            Local
+                .with_ymd_and_hms(1890, 3, 14, 10, 0, 0)
+                .earliest()
+                .expect("local 1890 time")
+                .timestamp_millis(),
+        );
+        assert!(reference.get() < 0);
+        let mut values = PromptRuntimeValues::default();
+        fill_time_values(&mut values, reference);
+        assert_eq!(values.date.as_deref(), Some("1890-03-14"));
+        assert_eq!(values.weekday.as_deref(), Some("Friday"));
+        assert_eq!(values.date_full.as_deref(), Some("Friday, March 14, 1890"));
+        assert_eq!(values.time_hour.as_deref(), Some("10"));
+        assert!(
+            values
+                .datetime_iso
+                .expect("iso timestamp")
+                .starts_with("1890-03-14T10:00:00")
+        );
+    }
 }

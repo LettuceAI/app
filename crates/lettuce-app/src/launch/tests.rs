@@ -3793,66 +3793,73 @@ fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() 
 #[test]
 fn companion_turn_uses_the_conversation_clock_for_decay_and_stamps() {
     use lettuce_conversations::ConversationRepository as _;
-    let database = database_with_builtins();
-    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
-        defaults.interaction_mode = InteractionMode::Companion;
-        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
-    });
-    let launched = ConversationLaunchPlanner::new(&database)
-        .launch_direct(&request(character_id, "clock-launch"), NOW)
-        .expect("launch");
-    let anchor = TimestampMillis::new(1_700_000_000_000);
-    database
-        .update_settings(
-            lettuce_conversations::PreparedConversationSettingsUpdate::new(
-                lettuce_conversations::UpdateConversationSettings {
-                    conversation_id: launched.value.conversation.id,
-                    expected_settings_revision: None,
-                    operation: OperationToken {
-                        key: key("clock-settings"),
-                        request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
-                    },
-                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
-                        companion_clock: lettuce_conversations::PatchValue::Set(
-                            lettuce_conversations::CompanionClockSettings {
-                                time_awareness_enabled: true,
-                                time_override: lettuce_conversations::CompanionTimeOverride::Frozen {
-                                    anchor_at: anchor,
+    for anchor in [
+        TimestampMillis::new(1_700_000_000_000),
+        TimestampMillis::new(-2_520_000_000_000),
+    ] {
+        let database = database_with_builtins();
+        let character_id =
+            seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+                defaults.interaction_mode = InteractionMode::Companion;
+                defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+            });
+        let launched = ConversationLaunchPlanner::new(&database)
+            .launch_direct(&request(character_id, "clock-launch"), NOW)
+            .expect("launch");
+        database
+            .update_settings(
+                lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                    lettuce_conversations::UpdateConversationSettings {
+                        conversation_id: launched.value.conversation.id,
+                        expected_settings_revision: None,
+                        operation: OperationToken {
+                            key: key("clock-settings"),
+                            request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                        },
+                        patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                            companion_clock: lettuce_conversations::PatchValue::Set(
+                                lettuce_conversations::CompanionClockSettings {
+                                    time_awareness_enabled: true,
+                                    time_override:
+                                        lettuce_conversations::CompanionTimeOverride::Frozen {
+                                            anchor_at: anchor,
+                                        },
                                 },
-                            },
-                        ),
-                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                            ),
+                            ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                        },
                     },
-                },
-                Vec::new(),
+                    Vec::new(),
+                )
+                .expect("prepared clock settings"),
+                TimestampMillis::new(NOW.get() + 1),
             )
-            .expect("prepared clock settings"),
-            TimestampMillis::new(NOW.get() + 1),
+            .expect("freeze the clock");
+        let conversation = ConversationReader::get(&database, launched.value.conversation.id)
+            .expect("conversation")
+            .conversation;
+        let unavailable =
+            ScenarioEmotionEngine::new(Err(CompanionEmotionGenerationError::Unavailable));
+        CompanionTurnCoordinator::new(&database, Some(&unavailable))
+            .begin_send(
+                &direct_send_command(&conversation, "clock-send", "hello"),
+                TimestampMillis::new(NOW.get() + 3 * 60 * 60 * 1000),
+                &CancellationToken::new(),
+            )
+            .expect("send");
+        let state = CompanionStateRepository::get(
+            &database,
+            CompanionStateOwner {
+                conversation_id: conversation.id,
+                character_id,
+                persona_id: None,
+            },
         )
-        .expect("freeze the clock");
-    let conversation = ConversationReader::get(&database, launched.value.conversation.id)
-        .expect("conversation")
-        .conversation;
-    let unavailable = ScenarioEmotionEngine::new(Err(CompanionEmotionGenerationError::Unavailable));
-    CompanionTurnCoordinator::new(&database, Some(&unavailable))
-        .begin_send(
-            &direct_send_command(&conversation, "clock-send", "hello"),
-            TimestampMillis::new(NOW.get() + 3 * 60 * 60 * 1000),
-            &CancellationToken::new(),
-        )
-        .expect("send");
-    let state = CompanionStateRepository::get(
-        &database,
-        CompanionStateOwner {
-            conversation_id: conversation.id,
-            character_id,
-            persona_id: None,
-        },
-    )
-    .expect("state")
-    .expect("companion state");
-    assert_eq!(state.state.updated_at, anchor);
-    assert_eq!(state.state.relationship_state.last_interaction_at, anchor);
+        .expect("state")
+        .expect("companion state");
+        assert_eq!(state.state.updated_at, anchor);
+        assert_eq!(state.state.relationship_state.last_interaction_at, anchor);
+    }
 }
 
 /// Every companion turn, continue included, falls back to the default state,
@@ -4109,6 +4116,45 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     };
     assert!(!notes_at(NOW.get() + 10).await);
     assert!(notes_at(NOW.get() + 2_000).await);
+    let story_time = -2_520_000_000_000;
+    let story_note_id = uuid::Uuid::new_v4();
+    database
+        .upsert_scheduled_note(lettuce_companions::CompanionScheduledNote {
+            id: story_note_id,
+            character_id,
+            label: "Telegram".into(),
+            content: "The telegram arrives at noon.".into(),
+            available_at: TimestampMillis::new(story_time),
+            expires_at: Some(TimestampMillis::new(story_time + 86_400_000)),
+            recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+            recurrence_window_ms: None,
+            enabled: true,
+            created_at: TimestampMillis::new(NOW.get() + 9),
+            updated_at: TimestampMillis::new(NOW.get() + 9),
+        })
+        .expect("store an 1890 note");
+    let story_text = |reference: i64| {
+        let mut request =
+            context_request_for(&database, launched.value.conversation.id, source_message_id);
+        request.reference_time = TimestampMillis::new(reference);
+        let assembler = &assembler;
+        async move {
+            assembler
+                .assemble(request)
+                .await
+                .expect("assemble at an 1890 reference time")
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .any(|part| {
+                    matches!(part, ProviderContextPart::Text { text }
+                        if text.contains("The telegram arrives at noon."))
+                })
+        }
+    };
+    assert!(story_text(story_time + 3_600_000).await);
+    assert!(!story_text(story_time - 1).await);
+    assert!(!story_text(NOW.get() + 10).await);
     let soul_owner = lettuce_companions::SoulOwner::Character(character_id);
     let soul = SoulRepository::get(&database, soul_owner)
         .expect("soul")
@@ -4184,6 +4230,9 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     database
         .delete_scheduled_note(note_id)
         .expect("delete scheduled note");
+    database
+        .delete_scheduled_note(story_note_id)
+        .expect("delete the 1890 note");
     assert!(
         database
             .list_scheduled_notes(character_id)

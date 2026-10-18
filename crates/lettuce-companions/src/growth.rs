@@ -112,7 +112,6 @@ impl CompanionGrowthRun {
                     || !memory_ids.insert(memory.id.as_str())
             })
             || crate::validate_state(&self.soul).is_err()
-            || self.created_at.get() < 0
         {
             return Err(CompanionGrowthRunRepositoryError::Invalid);
         }
@@ -126,11 +125,10 @@ impl CompanionGrowthRun {
 impl CompanionGrowthProposalCheckpoint {
     pub fn validate(&self) -> Result<(), CompanionGrowthRunRepositoryError> {
         let mut ids = HashSet::new();
-        if self.reduced_at.get() < 0
-            || self
-                .proposals
-                .iter()
-                .any(|proposal| proposal.id.trim().is_empty() || !ids.insert(&proposal.id))
+        if self
+            .proposals
+            .iter()
+            .any(|proposal| proposal.id.trim().is_empty() || !ids.insert(&proposal.id))
         {
             return Err(CompanionGrowthRunRepositoryError::Invalid);
         }
