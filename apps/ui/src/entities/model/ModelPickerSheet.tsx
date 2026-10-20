@@ -60,7 +60,6 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
               onChange={(event) => props.onQuery(event.target.value)}
               placeholder={t("model.picker.search", { count: props.total })}
               leading={<Search size={icon.sm} />}
-              data-autofocus
             />
           </div>
           <button

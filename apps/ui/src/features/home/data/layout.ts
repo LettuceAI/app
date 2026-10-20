@@ -7,7 +7,7 @@ import { queryKeys } from "@/api/query-keys";
 export const desktopViews = ["home", "list", "hero"] as const;
 export type DesktopView = (typeof desktopViews)[number];
 
-export const phoneLayouts = ["list", "gallery", "hero", "recent"] as const;
+export const phoneLayouts = ["list", "recent"] as const;
 export type PhoneLayout = (typeof phoneLayouts)[number];
 
 const desktopKey = "homeDesktopView";

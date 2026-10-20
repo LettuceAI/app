@@ -121,8 +121,8 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
       footer={current === "advanced" ? <div ref={setFooterTarget} className="@container" /> : undefined}
       title={t(`settings.views.${current}`)}
       size="lg"
-      placement={phone ? "bottom" : "side"}
-      {...(phone ? { detents: [1] as const } : {})}
+      placement="side"
+      {...(phone ? { closeButton: false } : {})}
       {...(phone || stack.length > 1
         ? { leftAction: <IconButton label={t("settings.back")} size="sm" shape="round" onClick={stack.length > 1 ? back : close}><ArrowLeft size={icon.lg} /></IconButton> }
         : {})}

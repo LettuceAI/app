@@ -91,3 +91,17 @@ describe("home characters", () => {
     expect(await screen.findByText("No characters yet")).toBeTruthy();
   });
 });
+
+describe("phone layouts", () => {
+  it("offers the cards and the recent list only", async () => {
+    const i18n = await createTestI18n("en");
+    const { I18nextProvider } = await import("react-i18next");
+    const { LayoutSheet } = await import("./components/LayoutSheet");
+    render(<I18nextProvider i18n={i18n}><LayoutSheet open value="list" onClose={() => undefined} onChange={() => undefined} /></I18nextProvider>);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("List");
+    expect(dialog.textContent).toContain("Recent");
+    expect(dialog.textContent).not.toContain("Gallery");
+    expect(dialog.textContent).not.toContain("Hero");
+  });
+});

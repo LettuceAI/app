@@ -243,17 +243,29 @@ describe("model settings", () => {
     expect(screen.getByRole("button", { name: /My model/ })).toBeTruthy();
     models = [];
     await act(async () => transport.emitAppEvent({ type: "models_changed" }));
-    expect(await screen.findByText("No models yet. Add a model or download a GGUF.")).toBeTruthy();
+    expect(await screen.findByText("No models yet. Add one to get started.")).toBeTruthy();
   });
 });
 
 
 describe("local model tools", () => {
+  it("shows only the Hugging Face browser on mobile, and only with an Ollama provider", async () => {
+    await mount("models");
+    await screen.findByText("Your models");
+    expect(screen.queryByRole("button", { name: /Runtime defaults/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /LoRA library/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Browse GGUF/ })).toBeNull();
+    cleanup();
+    await mount("models", { providerAccountsList: () => ({ status: "ok", data: [account, { ...account, id: "ollama", label: "Ollama", provider_kind: "ollama" }] }) });
+    expect(await screen.findByRole("button", { name: /Browse GGUF/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Runtime defaults/ })).toBeNull();
+  });
+
   it("saves runtime defaults with the settings revision", async () => {
     const settings = { global: { llama_default_context_length: 4096, llama_default_kv_cache_type: "q8_0" }, revision: 17 } as unknown as SettingsView;
     const save = vi.fn<NonNullable<MockCallHandlers["settingsUpdate"]>>(() => ({ status: "ok", data: settings }));
-    await mount("models", { settingsGet: () => ({ status: "ok", data: settings }), settingsUpdate: save });
-    await click(/Runtime defaults/);
+    await mount("models", { appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }), settingsGet: () => ({ status: "ok", data: settings }), settingsUpdate: save });
+    await click("Runtime");
     fireEvent.change(await screen.findByLabelText("Context length"), { target: { value: "8192" } });
     await click("Save");
     await waitFor(() => expect(save).toHaveBeenCalled());
@@ -265,11 +277,12 @@ describe("local model tools", () => {
     const lora = { path: "/models/style.safetensors", filename: "style.safetensors", bytes_on_disk: 1024, keywords: [], keyword_source: "none" as const, architecture: null, architecture_source: "none" as const, compatibility: "unknown" as const };
     const add = vi.fn<NonNullable<MockCallHandlers["lorasImport"]>>(() => { installed = true; return { status: "ok", data: lora }; });
     await mount("models", {
+      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }),
       lorasList: () => ({ status: "ok", data: { loras: installed ? [lora] : [] } }),
       filesPickOpen: () => ({ status: "ok", data: { sources: [{ uri: "content://chosen-adapter" }] } }),
       lorasImport: add,
     });
-    await click(/LoRA library/); await click("Import");
+    await click("LoRAs"); await click("Import");
     expect(await screen.findByText("style.safetensors")).toBeTruthy();
     expect(add.mock.calls[0]?.[0]).toEqual({ source: { uri: "content://chosen-adapter" } });
   });

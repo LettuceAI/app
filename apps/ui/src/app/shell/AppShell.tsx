@@ -96,7 +96,7 @@ export function AppShell() {
           {...(tabs ? {} : { footerItems: [settings] })}
           value={destinationOf(pathname)}
           onChange={(id) => { void navigate({ to: id === "settings" && settingsMode ? "/" : destinations[id] }); }}
-          {...(tabs && pathname === "/library" ? { onCreate: () => setCreateOpen(true), createLabel: t("navigation.create") } : {})}
+          {...(tabs ? { onCreate: () => setCreateOpen(true), createLabel: t("navigation.create") } : {})}
           navStyle={navigationHidden ? "header" : tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
           {...(tabs ? {} : {
             onNavToggle: () => setSidebarOpen(!sidebarOpen),

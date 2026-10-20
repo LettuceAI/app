@@ -213,6 +213,21 @@ describe("model", () => {
     expect(screen.getByText("Anthropic: Claude Sonnet 5")).toBeTruthy();
   });
 
+  it("keeps the search focused while typing and does not focus it on open", async () => {
+    await reachModel({ calls: { providerModels: () => ({ status: "ok", data: pricedModels }) } });
+    await click(/Choose from 3 models/);
+    const search = await screen.findByPlaceholderText(/Search 3 models/);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(document.activeElement).not.toBe(search);
+    search.focus();
+    for (const value of ["q", "qw", "qwe"]) {
+      fireEvent.change(search, { target: { value } });
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(document.activeElement).toBe(search);
+    }
+    expect(screen.getByText("Qwen: Max")).toBeTruthy();
+  });
+
   it("offers Only free models for OpenRouter only", async () => {
     await reachModel({ calls: { providerModels: () => ({ status: "ok", data: pricedModels }) } });
     await click(/Choose from 3 models/);

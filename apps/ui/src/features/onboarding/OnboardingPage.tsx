@@ -259,7 +259,7 @@ export function OnboardingPage() {
           animate={{ opacity: step === "welcome" ? 0 : step === "learn" || step === "path" ? 0.6 : 1 }}
           transition={m.settle}
         />
-        <div className={cn("relative z-10 flex h-14 shrink-0 items-center", phone ? "px-3" : "px-6")}>
+        <div className={cn("relative z-10 box-content flex h-14 shrink-0 items-center pt-[var(--safe-top)]", phone ? "px-3" : "px-6")}>
           {step !== "welcome" && (
             <IconButton
               label={t("header.back")}
@@ -312,7 +312,7 @@ export function OnboardingPage() {
               <div
                 className={cn(
                   "mx-auto flex w-full min-h-0 flex-1 flex-col",
-                  phone ? "px-5 pb-12" : workbench ? "max-w-6xl px-10 pb-8" : "max-w-5xl px-10 pb-5",
+                  phone ? "px-5 pb-[calc(var(--safe-bottom,0px)+3rem)]" : workbench ? "max-w-6xl px-10 pb-8" : "max-w-5xl px-10 pb-5",
                 )}
               >
                 <div className={cn("flex min-h-0 flex-1 flex-col", !phone && "overflow-y-auto [scrollbar-width:none]")}>

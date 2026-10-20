@@ -319,7 +319,7 @@ export function WelcomeBackPage() {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 1.02 }}
           transition={m.settle}
-          className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-width:none]"
+          className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto pt-[var(--safe-top)] [scrollbar-width:none]"
         >
           {screens[step]}
         </motion.div>

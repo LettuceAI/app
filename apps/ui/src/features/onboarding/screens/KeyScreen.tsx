@@ -18,7 +18,6 @@ export function KeyScreen({ route }: { route: GuidedRoute }) {
           value={state.apiKey}
           onChange={(event) => dispatch({ type: "patch", patch: { apiKey: event.target.value } })}
           placeholder={t(`guide.key.${route}Placeholder`)}
-          data-autofocus
           className="control-lg text-lg"
         />
         <p className="text-sm text-fg-3">{t("guide.key.hint", { name: routeName })}</p>

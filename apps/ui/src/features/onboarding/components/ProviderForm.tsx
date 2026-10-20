@@ -47,7 +47,6 @@ export function ProviderForm() {
             value={state.apiKey}
             onChange={(event) => patch({ apiKey: event.target.value })}
             placeholder={t("connect.form.apiKeyPlaceholder")}
-            data-autofocus
           />
         </Field>
       )}

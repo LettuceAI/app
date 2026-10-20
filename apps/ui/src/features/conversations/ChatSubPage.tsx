@@ -16,7 +16,7 @@ function Placeholder({ page }: { page: "memoryTitle" | "branchesTitle" }) {
   };
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-2 @xl:px-3">
+      <header className="box-content flex h-14 shrink-0 items-center gap-2 border-b border-line px-2 pt-[var(--safe-top)] @xl:px-3">
         <IconButton label={t("header.back")} shape="round" onClick={back}>
           <ArrowLeft size={icon.lg} />
         </IconButton>

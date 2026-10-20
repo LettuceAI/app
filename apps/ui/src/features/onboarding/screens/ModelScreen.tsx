@@ -98,7 +98,6 @@ export function ModelScreen() {
         onChange={(event) => dispatch({ type: "patch", patch: { manualId: event.target.value, model: null } })}
         placeholder={t("model.modelIdPlaceholder")}
         className="font-mono"
-        data-autofocus
       />
     </Field>
   );

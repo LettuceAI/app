@@ -21,7 +21,7 @@ export function ChatHeader({ name, avatar, model, modelKnown, phone, memory, sea
   const { t } = useTranslation("conversations");
   const { hasBackground, tone } = useOnSurface();
   const field = useRef<HTMLInputElement>(null);
-  const frame = cn("z-20 flex h-14 shrink-0 items-center px-2 @xl:px-3", hasBackground ? (tone === "light" ? "border-b border-black/10 bg-white/45 backdrop-blur-md" : "border-b border-white/10 bg-black/35 backdrop-blur-md") : "border-b border-line bg-surface");
+  const frame = cn("z-20 box-content flex h-14 shrink-0 items-center px-2 pt-[var(--safe-top)] @xl:px-3", hasBackground ? (tone === "light" ? "border-b border-black/10 bg-white/45 backdrop-blur-md" : "border-b border-white/10 bg-black/35 backdrop-blur-md") : "border-b border-line bg-surface");
 
   useEffect(() => {
     if (search.open) field.current?.focus({ preventScroll: true });

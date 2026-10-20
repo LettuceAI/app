@@ -63,7 +63,7 @@ describe("primary navigation", () => {
       appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android", ui_state } }),
     } }, ui_state, path);
     const navigation = await screen.findByRole("navigation", { name: "Main navigation" });
-    expect(within(navigation).getAllByRole("button")).toHaveLength(path === "/library" ? 5 : 4);
+    expect(within(navigation).getAllByRole("button")).toHaveLength(5);
     expect(within(navigation).queryByRole("button", { name: "Settings" })).toBeNull();
     const settings = screen.getByRole("button", { name: "Settings" });
     const header = settings.closest("header");

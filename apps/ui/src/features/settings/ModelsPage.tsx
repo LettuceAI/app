@@ -76,6 +76,10 @@ export function ModelsPage() {
   const { phone, back } = useSettingsLayout();
   const { accounts } = useProviderData();
   const models = useQuery({ queryKey: queryKeys.models.list(), queryFn: () => api.call("modelsList") });
+  const status = useQuery(appStatusQuery(api));
+  const mobile = status.data?.platform === "android" || status.data?.platform === "ios";
+  const hasOllama = accounts.data?.some((account) => account.provider_kind === "ollama") ?? false;
+  const tools = mobile ? modelTools.filter((tool) => tool.id === "browse" && hasOllama) : modelTools;
   const action = useSettingsAction();
   const [group, setGroup] = useModelListView(api);
   const [search, setSearch] = useState("");
@@ -184,7 +188,7 @@ export function ModelsPage() {
         contentClassName={`pb-10 pt-1 space-y-6 ${phone ? "px-4" : "px-8"}`}
         actions={
           <div className="flex items-center gap-1">
-            {modelTools.map((tool) =>
+            {tools.map((tool) =>
               phone ? (
                 <IconButton key={tool.id} label={t(`models.${tool.id}`)} variant="ghost" onClick={() => setTool(tool.id)}>
                   {tool.icon}
@@ -249,7 +253,7 @@ export function ModelsPage() {
           ) : models.isError ? (
             <FailureState error={models.error} onRetry={() => void models.refetch()} />
           ) : models.data.models.length === 0 ? (
-            <Text variant="hint">{t("models.empty")}</Text>
+            <Text variant="hint">{t(mobile ? "models.emptyMobile" : "models.empty")}</Text>
           ) : visibleModels.length === 0 ? (
             <Text variant="hint" role="status">
               {t("models.noResults")}

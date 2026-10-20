@@ -220,6 +220,7 @@
     "all": "All",
     "byProvider": "By provider",
     "empty": "No models yet. Add a model or download a GGUF.",
+    "emptyMobile": "No models yet. Add one to get started.",
     "deleteTitle": "Delete {{name}}?",
     "deleteWarning": "Delete this model permanently? References to it will be cleared.",
     "editHint": "Name, provider, parameters",

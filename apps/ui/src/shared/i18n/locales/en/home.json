@@ -35,14 +35,6 @@
       "title": "List",
       "body": "Every character as a card, the way they look today"
     },
-    "gallery": {
-      "title": "Gallery",
-      "body": "Portraits in a grid, for a big cast"
-    },
-    "hero": {
-      "title": "Hero",
-      "body": "Your latest chat up top, the rest below"
-    },
     "recent": {
       "title": "Recent",
       "body": "Every chat, newest first, with the line it stopped on"

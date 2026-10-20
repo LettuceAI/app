@@ -195,7 +195,7 @@ describe("chat settings panel", () => {
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
-  it("is a side panel on desktop and a full-height sheet on a phone", async () => {
+  it("is a side panel on desktop and a full-page drawer on a phone", async () => {
     await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
     const side = await screen.findByRole("dialog");
     expect(side.className).toContain("right-0");
@@ -207,9 +207,10 @@ describe("chat settings panel", () => {
     })) as typeof window.matchMedia;
     try {
       await open({ path: "/chat/c1?panel=settings", calls: panelCalls, platform: "android" });
-      const sheet = await screen.findByRole("dialog");
-      expect(sheet.className).not.toContain("right-0");
-      expect(sheet.getAttribute("style") ?? "").toContain("100");
+      const drawer = await screen.findByRole("dialog");
+      expect(drawer.className).toContain("right-0");
+      expect(drawer.className).toContain("w-full");
+      expect(within(drawer).getByRole("button", { name: "Back" })).toBeTruthy();
     } finally {
       window.matchMedia = original;
     }
