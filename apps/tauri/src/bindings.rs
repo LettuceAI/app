@@ -4,7 +4,7 @@ use specta_typescript::Typescript;
 use tauri::Runtime;
 use tauri_specta::{collect_commands, collect_events};
 
-use crate::{commands, events::AppEvent};
+use crate::{commands, events::AppEvent, host::{self, OpenedFiles}};
 
 /// Where the generated TypeScript bindings are committed.
 pub const BINDINGS_PATH: &str = concat!(
@@ -17,6 +17,7 @@ pub const BINDINGS_PATH: &str = concat!(
 pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new()
         .commands(collect_commands![
+            host::opened_files_take,
             commands::sync::sync_share_start,
             commands::sync::sync_share_approve,
             commands::sync::sync_share_begin,
@@ -397,7 +398,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::ollama::ollama_model_delete,
             commands::ollama::ollama_pull,
         ])
-        .events(collect_events![AppEvent])
+        .events(collect_events![AppEvent, OpenedFiles])
 }
 
 /// Writes the TypeScript bindings to `path`, ending in exactly one newline.

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_character"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new_character"
+        android:shortcutShortLabel="@string/shortcut_new_character_short"
+        android:shortcutLongLabel="@string/shortcut_new_character_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.lettuceai.app"
+            android:targetClass="com.lettuceai.app.MainActivity"
+            android:data="lettuceai://open/characters/new" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="library"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_library"
+        android:shortcutShortLabel="@string/shortcut_library_short"
+        android:shortcutLongLabel="@string/shortcut_library_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.lettuceai.app"
+            android:targetClass="com.lettuceai.app.MainActivity"
+            android:data="lettuceai://open/library" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="chats"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_chats"
+        android:shortcutShortLabel="@string/shortcut_chats_short"
+        android:shortcutLongLabel="@string/shortcut_chats_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.lettuceai.app"
+            android:targetClass="com.lettuceai.app.MainActivity"
+            android:data="lettuceai://open/" />
+    </shortcut>
+</shortcuts>

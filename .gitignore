@@ -16,6 +16,14 @@ coverage/
 .tmp/
 .notes/
 
+# Android signing and packages
+*.jks
+*.keystore
+keystore.properties
+key.properties
+*.apk
+*.aab
+
 # The legacy tree keeps its own historical ignore rules. Its existing local
 # build output may remain on developer machines but must never be committed.
 /old-code/src-tauri/target/

@@ -17,6 +17,7 @@ workspace = true
 [lib]
 name = "lettuce_tauri"
 path = "src/lib.rs"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "lettuce-tauri"
@@ -68,3 +69,4 @@ ndk-context = "0.1.1"
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
+tokio = { workspace = true, features = ["test-util"] }

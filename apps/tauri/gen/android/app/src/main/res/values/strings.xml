@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">"LettuceAI"</string>
+    <string name="main_activity_title">"LettuceAI"</string>
+    <string name="background_work_channel">"Background work"</string>
+    <string name="background_work_title">"LettuceAI is working"</string>
+    <string name="background_work_body">"Keeps replies, downloads and backups going in the background."</string>
+    <string name="shortcut_new_character_short">"New"</string>
+    <string name="shortcut_new_character_long">"New character"</string>
+    <string name="shortcut_library_short">"Library"</string>
+    <string name="shortcut_library_long">"Library"</string>
+    <string name="shortcut_chats_short">"Chats"</string>
+    <string name="shortcut_chats_long">"Chats"</string>
+</resources>

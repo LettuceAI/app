@@ -42,7 +42,38 @@
   "bundle": {
     "active": true,
     "homepage": "https://www.lettuceai.app",
+    "android": {
+      "minSdkVersion": 30
+    },
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["lettuce"],
+        "name": "LettuceAI backup",
+        "mimeType": "application/vnd.lettuceai.backup",
+        "role": "Editor"
+      },
+      {
+        "ext": ["uec"],
+        "name": "LettuceAI card",
+        "mimeType": "application/vnd.lettuceai.uec+json",
+        "role": "Editor"
+      }
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/lettuceai.desktop",
+        "files": {
+          "/usr/share/mime/packages/com.lettuceai.app.xml": "linux/lettuceai-mime.xml"
+        }
+      },
+      "rpm": {
+        "desktopTemplate": "linux/lettuceai.desktop",
+        "files": {
+          "/usr/share/mime/packages/com.lettuceai.app.xml": "linux/lettuceai-mime.xml"
+        }
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

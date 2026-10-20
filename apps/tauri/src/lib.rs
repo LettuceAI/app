@@ -4,11 +4,14 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+mod active_work;
 mod asset_protocol;
 mod bindings;
 mod commands;
 mod events;
 mod files;
+mod host;
 mod microphone;
 mod reset;
 
@@ -36,11 +39,14 @@ pub fn run() {
     let app = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
     #[cfg(desktop)]
     let app = app
-        .plugin(tauri_plugin_single_window::init())
+        .plugin(tauri_plugin_single_window::init_with(
+            host::single_window_config(),
+        ))
         .plugin(tauri_plugin_dialog::init());
     #[cfg(target_os = "android")]
     let app = app.plugin(tauri_plugin_android_fs::init());
     let app = app
+        .plugin(host::plugin())
         .invoke_handler(invoke_handler)
         .register_asynchronous_uri_scheme_protocol(
             asset_protocol::ASSET_SCHEME,
@@ -85,6 +91,11 @@ pub fn run() {
                     context.app_focus_changed(true);
                 }
             }
+            #[cfg(target_os = "macos")]
+            RunEvent::Opened { urls } => host::opened_paths(
+                handle,
+                urls.iter().filter_map(|url| url.to_file_path().ok()).collect(),
+            ),
             RunEvent::Exit => stop(handle),
             _ => {}
         }),
@@ -142,6 +153,8 @@ fn open_context<R: Runtime>(handle: &AppHandle<R>, secrets: Arc<dyn lettuce_sett
         asset_protocol::ASSET_URL_BASE.to_owned(),
         microphone::capture(),
     )?;
+    #[cfg(target_os = "android")]
+    host::follow_active_work(handle, context.watch_active_work());
     context.attach_logs(log_directory, output.sink.clone());
     context.attach_reset_host(Arc::new(reset::ResetHost(handle.clone())))?;
     Ok(context)

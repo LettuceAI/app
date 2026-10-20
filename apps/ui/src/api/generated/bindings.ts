@@ -5,6 +5,8 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
+	/**  Returns the items opened since the last call and clears the inbox. */
+	openedFilesTake: () => __TAURI_INVOKE<OpenedItem[]>("opened_files_take"),
 	syncShareStart: () => typedError<SyncSharing, ApiError_Serialize>(__TAURI_INVOKE("sync_share_start")),
 	syncShareApprove: (request: SyncShareApproveRequest) => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_share_approve", { request })),
 	syncShareBegin: () => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_share_begin")),
@@ -389,6 +391,7 @@ export const commands = {
 /** Events */
 export const events = {
 	appEvent: makeEvent<AppEvent_Serialize, AppEvent_Deserialize>("app-event"),
+	openedFiles: makeEvent<OpenedFiles, OpenedFiles>("opened-files"),
 };
 
 /* Types */
@@ -6276,6 +6279,12 @@ export type OllamaPullRequest = {
 	model: string,
 	client_operation_id: string,
 };
+
+/**  Tells the webview that `opened_files_take` has something to return. */
+export type OpenedFiles = null;
+
+/**  Something the operating system asked the app to open. */
+export type OpenedItem = { kind: "file"; source: FileSource } | { kind: "navigate"; path: string };
 
 export type ParticipantRole = "user" | "character" | "system";
 

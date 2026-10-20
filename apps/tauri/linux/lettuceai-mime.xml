@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.lettuceai.backup">
+    <comment>LettuceAI backup</comment>
+    <glob pattern="*.lettuce"/>
+  </mime-type>
+  <mime-type type="application/vnd.lettuceai.uec+json">
+    <comment>LettuceAI card</comment>
+    <sub-class-of type="application/json"/>
+    <glob pattern="*.uec"/>
+  </mime-type>
+</mime-info>
