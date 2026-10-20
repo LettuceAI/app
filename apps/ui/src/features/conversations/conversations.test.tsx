@@ -59,7 +59,7 @@ async function open(setup: Setup = {}) {
         conversationSettingsGet: () => ({ status: "ok", data: settings }),
         modelsList: () => ({ status: "ok", data: { models: [], default_model_id: null, revision: 1 } }),
         providerAccountsList: () => ({ status: "ok", data: [] }),
-        memoryGet: () => ({ status: "ok", data: { items: [], summary: null, revision: 1, status: { run_mode: "auto", interval: 10, messages_since_last_cycle: 0, messages_until_next_cycle: 10, total_conversation_messages: 1, pending_approval_count: null, skipped: false, latest_cycle_status: null, latest_job_id: null, failure: null, paused_reason: null } } }),
+        memoryGet: () => ({ status: "ok", data: { items: [], allowed_categories: ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"], summary: null, revision: 1, status: { run_mode: "auto", interval: 10, messages_since_last_cycle: 0, messages_until_next_cycle: 10, total_conversation_messages: 1, pending_approval_count: null, skipped: false, latest_cycle_status: null, latest_job_id: null, failure: null, paused_reason: null } } }),
         llmMetricsForMessage: () => ({ status: "ok", data: null }),
         charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
@@ -365,7 +365,7 @@ describe("conversation screen", () => {
   it("opens the memory page from the header", async () => {
     const runtime = await open();
     fireEvent.click(await screen.findByRole("button", { name: /^Memories/ }));
-    expect(await screen.findByText("Chat memory")).toBeTruthy();
+    expect(await screen.findByPlaceholderText("Search memories")).toBeTruthy();
     expect(runtime.router.state.location.pathname).toBe("/chat/c1/memory");
   });
 });

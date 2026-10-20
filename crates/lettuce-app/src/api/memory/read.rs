@@ -199,6 +199,10 @@ pub async fn memory_get(
             let since = scope.message_count.saturating_sub(scope.summary_cursor);
             Ok(dto::MemoryView {
                 revision: scope.memory.revision.get(),
+                allowed_categories: super::allowed_categories(database, &conversation)?
+                    .into_iter()
+                    .map(category)
+                    .collect(),
                 items: scope
                     .memory
                     .items

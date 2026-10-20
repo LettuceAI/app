@@ -50,6 +50,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const phone = useCompactLayout();
   const inlineAuthorNote = useInlineAuthorNote();
   const panelOpen = useRouteSearch({ strict: false, select: (search) => (search as { panel?: string }).panel === "settings" });
+  const requestedMessage = useRouteSearch({ strict: false, select: (search) => (search as { message?: string }).message ?? null });
+  const [landing, setLanding] = useState<string | null>(requestedMessage);
   const homing = useRef(false);
   const stuck = useRef(true);
   const onStick = useCallback((value: boolean) => {
@@ -138,18 +140,22 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const currentModel = chat.find(settings.data?.model.id ?? null);
 
   const lastJump = useRef<string | null>(null);
-  const hit = search.current?.message_id ?? null;
-  const { jumpTo, jumpToLatest, windowed } = timeline;
+  const hit = search.current?.message_id ?? landing;
+  const { jumpTo, jumpToLatest, windowed, pending } = timeline;
   useEffect(() => {
     if (!hit) {
       lastJump.current = null;
       return;
     }
-    if (messages.some((message) => message.id === hit) || lastJump.current === hit) return;
+    if (pending || messages.some((message) => message.id === hit) || lastJump.current === hit) return;
     lastJump.current = hit;
     jumpTo(hit);
-  }, [hit, messages, jumpTo]);
+  }, [hit, messages, pending, jumpTo]);
+  useEffect(() => {
+    if (requestedMessage) void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: {}, replace: true });
+  }, [requestedMessage, navigate, conversationId]);
   const { windowError } = timeline;
+  if (landing !== null && (search.open || windowError)) setLanding(null);
   useEffect(() => {
     if (!windowError) return;
     lastJump.current = null;
@@ -184,8 +190,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     };
   }, [api, conversationId, goHome]);
   useEffect(() => {
-    if (!search.open && windowed) jumpToLatest();
-  }, [search.open, windowed, jumpToLatest]);
+    if (!search.open && windowed && landing === null) jumpToLatest();
+  }, [search.open, windowed, landing, jumpToLatest]);
 
   const openSettings = () => {
     void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: { panel: "settings" }, state: { panelPushed: true } });

@@ -3,7 +3,7 @@ import { useCanGoBack, useNavigate, useParams, useRouter } from "@tanstack/react
 import { useTranslation } from "react-i18next";
 import { icon, IconButton } from "@lettuceai/crisp";
 
-function Placeholder({ page }: { page: "memoryTitle" | "branchesTitle" }) {
+function Placeholder({ page }: { page: "branchesTitle" }) {
   const { t } = useTranslation("conversations");
   const router = useRouter();
   const canGoBack = useCanGoBack();
@@ -24,10 +24,6 @@ function Placeholder({ page }: { page: "memoryTitle" | "branchesTitle" }) {
       </header>
     </div>
   );
-}
-
-export function ChatMemoryPage() {
-  return <Placeholder page="memoryTitle" />;
 }
 
 export function ChatBranchesPage() {

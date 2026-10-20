@@ -47,7 +47,7 @@ async function setup() {
   );
   const afterSubscribe = invalidated();
   seed();
-  return { transport, invalidated, afterSubscribe, view };
+  return { transport, queryClient, invalidated, afterSubscribe, view };
 }
 
 describe("AppEventBridge", () => {
@@ -80,6 +80,14 @@ describe("AppEventBridge", () => {
     const { transport, invalidated } = await setup();
     await act(async () => transport.emitAppEvent({ type: "future_event" } as unknown as AppEvent));
     expect(invalidated()).toEqual([]);
+  });
+
+  it("refreshes memory permissions after a character change", async () => {
+    const { transport, queryClient } = await setup();
+    const key = queryKeys.memory.detail("c1");
+    queryClient.setQueryData(key, { allowed_categories: ["other"] });
+    await act(async () => transport.emitAppEvent({ type: "character_changed", character_id: "ch1" }));
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
   });
 
   it("stops listening when unmounted", async () => {

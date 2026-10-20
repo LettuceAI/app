@@ -5,6 +5,66 @@ use lettuce_conversations::ConversationReader;
 use lettuce_memory::{MemoryRepository, MemorySummaryRepository};
 
 #[tokio::test]
+async fn memory_categories_match_write_permissions_and_preserve_companion_session_state() {
+    use lettuce_characters::{CharacterDefaults, CharacterRepository, InteractionMode};
+    let harness = harness(Reply::Text("reply"));
+    let direct = launch(&harness, "category-roleplay").await;
+    let roleplay = memory_get(&harness.context, dto::ConversationRequest { conversation_id: direct.clone() })
+        .await.expect("roleplay memory");
+    assert_eq!(roleplay.allowed_categories, vec![
+        dto::MemoryCategory::CharacterTrait,
+        dto::MemoryCategory::Relationship,
+        dto::MemoryCategory::PlotEvent,
+        dto::MemoryCategory::WorldDetail,
+        dto::MemoryCategory::Preference,
+        dto::MemoryCategory::Other,
+    ]);
+    let error = memory_add(&harness.context, dto::MemoryAddRequest {
+        conversation_id: direct,
+        text: "Morning coffee".into(),
+        category: Some(dto::MemoryCategory::Routine),
+        observed_at: None,
+        expected_revision: roleplay.revision,
+        client_operation_id: "roleplay-routine".into(),
+    }).await.expect_err("companion category refused");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+
+    let database = harness.context.backend().database();
+    let character_id = crate::api::tests::create_character(database, "Companion", CharacterDefaults {
+        interaction_mode: InteractionMode::Companion,
+        companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+        ..CharacterDefaults::default()
+    });
+    let companion = conversation_launch_direct(&harness.context, dto::LaunchDirectRequest {
+        character_id: character_id.to_string(), title: None, scene_id: None, starter_id: None,
+        client_operation_id: "category-companion".into(),
+    }).await.expect("companion chat").conversation_id;
+    let request = dto::ConversationRequest { conversation_id: companion.clone() };
+    let view = memory_get(&harness.context, request.clone()).await.expect("companion memory");
+    assert_eq!(view.allowed_categories.len(), 12);
+    assert!(view.allowed_categories.contains(&dto::MemoryCategory::Routine));
+    memory_add(&harness.context, dto::MemoryAddRequest {
+        conversation_id: companion.clone(), text: "Morning coffee".into(),
+        category: Some(dto::MemoryCategory::Routine), observed_at: None,
+        expected_revision: view.revision, client_operation_id: "companion-routine".into(),
+    }).await.expect("companion category accepted");
+
+    let character = CharacterRepository::get(database, character_id).expect("character").expect("exists").character;
+    let mut defaults = character.defaults;
+    defaults.interaction_mode = InteractionMode::Roleplay;
+    defaults.companion_soul = None;
+    CharacterRepository::update_defaults(database, character_id, character.revision, defaults, harness.context.now())
+        .expect("change character mode");
+    let preserved = memory_get(&harness.context, request).await.expect("retained companion state");
+    assert_eq!(preserved.allowed_categories, view.allowed_categories);
+    memory_add(&harness.context, dto::MemoryAddRequest {
+        conversation_id: companion, text: "First trip".into(),
+        category: Some(dto::MemoryCategory::Milestone), observed_at: None,
+        expected_revision: preserved.revision, client_operation_id: "retained-companion-milestone".into(),
+    }).await.expect("retained companion category accepted");
+}
+
+#[tokio::test]
 async fn manual_memory_without_tokenizer_replays_and_uses_conversation_membership() {
     let harness = harness(Reply::Text("reply"));
     let conversation_id = launch(&harness, "manual-memory-launch").await;

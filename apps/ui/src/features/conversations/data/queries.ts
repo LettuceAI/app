@@ -107,3 +107,21 @@ export function helpMeReplyEnabledQuery(api: ApiClient) {
     select: (settings) => settings.global.help_me_reply.enabled,
   });
 }
+
+export function memoryCyclesQuery(api: ApiClient, conversationId: string) {
+  return infiniteQueryOptions({
+    queryKey: [...queryKeys.memory.detail(conversationId), "cycles"] as const,
+    queryFn: ({ pageParam }) => api.call("memoryCycles", { conversation_id: conversationId, cursor: pageParam, limit: null }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next_cursor,
+  });
+}
+
+export function pinnedMessagesQuery(api: ApiClient, conversationId: string) {
+  return infiniteQueryOptions({
+    queryKey: [...queryKeys.conversations.detail(conversationId), "pinned"] as const,
+    queryFn: ({ pageParam }) => api.call("conversationPinnedMessages", { conversation_id: conversationId, cursor: pageParam, limit: null }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next_cursor,
+  });
+}

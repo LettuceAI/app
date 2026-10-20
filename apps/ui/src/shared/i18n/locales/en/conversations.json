@@ -168,7 +168,6 @@
     "composerAttachmentRemove": "Remove {{name}}"
   },
   "placeholder": {
-    "memoryTitle": "Chat memory",
     "branchesTitle": "Branches"
   },
   "streaming": {
@@ -467,6 +466,212 @@
       "inherited": "Following the model and app settings",
       "count_one": "{{count}} value changed for this chat",
       "count_other": "{{count}} values changed for this chat"
+    }
+  },
+  "memory": {
+    "title": "Memory",
+    "back": "Chat",
+    "tabs": {
+      "memories": "Memories",
+      "activity": "Activity",
+      "pinned": "Pinned"
+    },
+    "loading": "Loading memory",
+    "off": {
+      "title": "Memory is off for this chat",
+      "description": "Nothing is remembered or sent with the replies in this chat.",
+      "action": "Open chat settings"
+    },
+    "search": "Search memories",
+    "add": "Add",
+    "all": "All",
+    "categories": {
+      "character_trait": "Character trait",
+      "relationship": "Relationship",
+      "plot_event": "Plot event",
+      "world_detail": "World detail",
+      "preference": "Preference",
+      "other": "Other",
+      "milestone": "Milestone",
+      "boundary": "Boundary",
+      "profile": "Profile",
+      "routine": "Routine",
+      "episodic": "Episode",
+      "emotional_snapshot": "Emotional snapshot"
+    },
+    "origins": {
+      "model": "Model",
+      "user": "You",
+      "import": "Imported"
+    },
+    "temperature": {
+      "hot": "Hot",
+      "cold": "Cold"
+    },
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} tokens",
+    "window": "Messages {{from}} to {{to}}",
+    "pinnedMark": "Pinned",
+    "list": {
+      "found_one": "{{count}} found",
+      "found_other": "{{count}} found",
+      "total_one": "{{count}} memory",
+      "total_other": "{{count}} memories",
+      "byModel": "{{count}} by the model",
+      "byUser": "{{count}} by you",
+      "imported": "{{count}} imported",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "No memories yet",
+      "dynamic": "Memories appear here as the chat grows. You can also add your own.",
+      "manual": "Add what the character should always remember.",
+      "action": "Add memory",
+      "noMatch": "Nothing matches \"{{query}}\"",
+      "noMatchBody": "Try a word from the memory itself.",
+      "noCategory": "Nothing in this category"
+    },
+    "sheet": {
+      "addTitle": "Add memory",
+      "editTitle": "Memory",
+      "byModel": "Written by the model",
+      "byModelIn": "Written by the model in {{window}}",
+      "byUser": "Written by you",
+      "imported": "Imported",
+      "text": "Memory",
+      "textPlaceholder": "What should the character remember?",
+      "category": "Category",
+      "noCategory": "No category",
+      "when": "When it happened",
+      "whenHint": "Optional. Lets the character place it in time.",
+      "whenPlaceholder": "Not set",
+      "whenClear": "Clear",
+      "temperature": "Temperature",
+      "hotBody": "Hot memories stay close at hand",
+      "coldBody": "Cold memories are only recalled when they match closely",
+      "pin": "Pinned",
+      "pinBody": "The model never deletes or archives a pinned memory",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "add": "Add",
+      "save": "Save",
+      "deleteTitle": "Delete this memory?",
+      "deleteBody": "It will no longer be recalled in this chat.",
+      "keep": "Keep",
+      "added": "Memory added",
+      "saved": "Memory saved",
+      "deleted": "Memory deleted"
+    },
+    "summary": {
+      "title": "Context summary",
+      "empty": "Add a short summary so the character keeps the thread of the story.",
+      "description": "A short recap that goes with every reply",
+      "field": "Summary",
+      "dynamicHint": "The model rewrites this on each update. Your edits are kept until then.",
+      "clear": "Clear",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saved": "Summary saved",
+      "cleared": "Summary cleared"
+    },
+    "status": {
+      "approvalTitle": "Update memory?",
+      "approvalBody_one": "{{count}} new message is ready to be summarized into memory.",
+      "approvalBody_other": "{{count}} new messages are ready to be summarized into memory.",
+      "update": "Update",
+      "notNow": "Not now",
+      "skipped_one": "Skipped. It asks again after the next {{count}} message",
+      "skipped_other": "Skipped. It asks again after the next {{count}} messages",
+      "runningTitle": "Updating memory",
+      "runningBody": "Reading the latest messages",
+      "stop": "Stop",
+      "failedTitle": "Memory update failed",
+      "tryAgain": "Try again",
+      "otherModel": "Use another model",
+      "pausedTitle": "The last memory update was interrupted",
+      "pausedBody": "Another process took over before it finished.",
+      "nextIn_one": "Next update in {{count}} message",
+      "nextIn_other": "Next update in {{count}} messages",
+      "since_one": "{{count}} message since the last update",
+      "since_other": "{{count}} messages since the last update",
+      "modes": {
+        "auto": "Automatic",
+        "ask_first": "Ask first",
+        "manual": "Manual"
+      },
+      "every_one": "{{mode}} · every {{count}} message",
+      "every_other": "{{mode}} · every {{count}} messages",
+      "manualOnly": "{{mode}} · updates only run when you start them here",
+      "progress": "{{current}} of {{total}}",
+      "updateNow": "Update now"
+    },
+    "failure": {
+      "embedding_unavailable": "The embedding model isn't available.",
+      "model_missing": "The memory model isn't installed.",
+      "model_invalid": "The memory model can't be used.",
+      "prompt_missing": "The memory prompt is missing.",
+      "settings_invalid": "The memory settings aren't valid.",
+      "provider_unavailable": "The provider didn't answer.",
+      "provider_rejected": "The provider rejected the request.",
+      "empty_response": "The model returned an empty reply.",
+      "timed_out": "The model took too long to answer.",
+      "round_limit": "The model used too many steps.",
+      "tool_failed": "One of the memory changes failed.",
+      "storage_failure": "Memory couldn't be saved.",
+      "lease_lost": "Another update took over.",
+      "internal": "The app ran into an internal error."
+    },
+    "gate": {
+      "not_dynamic": "This chat doesn't use dynamic memory.",
+      "disabled": "Dynamic memory is turned off in settings.",
+      "nothing_to_summarise": "There is nothing to summarize yet.",
+      "cycle_running": "An update is already running."
+    },
+    "activity": {
+      "empty": "No updates yet",
+      "emptyBody": "Each memory update the model runs is listed here.",
+      "badgeUndone": "Undone",
+      "badgeFailed": "Failed",
+      "badgeStopped": "Stopped",
+      "badgeInterrupted": "Interrupted",
+      "badgeRunning": "Running",
+      "noDetails": "No details were recorded.",
+      "stopped": "This update was stopped before it finished.",
+      "running": "This update is still running.",
+      "actions": {
+        "created": "Added",
+        "duplicate_skipped": "Already known",
+        "deleted": "Deleted",
+        "soft_deleted": "Moved to cold",
+        "pinned": "Pinned",
+        "unpinned": "Unpinned",
+        "target_not_found": "Not found",
+        "done": "Done",
+        "rejected": "Rejected",
+        "skipped": "Skipped",
+        "stopped_after_done": "Stopped after done"
+      },
+      "undo": "Undo this update",
+      "blocked": "Can't be undone: a later update builds on it.",
+      "blockedBy": "Can't be undone: the update for {{window}} builds on it.",
+      "dependent": "A later update builds on it, so it can't be undone.",
+      "userEdited": "You edited a memory it wrote, so it can't be undone.",
+      "undoTitle": "Undo the update for {{window}}?",
+      "undoBody": "Memories it added are removed and the ones it changed come back. Your own edits are kept.",
+      "undoConfirm": "Undo update",
+      "keep": "Keep",
+      "undone": "Update undone",
+      "loadMore": "Show older updates"
+    },
+    "pinnedTab": {
+      "empty": "No pinned messages",
+      "emptyBody": "Pin a message from the chat and it always goes with the next reply.",
+      "label": "Always sent with the reply",
+      "unpin": "Unpin",
+      "unpinned": "Unpinned",
+      "noText": "Attachment",
+      "loadMore": "Show more",
+      "you": "You"
     }
   }
 }

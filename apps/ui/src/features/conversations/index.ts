@@ -1,5 +1,6 @@
 export { ConversationPage } from "./ConversationPage";
-export { ChatBranchesPage, ChatMemoryPage } from "./ChatSubPage";
+export { ChatBranchesPage } from "./ChatSubPage";
+export { MemoryPage as ChatMemoryPage } from "./memory/MemoryPage";
 export { useChatNavigation } from "./use-chat-navigation";
 export { startDirectChat } from "./data/actions";
 export { modelsQuery } from "./data/queries";

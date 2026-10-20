@@ -80,6 +80,35 @@ fn category(value: dto::MemoryCategory) -> lettuce_memory::MemoryCategory {
     }
 }
 
+fn allowed_categories(
+    database: &lettuce_database::Database,
+    conversation: &lettuce_conversations::Conversation,
+) -> Result<Vec<lettuce_memory::MemoryCategory>, ApiError> {
+    use lettuce_memory::MemoryCategory as M;
+    let companion = crate::companion::companion_clock::companion_clock_context(database, conversation)
+        .map_err(|_| api_error(ApiErrorCode::Internal, "the conversation mode could not be resolved"))?
+        .companion;
+    let mut categories = vec![
+        M::CharacterTrait,
+        M::Relationship,
+        M::PlotEvent,
+        M::WorldDetail,
+        M::Preference,
+        M::Other,
+    ];
+    if companion {
+        categories.extend([
+            M::Milestone,
+            M::Boundary,
+            M::Profile,
+            M::Routine,
+            M::Episodic,
+            M::EmotionalSnapshot,
+        ]);
+    }
+    Ok(categories)
+}
+
 fn embedding_error(context: &ApiContext, error: crate::EmbeddingGenerationError) -> ApiError {
     match error {
         crate::EmbeddingGenerationError::Cancelled => {
@@ -220,30 +249,10 @@ async fn apply<R: serde::Serialize>(
                 &settings.settings,
             )
             .map_err(IntoApiError::into_api_error)?;
-            let companion =
-                crate::companion::companion_clock::companion_clock_context(database, conversation)
-                    .map_err(|_| {
-                        api_error(
-                            ApiErrorCode::Internal,
-                            "the conversation mode could not be resolved",
-                        )
-                    })?
-                    .companion;
+            let allowed = allowed_categories(database, conversation)?;
             let validate_category =
                 |value: Option<lettuce_memory::MemoryCategory>| -> Result<(), ApiError> {
-                    if !companion
-                        && value.is_some_and(|value| {
-                            !matches!(
-                                value,
-                                lettuce_memory::MemoryCategory::CharacterTrait
-                                    | lettuce_memory::MemoryCategory::Relationship
-                                    | lettuce_memory::MemoryCategory::PlotEvent
-                                    | lettuce_memory::MemoryCategory::WorldDetail
-                                    | lettuce_memory::MemoryCategory::Preference
-                                    | lettuce_memory::MemoryCategory::Other
-                            )
-                        })
-                    {
+                    if value.is_some_and(|value| !allowed.contains(&value)) {
                         return Err(invalid_field(
                             "category",
                             "the category requires companion mode",

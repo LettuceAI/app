@@ -80,7 +80,10 @@ const settingsSectionRoute = createRoute({
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat/$conversationId",
-  validateSearch: (search: Record<string, unknown>): { panel?: "settings" } => (search.panel === "settings" ? { panel: "settings" } : {}),
+  validateSearch: (search: Record<string, unknown>): { panel?: "settings"; message?: string } => ({
+    ...(search.panel === "settings" ? { panel: "settings" as const } : {}),
+    ...(typeof search.message === "string" && search.message !== "" ? { message: search.message } : {}),
+  }),
   component: ConversationPage,
 });
 const chatSettingsRoute = createRoute({

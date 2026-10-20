@@ -5783,6 +5783,7 @@ export type MemoryUpdateRequest_Serialize = {
 
 export type MemoryView = {
 	items: MemoryItemView[],
+	allowed_categories: MemoryCategory[],
 	summary: MemorySummaryView | null,
 	status: MemoryStatusView,
 	revision: number,

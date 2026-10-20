@@ -398,6 +398,7 @@ pub struct MemoryStatusView {
 #[serde(deny_unknown_fields)]
 pub struct MemoryView {
     pub items: Vec<MemoryItemView>,
+    pub allowed_categories: Vec<MemoryCategory>,
     pub summary: Option<MemorySummaryView>,
     pub status: MemoryStatusView,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
