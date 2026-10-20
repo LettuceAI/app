@@ -85,6 +85,7 @@ pub struct ApiContext {
 struct ApiContextInner {
     usage_billing: Mutex<Option<Arc<dyn crate::OpenRouterBillingPort>>>,
     maintenance: super::app::maintenance::MaintenanceGate,
+    active_work: Arc<super::active_work::ActiveWork>,
     sync: super::sync::SyncState,
     parts: ApiContextParts,
     models: ModelSlots,
@@ -252,6 +253,7 @@ impl ApiContext {
             inner: Arc::new(ApiContextInner {
                 usage_billing: Mutex::new(None),
                 maintenance: super::app::maintenance::MaintenanceGate::default(),
+                active_work: Arc::default(),
                 sync: super::sync::SyncState::default(),
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
@@ -580,6 +582,18 @@ impl ApiContext {
             database_files: None,
             asset_url_base: parts.asset_url_base.clone(),
         })
+    }
+
+    /// Whether any job runs or any conversation generation is in flight;
+    /// the value changes only when the count moves between zero and
+    /// non-zero.
+    #[must_use]
+    pub fn watch_active_work(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.inner.active_work.watch()
+    }
+
+    pub(crate) fn begin_active_work(&self) -> super::active_work::ActiveWorkGuard {
+        self.inner.active_work.begin()
     }
 
     /// Cancels every running generation and any job a worker starts from

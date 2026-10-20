@@ -360,6 +360,7 @@ impl JobRunner {
         work: Option<tokio::sync::OwnedRwLockReadGuard<()>>,
     ) {
         let context = self.context.clone();
+        let active = context.begin_active_work();
         let cancellation = claimed.cancellation();
         let link = link_to_shutdown(context.shutdown_token(), cancellation.clone());
         context.jobs().start_running(job_id, cancellation.clone());
@@ -383,6 +384,7 @@ impl JobRunner {
         let lanes = Arc::clone(&self.lanes);
         let task = tokio::spawn(async move {
             let _work = work;
+            let _active = active;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             let _runtime_events = runtime_events;
             let _link = link;

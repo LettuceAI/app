@@ -747,6 +747,85 @@ async fn shutdown_stops_the_runner_and_cancels_its_install() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_job_is_active_from_its_claim_to_its_settlement() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = &harness.context;
+    let root = temp_root("active-cancel");
+    let bytes = vec![7_u8; 4096];
+    let (runner, _) = runner(context, &bytes, Some(Duration::from_millis(5)));
+    let active = context.watch_active_work();
+    let accepted = admit_install(
+        context,
+        InstallWork::Artifact {
+            plan: plan(&root, "slow", &bytes),
+            finish: Box::new(InstallFinish::Files),
+        },
+    )
+    .await
+    .expect("admit");
+    let job_id = parse(&accepted);
+    assert!(!*active.borrow());
+    assert!(runner.run_once().await.expect("run"));
+    assert!(*active.borrow());
+    until_running(context, job_id).await;
+    assert!(*active.borrow());
+    job_cancel(
+        context,
+        dto::JobCancelRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("cancel");
+    runner.wait_idle().await;
+    assert_eq!(until_ended(context, job_id).await, JobState::Cancelled);
+    assert!(!*active.borrow());
+    std::fs::remove_dir_all(root).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_cancelled_by_shutdown_stops_counting_as_active() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = harness.context.clone();
+    let root = temp_root("active-shutdown");
+    let bytes = vec![3_u8; 4096];
+    let (runner, _) = runner(&context, &bytes, Some(Duration::from_millis(5)));
+    let active = context.watch_active_work();
+    let accepted = admit_install(
+        &context,
+        InstallWork::Artifact {
+            plan: plan(&root, "slow", &bytes),
+            finish: Box::new(InstallFinish::Files),
+        },
+    )
+    .await
+    .expect("admit");
+    let job_id = parse(&accepted);
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let running = {
+        let runner = runner.clone();
+        tokio::spawn(async move {
+            runner
+                .run(async move {
+                    let _ = stopped.await;
+                })
+                .await;
+        })
+    };
+    until_running(&context, job_id).await;
+    assert!(*active.borrow());
+    context.begin_shutdown();
+    stop.send(()).expect("stop");
+    tokio::time::timeout(Duration::from_secs(10), running)
+        .await
+        .expect("the runner stopped")
+        .expect("runner task");
+    assert_eq!(state(&context, job_id), JobState::Cancelled);
+    assert!(!*active.borrow());
+    std::fs::remove_dir_all(root).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn startup_recovers_before_it_starts_the_workers() {
     let root = temp_root("startup");
     let harness = harness_in(

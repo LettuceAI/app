@@ -1693,3 +1693,61 @@ async fn a_job_started_after_shutdown_began_is_cancelled() {
     );
     assert!(harness.context.stream(turn.id).is_none());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_generation_is_active_from_its_claim_to_its_settlement() {
+    let harness = harness(Reply::UntilCancelled);
+    let conversation_id = launch(&harness, "launch-active-cancel").await;
+    let accepted = send(
+        &harness,
+        &conversation_id,
+        "active-cancel-1",
+        "Wait",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    let active = harness.context.watch_active_work();
+    assert!(!*active.borrow());
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    let (ran, running) = tokio::join!(worker.run_once(), async {
+        harness.provider.entered.notified().await;
+        let running = *active.borrow();
+        generation_cancel(
+            &harness.context,
+            dto::GenerationCancelRequest {
+                turn_id: accepted.turn_id.clone(),
+            },
+        )
+        .await
+        .expect("cancel");
+        running
+    });
+    assert!(ran.expect("worker ran"));
+    assert!(running);
+    assert!(!*active.borrow());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_generation_cancelled_by_shutdown_stops_counting_as_active() {
+    let harness = harness(Reply::UntilCancelled);
+    let conversation_id = launch(&harness, "launch-active-shutdown").await;
+    send(
+        &harness,
+        &conversation_id,
+        "active-shutdown-1",
+        "Wait",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    let mut active = harness.context.watch_active_work();
+    harness.context.begin_shutdown();
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    tokio::time::timeout(std::time::Duration::from_secs(10), worker.run_once())
+        .await
+        .expect("the job does not wait for a provider reply")
+        .expect("worker ran");
+    assert!(active.has_changed().expect("sender alive"));
+    assert!(!*active.borrow_and_update());
+}

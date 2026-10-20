@@ -83,6 +83,7 @@ impl ConversationGenerationWorker {
         next: QueuedConversationGeneration,
     ) -> Result<bool, ApiError> {
         let context = &self.context;
+        let _active = context.begin_active_work();
         let _work = context.maintenance().work(context.shutdown_token()).await;
         let backend = context.backend();
         let database = backend.database();

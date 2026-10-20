@@ -3,6 +3,7 @@
 //! `lettuce-contracts` DTOs and fails with an `ApiError`; repository work
 //! runs on the blocking pool.
 
+mod active_work;
 mod app;
 mod library;
 pub use app::content_filter::{content_filter_clear, content_filter_log};
