@@ -5,6 +5,7 @@
 mod companion_emotion;
 mod download_planner;
 mod embedding;
+mod espeak_android_bundle;
 mod gguf_runnability;
 mod hugging_face;
 mod kokoro;
@@ -17,6 +18,7 @@ mod whisper;
 pub use companion_emotion::*;
 pub use download_planner::*;
 pub use embedding::*;
+pub use espeak_android_bundle::*;
 pub use gguf_runnability::*;
 pub use hugging_face::*;
 pub use kokoro::*;

@@ -805,3 +805,18 @@ fn panic_payloads_become_messages() {
     let payload = std::panic::catch_unwind(|| std::panic::panic_any(7_u8)).expect_err("panicked");
     assert_eq!(panic_message(payload.as_ref()), "unknown panic");
 }
+
+#[test]
+fn the_android_gradle_build_pins_the_same_onnx_runtime_version() {
+    let gradle = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/tauri/gen/android/app/build.gradle.kts"),
+    )
+    .expect("Android Gradle build");
+    let versions = gradle
+        .split("com.microsoft.onnxruntime:onnxruntime-android:")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .collect::<Vec<_>>();
+    assert_eq!(versions, [ONNX_RUNTIME_VERSION]);
+}

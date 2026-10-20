@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 use lettuce_contracts::{ApiError, ApiErrorCode};
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_model_hub::{KokoroInstallStore, KokoroVoiceInstallStore};
-use lettuce_platform::EspeakNgProcess;
 use lettuce_speech::{
     AsrModelDescriptor, AsrRuntime, AsrRuntimeError, RuntimeTranscription, TranscriptionOptions,
     TtsRuntime,
@@ -142,7 +141,7 @@ impl SpeechHost for InstalledSpeech {
                     &tls,
                     KokoroInstallStore::open(&root).map_err(|error| unavailable(&error))?,
                     KokoroVoiceInstallStore::open(&root).map_err(|error| unavailable(&error))?,
-                    Arc::new(EspeakNgProcess::from_path()),
+                    phonemizer(&root),
                     OnnxRuntimePaths::legacy_layout(
                         folder,
                         context.resource_dir().map(std::path::PathBuf::from),
@@ -157,4 +156,16 @@ impl SpeechHost for InstalledSpeech {
     fn microphone(&self) -> Option<Arc<dyn MicrophoneCapture>> {
         self.microphone.clone()
     }
+}
+
+#[cfg(target_os = "android")]
+fn phonemizer(root: &std::path::Path) -> Arc<dyn lettuce_platform::EspeakPhonemizer> {
+    Arc::new(lettuce_platform::EspeakNgLibrary::new(
+        root.join(lettuce_model_hub::ESPEAK_DATA_DIRECTORY),
+    ))
+}
+
+#[cfg(not(target_os = "android"))]
+fn phonemizer(_root: &std::path::Path) -> Arc<dyn lettuce_platform::EspeakPhonemizer> {
+    Arc::new(lettuce_platform::EspeakNgProcess::from_path())
 }

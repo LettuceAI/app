@@ -71,12 +71,17 @@ pub async fn pin_kokoro_model(
     let paths = model
         .artifacts
         .iter()
+        .filter(|file| file.is_hugging_face())
         .map(|file| file.remote_path.as_str())
         .collect::<Vec<_>>();
     let pin = pinned_files(crate::KOKORO_REPOSITORY, &response.body, &paths)
         .map_err(|_| KokoroPinError::InvalidData)?;
     model.source_revision = pin.revision;
-    for artifact in &mut model.artifacts {
+    for artifact in model
+        .artifacts
+        .iter_mut()
+        .filter(|artifact| artifact.is_hugging_face())
+    {
         let file = pin
             .files
             .iter()

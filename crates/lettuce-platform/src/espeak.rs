@@ -6,7 +6,7 @@ use std::{
 };
 
 const MAX_ESPEAK_INPUT_BYTES: usize = 64 * 1024;
-const MAX_ESPEAK_OUTPUT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_ESPEAK_OUTPUT_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct EspeakNgProcess {
@@ -57,10 +57,7 @@ impl EspeakNgProcess {
     }
 
     fn execute(&self, input: &str, language: &str) -> Result<String, EspeakNgError> {
-        if input.len() > MAX_ESPEAK_INPUT_BYTES || input.contains('\0') || !valid_language(language)
-        {
-            return Err(EspeakNgError::InvalidConfiguration);
-        }
+        validate_request(input, language)?;
         let mut command = Command::new(&self.executable);
         command.args(["--ipa", "--stdin", "-q", "-v", language]);
         if let Some(directory) = &self.data_directory {
@@ -164,6 +161,13 @@ impl OptionalDirectory for Option<PathBuf> {
         }
         Ok(self)
     }
+}
+
+pub(crate) fn validate_request(input: &str, language: &str) -> Result<(), EspeakNgError> {
+    if input.len() > MAX_ESPEAK_INPUT_BYTES || input.contains('\0') || !valid_language(language) {
+        return Err(EspeakNgError::InvalidConfiguration);
+    }
+    Ok(())
 }
 
 fn valid_language(language: &str) -> bool {

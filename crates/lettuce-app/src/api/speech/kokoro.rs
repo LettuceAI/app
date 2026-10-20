@@ -83,8 +83,16 @@ pub async fn kokoro_inventory(
                         lettuce_model_hub::KokoroArtifactRole::Model => {
                             inventory.model = Some(summary)
                         }
+                        lettuce_model_hub::KokoroArtifactRole::EspeakData => {}
                     }
                 }
+            }
+            if !lettuce_model_hub::kokoro_model_ready(
+                lettuce_model_hub::KokoroHostPlatform::current(),
+                inventory.model.is_some(),
+                store.espeak_data_installed(),
+            ) {
+                inventory.model = None;
             }
             Ok(dto::KokoroInventory {
                 variant: inventory.variant,

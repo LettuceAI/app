@@ -63,6 +63,14 @@ impl KokoroDownloadSource for HuggingFaceKokoroDownloadSource {
         artifact: &RemoteKokoroArtifact,
         offset: u64,
     ) -> Result<Box<dyn KokoroDownloadBody>, KokoroDownloadSourceError> {
+        if !artifact.is_hugging_face() {
+            return self
+                .client
+                .open_https(&artifact.remote_path, offset, artifact.byte_size)
+                .await
+                .map(|stream| Box::new(stream) as Box<dyn KokoroDownloadBody>)
+                .map_err(map_source_error);
+        }
         let url = lettuce_model_hub::pinned_resolve_url(
             KOKORO_REPOSITORY,
             &model.source_revision,
@@ -168,7 +176,7 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         &self,
         model: RemoteKokoroModel,
     ) -> Result<KokoroDownloadAdmission, KokoroDownloadError> {
-        model.validate()?;
+        self.installs.validate_model(&model)?;
         if !lettuce_model_hub::kokoro_platform_allows_variant(model.variant) {
             return Err(KokoroDownloadError::InvalidWork);
         }
@@ -222,7 +230,7 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Option<KokoroDownloadClaimedWork>, KokoroDownloadError> {
-        model.validate()?;
+        self.installs.validate_model(&model)?;
         let job = self
             .jobs
             .get(job_id)?
@@ -362,6 +370,11 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
                 }
             }
         }
+        let installs = self.installs.clone();
+        let model = work.model.clone();
+        tokio::task::spawn_blocking(move || installs.install_espeak_data(&model))
+            .await
+            .map_err(|_| KokoroDownloadError::InvalidWork)??;
         let installed = self
             .installs
             .installed(&work.model)?
@@ -886,6 +899,193 @@ mod tests {
         ));
         assert!(source.offsets.lock().expect("offsets").is_empty());
         assert!(!root.join("config.json").exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[derive(Debug)]
+    struct AndroidSource {
+        bundle: Vec<u8>,
+    }
+
+    #[async_trait]
+    impl KokoroDownloadSource for AndroidSource {
+        async fn open(
+            &self,
+            _model: &RemoteKokoroModel,
+            artifact: &RemoteKokoroArtifact,
+            offset: u64,
+        ) -> Result<Box<dyn KokoroDownloadBody>, KokoroDownloadSourceError> {
+            let bytes = if artifact.is_hugging_face() {
+                bytes_for(&artifact.remote_path).to_vec()
+            } else {
+                self.bundle.clone()
+            };
+            Ok(Box::new(FixtureBody {
+                start: offset,
+                chunks: VecDeque::from([Ok(bytes[offset as usize..].to_vec())]),
+            }))
+        }
+    }
+
+    fn android_bundle() -> Vec<u8> {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::fast(),
+        ));
+        for (path, bytes) in [
+            ("jniLibs/arm64-v8a/libttsespeak.so", b"library".as_slice()),
+            ("espeak-ng-data/phontab", b"phonemes".as_slice()),
+            ("espeak-ng-data/voices/en", b"voice".as_slice()),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            builder
+                .append_data(&mut header, path, bytes)
+                .expect("bundle entry");
+        }
+        builder
+            .into_inner()
+            .expect("bundle")
+            .finish()
+            .expect("gzip")
+    }
+
+    fn android_model(bundle: &[u8]) -> RemoteKokoroModel {
+        use sha2::Digest;
+        let mut model = model();
+        model.artifacts.push(RemoteKokoroArtifact {
+            role: KokoroArtifactRole::EspeakData,
+            remote_path: lettuce_model_hub::espeak_android_bundle_url(),
+            local_segments: vec![
+                "espeak".into(),
+                lettuce_model_hub::ESPEAK_ANDROID_BUNDLE_ASSET.into(),
+            ],
+            byte_size: bundle.len() as u64,
+            sha256: format!("{:x}", sha2::Sha256::digest(bundle)),
+        });
+        model
+    }
+
+    async fn run_android_install(
+        coordinator: &KokoroDownloadCoordinator<'_, Database>,
+        model: &RemoteKokoroModel,
+        source: &AndroidSource,
+        at: i64,
+    ) -> KokoroDownloadRunResult {
+        let admitted = coordinator.admit(model.clone()).expect("admission");
+        let work = coordinator
+            .claim(
+                model.clone(),
+                admitted.job.id,
+                WorkerId::new(),
+                TimestampMillis::new(at),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim")
+            .expect("work");
+        coordinator
+            .run(
+                work,
+                source,
+                CancellationReason::User,
+                TimestampMillis::new(at + 1),
+            )
+            .await
+            .expect("run")
+    }
+
+    #[tokio::test]
+    async fn android_install_extracts_espeak_data_and_uninstall_removes_it() {
+        use lettuce_model_hub::{ESPEAK_DATA_DIRECTORY, KokoroHostPlatform, kokoro_model_ready};
+        let root = std::env::temp_dir().join(format!("kokoro-android-{}", JobId::new()));
+        std::fs::create_dir_all(&root).expect("root");
+        let database = Database::open_in_memory().expect("database");
+        let installs = KokoroInstallStore::open_for(&root, KokoroHostPlatform::Android)
+            .expect("install store");
+        let coordinator = KokoroDownloadCoordinator::new(&database, installs.clone());
+        let bundle = android_bundle();
+        let model = android_model(&bundle);
+        let source = AndroidSource { bundle };
+        let data = root.join(ESPEAK_DATA_DIRECTORY);
+        let stage = root.join("espeak-ng-data.stage");
+        let bundle_file = root
+            .join("espeak")
+            .join(lettuce_model_hub::ESPEAK_ANDROID_BUNDLE_ASSET);
+
+        std::fs::write(&stage, b"blocks the extraction").expect("stage blocker");
+        assert!(matches!(
+            run_android_install(&coordinator, &model, &source, 10).await,
+            KokoroDownloadRunResult::RetryScheduled { .. }
+        ));
+        assert!(bundle_file.is_file());
+        assert!(!data.exists());
+        assert!(installs.installed(&model).expect("installed").is_none());
+        assert!(!kokoro_model_ready(
+            KokoroHostPlatform::Android,
+            root.join("onnx/model_quantized.onnx").is_file(),
+            installs.espeak_data_installed(),
+        ));
+        std::fs::remove_file(&stage).expect("remove blocker");
+        let retry = coordinator.admit(model.clone()).expect("retry admission");
+        let work = coordinator
+            .claim(
+                model.clone(),
+                retry.job.id,
+                WorkerId::new(),
+                TimestampMillis::new(20),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim retry")
+            .expect("retry work");
+        assert!(matches!(
+            coordinator
+                .run(
+                    work,
+                    &source,
+                    CancellationReason::User,
+                    TimestampMillis::new(21),
+                )
+                .await
+                .expect("retry run"),
+            KokoroDownloadRunResult::Succeeded(_)
+        ));
+        assert_eq!(
+            std::fs::read(data.join("phontab")).expect("phontab"),
+            b"phonemes"
+        );
+        assert!(!root.join("jniLibs").exists());
+        assert!(!stage.exists());
+        assert!(kokoro_model_ready(
+            KokoroHostPlatform::Android,
+            true,
+            installs.espeak_data_installed(),
+        ));
+        let installed = installs
+            .installed(&model)
+            .expect("installed")
+            .expect("installed model");
+        assert_eq!(installed.artifacts.len(), 5);
+
+        std::fs::remove_dir_all(&data).expect("lose the data");
+        assert!(installs.installed(&model).expect("installed").is_none());
+        assert!(matches!(
+            run_android_install(&coordinator, &model, &source, 30).await,
+            KokoroDownloadRunResult::Succeeded(_)
+        ));
+        assert!(data.join("voices").join("en").is_file());
+
+        assert!(
+            crate::remove_managed_kokoro_model(&installs, &model)
+                .expect("remove model")
+                .removed
+        );
+        assert!(!data.exists());
+        assert!(!stage.exists());
+        assert!(!bundle_file.exists());
+        assert!(!root.join("onnx/model_quantized.onnx").exists());
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

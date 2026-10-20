@@ -15,6 +15,7 @@ Facts about how `lettuce-model-hub` relates to the legacy app (2.2.x). The crate
 
 ## Deliberate differences from legacy
 
+- Android eSpeak NG data is no longer packed into the APK and copied to the app's files folder on first use (`old-code/src-tauri/android-overrides/KokoroPhonemizerBridge.kt.template`). It is downloaded with the Kokoro model from the same pinned bundle legacy used (`old-code/.github/espeak-android-bundle.env`: `espeak-android-bundle-v2`, `kokoro-espeak-android-bundle.tar.gz`, SHA-256 `98b87268...45aa`), verified, and extracted into the Kokoro root. Only the library stays in the APK.
 - Legacy downloaded the embedding model from an unpinned Hugging Face `main` URL and treated file names as identity. New installs persist an immutable revision and verified hashes. The audited v4 upstream revision is `8fe12dc548f75865bfb120593fd5a514e9186ca0`; its config declares 2048 trained positions and 768 native dimensions.
 - Legacy's unpinned Hugging Face `main` URLs for Whisper are not copied; remote Whisper entries need an immutable revision and complete LFS size and SHA-256. Mutable branch names and files without LFS metadata are rejected. Hugging Face documents the tree metadata and LFS identities in its [Hub API](https://huggingface.co/docs/huggingface_hub/en/package_reference/hf_api).
 - The legacy SamLowe emotion triplet contract is deleted; Thymos replaces it.

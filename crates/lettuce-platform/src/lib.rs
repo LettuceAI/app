@@ -14,6 +14,8 @@ mod database_files;
 mod directories;
 mod error;
 mod espeak;
+#[cfg(any(target_os = "android", test))]
+mod espeak_library;
 mod file_lock;
 mod install;
 mod keys;
@@ -28,6 +30,8 @@ pub use database_files::DatabaseFiles;
 pub use directories::{DirectorySnapshot, ManagedRoot, RootKind};
 pub use error::PlatformError;
 pub use espeak::{EspeakNgError, EspeakNgProcess, EspeakPhonemizer};
+#[cfg(target_os = "android")]
+pub use espeak_library::EspeakNgLibrary;
 pub use file_lock::ManagedFileLock;
 pub use install::{
     ConfinedDirectoryEntry, ConfinedInstallStore, InstallPreparation, InstalledFile,

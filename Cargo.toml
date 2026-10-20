@@ -63,6 +63,7 @@ lettuce-sync = { path = "crates/lettuce-sync" }
 lettuce-transfer = { path = "crates/lettuce-transfer" }
 lettuce-types = { path = "crates/lettuce-types" }
 lettuce-usage = { path = "crates/lettuce-usage" }
+libloading = "0.8"
 
 rustix = { version = "1", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
@@ -121,6 +122,7 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
 
 [patch.crates-io]
 tauri = { path = "../tauri/crates/tauri" }

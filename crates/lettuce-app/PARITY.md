@@ -131,6 +131,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ## Deliberate differences from legacy
 
+- On Android, Kokoro phonemizes through `EspeakNgLibrary` over `<kokoro root>/espeak-ng-data`, which the Kokoro model install downloads; until that folder exists the inventory reports the model as not installed. Legacy copied the eSpeak data (19.1 MB in 413 entries) from APK assets on first use (`old-code/src-tauri/android-overrides/KokoroPhonemizerBridge.kt.template`).
 - Companion story time may lie before 1970. Note upserts and the active-notes preview accept negative epoch milliseconds, and the effective companion time flows unclamped into prompt time values, memory observation lines, temporal memory ranges, scheduled-note activity and Soul growth. Legacy kept these as u64 and clamped earlier times to 1970 (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:249`).
 - Manual memory token counts use null for unknown counts instead of legacy's zero on tokenizer failure (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`). The recount helper uses the memory tokenizer without embedding; conditional derived writes preserve revisions and reject stale text or summary timestamps. A dynamic cycle counts previously unknown manual items before dispatching its summary and manager requests, instead of inheriting legacy's zero fallback.
 
@@ -336,7 +337,6 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - The embedding API admits a pinned install job, records its pin for queued restart recovery, chooses its completed model, then runs the legacy health checks. Dynamic-memory setup activation is an explicit install option and happens only after those checks pass (old-code/src/pages/settings/EmbeddingDownloadPage.tsx:69-110). Raw cosine comparison matches old-code/src-tauri/src/embedding/tests.rs:830-854. The frontend settings screen is wired in its later API migration slice.
 - Remote avatar URLs in character and persona files: legacy downloaded character avatars when `autoDownloadCharacterCardAvatars` was on and persona avatars always; today the URL is dropped. The download policy (the setting, the fetch through the shared network client, storing the bytes) belongs in the character and persona file use cases, not the Tauri shell.
 - The macOS bundle needs legacy's `entitlements.plist` with `com.apple.security.cs.disable-library-validation`, or the hardened app refuses the re-signed ONNX Runtime download.
-- Android eSpeak hosting for Kokoro.
 - Automatic staged lorebook host wiring.
 - The advanced `lorebook_scan_depth` setting (1 to 20 recent messages, default 10): no Tauri command or settings control reads or writes it yet.
 - The analytics exit event.

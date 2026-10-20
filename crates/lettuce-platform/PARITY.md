@@ -10,6 +10,8 @@ Facts about `lettuce-platform` that are not architecture: what the previous READ
 
 ## History
 
+- Android eSpeak NG is loaded at run time with `libloading` instead of linked at build time like legacy (`old-code/src-tauri/build.rs:200-300`), so building and checking the workspace never needs the bundle. Legacy joined the clause chunks of `espeak_TextToPhonemes` with no separator (`old-code/src-tauri/src/tts_manager/kokoro/phonemizer.rs:733-745`), so a batched call never had one line per segment and every segment fell back to its own call, with multi-clause phonemes glued together. That was a bug: the library output now has one line per clause, like the command line.
+- Legacy initialized the Android library with `espeakINITIALIZE_PHONEME_IPA` only (`old-code/src-tauri/src/tts_manager/kokoro/phonemizer.rs:696-712`), so a missing or corrupt `phontab` or `phondata` made eSpeak call `exit(1)` and end the app. Fixed: initialization also passes `espeakINITIALIZE_DONT_EXIT`, so a broken data folder fails the call as `Unavailable`.
 - The previous README said create-new always publishes through an atomic hard link. The code now uses `renameat2(RENAME_NOREPLACE)` on Linux and a per-directory lock with a plain rename on Android (to avoid the `SIGSYS` older Android seccomp policies raise for `renameat2`); only other targets use a hard link.
 - The previous README described the private persistent root as serving a settings-owned secret adapter. Its only caller today is `AppDatabaseLocation` in `lettuce-app`, which keeps the active database pointer there; `lettuce-settings` does not use this crate.
 

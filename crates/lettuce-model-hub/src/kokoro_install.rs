@@ -8,7 +8,11 @@ use std::{
 use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, ResumableInstall};
 use sha2::{Digest, Sha256};
 
-use crate::{InstalledModelArtifact, KokoroModelVariant, ModelArtifactError};
+use crate::{
+    ESPEAK_ANDROID_BUNDLE_ASSET, ESPEAK_ANDROID_BUNDLE_BYTES, ESPEAK_ANDROID_BUNDLE_SHA256,
+    EspeakBundleError, InstalledModelArtifact, KokoroHostPlatform, KokoroModelVariant,
+    ModelArtifactError, espeak_android_bundle_url,
+};
 
 pub const KOKORO_REPOSITORY: &str = "onnx-community/Kokoro-82M-v1.0-ONNX";
 pub const KOKORO_SOURCE_REVISION: &str = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
@@ -20,6 +24,9 @@ pub enum KokoroArtifactRole {
     Tokenizer,
     TokenizerConfig,
     Model,
+    /// The eSpeak NG Android bundle, whose data folder is extracted into the
+    /// Kokoro root.
+    EspeakData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -57,9 +64,23 @@ pub struct InstalledKokoroModel {
     pub artifacts: Vec<InstalledKokoroArtifact>,
 }
 
+impl RemoteKokoroArtifact {
+    /// Whether the file comes from the Kokoro Hugging Face repository; the
+    /// eSpeak NG bundle is a GitHub release asset.
+    #[must_use]
+    pub fn is_hugging_face(&self) -> bool {
+        self.role != KokoroArtifactRole::EspeakData
+    }
+}
+
 impl RemoteKokoroModel {
     pub fn validate(&self) -> Result<(), KokoroInstallError> {
-        let expected = pinned_kokoro_model(self.variant);
+        self.validate_for(KokoroHostPlatform::current())
+    }
+
+    /// Checks the model against the files `platform` pins.
+    pub fn validate_for(&self, platform: KokoroHostPlatform) -> Result<(), KokoroInstallError> {
+        let expected = pinned_kokoro_model_for(self.variant, platform);
         if self.source_revision.len() != 40
             || !self
                 .source_revision
@@ -100,6 +121,16 @@ impl RemoteKokoroModel {
 
 #[must_use]
 pub fn pinned_kokoro_model(variant: KokoroModelVariant) -> RemoteKokoroModel {
+    pinned_kokoro_model_for(variant, KokoroHostPlatform::current())
+}
+
+/// The model's pinned files on `platform`; Android adds the eSpeak NG data
+/// bundle.
+#[must_use]
+pub fn pinned_kokoro_model_for(
+    variant: KokoroModelVariant,
+    platform: KokoroHostPlatform,
+) -> RemoteKokoroModel {
     let model = match variant {
         KokoroModelVariant::Fp32 => RemoteKokoroArtifact {
             role: KokoroArtifactRole::Model,
@@ -149,13 +180,28 @@ pub fn pinned_kokoro_model(variant: KokoroModelVariant) -> RemoteKokoroModel {
                 sha256: "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20".into(),
             },
             model,
-        ],
+        ]
+        .into_iter()
+        .chain(platform.installs_espeak_data().then(espeak_bundle_artifact))
+        .collect(),
+    }
+}
+
+fn espeak_bundle_artifact() -> RemoteKokoroArtifact {
+    RemoteKokoroArtifact {
+        role: KokoroArtifactRole::EspeakData,
+        remote_path: espeak_android_bundle_url(),
+        local_segments: vec!["espeak".into(), ESPEAK_ANDROID_BUNDLE_ASSET.into()],
+        byte_size: ESPEAK_ANDROID_BUNDLE_BYTES,
+        sha256: ESPEAK_ANDROID_BUNDLE_SHA256.into(),
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct KokoroInstallStore {
     inner: Arc<ConfinedInstallStore>,
+    root: PathBuf,
+    platform: KokoroHostPlatform,
 }
 
 pub struct MaterializedKokoroLexicon {
@@ -192,11 +238,25 @@ pub struct KokoroDownloadSession {
 
 impl KokoroInstallStore {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, KokoroInstallError> {
+        Self::open_for(root, KokoroHostPlatform::current())
+    }
+
+    /// A store that installs the files `platform` pins.
+    pub fn open_for(
+        root: impl AsRef<Path>,
+        platform: KokoroHostPlatform,
+    ) -> Result<Self, KokoroInstallError> {
         Ok(Self {
             inner: Arc::new(
-                ConfinedInstallStore::open(root).map_err(KokoroInstallError::Platform)?,
+                ConfinedInstallStore::open(root.as_ref()).map_err(KokoroInstallError::Platform)?,
             ),
+            root: root.as_ref().to_path_buf(),
+            platform,
         })
+    }
+
+    pub fn validate_model(&self, model: &RemoteKokoroModel) -> Result<(), KokoroInstallError> {
+        model.validate_for(self.platform)
     }
 
     pub fn recorded_model(
@@ -209,7 +269,7 @@ impl KokoroInstallStore {
             .inspect(&ObjectKey::single(&name).map_err(KokoroInstallError::Platform)?)
             .map_err(KokoroInstallError::Platform)?
         else {
-            return Ok(pinned_kokoro_model(variant));
+            return Ok(pinned_kokoro_model_for(variant, self.platform));
         };
         if file.len() > 64 * 1024 {
             return Err(KokoroInstallError::InvalidManifest);
@@ -219,7 +279,7 @@ impl KokoroInstallStore {
             .map_err(|_| KokoroInstallError::Unreadable)?;
         let model: RemoteKokoroModel =
             serde_json::from_slice(&bytes).map_err(|_| KokoroInstallError::InvalidManifest)?;
-        model.validate()?;
+        self.validate_model(&model)?;
         if model.variant != variant {
             return Err(KokoroInstallError::InvalidManifest);
         }
@@ -311,7 +371,7 @@ impl KokoroInstallStore {
         &self,
         model: &RemoteKokoroModel,
     ) -> Result<Option<InstalledKokoroModel>, KokoroInstallError> {
-        model.validate()?;
+        self.validate_model(model)?;
         let mut artifacts = Vec::with_capacity(model.artifacts.len());
         for remote in &model.artifacts {
             let target = ObjectKey::from_segments(&remote.local_segments)
@@ -331,6 +391,9 @@ impl KokoroInstallStore {
                 artifact,
             });
         }
+        if espeak_artifact(model).is_some() && !self.espeak_data_installed() {
+            return Ok(None);
+        }
         Ok(Some(InstalledKokoroModel {
             variant: model.variant,
             source_revision: model.source_revision.to_owned(),
@@ -344,7 +407,7 @@ impl KokoroInstallStore {
         &self,
         model: &RemoteKokoroModel,
     ) -> Result<Option<Vec<KokoroModelFile>>, KokoroInstallError> {
-        model.validate()?;
+        self.validate_model(model)?;
         let mut files = Vec::with_capacity(model.artifacts.len());
         for remote in &model.artifacts {
             let target = ObjectKey::from_segments(&remote.local_segments)
@@ -365,6 +428,37 @@ impl KokoroInstallStore {
             });
         }
         Ok(Some(files))
+    }
+
+    /// Whether the Kokoro root holds the extracted eSpeak NG data folder.
+    #[must_use]
+    pub fn espeak_data_installed(&self) -> bool {
+        crate::espeak_data_installed(&self.root)
+    }
+
+    /// Extracts the eSpeak NG data from the model's installed bundle, after
+    /// verifying the bundle again; a model without the bundle needs nothing.
+    pub fn install_espeak_data(&self, model: &RemoteKokoroModel) -> Result<(), KokoroInstallError> {
+        self.validate_model(model)?;
+        let Some(remote) = espeak_artifact(model) else {
+            return Ok(());
+        };
+        if self.espeak_data_installed() {
+            return Ok(());
+        }
+        let target = ObjectKey::from_segments(&remote.local_segments)
+            .map_err(KokoroInstallError::Platform)?;
+        let mut file = self
+            .inner
+            .inspect(&target)
+            .map_err(KokoroInstallError::Platform)?
+            .ok_or(KokoroInstallError::InvalidArtifact)?;
+        verify(&mut file, remote)?;
+        let archive = file.native_path().to_path_buf();
+        drop(file);
+        crate::install_espeak_data(&archive, &self.root)
+            .map(|_| ())
+            .map_err(map_bundle_error)
     }
 
     pub fn materialize_lexicon(
@@ -405,12 +499,21 @@ impl KokoroInstallStore {
         &self,
         model: &RemoteKokoroModel,
     ) -> Result<bool, KokoroInstallError> {
-        model.validate()?;
+        self.validate_model(model)?;
         let remote = model
             .artifacts
             .iter()
             .find(|artifact| artifact.role == KokoroArtifactRole::Model)
             .ok_or(KokoroInstallError::InvalidManifest)?;
+        let mut removed = self.remove_verified(remote)?;
+        if let Some(bundle) = espeak_artifact(model) {
+            removed |= crate::remove_espeak_data(&self.root).map_err(map_bundle_error)?;
+            removed |= self.remove_verified(bundle)?;
+        }
+        Ok(removed)
+    }
+
+    fn remove_verified(&self, remote: &RemoteKokoroArtifact) -> Result<bool, KokoroInstallError> {
         let target = ObjectKey::from_segments(&remote.local_segments)
             .map_err(KokoroInstallError::Platform)?;
         let Some(mut file) = self
@@ -462,6 +565,20 @@ impl KokoroDownloadSession {
         }
         let path = self.inner.commit().map_err(KokoroInstallError::Platform)?;
         InstalledModelArtifact::inspect(path).map_err(map_artifact_error)
+    }
+}
+
+fn espeak_artifact(model: &RemoteKokoroModel) -> Option<&RemoteKokoroArtifact> {
+    model
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.role == KokoroArtifactRole::EspeakData)
+}
+
+fn map_bundle_error(error: EspeakBundleError) -> KokoroInstallError {
+    match error {
+        EspeakBundleError::InvalidArchive => KokoroInstallError::InvalidArtifact,
+        EspeakBundleError::Io => KokoroInstallError::Platform(lettuce_platform::PlatformError::Io),
     }
 }
 
@@ -635,5 +752,48 @@ mod tests {
             KokoroArtifactPreparation::Installed(_)
         ));
         std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn android_pins_the_espeak_bundle_as_a_fifth_artifact() {
+        let desktop =
+            pinned_kokoro_model_for(KokoroModelVariant::Int8, KokoroHostPlatform::Desktop);
+        assert!(
+            desktop
+                .artifacts
+                .iter()
+                .all(RemoteKokoroArtifact::is_hugging_face)
+        );
+        let android =
+            pinned_kokoro_model_for(KokoroModelVariant::Int8, KokoroHostPlatform::Android);
+        assert_eq!(android.artifacts.len(), 5);
+        let bundle = &android.artifacts[4];
+        assert_eq!(bundle.role, KokoroArtifactRole::EspeakData);
+        assert!(!bundle.is_hugging_face());
+        assert_eq!(bundle.remote_path, espeak_android_bundle_url());
+        assert_eq!(bundle.byte_size, ESPEAK_ANDROID_BUNDLE_BYTES);
+        assert_eq!(bundle.sha256, ESPEAK_ANDROID_BUNDLE_SHA256);
+        validate_artifact(bundle).expect("pinned bundle descriptor");
+        assert_eq!(
+            android.total_bytes(),
+            desktop.total_bytes() + ESPEAK_ANDROID_BUNDLE_BYTES
+        );
+    }
+
+    #[test]
+    fn bundle_verification_refuses_a_wrong_sha256() {
+        let bytes = b"not the eSpeak NG bundle";
+        let mut remote = espeak_bundle_artifact();
+        remote.byte_size = bytes.len() as u64;
+        assert_eq!(
+            verify(&mut &bytes[..], &remote),
+            Err(KokoroInstallError::Mismatch)
+        );
+        remote.sha256 = format!("{:x}", Sha256::digest(bytes));
+        assert_eq!(verify(&mut &bytes[..], &remote), Ok(()));
+        assert_eq!(
+            verify(&mut &bytes[..bytes.len() - 1], &remote),
+            Err(KokoroInstallError::Mismatch)
+        );
     }
 }
