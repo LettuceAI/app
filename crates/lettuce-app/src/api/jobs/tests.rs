@@ -1249,7 +1249,7 @@ async fn embedding_install_worker_checks_health_before_activating_dynamic_memory
         if !bad_health && enable {
             assert_eq!(
                 settings.dynamic_memory.min_similarity_basis_points,
-                Some(3200)
+                None
             );
         }
         assert!(

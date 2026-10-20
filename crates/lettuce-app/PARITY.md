@@ -720,3 +720,5 @@ Library uses backend search before paging rather than downloading every cursor f
 Library grids request on-demand static image previews through the existing asset scheme. Preview generation is bounded and cached in memory, with no new stored assets or schema. Original bytes remain available for detail views and export; animated previews show their first frame.
 
 Media grids opt out of eager usage discovery and request references when opening an action sheet. Default callers still receive references; GC, retention and guarded removal use the same reference rules.
+
+Installing Eidos with dynamic memory turned on writes the default dynamic memory settings with the relevance threshold left to the model's calibration. Legacy's embedding download page wrote a 0.32 threshold (old-code/src/ui/pages/settings/EmbeddingDownloadPage.tsx:82,181).

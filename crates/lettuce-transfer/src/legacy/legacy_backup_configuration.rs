@@ -1387,16 +1387,25 @@ fn map_help_me_reply(
 /// therefore read as unset.
 const LEGACY_WRITTEN_MIN_SIMILARITY: [u16; 2] = [3_200, 3_500];
 
+/// The values legacy used for fields its stored settings leave out.
+fn legacy_dynamic_memory_defaults() -> DynamicMemorySettings {
+    DynamicMemorySettings {
+        max_entries: 50,
+        hot_memory_token_budget: 2_000,
+        ..DynamicMemorySettings::default()
+    }
+}
+
 fn map_dynamic_memory(
     value: Option<&Value>,
     path: &str,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<DynamicMemorySettings, LegacyBackupConfigurationError> {
     let Some(value) = value else {
-        return Ok(DynamicMemorySettings::default());
+        return Ok(legacy_dynamic_memory_defaults());
     };
     let object = object_or_empty(value, LegacyBackupDocumentKind::Settings, path)?;
-    let mut result = DynamicMemorySettings::default();
+    let mut result = legacy_dynamic_memory_defaults();
     result.enabled = optional_bool_value(
         object,
         "enabled",

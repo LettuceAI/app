@@ -1148,7 +1148,6 @@ async fn finish_artifact(
                         let mut stored = GlobalSettingsStore::load(database).map_err(internal)?;
                         stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {
                             enabled: true,
-                            min_similarity_basis_points: Some(3200),
                             ..Default::default()
                         };
                         GlobalSettingsStore::save(
