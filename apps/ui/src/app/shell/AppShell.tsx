@@ -11,9 +11,11 @@ import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { isSettingsSection, SidebarSettings } from "@/features/settings";
 import { LibraryCreateSheet } from "@/features/library";
+import { OpenedFiles } from "@/features/opened-files";
 import { CreateSheet } from "./CreateSheet";
 import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, type Destination } from "./navigation";
+import { useAndroidBack } from "./useAndroidBack";
 import { useWindowController } from "./useWindowController";
 
 const resizeEdges: readonly [WindowEdge, string][] = [
@@ -44,6 +46,7 @@ export function AppShell() {
   const { enabled: sidebarOnDetailPages } = useSidebarOnDetailPages(api);
   const mainScreen = Object.entries(destinations).some(([id, path]) => id !== "settings" && pathname === path);
   const navigationHidden = !mainScreen && (tabs || !sidebarOnDetailPages);
+  useAndroidBack(platform, welcome || mainScreen);
   const [sidebarOpen, setSidebarOpen] = useSidebarExpanded(api);
   const [createOpen, setCreateOpen] = useState(false);
   const chats = useChatNavigation();
@@ -112,6 +115,7 @@ export function AppShell() {
       )}
       {pathname === "/library" ? <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} /> : <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onCreate={(kind) => { void navigate({ to: kind === "persona" ? "/personas/new" : "/characters/new" }); }} onDiscover={() => { void navigate({ to: destinations.discover }); }} />}
       <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
+      <OpenedFiles api={api} held={welcome} />
       {controller && desktop && windowPlatform !== "macos" && !expanded && resizeEdges.map(([edge, className]) => (
         <div key={edge} aria-hidden className={cn("absolute z-50 touch-none", className)} onPointerDown={(event) => {
           if (event.button !== 0) return;

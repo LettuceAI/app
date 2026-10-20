@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/api/query-keys";
 import { ApiFailure, type ApiClient } from "@/api/client";
-import type { EntityExportResult, ImportCommitResult, MediaLibraryItem } from "@/api/generated/bindings";
+import type { EntityExportResult, FileSource, ImportCommitResult, MediaLibraryItem } from "@/api/generated/bindings";
 import { newPersonaDraft } from "./defaults";
 import type { Entry, EntryKind, EntryView } from "./queries";
 
@@ -35,7 +35,10 @@ export async function importEntry(api: ApiClient): Promise<ImportCommitResult | 
   if (!source) return null;
   const preview = await api.call("importPreview", { source });
   if (!["character", "persona", "lorebook"].includes(preview.content.kind)) throw new ApiFailure("unsupported", "unsupported library import", null);
-  return api.call("importCommit", { source, digest: preview.digest, options: {}, client_operation_id: crypto.randomUUID() });
+  return commitImport(api, source, preview.digest, crypto.randomUUID());
+}
+export function commitImport(api: ApiClient, source: FileSource, digest: string, operationId: string): Promise<ImportCommitResult> {
+  return api.call("importCommit", { source, digest, options: {}, client_operation_id: operationId });
 }
 export function mediaName(item: MediaLibraryItem): string {
   return item.source_label?.trim() || item.asset.asset_id;

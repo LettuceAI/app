@@ -1,0 +1,1 @@
+export { OpenedFiles } from "./OpenedFiles";

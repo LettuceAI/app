@@ -4,7 +4,7 @@ import type { i18n } from "i18next";
 import { createApiClient, selectTransport, type ApiClient } from "@/api/client";
 import type { Transport } from "@/api/transport";
 import { createI18n } from "@/shared/i18n";
-import { selectDeviceLocale } from "./device-locale";
+import { followSystemLocale, selectDeviceLocale } from "./device-locale";
 import { createQueryClient } from "../providers/query-client";
 import { createAppRouter, type AppRouter } from "../router/router";
 
@@ -27,11 +27,13 @@ export async function createAppRuntime(options: AppRuntimeOptions = {}): Promise
   if (!localization) {
     const status = await api.call("appStatus");
     const state = status.ui_state;
-    const locale = selectDeviceLocale(state, () => window.localStorage.getItem("app-locale"));
+    const android = status.platform === "android";
+    const locale = selectDeviceLocale(state, () => window.localStorage.getItem("app-locale"), android);
     if (state.locale !== locale) {
       await api.call("appUiStateUpdate", { patch: { locale } }).catch(() => undefined);
     }
     localization = await createI18n(locale);
+    if (android) followSystemLocale(localization, (next) => api.call("appUiStateUpdate", { patch: { locale: next } }).then(() => undefined));
   }
   const queryClient = createQueryClient();
   const router = createAppRouter(

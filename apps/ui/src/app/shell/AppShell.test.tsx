@@ -10,6 +10,17 @@ import { createTestI18n } from "@/shared/testing/i18n";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
+const backButton = vi.hoisted(() => ({ press: null as ((canGoBack: boolean) => void) | null, exit: vi.fn() }));
+vi.mock("@/api/back-button", () => ({
+  createBackButton: vi.fn(async (platform: string) => platform === "android" ? {
+    listen: async (onBack: (canGoBack: boolean) => void) => {
+      backButton.press = onBack;
+      return () => { backButton.press = null; };
+    },
+    exit: async () => backButton.exit(),
+  } : null),
+}));
+
 const ui_state = { onboarding: { completed: true } };
 
 function chat(id: string, title: string, updatedAt: number): ConversationSummary {
@@ -170,5 +181,40 @@ describe("desktop sidebar", () => {
     expect(await screen.findByText("Import a card")).toBeTruthy();
     fireEvent.click(screen.getByText("Browse Discover"));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/discover"));
+  });
+});
+
+describe("android back", () => {
+  const android = { calls: { appStatus: () => ({ status: "ok" as const, data: { ...mockAppStatus, platform: "android" as const, ui_state } }) } };
+  const press = async (canGoBack: boolean) => {
+    await waitFor(() => expect(backButton.press).not.toBeNull());
+    await act(async () => { backButton.press!(canGoBack); });
+  };
+
+  it("closes the topmost sheet before leaving the page", async () => {
+    const runtime = await renderShell(android, ui_state, "/library");
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    await screen.findByRole("dialog");
+    await press(true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(runtime.router.state.location.pathname).toBe("/library");
+    expect(backButton.exit).not.toHaveBeenCalled();
+  });
+
+  it("goes back through history", async () => {
+    const runtime = await renderShell(android, ui_state, "/library");
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/settings"));
+    await press(true);
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+  });
+
+  it("opens home from a detail page with no history and exits from a main screen", async () => {
+    const runtime = await renderShell(android, ui_state, "/settings");
+    await press(false);
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/"));
+    expect(backButton.exit).not.toHaveBeenCalled();
+    await press(false);
+    expect(backButton.exit).toHaveBeenCalledOnce();
   });
 });

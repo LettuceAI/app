@@ -1,0 +1,58 @@
+{
+  "cancel": "Cancel",
+  "retry": "Try again",
+  "notRecognized": "This file is not a LettuceAI card or backup.",
+  "import": {
+    "title": {
+      "character": "Import character",
+      "persona": "Import persona",
+      "lorebook": "Import lorebook"
+    },
+    "kind": {
+      "character": "Character",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} entry",
+    "entries_other": "{{count}} entries",
+    "confirm": "Import",
+    "open": "Open",
+    "done": "{{name}} imported",
+    "started": "Import started",
+    "warnings_one": "Imported with {{count}} warning",
+    "warnings_other": "Imported with {{count}} warnings"
+  },
+  "restore": {
+    "title": "Restore backup",
+    "created": "Created",
+    "version": "App version",
+    "password": "Password",
+    "warning": "Restoring replaces all chats, characters and settings on this device with the backup. Your current data is kept as a separate file.",
+    "action": "Restore",
+    "stop": "Stop",
+    "running": "Restoring",
+    "confirmTitle": "Replace everything on this device?",
+    "confirmBody": "All chats, characters and settings are replaced with this backup. Your current data is kept as a separate file.",
+    "confirm": "Restore",
+    "done": "Backup restored",
+    "warnings_one": "Backup restored with {{count}} warning",
+    "warnings_other": "Backup restored with {{count}} warnings",
+    "failure": {
+      "unknown": "The backup could not be restored.",
+      "backup_authentication": "The password is wrong or the backup is damaged.",
+      "backup_invalid_envelope": "This file is not a valid backup.",
+      "backup_limit_exceeded": "This backup is larger than the app can restore.",
+      "backup_unavailable": "Backups are not available right now.",
+      "backup_file_not_found": "The backup file could not be found.",
+      "backup_permission_denied": "The app is not allowed to read this file.",
+      "backup_file_busy": "The file is in use by another app.",
+      "backup_file_unavailable": "The backup file could not be read.",
+      "backup_file_unsupported": "This backup was made by a version the app cannot read.",
+      "backup_source_is_target": "The backup is the file the app is using.",
+      "backup_cancelled": "The restore was cancelled.",
+      "backup_retry_required": "The restore did not finish. Try again.",
+      "backup_recovery_required": "The restore needs the app to be reopened.",
+      "backup_verification_failed": "The backup did not pass verification."
+    }
+  }
+}
