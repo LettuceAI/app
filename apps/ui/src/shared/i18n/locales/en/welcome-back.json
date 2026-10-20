@@ -31,7 +31,7 @@
     "bodyReady_emotion": "Companion emotions are ready and run offline.",
     "bodyReady_both": "Dynamic memory and companion emotions are ready and run offline.",
     "names": {
-      "embedding": "Eidos memory model",
+      "embedding": "Lettuce Eidos memory model",
       "emotion": "Thymos emotion model"
     },
     "why": {

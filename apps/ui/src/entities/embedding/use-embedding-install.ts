@@ -13,7 +13,7 @@ export interface InstallState {
 
 const idle: InstallState = { phase: "idle", job: null, error: null };
 
-export function useEmbeddingInstall(api: ApiClient) {
+export function useEmbeddingInstall(api: ApiClient, enableDynamicMemory = true) {
   const [state, setState] = useState<InstallState>(idle);
   const abort = useRef<AbortController | null>(null);
 
@@ -30,12 +30,12 @@ export function useEmbeddingInstall(api: ApiClient) {
       if (terminalJobStates.has(job.state)) controller.abort();
     };
     try {
-      const accepted = await api.call("embeddingInstall", { family: "lettuce_eidos_v5", enable_dynamic_memory: true });
+      const accepted = await api.call("embeddingInstall", { family: "lettuce_eidos_v5", enable_dynamic_memory: enableDynamicMemory });
       await watchJob(api, accepted.job_id, apply, controller.signal);
     } catch (error) {
       if (!controller.signal.aborted) setState({ phase: "failed", job: null, error });
     }
-  }, [api]);
+  }, [api, enableDynamicMemory]);
 
   const reset = useCallback(() => {
     abort.current?.abort();

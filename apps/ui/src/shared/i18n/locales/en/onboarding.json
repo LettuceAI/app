@@ -330,21 +330,6 @@
       "point2": "Full control over what is remembered",
       "point3": "Nothing runs in the background",
       "note": "Nothing to download."
-    },
-    "sheet": {
-      "title": "Download the memory model",
-      "titleDone": "Memory is ready",
-      "body": "Automatic memory needs a small model on this device. It downloads once, then runs offline.",
-      "bodyDone": "Your characters will now keep track of what matters, even in long chats. You can turn this off per chat.",
-      "modelName": "Eidos memory model",
-      "keepOpen": "Keep the app open until it finishes.",
-      "download": "Download and finish",
-      "downloading": "Downloading",
-      "checking": "Checking the model",
-      "useManual": "Use manual memory instead",
-      "doneDetail": "Installed and tested · runs offline",
-      "failedOffline": "Connection lost. Try again to continue.",
-      "failedOther": "The download did not finish. Try again to continue."
     }
   },
   "other": {

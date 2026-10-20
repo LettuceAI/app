@@ -19,6 +19,10 @@
       "title": "Models",
       "subtitle": "Configure AI models"
     },
+    "memory": {
+      "title": "Memory",
+      "subtitle": "How characters remember"
+    },
     "imageGeneration": {
       "title": "Image generation",
       "subtitle": "Generate and test images"
@@ -29,7 +33,7 @@
     },
     "advanced": {
       "title": "Advanced",
-      "subtitle": "Memory & features"
+      "subtitle": "Reply help, generators and more"
     },
     "performance": {
       "title": "Local LLM performance",
@@ -756,7 +760,11 @@
     "memoryCachePair": "K: {{keyType}} · V: {{valueType}}",
     "recommendedGpuHint": "Leaves extra GPU memory free for processing.",
     "recommendedRamHint": "Leaves extra memory free for the system.",
-    "memoryParts": { "model": "Model", "context": "Chat context", "working": "Processing" },
+    "memoryParts": {
+      "model": "Model",
+      "context": "Chat context",
+      "working": "Processing"
+    },
     "memoryModelEstimate": "Estimated memory for this model",
     "memoryAlreadyUsed": "Already in use",
     "memoryAfterLoading": "{{size}} left after loading",
@@ -908,5 +916,124 @@
       "speed": "Speed & memory"
     },
     "usageGroups": "Groups"
+  },
+  "memory": {
+    "title": "Memory",
+    "subtitle": "How characters remember",
+    "manual": {
+      "group": "Manual memory",
+      "window": "Context window",
+      "windowBody": "Recent messages sent with each reply on manual memory. Pinned ones always go."
+    },
+    "dynamic": {
+      "group": "Dynamic memory",
+      "title": "Dynamic memory",
+      "body": "Summarizes chats as they grow and recalls what matters in each reply. Any character can still use manual memory."
+    },
+    "scope": {
+      "direct": "One-on-one chats",
+      "group": "Group chats",
+      "same": "Use one-on-one settings",
+      "sameOn": "Group chats remember the same way as one-on-one chats",
+      "sameOff": "Group chats use their own settings below"
+    },
+    "updates": {
+      "title": "Memory updates",
+      "auto": "Automatic",
+      "ask_first": "Ask first",
+      "manual": "Manual",
+      "autoBody": "Memory updates run on their own in the background.",
+      "ask_firstBody": "Asks before each update, so you decide when it runs.",
+      "manualBody": "Updates run only when you start them from the chat's memory panel."
+    },
+    "profile": {
+      "title": "Memory profile",
+      "minimal": "Minimal",
+      "balanced": "Balanced",
+      "comprehensive": "Comprehensive",
+      "minimalBody": "Fast and light. Keeps only what matters most.",
+      "balancedBody": "A good mix of recall and speed for most chats.",
+      "comprehensiveBody": "Remembers the most. Best for long, detailed stories.",
+      "customBody": "Custom: your own values. Pick a profile to start over from it.",
+      "advanced": "Advanced options",
+      "advancedBody": "Every value the profile sets",
+      "interval": "Summary interval",
+      "intervalBody": "Messages between summaries. Also how many recent messages go with each reply.",
+      "maxEntries": "Max memory entries",
+      "maxEntriesBody": "The most memories one chat keeps",
+      "hotBudget": "Hot memory budget",
+      "hotBudgetBody": "Tokens of active memories sent with each reply",
+      "retrievalLimit": "Retrieval limit",
+      "retrievalLimitBody": "The most memories picked for one reply",
+      "similarity": "Relevance threshold",
+      "similarityBody": "Uses your own threshold below.",
+      "mode": "Retrieval mode",
+      "modeSmart": "Weighs importance and recency with the match",
+      "modeCosine": "Picks by match alone",
+      "smart": "Smart",
+      "cosine": "Cosine",
+      "decay": "Decay rate",
+      "decayBody": "How fast an unused memory loses importance",
+      "cold": "Cold storage threshold",
+      "coldBody": "Importance at which a memory moves to cold storage",
+      "similarityDefault": "Uses Lettuce Eidos's calibrated threshold.",
+      "similarityCustom": "Custom",
+      "similarityAuto": "Auto",
+      "similarityValue": "Threshold",
+      "similarityValueBody": "Minimum similarity for a memory to be retrieved"
+    },
+    "advanced": {
+      "title": "Advanced",
+      "body": "Context enrichment and memory manager behavior",
+      "enrichment": "Context enrichment",
+      "experimental": "Experimental",
+      "enrichmentBody": "Uses the last few messages to search memories, not only the newest one",
+      "loops": "Recursive memory loops",
+      "loopsBody": "Sends tool results back until the model calls done. Helps weaker models, costs more tokens.",
+      "loopCap": "Recursive loop hard cap",
+      "loopCapBody": "Stops here even if the model never calls done",
+      "deleteConfidence": "Delete confidence default",
+      "deleteConfidenceBody": "Used when the model gives none. Lower archives instead of deleting.",
+      "deleteRatio": "Max hard delete ratio",
+      "deleteRatioBody": "Share of memories one update may delete for good",
+      "duplicate": "Duplicate threshold",
+      "duplicateBody": "How alike two memories must be to count as one",
+      "fallback": "Structured fallback",
+      "fallbackBody": "Used only when the model cannot call tools"
+    },
+    "summarization": {
+      "group": "Summarization · shared by all chats",
+      "model": "Summarization model",
+      "appDefault": "App default",
+      "appDefaultNamed": "App default · {{name}}",
+      "summaryPrompt": "Summary prompt",
+      "managerPrompt": "Memory manager prompt",
+      "builtIn": "Built-in",
+      "promptMissing": "A prompt that no longer exists",
+      "promptBuiltInBody": "The app's own prompt",
+      "promptsFailed": "Couldn't load prompts",
+      "sampler": "Overwrite sampler configuration",
+      "samplerOn": "Uses fixed sampler values made for memory work",
+      "samplerOff": "Uses the summarization model's own generation settings",
+      "promptCustom": "Custom prompt",
+      "modelMissing": "Missing model"
+    },
+    "embedding": {
+      "group": "Embedding model · shared by all chats",
+      "name": "Lettuce Eidos",
+      "installed": "Installed",
+      "missing": "Not installed",
+      "body": "Finds the memories that fit a reply · {{capacity}} token capacity",
+      "missingBody": "Dynamic memory needs this model",
+      "remove": "Remove",
+      "download": "Download",
+      "keepLoaded": "Keep model loaded",
+      "keepLoadedBody": "Stays in memory between replies. Faster, uses more RAM.",
+      "removeTitle": "Remove the memory model?",
+      "removeBody": "Dynamic memory needs this model, so removing it turns dynamic memory off. Characters use manual memory until you download it again.",
+      "removeConfirm": "Remove",
+      "capacity": "Token capacity",
+      "capacityBody": "How much of a memory and the chat the model reads at once. Higher fits longer memories, uses more memory and time."
+    }
   }
 }

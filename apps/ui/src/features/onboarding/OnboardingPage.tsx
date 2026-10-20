@@ -11,7 +11,7 @@ import { guideContent } from "./content/guide-content";
 import { learnSlides } from "./content/slides";
 import { applyManualMemory, completeOnboarding, enableAutomaticMemory, hasEidosInstalled } from "./data/completion";
 import { canConnect, classifyConnectError, connectProvider } from "./data/connect";
-import { useEmbeddingInstall } from "./data/install-job";
+import { MemoryDownloadSheet, useEmbeddingInstall } from "@/entities/embedding";
 import { externalModelId, saveChosenModel } from "./data/models";
 import { catalogQuery, useApi } from "./data/queries";
 import { useAction } from "./data/use-action";
@@ -25,7 +25,6 @@ import { MemoryScreen } from "./screens/MemoryScreen";
 import { ModelScreen } from "./screens/ModelScreen";
 import { PathScreen } from "./screens/PathScreen";
 import { WelcomeScreen } from "./screens/WelcomeScreen";
-import { MemoryDownloadSheet } from "./sheets/MemoryDownloadSheet";
 import { OtherOptionsSheet } from "./sheets/OtherOptionsSheet";
 import { SkipWarningSheet } from "./sheets/SkipWarningSheet";
 
@@ -373,9 +372,7 @@ export function OnboardingPage() {
             dispatch({ type: "patch", patch: { memory: "manual" } });
             setMemorySheet(false);
           }}
-          onOpenApp={openApp.run}
-          opening={openApp.busy}
-          openError={openApp.error}
+          done={{ label: t("actions.openApp"), onClick: openApp.run, loading: openApp.busy, error: openApp.error }}
         />
       </Surface>
     </OnboardingContext.Provider>
