@@ -3,7 +3,6 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useTranslation } from "react-i18next";
 import {
   Button,
-  confirm,
   Field,
   fileSize,
   Input,
@@ -23,6 +22,7 @@ import { queryKeys } from "@/api/query-keys";
 import { terminalJobStates, watchJob } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsAction, useSettingsApi } from "./data";
+import { LoraLibraryView } from "./image/LoraLibraryView";
 
 const searchPageSize = 30;
 const activeDownloadStates = ["queued", "claimed", "running", "cancellation_requested", "cleaning_up"] as const;
@@ -48,7 +48,7 @@ export function ModelTools({ open, tool, onClose }: { open: boolean; tool: "brow
   const { t } = useTranslation("settings");
   return (
     <Sheet open={open} onClose={onClose} title={t(`models.${tool}`)}>
-      {tool === "browse" ? <GgufBrowser /> : tool === "runtime" ? <RuntimeDefaults /> : <LoraLibrary />}
+      {tool === "browse" ? <GgufBrowser /> : tool === "runtime" ? <RuntimeDefaults /> : <LoraLibraryView open={open} />}
     </Sheet>
   );
 }
@@ -99,66 +99,6 @@ function RuntimeForm({ settings }: { settings: SettingsView }) {
       <Button loading={action.isPending} disabled={invalid} onClick={save}>
         {t("manage.save")}
       </Button>
-    </div>
-  );
-}
-
-function LoraLibrary() {
-  const { t } = useTranslation("settings");
-  const { t: common } = useTranslation("common");
-  const api = useSettingsApi();
-  const action = useSettingsAction();
-  const loras = useQuery({ queryKey: queryKeys.loras.all, queryFn: () => api.call("lorasList", { profile_id: null }) });
-  const importLora = () =>
-    action.mutate(async () => {
-      const picked = await api.call("filesPickOpen", { kinds: ["any"], multiple: false });
-      if (picked.sources[0]) await api.call("lorasImport", { source: picked.sources[0] });
-    });
-  const removeLora = (path: string, filename: string) => {
-    void (async () => {
-      const sure = await confirm({
-        title: t("tools.deleteLoraTitle", { name: filename }),
-        message: t("tools.deleteLora"),
-        confirmLabel: t("manage.confirmDelete"),
-        cancelLabel: common("actions.cancel"),
-        destructive: true,
-      });
-      if (!sure) return;
-      action.mutate(() => api.call("lorasDelete", { path }));
-    })();
-  };
-  return (
-    <div className="space-y-4">
-      <Text variant="hint">{t("tools.loraHint")}</Text>
-      {action.isError && <FailureState error={action.error} size="sm" />}
-      <Button loading={action.isPending} onClick={importLora}>
-        {t("manage.import")}
-      </Button>
-      {loras.isPending ? (
-        <LoadingState />
-      ) : loras.isError ? (
-        <FailureState error={loras.error} onRetry={() => void loras.refetch()} />
-      ) : (
-        <ListGroup>
-          {loras.data.loras.map((lora) => (
-            <ListRow
-              key={lora.path}
-              title={lora.filename}
-              description={lora.keywords.join(", ")}
-              trailing={
-                <Button
-                  variant="ghost"
-                  disabled={action.isPending}
-                  onClick={() => removeLora(lora.path, lora.filename)}
-                >
-                  {t("manage.delete")}
-                </Button>
-              }
-            />
-          ))}
-        </ListGroup>
-      )}
-      {loras.data?.loras.length === 0 && <Text variant="hint">{t("tools.noLoras")}</Text>}
     </div>
   );
 }

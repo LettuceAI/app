@@ -15,7 +15,7 @@ import { CommitNumber } from "./CommitNumber";
 import { capacities, defaultCapacity } from "./presets";
 import { MemoryPromptSheet } from "./MemoryPromptSheet";
 import { ScopedSettings } from "./ScopedSettings";
-import { useSettingsWrite } from "./use-settings-write";
+import { useSettingsWrite } from "../use-settings-write";
 
 const eidos = "lettuce_eidos_v5";
 const summarizerPrompt = "dynamic_memory_summarizer";

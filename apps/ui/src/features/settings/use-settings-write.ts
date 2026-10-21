@@ -8,10 +8,6 @@ import { queryKeys } from "@/api/query-keys";
 
 export type SettingsWrite = (build: (view: SettingsView) => SettingsPatch_Serialize | null) => Promise<SettingsView | null>;
 
-/**
- * Writes settings one patch at a time. Each patch is built from the latest view when its turn comes, so quick edits
- * never overwrite each other; a failure shows the typed error and a conflict refetches.
- */
 export function useSettingsWrite(api: ApiClient): SettingsWrite {
   const queryClient = useQueryClient();
   const { t } = useTranslation("common");

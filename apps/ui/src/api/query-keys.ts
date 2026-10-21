@@ -58,6 +58,7 @@ export const queryKeys = {
   },
   localModels: { all: ["local-models"] as const },
   loras: { all: ["loras"] as const },
+  localImages: { all: ["local-images"] as const },
   embedding: {
     all: ["embedding"] as const,
     status: () => [...queryKeys.embedding.all, "status"] as const,
@@ -97,14 +98,14 @@ export const appEventInvalidations: AppEventInvalidations = {
   character_changed: () => [queryKeys.characters.all, queryKeys.home.characters(), queryKeys.library.all, queryKeys.media.library(), queryKeys.memory.all],
   persona_changed: () => [queryKeys.personas.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
   lorebooks_changed: () => [queryKeys.lorebooks.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
-  models_changed: () => [queryKeys.models.all, queryKeys.providers.all, queryKeys.settings.all, queryKeys.localModels.all],
+  models_changed: () => [queryKeys.models.all, queryKeys.providers.all, queryKeys.settings.all, queryKeys.localModels.all, queryKeys.localImages.all],
   database_reloaded: () => [[]],
   settings_changed: (event) => event.section === "ui_state"
     ? [queryKeys.settings.all, queryKeys.app.status()]
-    : [queryKeys.settings.all, queryKeys.providers.all, queryKeys.audioProviders.all, queryKeys.models.all],
+    : [queryKeys.settings.all, queryKeys.providers.all, queryKeys.audioProviders.all, queryKeys.models.all, ...(event.section === "general" ? [queryKeys.localImages.all] : [])],
   content_filter_hit: () => [queryKeys.settings.filterLog()],
   prompts_changed: () => [queryKeys.prompts.all],
-  job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id), ...(event.job.state === "succeeded" ? [queryKeys.media.library(), queryKeys.library.counts()] : [])],
+  job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id), ...(event.job.state === "succeeded" ? [queryKeys.media.library(), queryKeys.library.counts()] : []), ...((event.job.kind === "artifact_install" || event.job.kind === "maintenance") && ["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state) ? [queryKeys.localImages.all, queryKeys.loras.all] : [])],
 };
 
 /** The keys to invalidate for `event`; an event type the table does not know invalidates nothing. */

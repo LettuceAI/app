@@ -72,6 +72,10 @@ const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/set
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
+  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras" } => ({
+    ...(search.imagePicker === "avatar" || search.imagePicker === "scene" || search.imagePicker === "writer" ? { imagePicker: search.imagePicker } : {}),
+    ...(search.localImageView === "engine" || search.localImageView === "models" || search.localImageView === "bundle" || search.localImageView === "loras" ? { localImageView: search.localImageView } : {}),
+  }),
   beforeLoad: ({ params }) => {
     if (!isSettingsSection(params.section) || !builtSettingsSections.has(params.section)) throw notFound();
   },
@@ -125,6 +129,8 @@ declare module "@tanstack/history" {
   interface HistoryState {
     panelPushed?: boolean;
     libraryOverlayPushed?: boolean;
+    imagePickerPushed?: boolean;
+    localImagesPushed?: boolean;
     libraryKind?: "character" | "persona" | "lorebook";
   }
 }
