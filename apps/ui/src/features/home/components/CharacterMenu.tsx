@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Download, EyeOff, Pencil, FileCode, Package, RectangleHorizontal, Trash2 } from "lucide-react";
+import { Download, EyeOff, History, Pencil, FileCode, Package, RectangleHorizontal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, confirm, icon, ListGroup, ListRowButton, relativeTime, Sheet, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
@@ -59,6 +59,16 @@ export function CharacterMenu({ api, home, onClose }: { api: ApiClient; home: Ho
         {shown && character && (
           <div className="space-y-4 pb-1">
             <ListGroup>
+              <ListRowButton
+                icon={<History size={icon.lg} />}
+                title={t("menu.history")}
+                description={t("menu.historyBody")}
+                disabled={busy}
+                onClick={() => {
+                  onClose();
+                  void navigate({ to: "/characters/$characterId/history", params: { characterId: character.id } });
+                }}
+              />
               <ListRowButton
                 icon={<Pencil size={icon.lg} />}
                 title={t("menu.edit")}

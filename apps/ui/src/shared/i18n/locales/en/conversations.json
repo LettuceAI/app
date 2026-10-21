@@ -1,4 +1,7 @@
 {
+  "historyPage": {
+    "archivedCharacter": "Restore this character in your library to start a new chat."
+  },
   "header": {
     "back": "Back",
     "memories": "Memories, {{count}}",

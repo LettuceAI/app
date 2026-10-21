@@ -36,6 +36,7 @@ async function renderHome(characters: CharacterSummary[], latest: { source_id: s
   await act(async () => {
     render(<App runtime={runtime} />);
   });
+  return runtime;
 }
 
 afterEach(() => {
@@ -43,6 +44,15 @@ afterEach(() => {
 });
 
 describe("home characters", () => {
+  it("opens a character's history from its menu even before its first chat", async () => {
+    const runtime = await renderHome([character("ch1", "Cassian")]);
+    fireEvent.contextMenu((await screen.findByText("Cassian")).closest("button")!);
+    fireEvent.click(await screen.findByRole("button", { name: /^Chat history/ }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/ch1/history"));
+    expect(await screen.findByRole("heading", { name: "Chat history" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("puts the most recently active character first: its newest chat, else its own last change", () => {
     const sorted = sortByActivity(
       [character("a", "Old chat", { updated_at: 50 }), character("b", "Edited", { updated_at: 40 }), character("c", "Recent chat", { updated_at: 1 })],

@@ -47,6 +47,8 @@
     "empty": "No chats yet"
   },
   "menu": {
+    "history": "Chat history",
+    "historyBody": "Earlier chats with this character",
     "edit": "Edit character",
     "cardStyle": "Card style",
     "cardRow": "Row, switch to banner",

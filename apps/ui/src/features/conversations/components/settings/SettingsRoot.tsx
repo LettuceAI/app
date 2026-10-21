@@ -32,7 +32,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
   const { api, queryClient, conversationId, view, settings } = ctx;
   const character = useQuery(characterQuery(api, ctx.characterId));
   const count = useQuery(messageCountQuery(api, conversationId));
-  const chats = useQuery(characterChatsQuery(api, conversationId, ctx.characterId));
+  const chats = useQuery(characterChatsQuery(api, ctx.characterId));
   const personas = useQuery({ ...personasQuery(api, conversationId), enabled: settings !== undefined });
   const lorebooks = useQuery({ ...lorebooksQuery(api, conversationId), enabled: settings !== undefined });
   const chat = useChatModels(api);

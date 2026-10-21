@@ -37,12 +37,12 @@ export function lorebooksQuery(api: ApiClient, conversationId: string) {
   });
 }
 
-export function characterChatsQuery(api: ApiClient, conversationId: string, characterId: string | null) {
+export function characterChatsQuery(api: ApiClient, characterId: string | null) {
   return queryOptions({
     queryKey: [...queryKeys.conversations.lists(), "character", characterId] as const,
     queryFn: (): Promise<ConversationSummary[]> =>
       allPages((cursor) => api.call("conversationsList", { kind: "direct", character_id: characterId, source_group_id: null, lifecycle: "all", cursor, limit: null })),
-    enabled: characterId !== null && conversationId.length > 0,
+    enabled: characterId !== null,
   });
 }
 

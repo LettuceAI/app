@@ -12,7 +12,7 @@ import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage, EditCharacterPage } from "@/features/characters";
 import { CreatePersonaPage } from "@/features/personas";
-import { ChatBranchesPage, ChatMemoryPage, ConversationPage } from "@/features/conversations";
+import { ChatBranchesPage, ChatHistoryPage, ChatMemoryPage, ConversationPage } from "@/features/conversations";
 import { LibraryPage, validateLibrarySearch } from "@/features/library";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
@@ -66,6 +66,7 @@ const libraryRoute = createRoute({
 });
 const newCharacterRoute = createRoute({ getParentRoute: () => rootRoute, path: "/characters/new", component: CreateCharacterPage });
 const editCharacterRoute = createRoute({ getParentRoute: () => rootRoute, path: "/characters/$characterId/edit", component: EditCharacterPage });
+const characterHistoryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/characters/$characterId/history", component: ChatHistoryPage });
 const newPersonaRoute = createRoute({ getParentRoute: () => rootRoute, path: "/personas/new", component: CreatePersonaPage });
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsIndexPage });
 const settingsSectionRoute = createRoute({
@@ -99,7 +100,7 @@ const chatBranchesRoute = createRoute({ getParentRoute: () => rootRoute, path: "
 const newModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/new", component: ModelEditorPage });
 const editModelRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings/models/$modelId", component: ModelEditorPage });
 
-const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, newCharacterRoute, editCharacterRoute, newPersonaRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
+const routeTree = rootRoute.addChildren([homeRoute, welcomeRoute, welcomeBackRoute, groupsRoute, discoverRoute, libraryRoute, newCharacterRoute, editCharacterRoute, characterHistoryRoute, newPersonaRoute, settingsRoute, settingsSectionRoute, newModelRoute, editModelRoute, chatRoute, chatSettingsRoute, chatMemoryRoute, chatBranchesRoute]);
 
 export interface AppRouterOptions {
   history?: RouterHistory;
