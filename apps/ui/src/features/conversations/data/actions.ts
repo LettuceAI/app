@@ -68,6 +68,22 @@ export async function rewindTo(services: ConversationServices, message: Timeline
   });
 }
 
+export async function branchToNewChat(services: ConversationServices, message: TimelineMessage, characterId: string): Promise<string> {
+  trimIfStuck(services);
+  const { api, queryClient } = services;
+  const copy = await api.call("conversationBranchDirectToCharacter", {
+    conversation_id: services.conversationId,
+    message_id: message.id,
+    character_id: characterId,
+    client_operation_id: crypto.randomUUID(),
+  });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
+  ]);
+  return copy.conversation_id;
+}
+
 function patchMessage(queryClient: QueryClient, conversationId: string, message: TimelineMessage, revision?: number): void {
   queryClient.setQueryData<InfiniteData<TimelinePage, string | null>>(queryKeys.conversations.messages(conversationId), (data) =>
     data && {

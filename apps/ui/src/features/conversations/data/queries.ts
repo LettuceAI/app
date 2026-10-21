@@ -49,6 +49,14 @@ export function metricsQuery(api: ApiClient, conversationId: string, messageId: 
   });
 }
 
+export function promptSnapshotQuery(api: ApiClient, conversationId: string, messageId: string) {
+  return queryOptions({
+    queryKey: [...queryKeys.conversations.detail(conversationId), "prompt-snapshot", messageId] as const,
+    queryFn: () => api.call("messagePromptSnapshot", { message_id: messageId }),
+    retry: false,
+  });
+}
+
 export function windowQuery(api: ApiClient, conversationId: string, anchorId: string | null) {
   return queryOptions({
     queryKey: [...queryKeys.conversations.messages(conversationId), "window", anchorId] as const,

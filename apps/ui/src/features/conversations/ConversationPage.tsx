@@ -18,7 +18,7 @@ import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
 import { Timeline } from "./components/Timeline";
 import {
-  deleteMessage, editMessage, pinMessage, rewindTo, selectCandidate, updateSettings, type ConversationServices,
+  branchToNewChat, deleteMessage, editMessage, pinMessage, rewindTo, selectCandidate, updateSettings, type ConversationServices,
 } from "./data/actions";
 import { characterParticipant, formatTime, textOf, userParticipant, type MediaItem } from "./data/messages";
 import { candidatesQuery, memoryQuery, personasQuery, settingsQuery } from "./data/queries";
@@ -264,6 +264,15 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     });
   };
 
+  const branchHere = (message: TimelineMessage, characterId: string) => {
+    setMenuId(null);
+    void run(async () => {
+      const id = await branchToNewChat(services, message, characterId);
+      toast.success(t("toast.branched"));
+      void navigate({ to: "/chat/$conversationId", params: { conversationId: id }, search: {} });
+    });
+  };
+
   const remove = async (message: TimelineMessage) => {
     setMenuId(null);
     const sure = await confirm({
@@ -295,6 +304,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     }),
     [t],
   );
+  const directCharacterId = view?.source.type === "direct" ? view.source.character_id : null;
   const menuAfter = shownMenu && !timeline.windowed ? messages.length - 1 - messages.findIndex((message) => message.id === shownMenu.id) : 0;
   const memoryBusy = memory.data?.status.latest_cycle_status === "queued" || memory.data?.status.latest_cycle_status === "processing";
 
@@ -400,6 +410,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             }}
             onPin={() => togglePin(shownMenu)}
             onRewind={() => void rewind(shownMenu, menuAfter)}
+            {...(directCharacterId ? { onBranch: () => branchHere(shownMenu, directCharacterId) } : {})}
             onDelete={() => void remove(shownMenu)}
           />
         )}
