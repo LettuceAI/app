@@ -419,6 +419,7 @@ async fn a_local_turn_completes_when_the_ui_discards_every_event() {
     let accepted = crate::api::conversation_send(
         &harness.context,
         lettuce_contracts::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: chat,
             text: "Hi".into(),
             media: Vec::new(),

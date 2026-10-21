@@ -125,6 +125,8 @@ Every other conversation mutation runs through `run_mutation` in `conversation_m
 5. Allocate contiguous per-conversation outbox sequences and append the events.
 6. Commit.
 
+A continuation may start from a fresh branch's inherited fork message. The turn input triggers check the effective head, and its message foreign key stays scoped to the conversation so the parent-owned fork point is valid.
+
 The generation-begin family adds its own rule: a conversation holds at most one live turn, so a second begin while one is unsettled conflicts. Turn idempotency keys are prefixed with the operation kind, since send, continue, regenerate and retry share one unique index. `append_event` is shaped differently: it carries no conversation revision, so it checks the lifecycle, appends the checkpoint and leaves the revision and outbox alone. `latest_checkpoint_sequence` returns the highest stored sequence for an exact turn and attempt (none before the first append), and the insert trigger remains the authority on contiguity. Every turn status change is checked against the domain transition table before SQL runs, and again by the trigger.
 
 Some mutations carry more:

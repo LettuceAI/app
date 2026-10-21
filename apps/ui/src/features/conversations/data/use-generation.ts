@@ -169,11 +169,15 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
         }
         return true;
       } catch (error) {
+        const failure = ApiFailure.fromRejection(error);
         current.settled = true;
         finish();
         if (restore) store.fail(restore);
         else store.clear();
-        hooksRef.current.onError(ApiFailure.fromRejection(error));
+        if (failure.code === "conflict") {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+        }
+        hooksRef.current.onError(failure);
         return false;
       }
     },
@@ -185,12 +189,12 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
       run(null, text, null, (onEvent, signal) =>
         api.stream(
           "conversationSend",
-          [{ conversation_id: conversationId, text, media, swap_places: swapPlaces, client_operation_id: crypto.randomUUID() }],
+          [{ conversation_id: conversationId, expected_revision: currentRevision(queryClient, conversationId), text, media, swap_places: swapPlaces, client_operation_id: crypto.randomUUID() }],
           onEvent,
           { signal },
         ),
       ),
-    [api, conversationId, run],
+    [api, conversationId, queryClient, run],
   );
 
   const continueReply = useCallback(

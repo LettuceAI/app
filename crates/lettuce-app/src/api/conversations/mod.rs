@@ -553,6 +553,9 @@ where
         + 'static,
 {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    let client_revision = request.expected_revision
+        .map(self::messages::expected_revision)
+        .transpose()?;
     let media = self::send_media::parse_media(&request.media)?;
     if request.text.trim().is_empty() && media.is_empty() {
         return Err(invalid_field("text", "the message text is blank"));
@@ -611,10 +614,15 @@ where
         .blocking(move |context| {
             let database = context.backend().database();
             let now = context.now();
-            if !replay {
-                crate::conversation::ensure_group_members(database, conversation_id, now)
-                    .map_err(self::settings::edit_error)?;
-            }
+            let expected = if !replay && let Some(client) = client_revision {
+                Some(self::turns::begin_revision(context, conversation_id, client)?)
+            } else {
+                if !replay {
+                    crate::conversation::ensure_group_members(database, conversation_id, now)
+                        .map_err(self::settings::edit_error)?;
+                }
+                None
+            };
             let conversation = ConversationReader::get(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?
                 .conversation;
@@ -664,7 +672,7 @@ where
             let command = SendConversation {
                 conversation_id,
                 branch_id: conversation.active_branch_id,
-                expected_revision: conversation.revision,
+                expected_revision: expected.unwrap_or(conversation.revision),
                 operation,
                 message: MessageDraft {
                     role: MessageRole::User,

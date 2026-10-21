@@ -196,6 +196,29 @@ describe("conversation screen", () => {
     expect(screen.getAllByText("Hi")).toHaveLength(1);
   });
 
+  it("refreshes a changed branch and keeps the draft when a stale send conflicts", async () => {
+    let changed = false;
+    const proceed = vi.fn<NonNullable<MockStreamHandlers["conversationSend"]>>(() => {
+      changed = true;
+      return { status: "error", error: { code: "conflict", message: "The branch changed", details: null } };
+    });
+    await open({
+      calls: {
+        conversationOpen: () => ({ status: "ok", data: changed
+          ? view([message("a2", "assistant", "The newly selected branch")], { revision: 5, branch: { branch_id: "new-branch", head_message_id: "a2" } })
+          : view([message("a1", "assistant", "The original branch")]),
+        }),
+      },
+      streams: { conversationSend: proceed },
+    });
+    await typeAndSend("Keep my draft");
+    await waitFor(() => expect(proceed).toHaveBeenCalled());
+    expect(proceed.mock.calls[0]?.[0]).toMatchObject([{ conversation_id: "c1", expected_revision: 4 }]);
+    expect(await screen.findByText("The newly selected branch")).toBeTruthy();
+    await waitFor(() => expect((screen.getByPlaceholderText("Message Cassian…") as HTMLTextAreaElement).value).toBe("Keep my draft"));
+    expect(proceed).toHaveBeenCalledTimes(1);
+  });
+
   it("cancels a turn that was stopped before it started once its id is known", async () => {
     let release: () => void = () => {};
     const cancel = vi.fn((_args: unknown) => ({ status: "ok" as const, data: null }));

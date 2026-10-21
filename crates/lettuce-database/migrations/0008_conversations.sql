@@ -309,8 +309,6 @@ CREATE TABLE conversation_turns (
     FOREIGN KEY (conversation_id, user_message_id, branch_id)
         REFERENCES conversation_messages(conversation_id, id, branch_id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, head_message_id) REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
-    FOREIGN KEY (conversation_id, head_message_id, branch_id)
-        REFERENCES conversation_messages(conversation_id, id, branch_id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, candidate_message_id) REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, candidate_message_id, candidate_id, branch_id)
         REFERENCES conversation_message_candidates(conversation_id, message_id, id, branch_id)
@@ -343,7 +341,7 @@ WHEN (NEW.input_kind = 'user_message' AND NOT EXISTS (
           SELECT 1 FROM conversation_branches
           WHERE conversation_id = NEW.conversation_id
             AND id = NEW.branch_id
-            AND head_message_id = NEW.head_message_id
+            AND COALESCE(head_message_id, fork_message_id) = NEW.head_message_id
       ))
 BEGIN SELECT RAISE(ABORT, 'turn input does not match branch semantics'); END;
 CREATE TRIGGER conversation_turn_input_update
@@ -360,7 +358,7 @@ WHEN (NEW.input_kind = 'user_message' AND NOT EXISTS (
           SELECT 1 FROM conversation_branches
           WHERE conversation_id = NEW.conversation_id
             AND id = NEW.branch_id
-            AND head_message_id = NEW.head_message_id
+            AND COALESCE(head_message_id, fork_message_id) = NEW.head_message_id
       ))
 BEGIN SELECT RAISE(ABORT, 'turn input does not match branch semantics'); END;
 CREATE TRIGGER conversation_turn_terminal_insert

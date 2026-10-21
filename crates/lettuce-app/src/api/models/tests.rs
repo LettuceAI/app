@@ -201,6 +201,7 @@ async fn send(harness: &Harness, conversation_id: &str, key: &str) -> Result<(),
     conversation_send(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.into(),
             text: "Hello there".into(),
             media: Vec::new(),
@@ -430,6 +431,7 @@ async fn an_accepted_send_replays_after_its_model_is_removed() {
     let conflict = conversation_send(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.clone(),
             text: "Something else".into(),
             media: Vec::new(),

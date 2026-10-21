@@ -142,7 +142,7 @@ pub(super) async fn preflight(
 /// at the revision the caller last saw. Adding the group's new members
 /// changes the revision but nothing the caller could have seen, so the
 /// request continues from the revision after it.
-fn begin_revision(
+pub(super) fn begin_revision(
     context: &ApiContext,
     conversation_id: ConversationId,
     client: Revision,

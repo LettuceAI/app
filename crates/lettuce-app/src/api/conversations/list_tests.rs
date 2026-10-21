@@ -96,6 +96,7 @@ async fn send(harness: &Harness, conversation_id: &str, key: &str, text: &str) {
     conversation_send(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.into(),
             text: text.into(),
             media: Vec::new(),

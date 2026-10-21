@@ -122,6 +122,7 @@ async fn send_swapped(
     conversation_send(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.into(),
             text: text.into(),
             media: media.iter().map(ToString::to_string).collect(),
@@ -207,6 +208,7 @@ async fn bad_attachment_ids_are_refused_and_nothing_is_written() {
     let malformed = conversation_send(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.clone(),
             text: "Hi".into(),
             media: vec!["nope".into()],

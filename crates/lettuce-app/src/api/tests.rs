@@ -578,6 +578,7 @@ pub(super) async fn send(
     conversation_send(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.into(),
             text: text.into(),
             media: Vec::new(),
@@ -1334,6 +1335,7 @@ async fn a_job_created_but_not_yet_attached_is_skipped_not_failed() {
     let accepted = super::conversations::send_with(
         &harness.context,
         dto::ConversationSendRequest {
+            expected_revision: None,
             conversation_id: conversation_id.clone(),
             text: "Hi".into(),
             media: Vec::new(),
@@ -1386,6 +1388,7 @@ async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
     let conversation_id = launch(&harness, "launch-unschedulable").await;
     let stream = Arc::new(RecordingStream::default());
     let request = dto::ConversationSendRequest {
+        expected_revision: None,
         conversation_id: conversation_id.clone(),
         text: "Hi".into(),
         media: Vec::new(),

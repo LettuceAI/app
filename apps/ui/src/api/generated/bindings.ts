@@ -1793,6 +1793,8 @@ export type ConversationSendRequest = ConversationSendRequest_Serialize | Conver
 
 export type ConversationSendRequest_Deserialize = {
 	conversation_id: string,
+	/**  The revision of the visible conversation. Older callers may omit it. */
+	expected_revision?: number | null,
 	text: string,
 	/**
 	 *  Attachment asset ids from `assets_ingest`, in the order attached. The
@@ -1810,6 +1812,8 @@ export type ConversationSendRequest_Deserialize = {
 
 export type ConversationSendRequest_Serialize = {
 	conversation_id: string,
+	/**  The revision of the visible conversation. Older callers may omit it. */
+	expected_revision: number | null,
 	text: string,
 	/**
 	 *  Attachment asset ids from `assets_ingest`, in the order attached. The

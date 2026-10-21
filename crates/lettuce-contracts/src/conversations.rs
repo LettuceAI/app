@@ -640,6 +640,10 @@ pub struct MessagePage {
 #[serde(deny_unknown_fields)]
 pub struct ConversationSendRequest {
     pub conversation_id: String,
+    /// The revision of the visible conversation. Older callers may omit it.
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub expected_revision: Option<u64>,
     pub text: String,
     /// Attachment asset ids from `assets_ingest`, in the order attached. The
     /// text may be blank only when there are attachments.

@@ -795,3 +795,7 @@ Library listing keeps UI payloads bounded: characters_list optionally matches de
 Image references used by Library carry a separate `preview_url`. `read_asset_preview` checks the ready source, decodes with a 128 MiB allocation limit, applies orientation and returns a static WebP no larger than 512 pixels on either side. Two decodes can run at once. A context-local, content-hash-keyed LRU keeps at most 256 entries and 32 MiB of encoded previews; database rebind creates a fresh cache. Originals, exports and stored media records are unchanged.
 
 media_library_list accepts include_references (omitted means true). Library grids request false and get catalog metadata without scanning other records for usage. media_references exposes the existing authoritative usage reader for one asset; removal continues to check usage in its existing transaction.
+
+Conversation sends accept the visible conversation revision and refuse a stale revision before appending a message or materializing group members. Exact operation replays still return their original result. Older callers may omit this field; the UI always sends it and refreshes the conversation after a conflict while keeping the draft.
+
+Continue uses an inherited fork point until the selected branch has its own head; regenerating a parent-owned reply from a child remains unsupported.

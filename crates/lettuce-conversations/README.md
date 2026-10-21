@@ -112,7 +112,7 @@ A repository returns `MutationCommit<T>`: the value, the `OperationRecord` and t
 
 Some command details:
 
-- `ForkBranch` forks at a message or, without one, at the source head; forking a headless branch is a conflict.
+- `ForkBranch` forks at a message or, without one, at the source head; forking a headless branch is a conflict. A continuation on a fresh fork uses its inherited fork message as the head.
 - `TombstoneMessage` takes a `DescendantPolicy`: `Preserve`, `Tombstone` or `Fork`. Tombstoning descendants leaves the branch head where it is, because a tombstone is a flag and the timeline still renders the entries. The policy is branch-local; cross-branch descendants belong to `Fork` or branch archival.
 - `ArchiveConversation` only hides a conversation from default lists; an in-flight generation keeps running and the conversation stays usable.
 - `append_user_message` adds a user message without starting a reply. A group director uses it and then continues with a forced speaker.

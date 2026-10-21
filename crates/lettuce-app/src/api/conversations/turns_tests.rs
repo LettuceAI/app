@@ -102,6 +102,198 @@ fn last_event(stream: &RecordingStream) -> GenerationEvent {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn send_rejects_a_revision_from_before_a_branch_switch_without_writing() {
+    let harness = harness(Reply::Text("Hello."));
+    let (chat, reply) = replied_chat(&harness, "stale-send-branch").await;
+    let visible = open(&harness, &chat).await;
+    let fork = conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: chat.clone(),
+            message_id: reply,
+            expected_revision: visible.revision,
+            client_operation_id: "stale-send-fork".into(),
+        },
+    )
+    .await
+    .expect("branch changes before the visible conversation refreshes");
+    let request = dto::ConversationSendRequest {
+        conversation_id: chat.clone(),
+        expected_revision: Some(visible.revision),
+        text: "For the branch I can see".into(),
+        media: Vec::new(),
+        swap_places: false,
+        client_operation_id: "stale-send-request".into(),
+    };
+    let error = conversation_send(
+        &harness.context,
+        request.clone(),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect_err("a stale screen must not send to the newly selected branch");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+    let unchanged = open(&harness, &chat).await;
+    assert_eq!(unchanged.revision, fork.revision);
+    assert_eq!(unchanged.messages.items, visible.messages.items);
+    assert!(unchanged.pending_turn_id.is_none());
+    let current = dto::ConversationSendRequest {
+        expected_revision: Some(unchanged.revision),
+        ..request
+    };
+    let sent = conversation_send(
+        &harness.context,
+        current.clone(),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("the refreshed view can send");
+    assert_eq!(
+        conversation_send(
+            &harness.context,
+            current,
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("an exact replay may carry an older revision"),
+        sent
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn turn_operations_after_a_model_switch_use_the_selected_fork_or_root() {
+    use lettuce_models::{ModelProfileRepository, ProviderAccountRepository, ProviderProtocol};
+
+    let harness = harness(Reply::Text("Hello."));
+    let (chat, original_reply) = replied_chat(&harness, "fork-model").await;
+    let root = open(&harness, &chat).await;
+    let fork = conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: chat.clone(),
+            message_id: original_reply.clone(),
+            expected_revision: root.revision,
+            client_operation_id: "fork-model-create".into(),
+        },
+    )
+    .await
+    .expect("fork");
+    let model = crate::launch::tests::seed_model(
+        harness.context.backend().database(),
+        ProviderProtocol::OpenAiCompatible,
+        "openrouter",
+    );
+    let database = harness.context.backend().database();
+    let profile = ModelProfileRepository::get(database, model)
+        .expect("model").expect("model exists");
+    let mut account = ProviderAccountRepository::get(database, profile.provider_account_id)
+        .expect("account").expect("account exists");
+    let revision = account.revision;
+    account.api_key_ref = Some(lettuce_settings::SecretRef::new());
+    ProviderAccountRepository::upsert(database, account, Some(revision))
+        .expect("credential reference for the test provider");
+    let settings = conversation_settings_get(
+        &harness.context,
+        dto::ConversationSettingsGetRequest { conversation_id: chat.clone() },
+    )
+    .await
+    .expect("settings");
+    conversation_settings_update(
+        &harness.context,
+        dto::ConversationSettingsUpdateRequest {
+            conversation_id: chat.clone(),
+            expected_settings_revision: settings.settings_revision,
+            patch: dto::ConversationSettingsPatch {
+                model: Some(dto::IdChange::Set { id: model.to_string() }),
+                ..dto::ConversationSettingsPatch::default()
+            },
+        },
+    )
+    .await
+    .expect("switch provider model");
+
+    let inherited = conversation_regenerate(
+        &harness.context,
+        regenerate_request(&harness, &chat, &original_reply, "fork-model-inherited"),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect_err("a fresh fork must not regenerate its parent's message");
+    assert_eq!(inherited.code, ApiErrorCode::Unsupported);
+
+    for (branch, key) in [(&fork.branch_id, "fork"), (&root.branch.branch_id, "root")] {
+        if branch == &root.branch.branch_id {
+            conversation_branch_select(
+                &harness.context,
+                dto::ConversationBranchMutationRequest {
+                    branch_id: branch.clone(),
+                    expected_revision: conversation(&harness, &chat).revision.get(),
+                    client_operation_id: "fork-model-return-root".into(),
+                },
+            )
+            .await
+            .expect("return to the original branch");
+        }
+        let before = open(&harness, &chat).await;
+        assert_eq!(&before.branch.branch_id, branch);
+        let continued_turn = conversation_continue(
+            &harness.context,
+            continue_request(&harness, &chat, &format!("{key}-model-continue")),
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("continue on the visible branch");
+        run_generation(&harness).await;
+        let turn = ConversationReader::get_turn(
+            harness.context.backend().database(),
+            continued_turn.turn_id.parse().expect("turn id"),
+        )
+        .expect("continued turn");
+        assert_eq!(turn.status, GenerationTurnStatus::Succeeded, "{turn:?}");
+        let continued = open(&harness, &chat).await;
+        assert_eq!(&continued.branch.branch_id, branch);
+        assert_eq!(continued.messages.items.len(), before.messages.items.len() + 1);
+        let reply = continued.messages.items.last().expect("continued reply");
+        assert_eq!(reply.role, dto::MessageRole::Assistant);
+        conversation_regenerate(
+            &harness.context,
+            regenerate_request(&harness, &chat, &reply.id, &format!("{key}-model-regenerate")),
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("regenerate this branch's own reply");
+        run_generation(&harness).await;
+        let regenerated = open(&harness, &chat).await;
+        assert_eq!(regenerated.messages.items.len(), continued.messages.items.len());
+        assert_eq!(regenerated.messages.items.last().expect("reply").candidate_count, 2);
+        conversation_send(
+            &harness.context,
+            dto::ConversationSendRequest {
+                conversation_id: chat.clone(),
+                expected_revision: Some(regenerated.revision),
+                text: "Another message".into(),
+                media: Vec::new(),
+                swap_places: false,
+                client_operation_id: format!("fork-model-{key}-followup-send"),
+            },
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("send on the visible branch");
+        run_generation(&harness).await;
+        let sent = open(&harness, &chat).await;
+        assert_eq!(&sent.branch.branch_id, branch);
+        assert_eq!(sent.messages.items.len(), before.messages.items.len() + 3);
+        if key == "root" {
+            assert_eq!(before.messages.items, root.messages.items, "fork writes leave the original timeline intact");
+        }
+    }
+    let requests = harness.provider.requests.lock().expect("inference requests");
+    assert_eq!(requests.len(), 7);
+    assert!(requests[1..].iter().all(|request| request.profile.chat_profile.model_profile_id == model));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn regenerate_adds_a_variant_replays_its_key_and_conflicts_on_another_request_or_a_stale_revision()
  {
     let harness = harness(Reply::Text("Hello."));

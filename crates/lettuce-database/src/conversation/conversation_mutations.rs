@@ -13854,6 +13854,66 @@ mod tests {
     }
 
     #[test]
+    fn continue_on_a_fresh_fork_uses_the_inherited_head() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "continue-fork");
+        let root_branch = fixture.branch_id;
+        let forked = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: root_branch,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("continue-fork", "cd"),
+                },
+                TimestampMillis::new(200),
+            )
+            .expect("fork at an earlier reply");
+        let fork = forked.value.branch.id;
+        fixture.revision = conversation_revision(&fixture);
+        let command = ContinueConversation {
+            conversation_id: fixture.conversation_id,
+            branch_id: fork,
+            expected_revision: fixture.revision,
+            forced_speaker: None,
+            swap_roles: false,
+            operation: token("continue-inherited-head", "cd"),
+        };
+        let continued = fixture
+            .database
+            .begin_continue(&command, TimestampMillis::new(201))
+            .expect("continue from the inherited reply");
+        assert_eq!(continued.value.turn.branch_id, fork);
+        assert_eq!(
+            continued.value.turn.input,
+            GenerationInput::ExistingHead {
+                head_message_id: messages[1]
+            }
+        );
+        assert!(matches!(
+            continued.value.turn.target,
+            GenerationTarget::NewAssistant {
+                parent_message_id: Some(parent), ..
+            } if parent == messages[1]
+        ));
+        let replay = fixture
+            .database
+            .begin_continue(&command, TimestampMillis::new(202))
+            .expect("replay the same continue");
+        assert_eq!(replay.value.turn.id, continued.value.turn.id);
+        settle_failed(&fixture, &continued.value.turn, 203);
+        let original = ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+            .expect("conversation");
+        assert_eq!(
+            original.branches.iter().find(|branch| branch.id == root_branch)
+                .expect("root").head_message_id,
+            Some(messages[3])
+        );
+    }
+
+    #[test]
     fn forking_selects_the_new_branch_and_selecting_returns() {
         let mut fixture = direct_fixture();
         let messages = conversation_with_two_exchanges(&mut fixture, "fork");
