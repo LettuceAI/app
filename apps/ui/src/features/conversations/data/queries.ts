@@ -1,6 +1,6 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { ConversationView, PersonaPage, PersonaSummary, MessageCandidatePage, MessageCandidateView, MessagePage, MessageWindow } from "@/api/generated/bindings";
+import type { ConversationPage, ConversationSummary, ConversationView, PersonaPage, PersonaSummary, MessageCandidatePage, MessageCandidateView, MessagePage, MessageWindow } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 
 export interface TimelinePage {
@@ -54,6 +54,29 @@ export function promptSnapshotQuery(api: ApiClient, conversationId: string, mess
     queryKey: [...queryKeys.conversations.detail(conversationId), "prompt-snapshot", messageId] as const,
     queryFn: () => api.call("messagePromptSnapshot", { message_id: messageId }),
     retry: false,
+  });
+}
+
+export function branchesQuery(api: ApiClient, conversationId: string) {
+  return queryOptions({
+    queryKey: [...queryKeys.conversations.detail(conversationId), "branches"] as const,
+    queryFn: () => api.call("conversationBranches", { conversation_id: conversationId }),
+  });
+}
+
+export function allChatsQuery(api: ApiClient) {
+  return queryOptions({
+    queryKey: [...queryKeys.conversations.lists(), "all"] as const,
+    queryFn: async (): Promise<ConversationSummary[]> => {
+      const all: ConversationSummary[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: ConversationPage = await api.call("conversationsList", { kind: null, character_id: null, source_group_id: null, lifecycle: null, cursor, limit: null });
+        all.push(...page.items);
+        cursor = page.next_cursor;
+      } while (cursor !== null);
+      return all;
+    },
   });
 }
 

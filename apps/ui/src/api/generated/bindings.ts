@@ -2018,6 +2018,10 @@ export type ConversationSummary_Deserialize = {
 	missing_models: RequiredModel[],
 	/**  Why the chat's dynamic memory is stopped, when it is. */
 	memory_blocked: MemoryBlockedReason | null,
+	/**  The chat this one was branched from, when it was. */
+	origin_conversation_id: string | null,
+	/**  The message of the origin chat the branch starts after. */
+	origin_message_id: string | null,
 };
 
 export type ConversationSummary_Serialize = {
@@ -2048,6 +2052,10 @@ export type ConversationSummary_Serialize = {
 	missing_models: RequiredModel[],
 	/**  Why the chat's dynamic memory is stopped, when it is. */
 	memory_blocked: MemoryBlockedReason | null,
+	/**  The chat this one was branched from, when it was. */
+	origin_conversation_id: string | null,
+	/**  The message of the origin chat the branch starts after. */
+	origin_message_id: string | null,
 };
 
 export type ConversationView = ConversationView_Serialize | ConversationView_Deserialize;

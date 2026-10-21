@@ -93,7 +93,7 @@ const character = {
 function summary(id: string, title: string, patch: Partial<ConversationSummary> = {}): ConversationSummary {
   return {
     id, kind: "direct", title, avatars: [], background: null, revision: 3, last_message_preview: `About ${title}`, updated_at: 1_700_000_000_000, archived: false,
-    source: { type: "direct", character_id: "ch1" }, message_count: 5, chat_mode: null, missing_models: [], memory_blocked: null, ...patch,
+    source: { type: "direct", character_id: "ch1" }, message_count: 5, chat_mode: null, missing_models: [], memory_blocked: null, origin_conversation_id: null, origin_message_id: null, ...patch,
   };
 }
 
@@ -166,7 +166,7 @@ describe("chat settings panel", () => {
     expect(await screen.findByRole("button", { name: "Edit inline author's note" })).toBeTruthy();
   });
 
-  it("navigates branches to its own placeholder page and omits scene and prompt controls", async () => {
+  it("navigates branches to its own page and omits scene and prompt controls", async () => {
     const runtime = await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
     expect(screen.queryByRole("button", { name: /^Scene/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Prompt/ })).toBeNull();

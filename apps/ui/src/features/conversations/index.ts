@@ -1,5 +1,5 @@
 export { ConversationPage } from "./ConversationPage";
-export { ChatBranchesPage } from "./ChatSubPage";
+export { BranchesPage as ChatBranchesPage } from "./branches/BranchesPage";
 export { MemoryPage as ChatMemoryPage } from "./memory/MemoryPage";
 export { ChatHistoryPage } from "./history/ChatHistoryPage";
 export { useChatNavigation } from "./use-chat-navigation";

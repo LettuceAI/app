@@ -113,6 +113,10 @@ pub struct ConversationSummary {
     pub missing_models: Vec<crate::RequiredModel>,
     /// Why the chat's dynamic memory is stopped, when it is.
     pub memory_blocked: Option<MemoryBlockedReason>,
+    /// The chat this one was branched from, when it was.
+    pub origin_conversation_id: Option<String>,
+    /// The message of the origin chat the branch starts after.
+    pub origin_message_id: Option<String>,
 }
 
 /// Conversations, most recently updated first.

@@ -28,7 +28,7 @@ const historyPageSize = 10;
 const historyFilters: readonly LifecycleFilter[] = ["all", "active", "archived"];
 const historySorts = ["recent", "oldest"] as const;
 
-function RenameRow({ initial, onSave, onCancel, busy }: { initial: string; onSave: (title: string) => void; onCancel: () => void; busy: boolean }) {
+export function RenameRow({ initial, onSave, onCancel, busy, label, saveLabel }: { initial: string; onSave: (title: string) => void; onCancel: () => void; busy: boolean; label?: string; saveLabel?: string }) {
   const { t } = useTranslation("conversations");
   const [text, setText] = useState(initial);
   return (
@@ -41,9 +41,9 @@ function RenameRow({ initial, onSave, onCancel, busy }: { initial: string; onSav
           if (event.key === "Enter" && !busy && text.trim()) onSave(text);
           if (event.key === "Escape") onCancel();
         }}
-        aria-label={t("settings.rename.field")}
+        aria-label={label ?? t("settings.rename.field")}
       />
-      <Button variant="primary" size="sm" disabled={busy || !text.trim()} onClick={() => onSave(text)}>{t("settings.rename.save")}</Button>
+      <Button variant="primary" size="sm" disabled={busy || !text.trim()} onClick={() => onSave(text)}>{saveLabel ?? t("settings.rename.save")}</Button>
       <Button variant="ghost" size="sm" onClick={onCancel}>{t("confirm.cancel")}</Button>
     </div>
   );

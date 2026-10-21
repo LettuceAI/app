@@ -32,6 +32,28 @@ export async function duplicateChat(api: ApiClient, queryClient: QueryClient, co
   return copy.conversation_id;
 }
 
+async function refreshBranches(queryClient: QueryClient, conversationId: string): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
+  ]);
+}
+
+export async function selectBranch(api: ApiClient, queryClient: QueryClient, conversationId: string, branchId: string, revision: number): Promise<void> {
+  await api.call("conversationBranchSelect", { branch_id: branchId, expected_revision: revision, client_operation_id: crypto.randomUUID() });
+  await refreshBranches(queryClient, conversationId);
+}
+
+export async function renameBranch(api: ApiClient, queryClient: QueryClient, conversationId: string, branchId: string, revision: number, label: string): Promise<void> {
+  await api.call("conversationBranchRename", { branch_id: branchId, label: label.trim(), expected_revision: revision, client_operation_id: crypto.randomUUID() });
+  await refreshBranches(queryClient, conversationId);
+}
+
+export async function deleteBranch(api: ApiClient, queryClient: QueryClient, conversationId: string, branchId: string, revision: number): Promise<void> {
+  await api.call("conversationBranchDelete", { branch_id: branchId, expected_revision: revision, client_operation_id: crypto.randomUUID() });
+  await refreshBranches(queryClient, conversationId);
+}
+
 export async function exportChat(api: ApiClient, conversationId: string, title: string): Promise<string | null> {
   const picked = await api.call("filesPickSave", { suggested_name: `${title.replace(/[/\\]/g, "_") || "chat"}.jsonl`, kind: "chat_log" });
   if (!picked.target) return null;

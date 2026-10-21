@@ -140,6 +140,8 @@ fn conversation_summary(
             .map(|group| mapping::group_chat_mode(group.chat_mode)),
         missing_models: missing.of(context, conversation)?,
         memory_blocked: self::messages::memory_blocked(context, conversation.id)?,
+        origin_conversation_id: conversation.origin_conversation_id.map(|id| id.to_string()),
+        origin_message_id: conversation.origin_message_id.map(|id| id.to_string()),
     })
 }
 

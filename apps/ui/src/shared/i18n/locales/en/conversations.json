@@ -188,9 +188,6 @@
     "composerFile": "File",
     "composerAttachmentRemove": "Remove {{name}}"
   },
-  "placeholder": {
-    "branchesTitle": "Branches"
-  },
   "streaming": {
     "imagePrompt": "Writing the image prompt"
   },
@@ -694,5 +691,25 @@
       "loadMore": "Show more",
       "you": "You"
     }
+  },
+  "branches": {
+    "title": "Branches",
+    "meta_one": "{{count}} message · {{date}}",
+    "meta_other": "{{count}} messages · {{date}}",
+    "current": "Current",
+    "actions": "Actions for {{title}}",
+    "rename": "Rename",
+    "renameField": "Branch name",
+    "delete": "Delete",
+    "deleteRoot": "The original branch can't be deleted",
+    "deleteActive": "Switch to another branch first",
+    "deleteTitle": "Delete this branch?",
+    "deleteBody": "{{name}} and its messages are removed. The other branches stay.",
+    "deleted": "Branch deleted",
+    "untitled": "Untitled branch",
+    "thisChat": "This chat",
+    "renameSave": "Save name",
+    "original": "Original",
+    "untitledChat": "Untitled chat"
   }
 }

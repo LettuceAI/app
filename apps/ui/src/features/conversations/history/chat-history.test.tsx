@@ -18,7 +18,7 @@ function chat(id: string, patch: Partial<ConversationSummary> = {}): Conversatio
   return {
     id, title: `Story ${id}`, kind: "direct", revision: 1, updated_at: 1_700_000_000_000,
     archived: false, avatars: [], background: null, last_message_preview: "At the harbour", message_count: 5,
-    source: { type: "direct", character_id: "ch1" }, chat_mode: null, missing_models: [], memory_blocked: null, ...patch,
+    source: { type: "direct", character_id: "ch1" }, chat_mode: null, missing_models: [], memory_blocked: null, origin_conversation_id: null, origin_message_id: null, ...patch,
   };
 }
 
