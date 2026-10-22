@@ -30,7 +30,7 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "img-src": "'self' lettuce-asset: http://lettuce-asset.localhost blob: data:",
+        "img-src": "'self' lettuce-asset: http://lettuce-asset.localhost blob: data: https://image.civitai.com",
         "media-src": "'self' lettuce-asset: http://lettuce-asset.localhost blob: data:",
         "style-src": "'self' 'unsafe-inline'",
         "script-src": "'self'",

@@ -59,6 +59,12 @@ export const queryKeys = {
   localModels: { all: ["local-models"] as const },
   loras: { all: ["loras"] as const },
   localImages: { all: ["local-images"] as const },
+  civitai: {
+    all: ["civitai"] as const,
+    auth: () => ["civitai", "auth"] as const,
+    search: (query: string, sort: string, period: string, base: string) => ["civitai", "search", query, sort, period, base] as const,
+    model: (modelId: number) => ["civitai", "model", modelId] as const,
+  },
   backups: { all: ["backups"] as const, list: () => ["backups", "list"] as const },
   embedding: {
     all: ["embedding"] as const,

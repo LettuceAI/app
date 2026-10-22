@@ -1,9 +1,10 @@
-import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { fileSize, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
-import type { JobPage, JobSubjectDetail, JobView, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
+import type { CivitaiAuthStatus, JobPage, JobSubjectDetail, JobView, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { useSettingsApi } from "../data";
 
 export type ImageInstallDetail = Extract<JobSubjectDetail, { type: "sd_runtime_install" | "sd_upscaler_install" | "sd_model_install" }>;
 
@@ -49,7 +50,7 @@ export function useCleanupWarning() {
 export function useCopyText() {
   const { t } = useTranslation("settings");
   return (value: string) => {
-    void navigator.clipboard.writeText(value).catch(() => toast.error(t("image.local.copyFailed")));
+    void navigator.clipboard.writeText(value).then(() => toast.success(t("image.local.copied")), () => toast.error(t("image.local.copyFailed")));
   };
 }
 
@@ -73,3 +74,31 @@ export async function activeImageDownloads(api: ApiClient): Promise<JobView[]> {
   } while (cursor);
   return jobs;
 }
+
+const civitaiImageHost = "image.civitai.com";
+const civitaiSizedSegment = /\/(?:original=true|width=\d+)[^/]*\//;
+export const civitaiWidths = { card: 450, hero: 1024 } as const;
+export const loraDownloadKey = (versionId: number, fileId: number) => `${versionId}/${fileId}`;
+export const civitaiModelUrl = (id: number) => `https://civitai.com/models/${id}`;
+
+export function civitaiImage(url: string, width: number) {
+  if (width <= 0) return url;
+  try {
+    if (new URL(url).hostname !== civitaiImageHost) return url;
+  } catch {
+    return url;
+  }
+  return url.replace(civitaiSizedSegment, `/anim=false,width=${width}/`);
+}
+
+export function usePureMode() {
+  const api = useSettingsApi();
+  return useQuery({ queryKey: queryKeys.settings.detail(), queryFn: () => api.call("settingsGet"), select: (settings) => settings.global.pure_mode }).data;
+}
+
+export function useCivitaiAuth() {
+  const api = useSettingsApi();
+  return useQuery({ queryKey: queryKeys.civitai.auth(), queryFn: () => api.call("civitaiAuthStatus") });
+}
+
+export const civitaiTokenNeeded = (status: CivitaiAuthStatus | undefined) => status !== undefined && (!status.saved || status.error_kind === "invalid_or_expired");

@@ -42,6 +42,13 @@ const testJob = (state: JobView["state"], result: JobView["result"] = null): Job
   progress: { current: 1, total: 10, unit: "bytes", label_code: "download", bytes_per_second: 1 }, created_at: 1, updated_at: 1, failure: null, result,
 });
 
+const civitaiFile = { id: 30, name: "film.safetensors", size_kb: 1, primary: true, format: "safetensors", fp: null, sha256: null };
+const civitaiVersion = (id: number, name: string) => ({ id, name, base_model: "FLUX", architecture: "flux", published_at: null, trained_words: ["film"], images: [] as { url: string; nsfw_level: number; width: number; height: number }[], files: [civitaiFile] });
+const civitaiModel = { id: 10, name: "Film style", description: null as string | null, nsfw: false, nsfw_level: 1, creator_username: "Artist", download_count: 2, thumbs_up_count: 1, tags: [], versions: [civitaiVersion(20, "v1")] };
+const civitaiSummary = { id: 10, name: "Film style", nsfw: false, nsfw_level: 1, creator_username: "Artist", download_count: 2, thumbs_up_count: 1, preview_image: null, base_models: ["FLUX"], latest_version_id: 20 };
+const civitaiCalls = (calls: MockCallHandlers = {}): MockCallHandlers => ({ lorasList: () => ok({ loras: [] }), civitaiAuthStatus: () => ok({ saved: true, valid: true, error_kind: null }), civitaiSearch: () => ok({ items: [civitaiSummary], next_cursor: null }), civitaiModel: () => ok(civitaiModel), ...calls });
+const loraPath = "/settings/imageGeneration?localImageView=loras&civitaiModel=10";
+
 async function mount(options: { settings?: Partial<SettingsImageGenerationSettings>; calls?: MockCallHandlers; streams?: MockStreamHandlers; platform?: "other" | "android"; path?: string; language?: "en" | "cimode"; saveGate?: Promise<void>; emitSettingsEvent?: boolean } = {}) {
   let view = { global: { image_generation: { ...initial, ...options.settings } }, revision: 7 } as SettingsView;
   const update = vi.fn(async (request: SettingsUpdateRequest_Deserialize) => {
@@ -449,18 +456,102 @@ describe("image settings", () => {
     expect(screen.queryByText("It changed somewhere else. Reload and try again.")).toBeNull();
   });
 
-  it("downloads a CivitAI version by its IDs and keeps search filters in the request", async () => {
+  const loraJob: JobView = { ...testJob("running"), subject_detail: { type: "sd_lora_install", model_id: 10, version_id: 20, file_id: 30, filename: "film.safetensors" } };
+
+  it("finds a LoRA download that started before the page opened", async () => {
+    await mount({ platform: "other", path: "/settings/imageGeneration?localImageView=loras&civitaiModel=10", calls: civitaiCalls({ jobsList: () => ok({ items: [loraJob], next_cursor: null }) }), streams: { jobWatch: () => ok(loraJob) } });
+    expect(await screen.findByText(/Downloading$/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("opens a CivitAI LoRA as a page, downloads by its IDs and keeps the browse state after Back", async () => {
     const download = vi.fn(() => ok({ job_id: "image-job" }));
-    const search = vi.fn<NonNullable<MockCallHandlers["civitaiSearch"]>>(() => ok({ items: [{ id: 10, name: "Film style", nsfw: false, nsfw_level: 1, creator_username: "Artist", download_count: 2, thumbs_up_count: 1, preview_image: null, base_models: ["FLUX"], latest_version_id: 20 }], next_cursor: null }));
-    await mount({ platform: "other", calls: {
-      lorasList: () => ok({ loras: [] }), civitaiAuthStatus: () => ok({ saved: true, valid: true, error_kind: null }), civitaiSearch: search,
-      civitaiModel: () => ok({ id: 10, name: "Film style", description: null, nsfw: false, nsfw_level: 1, creator_username: "Artist", download_count: 2, thumbs_up_count: 1, tags: [], versions: [{ id: 20, name: "v1", base_model: "FLUX", architecture: "flux", published_at: null, trained_words: ["film"], images: [], files: [{ id: 30, name: "film.safetensors", size_kb: 1, primary: true, format: "safetensors", fp: null, sha256: null }] }] }), civitaiLoraDownload: download,
-    }, streams: { jobWatch: () => ok(testJob("running")) } });
+    const search = vi.fn<NonNullable<MockCallHandlers["civitaiSearch"]>>(() => ok({ items: [civitaiSummary], next_cursor: null }));
+    const { history, transport } = await mount({ platform: "other", calls: civitaiCalls({ civitaiSearch: search, civitaiLoraDownload: download }), streams: { jobWatch: () => ok(testJob("running")) } });
     await clickRow("LoRA library");
     fireEvent.click(await screen.findByRole("tab", { name: "Browse CivitAI" }));
-    await clickRow("Film style");
+    await waitFor(() => expect(search).toHaveBeenCalledWith({ query: null, sort: "Highest Rated", period: "AllTime", base_models: [], cursor: null, limit: null }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search CivitAI" }), { target: { value: "film" } });
+    await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: "film" })));
+    const calls = search.mock.calls.length;
+    fireEvent.click(await screen.findByRole("button", { name: /Film style/ }));
+    expect(await screen.findByRole("heading", { name: "Film style" })).toBeTruthy();
+    expect(history.location.search).toBe("?localImageView=loras&civitaiModel=10");
     fireEvent.click(await screen.findByRole("button", { name: "Download" }));
     await waitFor(() => expect(download).toHaveBeenCalledWith({ model_id: 10, version_id: 20, file_id: 30 }));
-    expect(search).toHaveBeenCalledWith({ query: null, sort: "Highest Rated", period: "AllTime", base_models: [], cursor: null, limit: null });
+    await act(async () => { transport.emitAppEvent({ type: "job_updated", job: loraJob }); });
+    expect(await screen.findByText(/Downloading$/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getAllByRole("button", { name: "Browse CivitAI" }).at(-1)!);
+    await waitFor(() => expect(history.location.search).toBe("?localImageView=loras"));
+    expect((screen.getByRole("searchbox", { name: "Search CivitAI" }) as HTMLInputElement).value).toBe("film");
+    expect(screen.getByRole("tab", { name: "Browse CivitAI" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("heading", { name: "Film style" })).toBeNull();
+    expect(search.mock.calls.length).toBe(calls);
+    expect(screen.getByText("film.safetensors")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /^Library/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "Browse CivitAI" }));
+    expect((screen.getByRole("searchbox", { name: "Search CivitAI" }) as HTMLInputElement).value).toBe("film");
+    expect(search.mock.calls.length).toBe(calls);
+  });
+
+  it("names a keyword discovery job by its file and labels it as a task, not a download", async () => {
+    const lora = { filename: "style.safetensors", path: "style.safetensors", bytes_on_disk: 1000, keywords: [], keyword_source: "none" as const, architecture: null, architecture_source: "none" as const, compatibility: "unknown" as const };
+    const discover = vi.fn(() => ok({ job_id: "discover-job" }));
+    await mount({ platform: "other", calls: { lorasList: () => ok({ loras: [lora] }), loraKeywordsDiscover: discover }, streams: { jobWatch: () => ok({ ...testJob("running"), id: "discover-job", kind: "maintenance" as const }) } });
+    await clickRow("LoRA library");
+    await clickRow("style.safetensors");
+    fireEvent.click(await screen.findByRole("button", { name: "Find keywords" }));
+    expect(await screen.findByText("Find keywords for style.safetensors")).toBeTruthy();
+    expect(await screen.findByText("Working")).toBeTruthy();
+    expect(screen.queryByText("Downloading…")).toBeNull();
+  });
+
+  it("opens a LoRA from a deep link and replaces it with the browse view on Back", async () => {
+    const { history } = await mount({ platform: "other", path: loraPath, calls: civitaiCalls() });
+    expect(await screen.findByRole("heading", { name: "Film style" })).toBeTruthy();
+    expect(screen.getByText("by Artist")).toBeTruthy();
+    const length = history.length;
+    fireEvent.click(screen.getAllByRole("button", { name: "Browse CivitAI" }).at(-1)!);
+    await waitFor(() => expect(history.location.search).toBe("?localImageView=loras"));
+    expect(history.length).toBe(length);
+    expect(await screen.findByRole("heading", { name: "LoRA library" })).toBeTruthy();
+  });
+
+  it("switches versions, marks files already in the library and strips HTML from the description", async () => {
+    const second = { ...civitaiVersion(21, "v2"), trained_words: ["grain"], files: [{ ...civitaiFile, id: 31, name: "film-v2.safetensors" }] };
+    const model = { ...civitaiModel, description: "<p>First line</p><p>Second <b>bold</b></p>", versions: [civitaiVersion(20, "v1"), second] };
+    await mount({ platform: "other", path: loraPath, calls: civitaiCalls({ civitaiModel: () => ok(model), lorasList: () => ok({ loras: [{ filename: "FILM.safetensors", path: "FILM.safetensors", bytes_on_disk: 1, keywords: [], keyword_source: "none", architecture: null, architecture_source: "none", compatibility: "unknown" }] }) }) });
+    expect(await screen.findByText("In library")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Download" })).toBeNull();
+    expect(screen.getByText((content) => content.includes("First line") && content.includes("Second bold"))).toBeTruthy();
+    expect(document.querySelector("main b")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "v2" }));
+    expect(await screen.findByText("film-v2.safetensors")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy grain" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+  });
+
+  it("keeps NSFW previews behind a reveal unless Pure mode is off", async () => {
+    const image = { url: "https://image.civitai.com/key/abc/width=832/1.jpeg", nsfw_level: 4, width: 832, height: 1216 };
+    const model = { ...civitaiModel, versions: [{ ...civitaiVersion(20, "v1"), images: [image] }] };
+    await mount({ platform: "other", path: loraPath, calls: civitaiCalls({ civitaiModel: () => ok(model) }) });
+    expect(await screen.findByText("Previews hidden")).toBeTruthy();
+    expect(document.querySelector("img[src*='civitai']")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show images" }));
+    expect(await screen.findByRole("button", { name: "Film style, image 1" })).toBeTruthy();
+    expect(document.querySelector("img")?.getAttribute("src")).toBe("https://image.civitai.com/key/abc/anim=false,width=1024/1.jpeg");
+    cleanup();
+    const settings = { global: { image_generation: initial, pure_mode: "off" }, revision: 7 } as SettingsView;
+    await mount({ platform: "other", path: loraPath, calls: civitaiCalls({ civitaiModel: () => ok(model), settingsGet: () => ok(settings) }) });
+    expect(await screen.findByRole("button", { name: "Film style, image 1" })).toBeTruthy();
+    expect(screen.queryByText("Previews hidden")).toBeNull();
+  });
+
+  it("offers the token sheet from the LoRA page when no CivitAI token is saved", async () => {
+    await mount({ platform: "other", path: loraPath, calls: civitaiCalls({ civitaiAuthStatus: () => ok({ saved: false, valid: false, error_kind: "missing_token" }) }) });
+    expect(await screen.findByText("No CivitAI token")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add token" }));
+    expect(await screen.findByRole("dialog", { name: "CivitAI token" })).toBeTruthy();
   });
 });
