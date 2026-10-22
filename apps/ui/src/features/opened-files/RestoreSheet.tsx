@@ -47,7 +47,7 @@ export function RestoreSheet({ api, source, header, onClose }: { api: ApiClient;
     setJob(null);
     let jobId: string | null = null;
     try {
-      const accepted = await api.call("backupRestore", { source, password, client_operation_id: crypto.randomUUID() });
+      const accepted = await api.call(header.version === 1 ? "legacyBackupRestore" : "backupRestore", { source, password, client_operation_id: crypto.randomUUID() });
       jobId = accepted.job_id;
       const settled = await watchJob(api, accepted.job_id, setJob, abort.signal);
       if (settled.state === "succeeded") await afterRestore(settled);

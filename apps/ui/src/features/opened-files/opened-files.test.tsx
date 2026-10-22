@@ -147,7 +147,7 @@ describe("opened files", () => {
     const restore = vi.fn(() => ok({ job_id: "j1" }));
     const { status } = await open([file("all.lettuce")], {
       importPreview: () => failure("unsupported"),
-      backupInspect: () => ok({ version: 1, created_at: new Date(2026, 9, 1, 12, 0).getTime(), app_version: "2.3.0" }),
+      backupInspect: () => ok({ version: 2, created_at: new Date(2026, 9, 1, 12, 0).getTime(), app_version: "2.3.0" }),
       backupRestore: restore,
     }, { jobWatch: () => ok(job({ result: { type: "backup_restored", kept_file: "old.db", warnings: [] } })) });
     expect(await screen.findByText("Restore backup")).toBeTruthy();
@@ -169,11 +169,28 @@ describe("opened files", () => {
     expect(await screen.findAllByText("Backup restored")).not.toHaveLength(0);
   });
 
+  it("restores a backup made by the previous app through the legacy command", async () => {
+    const restore = vi.fn(() => ok({ job_id: "j1" }));
+    const legacy = vi.fn(() => ok({ job_id: "j1" }));
+    await open([file("old.lettuce")], {
+      importPreview: () => failure("unsupported"),
+      backupInspect: () => ok({ version: 1, created_at: 1, app_version: "2.2.5" }),
+      backupRestore: restore,
+      legacyBackupRestore: legacy,
+    }, { jobWatch: () => ok(job({ result: { type: "backup_restored", kept_file: "old.db", warnings: [] } })) });
+    await screen.findByText("Restore backup");
+    fireEvent.change(sheet().getByLabelText(/Password/), { target: { value: "secret" } });
+    fireEvent.click(sheet().getByRole("button", { name: "Restore" }));
+    fireEvent.click(within((await screen.findAllByRole("dialog")).at(-1)!).getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(legacy).toHaveBeenCalledTimes(1));
+    expect(restore).not.toHaveBeenCalled();
+  });
+
   it("reads the job once when the restore watch ends without its last event", async () => {
     const get = vi.fn(() => ok(job({ result: { type: "backup_restored", kept_file: "old.db", warnings: [] } })));
     await open([file("all.lettuce")], {
       importPreview: () => failure("unsupported"),
-      backupInspect: () => ok({ version: 1, created_at: 1, app_version: "2.3.0" }),
+      backupInspect: () => ok({ version: 2, created_at: 1, app_version: "2.3.0" }),
       backupRestore: () => ok({ job_id: "j1" }),
       jobGet: get,
     }, { jobWatch: () => failure("unavailable") });
@@ -189,7 +206,7 @@ describe("opened files", () => {
   it("keeps the sheet and the password when the password is wrong", async () => {
     await open([file("all.lettuce")], {
       importPreview: () => failure("malformed"),
-      backupInspect: () => ok({ version: 1, created_at: 1, app_version: "2.3.0" }),
+      backupInspect: () => ok({ version: 2, created_at: 1, app_version: "2.3.0" }),
       backupRestore: () => ok({ job_id: "j1" }),
     }, { jobWatch: () => ok(job({ state: "failed", failure: { code: "authentication", reason: "backup_authentication", retryable: false } as never })) });
     await screen.findByText("Restore backup");
