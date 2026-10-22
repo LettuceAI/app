@@ -1021,7 +1021,7 @@ where
             crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
                 .is_ok_and(|model| model.is_local_diffusion())
         };
-        let scene_image_protocol = (!group && images.scene_enabled)
+        let scene_image_protocol = (!group && images.scene_enabled && images.scene_automatic_enabled)
             .then(|| {
                 crate::image_feature_model(
                     self.repository,
@@ -1804,7 +1804,7 @@ where
             crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
                 .is_ok_and(|model| model.is_local_diffusion())
         };
-        let scene_image_protocol = (!group && images.scene_enabled)
+        let scene_image_protocol = (!group && images.scene_enabled && images.scene_automatic_enabled)
             .then(|| {
                 crate::image_feature_model(
                     self.repository,

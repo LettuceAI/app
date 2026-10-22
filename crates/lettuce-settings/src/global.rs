@@ -229,6 +229,7 @@ pub struct ImageGenerationSettings {
     pub avatar_enabled: bool,
     pub avatar_model_profile_id: Option<ModelProfileId>,
     pub scene_enabled: bool,
+    pub scene_automatic_enabled: bool,
     pub scene_mode: SceneGenerationMode,
     pub scene_model_profile_id: Option<ModelProfileId>,
     pub scene_writer_model_profile_id: Option<ModelProfileId>,
@@ -244,6 +245,7 @@ impl Default for ImageGenerationSettings {
             avatar_enabled: true,
             avatar_model_profile_id: None,
             scene_enabled: false,
+            scene_automatic_enabled: true,
             scene_mode: SceneGenerationMode::Auto,
             scene_model_profile_id: None,
             scene_writer_model_profile_id: None,
@@ -680,6 +682,18 @@ mod tests {
             .remove("image_generation");
         let older: GlobalSettings = serde_json::from_value(older).expect("older payload");
         assert_eq!(older.image_generation, defaults);
+        let older: ImageGenerationSettings =
+            serde_json::from_str(r#"{"scene_enabled":true}"#).expect("older image settings");
+        assert!(older.scene_enabled && older.scene_automatic_enabled);
+        let disabled = ImageGenerationSettings {
+            scene_automatic_enabled: false,
+            ..older
+        };
+        let restored: ImageGenerationSettings = serde_json::from_value(
+            serde_json::to_value(&disabled).expect("image settings"),
+        )
+        .expect("restored image settings");
+        assert_eq!(restored, disabled);
         let mut settings = GlobalSettings::default();
         let kept = ModelProfileId::new();
         let removed = ModelProfileId::new();

@@ -15,7 +15,7 @@ afterEach(() => { toast.dismiss(); cleanup(); });
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 const initial: SettingsImageGenerationSettings = {
   avatar_enabled: true, avatar_model_profile_id: null,
-  scene_enabled: false, scene_mode: "auto", scene_model_profile_id: null,
+  scene_enabled: false, scene_automatic_enabled: true, scene_mode: "auto", scene_model_profile_id: null,
   scene_writer_model_profile_id: null, creation_helper_model_profile_id: "keep-helper", scene_default_size: "768x768",
 };
 const accounts: ProviderAccountView[] = ["openai", "sdcpp"].map((kind) => ({
@@ -100,6 +100,28 @@ describe("image settings", () => {
     const writer = await screen.findByRole("dialog");
     expect(within(writer).getByRole("button", { name: /Vision writer/ })).toBeTruthy();
     expect(within(writer).queryByRole("button", { name: /Text writer|Cloud image/ })).toBeNull();
+  });
+
+  it("keeps scene pictures available without automatic prompts and retains the mode and choice", async () => {
+    const { current, update } = await mount({ settings: { scene_enabled: true, scene_mode: "ask_first", scene_model_profile_id: "Cloud image" } });
+    const automatic = await screen.findByRole("switch", { name: "Automatic scene images" });
+    expect(automatic.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(automatic);
+    await waitFor(() => expect(current().global.image_generation.scene_automatic_enabled).toBe(false));
+    expect(screen.queryByText("Ask first")).toBeNull();
+    expect(screen.getByRole("switch", { name: "Scene pictures" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Scene model/ }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: /^Prompt writer/ }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("switch", { name: "Scene pictures" }));
+    await waitFor(() => expect(automatic.hasAttribute("disabled")).toBe(true));
+    fireEvent.click(screen.getByRole("switch", { name: "Scene pictures" }));
+    await waitFor(() => expect(automatic.hasAttribute("disabled")).toBe(false));
+    expect(automatic.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByText("Ask first")).toBeNull();
+    fireEvent.click(automatic);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Ask first/ }).getAttribute("aria-pressed")).toBe("true"));
+    expect(current().global.image_generation).toMatchObject({ scene_enabled: true, scene_automatic_enabled: true, scene_mode: "ask_first", scene_model_profile_id: "Cloud image", creation_helper_model_profile_id: "keep-helper", scene_default_size: "768x768" });
+    expect(update.mock.calls.map(([request]) => request.expected_revision)).toEqual([7, 8, 9, 10]);
   });
 
   it("keeps a missing selection explicit, supports automatic selection and closes on browser Back", async () => {

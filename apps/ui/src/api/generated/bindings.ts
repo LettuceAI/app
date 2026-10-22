@@ -7747,6 +7747,7 @@ export type SettingsImageGenerationSettings = {
 	avatar_enabled: boolean,
 	avatar_model_profile_id: string | null,
 	scene_enabled: boolean,
+	scene_automatic_enabled: boolean,
 	scene_mode: SettingsSceneGenerationMode,
 	scene_model_profile_id: string | null,
 	scene_writer_model_profile_id: string | null,

@@ -110,8 +110,9 @@ export function ImageSettingsPage() {
                 <ListGroup label={t("image.scene.group")}>
                   <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.title")} description={t("image.scene.body")} trailing={<Switch checked={value.scene_enabled} onChange={(enabled) => { void change({ scene_enabled: enabled }); }} disabled={busy} aria-label={t("image.scene.title")} />} />
                   <ListRowButton icon={<Image size={icon.lg} />} title={t("image.scene.model")} description={value.scene_enabled ? describe("scene") : t("image.scene.disabled")} disabled={busy || !value.scene_enabled} onClick={() => open("scene")} />
+                  <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.automatic.title")} description={t(value.scene_enabled ? "image.scene.automatic.body" : "image.scene.automatic.disabled")} trailing={<Switch checked={value.scene_automatic_enabled} onChange={(enabled) => { void change({ scene_automatic_enabled: enabled }); }} disabled={busy || !value.scene_enabled} aria-label={t("image.scene.automatic.title")} />} />
                 </ListGroup>
-                {value.scene_enabled && <ListGroup label={t("image.modes.group")}>
+                {value.scene_enabled && value.scene_automatic_enabled && <ListGroup label={t("image.modes.group")}>
                   {sceneModes.map((mode) => <ListRowButton key={mode} title={t(`image.modes.${mode}.title`)} description={t(`image.modes.${mode}.body`)} chevron={false} aria-pressed={value.scene_mode === mode} trailing={value.scene_mode === mode ? <Check size={icon.md} /> : undefined} disabled={busy} onClick={() => { void change({ scene_mode: mode }); }} />)}
                 </ListGroup>}
               </div>

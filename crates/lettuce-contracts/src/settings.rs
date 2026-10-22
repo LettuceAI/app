@@ -68,6 +68,7 @@ pub struct SettingsImageGenerationSettings {
     pub avatar_enabled: bool,
     pub avatar_model_profile_id: Option<String>,
     pub scene_enabled: bool,
+    pub scene_automatic_enabled: bool,
     pub scene_mode: SettingsSceneGenerationMode,
     pub scene_model_profile_id: Option<String>,
     pub scene_writer_model_profile_id: Option<String>,

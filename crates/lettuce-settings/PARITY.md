@@ -4,6 +4,8 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy parity
 
+- Automatic scene images is a separate `scene_automatic_enabled` choice (user decision, 2026-10-22). It defaults on, including for older documents and legacy imports, so existing scene behavior is retained. Legacy coupled image-tag instructions to scene availability; disabling automatic scenes now leaves manual scene generation available.
+
 - Lorebook generator resolution copies legacy's priority: explicit selection, generator setting, then default model or built-in prompt. The target count (default 12, 5..50) and output tokens (default 4096, 256..32768) are legacy's bounds.
 - The dynamic-memory defaults copy legacy's runtime fallbacks: 50 entries, a 2000-token hot budget, 0.35 minimum similarity, five smart results, 0.3 cold threshold, 0.5 delete confidence and per-cycle hard-delete ratio, 0.78 duplicate threshold, and two-message context enrichment.
 - The post-turn cycle settings follow legacy's schema defaults: disabled until enabled, a 20-message summary interval, `auto` run mode (`ask_first` and `manual` also exist), 0.08 per-cycle decay, recursive memory loops off with a hard cap of 20 rounds, and the `xml` structured fallback format (legacy `dynamicMemoryStructuredFallbackFormat`, `json` the other value).

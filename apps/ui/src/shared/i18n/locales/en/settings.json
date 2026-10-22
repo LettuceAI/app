@@ -226,6 +226,11 @@
       "title": "Scene pictures",
       "body": "Pictures of the moment, drawn from the chat",
       "model": "Scene model",
+      "automatic": {
+        "title": "Automatic scene images",
+        "body": "Lets the chat model add scene image prompts to replies",
+        "disabled": "Turn on scene pictures to use this. Your choice is kept."
+      },
       "disabled": "Turn on scene pictures to choose. Your pick is kept."
     },
     "writer": {

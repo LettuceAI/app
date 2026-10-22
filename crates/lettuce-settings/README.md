@@ -51,7 +51,7 @@ Scores are integer basis points (0 to 10 000) so a stored policy compares and ro
 - `LorebookEntryGeneratorSettings`: model (unset means the first text model), entry and keyword prompts, JSON fallback format by default.
 - `CreationHelperSettings`: model (unset means the default model), streaming on, `enabled_tools` (unset means all), tool fallback `Native`, `Json` or `Xml`.
 - `CompanionSoulWriterSettings`: model (unset means the default model, then the first text model), a fallback model, prompt, JSON fallback format by default.
-- `ImageGenerationSettings`: avatar generation on, scene generation off, scene mode `Auto` (`AskFirst`, `Manual`), and the avatar, scene, scene writer and creation helper image models (unset means the first suitable model). `scene_default_size` is used by scene generation when the scene model sets none (unset means 1024x1024).
+- `ImageGenerationSettings`: avatar generation on, scene generation off, automatic scene images on, scene mode `Auto` (`AskFirst`, `Manual`), and the avatar, scene, scene writer and creation helper image models (unset means the first suitable model). `scene_automatic_enabled` controls reply image-tag instructions and follow-ups independently of manual scene generation. `scene_default_size` is used by scene generation when the scene model sets none (unset means 1024x1024).
 
 These store the choices only. The jobs take a resolved model profile per request, picked by the resolvers in `lettuce-app` (`creation_helper_model`, `lorebook_entry_generator_model`, `soul_writer_model`, `soul_writer_fallback_model` and others).
 

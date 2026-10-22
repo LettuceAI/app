@@ -274,6 +274,60 @@ fn approve(reply: &str, prompt: Option<&str>) -> dto::MessageSceneImageApproveRe
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn automatic_scene_images_control_reply_instructions_and_follow_ups() {
+    for automatic in [false, true] {
+        let scene = scene_harness(Reply::Text(TAGGED), Vec::new(), SceneGenerationMode::AskFirst);
+        let context = &scene.harness.context;
+        let settings = settings_get(context).await.expect("settings");
+        let mut images = settings.global.image_generation;
+        images.scene_automatic_enabled = automatic;
+        settings_update(
+            context,
+            dto::SettingsUpdateRequest {
+                expected_revision: settings.revision,
+                patch: dto::SettingsPatch::ImageGeneration { value: images },
+            },
+        )
+        .await
+        .expect("automatic scenes setting");
+        let restarted = context.restarted();
+        assert_eq!(
+            settings_get(&restarted).await.expect("persisted settings")
+                .global.image_generation.scene_automatic_enabled,
+            automatic
+        );
+        let (chat, reply) = reply_with_scene(&scene.harness, "automatic-setting").await;
+        conversation_regenerate(
+            context,
+            super::turns_tests::regenerate_request(&scene.harness, &chat, &reply, "automatic-regen"),
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("regenerate");
+        super::turns_tests::run_generation(&scene.harness).await;
+        let shown = reply_of(context, &chat, &reply).await;
+        assert_eq!(shown.scene_image.is_some(), automatic);
+        assert!(!shown.parts.iter().any(|part| matches!(
+            part,
+            dto::MessagePartView::Text { text } if text.contains("<img>")
+        )));
+        let requests = scene.harness.provider.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            let has_protocol = request.context.messages.iter().any(|message| {
+                message.parts.iter().any(|part| matches!(
+                    part,
+                    lettuce_conversations::ProviderContextPart::Text { text }
+                        if text.contains("# Scene Image Generation")
+                ))
+            });
+            assert_eq!(has_protocol, automatic, "{:?}", request.operation);
+        }
+        assert_eq!(scene.images.calls(), 0);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn an_automatic_scene_image_starts_with_the_reply_and_lands_on_the_message() {
     let scene = scene_harness(
         Reply::Text(TAGGED),
@@ -433,12 +487,32 @@ async fn a_stopped_reply_asks_for_no_scene_image() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_manual_image_takes_a_written_or_typed_prompt_and_a_second_one_adds_another() {
+    manual_images(SceneGenerationMode::Manual, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn manual_images_work_with_automatic_scene_images_disabled() {
+    manual_images(SceneGenerationMode::Auto, false).await;
+}
+
+async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
     let scene = scene_harness(
         Reply::Text(TAGGED),
         vec![Outcome::Image, Outcome::Image],
-        SceneGenerationMode::Manual,
+        mode,
     );
     let context = &scene.harness.context;
+    let database = context.backend().database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.scene_automatic_enabled = automatic;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("automatic scenes setting");
     let (chat, reply) = reply_with_scene(&scene.harness, "manual").await;
     assert_eq!(reply_of(context, &chat, &reply).await.scene_image, None);
     assert_eq!(follow_up_state(context, &chat, &reply), None);

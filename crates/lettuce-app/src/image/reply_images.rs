@@ -35,6 +35,7 @@ pub(crate) fn reply_image_facts<C: ModelCatalog + ?Sized>(
     let images = &settings.image_generation;
     Some(ReplyImageFacts {
         scene_mode: (images.scene_enabled
+            && images.scene_automatic_enabled
             && image_feature_model(models, settings, ImageFeature::Scene).is_ok())
         .then_some(images.scene_mode),
     })
