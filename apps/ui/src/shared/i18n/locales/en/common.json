@@ -19,6 +19,16 @@
     "expandSidebar": "Expand sidebar",
     "backToApp": "Back to app"
   },
+  "downloads": {
+    "title": "Downloads",
+    "titleActive_one": "Downloads, one active",
+    "titleActive_other": "Downloads, {{count}} active",
+    "empty": "Nothing downloading.",
+    "emptyBody": "Installs and updates show up here.",
+    "generic": "Download",
+    "done": "{{name}} is ready",
+    "failed": "{{name}} could not be downloaded"
+  },
   "window": {
     "minimize": "Minimize",
     "maximize": "Maximize",

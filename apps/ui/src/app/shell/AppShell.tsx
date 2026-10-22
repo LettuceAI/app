@@ -12,6 +12,7 @@ import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { isSettingsSection, SidebarSettings } from "@/features/settings";
 import { LibraryCreateSheet } from "@/features/library";
 import { OpenedFiles } from "@/features/opened-files";
+import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
 import { CreateSheet } from "./CreateSheet";
 import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, type Destination } from "./navigation";
@@ -78,9 +79,12 @@ export function AppShell() {
         onMaximize: () => perform(() => controller.toggleMaximize()),
         onClose: () => perform(() => controller.close()),
       } : {})}
-    />
+    >
+      <DownloadsMenu api={api} />
+    </TitleBar>
   ) : null;
   return (
+    <DownloadsProvider api={api}>
     <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), navCreate: t("navigation.create"), navCollapse: t("navigation.collapse"), navCollapseSidebar: t("navigation.collapseSidebar"), navExpandSidebar: t("navigation.expandSidebar"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
     <div className={cn("relative flex h-full min-h-0 flex-col overflow-clip bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
       {failed && <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">{t("window.failed")}</p>}
@@ -125,5 +129,6 @@ export function AppShell() {
       ))}
     </div>
     </CrispStringsProvider>
+    </DownloadsProvider>
   );
 }

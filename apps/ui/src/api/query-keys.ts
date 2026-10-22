@@ -64,6 +64,7 @@ export const queryKeys = {
     all: ["embedding"] as const,
     status: () => [...queryKeys.embedding.all, "status"] as const,
   },
+  downloads: { all: ["downloads"] as const, list: () => ["downloads", "list"] as const },
   jobs: {
     all: ["jobs"] as const,
     lists: () => [...queryKeys.jobs.all, "list"] as const,
