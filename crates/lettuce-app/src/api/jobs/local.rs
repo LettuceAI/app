@@ -99,6 +99,12 @@ pub(crate) enum LocalModelJobDetail {
         runtime_asset: String,
         display_name: String,
     },
+    SdLoraInstall {
+        model_id: u64,
+        version_id: u64,
+        file_id: u64,
+        filename: String,
+    },
 }
 
 /// What a local model job produced.
@@ -311,6 +317,9 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
         }
         LocalModelJobDetail::SdModelInstall { profile_id, variant_id, runtime_release, runtime_asset, display_name } => {
             dto::JobSubjectDetail::SdModelInstall { profile_id, variant_id, runtime_release, runtime_asset, display_name }
+        }
+        LocalModelJobDetail::SdLoraInstall { model_id, version_id, file_id, filename } => {
+            dto::JobSubjectDetail::SdLoraInstall { model_id, version_id, file_id, filename }
         }
     };
     LocalJobView {

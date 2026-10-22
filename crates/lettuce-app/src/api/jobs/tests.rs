@@ -515,6 +515,10 @@ async fn engine_install_targets_survive_reopen_in_list_and_watch_views() {
                 profile_id: "flux".into(), variant_id: "q4".into(), runtime_release: "test-release".into(), runtime_asset: "vulkan.zip".into(), display_name: "FLUX · Q4".into(),
             },
         ),
+        (
+            local::LocalModelJobDetail::SdLoraInstall { model_id: 10, version_id: 20, file_id: 30, filename: "style.safetensors".into() },
+            dto::JobSubjectDetail::SdLoraInstall { model_id: 10, version_id: 20, file_id: 30, filename: "style.safetensors".into() },
+        ),
     ];
     for (detail, expected) in targets {
         let harness = harness(Reply::Text("Hello."));

@@ -129,6 +129,15 @@ pub enum JobSubjectDetail {
         runtime_asset: String,
         display_name: String,
     },
+    SdLoraInstall {
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        model_id: u64,
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        version_id: u64,
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        file_id: u64,
+        filename: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

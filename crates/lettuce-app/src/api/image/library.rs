@@ -23,6 +23,8 @@ use crate::HfBundleInstallRequest;
 use crate::api::error::{api_error, hf_error, invalid_field};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::api::jobs::admit_install_with_detail;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::api::jobs::local::{LocalModelJobDetail, encode};
 use crate::api::jobs::{ImageToolDetail, admit_tool};
 use crate::api::models::local::local_path;
 use crate::{HfBundleRoleSearch, HuggingFaceBrowser};
@@ -761,6 +763,7 @@ pub async fn civitai_lora_download(
             .iter()
             .find(|file| file.id == request.file_id)
             .ok_or_else(|| invalid_field("file_id", "that version has no such file"))?;
+        let filename = file.name.clone();
         let download = CivitaiLoraDownload {
             model_name: detail.name.clone(),
             version_id: version.id,
@@ -781,7 +784,7 @@ pub async fn civitai_lora_download(
         let plan = crate::civitai_lora_install_plan(&client, &lora_root, &download, token_saved)
             .await
             .map_err(civitai_error)?;
-        crate::api::jobs::admit_install(
+        admit_install_with_detail(
             context,
             crate::api::InstallWork::Artifact {
                 plan,
@@ -790,6 +793,12 @@ pub async fn civitai_lora_download(
                     download,
                 }),
             },
+            Some(encode(&LocalModelJobDetail::SdLoraInstall {
+                model_id: request.model_id,
+                version_id: request.version_id,
+                file_id: request.file_id,
+                filename,
+            })?),
         )
         .await
     }
