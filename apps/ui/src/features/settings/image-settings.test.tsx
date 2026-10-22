@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { JobView, ModelView, ProviderAccountView, SdCatalogProfile, SettingsImageGenerationSettings, SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
+import type { JobEvent, JobView, ModelView, ProviderAccountView, SdCatalogProfile, SettingsImageGenerationSettings, SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -70,6 +70,7 @@ async function mount(options: { settings?: Partial<SettingsImageGenerationSettin
 }
 
 const clickRow = async (name: string) => fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${name}`) }));
+const openEngineInstall = async () => { await clickRow("Install a build"); return screen.findByRole("dialog", { name: "Install a build" }); };
 
 describe("image settings", () => {
   it("opens the page and preserves selections and hidden fields when toggling and changing mode", async () => {
@@ -210,16 +211,78 @@ describe("image settings", () => {
     await mount({ platform: "other", calls: { sdRuntimeInventory: () => ok({ installed: [], active: null }), sdRuntimeInstall: install, sdUpscalersInstall: upscale, jobCancel: cancel }, streams: { jobWatch: watch } });
     await clickRow("Engine");
     const page = await screen.findByRole("heading", { name: "Engine" });
-    const buttons = await screen.findAllByRole("button", { name: "Install" });
-    fireEvent.click(buttons[0]!);
+    const drawer = await openEngineInstall();
+    fireEvent.click(await within(drawer).findByRole("button", { name: "Install" }));
     await waitFor(() => expect(install).toHaveBeenCalledWith({ ...runtimeRef, then_register: null }));
     await waitFor(() => expect(watch).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click((await screen.findAllByRole("button", { name: "Install" })).at(-1)!);
     await waitFor(() => expect(upscale).toHaveBeenCalledTimes(1));
     fireEvent.click(within(page.closest("main")!).getByRole("button", { name: "Image generation" }));
     await waitFor(() => expect(page.isConnected).toBe(false));
     expect(cancel).not.toHaveBeenCalled();
     expect(screen.getByRole("switch", { name: "Avatar generation" })).toBeTruthy();
+  });
+
+  it("shows a shaped engine build skeleton until releases arrive", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    await mount({ platform: "other", calls: { sdRuntimeReleases: async () => { await gate; return ok({ releases: [] }); } } });
+    await clickRow("Engine");
+    await openEngineInstall();
+    expect(await screen.findByRole("status", { name: "Loading engine builds" })).toBeTruthy();
+    expect(screen.queryByText("Loading...")).toBeNull();
+    await act(async () => { finish(); });
+    expect(await screen.findByText("No builds available for this computer")).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Loading engine builds" })).toBeNull();
+  });
+
+  it("keeps Install locked for the running engine and shows Eidos download details until it settles", async () => {
+    const install = vi.fn(() => ok({ job_id: "image-job" }));
+    let emit!: (event: JobEvent) => void;
+    const running = testJob("running");
+    await mount({ platform: "other", calls: { sdRuntimeInventory: () => ok({ installed: [], active: null }), sdRuntimeInstall: install }, streams: { jobWatch: (_request, next) => { emit = next; return ok(running); } } });
+    await clickRow("Engine");
+    const drawer = await openEngineInstall();
+    const button = await within(drawer).findByRole("button", { name: "Install" });
+    fireEvent.click(button);
+    expect(await screen.findByText(/9s left/)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await openEngineInstall();
+    const installing = await screen.findByRole("button", { name: "Installing" });
+    expect(installing.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(installing);
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Downloading...")).toBeNull();
+    const card = screen.getByText(`${runtimeRef.release} · Vulkan`).closest(".rounded-xl");
+    expect(card?.parentElement?.className).not.toContain("rounded");
+    await act(async () => { emit({ type: "failed", job: { ...running, state: "failed" } }); });
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Install" }).hasAttribute("disabled")).toBe(false));
+  });
+
+  it("restores exact-build install locks from active jobs when reopening Engine without inventing an ETA", async () => {
+    const running = { ...testJob("running"), subject_detail: { type: "sd_runtime_install" as const, ...runtimeRef, backend: "Vulkan" }, progress: { ...testJob("running").progress, bytes_per_second: null } };
+    const { history } = await mount({ platform: "other", calls: {
+      sdRuntimeInventory: () => ok({ installed: [], active: null }),
+      sdRuntimeReleases: () => ok({ releases: [{ tag: runtimeRef.release, name: "Build 100", published_at: null, prerelease: false, assets: [runtimeAsset, { ...runtimeAsset, name: "cuda.zip", backend: "CUDA" }] }] }),
+      jobsList: () => ok({ items: [running], next_cursor: null }),
+    }, streams: { jobWatch: () => ok(running) } });
+    await clickRow("Engine");
+    const page = await screen.findByRole("heading", { name: "Engine" });
+    await openEngineInstall();
+    const installing = await screen.findByRole("button", { name: "Installing" });
+    expect(installing.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText(/left$/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^CUDA/ }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Installing" })).toBeNull());
+    expect(screen.getAllByRole("button", { name: "Install" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
+    await act(async () => { history.back(); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("heading", { name: "Engine" })).toBe(page);
+    fireEvent.click(within(page.closest("main")!).getByRole("button", { name: "Image generation" }));
+    await clickRow("Engine");
+    await openEngineInstall();
+    expect((await screen.findByRole("button", { name: "Installing" })).hasAttribute("disabled")).toBe(true);
   });
 
   it("validates GPU budgets and saves the policy against the exact engine build", async () => {
@@ -244,11 +307,80 @@ describe("image settings", () => {
     await mount({ platform: "other", calls: { sdCatalog: () => ok({ runtime_supported: true, unsupported_reason: null, runtime_releases: [], profiles: [profile] }), sdModelInstall: install, sdRunnability: probe }, streams: { jobWatch: () => ok(testJob("succeeded", { type: "runnability", verdict })) } });
     await clickRow("Image models");
     await clickRow("FLUX model");
-    fireEvent.click(await screen.findByRole("button", { name: "Check fit" }));
-    expect(await screen.findByText("Estimated to fit")).toBeTruthy();
+    expect((await screen.findAllByText("Estimated to fit")).length).toBeGreaterThan(0);
     expect(probe).toHaveBeenCalledWith(expect.objectContaining({ profile_id: "flux", variant_id: "q4", runtime_release: runtimeRef.release, runtime_asset: runtimeRef.asset, full_execution: false }));
     fireEvent.click(screen.getByRole("button", { name: /^Download / }));
     await waitFor(() => expect(install).toHaveBeenCalledWith({ profile_id: "flux", variant_id: "q4", ...runtimeRef }));
+  });
+
+  it("checks every variant on open, recommends the one that fits the GPU and asks before a CPU offload download", async () => {
+    const estimateOf = (cpu: boolean) => ({ model_bytes: 1024, available_ram_bytes: 8192, plan_mode: "concurrent" as const, devices: [{ id: 0, name: "gpu", description: "Test GPU", total_bytes: 8192, free_bytes: 6144, budget_bytes: 6144 }], placements: [{ component: "dit" as const, params_bytes: 1024, compute_reserve_bytes: 128, targets: [cpu ? "CPU" : "Test GPU"], cpu, split: false }] });
+    const verdictOf = (cpu: boolean) => ({ status: "estimated_runnable" as const, method: "estimate", exact: false, scope: "model", placement_policy: "auto", elapsed_ms: null, reason: "diagnostic", estimate: estimateOf(cpu) });
+    const catalog = { ...profile, variants: [{ ...profile.variants[0]!, id: "q3", label: "Q3 (smaller)", download_bytes: 512, recommended: false }, { ...profile.variants[0]!, id: "q4", label: "Q4 (recommended)", download_bytes: 1024, recommended: true }] };
+    const install = vi.fn(() => ok({ job_id: null, model_id: "registered" }));
+    const probe = vi.fn((request: { variant_id: string }) => ok({ job_id: `fit-${request.variant_id}` }));
+    await mount({ platform: "other", calls: { sdCatalog: () => ok({ runtime_supported: true, unsupported_reason: null, runtime_releases: [], profiles: [catalog] }), sdModelInstall: install, sdRunnability: probe as never }, streams: { jobWatch: ([request]) => ok(testJob("succeeded", { type: "runnability", verdict: verdictOf(request.job_id === "fit-q4") })) } });
+    await clickRow("Image models");
+    await clickRow("FLUX model");
+    await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Best fit")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Q3.*Fits your GPU/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Q4.*Uses CPU offload/ }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByText(/\(recommended\)|\(smaller\)/)).toBeNull();
+    expect(screen.getByText("Runs on your GPU")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Q4/ }));
+    expect(await screen.findByText("Partly runs on the CPU")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Download / }));
+    const dialogs = await screen.findAllByRole("dialog");
+    expect(install).not.toHaveBeenCalled();
+    fireEvent.click(within(dialogs.at(-1)!).getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(install).toHaveBeenCalledWith({ profile_id: "flux", variant_id: "q4", ...runtimeRef }));
+  });
+
+  it("uses a catalog skeleton while image models load", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    await mount({ platform: "other", calls: { sdCatalog: async () => { await gate; return ok({ runtime_supported: true, unsupported_reason: null, runtime_releases: [], profiles: [profile] }); } } });
+    await clickRow("Image models");
+    expect(await screen.findByRole("status", { name: "Loading image models" })).toBeTruthy();
+    expect(screen.queryByText("Loading...")).toBeNull();
+    await act(async () => { finish(); });
+    expect(await screen.findByRole("button", { name: /^FLUX model/ })).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Loading image models" })).toBeNull();
+  });
+
+  it("keeps a catalog download locked after its drawer closes and releases it on cancellation", async () => {
+    const install = vi.fn(() => ok({ job_id: "image-job", model_id: null }));
+    let emit!: (event: JobEvent) => void;
+    const running = testJob("running");
+    await mount({ platform: "other", calls: { sdCatalog: () => ok({ runtime_supported: true, unsupported_reason: null, runtime_releases: [], profiles: [profile] }), sdModelInstall: install }, streams: { jobWatch: (_request, next) => { emit = next; return ok(running); } } });
+    await clickRow("Image models");
+    await clickRow("FLUX model");
+    fireEvent.click(await screen.findByRole("button", { name: /^Download / }));
+    await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await screen.findByText(/9s left/)).toBeTruthy();
+    await clickRow("FLUX model");
+    const button = await screen.findByRole("button", { name: "Installing" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(button);
+    expect(install).toHaveBeenCalledTimes(1);
+    await act(async () => { emit({ type: "cancelled", job: { ...running, state: "cancelled" } }); });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Download / }).hasAttribute("disabled")).toBe(false));
+  });
+
+  it("restores catalog download locks by model and variant without blocking another variant", async () => {
+    const running = { ...testJob("running"), subject_detail: { type: "sd_model_install" as const, profile_id: profile.id, variant_id: "q4", runtime_release: runtimeRef.release, runtime_asset: runtimeRef.asset, display_name: "FLUX model · Q4" } };
+    const catalog = { ...profile, variants: [...profile.variants, { ...profile.variants[0]!, id: "q8", label: "Q8", recommended: false }] };
+    await mount({ platform: "other", calls: { sdCatalog: () => ok({ runtime_supported: true, unsupported_reason: null, runtime_releases: [], profiles: [catalog] }), jobsList: () => ok({ items: [running], next_cursor: null }) }, streams: { jobWatch: () => ok(running) } });
+    await clickRow("Image models");
+    expect(await screen.findByText("FLUX model · Q4")).toBeTruthy();
+    await clickRow("FLUX model");
+    expect((await screen.findByRole("button", { name: "Installing" })).hasAttribute("disabled")).toBe(true);
+    await clickRow("Q8");
+    expect((await screen.findByRole("button", { name: /^Download / })).hasAttribute("disabled")).toBe(false);
+    await clickRow("Q4");
+    expect(screen.getByRole("button", { name: "Installing" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("assembles pinned HF components, estimates the bundle and submits the exact chosen files", async () => {

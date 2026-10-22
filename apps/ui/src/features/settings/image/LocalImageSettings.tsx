@@ -4,11 +4,12 @@ import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { Cpu, Download, HardDrive, Layers, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge, Button, icon, IconButton, ListGroup, ListRow, ListRowButton, Page, Sheet } from "@lettuceai/crisp";
-import type { SdRuntimeRef } from "@/api/generated/bindings";
+import type { JobView, SdRuntimeRef } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { terminalJobStates } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi, useSettingsLayout } from "../data";
-import { activeImageDownloads, installedQuery, inventoryQuery, localImageKeys, useByteSize } from "./local-data";
+import { activeImageDownloads, installedQuery, inventoryQuery, localImageKeys, useByteSize, type ImageInstallDetail } from "./local-data";
 import { CatalogView } from "./CatalogView";
 import { ComputePolicyView } from "./ComputePolicyView";
 import { EngineView } from "./EngineView";
@@ -60,10 +61,19 @@ export function LocalImagePage({ view }: { view: View }) {
   const [loraActionTarget, setLoraActionTarget] = useState<HTMLDivElement | null>(null);
   const [policyFooter, setPolicyFooter] = useState<HTMLDivElement | null>(null);
   const [fitEpoch, setFitEpoch] = useState(0);
-  const [jobs, setJobs] = useState<Record<string, string>>({});
+  const [jobs, setJobs] = useState<Record<string, { title: string; detail: ImageInstallDetail | null }>>({});
+  const [observed, setObserved] = useState<Record<string, JobView>>({});
   const downloads = useQuery({ queryKey: [...queryKeys.jobs.lists(), "image-installs"], queryFn: () => activeImageDownloads(api), enabled: view !== "loras" });
-  const onJob = useCallback((id: string, title: string) => { setJobs((current) => ({ ...current, [id]: title })); }, []);
-  const jobIds = [...new Set([...Object.keys(jobs), ...(downloads.data ?? []).map((job) => job.id)])];
+  const onJob = useCallback((id: string, title: string, detail: ImageInstallDetail | null = null) => { setJobs((current) => ({ ...current, [id]: { title, detail } })); }, []);
+  const onUpdate = useCallback((job: JobView) => { setObserved((current) => ({ ...current, [job.id]: job })); }, []);
+  const listed = (downloads.data ?? []).filter((job) => view !== "engine" || job.subject_detail?.type === "sd_runtime_install" || job.subject_detail?.type === "sd_upscaler_install");
+  const jobIds = [...new Set([...Object.keys(jobs), ...Object.keys(observed), ...listed.map((job) => job.id)])];
+  const activeInstalls = jobIds.flatMap((id): ImageInstallDetail[] => {
+    const job = observed[id] ?? listed.find((item) => item.id === id);
+    if (job && terminalJobStates.has(job.state)) return [];
+    const detail = job?.subject_detail ?? jobs[id]?.detail;
+    return detail?.type === "sd_runtime_install" || detail?.type === "sd_upscaler_install" || detail?.type === "sd_model_install" ? [detail] : [];
+  });
   const back = () => {
     if (pushed) router.history.back();
     else open(view === "bundle" ? "models" : null, true);
@@ -75,8 +85,8 @@ export function LocalImagePage({ view }: { view: View }) {
     <>
       <Page key={view} title={t(titleKeys[view])} meta={phone ? undefined : t(metaKeys[view])} onBack={back} backLabel={t(view === "bundle" ? "image.local.catalog.title" : "sections.imageGeneration.title")} actions={actions} contentClassName={view === "loras" ? "max-w-4xl space-y-7" : "max-w-3xl space-y-7"}>
         {downloads.isError && view !== "loras" && <FailureState error={downloads.error} onRetry={() => void downloads.refetch()} size="sm" />}
-        {view !== "loras" && jobIds.map((id) => <ListGroup key={id}><ImageJob id={id} title={jobs[id]} /></ListGroup>)}
-        {view === "engine" ? <EngineView open onJob={onJob} onPolicy={setPolicy} /> : view === "models" ? <CatalogView fitEpoch={fitEpoch} onJob={onJob} onEngine={() => open("engine")} onBundle={() => open("bundle")} /> : view === "bundle" ? <BundleView onJob={onJob} onEngine={() => open("engine")} /> : <LoraLibraryView open actionTarget={loraActionTarget} />}
+        {view !== "loras" && jobIds.map((id) => <ImageJob key={id} id={id} title={jobs[id]?.title} download onUpdate={onUpdate} />)}
+        {view === "engine" ? <EngineView open onJob={onJob} onPolicy={setPolicy} activeInstalls={activeInstalls} downloadsReady={downloads.data !== undefined && !downloads.isError} /> : view === "models" ? <CatalogView fitEpoch={fitEpoch} onJob={onJob} activeInstalls={activeInstalls} downloadsReady={downloads.data !== undefined && !downloads.isError} onEngine={() => open("engine")} onBundle={() => open("bundle")} /> : view === "bundle" ? <BundleView onJob={onJob} onEngine={() => open("engine")} /> : <LoraLibraryView open actionTarget={loraActionTarget} />}
       </Page>
       <Sheet open={policy !== null} onClose={() => setPolicy(null)} title={t("image.local.policy.title")} description={t("image.local.policy.body")} placement="auto" footer={<div ref={setPolicyFooter} />}>
         {policy && <ComputePolicyView key={`${policy.release}/${policy.asset}`} runtime={policy} footerTarget={policyFooter} onClose={() => setPolicy(null)} onDone={() => { setPolicy(null); setFitEpoch((current) => current + 1); }} />}

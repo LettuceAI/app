@@ -24,7 +24,7 @@ use super::{ApiContext, engine, image_error, internal};
 use crate::api::error::api_error;
 use crate::api::error::invalid_field;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use crate::api::jobs::admit_install;
+use crate::api::jobs::{admit_install_with_detail, local::{LocalModelJobDetail, encode}};
 use crate::api::jobs::{ImageToolDetail, admit_tool};
 use crate::api::models::local::local_path;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -324,6 +324,11 @@ pub async fn sd_runtime_install(
             .cloned()
             .ok_or_else(|| api_error(ApiErrorCode::NotFound, "that engine build is not offered"))?;
         let plan = crate::runtime_install_plan(&paths, release, &asset).map_err(install_error)?;
+        let detail = encode(&LocalModelJobDetail::SdRuntimeInstall {
+            release: release.tag.clone(),
+            asset: asset.name.clone(),
+            backend: asset.backend.clone(),
+        })?;
         let variant = request
             .then_register
             .map(|variant| crate::api::CatalogVariant {
@@ -332,7 +337,7 @@ pub async fn sd_runtime_install(
                 runtime_release: release.tag.clone(),
                 runtime_asset: asset.name.clone(),
             });
-        admit_install(
+        admit_install_with_detail(
             context,
             crate::api::InstallWork::Artifact {
                 plan,
@@ -343,6 +348,7 @@ pub async fn sd_runtime_install(
                     variant,
                 }),
             },
+            Some(detail),
         )
         .await
     }
@@ -437,7 +443,7 @@ pub async fn sd_model_install(
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         super::refuse_during_move(context).await?;
-        let (profile, _) = variant_of(&request.profile_id, &request.variant_id)?;
+        let (profile, selected) = variant_of(&request.profile_id, &request.variant_id)?;
         let paths = engine.paths();
         if !runtime_is_installed(&paths, &request.release, &request.asset) {
             return Err(image_error(ImageError::new(
@@ -487,7 +493,14 @@ pub async fn sd_model_install(
                 model_id: Some(registered),
             });
         }
-        let accepted = admit_install(
+        let detail = encode(&LocalModelJobDetail::SdModelInstall {
+            profile_id: variant.profile_id.clone(),
+            variant_id: variant.variant_id.clone(),
+            runtime_release: variant.runtime_release.clone(),
+            runtime_asset: variant.runtime_asset.clone(),
+            display_name: format!("{} · {}", profile.display_name, selected.label),
+        })?;
+        let accepted = admit_install_with_detail(
             context,
             crate::api::InstallWork::Artifact {
                 plan,
@@ -496,6 +509,7 @@ pub async fn sd_model_install(
                     variant,
                 }),
             },
+            Some(detail),
         )
         .await?;
         Ok(dto::SdModelInstallStarted {
@@ -809,12 +823,15 @@ pub async fn sd_upscalers_install(context: &ApiContext) -> Result<dto::JobAccept
                 "The recommended upscaler is already installed.",
             ));
         }
-        admit_install(
+        admit_install_with_detail(
             context,
             crate::api::InstallWork::Artifact {
                 plan: crate::upscaler_install_plan(&engine.paths()),
                 finish: Box::new(crate::api::InstallFinish::Files),
             },
+            Some(encode(&LocalModelJobDetail::SdUpscalerInstall {
+                filename: diffusion_catalog().upscaler.filename.clone(),
+            })?),
         )
         .await
     }

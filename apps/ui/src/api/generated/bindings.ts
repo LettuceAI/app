@@ -3868,7 +3868,7 @@ export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_reque
  *  download installs, the model an Ollama server pulls, the folders a move
  *  goes between.
  */
-export type JobSubjectDetail = { type: "lorebook_draft"; lorebook: HistoricalSourceView | null; prompt: HistoricalSourceView } | { type: "lorebook_project"; project_id: string; prompt: HistoricalSourceView } | { type: "companion_soul_writer"; prompt: HistoricalSourceView } | { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string };
+export type JobSubjectDetail = { type: "lorebook_draft"; lorebook: HistoricalSourceView | null; prompt: HistoricalSourceView } | { type: "lorebook_project"; project_id: string; prompt: HistoricalSourceView } | { type: "companion_soul_writer"; prompt: HistoricalSourceView } | { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string } | { type: "sd_runtime_install"; release: string; asset: string; backend: string } | { type: "sd_upscaler_install"; filename: string } | { type: "sd_model_install"; profile_id: string; variant_id: string; runtime_release: string; runtime_asset: string; display_name: string };
 
 /**  What a job works on. */
 export type JobSubjectDto = {

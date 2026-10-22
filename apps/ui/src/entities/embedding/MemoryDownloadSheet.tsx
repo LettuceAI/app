@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, DownloadItem, Sheet } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
-import type { JobView } from "@/api/generated/bindings";
+import { downloadProgressOf } from "@/entities/job";
 import { ActionButton } from "@/shared/ui/ActionButton";
 import { ActionError } from "@/shared/ui/ActionError";
 import type { InstallState } from "./use-embedding-install";
@@ -17,20 +17,6 @@ export interface MemoryDownloadSheetProps {
   done?: { label: string; onClick: () => void; loading: boolean; error: unknown };
 }
 
-function progressOf(job: JobView | null): { fraction: number | undefined; size: number | undefined; speed: number | undefined; eta: number | undefined } {
-  const progress = job?.progress;
-  if (!progress || progress.unit !== "bytes" || !progress.total) {
-    return { fraction: undefined, size: undefined, speed: undefined, eta: undefined };
-  }
-  const speed = progress.bytes_per_second && progress.bytes_per_second > 0 ? progress.bytes_per_second : undefined;
-  return {
-    fraction: Math.min(1, progress.current / progress.total),
-    size: progress.total,
-    speed,
-    eta: speed ? Math.max(0, (progress.total - progress.current) / speed) : undefined,
-  };
-}
-
 export function MemoryDownloadSheet(props: MemoryDownloadSheetProps) {
   const { t, i18n } = useTranslation("common");
   const { install } = props;
@@ -39,7 +25,7 @@ export function MemoryDownloadSheet(props: MemoryDownloadSheetProps) {
   const done = install.phase === "done";
   const failed = install.phase === "failed";
   const name = t("memoryDownload.modelName");
-  const { fraction, size, speed, eta } = progressOf(install.job);
+  const { fraction, size, speed, eta } = downloadProgressOf(install.job);
   const failure = install.job?.failure ?? null;
   const failureText = isApiFailure(install.error)
     ? t(`errors.code.${install.error.code}`)

@@ -114,6 +114,21 @@ pub enum JobSubjectDetail {
         bundle_id: String,
         display_name: String,
     },
+    SdRuntimeInstall {
+        release: String,
+        asset: String,
+        backend: String,
+    },
+    SdUpscalerInstall {
+        filename: String,
+    },
+    SdModelInstall {
+        profile_id: String,
+        variant_id: String,
+        runtime_release: String,
+        runtime_asset: String,
+        display_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,5 +1,7 @@
 # lettuce-app: legacy parity notes
 
+Engine, upscaler and catalog model installs expose their exact target in typed job subject details, using the existing local-model-job record (2026-10-22). This lets Engine and Image models restore the matching Install/Download lock when reopened instead of relying on a component's request state; job admission still joins an existing installation and startup recovery remains unchanged.
+
 Automatic scene images can be disabled independently of scene availability (user decision, 2026-10-22). Both generation input paths then omit the built-in scene image protocol, and reply finalization strips any stale tag without scheduling a follow-up. Manual scene prompt writing and image generation remain available. Legacy used scene availability and reply mode together (`old-code/src/ui/pages/chats/hooks/useChatEnhancementsController.ts:79-88,252-288`).
 
 Slice 11a returns ignored-entry warnings in the legacy restore receipt. Legacy read known documents by name (`old-code/src-tauri/src/storage_manager/backup.rs:3760-3792`) and skipped unrelated archive entries (`backup.rs:4300-4302`); the rewrite preserves that acceptance while retaining typed warning evidence.

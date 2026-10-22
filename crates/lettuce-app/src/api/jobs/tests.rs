@@ -493,6 +493,54 @@ async fn embedding_install_admission_preserves_detail_and_conflicts_with_changed
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn engine_install_targets_survive_reopen_in_list_and_watch_views() {
+    let targets = [
+        (
+            local::LocalModelJobDetail::SdRuntimeInstall {
+                release: "test-release".into(), asset: "vulkan.zip".into(), backend: "Vulkan".into(),
+            },
+            dto::JobSubjectDetail::SdRuntimeInstall {
+                release: "test-release".into(), asset: "vulkan.zip".into(), backend: "Vulkan".into(),
+            },
+        ),
+        (
+            local::LocalModelJobDetail::SdUpscalerInstall { filename: "upscaler.pth".into() },
+            dto::JobSubjectDetail::SdUpscalerInstall { filename: "upscaler.pth".into() },
+        ),
+        (
+            local::LocalModelJobDetail::SdModelInstall {
+                profile_id: "flux".into(), variant_id: "q4".into(), runtime_release: "test-release".into(), runtime_asset: "vulkan.zip".into(), display_name: "FLUX · Q4".into(),
+            },
+            dto::JobSubjectDetail::SdModelInstall {
+                profile_id: "flux".into(), variant_id: "q4".into(), runtime_release: "test-release".into(), runtime_asset: "vulkan.zip".into(), display_name: "FLUX · Q4".into(),
+            },
+        ),
+    ];
+    for (detail, expected) in targets {
+        let harness = harness(Reply::Text("Hello."));
+        let root = temp_root("engine-target");
+        let accepted = admit_install_with_detail(
+            &harness.context,
+            InstallWork::Artifact {
+                plan: plan(&root, "engine-target", b"model bytes"),
+                finish: Box::new(InstallFinish::Files),
+            },
+            Some(local::encode(&detail).expect("detail")),
+        )
+        .await
+        .expect("admit");
+        let reopened = harness.context.restarted();
+        let listed = jobs_list(&reopened, dto::JobsListRequest::default()).await.expect("list");
+        let job = listed.items.iter().find(|job| job.id == accepted.job_id).expect("install");
+        assert_eq!(job.subject_detail.as_ref(), Some(&expected));
+        let stream = Arc::new(RecordingJob::default());
+        let watched = job_watch(&reopened, dto::JobWatchRequest { job_id: accepted.job_id }, stream).await.expect("watch");
+        assert_eq!(watched.subject_detail, Some(expected));
+        std::fs::remove_dir_all(root).ok();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn an_artifact_install_runs_to_success_and_its_watch_sees_the_end() {
     let harness = harness(Reply::Text("Hello."));
     let context = &harness.context;

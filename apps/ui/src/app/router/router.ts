@@ -72,9 +72,10 @@ const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/set
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
-  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras" } => ({
+  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras"; engineInstall?: boolean } => ({
     ...(search.imagePicker === "avatar" || search.imagePicker === "scene" || search.imagePicker === "writer" ? { imagePicker: search.imagePicker } : {}),
     ...(search.localImageView === "engine" || search.localImageView === "models" || search.localImageView === "bundle" || search.localImageView === "loras" ? { localImageView: search.localImageView } : {}),
+    ...(search.localImageView === "engine" && search.engineInstall === true ? { engineInstall: true } : {}),
   }),
   beforeLoad: ({ params }) => {
     if (!isSettingsSection(params.section) || !builtSettingsSections.has(params.section)) throw notFound();
@@ -131,6 +132,7 @@ declare module "@tanstack/history" {
     libraryOverlayPushed?: boolean;
     imagePickerPushed?: boolean;
     localImagesPushed?: boolean;
+    engineInstallPushed?: boolean;
     libraryKind?: "character" | "persona" | "lorebook";
   }
 }

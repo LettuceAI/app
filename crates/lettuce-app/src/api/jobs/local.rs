@@ -84,6 +84,21 @@ pub(crate) enum LocalModelJobDetail {
         bundle_id: String,
         display_name: String,
     },
+    SdRuntimeInstall {
+        release: String,
+        asset: String,
+        backend: String,
+    },
+    SdUpscalerInstall {
+        filename: String,
+    },
+    SdModelInstall {
+        profile_id: String,
+        variant_id: String,
+        runtime_release: String,
+        runtime_asset: String,
+        display_name: String,
+    },
 }
 
 /// What a local model job produced.
@@ -125,7 +140,7 @@ pub(super) fn internal(error: impl std::fmt::Display) -> ApiError {
     api_error(ApiErrorCode::Internal, error.to_string())
 }
 
-pub(super) fn encode<T: Serialize>(value: &T) -> Result<serde_json::Value, ApiError> {
+pub(crate) fn encode<T: Serialize>(value: &T) -> Result<serde_json::Value, ApiError> {
     serde_json::to_value(value).map_err(internal)
 }
 
@@ -288,6 +303,15 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
             bundle_id,
             display_name,
         },
+        LocalModelJobDetail::SdRuntimeInstall { release, asset, backend } => {
+            dto::JobSubjectDetail::SdRuntimeInstall { release, asset, backend }
+        }
+        LocalModelJobDetail::SdUpscalerInstall { filename } => {
+            dto::JobSubjectDetail::SdUpscalerInstall { filename }
+        }
+        LocalModelJobDetail::SdModelInstall { profile_id, variant_id, runtime_release, runtime_asset, display_name } => {
+            dto::JobSubjectDetail::SdModelInstall { profile_id, variant_id, runtime_release, runtime_asset, display_name }
+        }
     };
     LocalJobView {
         detail: Some(detail),

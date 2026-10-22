@@ -2,8 +2,10 @@ import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query
 import { useTranslation } from "react-i18next";
 import { fileSize, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
-import type { JobPage, JobView, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
+import type { JobPage, JobSubjectDetail, JobView, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+
+export type ImageInstallDetail = Extract<JobSubjectDetail, { type: "sd_runtime_install" | "sd_upscaler_install" | "sd_model_install" }>;
 
 export const localImageKeys = {
   inventory: [...queryKeys.localImages.all, "inventory"],
@@ -12,6 +14,7 @@ export const localImageKeys = {
   releases: [...queryKeys.localImages.all, "releases"],
   upscaler: [...queryKeys.localImages.all, "upscaler"],
   disk: [...queryKeys.localImages.all, "disk"],
+  fit: (profile: string, variant: string, release: string, asset: string, epoch: number) => ["local-image-fit", profile, variant, release, asset, epoch],
   policy: (release: string, asset: string) => [...queryKeys.localImages.all, "policy", release, asset],
 };
 
