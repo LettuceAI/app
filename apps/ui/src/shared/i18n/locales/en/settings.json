@@ -1342,5 +1342,71 @@
       "capacity": "Token capacity",
       "capacityBody": "How much of a memory and the chat the model reads at once. Higher fits longer memories, uses more memory and time."
     }
+  },
+  "backup": {
+    "loading": "Loading backups",
+    "create": {
+      "group": "Create",
+      "title": "New backup",
+      "body": "An encrypted copy of your chats, characters and settings",
+      "sheetTitle": "New backup",
+      "password": "Password",
+      "confirm": "Confirm password",
+      "hint": "You need this password to restore the backup. It can't be recovered.",
+      "tooShort": "Use at least {{count}} characters",
+      "mismatch": "The passwords don't match",
+      "whereDesktop": "You choose where to save it next.",
+      "whereAndroid": "Saved to Downloads/LettuceAI.",
+      "action": "Create",
+      "stop": "Stop",
+      "running": "Creating the backup",
+      "done": "Backup created",
+      "warnings_one": "Backup created with {{count}} warning",
+      "warnings_other": "Backup created with {{count}} warnings"
+    },
+    "restore": {
+      "group": "Restore",
+      "title": "Restore from a file",
+      "body": "Pick a .lettuce backup",
+      "notBackup": "That file is not a LettuceAI backup."
+    },
+    "saved": {
+      "group": "Saved backups",
+      "empty": {
+        "title": "No backups yet",
+        "body": "Create a backup, or restore one from a file."
+      },
+      "missing": "The file is missing",
+      "unavailable": "The file can't be read",
+      "permission_denied": "The app can't access the file"
+    },
+    "item": {
+      "version": "App version",
+      "size": "Size",
+      "location": "Location",
+      "restore": "Restore",
+      "restoreBody": "Replaces everything on this device",
+      "forget": "Remove from list",
+      "forgetBody": "Keeps the file on your device",
+      "delete": "Delete file",
+      "deleteBody": "Removes the file from your device",
+      "deleteTitle": "Delete this backup?",
+      "deleteConfirm": "Delete",
+      "deleteConfirmBody": "The file is removed from your device. This can't be undone."
+    },
+    "failure": {
+      "unknown": "The backup could not be created.",
+      "backup_unavailable": "Backups are not available right now.",
+      "backup_limit_exceeded": "Your data is larger than a backup can hold.",
+      "backup_permission_denied": "The app is not allowed to write to this location.",
+      "backup_file_busy": "The file is in use by another app.",
+      "backup_file_unavailable": "The backup file could not be written.",
+      "backup_file_unsupported": "This location can't hold a backup.",
+      "backup_source_is_target": "That file is the one the app is using. Choose another.",
+      "backup_cancelled": "The backup was cancelled.",
+      "backup_retry_required": "The backup did not finish. Try again.",
+      "backup_recovery_required": "The backup needs the app to be reopened.",
+      "backup_verification_failed": "The backup did not pass verification."
+    }
   }
 }

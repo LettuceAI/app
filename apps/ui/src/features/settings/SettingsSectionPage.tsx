@@ -4,6 +4,7 @@ import { ModelsPage } from "./ModelsPage";
 import { AboutPage } from "./AboutPage";
 import { MemoryPage } from "./memory/MemoryPage";
 import { ImageSettingsPage } from "./image/ImageSettingsPage";
+import { BackupPage } from "./backup/BackupPage";
 
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
@@ -12,5 +13,6 @@ export function SettingsSectionPage() {
   if (section === "models") return <ModelsPage />;
   if (section === "memory") return <MemoryPage />;
   if (section === "imageGeneration") return <ImageSettingsPage />;
+  if (section === "backup") return <BackupPage />;
   return section === "about" ? <AboutPage /> : null;
 }
