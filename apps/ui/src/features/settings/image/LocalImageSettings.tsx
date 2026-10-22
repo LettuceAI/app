@@ -83,7 +83,7 @@ export function LocalImagePage({ view }: { view: View }) {
     : view === "models" ? <Button variant="ghost" size="sm" leading={<RefreshCw size={icon.sm} />} onClick={refresh}>{t("image.local.fit.again")}</Button> : view === "loras" ? <div ref={setLoraActionTarget} /> : undefined;
   return (
     <>
-      <Page key={view} title={t(titleKeys[view])} meta={phone ? undefined : t(metaKeys[view])} onBack={back} backLabel={t(view === "bundle" ? "image.local.catalog.title" : "sections.imageGeneration.title")} actions={actions} contentClassName={view === "loras" ? "max-w-4xl space-y-7" : "max-w-3xl space-y-7"}>
+      <Page key={view} title={t(titleKeys[view])} meta={phone ? undefined : t(metaKeys[view])} onBack={back} backLabel={t(view === "bundle" ? "image.local.catalog.title" : "sections.imageGeneration.title")} actions={actions} contentClassName="space-y-7">
         {downloads.isError && view !== "loras" && <FailureState error={downloads.error} onRetry={() => void downloads.refetch()} size="sm" />}
         {view !== "loras" && jobIds.map((id) => <ImageJob key={id} id={id} title={jobs[id]?.title} download onUpdate={onUpdate} />)}
         {view === "engine" ? <EngineView open onJob={onJob} onPolicy={setPolicy} activeInstalls={activeInstalls} downloadsReady={downloads.data !== undefined && !downloads.isError} /> : view === "models" ? <CatalogView fitEpoch={fitEpoch} onJob={onJob} activeInstalls={activeInstalls} downloadsReady={downloads.data !== undefined && !downloads.isError} onEngine={() => open("engine")} onBundle={() => open("bundle")} /> : view === "bundle" ? <BundleView onJob={onJob} onEngine={() => open("engine")} /> : <LoraLibraryView open actionTarget={loraActionTarget} />}

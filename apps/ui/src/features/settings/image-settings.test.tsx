@@ -418,6 +418,37 @@ describe("image settings", () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith({ path: "style.safetensors", profile_id: null, keywords: [] }));
   });
 
+  it("counts the library, previews at most four trigger words and imports a file with a confirmation", async () => {
+    const base = { path: "a.safetensors", filename: "a.safetensors", bytes_on_disk: 1000, keyword_source: "manual" as const, architecture: "flux", architecture_source: "metadata" as const, compatibility: "unknown" as const };
+    const many = { ...base, keywords: ["one", "two", "three", "four", "five", "six"] };
+    const fewer = { ...base, path: "b.safetensors", filename: "b.safetensors", keywords: ["solo"] };
+    const pick = vi.fn(() => ok({ sources: [{ uri: "/loras/c.safetensors" }] }));
+    const importLora = vi.fn(() => ok({ ...base, filename: "c.safetensors", path: "c.safetensors", keywords: [] }));
+    await mount({ platform: "other", calls: { lorasList: () => ok({ loras: [many, fewer] }), filesPickOpen: pick, lorasImport: importLora } });
+    await clickRow("LoRA library");
+    expect(await screen.findByRole("tab", { name: /Library.*2/ })).toBeTruthy();
+    expect(screen.getByText(/Adds: one, two, three, four and 2 more/)).toBeTruthy();
+    expect(screen.getByText(/Adds: solo/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Import file" }));
+    await waitFor(() => expect(importLora).toHaveBeenCalledWith({ source: { uri: "/loras/c.safetensors" } }));
+    expect(await screen.findByText("c.safetensors is in your library")).toBeTruthy();
+  });
+
+  it("says why a LoRA that a model uses cannot be deleted and why a same-named import is refused", async () => {
+    const lora = { filename: "style.safetensors", path: "style.safetensors", bytes_on_disk: 1000, keywords: [], keyword_source: "none" as const, architecture: null, architecture_source: "unknown" as never, compatibility: "unknown" as const };
+    const conflict = { status: "error" as const, error: { code: "conflict" as const, message: "diagnostic", details: null } };
+    await mount({ platform: "other", calls: { lorasList: () => ok({ loras: [lora] }), lorasDelete: () => conflict, filesPickOpen: () => ok({ sources: [{ uri: "/loras/style.safetensors" }] }), lorasImport: () => conflict } });
+    await clickRow("LoRA library");
+    fireEvent.click(await screen.findByRole("button", { name: "Import file" }));
+    expect(await screen.findByText("A different LoRA with this name is already in your library.")).toBeTruthy();
+    await clickRow("style.safetensors");
+    fireEvent.click(await screen.findByRole("button", { name: /^Delete/ }));
+    fireEvent.click(within((await screen.findAllByRole("dialog")).at(-1)!).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText("Can't delete it yet")).toBeTruthy();
+    expect(screen.getByText("An image model uses this LoRA. Remove it from that model first.")).toBeTruthy();
+    expect(screen.queryByText("It changed somewhere else. Reload and try again.")).toBeNull();
+  });
+
   it("downloads a CivitAI version by its IDs and keeps search filters in the request", async () => {
     const download = vi.fn(() => ok({ job_id: "image-job" }));
     const search = vi.fn<NonNullable<MockCallHandlers["civitaiSearch"]>>(() => ok({ items: [{ id: 10, name: "Film style", nsfw: false, nsfw_level: 1, creator_username: "Artist", download_count: 2, thumbs_up_count: 1, preview_image: null, base_models: ["FLUX"], latest_version_id: 20 }], next_cursor: null }));
