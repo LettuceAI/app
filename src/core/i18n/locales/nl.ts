@@ -5357,6 +5357,7 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Recente tokens voor herhalings-, frequentie- en aanwezigheidsstraffen; `-1` gebruikt de volledige context",
       xtcProbability: "XTC-waarschijnlijkheid",
       xtcThreshold: "XTC-drempel",
+      topNSigma: "Top-n-sigma",
       localOverride: "Lokale overschrijving",
       dryMultiplier: "DRY-multiplier",
       dryMultiplierDescription: "`0` schakelt herhalingsbeheer van sequenties uit",
@@ -8811,6 +8812,9 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Kans om toptokens uit te sluiten (0 = uit). Vergroot de variatie.",
       xtcThreshold: "XTC-drempel",
       xtcThresholdDesc: "Minimale waarschijnlijkheid die een token nodig heeft om door XTC verwijderd te kunnen worden.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Houdt tokens binnen n standaarddeviaties van de hoogste logit (0 = uit). Vervangt top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Willekeurige seed. Laat leeg voor willekeurig.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Strafbereik",
     xtcProbability: "XTC-waarschijnlijkheid",
     xtcThreshold: "XTC-drempel",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY-multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY toegestane lengte",
@@ -9047,6 +9052,10 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Beste keuzes uitsluiten — verwijdert tokens met hoge waarschijnlijkheid voor meer variatie.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Houdt alleen tokens binnen n standaarddeviaties van de hoogste logit. Uit tenzij n is ingesteld; bedoeld om top-k/top-p/min-p te vervangen.",
       },
       temp: {
         label: "Temperature",

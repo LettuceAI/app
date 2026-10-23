@@ -7995,6 +7995,9 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "शीर्ष टोकन को बाहर करने की संभावना (0 = बंद)। विविधता बढ़ाता है।",
       xtcThreshold: "XTC सीमा",
       xtcThresholdDesc: "XTC द्वारा हटाने योग्य होने के लिए टोकन को आवश्यक न्यूनतम प्रायिकता।",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "शीर्ष logit के n मानक विचलनों के भीतर के टोकन रखता है (0 = बंद)। top-k/top-p/min-p की जगह लेता है।",
       seed: "Seed",
       seedDesc: "रैंडम seed। रैंडम के लिए खाली छोड़ें।",
       ropeBase: "RoPE Base",
@@ -8151,6 +8154,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "पेनल्टी रेंज",
     xtcProbability: "XTC प्रायिकता",
     xtcThreshold: "XTC सीमा",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -8231,6 +8235,10 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "शीर्ष विकल्पों को बाहर करें — विविधता के लिए उच्च-संभावना वाले टोकन हटाता है।",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "केवल शीर्ष logit के n मानक विचलनों के भीतर के टोकन रखता है। जब तक n सेट न हो तब तक बंद; इसका उद्देश्य top-k/top-p/min-p की जगह लेना है।",
       },
       temp: {
         label: "Temperature",
@@ -10218,6 +10226,7 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "रिपीट, फ़्रीक्वेंसी और प्रेज़ेन्स पेनल्टी के लिए हाल के टोकन; `-1` पूरा कॉन्टेक्स्ट उपयोग करता है",
       xtcProbability: "XTC प्रायिकता",
       xtcThreshold: "XTC सीमा",
+      topNSigma: "Top-n-sigma",
       localOverride: "लोकल ओवरराइड (Local override)",
       dryMultiplier: "DRY मल्टीप्लायर (DRY Multiplier)",
       dryMultiplierDescription: "`0` सीक्वेंस रिपिटिशन कंट्रोल को अक्षम करता है",

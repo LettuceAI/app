@@ -4818,6 +4818,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Последние токены для штрафов за повторение, частоту и присутствие; `-1` использует весь контекст",
       xtcProbability: "Вероятность XTC",
       xtcThreshold: "Порог XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Локальное переопределение",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0` отключает контроль повторения последовательностей",
@@ -8811,6 +8812,9 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Вероятность исключения топ-токенов (0 = выкл.). Повышает разнообразие.",
       xtcThreshold: "Порог XTC",
       xtcThresholdDesc: "Минимальная вероятность, необходимая токену для удаления через XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Оставляет токены в пределах n стандартных отклонений от верхнего логита (0 = выкл.). Заменяет top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Случайный seed. Оставьте пустым для случайного.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Диапазон штрафа",
     xtcProbability: "Вероятность XTC",
     xtcThreshold: "Порог XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -9047,6 +9052,10 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Исключить топ-варианты — отбрасывает высоковероятные токены ради разнообразия.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Оставляет только токены в пределах n стандартных отклонений от верхнего логита. Отключено, пока n не задано; предназначен для замены top-k/top-p/min-p.",
       },
       temp: {
         label: "Температура",

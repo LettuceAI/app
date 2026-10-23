@@ -4818,6 +4818,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "반복, 빈도 및 존재 페널티에 사용할 최근 토큰 수이며 `-1`은 전체 컨텍스트를 사용합니다",
       xtcProbability: "XTC 확률",
       xtcThreshold: "XTC 임계값",
+      topNSigma: "Top-n-sigma",
       localOverride: "로컬 재정의",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0`은 시퀀스 반복 제어를 비활성화합니다",
@@ -8811,6 +8812,9 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "상위 토큰을 제외할 확률 (0 = 끔). 다양성을 높입니다.",
       xtcThreshold: "XTC 임계값",
       xtcThresholdDesc: "토큰이 XTC 제거 대상이 되기 위해 필요한 최소 확률.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "최상위 로짓에서 n 표준편차 이내의 토큰만 유지합니다 (0 = 끔). top-k/top-p/min-p를 대체합니다.",
       seed: "Seed",
       seedDesc: "랜덤 시드. 비워두면 무작위.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "페널티 범위",
     xtcProbability: "XTC 확률",
     xtcThreshold: "XTC 임계값",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -9047,6 +9052,10 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "상위 선택 제외 — 다양성을 위해 높은 확률의 토큰을 버립니다.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "최상위 로짓에서 n 표준편차 이내의 토큰만 유지합니다. n이 설정되지 않으면 꺼짐. top-k/top-p/min-p를 대체하기 위한 것입니다.",
       },
       temp: {
         label: "Temperature",

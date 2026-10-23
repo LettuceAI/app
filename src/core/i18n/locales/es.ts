@@ -4818,6 +4818,7 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Tokens recientes usados por las penalizaciones de repetición, frecuencia y presencia; `-1` usa todo el contexto",
       xtcProbability: "Probabilidad XTC",
       xtcThreshold: "Umbral XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Anulación local",
       dryMultiplier: "Multiplicador DRY",
       dryMultiplierDescription: "`0` desactiva el control de repetición de secuencias",
@@ -8811,6 +8812,9 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Probabilidad de excluir los tokens principales (0 = desactivado). Aumenta la variedad.",
       xtcThreshold: "Umbral XTC",
       xtcThresholdDesc: "Probabilidad mínima que necesita un token para que XTC pueda eliminarlo.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Mantiene los tokens dentro de n desviaciones estándar del logit principal (0 = desactivado). Reemplaza a top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Semilla aleatoria. Dejar en blanco para aleatorio.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Rango de penalización",
     xtcProbability: "Probabilidad XTC",
     xtcThreshold: "Umbral XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "Multiplicador DRY",
     dryBase: "Base DRY",
     dryAllowedLength: "Longitud permitida DRY",
@@ -9047,6 +9052,10 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Excluir las opciones principales: descarta tokens de alta probabilidad para dar variedad.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Mantiene solo los tokens dentro de n desviaciones estándar del logit principal. Desactivado salvo que se defina n; pensado para reemplazar a top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",

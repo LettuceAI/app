@@ -1298,6 +1298,13 @@ mod desktop {
             .or_else(|| body.get("llamaXtcThreshold"))
             .or_else(|| body.get("llama_xtc_threshold"))
             .and_then(|v| v.as_f64());
+        let top_n_sigma = body
+            .get("top_n_sigma")
+            .or_else(|| body.get("topNSigma"))
+            .or_else(|| body.get("llamaTopNSigma"))
+            .or_else(|| body.get("llama_top_n_sigma"))
+            .and_then(|v| v.as_f64())
+            .filter(|v| *v > 0.0);
         let adaptive_target = body
             .get("adaptive_target")
             .or_else(|| body.get("adaptiveTarget"))
@@ -3984,6 +3991,7 @@ mod desktop {
                 dry_sequence_breakers: dry_sequence_breakers.clone(),
                 xtc_probability,
                 xtc_threshold,
+                top_n_sigma,
                 frequency_penalty,
                 presence_penalty,
                 adaptive_target,

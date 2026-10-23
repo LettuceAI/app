@@ -4818,6 +4818,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Mga kamakailang token para sa repeat, frequency, at presence penalty; ginagamit ng `-1` ang buong context",
       xtcProbability: "Probabilidad ng XTC",
       xtcThreshold: "Threshold ng XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Local override",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "Ina-disable ng `0` ang sequence repetition control",
@@ -8811,6 +8812,9 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Tsansang i-exclude ang mga nangungunang token (0 = naka-off). Nagpapataas ng pagkakaiba-iba.",
       xtcThreshold: "Threshold ng XTC",
       xtcThresholdDesc: "Pinakamababang probabilidad na kailangan ng token para matanggal ito ng XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Pinapanatili ang mga token sa loob ng n standard deviation mula sa pinakamataas na logit (0 = naka-off). Pumapalit sa top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Random seed. Iwanang blangko para random.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Saklaw ng penalty",
     xtcProbability: "Probabilidad ng XTC",
     xtcThreshold: "Threshold ng XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -9047,6 +9052,10 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Exclude Top Choices — inaalis ang mga high-probability na token para sa pagkakaiba-iba.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Pinapanatili lamang ang mga token sa loob ng n standard deviation mula sa pinakamataas na logit. Naka-off maliban kung nakatakda ang n; nilayong palitan ang top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",

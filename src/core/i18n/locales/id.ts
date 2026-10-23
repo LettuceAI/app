@@ -7995,6 +7995,9 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Peluang mengecualikan token teratas (0 = nonaktif). Menambah variasi.",
       xtcThreshold: "Ambang XTC",
       xtcThresholdDesc: "Probabilitas minimum yang dibutuhkan token agar bisa dihapus oleh XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Mempertahankan token dalam n simpangan baku dari logit teratas (0 = nonaktif). Menggantikan top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Seed acak. Kosongkan untuk acak.",
       ropeBase: "RoPE Base",
@@ -8151,6 +8154,7 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Rentang penalti",
     xtcProbability: "Probabilitas XTC",
     xtcThreshold: "Ambang XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -8231,6 +8235,10 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Kecualikan Pilihan Teratas — membuang token berprobabilitas tinggi demi variasi.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Hanya mempertahankan token dalam n simpangan baku dari logit teratas. Nonaktif kecuali n diatur; dimaksudkan untuk menggantikan top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",
@@ -10218,6 +10226,7 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Token terbaru untuk penalti pengulangan, frekuensi, dan kehadiran; `-1` memakai seluruh konteks",
       xtcProbability: "Probabilitas XTC",
       xtcThreshold: "Ambang XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Penggantian lokal",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0` menonaktifkan kontrol pengulangan urutan",

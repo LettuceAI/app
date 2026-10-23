@@ -687,6 +687,7 @@ export function EditModelPage() {
     handleLlamaNPenRangeChange,
     handleLlamaXtcProbabilityChange,
     handleLlamaXtcThresholdChange,
+    handleLlamaTopNSigmaChange,
     handleLlamaAdaptiveTargetChange,
     handleLlamaAdaptiveDecayChange,
     handleLlamaDryMultiplierChange,
@@ -4677,6 +4678,28 @@ export function EditModelPage() {
                                       step={0.01}
                                       value={modelAdvancedDraft.llamaXtcThreshold ?? null}
                                       onChange={(next) => handleLlamaXtcThresholdChange(next)}
+                                      placeholder={t("editModel.placeholders.default")}
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-6">
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        {t("editModel.llamaSampler.topNSigma")}
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        {t("editModel.llamaSampler.localOverride")}
+                                      </span>
+                                    </div>
+                                    <NumberInput
+                                      min={0}
+                                      max={10}
+                                      step={0.1}
+                                      value={modelAdvancedDraft.llamaTopNSigma ?? null}
+                                      onChange={(next) => handleLlamaTopNSigmaChange(next)}
                                       placeholder={t("editModel.placeholders.default")}
                                       className={numberInputClassName}
                                     />

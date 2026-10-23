@@ -5006,6 +5006,7 @@ export const enMessages = {
         "Recent tokens used by repeat, frequency, and presence penalties; `-1` uses the full context",
       xtcProbability: "XTC Probability",
       xtcThreshold: "XTC Threshold",
+      topNSigma: "Top-n-sigma",
       adaptiveTarget: "Adaptive-P Target",
       adaptiveTargetDescription:
         "Target probability for Adaptive-P; leave empty to keep the standard final sampling step",
@@ -9498,6 +9499,9 @@ export const enMessages = {
       xtcProbabilityDesc: "Chance of excluding top tokens (0 = off). Boosts variety.",
       xtcThreshold: "XTC Threshold",
       xtcThresholdDesc: "Min probability a token needs to be eligible for XTC removal.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Keep tokens within n std-devs of the top logit (0 = off). Replaces top-k/top-p/min-p.",
       adaptiveTarget: "Adaptive-P Target",
       adaptiveTargetDesc: "Aim for tokens near this probability. Empty keeps normal sampling.",
       adaptiveDecay: "Adaptive-P Target Decay",
@@ -9659,6 +9663,7 @@ export const enMessages = {
     penaltyRange: "Penalty Range",
     xtcProbability: "XTC Probability",
     xtcThreshold: "XTC Threshold",
+    topNSigma: "Top-n-sigma",
     adaptiveTarget: "Adaptive-P Target",
     adaptiveDecay: "Adaptive-P Target Decay",
     dryMultiplier: "DRY Multiplier",
@@ -9740,6 +9745,10 @@ export const enMessages = {
       xtc: {
         label: "XTC",
         desc: "Exclude Top Choices — drop high-probability tokens for variety.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Keep only tokens within n standard deviations of the top logit. Off unless n is set; meant to replace top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",

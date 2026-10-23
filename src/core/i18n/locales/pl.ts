@@ -8084,6 +8084,9 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Szansa na wykluczenie najlepszych tokenów (0 = wył.). Zwiększa różnorodność.",
       xtcThreshold: "Próg XTC",
       xtcThresholdDesc: "Minimalne prawdopodobieństwo, jakie musi mieć token, aby mógł zostać usunięty przez XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Zachowuje tokeny w zakresie n odchyleń standardowych od najwyższego logitu (0 = wył.). Zastępuje top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Ziarno losowe. Zostaw puste dla losowego.",
       ropeBase: "RoPE Base",
@@ -8240,6 +8243,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Zakres kary",
     xtcProbability: "Prawdopodobieństwo XTC",
     xtcThreshold: "Próg XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "Mnożnik DRY",
     dryBase: "Baza DRY",
     dryAllowedLength: "Dozwolona długość DRY",
@@ -8320,6 +8324,10 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Wyklucz najlepsze wybory — odrzuca tokeny o wysokim prawdopodobieństwie dla różnorodności.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Zachowuje tylko tokeny w zakresie n odchyleń standardowych od najwyższego logitu. Wyłączone, dopóki n nie zostanie ustawione; ma zastąpić top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",
@@ -8977,6 +8985,7 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Ostatnie tokeny dla kar za powtórzenia, częstotliwość i obecność; `-1` używa całego kontekstu",
       xtcProbability: "Prawdopodobieństwo XTC",
       xtcThreshold: "Próg XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Nadpisanie lokalne",
       dryMultiplier: "Mnożnik DRY",
       dryMultiplierDescription: "`0` wyłącza kontrolę powtórzeń sekwencji",

@@ -7995,6 +7995,9 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Khả năng loại bỏ các token hàng đầu (0 = tắt). Tăng tính đa dạng.",
       xtcThreshold: "Ngưỡng XTC",
       xtcThresholdDesc: "Xác suất tối thiểu mà một token cần để đủ điều kiện bị XTC loại bỏ.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Giữ các token nằm trong n độ lệch chuẩn của logit cao nhất (0 = tắt). Thay thế top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Seed ngẫu nhiên. Để trống cho ngẫu nhiên.",
       ropeBase: "RoPE Base",
@@ -8151,6 +8154,7 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Phạm vi phạt",
     xtcProbability: "Xác suất XTC",
     xtcThreshold: "Ngưỡng XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -8231,6 +8235,10 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Loại bỏ lựa chọn hàng đầu — bỏ các token xác suất cao để tăng đa dạng.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Chỉ giữ các token nằm trong n độ lệch chuẩn của logit cao nhất. Tắt trừ khi n được đặt; nhằm thay thế top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",
@@ -8977,6 +8985,7 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Các token gần đây dùng cho phạt lặp lại, tần suất và hiện diện; `-1` dùng toàn bộ ngữ cảnh",
       xtcProbability: "Xác suất XTC",
       xtcThreshold: "Ngưỡng XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Ghi đè cục bộ",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0` vô hiệu hóa kiểm soát lặp lại chuỗi",

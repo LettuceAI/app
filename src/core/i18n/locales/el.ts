@@ -4818,6 +4818,7 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Πρόσφατα tokens για ποινές επανάληψης, συχνότητας και παρουσίας· το `-1` χρησιμοποιεί όλο το πλαίσιο",
       xtcProbability: "Πιθανότητα XTC",
       xtcThreshold: "Κατώφλι XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Τοπική αντικατάσταση",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "Το `0` απενεργοποιεί τον έλεγχο επανάληψης ακολουθίας",
@@ -8811,6 +8812,9 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Πιθανότητα αποκλεισμού των κορυφαίων tokens (0 = ανενεργό). Αυξάνει την ποικιλία.",
       xtcThreshold: "Κατώφλι XTC",
       xtcThresholdDesc: "Ελάχιστη πιθανότητα που χρειάζεται ένα token για να αφαιρεθεί από το XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Διατηρεί τα token εντός n τυπικών αποκλίσεων από το κορυφαίο logit (0 = ανενεργό). Αντικαθιστά τα top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Τυχαίο seed. Αφήστε κενό για τυχαίο.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Εύρος ποινής",
     xtcProbability: "Πιθανότητα XTC",
     xtcThreshold: "Κατώφλι XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -9047,6 +9052,10 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Αποκλεισμός κορυφαίων επιλογών — απορρίπτει tokens υψηλής πιθανότητας για ποικιλία.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Διατηρεί μόνο τα token εντός n τυπικών αποκλίσεων από το κορυφαίο logit. Ανενεργό εκτός αν οριστεί το n· προορίζεται να αντικαταστήσει τα top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",

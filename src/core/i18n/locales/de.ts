@@ -4822,6 +4822,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Letzte Tokens für Wiederholungs-, Häufigkeits- und Anwesenheitsstrafen; `-1` nutzt den gesamten Kontext",
       xtcProbability: "XTC-Wahrscheinlichkeit",
       xtcThreshold: "XTC-Schwellenwert",
+      topNSigma: "Top-n-sigma",
       localOverride: "Lokale Überschreibung",
       dryMultiplier: "DRY-Multiplikator",
       dryMultiplierDescription: "`0` deaktiviert die Sequenzwiederholungskontrolle",
@@ -8815,6 +8816,9 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Wahrscheinlichkeit, Top-Tokens auszuschließen (0 = aus). Erhöht die Vielfalt.",
       xtcThreshold: "XTC-Schwellenwert",
       xtcThresholdDesc: "Mindestwahrscheinlichkeit, die ein Token für die XTC-Entfernung haben muss.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Behält nur Tokens innerhalb von n Standardabweichungen des Top-Logits (0 = aus). Ersetzt Top-k/Top-p/Min-p.",
       seed: "Seed",
       seedDesc: "Zufalls-Seed. Leer lassen für zufällig.",
       ropeBase: "RoPE Base",
@@ -8971,6 +8975,7 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Strafbereich",
     xtcProbability: "XTC-Wahrscheinlichkeit",
     xtcThreshold: "XTC-Schwellenwert",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY-Multiplikator",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY-Erlaubte-Länge",
@@ -9051,6 +9056,10 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Top-Optionen ausschließen – verwirft hochwahrscheinliche Tokens für mehr Vielfalt.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Behält nur Tokens innerhalb von n Standardabweichungen des Top-Logits. Aus, solange n nicht gesetzt ist; soll Top-k/Top-p/Min-p ersetzen.",
       },
       temp: {
         label: "Temperature",

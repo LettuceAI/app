@@ -44,6 +44,7 @@ export function loraArchitectureLabel(
     case "flux1": return "FLUX.1";
     case "flux": return "FLUX";
     case "krea-2": return "Krea 2";
+    case "qwen-image-2.1": return "Qwen Image 2.1";
     case "qwen-image-edit-2511": return "Qwen Image Edit 2511";
     case "qwen-image-edit": return "Qwen Image Edit";
     case "qwen-image": return "Qwen Image";

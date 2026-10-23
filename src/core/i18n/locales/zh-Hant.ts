@@ -4818,6 +4818,7 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "重複、頻率和存在懲罰使用的最近 token 數；`-1` 使用完整上下文",
       xtcProbability: "XTC 機率",
       xtcThreshold: "XTC 閾值",
+      topNSigma: "Top-n-sigma",
       localOverride: "本地覆蓋",
       dryMultiplier: "DRY 倍數",
       dryMultiplierDescription: "`0` 將禁用序列重複控制",
@@ -8811,6 +8812,9 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "排除高機率詞元的機率（0 = 關閉）。提升多樣性。",
       xtcThreshold: "XTC 閾值",
       xtcThresholdDesc: "詞元需要達到的最低機率才會被 XTC 移除。",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "僅保留在最高 logit 的 n 個標準差範圍內的 token（0 = 關閉）。取代 top-k/top-p/min-p。",
       seed: "Seed",
       seedDesc: "隨機種子。留空為隨機。",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "懲罰範圍",
     xtcProbability: "XTC 機率",
     xtcThreshold: "XTC 閾值",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY 倍數",
     dryBase: "DRY 基數",
     dryAllowedLength: "DRY 允許長度",
@@ -9047,6 +9052,10 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "排除最佳選擇 — 捨棄高機率詞元以增加多樣性。",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "僅保留在最高 logit 的 n 個標準差範圍內的 token。未設定 n 時關閉；用於取代 top-k/top-p/min-p。",
       },
       temp: {
         label: "Temperature",

@@ -4818,6 +4818,7 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Tekrar, sıklık ve varlık cezalarında kullanılacak son tokenlar; `-1` tüm bağlamı kullanır",
       xtcProbability: "XTC Olasılığı",
       xtcThreshold: "XTC Eşiği",
+      topNSigma: "Top-n-sigma",
       localOverride: "Yerel geçersiz kılma",
       dryMultiplier: "DRY Çarpanı",
       dryMultiplierDescription: "`0` dizi tekrar kontrolünü devre dışı bırakır",
@@ -8811,6 +8812,9 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "En olası tokenları hariç tutma şansı (0 = kapalı). Çeşitliliği artırır.",
       xtcThreshold: "XTC Eşiği",
       xtcThresholdDesc: "Bir tokenın XTC ile kaldırılabilmesi için gereken en düşük olasılık.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "En yüksek logit'in n standart sapması içindeki token'ları tutar (0 = kapalı). top-k/top-p/min-p yerine geçer.",
       seed: "Seed",
       seedDesc: "Rastgele tohum. Rastgele için boş bırak.",
       ropeBase: "RoPE Base",
@@ -8967,6 +8971,7 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Ceza aralığı",
     xtcProbability: "XTC Olasılığı",
     xtcThreshold: "XTC Eşiği",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Çarpanı",
     dryBase: "DRY Tabanı",
     dryAllowedLength: "DRY İzin Verilen Uzunluk",
@@ -9047,6 +9052,10 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "En İyi Seçenekleri Hariç Tut — çeşitlilik için yüksek olasılıklı tokenları atar.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Yalnızca en yüksek logit'in n standart sapması içindeki token'ları tutar. n ayarlanmadıkça kapalıdır; top-k/top-p/min-p yerine geçmesi amaçlanır.",
       },
       temp: {
         label: "Sıcaklık",
