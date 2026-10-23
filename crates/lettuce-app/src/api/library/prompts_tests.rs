@@ -14,6 +14,42 @@ use crate::api::*;
 
 const DIRECT_PLACEHOLDERS: &str = "{{char.name}} is {{char.desc}}. {{persona.name}}: {{persona.desc}}. {{scene}} {{scene_direction}} {{context_summary}} {{key_memories}}";
 
+#[tokio::test]
+async fn prompt_copy_preserves_its_source_and_replays_after_source_deletion() {
+    let harness = harness(Reply::Text("unused"));
+    let legacy = dto::PromptCreateRequest { client_operation_id: "legacy".into(), source_prompt_id: None, prompt: input("Legacy", DIRECT_PLACEHOLDERS) };
+    assert_eq!(serde_json::to_string(&legacy).expect("legacy request"), format!("{{\"client_operation_id\":\"legacy\",\"prompt\":{}}}", serde_json::to_string(&legacy.prompt).expect("legacy input")));
+    let source = create(&harness, "copy-source", "Source").await;
+    let request: dto::PromptCreateRequest = serde_json::from_value(serde_json::json!({
+        "client_operation_id": "copy", "source_prompt_id": source.prompt.id,
+        "prompt": input("Copy", DIRECT_PLACEHOLDERS),
+    })).expect("copy request");
+    let copy = prompt_create(&harness.context, request.clone()).await.expect("copy");
+    assert!(matches!(&copy.prompt.origin, dto::PromptOrigin::Derived { source_id, source_name, source_deleted: false } if source_id == &source.prompt.id && source_name == "Source"));
+    assert_ne!(copy.entries[0].id, source.entries[0].id);
+    prompt_delete(&harness.context, dto::PromptDeleteRequest { client_operation_id: "delete-copy-source".into(), prompt_id: source.prompt.id, expected_revision: source.prompt.revision }).await.expect("delete source");
+    assert_eq!(prompt_create(&harness.context, request).await.expect("replay"), copy);
+    let current = prompt_get(&harness.context, dto::PromptGetRequest { prompt_id: copy.prompt.id }).await.expect("copy remains");
+    assert!(matches!(current.prompt.origin, dto::PromptOrigin::Derived { source_deleted: true, .. }));
+}
+
+#[tokio::test]
+async fn prompt_preview_renders_an_unsaved_draft_without_writes_or_events() {
+    let harness = harness(Reply::Text("unused"));
+    let before = harness.context.backend().database().read_provider_backup_graph().expect("before");
+    let events = harness.events.events().len();
+    let id = PromptDocumentId::new().to_string();
+    let request: dto::PromptPreviewRequest = serde_json::from_value(serde_json::json!({
+        "prompt_id": id, "draft": input("Unsaved", &format!("Draft marker {DIRECT_PLACEHOLDERS}")),
+        "conversation_id": null, "character_id": harness.character_id.to_string(), "persona_id": null,
+    })).expect("draft preview request");
+    let preview = prompt_preview(&harness.context, request).await.expect("draft preview");
+    assert!(preview.entries.iter().any(|entry| entry.text.contains("Draft marker")));
+    assert_eq!(prompt_get(&harness.context, dto::PromptGetRequest { prompt_id: id }).await.expect_err("not stored").code, ApiErrorCode::NotFound);
+    assert_eq!(harness.context.backend().database().read_provider_backup_graph().expect("after"), before);
+    assert_eq!(harness.events.events().len(), events);
+}
+
 fn entry(content: &str) -> dto::PromptEntryInput {
     dto::PromptEntryInput {
         entry_id: None,
@@ -45,6 +81,7 @@ async fn create(harness: &Harness, key: &str, name: &str) -> dto::PromptView {
     prompt_create(
         &harness.context,
         dto::PromptCreateRequest {
+            source_prompt_id: None,
             client_operation_id: key.into(),
             prompt: input(name, DIRECT_PLACEHOLDERS),
         },
@@ -169,6 +206,7 @@ async fn writes_require_the_kinds_placeholders_and_replay_by_key() {
     let refused = prompt_create(
         &harness.context,
         dto::PromptCreateRequest {
+            source_prompt_id: None,
             client_operation_id: "short".into(),
             prompt: input("Short", "{{char.name}} only"),
         },
@@ -221,6 +259,7 @@ async fn writes_require_the_kinds_placeholders_and_replay_by_key() {
     let conflict = prompt_create(
         &harness.context,
         dto::PromptCreateRequest {
+            source_prompt_id: None,
             client_operation_id: "full".into(),
             prompt: input("Other", DIRECT_PLACEHOLDERS),
         },
@@ -557,6 +596,7 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let prompt = prompt_create(
         &harness.context,
         dto::PromptCreateRequest {
+            source_prompt_id: None,
             client_operation_id: "preview".into(),
             prompt: preview_input,
         },
@@ -566,6 +606,7 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let sample = prompt_preview(
         &harness.context,
         dto::PromptPreviewRequest {
+            draft: None,
             prompt_id: prompt.prompt.id.clone(),
             conversation_id: None,
             character_id: Some(harness.character_id.to_string()),
@@ -592,6 +633,7 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let live = prompt_preview(
         &harness.context,
         dto::PromptPreviewRequest {
+            draft: None,
             prompt_id: prompt.prompt.id.clone(),
             conversation_id: Some(chat),
             character_id: None,
@@ -614,6 +656,7 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let group_prompt = prompt_create(
         &harness.context,
         dto::PromptCreateRequest {
+            source_prompt_id: None,
             client_operation_id: "group-prompt".into(),
             prompt: dto::PromptInput {
                 kind: dto::PromptKind::GroupChatConversational,
@@ -629,6 +672,7 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let group = prompt_preview(
         &harness.context,
         dto::PromptPreviewRequest {
+            draft: None,
             prompt_id: group_prompt.prompt.id,
             conversation_id: Some(cast.chat),
             character_id: Some(cast.ada_character.to_string()),
@@ -649,6 +693,7 @@ async fn live_preview_uses_provider_and_model_conditions_without_writing_snapsho
     let prompt = prompt_create(
         &harness.context,
         dto::PromptCreateRequest {
+            source_prompt_id: None,
             client_operation_id: "provider-preview".into(),
             prompt: dto::PromptInput {
                 entries: vec![
@@ -678,6 +723,7 @@ async fn live_preview_uses_provider_and_model_conditions_without_writing_snapsho
     let preview = prompt_preview(
         &harness.context,
         dto::PromptPreviewRequest {
+            draft: None,
             prompt_id: prompt.prompt.id,
             conversation_id: Some(chat),
             character_id: None,

@@ -138,12 +138,12 @@ export const commands = {
 	promptPlaceholders: (request: PromptPlaceholdersRequest) => typedError<PromptPlaceholders, ApiError_Serialize>(__TAURI_INVOKE("prompt_placeholders", { request })),
 	promptValidate: (request: PromptValidateRequest) => typedError<PromptValidation, ApiError_Serialize>(__TAURI_INVOKE("prompt_validate", { request })),
 	promptGet: (request: PromptGetRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_get", { request })),
-	promptCreate: (request: PromptCreateRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_create", { request })),
+	promptCreate: (request: PromptCreateRequest_Deserialize) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_create", { request })),
 	promptUpdate: (request: PromptUpdateRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_update", { request })),
 	promptDelete: (request: PromptDeleteRequest) => typedError<SourceDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_delete", { request })),
 	promptBuiltinReset: (request: PromptBuiltinResetRequest) => typedError<PromptBuiltinResetResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_builtin_reset", { request })),
 	promptAppDefaultSet: (request: PromptAppDefaultSetRequest) => typedError<PromptAppDefault, ApiError_Serialize>(__TAURI_INVOKE("prompt_app_default_set", { request })),
-	promptPreview: (request: PromptPreviewRequest) => typedError<PromptPreview, ApiError_Serialize>(__TAURI_INVOKE("prompt_preview", { request })),
+	promptPreview: (request: PromptPreviewRequest_Deserialize) => typedError<PromptPreview, ApiError_Serialize>(__TAURI_INVOKE("prompt_preview", { request })),
 	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebooks_list", { request })),
 	lorebookGet: (request: LorebookGetRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_get", { request })),
 	lorebookCreate: (request: LorebookCreateRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_create", { request })),
@@ -6692,8 +6692,17 @@ export type PromptChatMode = "direct" | "group";
 /**  When a prompt entry applies. */
 export type PromptCondition = { type: "chat_mode"; value: PromptChatMode } | { type: "info_source"; value: PromptInfoSource } | { type: "scene_generation_enabled"; value: boolean } | { type: "avatar_generation_enabled"; value: boolean } | { type: "is_local_image_generation_model"; value: boolean } | { type: "is_scene_generation_local_image_model"; value: boolean } | { type: "scene_image_protocol"; value: PromptSceneImageProtocol } | { type: "has_scene"; value: boolean } | { type: "has_scene_direction"; value: boolean } | { type: "has_persona"; value: boolean } | { type: "message_count_at_least"; value: number } | { type: "participant_count_at_least"; value: number } | { type: "keyword_any"; values: string[] } | { type: "keyword_all"; values: string[] } | { type: "keyword_none"; values: string[] } | { type: "dynamic_memory_enabled"; value: boolean } | { type: "has_memory_summary"; value: boolean } | { type: "has_key_memories"; value: boolean } | { type: "has_lorebook_content"; value: boolean } | { type: "does_author_note_exists"; value: boolean } | { type: "has_active_scheduled_note"; value: boolean } | { type: "has_subject_description"; value: boolean } | { type: "has_current_description"; value: boolean } | { type: "has_character_reference_images"; value: boolean } | { type: "has_chat_background"; value: boolean } | { type: "has_persona_reference_images"; value: boolean } | { type: "has_character_reference_text"; value: boolean } | { type: "has_persona_reference_text"; value: boolean } | { type: "input_scope_any"; values: string[] } | { type: "output_scope_any"; values: string[] } | { type: "provider_id_any"; values: string[] } | { type: "reasoning_enabled"; value: boolean } | { type: "vision_enabled"; value: boolean } | { type: "is_time_awareness_enabled"; value: boolean } | { type: "is_companion_mode"; value: boolean } | { type: "all"; conditions: PromptCondition[] } | { type: "any"; conditions: PromptCondition[] } | { type: "not"; condition: PromptCondition };
 
-export type PromptCreateRequest = {
+export type PromptCreateRequest = PromptCreateRequest_Serialize | PromptCreateRequest_Deserialize;
+
+export type PromptCreateRequest_Deserialize = {
 	client_operation_id: string,
+	source_prompt_id?: string | null,
+	prompt: PromptInput,
+};
+
+export type PromptCreateRequest_Serialize = {
+	client_operation_id: string,
+	source_prompt_id?: string,
 	prompt: PromptInput,
 };
 
@@ -6840,8 +6849,31 @@ export type PromptPreviewEntry = {
  *  the given character and persona (or none) and sample memories, summary
  *  and lorebook text.
  */
-export type PromptPreviewRequest = {
+export type PromptPreviewRequest = PromptPreviewRequest_Serialize | PromptPreviewRequest_Deserialize;
+
+/**
+ *  Renders a prompt. With a conversation it renders from that
+ *  conversation's live sources as its next turn would; without one it uses
+ *  the given character and persona (or none) and sample memories, summary
+ *  and lorebook text.
+ */
+export type PromptPreviewRequest_Deserialize = {
 	prompt_id: string,
+	draft?: PromptInput | null,
+	conversation_id: string | null,
+	character_id: string | null,
+	persona_id: string | null,
+};
+
+/**
+ *  Renders a prompt. With a conversation it renders from that
+ *  conversation's live sources as its next turn would; without one it uses
+ *  the given character and persona (or none) and sample memories, summary
+ *  and lorebook text.
+ */
+export type PromptPreviewRequest_Serialize = {
+	prompt_id: string,
+	draft: PromptInput | null,
 	conversation_id: string | null,
 	character_id: string | null,
 	persona_id: string | null,

@@ -49,7 +49,7 @@ describe("settings routes", () => {
   });
 
   it("does not find a section that has no page, or one that does not exist", async () => {
-    await renderAt("/settings/prompts");
+    await renderAt("/settings/voices");
     expect(await screen.findByText("Nothing here")).toBeTruthy();
     cleanup();
     await renderAt("/settings/nope");

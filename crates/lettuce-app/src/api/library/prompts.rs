@@ -558,6 +558,7 @@ pub async fn prompt_create(
         &[b"prompt_create", &bytes],
     )?;
     let input = input(request.prompt)?;
+    let source = request.source_prompt_id.as_deref().map(|id| parse_id::<PromptDocumentId>(id, "source_prompt_id")).transpose()?;
     if input.edits.iter().any(|edit| edit.entry_id.is_some()) {
         return Err(invalid_field("entry_id", "a new prompt has no entries yet"));
     }
@@ -575,12 +576,11 @@ pub async fn prompt_create(
                     token.request_digest.as_str(),
                     now,
                     |scope| {
-                        let document = scope
-                            .create_prompt(
-                                input.metadata,
-                                input.edits.into_iter().map(|edit| edit.draft).collect(),
-                                now,
-                            )
+                        let entries = input.edits.into_iter().map(|edit| edit.draft).collect();
+                        let document = match source {
+                            Some(source) => scope.create_prompt_copy(source, input.metadata, entries, now),
+                            None => scope.create_prompt(input.metadata, entries, now),
+                        }
                             .map_err(|error| Failure(error.into_api_error()))?;
                         transaction_view(context, scope, &document)
                     },
@@ -919,6 +919,7 @@ pub async fn prompt_preview(
     request: dto::PromptPreviewRequest,
 ) -> Result<dto::PromptPreview, ApiError> {
     let id: PromptDocumentId = parse_id(&request.prompt_id, "prompt_id")?;
+    let draft = request.draft.map(input).transpose()?;
     let conversation = request
         .conversation_id
         .as_deref()
@@ -937,7 +938,22 @@ pub async fn prompt_preview(
     let handle = tokio::runtime::Handle::current();
     context
         .blocking(move |context| {
-            let document = load(context, id)?;
+            let document = if let Some(draft) = draft {
+                let document = PromptDocument {
+                    id, status: LifecycleStatus::Active, name: draft.metadata.name.clone(), purpose: draft.metadata.purpose,
+                    entries: draft.edits.iter().map(|edit| PromptEntry {
+                        id: edit.entry_id.unwrap_or_else(PromptEntryId::new), built_in_entry_key: None,
+                        name: edit.draft.name.clone(), role: edit.draft.role, content: edit.draft.content.clone(), enabled: edit.draft.enabled,
+                        injection_position: edit.draft.injection_position, depth: edit.draft.depth,
+                        conditional_min_messages: edit.draft.conditional_min_messages, interval_turns: edit.draft.interval_turns,
+                        system_prompt: edit.draft.system_prompt, conditions: edit.draft.conditions.clone(), payload: edit.draft.payload.clone(),
+                    }).collect(),
+                    condense: draft.metadata.condense, behavior_version: draft.metadata.behavior_version, provenance: PromptProvenance::User,
+                    revision: lettuce_types::Revision::INITIAL, created_at: context.now(), updated_at: context.now(),
+                };
+                document.validate().map_err(|error| api_error(ApiErrorCode::InvalidInput, error.to_string()))?;
+                document
+            } else { load(context, id)? };
             let (render_context, strip_scene) = match conversation {
                 Some(conversation_id) => {
                     let backend = context.backend();

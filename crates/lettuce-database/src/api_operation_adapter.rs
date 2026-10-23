@@ -162,7 +162,18 @@ impl ApiOperationTransaction<'_, '_> {
             metadata,
             entries,
             now,
+            None,
         )
+    }
+
+    pub fn create_prompt_copy(
+        &self,
+        source: lettuce_types::PromptDocumentId,
+        metadata: lettuce_context::PromptMetadataDraft,
+        entries: Vec<lettuce_context::PromptEntryDraft>,
+        now: TimestampMillis,
+    ) -> Result<lettuce_context::PromptDocument, lettuce_context::PromptRepositoryError> {
+        crate::catalog::prompt_adapter::create_user_draft_in(self.transaction, metadata, entries, now, Some(source))
     }
 
     pub fn import_prompt_file(

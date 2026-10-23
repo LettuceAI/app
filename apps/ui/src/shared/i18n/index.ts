@@ -7,6 +7,7 @@ import home from "./locales/en/home.json";
 import library from "./locales/en/library.json";
 import openedFiles from "./locales/en/opened-files.json";
 import onboarding from "./locales/en/onboarding.json";
+import prompts from "./locales/en/prompts.json";
 import personas from "./locales/en/personas.json";
 import settings from "./locales/en/settings.json";
 import welcomeBack from "./locales/en/welcome-back.json";
@@ -14,7 +15,7 @@ import welcomeBack from "./locales/en/welcome-back.json";
 export const defaultNamespace = "common";
 
 export const resources = {
-  en: { characters, common, conversations, home, library, onboarding, "opened-files": openedFiles, personas, settings, "welcome-back": welcomeBack },
+  en: { prompts, characters, common, conversations, home, library, onboarding, "opened-files": openedFiles, personas, settings, "welcome-back": welcomeBack },
 } as const;
 
 export type Language = keyof typeof resources;

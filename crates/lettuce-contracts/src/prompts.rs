@@ -265,6 +265,8 @@ pub struct PromptInput {
 #[serde(deny_unknown_fields)]
 pub struct PromptCreateRequest {
     pub client_operation_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_prompt_id: Option<String>,
     pub prompt: PromptInput,
 }
 
@@ -373,6 +375,8 @@ pub struct PromptValidation {
 #[serde(deny_unknown_fields)]
 pub struct PromptPreviewRequest {
     pub prompt_id: String,
+    #[serde(default)]
+    pub draft: Option<PromptInput>,
     pub conversation_id: Option<String>,
     pub character_id: Option<String>,
     pub persona_id: Option<String>,

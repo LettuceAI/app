@@ -936,6 +936,7 @@ pub(crate) fn create_user_draft_in(
     metadata: PromptMetadataDraft,
     entries: Vec<PromptEntryDraft>,
     now: TimestampMillis,
+    source: Option<PromptDocumentId>,
 ) -> Result<PromptDocument, PromptRepositoryError> {
     validate_metadata(&metadata)?;
     validate_entries(&entries)?;
@@ -943,11 +944,12 @@ pub(crate) fn create_user_draft_in(
         .into_iter()
         .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
         .collect();
+    let provenance = source.map(|id| load_required(tx, id)).transpose()?.map_or(PromptProvenance::User, |document| PromptProvenance::Derived { source: document.id, source_name: document.name });
     let document = metadata_document(
         PromptDocumentId::new(),
         metadata,
         entries,
-        PromptProvenance::User,
+        provenance,
         now,
     )?;
     insert_root(tx, &document)?;

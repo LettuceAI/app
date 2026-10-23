@@ -14,6 +14,9 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ### Launch and prompts
 
+- Prompt creation accepts an optional source document and records Derived provenance inside the existing atomic operation; entry ownership is freshly allocated. Draft preview validates an ephemeral document and uses the existing renderer without writes or events. Both fields are optional for existing callers (system-prompt editor, user decision, 2026-10-23).
+
+
 - Prompt launch follows legacy `build_system_prompt_entries`. Legacy accepted an app-wide template in companion mode only when its type was companion chat. A starter's prompt is ignored for companions as in release 2.2.5 `221fe1aa` (the companion template wins over any session template).
 - An archived inherited direct prompt falls through to the app default like legacy's not-found fallback.
 - A direct chat resolves its chat model live like legacy `select_model_with_credential`.
