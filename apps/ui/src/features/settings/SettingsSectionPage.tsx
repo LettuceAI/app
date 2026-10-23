@@ -4,6 +4,7 @@ import { ModelsPage } from "./ModelsPage";
 import { AboutPage } from "./AboutPage";
 import { MemoryPage } from "./memory/MemoryPage";
 import { ImageSettingsPage } from "./image/ImageSettingsPage";
+import { ReplyHelperPage } from "./reply-helper/ReplyHelperPage";
 import { PromptsPage } from "./prompts/PromptsPage";
 import { BackupPage } from "./backup/BackupPage";
 
@@ -14,6 +15,7 @@ export function SettingsSectionPage() {
   if (section === "models") return <ModelsPage />;
   if (section === "memory") return <MemoryPage />;
   if (section === "imageGeneration") return <ImageSettingsPage />;
+  if (section === "replyHelper") return <ReplyHelperPage />;
   if (section === "prompts") return <PromptsPage />;
   if (section === "backup") return <BackupPage />;
   return section === "about" ? <AboutPage /> : null;

@@ -395,10 +395,6 @@
       "title": "System prompts",
       "subtitle": "Shape AI personality"
     },
-    "advanced": {
-      "title": "Advanced",
-      "subtitle": "Reply help, generators and more"
-    },
     "performance": {
       "title": "Local LLM performance",
       "subtitle": "Speed & context graphs"
@@ -470,6 +466,14 @@
     "developer": {
       "title": "Developer tools",
       "subtitle": "Debug & testing"
+    },
+    "replyHelper": {
+      "title": "Reply helper",
+      "subtitle": "Suggests your next message"
+    },
+    "smartCreator": {
+      "title": "Smart creator",
+      "subtitle": "Build characters by chatting"
     }
   },
   "about": {
@@ -1463,5 +1467,59 @@
       "backup_recovery_required": "The backup needs the app to be reopened.",
       "backup_verification_failed": "The backup did not pass verification."
     }
+  },
+  "replyHelper": {
+    "meta": "Suggests your next message",
+    "enabledBody": "Adds a button to the chat composer that writes your next message, or polishes the one you started.",
+    "style": "Style",
+    "roleplay": "Roleplay",
+    "conversational": "Conversational",
+    "roleplayHint": "Writes in character, with actions in asterisks and a bit of narration.",
+    "conversationalHint": "Writes plain dialogue, the way you would text someone.",
+    "roleplayExample": "*I set the lantern down and glance at the door.* \"You heard that too, right?\"",
+    "conversationalExample": "Wait, did you hear that? I swear something just moved outside.",
+    "example": "Example: {{text}}",
+    "modelGroup": "Model",
+    "model": "Reply model",
+    "streaming": "Stream suggestions",
+    "streamingBody": "Words appear in the composer as they are written",
+    "lengthGroup": "Length and context",
+    "maxLength": "Max length",
+    "maxLengthBody": "In tokens. Shorter is quicker.",
+    "history": "Messages sent",
+    "historyBody": "How many recent messages the model reads first",
+    "historyDefault": "Uses the default history length",
+    "prompts": "Prompts",
+    "roleplayPrompt": "Roleplay prompt",
+    "conversationalPrompt": "Conversational prompt",
+    "inUse": "In use",
+    "promptsHint": "Each style has its own prompt. Write your own under Settings, System prompts.",
+    "globalHint": "These settings apply to every chat.",
+    "appDefault": "App default",
+    "defaultModel": "App default · {{name}}",
+    "noDefault": "No app default selected",
+    "defaultUnavailable": "App default is unavailable",
+    "modelUnavailable": "Selected model is unavailable",
+    "modelDisabled": "Selected model’s provider is disabled",
+    "modelIdentity": "{{provider}} · {{name}}",
+    "providerDisabled": "{{provider}} · Disabled",
+    "defaultGroup": "Default",
+    "onDevice": "On device",
+    "builtIn": "Built in",
+    "app": "App",
+    "yours": "Yours",
+    "promptUnavailable": "Selected prompt is unavailable; using built in",
+    "builtinMissing": "Built-in prompt is unavailable",
+    "managePrompts": "Manage prompts",
+    "managePromptsBody": "Opens System prompts",
+    "modelSearch": "Search models",
+    "promptSearch": "Search prompts",
+    "noModels": "No models available",
+    "noModelsBody": "Add a text model under Settings, Models.",
+    "addModel": "Add model",
+    "noMatches": "No matches",
+    "loading": "Loading reply helper settings",
+    "notSaved": "Not saved",
+    "retry": "Try again"
   }
 }

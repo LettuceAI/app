@@ -112,7 +112,7 @@ async function commit(title: string, value: string) {
 const lastPatch = (store: ReturnType<typeof backend>) => store.requests.at(-1)!.patch;
 
 describe("memory settings page", () => {
-  it("is listed with its subtitle, and Advanced has the new one", async () => {
+  it("is listed with its subtitle and the direct helper sections", async () => {
     const i18n = await createTestI18n("en");
     const runtime = await createAppRuntime({
       transport: createMockTransport({ calls: { appStatus: () => ok({ ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } }) } }),
@@ -123,7 +123,9 @@ describe("memory settings page", () => {
     const memoryRow = await screen.findByRole("button", { name: /^Memory/ });
     expect(within(memoryRow).getByText("How characters remember")).toBeTruthy();
     expect(memoryRow.hasAttribute("disabled")).toBe(false);
-    expect(i18n.t("sections.advanced.subtitle", { ns: "settings" })).toBe("Reply help, generators and more");
+    expect(screen.queryByRole("button", { name: /^Advanced/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Reply helper/ }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: /^Smart creator/ })).toBeTruthy();
   });
 
   it("saves the context window when the field is left", async () => {

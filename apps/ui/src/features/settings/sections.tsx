@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import {
   ArrowLeftRight, BarChart3, BookOpen, Brain, Cpu, EthernetPort, FileCode, FileText, Gauge, HardDrive, HelpCircle, Image, Info,
-  Mic, Palette, RefreshCw, RotateCcw, ScrollText, Shield, Sliders, Sparkles, Volume2, Wrench,
+  Mic, Palette, PenLine, RefreshCw, RotateCcw, ScrollText, Shield, Sparkles, Volume2, Wand2, Wrench,
 } from "lucide-react";
 import { icon } from "@lettuceai/crisp";
 
 export const settingsSectionIds = [
-  "providers", "models", "memory", "imageGeneration", "prompts", "advanced", "performance",
+  "providers", "models", "memory", "imageGeneration", "prompts", "replyHelper", "smartCreator", "performance",
   "voices", "customization", "speech",
   "sync", "backup", "convert",
   "security", "usage",
@@ -38,7 +38,8 @@ export const settingsGroups: readonly SettingsGroup[] = [
       { id: "memory", icon: glyph(Brain) },
       { id: "imageGeneration", icon: glyph(Image) },
       { id: "prompts", icon: glyph(FileText) },
-      { id: "advanced", icon: glyph(Sliders) },
+      { id: "replyHelper", icon: glyph(PenLine) },
+      { id: "smartCreator", icon: glyph(Wand2) },
       { id: "performance", icon: glyph(Gauge) },
     ],
   },
@@ -87,7 +88,7 @@ export const settingsGroups: readonly SettingsGroup[] = [
 ];
 
 /** The sections that have a page so far; the rest are listed but cannot be opened yet. */
-export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set(["about", "providers", "models", "memory", "imageGeneration", "backup", "prompts"]);
+export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set(["about", "providers", "models", "memory", "imageGeneration", "backup", "prompts", "replyHelper"]);
 
 export function isSettingsSection(value: string): value is SettingsSectionId {
   return (settingsSectionIds as readonly string[]).includes(value);

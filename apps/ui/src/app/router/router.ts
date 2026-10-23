@@ -72,7 +72,8 @@ const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/set
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
-  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras"; engineInstall?: boolean; civitaiModel?: number; prompt?: string; promptSource?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras"; engineInstall?: boolean; civitaiModel?: number; prompt?: string; promptSource?: string; replyPicker?: "model" | "roleplay" | "conversational" } => ({
+    ...(search.replyPicker === "model" || search.replyPicker === "roleplay" || search.replyPicker === "conversational" ? { replyPicker: search.replyPicker } : {}),
     ...(typeof search.prompt === "string" && search.prompt ? { prompt: search.prompt } : {}),
     ...(search.prompt === "new" && typeof search.promptSource === "string" && search.promptSource ? { promptSource: search.promptSource } : {}),
     ...(search.imagePicker === "avatar" || search.imagePicker === "scene" || search.imagePicker === "writer" ? { imagePicker: search.imagePicker } : {}),
@@ -131,6 +132,7 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 
 declare module "@tanstack/history" {
   interface HistoryState {
+    replyPickerPushed?: boolean;
     promptPushed?: boolean;
     panelPushed?: boolean;
     libraryOverlayPushed?: boolean;
