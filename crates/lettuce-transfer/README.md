@@ -47,6 +47,8 @@ The envelope accepts any nonempty UTF-8 password without character-class or leng
 
 ## What a backup contains
 
+Conversation usage version 4 includes each event's conversation id so usage and cost history survive backing up after a conversation is deleted. Versions 1 through 3 remain readable; their conversation ids are resolved from the retained generation attempts. The encrypted envelope remains version 2.
+
 Provider graph version 3 carries lorebook apply receipts with the destination's name at apply time. A receipt remains restorable when its lorebook is absent. The encrypted envelope remains version 2.
 
 The lorebook and prompt history snapshots (turn prompt and lorebook names, run prompt names, a derived prompt's source name) travel in conversation runtime version 2, dynamic memory version 7, companion state version 3 and provider graph version 3. A derived prompt's source and the books and prompts a turn used need not be in the backup.

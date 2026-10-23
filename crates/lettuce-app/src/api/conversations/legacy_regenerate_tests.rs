@@ -423,7 +423,7 @@ async fn imported_candidates_and_the_unknown_speaker_survive_a_backup_round_trip
         "password", sections.clone()).expect("sealed");
     let decoded = lettuce_transfer::decode_provider_backup_restore_plan(std::io::Cursor::new(sealed), "password")
         .expect("origin-bearing backup decodes");
-    assert_eq!(decoded.graph.conversation_usage.version, 3);
+    assert_eq!(decoded.graph.conversation_usage.version, 4);
     assert!(!decoded.graph.conversation_usage.events.is_empty());
     for version in [1, 2] {
         let mut old_sections = sections.clone();

@@ -18585,6 +18585,95 @@ mod tests {
         assert_eq!(assets, 1);
     }
 
+    #[test]
+    fn backup_round_trips_usage_after_its_conversation_is_purged() {
+        let mut fixture = direct_fixture();
+        conversation_with_two_exchanges(&mut fixture, "purged-backup");
+        fixture.database.purge_conversation(fixture.conversation_id, TimestampMillis::new(700)).expect("purge");
+        let (graph, restored) = crate::backup::restore_writer::tests::backup_round_trip(fixture.database.as_ref(), |_| {});
+        assert_eq!(graph.conversation_usage.events.len(), 2);
+        let id = fixture.conversation_id.to_string();
+        assert_eq!(scalar::<i64>(&restored, "SELECT count(*) FROM usage_events WHERE conversation_id = ?1", &id), 2);
+        assert_eq!(scalar::<i64>(&restored, "SELECT count(*) FROM conversations WHERE id = ?1", &id), 0);
+        let guard = "usage_events_require_attempt";
+        let trigger = scalar::<String>(&fixture.database, "SELECT sql FROM sqlite_master WHERE name = ?1", guard);
+        assert_eq!(scalar::<String>(&restored, "SELECT sql FROM sqlite_master WHERE name = ?1", guard), trigger);
+        let failing = Database::open_in_memory().expect("failing target");
+        failing.connection().expect("connection").execute_batch("CREATE TRIGGER fail_restore_usage BEFORE INSERT ON usage_events BEGIN SELECT RAISE(ABORT, 'test restore rollback'); END;").expect("failure trigger");
+        assert!(lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(&failing, &graph, &[]).is_err());
+        assert_eq!(scalar::<String>(&failing, "SELECT sql FROM sqlite_master WHERE name = ?1", guard), trigger);
+        assert_eq!(scalar::<i64>(&failing, "SELECT count(*) FROM usage_events WHERE conversation_id = ?1", &id), 0);
+    }
+
+    #[test]
+    fn backup_rejects_usage_with_a_wrong_or_missing_retained_owner() {
+        let mut fixture = direct_fixture();
+        conversation_with_two_exchanges(&mut fixture, "usage-owner");
+        let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(fixture.database.as_ref()).expect("graph");
+        let mut wrong = graph.clone();
+        wrong.conversation_usage.events[0].conversation_id = Some(ConversationId::new());
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong).is_err());
+        let mut missing = graph.clone();
+        missing.conversation_usage.events[0].event.record.attempt_id = GenerationAttemptId::new();
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut missing).is_err());
+        let mut unidentified = graph;
+        unidentified.conversation_usage.events[0].conversation_id = None;
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut unidentified).is_err());
+    }
+
+    #[test]
+    fn older_usage_backups_resolve_their_conversation_from_retained_attempts() {
+        let mut fixture = direct_fixture();
+        conversation_with_two_exchanges(&mut fixture, "older-usage");
+        let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(fixture.database.as_ref()).expect("graph");
+        for version in [1, 2, 3] {
+            let mut older = graph.clone();
+            older.conversation_usage.version = version;
+            for event in &mut older.conversation_usage.events {
+                event.conversation_id = None;
+            }
+            lettuce_transfer::canonicalize_and_validate(&mut older).expect("older usage remains valid");
+            assert!(older.conversation_usage.events.iter().all(|event| event.conversation_id == Some(fixture.conversation_id)));
+        }
+    }
+
+    #[test]
+    fn backup_round_trips_continue_after_a_rewind_or_an_inherited_fork_head() {
+        for inherited in [false, true] {
+            let mut fixture = direct_fixture();
+            let messages = conversation_with_two_exchanges(&mut fixture, "backup-continue");
+            let branch_id = if inherited {
+                fixture.database.fork_branch(&ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("backup-continue-fork", "cd"),
+                }, TimestampMillis::new(300)).expect("fork").value.branch.id
+            } else {
+                fixture.database.tombstone_message(&TombstoneMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id: messages[2],
+                    expected_revision: fixture.revision,
+                    operation: token("backup-continue-rewind", "cd"),
+                    descendants: DescendantPolicy::Tombstone,
+                }, TimestampMillis::new(300)).expect("rewind");
+                fixture.branch_id
+            };
+            let continued = fixture.database.begin_continue(&ContinueConversation {
+                conversation_id: fixture.conversation_id,
+                branch_id,
+                expected_revision: conversation_revision(&fixture),
+                forced_speaker: None,
+                swap_roles: false,
+                operation: token("backup-continue", "cd"),
+            }, TimestampMillis::new(301)).expect("continue");
+            settle_succeeded(&fixture, &continued.value.turn, 302);
+            store_fixture_model_snapshots(&fixture.database);
+            crate::backup::restore_writer::tests::assert_backup_round_trip(fixture.database.as_ref());
+        }
+    }
+
     fn sync_all(from: &Database, to: &Database, at: i64) {
         use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
         from.journal_current_state(TimestampMillis::new(at))

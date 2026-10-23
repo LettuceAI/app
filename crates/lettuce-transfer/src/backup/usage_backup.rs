@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use lettuce_types::{GenerationAttemptId, UsageEventId};
+use lettuce_types::{ConversationId, GenerationAttemptId, UsageEventId};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_USAGE_BACKUP_VERSION: u32 = 3;
+pub const CONVERSATION_USAGE_BACKUP_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +17,8 @@ pub struct ConversationUsageBackup {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackupConversationUsage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<ConversationId>,
     pub event: lettuce_usage::UsageEvent,
     pub cost_basis: Option<lettuce_usage::UsageCostBasis>,
     pub overlapping_job_inference_ids: Vec<UsageEventId>,
@@ -28,7 +30,7 @@ impl ConversationUsageBackup {
         runtime: &crate::ConversationRuntimeBackup,
         jobs: &crate::JobBackup,
     ) -> Result<(), ConversationUsageBackupError> {
-        if !matches!(self.version, 1 | 2 | CONVERSATION_USAGE_BACKUP_VERSION)
+        if !matches!(self.version, 1 | 2 | 3 | CONVERSATION_USAGE_BACKUP_VERSION)
             || (self.version == 1 && !self.tombstones.is_empty())
         {
             return Err(ConversationUsageBackupError::InvalidData);
@@ -144,13 +146,22 @@ impl ConversationUsageBackup {
             }
         }
 
+        let conversation_ids = runtime.conversations.iter().map(|conversation| conversation.conversation_id).collect::<BTreeSet<_>>();
         for entry in &mut self.events {
+            let owner = runtime_owners.get(&(entry.event.record.turn_id, entry.event.record.attempt_id));
+            if self.version < CONVERSATION_USAGE_BACKUP_VERSION && entry.conversation_id.is_none() {
+                entry.conversation_id = owner.map(|owner| owner.0);
+            }
+            let conversation_id = entry.conversation_id.ok_or(ConversationUsageBackupError::InvalidData)?;
+            let linked = match owner {
+                Some((id, usage, _)) => *id == conversation_id && *usage == Some(entry.event.id),
+                None => self.version == CONVERSATION_USAGE_BACKUP_VERSION && !conversation_ids.contains(&conversation_id),
+            };
             entry.overlapping_job_inference_ids.sort();
             if !ids.insert(entry.event.id)
                 || !owners.insert((entry.event.record.turn_id, entry.event.record.attempt_id))
                 || entry.event.record.validate().is_err()
-                || attempts.get(&(entry.event.record.turn_id, entry.event.record.attempt_id))
-                    != Some(&Some(entry.event.id))
+                || !linked
                 || entry
                     .cost_basis
                     .as_ref()

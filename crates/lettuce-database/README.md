@@ -76,6 +76,10 @@ The schema has not shipped, so a domain's tables change inside that domain's mig
 
 Terminal usage snapshots use nullable scalar columns in the usage migration. A presence flag distinguishes an older record with no snapshot from a snapshot whose fields are all unknown. Snapshot metadata, counters and event identity are inserted together, remain immutable, and are carried by the same historical usage writer used for backup and synchronization.
 
+Backup usage retains the original conversation id after a conversation is purged. Restore validates those detached events, inserts them with the historical usage writer and retains their cost bases. It suspends the attempt-admission trigger only inside the restore transaction and restores the exact trigger before commit; any failure rolls back both the data and the trigger.
+
+Historical Continue turns are inserted with their recorded input as the temporary branch head, including an inherited fork head. Once the history is inserted, the saved final heads are restored. Rewound history therefore follows the same admission constraints without losing hidden messages or changing the restored branch state.
+
 Job usage stores optional admission and response snapshots in its existing versioned documents. Admission fields cannot contain a result; settlement may add result fields but cannot change admitted names or attribution, and the snapshot response id must agree with the response itself. Reads and backup validation enforce the same domain check.
 
 The same few patterns run through every adapter:

@@ -1576,6 +1576,10 @@ fn read_conversation_usage(
 ) -> Result<ConversationUsageBackup, ProviderBackupSourceError> {
     let usage = crate::usage_adapter::load_all_usage_in(transaction)
         .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    let owners = transaction.prepare("SELECT id, conversation_id FROM usage_events ORDER BY id")
+        .and_then(|mut statement| statement.query_map([], |row| Ok((parse_id(row.get(0)?)?, parse_id(row.get(1)?)?)))?
+            .collect::<rusqlite::Result<std::collections::BTreeMap<lettuce_types::UsageEventId, ConversationId>>>())
+        .map_err(backup_error)?;
     let mut costs = std::collections::BTreeMap::new();
     let mut statement = transaction
         .prepare("SELECT event_id,basis_json FROM usage_costs ORDER BY event_id")
@@ -1615,15 +1619,16 @@ fn read_conversation_usage(
     }
     let events = usage
         .into_iter()
-        .map(|event| BackupConversationUsage {
+        .map(|event| Ok(BackupConversationUsage {
+            conversation_id: Some(*owners.get(&event.id).ok_or(ProviderBackupSourceError::InvalidData)?),
             cost_basis: costs.remove(&event.id),
             overlapping_job_inference_ids: overlaps
                 .get(&event.record.attempt_id)
                 .cloned()
                 .unwrap_or_default(),
             event,
-        })
-        .collect();
+        }))
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     if !costs.is_empty() {
         return Err(ProviderBackupSourceError::InvalidData);
     }

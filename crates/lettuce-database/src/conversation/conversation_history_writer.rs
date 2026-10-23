@@ -840,6 +840,12 @@ pub(crate) fn insert_turn(
     transaction: &Transaction<'_>,
     turn: &GenerationTurn,
 ) -> Result<(), ConversationRepositoryError> {
+    if let GenerationInput::ExistingHead { head_message_id } = turn.input {
+        transaction.execute(
+            "UPDATE conversation_branches SET head_message_id = CASE WHEN fork_message_id = ?3 THEN NULL ELSE ?3 END WHERE conversation_id = ?1 AND id = ?2",
+            params![turn.conversation_id.to_string(), turn.branch_id.to_string(), head_message_id.to_string()],
+        ).map_err(kernel::map_constraint)?;
+    }
     let (input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id) =
         match turn.input {
             GenerationInput::UserMessage { message_id } => (

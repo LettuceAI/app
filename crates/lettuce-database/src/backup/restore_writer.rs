@@ -33,6 +33,7 @@ impl ProviderBackupRestoreWriter for Database {
     ) -> Result<(), Error> {
         let mut settled = graph.clone();
         lettuce_transfer::settle_in_flight_generation(&mut settled);
+        settled.conversation_usage.canonicalize_and_validate(&settled.conversation_runtime, &settled.job_backup).map_err(invalid)?;
         let graph = &settled;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -836,6 +837,16 @@ impl ProviderBackupRestoreWriter for Database {
                         .map_err(invalid)?;
                 }
             }
+        }
+        let detached = graph.conversation_usage.events.iter().filter(|entry| entry.conversation_id.is_some_and(|id| !runtime.contains_key(&id))).collect::<Vec<_>>();
+        if !detached.is_empty() {
+            let trigger: String = transaction.query_row("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'usage_events_require_attempt'", [], |row| row.get(0)).map_err(invalid)?;
+            transaction.execute_batch("DROP TRIGGER usage_events_require_attempt").map_err(invalid)?;
+            for entry in detached {
+                let conversation_id = entry.conversation_id.ok_or(Error::InvalidData)?;
+                crate::usage_adapter::insert_usage_event_in(&transaction, &conversation_id.to_string(), &entry.event).map_err(invalid)?;
+            }
+            transaction.execute_batch(&trigger).map_err(invalid)?;
         }
         for entry in &graph.conversation_usage.events {
             if let Some(basis) = &entry.cost_basis {

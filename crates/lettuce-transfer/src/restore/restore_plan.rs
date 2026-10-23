@@ -277,6 +277,7 @@ pub fn decode_provider_backup_restore_plan(
         "conversation-usage.v1" => 1,
         "conversation-usage.v2" => 2,
         "conversation-usage.v3" => 3,
+        "conversation-usage.v4" => 4,
         _ => return Err(ProviderBackupRestorePlanError::InvalidInventory),
     };
     let conversation_usage: crate::ConversationUsageBackup =

@@ -509,7 +509,7 @@ pub fn plan_provider_backup_export(
         BackupSection::new("data/jobs.json", "jobs.v1", jobs),
         BackupSection::new(
             "data/conversation-usage.json",
-            "conversation-usage.v3",
+            "conversation-usage.v4",
             conversation_usage,
         ),
         BackupSection::new(
@@ -1524,6 +1524,7 @@ pub fn settle_in_flight_generation(graph: &mut ProviderBackupGraph) {
                     overlapping.sort();
                     let model = turn.resolved_model.as_ref();
                     events.push(crate::BackupConversationUsage {
+                        conversation_id: Some(turn.conversation_id),
                         event: lettuce_usage::UsageEvent {
                             id,
                             origin: lettuce_usage::UsageEventOrigin::Live,
