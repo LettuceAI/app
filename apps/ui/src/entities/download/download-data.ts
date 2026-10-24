@@ -19,6 +19,7 @@ export function downloadName(job: JobView | null): string | null {
   switch (detail?.type) {
     case "sd_runtime_install":
       return `${detail.release} · ${detail.backend}`;
+    case "whisper_model_install":
     case "sd_upscaler_install":
     case "sd_lora_install":
       return detail.filename;

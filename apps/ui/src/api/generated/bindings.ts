@@ -348,6 +348,10 @@ export const commands = {
 	ttsCacheClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("tts_cache_clear")),
 	ttsSynthesize: (request: TtsSynthesizeRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("tts_synthesize", { request })),
 	messageSpeak: (request: MessageSpeakRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_speak", { request })),
+	audioCaptureStart: (request: AudioCaptureStartRequest) => typedError<DictationStarted, ApiError_Serialize>(__TAURI_INVOKE("audio_capture_start", { request })),
+	audioCaptureStop: (request: DictationCancelRequest) => typedError<AssetRef_Serialize, ApiError_Serialize>(__TAURI_INVOKE("audio_capture_stop", { request })),
+	microphoneDevices: () => typedError<MicrophoneDevices, ApiError_Serialize>(__TAURI_INVOKE("microphone_devices")),
+	asrPromptPreview: (request: AsrLearningFilter_Deserialize) => typedError<string, ApiError_Serialize>(__TAURI_INVOKE("asr_prompt_preview", { request })),
 	whisperCatalog: () => typedError<WhisperCatalog, ApiError_Serialize>(__TAURI_INVOKE("whisper_catalog")),
 	whisperModelsList: () => typedError<WhisperInstalledModels, ApiError_Serialize>(__TAURI_INVOKE("whisper_models_list")),
 	whisperDownload: (request: WhisperModelRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("whisper_download", { request })),
@@ -356,7 +360,7 @@ export const commands = {
 	whisperClearCache: () => typedError<WhisperCacheCleared, ApiError_Serialize>(__TAURI_INVOKE("whisper_clear_cache")),
 	whisperDictationModelSet: (request: DictationModelSetRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("whisper_dictation_model_set", { request })),
 	transcribeFile: (request: TranscribeFileRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("transcribe_file", { request })),
-	dictationStart: (request: DictationStartRequest) => typedError<DictationStarted, ApiError_Serialize>(__TAURI_INVOKE("dictation_start", { request })),
+	dictationStart: (request: DictationStartRequest_Deserialize) => typedError<DictationStarted, ApiError_Serialize>(__TAURI_INVOKE("dictation_start", { request })),
 	dictationStop: (request: DictationStopRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("dictation_stop", { request })),
 	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("dictation_cancel", { request })),
 	certificatesList: () => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_list")),
@@ -823,6 +827,10 @@ export type AssetRef_Serialize = {
 export type AssetsIngestRequest = {
 	source: FileSource,
 	role: AssetIngestRole,
+};
+
+export type AudioCaptureStartRequest = {
+	device_id: string | null,
 };
 
 export type AudioProviderApiKeyRotateRequest = {
@@ -2162,7 +2170,15 @@ export type DictationModelSetRequest = {
 	model_id: string | null,
 };
 
-export type DictationStartRequest = {
+export type DictationStartRequest = DictationStartRequest_Serialize | DictationStartRequest_Deserialize;
+
+export type DictationStartRequest_Deserialize = {
+	device_id?: string | null,
+	conversation_id: string | null,
+};
+
+export type DictationStartRequest_Serialize = {
+	device_id: string | null,
 	conversation_id: string | null,
 };
 
@@ -3868,7 +3884,7 @@ export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_reque
  *  download installs, the model an Ollama server pulls, the folders a move
  *  goes between.
  */
-export type JobSubjectDetail = { type: "lorebook_draft"; lorebook: HistoricalSourceView | null; prompt: HistoricalSourceView } | { type: "lorebook_project"; project_id: string; prompt: HistoricalSourceView } | { type: "companion_soul_writer"; prompt: HistoricalSourceView } | { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string } | { type: "sd_runtime_install"; release: string; asset: string; backend: string } | { type: "sd_upscaler_install"; filename: string } | { type: "sd_model_install"; profile_id: string; variant_id: string; runtime_release: string; runtime_asset: string; display_name: string } | { type: "sd_lora_install"; model_id: number; version_id: number; file_id: number; filename: string };
+export type JobSubjectDetail = { type: "whisper_model_install"; model_id: string; filename: string } | { type: "lorebook_draft"; lorebook: HistoricalSourceView | null; prompt: HistoricalSourceView } | { type: "lorebook_project"; project_id: string; prompt: HistoricalSourceView } | { type: "companion_soul_writer"; prompt: HistoricalSourceView } | { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string } | { type: "sd_runtime_install"; release: string; asset: string; backend: string } | { type: "sd_upscaler_install"; filename: string } | { type: "sd_model_install"; profile_id: string; variant_id: string; runtime_release: string; runtime_asset: string; display_name: string } | { type: "sd_lora_install"; model_id: number; version_id: number; file_id: number; filename: string };
 
 /**  What a job works on. */
 export type JobSubjectDto = {
@@ -6110,6 +6126,17 @@ export type MessagesDeleteOutcome = { type: "tombstoned"; removed: string[] } | 
 export type MessagesDeleteResult = {
 	outcome: MessagesDeleteOutcome,
 	revision: number,
+};
+
+export type MicrophoneDevice = {
+	id: string,
+	label: string,
+	selectable: boolean,
+};
+
+export type MicrophoneDevices = {
+	supported: boolean,
+	devices: MicrophoneDevice[],
 };
 
 export type ModelDefaultSetRequest = {
@@ -8532,6 +8559,7 @@ export type TranscribeFileRequest = TranscribeFileRequest_Serialize | Transcribe
  *  is `Conflict`. `model_id` defaults to the dictation model.
  */
 export type TranscribeFileRequest_Deserialize = {
+	retain_audio?: boolean,
 	request_id: string,
 	source: FileSource,
 	model_id: string | null,
@@ -8545,6 +8573,7 @@ export type TranscribeFileRequest_Deserialize = {
  *  is `Conflict`. `model_id` defaults to the dictation model.
  */
 export type TranscribeFileRequest_Serialize = {
+	retain_audio?: boolean,
 	request_id: string,
 	source: FileSource,
 	model_id: string | null,
@@ -8927,6 +8956,7 @@ export type WhisperInstalledModel = {
 	english_only: boolean,
 	quantized: boolean,
 	dictation: boolean,
+	loaded: boolean,
 };
 
 export type WhisperInstalledModels = {

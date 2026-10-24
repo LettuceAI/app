@@ -61,6 +61,7 @@ pub(super) fn admit_transcription(
     options: TranscriptionOptions,
 ) -> Result<dto::JobAccepted, ApiError> {
     let request = TranscriptionRequest {
+        retain_audio: false,
         id: request_id,
         audio_asset_id: Some(audio),
         model,
@@ -132,6 +133,7 @@ pub async fn transcribe_file(
             let job = atomic_transcription(
                 context,
                 TranscriptionRequest {
+                    retain_audio: request.retain_audio,
                     id: request_id,
                     audio_asset_id: Some(audio),
                     model,

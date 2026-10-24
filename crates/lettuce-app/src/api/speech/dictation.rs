@@ -337,6 +337,31 @@ pub async fn dictation_start(
     context: &ApiContext,
     request: dto::DictationStartRequest,
 ) -> Result<dto::DictationStarted, ApiError> {
+    start_recording(context, request.conversation_id, request.device_id, true).await
+}
+
+pub async fn audio_capture_start(
+    context: &ApiContext,
+    request: dto::AudioCaptureStartRequest,
+) -> Result<dto::DictationStarted, ApiError> {
+    start_recording(context, None, request.device_id, false).await
+}
+
+pub async fn microphone_devices(context: &ApiContext) -> Result<dto::MicrophoneDevices, ApiError> {
+    context.blocking(|context| {
+        let Some(microphone) = context.speech().microphone() else {
+            return Ok(dto::MicrophoneDevices { supported: false, devices: Vec::new() });
+        };
+        Ok(dto::MicrophoneDevices { supported: true, devices: microphone.devices().map_err(microphone_error)? })
+    }).await
+}
+
+async fn start_recording(
+    context: &ApiContext,
+    conversation_id: Option<String>,
+    device_id: Option<String>,
+    require_model: bool,
+) -> Result<dto::DictationStarted, ApiError> {
     if context.shutdown_token().is_cancelled() {
         return Err(api_error(
             ApiErrorCode::Unavailable,
@@ -360,7 +385,7 @@ pub async fn dictation_start(
     {
         return Err(crate::api::context::write_fenced_error());
     }
-    if let Some(conversation_id) = &request.conversation_id {
+    if let Some(conversation_id) = &conversation_id {
         parse_id::<ConversationId>(conversation_id, "conversation_id")?;
     }
     let capture_id = RequestId::new().to_string();
@@ -374,7 +399,7 @@ pub async fn dictation_start(
         }
         inner.starting = true;
     }
-    let started = start_capture(context, &capture_id).await;
+    let started = start_capture(context, &capture_id, device_id, require_model).await;
     let mut inner = lock(context.speech_state().dictation());
     inner.starting = false;
     let (recorder, session) = started?;
@@ -422,18 +447,20 @@ pub async fn dictation_start(
 async fn start_capture(
     context: &ApiContext,
     capture_id: &str,
+    device_id: Option<String>,
+    require_model: bool,
 ) -> Result<(Arc<Recorder>, Box<dyn CaptureSession>), ApiError> {
     let capture_id = capture_id.to_owned();
     context
         .blocking(move |context| {
-            resolve_model(context, None)?;
+            if require_model { resolve_model(context, None)?; }
             let microphone = context.speech().microphone().ok_or_else(|| {
                 api_error(
                     ApiErrorCode::Unsupported,
                     "this device cannot record from a microphone",
                 )
             })?;
-            let prepared = microphone.prepare().map_err(microphone_error)?;
+            let prepared = microphone.prepare_device(device_id.as_deref()).map_err(microphone_error)?;
             let path = scratch_path(context, &capture_id)?;
             let spool = WavSpool::create(&path, prepared.format()).map_err(unavailable)?;
             let recorder = Arc::new(Recorder::new(Box::new(spool))?);
@@ -485,6 +512,27 @@ pub async fn dictation_stop(
     let model = context
         .blocking(move |context| resolve_model(context, model_id.as_deref()))
         .await?;
+    finish_recording(context, capture_id, move |context, audio| {
+        admit_transcription(context, RequestId::new(), audio, model, engine_options(&request.options))
+            .map_err(|mut error| {
+                error.details = Some(dto::ApiErrorDetails::CapturedAudio { audio: context.asset_ref(audio) });
+                error
+            })
+    }).await
+}
+
+pub async fn audio_capture_stop(
+    context: &ApiContext,
+    request: dto::DictationCancelRequest,
+) -> Result<dto::AssetRef, ApiError> {
+    finish_recording(context, request.capture_id, |context, audio| Ok(context.asset_ref(audio))).await
+}
+
+async fn finish_recording<T: Send + 'static>(
+    context: &ApiContext,
+    capture_id: String,
+    finished: impl FnOnce(&ApiContext, AssetId) -> Result<T, ApiError> + Send + 'static,
+) -> Result<T, ApiError> {
     let mut active = take_active(context, &capture_id, Ended::Stopped)?;
     if let Some(task) = active.level_task.take() {
         task.abort();
@@ -536,19 +584,7 @@ pub async fn dictation_stop(
             };
             std::fs::remove_file(&path).ok();
             lock(context.speech_state().dictation()).stopping = false;
-            admit_transcription(
-                context,
-                RequestId::new(),
-                audio,
-                model,
-                engine_options(&request.options),
-            )
-            .map_err(|mut error| {
-                error.details = Some(dto::ApiErrorDetails::CapturedAudio {
-                    audio: context.asset_ref(audio),
-                });
-                error
-            })
+            finished(context, audio)
         })
         .await
 }

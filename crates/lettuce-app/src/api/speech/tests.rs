@@ -316,6 +316,7 @@ fn descriptor(id: &str) -> AsrModelDescriptor {
 
 fn transcription_request(context: &ApiContext, id: &str) -> TranscriptionRequest {
     TranscriptionRequest {
+        retain_audio: false,
         id: RequestId::new(),
         audio_asset_id: Some(ingest_wav(context, tone())),
         model: descriptor(id),
@@ -703,6 +704,7 @@ async fn a_replayed_transcription_returns_its_job_and_another_request_conflicts(
     let audio = env.root.join("sample.wav");
     std::fs::write(&audio, tone()).expect("sample");
     let request = dto::TranscribeFileRequest {
+        retain_audio: false,
         request_id: RequestId::new().to_string(),
         source: dto::FileSource {
             uri: audio.to_string_lossy().into_owned(),
@@ -753,6 +755,7 @@ async fn dictation_records_to_an_asset_and_transcribes_without_audio_over_the_ap
     let started = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -775,6 +778,7 @@ async fn dictation_records_to_an_asset_and_transcribes_without_audio_over_the_ap
     let second = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -843,6 +847,7 @@ async fn a_denied_microphone_permission_is_typed_and_needs_a_model_first() {
     });
     let env = env(TtsMode::Speak, AsrMode::Text("unused"), Some(microphone));
     let request = dto::DictationStartRequest {
+        device_id: None,
         conversation_id: None,
     };
 
@@ -890,6 +895,7 @@ async fn a_cancelled_dictation_leaves_no_recording_and_cannot_be_stopped() {
     let started = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -948,6 +954,7 @@ async fn a_recording_with_no_samples_is_refused() {
     let started = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -990,6 +997,7 @@ async fn the_default_speech_host_has_no_microphone_and_no_runtime() {
     let error = super::dictation_start(
         &context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -1165,6 +1173,7 @@ async fn shutdown_discards_an_active_capture_and_refuses_new_recordings() {
     let started = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -1207,6 +1216,7 @@ async fn shutdown_discards_an_active_capture_and_refuses_new_recordings() {
         super::dictation_start(
             &env.context,
             dto::DictationStartRequest {
+                device_id: None,
                 conversation_id: None
             }
         )
@@ -1637,6 +1647,7 @@ async fn asr_library_api_filters_exports_and_keeps_audio_as_an_asset_reference()
         .expect("vocabulary");
     assert_eq!(vocabulary.len(), 1);
     assert_eq!(vocabulary[0].id, term.id.to_string());
+    assert_eq!(super::asr_prompt_preview(&env.context, filter()).await.expect("prompt"), "Ford.");
     let asset = ingest_wav(&env.context, tone());
     let mut example = lettuce_speech::AsrVoiceExample::new(
         asset,
@@ -3106,6 +3117,7 @@ async fn dictation_late_admission_failure_keeps_an_asset_for_file_retry() {
     let capture = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -3132,6 +3144,7 @@ async fn dictation_late_admission_failure_keeps_an_asset_for_file_retry() {
     let accepted = super::transcribe_file(
         &env.context,
         dto::TranscribeFileRequest {
+            retain_audio: false,
             request_id: RequestId::new().to_string(),
             source: dto::FileSource { uri: asset.url },
             model_id: None,
@@ -3162,6 +3175,7 @@ async fn dictation_ingest_failure_can_retry_the_same_stopped_recording() {
     let capture = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -3210,6 +3224,7 @@ async fn queued_dictation_input_survives_collection_after_twenty_four_hours() {
     let capture = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -3281,6 +3296,7 @@ async fn completed_dictation_discards_the_temporary_input_and_keeps_its_transcri
     let capture = super::dictation_start(
         &env.context,
         dto::DictationStartRequest {
+            device_id: None,
             conversation_id: None,
         },
     )
@@ -3342,6 +3358,7 @@ async fn temporary_transcription(env: &Env) -> (JobId, AssetId) {
     let admitted = super::transcribe_file(
         &env.context,
         dto::TranscribeFileRequest {
+            retain_audio: false,
             request_id: RequestId::new().to_string(),
             source: dto::FileSource {
                 uri: path.to_string_lossy().into_owned(),
@@ -3410,6 +3427,7 @@ async fn failed_transcription_retains_retry_audio_until_expiry() {
     let retry = super::transcribe_file(
         &env.context,
         dto::TranscribeFileRequest {
+            retain_audio: false,
             request_id: RequestId::new().to_string(),
             source: dto::FileSource {
                 uri: env.context.asset_ref(input).url,
@@ -3596,7 +3614,7 @@ async fn dictation_blocks_database_cutover_before_admission_and_keeps_audio() {
     }));
     install_whisper_file(&root);
     let active = location.active_path().expect("active");
-    let capture = super::dictation_start(&context, dto::DictationStartRequest { conversation_id: None }).await.expect("capture");
+    let capture = super::dictation_start(&context, dto::DictationStartRequest { device_id: None, conversation_id: None }).await.expect("capture");
     let reset = crate::api::app_data_reset(&context, dto::AppDataResetRequest { client_operation_id: RequestId::new().to_string() }).await.expect_err("recording prevents reset");
     assert_eq!(reset.code, ApiErrorCode::Busy);
     assert_eq!(serde_json::to_value(reset.details).expect("details"), serde_json::json!({"type": "dictation_active"}));
@@ -3615,10 +3633,10 @@ async fn dictation_start_refuses_a_held_database_maintenance_lease() {
     install_whisper_file(&env.root);
     let token = lettuce_jobs::handle::CancellationToken::new();
     let lease = env.context.maintenance().maintenance(&token).await.expect("maintenance");
-    let result = super::dictation_start(&env.context, dto::DictationStartRequest { conversation_id: None }).await;
+    let result = super::dictation_start(&env.context, dto::DictationStartRequest { device_id: None, conversation_id: None }).await;
     assert_eq!(result.expect_err("cutover prevents capture").code, ApiErrorCode::Busy);
     drop(lease);
-    let capture = super::dictation_start(&env.context, dto::DictationStartRequest { conversation_id: None }).await.expect("capture after lease");
+    let capture = super::dictation_start(&env.context, dto::DictationStartRequest { device_id: None, conversation_id: None }).await.expect("capture after lease");
     super::dictation_cancel(&env.context, dto::DictationCancelRequest { capture_id: capture.capture_id }).await.expect("cancel");
 }
 
@@ -3638,7 +3656,7 @@ async fn dictation_started_after_restore_admission_fails_the_job_without_cutover
     context.attach_reset_host(Arc::new(crate::api::app::reset_tests::Host::default())).expect("host");
     let reset_request = dto::AppDataResetRequest { client_operation_id: RequestId::new().to_string() };
     let reset = crate::api::app_data_reset(&context, reset_request.clone()).await.expect("reset admission");
-    let capture = super::dictation_start(&context, dto::DictationStartRequest { conversation_id: None }).await.expect("capture");
+    let capture = super::dictation_start(&context, dto::DictationStartRequest { device_id: None, conversation_id: None }).await.expect("capture");
     assert_eq!(crate::api::backup_restore(&context, request.clone()).await.expect("replay while recording"), accepted);
     assert_eq!(crate::api::backup_restore(&context, dto::BackupRestoreRequest { password: "different".into(), ..request.clone() }).await.expect("password-only replay while recording"), accepted);
     let changed = dto::BackupRestoreRequest { source: dto::FileSource { uri: "changed.lettuce".into() }, ..request };
@@ -3659,4 +3677,45 @@ async fn dictation_started_after_restore_admission_fails_the_job_without_cutover
     super::dictation_cancel(&context, dto::DictationCancelRequest { capture_id: capture.capture_id }).await.expect("recording retained");
     context.begin_shutdown();
     std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn capture_only_records_without_a_whisper_model_and_releases_the_microphone() {
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), Some(Arc::new(FakeMic { outcome: Ok(vec![0.25; 8000]) })));
+    let devices = super::microphone_devices(&env.context).await.expect("devices");
+    assert!(devices.supported);
+    let capture = super::audio_capture_start(&env.context, dto::AudioCaptureStartRequest { device_id: None }).await.expect("capture without model");
+    let busy = super::audio_capture_start(&env.context, dto::AudioCaptureStartRequest { device_id: None }).await.expect_err("exclusive microphone");
+    assert_eq!(busy.code, ApiErrorCode::Conflict);
+    let audio = super::audio_capture_stop(&env.context, dto::DictationCancelRequest { capture_id: capture.capture_id.clone() }).await.expect("audio");
+    let input = audio.asset_id.parse().expect("asset id");
+    env.context.media().expect("media").open_ready(input).expect("playable audio");
+    assert_eq!(std::fs::read_dir(crate::dictation_scratch_root(&env.root)).expect("scratch").count(), 0);
+    assert_eq!(super::audio_capture_stop(&env.context, dto::DictationCancelRequest { capture_id: capture.capture_id }).await.expect_err("already stopped").code, ApiErrorCode::Conflict);
+    let capture = super::audio_capture_start(&env.context, dto::AudioCaptureStartRequest { device_id: None }).await.expect("capture again");
+    super::dictation_cancel(&env.context, dto::DictationCancelRequest { capture_id: capture.capture_id }).await.expect("cancel");
+    let unavailable = super::audio_capture_start(&env.context, dto::AudioCaptureStartRequest { device_id: Some("missing".into()) }).await.expect_err("never silently switch input");
+    assert!(matches!(unavailable.details, Some(ApiErrorDetails::Speech { failure: SpeechFailure::NoMicrophone })));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn retained_test_transcription_releases_job_reference_but_keeps_audio_until_expiry() {
+    use lettuce_speech::TranscriptionRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("test recording"), Some(Arc::new(FakeMic { outcome: Ok(vec![0.25; 8000]) })));
+    let capture = super::audio_capture_start(&env.context, dto::AudioCaptureStartRequest { device_id: None }).await.expect("capture");
+    let audio = super::audio_capture_stop(&env.context, dto::DictationCancelRequest { capture_id: capture.capture_id }).await.expect("audio");
+    let input = audio.asset_id.parse().expect("asset id");
+    let object = recording_object(&env, input);
+    install_whisper_file(&env.root);
+    let accepted = super::transcribe_file(&env.context, dto::TranscribeFileRequest { retain_audio: true, request_id: RequestId::new().to_string(), source: dto::FileSource { uri: audio.url }, model_id: None, options: dto::TranscribeOptions::default() }).await.expect("transcribe");
+    assert!(run_to_idle(&runner(&env.context)).await);
+    let id = accepted.job_id.parse().expect("job id");
+    assert_eq!(job(&env.context, id).await.state, dto::JobStateDto::Succeeded);
+    assert!(TranscriptionRepository::get(env.context.backend().database(), id).expect("record").request.audio_asset_id.is_none());
+    super::collect_recordings(&env.context).expect("GC");
+    assert!(object.exists());
+    env.context.media().expect("media").open_ready(input).expect("test playback");
+    env.clock.advance(Duration::from_secs(25 * 60 * 60));
+    super::collect_recordings(&env.context).expect("expiry GC");
+    assert!(!object.exists());
 }

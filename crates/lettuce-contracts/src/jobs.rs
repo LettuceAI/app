@@ -85,6 +85,7 @@ pub struct JobSubjectDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobSubjectDetail {
+    WhisperModelInstall { model_id: String, filename: String },
     LorebookDraft {
         lorebook: Option<HistoricalSourceView>,
         prompt: HistoricalSourceView,

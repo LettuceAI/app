@@ -11,7 +11,7 @@ use super::errors::whisper_required;
 use crate::WhisperCatalogError;
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, invalid_field};
-use crate::api::jobs::{InstallWork, admit_install};
+use crate::api::jobs::InstallWork;
 
 fn unavailable(error: impl std::fmt::Display) -> ApiError {
     api_error(ApiErrorCode::Unavailable, error.to_string())
@@ -189,6 +189,7 @@ pub async fn whisper_models_list(
 ) -> Result<dto::WhisperInstalledModels, ApiError> {
     context
         .blocking(|context| {
+            let resident = context.backend().whisper_runtime().resident_files().map_err(unavailable)?;
             let chosen = dictation_model_id(context)?;
             let models = installed(context)?;
             let dictation = chosen
@@ -198,6 +199,7 @@ pub async fn whisper_models_list(
                 models: models
                     .into_iter()
                     .map(|manifest| dto::WhisperInstalledModel {
+                        loaded: resident.contains(&manifest.model.path),
                         dictation: dictation.as_deref() == Some(manifest.model_id.as_str()),
                         filename: filename(&manifest.model_id),
                         size_bytes: manifest.model.byte_size,
@@ -234,12 +236,16 @@ pub async fn whisper_download(
             Ok(root)
         })
         .await?;
-    admit_install(
+    let detail = serde_json::to_value(crate::api::jobs::local::LocalModelJobDetail::WhisperModelInstall {
+        filename: model.filename.clone(), model_id: model.model_id.clone(),
+    }).map_err(unavailable)?;
+    crate::api::jobs::install::admit_install_with_detail(
         context,
         InstallWork::Whisper {
             model,
             install_root,
         },
+        Some(detail),
     )
     .await
 }

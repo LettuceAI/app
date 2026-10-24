@@ -50,4 +50,15 @@ pub trait PreparedCapture: Send {
 /// prompt, so it is called off the async executor.
 pub trait MicrophoneCapture: Send + Sync {
     fn prepare(&self) -> Result<Box<dyn PreparedCapture>, MicrophoneError>;
+
+    fn devices(&self) -> Result<Vec<lettuce_contracts::MicrophoneDevice>, MicrophoneError> {
+        Ok(Vec::new())
+    }
+
+    fn prepare_device(&self, id: Option<&str>) -> Result<Box<dyn PreparedCapture>, MicrophoneError> {
+        if id.is_some() {
+            return Err(MicrophoneError::NoInputDevice);
+        }
+        self.prepare()
+    }
 }

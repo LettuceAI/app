@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, DownloadItem, Sheet } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
-import { downloadProgressOf } from "@/entities/job";
+import { useDownloadProgress } from "@/entities/download";
 import { ActionButton } from "@/shared/ui/ActionButton";
 import { ActionError } from "@/shared/ui/ActionError";
 import type { InstallState } from "./use-embedding-install";
@@ -25,7 +25,7 @@ export function MemoryDownloadSheet(props: MemoryDownloadSheetProps) {
   const done = install.phase === "done";
   const failed = install.phase === "failed";
   const name = t("memoryDownload.modelName");
-  const { fraction, size, speed, eta } = downloadProgressOf(install.job);
+  const { fraction, size, speed, eta } = useDownloadProgress(install.job);
   const failure = install.job?.failure ?? null;
   const failureText = isApiFailure(install.error)
     ? t(`errors.code.${install.error.code}`)

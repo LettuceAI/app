@@ -20,7 +20,7 @@ pub(crate) mod whisper;
 mod tests;
 
 pub(crate) use dictation::sweep_scratch;
-pub use dictation::{dictation_cancel, dictation_start, dictation_stop};
+pub use dictation::{audio_capture_start, audio_capture_stop, microphone_devices, dictation_cancel, dictation_start, dictation_stop};
 pub use host::{InstalledSpeech, NoSpeech, SpeechHost};
 pub(crate) use state::SpeechApiState;
 pub use transcribe::transcribe_file;
@@ -47,7 +47,7 @@ pub use kokoro::{
 };
 
 pub use learning::{
-    asr_correction_delete, asr_correction_save, asr_corrections_list, asr_ignored_suggestions_list,
+    asr_prompt_preview, asr_correction_delete, asr_correction_save, asr_corrections_list, asr_ignored_suggestions_list,
     asr_learning_export, asr_learning_import, asr_suggestion_approve, asr_suggestion_ignore,
     asr_suggestions, asr_vocabulary_delete, asr_vocabulary_list, asr_vocabulary_save,
     asr_voice_example_delete, asr_voice_example_save, asr_voice_example_suggest,

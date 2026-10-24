@@ -129,6 +129,7 @@ pub use conversations::scenes::{
     message_scene_prompt_generate,
 };
 pub use speech::{
+    audio_capture_start, audio_capture_stop, microphone_devices, asr_prompt_preview,
     InstalledSpeech, NoSpeech, SpeechHost, asr_correction_delete, asr_correction_save,
     asr_corrections_list, asr_ignored_suggestions_list, asr_learning_export, asr_learning_import,
     asr_suggestion_approve, asr_suggestion_ignore, asr_suggestions, asr_vocabulary_delete,

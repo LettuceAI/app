@@ -148,6 +148,8 @@ impl TranscriptionOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TranscriptionRequest {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retain_audio: bool,
     pub id: RequestId,
     pub audio_asset_id: Option<AssetId>,
     pub model: AsrModelDescriptor,

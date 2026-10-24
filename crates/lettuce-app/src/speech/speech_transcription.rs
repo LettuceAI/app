@@ -630,6 +630,7 @@ mod tests {
 
     fn request(audio_asset_id: AssetId) -> TranscriptionRequest {
         TranscriptionRequest {
+            retain_audio: false,
             id: RequestId::new(),
             audio_asset_id: Some(audio_asset_id),
             model: AsrModelDescriptor {

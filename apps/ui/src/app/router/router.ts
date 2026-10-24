@@ -72,7 +72,10 @@ const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/set
 const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
-  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras"; engineInstall?: boolean; civitaiModel?: number; prompt?: string; promptSource?: string; replyPicker?: "model" | "roleplay" | "conversational" } => ({
+  validateSearch: (search: Record<string, unknown>): { imagePicker?: "avatar" | "scene" | "writer"; localImageView?: "engine" | "models" | "bundle" | "loras"; engineInstall?: boolean; civitaiModel?: number; prompt?: string; promptSource?: string; replyPicker?: "model" | "roleplay" | "conversational"; speechTab?: "model" | "vocabulary" | "corrections" | "examples"; speechPanel?: "models" | "microphone" | "word" | "correction" | "example"; speechItem?: string } => ({
+    ...(["model", "vocabulary", "corrections", "examples"].includes(String(search.speechTab)) ? { speechTab: search.speechTab as "model" | "vocabulary" | "corrections" | "examples" } : {}),
+    ...(["models", "microphone", "word", "correction", "example"].includes(String(search.speechPanel)) ? { speechPanel: search.speechPanel as "models" | "microphone" | "word" | "correction" | "example" } : {}),
+    ...(typeof search.speechItem === "string" && search.speechItem ? { speechItem: search.speechItem } : {}),
     ...(search.replyPicker === "model" || search.replyPicker === "roleplay" || search.replyPicker === "conversational" ? { replyPicker: search.replyPicker } : {}),
     ...(typeof search.prompt === "string" && search.prompt ? { prompt: search.prompt } : {}),
     ...(search.prompt === "new" && typeof search.promptSource === "string" && search.promptSource ? { promptSource: search.promptSource } : {}),
@@ -132,6 +135,7 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 
 declare module "@tanstack/history" {
   interface HistoryState {
+    speechPanelPushed?: boolean;
     replyPickerPushed?: boolean;
     promptPushed?: boolean;
     panelPushed?: boolean;

@@ -49,12 +49,40 @@ mod desktop {
     }
 
     impl MicrophoneCapture for NativeMicrophone {
+        fn devices(&self) -> Result<Vec<lettuce_contracts::MicrophoneDevice>, MicrophoneError> {
+            let mut names = std::collections::BTreeMap::<String, usize>::new();
+            for device in cpal::default_host().input_devices().map_err(|_| MicrophoneError::Failed)? {
+                let name = device.name().map_err(|_| MicrophoneError::Failed)?;
+                *names.entry(name).or_default() += 1;
+            }
+            Ok(names.into_iter().map(|(name, count)| lettuce_contracts::MicrophoneDevice {
+                id: format!("input:{name}"), label: name, selectable: count == 1,
+            }).collect())
+        }
+
         fn prepare(&self) -> Result<Box<dyn PreparedCapture>, MicrophoneError> {
+            self.prepare_device(None)
+        }
+
+        fn prepare_device(&self, id: Option<&str>) -> Result<Box<dyn PreparedCapture>, MicrophoneError> {
             #[cfg(target_os = "android")]
             super::android_record_audio_permission()?;
-            let device = cpal::default_host()
-                .default_input_device()
-                .ok_or(MicrophoneError::NoInputDevice)?;
+            let host = cpal::default_host();
+            let device = if let Some(id) = id {
+                let id = id.strip_prefix("input:").ok_or(MicrophoneError::NoInputDevice)?;
+                let mut matched = None;
+                for device in host.input_devices().map_err(|_| MicrophoneError::Failed)? {
+                    if device.name().map_err(|_| MicrophoneError::Failed)? == id {
+                        if matched.is_some() {
+                            return Err(MicrophoneError::NoInputDevice);
+                        }
+                        matched = Some(device);
+                    }
+                }
+                matched.ok_or(MicrophoneError::NoInputDevice)?
+            } else {
+                host.default_input_device().ok_or(MicrophoneError::NoInputDevice)?
+            };
             let config = device.default_input_config().map_err(|error| {
                 tracing::warn!(%error, "the microphone format could not be selected");
                 MicrophoneError::Failed

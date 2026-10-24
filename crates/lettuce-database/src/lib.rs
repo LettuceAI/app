@@ -5014,7 +5014,7 @@ mod tests {
         asset.retention = RetentionClass::Temporary { expires_at: TimestampMillis::new(100) };
         let asset = MediaAssetRepository::create(&database, asset).expect("asset");
         let id = lettuce_types::RequestId::new();
-        let request = TranscriptionRequest { id, audio_asset_id: Some(asset.id), model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(20) };
+        let request = TranscriptionRequest { retain_audio: false, id, audio_asset_id: Some(asset.id), model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(20) };
         let spec = JobSpec::new(JobKind::SpeechTranscribe, JobSubject::new(SubjectKind::SpeechRequest, id.to_string()).expect("subject"), OutcomeRef::Request(id)).with_resources(vec![ResourceClass::Cpu]);
         database.admit_speech_transcription(spec, "queued-recording", "digest", &serde_json::json!({"kind":"speech_transcribe"}), request).expect("admit");
         database.connection().expect("connection").execute("INSERT INTO media_gc_candidates(asset_id,queued_at) VALUES (?1,100)", [asset.id.to_string()]).expect("queue collection");
@@ -5035,7 +5035,7 @@ mod tests {
         asset.retention = RetentionClass::Temporary { expires_at: TimestampMillis::new(now + 100) };
         let asset = MediaAssetRepository::create(&database, asset).expect("asset");
         let id = lettuce_types::RequestId::new();
-        let request = TranscriptionRequest { id, audio_asset_id: Some(asset.id), model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(now) };
+        let request = TranscriptionRequest { retain_audio: false, id, audio_asset_id: Some(asset.id), model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(now) };
         let spec = JobSpec::new(JobKind::SpeechTranscribe, JobSubject::new(SubjectKind::SpeechRequest, id.to_string()).expect("subject"), OutcomeRef::Request(id)).with_resources(vec![lettuce_jobs::ResourceClass::Cpu]).with_policies(RecoveryPolicy::MarkInterrupted, CancellationPolicy::Cooperative);
         let job = database.admit_speech_transcription(spec, "interrupted-recording", "digest", &serde_json::json!({"kind":"speech_transcribe"}), request).expect("admit");
         let claim = database.claim(job.id, WorkerId::new(), job.updated_at, std::time::Duration::from_secs(60), &ResourceAvailability::all()).expect("claim").expect("claimed");

@@ -7,10 +7,12 @@ import type { JobView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { terminalJobStates } from "@/entities/job";
 import { downloadKinds, downloadName, listActiveDownloads } from "./download-data";
+import { DownloadRateTracker } from "./download-rate";
 import { DownloadsContext } from "./downloads-context";
 
 export function DownloadsProvider({ api, children }: { api: ApiClient; children: ReactNode }) {
   const { t } = useTranslation();
+  const rates = useRef(new DownloadRateTracker());
   const { data: seeded, error: seedError, refetch } = useQuery({ queryKey: queryKeys.downloads.list(), queryFn: () => listActiveDownloads(api), staleTime: Infinity, refetchOnWindowFocus: false });
   const [live, setLive] = useState<ReadonlyMap<string, JobView>>(new Map());
   const known = useRef(new Set<string>());
@@ -25,7 +27,10 @@ export function DownloadsProvider({ api, children }: { api: ApiClient; children:
   }, [t]);
 
   useEffect(() => {
-    for (const job of seeded ?? []) known.current.add(job.id);
+    for (const job of seeded ?? []) {
+      known.current.add(job.id);
+      if (!rates.current.has(job.id)) rates.current.observe(job, performance.now());
+    }
   }, [seeded]);
 
   useEffect(() => {
@@ -33,7 +38,7 @@ export function DownloadsProvider({ api, children }: { api: ApiClient; children:
     let stop: (() => void) | undefined;
     void api.subscribe((event) => {
       if (event.type !== "job_updated" || !downloadKinds.includes(event.job.kind)) return;
-      const job = event.job;
+      const job = rates.current.observe(event.job, performance.now());
       setLive((current) => new Map(current).set(job.id, job));
       if (!terminalJobStates.has(job.state)) known.current.add(job.id);
       else if (known.current.delete(job.id)) settled.current(job);

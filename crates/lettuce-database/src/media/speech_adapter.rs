@@ -267,7 +267,7 @@ pub(crate) fn release_input_in(
     at: TimestampMillis,
 ) -> Result<(), lettuce_jobs::StoreError> {
     if state == lettuce_jobs::JobState::Succeeded {
-        transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT audio_asset_id,?2 FROM speech_transcriptions WHERE job_id=?1 AND audio_asset_id IN (SELECT id FROM media_assets WHERE retention='temporary')", params![job_id.to_string(), at.get()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+        transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT audio_asset_id,?2 FROM speech_transcriptions WHERE job_id=?1 AND COALESCE(json_extract(request_json,'$.value.retain_audio'),0)=0 AND audio_asset_id IN (SELECT id FROM media_assets WHERE retention='temporary')", params![job_id.to_string(), at.get()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
     }
     transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL),result_json=json_set(result_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NOT NULL", [job_id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
     transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NULL", [job_id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;

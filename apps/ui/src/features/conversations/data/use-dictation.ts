@@ -1,3 +1,5 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { appStatusQuery } from "@/api/app-status-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient } from "@/api/client";
 import { ApiFailure } from "@/api/client";
@@ -34,6 +36,7 @@ export interface DictationHooks {
 }
 
 export function useDictation(api: ApiClient, conversationId: string, hooks: DictationHooks) {
+  const queryClient = useQueryClient();
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
   const [level, setLevel] = useState(0);
@@ -92,7 +95,14 @@ export function useDictation(api: ApiClient, conversationId: string, hooks: Dict
     if (phase !== "idle" || starting.current) return;
     starting.current = true;
     try {
-      const started = await api.call("dictationStart", { conversation_id: conversationId });
+      const query = appStatusQuery(api);
+      let status = queryClient.getQueryData(query.queryKey);
+      if (!status) {
+        status = await queryClient.ensureQueryData(query);
+        if (unmounted.current) return;
+      }
+      const microphone = status.ui_state.speechMicrophoneId;
+      const started = await api.call("dictationStart", { conversation_id: conversationId, device_id: typeof microphone === "string" ? microphone : null });
       if (unmounted.current) {
         void api.call("dictationCancel", { capture_id: started.capture_id }).catch(() => undefined);
         return;
@@ -105,7 +115,7 @@ export function useDictation(api: ApiClient, conversationId: string, hooks: Dict
     } finally {
       starting.current = false;
     }
-  }, [api, conversationId, phase]);
+  }, [api, conversationId, phase, queryClient]);
 
   const cancel = useCallback(() => {
     const id = capture.current;

@@ -496,6 +496,10 @@ async fn embedding_install_admission_preserves_detail_and_conflicts_with_changed
 async fn engine_install_targets_survive_reopen_in_list_and_watch_views() {
     let targets = [
         (
+            local::LocalModelJobDetail::WhisperModelInstall { model_id: "small".into(), filename: "ggml-small.bin".into() },
+            dto::JobSubjectDetail::WhisperModelInstall { model_id: "small".into(), filename: "ggml-small.bin".into() },
+        ),
+        (
             local::LocalModelJobDetail::SdRuntimeInstall {
                 release: "test-release".into(), asset: "vulkan.zip".into(), backend: "Vulkan".into(),
             },

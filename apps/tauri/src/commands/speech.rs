@@ -589,3 +589,34 @@ pub async fn voice_design_create(
     let context = context.snapshot()?;
     lettuce_app::api::voice_design_create(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn audio_capture_start(context: State<'_, ApiContextSlot>,
+    request: dto::AudioCaptureStartRequest) -> Result<dto::DictationStarted, ApiError> {
+    let context = context.snapshot()?;
+    lettuce_app::api::audio_capture_start(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn audio_capture_stop(context: State<'_, ApiContextSlot>,
+    request: dto::DictationCancelRequest) -> Result<dto::AssetRef, ApiError> {
+    let context = context.snapshot()?;
+    lettuce_app::api::audio_capture_stop(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_prompt_preview(context: State<'_, ApiContextSlot>,
+    request: dto::AsrLearningFilter) -> Result<String, ApiError> {
+    let context = context.snapshot()?;
+    lettuce_app::api::asr_prompt_preview(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn microphone_devices(context: State<'_, ApiContextSlot>) -> Result<dto::MicrophoneDevices, ApiError> {
+    let context = context.snapshot()?;
+    lettuce_app::api::microphone_devices(&context).await
+}

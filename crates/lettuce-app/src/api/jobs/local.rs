@@ -54,6 +54,7 @@ pub(crate) struct StoredArtifact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum LocalModelJobDetail {
+    WhisperModelInstall { model_id: String, filename: String },
     EmbeddingInstall {
         root: PathBuf,
         pin: lettuce_model_hub::EmbeddingPin,
@@ -277,6 +278,7 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
             },
         });
     let detail = match detail {
+        LocalModelJobDetail::WhisperModelInstall { model_id, filename } => dto::JobSubjectDetail::WhisperModelInstall { model_id, filename },
         LocalModelJobDetail::EmbeddingInstall { pin, .. } => dto::JobSubjectDetail::ModelDownload {
             repo: pin.family.repository().to_owned(),
             file: "embedding".into(),

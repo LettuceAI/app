@@ -36,6 +36,7 @@ pub struct WhisperInstalledModel {
     pub english_only: bool,
     pub quantized: bool,
     pub dictation: bool,
+    pub loaded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,6 +140,8 @@ impl Default for TranscribeOptions {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct TranscribeFileRequest {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retain_audio: bool,
     pub request_id: String,
     pub source: crate::FileSource,
     pub model_id: Option<String>,
@@ -187,6 +190,8 @@ pub struct TranscriptionView {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct DictationStartRequest {
+    #[serde(default)]
+    pub device_id: Option<String>,
     pub conversation_id: Option<String>,
 }
 
@@ -434,4 +439,28 @@ pub struct AsrLearningImportView {
     pub ignored_suggestion_count: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub voice_example_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MicrophoneDevice {
+    pub id: String,
+    pub label: String,
+    pub selectable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MicrophoneDevices {
+    pub supported: bool,
+    pub devices: Vec<MicrophoneDevice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioCaptureStartRequest {
+    pub device_id: Option<String>,
 }

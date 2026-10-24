@@ -245,10 +245,9 @@ impl AsrCorrectionDraft {
                     existing.and_then(|rule| rule.last_seen_at)
                 }
             }),
-            user_approved: self
-                .user_approved
-                .unwrap_or(existing.is_some_and(|rule| rule.user_approved))
-                || accepted > 0,
+            user_approved: self.user_approved.unwrap_or_else(|| {
+                existing.is_some_and(|rule| rule.user_approved) || accepted > 0
+            }),
             created_at: existing.map_or(now, |rule| rule.created_at),
             updated_at: existing.map_or(now, |rule| now.max(rule.updated_at)),
         };
@@ -1369,5 +1368,24 @@ mod tests {
         let approved =
             AsrCorrectionRule::new("orange", "purple", None, None, true, now).expect("rule");
         assert!((approved.confidence - 0.65).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn explicit_disapproval_keeps_correction_evidence_without_reapproving_it() {
+        let now = TimestampMillis::new(100);
+        let approved = AsrCorrectionRule::new("let us", "LettuceAI", Some("en"), Some("global"), true, now).expect("rule");
+        assert!(approved.accepted_count > 0);
+        let draft = AsrCorrectionDraft {
+            id: Some(approved.id), wrong: approved.wrong.clone(), correct: approved.correct.clone(),
+            language: approved.language.clone(), scope: Some(approved.scope.clone()),
+            user_approved: Some(false), ..Default::default()
+        };
+        let updated = draft.materialize(Some(&approved), false, TimestampMillis::new(101)).expect("edit");
+        assert!(!updated.user_approved);
+        assert_eq!(updated.accepted_count, approved.accepted_count);
+        assert_eq!(updated.seen_count, approved.seen_count);
+        assert_eq!(updated.use_count, approved.use_count);
+        let implicit = AsrCorrectionDraft { user_approved: None, ..draft };
+        assert!(implicit.materialize(Some(&approved), false, now).expect("implicit approval").user_approved);
     }
 }

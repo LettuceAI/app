@@ -1828,6 +1828,7 @@ mod tests {
             .expect("store voice example");
         crate::SpeechTranscriptionCoordinator::new(backend.database(), backend.database())
             .admit(lettuce_speech::TranscriptionRequest {
+                retain_audio: false,
                 id: lettuce_types::RequestId::new(),
                 audio_asset_id: Some(voice_audio.asset.id),
                 model: lettuce_speech::AsrModelDescriptor {

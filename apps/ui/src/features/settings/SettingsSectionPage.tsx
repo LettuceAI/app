@@ -1,4 +1,5 @@
 import { useParams } from "@tanstack/react-router";
+import { SpeechPage } from "./speech/SpeechPage";
 import { ProvidersPage } from "./ProvidersPage";
 import { ModelsPage } from "./ModelsPage";
 import { AboutPage } from "./AboutPage";
@@ -11,6 +12,7 @@ import { BackupPage } from "./backup/BackupPage";
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
   const { section } = useParams({ from: "/settings/$section" });
+  if (section === "speech") return <SpeechPage />;
   if (section === "providers") return <ProvidersPage />;
   if (section === "models") return <ModelsPage />;
   if (section === "memory") return <MemoryPage />;
