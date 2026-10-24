@@ -2,7 +2,7 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/r
 import { useTranslation } from "react-i18next";
 import { fileSize, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
-import type { CivitaiAuthStatus, JobPage, JobSubjectDetail, JobView, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
+import type { CivitaiAuthStatus, JobSubjectDetail, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { useSettingsApi } from "../data";
 
@@ -64,16 +64,6 @@ export function recommendedAsset(platform: string, devices: LlamaDevice[], asset
   return priorities.map((backend) => assets.find((asset) => asset.backend.toLowerCase() === backend)).find(Boolean) ?? assets[0] ?? null;
 }
 
-export async function activeImageDownloads(api: ApiClient): Promise<JobView[]> {
-  const jobs: JobView[] = [];
-  let cursor: string | null = null;
-  do {
-    const page: JobPage = await api.call("jobsList", { kinds: ["artifact_install"], states: ["queued", "claimed", "running", "cancellation_requested", "cleaning_up"], subject: null, cursor, limit: 100 });
-    jobs.push(...page.items);
-    cursor = page.next_cursor;
-  } while (cursor);
-  return jobs;
-}
 
 const civitaiImageHost = "image.civitai.com";
 const civitaiSizedSegment = /\/(?:original=true|width=\d+)[^/]*\//;

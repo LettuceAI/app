@@ -5,6 +5,8 @@ type Sample = { current: number; total: number | null; stage: string | null; at:
 export class DownloadRateTracker {
   private readonly samples = new Map<string, Sample>();
 
+  clear() { this.samples.clear(); }
+
   has(id: string) { return this.samples.has(id); }
 
   observe(job: JobView, at: number): JobView {

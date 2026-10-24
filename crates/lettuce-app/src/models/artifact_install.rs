@@ -506,6 +506,10 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
                     stage: StageSnapshot::new("install", false).expect("constant stage"),
                     at,
                 }) {
+                    Ok(job) if job.state == JobState::CancellationRequested => {
+                        work.handle.request_cancel();
+                        Err(ArtifactInstallError::Cancelled)
+                    }
                     Ok(_) => self
                         .finish_with_lease(
                             &work,
@@ -538,7 +542,13 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         tokio::pin!(finishing);
         loop {
             tokio::select! {
-                finished = &mut finishing => return finished,
+                finished = &mut finishing => {
+                    if self.jobs.get(work.job.id)?.is_some_and(|job| job.state == JobState::CancellationRequested) {
+                        work.handle.request_cancel();
+                        return Err(ArtifactInstallError::Cancelled);
+                    }
+                    return finished;
+                },
                 () = tokio::time::sleep(renew_every) => {
                     *at = (*at).max(TimestampMillis::now().unwrap_or(*at));
                     if let Err(error) =
@@ -549,6 +559,9 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
                             %error,
                             "could not renew the artifact install lease"
                         );
+                    }
+                    if self.jobs.get(work.job.id)?.is_some_and(|job| job.state == JobState::CancellationRequested) {
+                        work.handle.request_cancel();
                     }
                 }
             }
@@ -745,7 +758,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         *at = (*at).max(TimestampMillis::now().unwrap_or(*at));
         self.jobs
             .heartbeat(&work.claim.claim, *at, work.lease_for)?;
-        self.jobs.append_and_transition(JobMutation::Progress {
+        let job = self.jobs.append_and_transition(JobMutation::Progress {
             claim: work.claim.claim.clone(),
             progress: ProgressSnapshot {
                 bytes: Some(
@@ -756,6 +769,10 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
             },
             at: *at,
         })?;
+        if job.state == JobState::CancellationRequested {
+            work.handle.request_cancel();
+            return Err(ArtifactInstallError::Cancelled);
+        }
         Ok(())
     }
 }
@@ -1091,6 +1108,52 @@ mod tests {
                 .state,
             JobState::Cancelled
         );
+    }
+
+    #[tokio::test]
+    async fn a_persisted_cancellation_stops_download_before_the_install_stage() {
+        struct CancellingSource<'a> {
+            database: &'a Database,
+            job_id: JobId,
+            source: Source,
+        }
+
+        #[async_trait]
+        impl ArtifactSourceClient for CancellingSource<'_> {
+            async fn open(&self, source: &ArtifactSource, offset: u64, expected_size: u64) -> Result<Box<dyn ArtifactBody>, ArtifactSourceError> {
+                self.database.append_and_transition(JobMutation::RequestCancellation {
+                    id: self.job_id,
+                    reason: CancellationReason::User,
+                    at: TimestampMillis::now().expect("now"),
+                }).expect("cancel");
+                self.source.open(source, offset, expected_size).await
+            }
+        }
+
+        let database = Database::open_in_memory().expect("database");
+        let root = std::env::temp_dir().join(format!("artifact-cancel-{}", OperationId::new()));
+        let artifact = ArtifactSource::Https { url: "https://example.com/model.bin".to_owned() };
+        let plan = ArtifactInstallPlan {
+            install_id: "cancel-persisted".to_owned(),
+            root: root.clone(),
+            artifacts: vec![planned(artifact.clone(), &["model.bin"], b"bytes")],
+        };
+        let coordinator = ArtifactInstallCoordinator::new(&database);
+        let admitted = coordinator.admit(&plan).expect("admit");
+        let now = TimestampMillis::now().expect("now");
+        let work = coordinator.claim(plan, admitted.job.id, WorkerId::new(), now, Duration::from_secs(30), &ResourceAvailability::all()).expect("claim").expect("work");
+        assert!(!work.handle.cancellation_token().is_cancelled());
+        let source = CancellingSource {
+            database: &database,
+            job_id: admitted.job.id,
+            source: Source { files: vec![(artifact, b"bytes".to_vec())], opens: Mutex::new(Vec::new()) },
+        };
+        let result = coordinator.run_then(work, &source, CancellationReason::User, now, |_, _| async {
+            panic!("a cancelled download must not reach the install stage")
+        }).await.expect("run");
+        assert!(matches!(result, ArtifactInstallRunResult::Cancelled { job } if job.state == JobState::Cancelled));
+        assert!(!root.join("model.bin").exists());
+        std::fs::remove_dir_all(root).expect("remove temporary files");
     }
 
     #[tokio::test]

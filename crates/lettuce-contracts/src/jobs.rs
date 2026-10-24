@@ -74,6 +74,9 @@ pub enum JobSubjectKindDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct JobSubjectDto {
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub display_name: Option<String>,
     pub kind: JobSubjectKindDto,
     pub id: String,
 }

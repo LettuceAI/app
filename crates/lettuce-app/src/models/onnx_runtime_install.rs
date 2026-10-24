@@ -399,7 +399,7 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
         let plan = archive_plan(&self.paths, &archive, bytes);
         let installer = ArtifactInstallCoordinator::new(self.jobs);
         let admitted = installer
-            .admit(&plan)
+            .admit_labeled(&plan, &format!("ONNX Runtime {ONNX_RUNTIME_VERSION}"))
             .map_err(OnnxRuntimeInstallError::Download)?;
         let job_id = admitted.job.id;
         let now = TimestampMillis::now().unwrap_or(admitted.job.updated_at);

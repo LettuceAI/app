@@ -1,19 +1,18 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Button, DownloadItem, ListRow, Progress } from "@lettuceai/crisp";
+import { Button, ListRow, Progress } from "@lettuceai/crisp";
 import { ApiFailure } from "@/api/client";
 import type { JobView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
-import { downloadName, useDownloadProgress } from "@/entities/download";
-import { downloadPhaseOf, terminalJobStates, watchJob } from "@/entities/job";
+import { DownloadCard, DownloadJob, downloadName } from "@/entities/download";
+import { terminalJobStates, watchJob } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "../data";
 import { useImageAction } from "./local-data";
 
-export function ImageJob({ id, title, download = false, onUpdate, onDone }: { id: string; title?: string | undefined; download?: boolean; onUpdate?: (job: JobView) => void; onDone?: (job: JobView) => void }) {
+function ImageOperationJob({ id, title, download = false, onUpdate, onDone }: { id: string; title?: string | undefined; download?: boolean; onUpdate?: ((job: JobView) => void) | undefined; onDone?: ((job: JobView) => void) | undefined }) {
   const { t } = useTranslation("settings");
-  const { t: common } = useTranslation("common");
   const api = useSettingsApi();
   const client = useQueryClient();
   const action = useImageAction();
@@ -31,13 +30,11 @@ export function ImageJob({ id, title, download = false, onUpdate, onDone }: { id
   const active = job !== null && !terminalJobStates.has(job.state);
   const failed = job && ["failed", "interrupted"].includes(job.state);
   const cancel = () => action.mutate(() => api.call("jobCancel", { job_id: id }));
-  const { fraction, size, speed, eta } = useDownloadProgress(job, id);
   const name = title ?? downloadName(job) ?? t("image.local.download");
   const isDownload = download || job?.kind === "artifact_install";
-  const downloadStatus = !job || job.state === "queued" || job.state === "claimed" ? "queued" : downloadPhaseOf(job);
   return (
     <div className="space-y-2">
-      {isDownload ? <DownloadItem name={name} status={downloadStatus} {...(fraction !== undefined ? { progress: fraction } : {})} {...(size !== undefined ? { size } : {})} {...(speed !== undefined ? { speed } : {})} {...(eta !== undefined ? { eta } : {})} error={job?.state === "cancelled" ? t("tools.job.cancelled") : common("errors.code.unavailable")} {...(active && !action.isPending && job.state !== "cancellation_requested" && job.state !== "cleaning_up" ? { onCancel: cancel } : {})} /> : <>
+      {isDownload ? <DownloadCard job={job} id={id} name={name} /> : <>
         <ListRow title={title ?? t("image.local.download")} description={t(`image.local.task.${job?.state ?? "queued"}`)} trailing={active ? <Button variant="ghost" size="sm" loading={action.isPending} onClick={cancel}>{t("manage.cancel")}</Button> : undefined} />
         {active && <Progress label={t("image.local.task.running")} {...(job.progress.total ? { value: Math.min(100, job.progress.current / job.progress.total * 100) } : {})} />}
       </>}
@@ -45,4 +42,14 @@ export function ImageJob({ id, title, download = false, onUpdate, onDone }: { id
       {action.isError && <FailureState error={action.error} size="sm" />}
     </div>
   );
+}
+
+export function ImageJob(props: { id: string; title?: string | undefined; download?: boolean; onUpdate?: ((job: JobView) => void) | undefined; onDone?: ((job: JobView) => void) | undefined }) {
+  const api = useSettingsApi();
+  const client = useQueryClient();
+  if (!props.download) return <ImageOperationJob {...props} />;
+  return <DownloadJob api={api} id={props.id} name={props.title} onUpdate={props.onUpdate} onDone={async (job) => {
+    props.onDone?.(job);
+    await Promise.all([queryKeys.localImages.all, queryKeys.models.all, queryKeys.loras.all, queryKeys.jobs.lists()].map((queryKey) => client.invalidateQueries({ queryKey })));
+  }} />;
 }

@@ -51,6 +51,22 @@ describe("downloads menu", () => {
     expect(screen.getByText("Installs and updates show up here.")).toBeTruthy();
   });
 
+  it("waits for the shared active-job inventory instead of claiming there are no downloads", async () => {
+    let release!: (value: ReturnType<typeof ok<{ items: JobView[]; next_cursor: null }>>) => void;
+    await mount({ jobsList: () => new Promise((resolve) => { release = resolve; }) });
+    fireEvent.click(await screen.findByRole("button", { name: "Downloads" }));
+    expect(await screen.findByRole("status", { name: "Loading downloads" })).toBeTruthy();
+    expect(screen.queryByText("Nothing downloading.")).toBeNull();
+    await act(async () => { release(ok({ items: [], next_cursor: null })); });
+    expect(await screen.findByText("Nothing downloading.")).toBeTruthy();
+  });
+
+  it("uses recorded native names for installs without a feature-specific detail", async () => {
+    await mount({ jobsList: () => ok({ items: [running({ subject_detail: null, subject: { kind: "artifact_install", id: "thymos", display_name: "Lettuce Thymos" } })], next_cursor: null }) });
+    fireEvent.click(await screen.findByRole("button", { name: "Downloads, one active" }));
+    expect(await screen.findByText("Lettuce Thymos")).toBeTruthy();
+  });
+
   it("lists active downloads by their detail name with progress and counts them on the button", async () => {
     await mount({ jobsList: () => ok({ items: [running()], next_cursor: null }) });
     fireEvent.click(await screen.findByRole("button", { name: "Downloads, one active" }));

@@ -182,6 +182,7 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         }
         let asset_id = download_asset_id(&model);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
+            .and_then(|subject| subject.with_display(model.variant.label()))
             .map_err(|_| KokoroDownloadError::InvalidWork)?;
         let mut key = format!("kokoro-install-{asset_id}");
         for _ in 0..64 {

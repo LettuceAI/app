@@ -230,6 +230,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
         bundle.validate()?;
         let asset_id = download_asset_id(&bundle);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
+            .and_then(|subject| subject.with_display(format!("Kokoro voices ({})", bundle.voices.len())))
             .map_err(|_| KokoroVoiceDownloadError::InvalidWork)?;
         let mut key = format!("kokoro-voices-{asset_id}");
         for _ in 0..64 {

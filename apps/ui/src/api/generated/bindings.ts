@@ -171,7 +171,7 @@ export const commands = {
 	lorebookProjectRefine: (request: LorebookProjectRefineRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_refine", { request })),
 	lorebookProjectCoherence: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_coherence", { request })),
 	lorebookProjectCommit: (request: LorebookProjectCommitRequest) => typedError<LorebookProjectCommitView, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_commit", { request })),
-	jobsList: (request: JobsListRequest) => typedError<JobPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("jobs_list", { request })),
+	jobsList: (request: JobsListRequest_Deserialize) => typedError<JobPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("jobs_list", { request })),
 	jobGet: (request: JobGetRequest) => typedError<JobView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("job_get", { request })),
 	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("job_cancel", { request })),
 	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent_Deserialize>) => typedError<JobView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("job_watch", { request, onEvent })),
@@ -3887,7 +3887,18 @@ export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_reque
 export type JobSubjectDetail = { type: "whisper_model_install"; model_id: string; filename: string } | { type: "lorebook_draft"; lorebook: HistoricalSourceView | null; prompt: HistoricalSourceView } | { type: "lorebook_project"; project_id: string; prompt: HistoricalSourceView } | { type: "companion_soul_writer"; prompt: HistoricalSourceView } | { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string } | { type: "sd_runtime_install"; release: string; asset: string; backend: string } | { type: "sd_upscaler_install"; filename: string } | { type: "sd_model_install"; profile_id: string; variant_id: string; runtime_release: string; runtime_asset: string; display_name: string } | { type: "sd_lora_install"; model_id: number; version_id: number; file_id: number; filename: string };
 
 /**  What a job works on. */
-export type JobSubjectDto = {
+export type JobSubjectDto = JobSubjectDto_Serialize | JobSubjectDto_Deserialize;
+
+/**  What a job works on. */
+export type JobSubjectDto_Deserialize = {
+	display_name?: string | null,
+	kind: JobSubjectKindDto,
+	id: string,
+};
+
+/**  What a job works on. */
+export type JobSubjectDto_Serialize = {
+	display_name?: string | null,
 	kind: JobSubjectKindDto,
 	id: string,
 };
@@ -3899,7 +3910,7 @@ export type JobView = JobView_Serialize | JobView_Deserialize;
 export type JobView_Deserialize = {
 	id: string,
 	kind: JobKindDto,
-	subject: JobSubjectDto,
+	subject: JobSubjectDto_Deserialize,
 	subject_detail: JobSubjectDetail | null,
 	state: JobStateDto,
 	progress: JobProgressDto,
@@ -3912,7 +3923,7 @@ export type JobView_Deserialize = {
 export type JobView_Serialize = {
 	id: string,
 	kind: JobKindDto,
-	subject: JobSubjectDto,
+	subject: JobSubjectDto_Serialize,
 	subject_detail: JobSubjectDetail | null,
 	state: JobStateDto,
 	progress: JobProgressDto,
@@ -3930,10 +3941,28 @@ export type JobWatchRequest = {
  *  Jobs, most recently created first. An empty or missing `kinds` or
  *  `states` matches every value.
  */
-export type JobsListRequest = {
+export type JobsListRequest = JobsListRequest_Serialize | JobsListRequest_Deserialize;
+
+/**
+ *  Jobs, most recently created first. An empty or missing `kinds` or
+ *  `states` matches every value.
+ */
+export type JobsListRequest_Deserialize = {
 	kinds: JobKindDto[] | null,
 	states: JobStateDto[] | null,
-	subject: JobSubjectDto | null,
+	subject: JobSubjectDto_Deserialize | null,
+	cursor: string | null,
+	limit: number | null,
+};
+
+/**
+ *  Jobs, most recently created first. An empty or missing `kinds` or
+ *  `states` matches every value.
+ */
+export type JobsListRequest_Serialize = {
+	kinds: JobKindDto[] | null,
+	states: JobStateDto[] | null,
+	subject: JobSubjectDto_Serialize | null,
 	cursor: string | null,
 	limit: number | null,
 };

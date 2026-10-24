@@ -30,6 +30,6 @@ export function downloadName(job: JobView | null): string | null {
     case "model_pull":
       return detail.model;
     default:
-      return null;
+      return job?.subject.display_name ?? null;
   }
 }

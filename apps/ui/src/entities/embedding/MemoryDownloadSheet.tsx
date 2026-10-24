@@ -1,8 +1,8 @@
 import { Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, DownloadItem, Sheet } from "@lettuceai/crisp";
+import { Button, Sheet } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
-import { useDownloadProgress } from "@/entities/download";
+import { DownloadCard } from "@/entities/download";
 import { ActionButton } from "@/shared/ui/ActionButton";
 import { ActionError } from "@/shared/ui/ActionError";
 import type { InstallState } from "./use-embedding-install";
@@ -25,7 +25,6 @@ export function MemoryDownloadSheet(props: MemoryDownloadSheetProps) {
   const done = install.phase === "done";
   const failed = install.phase === "failed";
   const name = t("memoryDownload.modelName");
-  const { fraction, size, speed, eta } = useDownloadProgress(install.job);
   const failure = install.job?.failure ?? null;
   const failureText = isApiFailure(install.error)
     ? t(`errors.code.${install.error.code}`)
@@ -80,13 +79,10 @@ export function MemoryDownloadSheet(props: MemoryDownloadSheetProps) {
             </span>
           </div>
         ) : (
-          <DownloadItem
+          <DownloadCard
+            job={install.job}
             name={name}
-            status={install.phase === "downloading" ? "downloading" : install.phase === "verifying" ? "verifying" : done ? "done" : "failed"}
-            {...(fraction !== undefined ? { progress: fraction } : {})}
-            {...(size !== undefined ? { size } : {})}
-            {...(speed !== undefined ? { speed } : {})}
-            {...(eta !== undefined ? { eta } : {})}
+            {...(install.job === null ? { status: failed ? "failed" as const : "queued" as const } : {})}
             error={failureText}
             {...(done ? { detail: t("memoryDownload.doneDetail"), className: "border-accent/30 bg-accent/5" } : {})}
           />

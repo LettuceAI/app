@@ -80,7 +80,7 @@ export function AppShell() {
         onClose: () => perform(() => controller.close()),
       } : {})}
     >
-      <DownloadsMenu api={api} />
+      <DownloadsMenu />
     </TitleBar>
   ) : null;
   return (

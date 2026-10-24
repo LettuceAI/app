@@ -9,7 +9,7 @@ import { queryKeys } from "@/api/query-keys";
 import { terminalJobStates } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi, useSettingsLayout } from "../data";
-import { activeImageDownloads, installedQuery, inventoryQuery, localImageKeys, loraDownloadKey, useByteSize, type ImageInstallDetail } from "./local-data";
+import { installedQuery, inventoryQuery, localImageKeys, loraDownloadKey, useByteSize, type ImageInstallDetail } from "./local-data";
 import { CatalogView } from "./CatalogView";
 import { ComputePolicyView } from "./ComputePolicyView";
 import { EngineView } from "./EngineView";
@@ -53,7 +53,6 @@ export function LocalImageSettings() {
 
 export function LocalImagePage({ view }: { view: View }) {
   const { t } = useTranslation("settings");
-  const api = useSettingsApi();
   const { phone } = useSettingsLayout();
   const client = useQueryClient();
   const router = useRouter();
@@ -63,22 +62,23 @@ export function LocalImagePage({ view }: { view: View }) {
   const loraPushed = useLocation({ select: (location) => location.state.loraDetailPushed });
   const civitaiModel = useSearch({ from: "/settings/$section", select: (search) => search.civitaiModel ?? null });
   const lora = view === "loras" ? civitaiModel : null;
-  const { downloads: shellDownloads } = useDownloads();
+  const downloads = useDownloads();
+  const shellDownloads = downloads.downloads;
   const [policy, setPolicy] = useState<SdRuntimeRef | null>(null);
   const [loraActionTarget, setLoraActionTarget] = useState<HTMLDivElement | null>(null);
   const [policyFooter, setPolicyFooter] = useState<HTMLDivElement | null>(null);
   const [fitEpoch, setFitEpoch] = useState(0);
   const [jobs, setJobs] = useState<Record<string, { title: string; detail: ImageInstallDetail | null }>>({});
   const [observed, setObserved] = useState<Record<string, JobView>>({});
-  const downloads = useQuery({ queryKey: [...queryKeys.jobs.lists(), "image-installs"], queryFn: () => activeImageDownloads(api), enabled: view !== "loras" });
   const onJob = useCallback((id: string, title: string, detail: ImageInstallDetail | null = null) => { setJobs((current) => ({ ...current, [id]: { title, detail } })); }, []);
   const onUpdate = useCallback((job: JobView) => { setObserved((current) => ({ ...current, [job.id]: job })); }, []);
-  const listed = (downloads.data ?? []).filter((job) => job.subject_detail?.type !== "sd_lora_install" && (view !== "engine" || job.subject_detail?.type === "sd_runtime_install" || job.subject_detail?.type === "sd_upscaler_install"));
+  const listed = shellDownloads.filter((job) => (job.subject_detail?.type === "image_bundle" || job.subject_detail?.type === "sd_runtime_install" || job.subject_detail?.type === "sd_upscaler_install" || job.subject_detail?.type === "sd_model_install") && (view !== "engine" || job.subject_detail?.type === "sd_runtime_install" || job.subject_detail?.type === "sd_upscaler_install"));
   const loraDownloads: LoraDownloads = {};
   for (const job of shellDownloads) if (job.subject_detail?.type === "sd_lora_install") loraDownloads[loraDownloadKey(job.subject_detail.version_id, job.subject_detail.file_id)] = { id: job.id, title: job.subject_detail.filename };
   const jobIds = [...new Set([...Object.keys(jobs), ...Object.keys(observed), ...listed.map((job) => job.id)])];
   const activeInstalls = jobIds.flatMap((id): ImageInstallDetail[] => {
-    const job = observed[id] ?? listed.find((item) => item.id === id);
+    const local = observed[id];
+    const job = local && terminalJobStates.has(local.state) ? local : downloads.jobs.get(id) ?? local;
     if (job && terminalJobStates.has(job.state)) return [];
     const detail = job?.subject_detail ?? jobs[id]?.detail;
     return detail?.type === "sd_runtime_install" || detail?.type === "sd_upscaler_install" || detail?.type === "sd_model_install" ? [detail] : [];
@@ -98,9 +98,9 @@ export function LocalImagePage({ view }: { view: View }) {
     <>
       <div className={lora !== null ? "hidden" : "h-full min-h-0"}>
       <Page key={view} title={t(titleKeys[view])} meta={phone ? undefined : t(metaKeys[view])} onBack={back} backLabel={t(view === "bundle" ? "image.local.catalog.title" : "sections.imageGeneration.title")} actions={actions} contentClassName="space-y-7">
-        {downloads.isError && view !== "loras" && <FailureState error={downloads.error} onRetry={() => void downloads.refetch()} size="sm" />}
+        {downloads.error !== null && view !== "loras" && <FailureState error={downloads.error} onRetry={downloads.retry} size="sm" />}
         {view !== "loras" && jobIds.map((id) => <ImageJob key={id} id={id} title={jobs[id]?.title} download onUpdate={onUpdate} />)}
-        {view === "engine" ? <EngineView open onJob={onJob} onPolicy={setPolicy} activeInstalls={activeInstalls} downloadsReady={downloads.data !== undefined && !downloads.isError} /> : view === "models" ? <CatalogView fitEpoch={fitEpoch} onJob={onJob} activeInstalls={activeInstalls} downloadsReady={downloads.data !== undefined && !downloads.isError} onEngine={() => open("engine")} onBundle={() => open("bundle")} /> : view === "bundle" ? <BundleView onJob={onJob} onEngine={() => open("engine")} /> : <LoraLibraryView open actionTarget={loraActionTarget} downloads={Object.values(loraDownloads)} />}
+        {view === "engine" ? <EngineView open onJob={onJob} onPolicy={setPolicy} activeInstalls={activeInstalls} downloadsReady={downloads.ready} /> : view === "models" ? <CatalogView fitEpoch={fitEpoch} onJob={onJob} activeInstalls={activeInstalls} downloadsReady={downloads.ready} onEngine={() => open("engine")} onBundle={() => open("bundle")} /> : view === "bundle" ? <BundleView onJob={onJob} onEngine={() => open("engine")} /> : <LoraLibraryView open actionTarget={loraActionTarget} downloads={Object.values(loraDownloads)} />}
       </Page>
       </div>
       {lora !== null && <CivitaiLoraPage key={lora} id={lora} downloads={loraDownloads} onBack={closeLora} />}

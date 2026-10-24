@@ -259,6 +259,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
         subject: dto::JobSubjectDto {
+            display_name: job.subject.display.as_ref().map(|name| name.as_str().to_owned()),
             kind: subject_kind_dto(job.subject.kind),
             id: job.subject.id.to_string(),
         },

@@ -4,7 +4,7 @@ import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Check, Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, cn, fileSize, icon, motion as m, Surface, useCompactLayout } from "@lettuceai/crisp";
+import { Button, cn, icon, motion as m, Surface, useCompactLayout } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
 import type { RequiredModel } from "@/api/generated/bindings";
@@ -12,7 +12,8 @@ import { lettuceLogo } from "@/shared/assets";
 import { Backdrop } from "./components/Backdrop";
 import { StatusList, type StatusRow } from "./components/StatusList";
 import { finishedStages, migrationStages, stageCompletion, useLegacyMigration } from "./data/migration";
-import { modelsNeededAfterMove, useModelInstalls, type ModelInstall } from "./data/models";
+import { DownloadCard } from "@/entities/download";
+import { modelsNeededAfterMove, useModelInstalls } from "./data/models";
 
 type Step = "welcome" | "migrate" | "models" | "done" | "upgrade";
 
@@ -114,31 +115,7 @@ export function WelcomeBackPage() {
     status: index < finished ? "done" : index === finished && !failed ? "active" : "waiting",
   }));
 
-  const modelDetail = (entry: ModelInstall): ReactNode => {
-    const progress = entry.job?.progress;
-    if (entry.phase === "done") return t("models.ready");
-    if (entry.phase === "failed") return t("models.failed");
-    if (entry.phase === "verifying") return t("models.checkingFiles");
-    if (entry.phase === "downloading" && progress && progress.unit === "bytes" && progress.total !== null) {
-      return t("models.progress", { done: fileSize(progress.current, i18n.language), total: fileSize(progress.total, i18n.language) });
-    }
-    if (started) return t("models.waiting");
-    return t(`models.why.${entry.model}`);
-  };
-  const modelRows: StatusRow[] = installs.installs.map((entry) => {
-    const progress = entry.job?.progress;
-    const fraction = progress && progress.total ? progress.current / progress.total : 0;
-    return {
-      id: entry.model,
-      title: t(`models.names.${entry.model}`),
-      detail: modelDetail(entry),
-      status:
-        entry.phase === "done" ? "done"
-        : entry.phase === "verifying" ? "active"
-        : entry.phase === "downloading" ? { progress: fraction }
-        : "waiting",
-    };
-  });
+  const modelCards = <div className="w-full max-w-md space-y-3">{installs.installs.map((entry) => <DownloadCard key={entry.model} job={entry.job} name={t(`models.names.${entry.model}`)} {...(!started ? { detail: t(`models.why.${entry.model}`) } : {})} {...(entry.job === null ? { status: entry.phase === "failed" ? "failed" as const : "queued" as const } : {})} />)}</div>;
 
   const screens: Record<Step, ReactNode> = {
     welcome: center(
@@ -210,7 +187,7 @@ export function WelcomeBackPage() {
           </motion.div>
         </AnimatePresence>
         <div className="mt-9 flex w-full justify-center">
-          <StatusList rows={modelRows} />
+          {modelCards}
         </div>
         <p className="mt-6 min-h-5 text-sm text-fg-3">{allInstalled ? null : installs.running ? t("models.keepOpen") : started ? null : t("models.notNowNote")}</p>
       </>,

@@ -20,6 +20,7 @@
     "backToApp": "Back to app"
   },
   "downloads": {
+    "loading": "Loading downloads",
     "title": "Downloads",
     "titleActive_one": "Downloads, one active",
     "titleActive_other": "Downloads, {{count}} active",

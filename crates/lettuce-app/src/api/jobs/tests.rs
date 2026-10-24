@@ -124,6 +124,7 @@ async fn jobs_list_filters_and_pages_newest_first() {
         context,
         dto::JobsListRequest {
             subject: Some(dto::JobSubjectDto {
+                display_name: None,
                 kind: dto::JobSubjectKindDto::Maintenance,
                 id: "one".into(),
             }),
@@ -1315,4 +1316,18 @@ async fn embedding_install_worker_checks_health_before_activating_dynamic_memory
                 .is_some()
         );
     }
+}
+
+#[tokio::test]
+async fn install_subject_display_survives_get_list_and_watch() {
+    let harness = harness(Reply::Text("Hello."));
+    let mut request = spec(JobKind::ArtifactInstall, "runtime", "runtime-display");
+    request.subject = request.subject.with_display("ONNX Runtime").expect("display");
+    let id = create(&harness, request);
+    let loaded = job_get(&harness.context, dto::JobGetRequest { job_id: id.to_string() }).await.expect("get");
+    assert_eq!(loaded.subject.display_name.as_deref(), Some("ONNX Runtime"));
+    let listed = jobs_list(&harness.context, dto::JobsListRequest::default()).await.expect("list");
+    assert_eq!(listed.items[0].subject.display_name, loaded.subject.display_name);
+    let watched = job_watch(&harness.context, dto::JobWatchRequest { job_id: id.to_string() }, Arc::new(RecordingJob::default())).await.expect("watch");
+    assert_eq!(watched.subject.display_name, loaded.subject.display_name);
 }

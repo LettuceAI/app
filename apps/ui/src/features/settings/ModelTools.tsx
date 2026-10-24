@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,40 +10,19 @@ import {
   ListRow,
   ListRowButton,
   LoadingState,
-  Progress,
   Select,
   Sheet,
   Text,
 } from "@lettuceai/crisp";
-import type { ApiClient } from "@/api/client";
-import type { JobPage, JobView, SettingsLlamaDefaultKvCacheType, SettingsView } from "@/api/generated/bindings";
+import type { SettingsLlamaDefaultKvCacheType, SettingsView } from "@/api/generated/bindings";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
-import { terminalJobStates, watchJob } from "@/entities/job";
+import { DownloadJob, useDownloads } from "@/entities/download";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsAction, useSettingsApi } from "./data";
 import { LoraLibraryView } from "./image/LoraLibraryView";
 
 const searchPageSize = 30;
-const activeDownloadStates = ["queued", "claimed", "running", "cancellation_requested", "cleaning_up"] as const;
-
-async function listActiveDownloads(api: ApiClient): Promise<JobView[]> {
-  const jobs: JobView[] = [];
-  let cursor: string | null = null;
-  do {
-    const page: JobPage = await api.call("jobsList", {
-      kinds: ["artifact_install"],
-      states: [...activeDownloadStates],
-      subject: null,
-      cursor,
-      limit: 100,
-    });
-    jobs.push(...page.items);
-    cursor = page.next_cursor;
-  } while (cursor);
-  return jobs;
-}
-
 export function ModelTools({ open, tool, onClose }: { open: boolean; tool: "browse" | "runtime" | "loras"; onClose: () => void }) {
   const { t } = useTranslation("settings");
   return (
@@ -114,14 +93,12 @@ function GgufBrowser() {
   const [repo, setRepo] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const [mmproj, setMmproj] = useState("");
-  const downloads = useQuery({
-    queryKey: [...queryKeys.jobs.lists(), "model-downloads"],
-    queryFn: () => listActiveDownloads(api),
-  });
+  const downloads = useDownloads();
+  const client = useQueryClient();
   const downloadIds = [
     ...new Set([
       ...(jobId ? [jobId] : []),
-      ...(downloads.data?.filter((job) => job.subject_detail?.type === "model_download").map((job) => job.id) ?? []),
+      ...(downloads.downloads.filter((job) => job.subject_detail?.type === "model_download" && job.subject_detail.file.toLowerCase().endsWith(".gguf")).map((job) => job.id)),
     ]),
   ];
   const results = useInfiniteQuery({
@@ -171,9 +148,9 @@ function GgufBrowser() {
     <div className="space-y-4">
       {action.isError && <FailureState error={action.error} size="sm" />}
       {mobile && <Text variant="hint">{t("tools.mobileDownloads")}</Text>}
-      {downloads.isError && <FailureState error={downloads.error} onRetry={() => void downloads.refetch()} size="sm" />}
+      {downloads.error !== null && <FailureState error={downloads.error} onRetry={downloads.retry} size="sm" />}
       {downloadIds.map((id) => (
-        <DownloadProgress key={id} id={id} />
+        <DownloadJob key={id} api={api} id={id} onDone={() => client.invalidateQueries({ queryKey: queryKeys.models.all })} />
       ))}
       {!repo ? (
         <>
@@ -271,47 +248,6 @@ function GgufBrowser() {
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function DownloadProgress({ id }: { id: string }) {
-  const { t } = useTranslation("settings");
-  const api = useSettingsApi();
-  const client = useQueryClient();
-  const action = useSettingsAction();
-  const [job, setJob] = useState<JobView | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    void watchJob(api, id, setJob, controller.signal)
-      .then(() => client.invalidateQueries({ queryKey: queryKeys.models.all }))
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason);
-      });
-    return () => controller.abort();
-  }, [api, client, id]);
-  const active = job !== null && !terminalJobStates.has(job.state) ? job : null;
-  return (
-    <div className="space-y-2" role="status">
-      {job?.subject_detail?.type === "model_download" && <Text>{job.subject_detail.display_name}</Text>}
-      {error ? (
-        <FailureState error={error} size="sm" />
-      ) : (
-        <Text>{job ? t(`tools.job.${job.state}`) : t("tools.job.queued")}</Text>
-      )}
-      {active && (
-        <Progress
-          {...(active.progress.total ? { value: Math.min(100, (active.progress.current / active.progress.total) * 100) } : {})}
-          label={t("tools.job.running")}
-        />
-      )}
-      {active && (
-        <Button variant="ghost" loading={action.isPending} onClick={() => action.mutate(() => api.call("jobCancel", { job_id: id }))}>
-          {t("manage.cancel")}
-        </Button>
-      )}
-      {action.isError && <FailureState error={action.error} size="sm" />}
     </div>
   );
 }
