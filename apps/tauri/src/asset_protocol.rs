@@ -3,9 +3,9 @@ use lettuce_contracts::{ApiError, ApiErrorCode};
 use tauri::{
     Manager, Runtime, UriSchemeContext, UriSchemeResponder,
     http::{
-        Request, Response, StatusCode, Uri,
+        HeaderValue, Request, Response, StatusCode, Uri,
         header::{
-            ACCEPT_RANGES, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
+            ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_ORIGIN, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE, VARY,
             X_CONTENT_TYPE_OPTIONS,
         },
     },
@@ -28,12 +28,15 @@ pub(crate) fn handle<R: Runtime>(
     request: Request<Vec<u8>>,
     responder: UriSchemeResponder,
 ) {
+    let origin = context.app_handle().get_webview_window(context.webview_label())
+        .and_then(|webview| webview.url().ok())
+        .and_then(|url| url_origin(url.as_str()));
     let Some(api_context) = context
         .app_handle()
         .try_state::<ApiContextSlot>()
         .and_then(|state| state.snapshot().ok())
     else {
-        responder.respond(status(StatusCode::SERVICE_UNAVAILABLE));
+        responder.respond(with_origin(status(StatusCode::SERVICE_UNAVAILABLE), origin));
         return;
     };
     let asset_id = asset_id(request.uri());
@@ -50,8 +53,21 @@ pub(crate) fn handle<R: Runtime>(
         } else {
             api::read_asset(&api_context, &asset_id, range).await
         };
-        responder.respond(response(read, !preview && range != AssetRange::Whole));
+        responder.respond(with_origin(response(read, !preview && range != AssetRange::Whole), origin));
     });
+}
+
+fn url_origin(url: &str) -> Option<HeaderValue> {
+    let uri: Uri = url.parse().ok()?;
+    HeaderValue::from_str(&format!("{}://{}", uri.scheme_str()?, uri.authority()?)).ok()
+}
+
+fn with_origin(mut response: Response<Vec<u8>>, origin: Option<HeaderValue>) -> Response<Vec<u8>> {
+    if let Some(origin) = origin {
+        response.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+        response.headers_mut().insert(VARY, HeaderValue::from_static("Origin"));
+    }
+    response
 }
 
 /// A single `bytes=a-b`, `bytes=a-` or `bytes=-n` range; anything else is
@@ -222,6 +238,21 @@ mod tests {
             .headers()
             .get(name)
             .and_then(|value| value.to_str().ok())
+    }
+
+    #[test]
+    fn asset_fetches_allow_the_owning_webview_origin_including_dev_ports() {
+        for (url, expected) in [
+            ("http://localhost:1420/settings/speech?tab=model", "http://localhost:1420"),
+            ("tauri://localhost/index.html", "tauri://localhost"),
+            ("http://tauri.localhost/", "http://tauri.localhost"),
+        ] {
+            let response = with_origin(status(StatusCode::OK), url_origin(url));
+            assert_eq!(header(&response, "access-control-allow-origin"), Some(expected));
+            assert_eq!(header(&response, "vary"), Some("Origin"));
+        }
+        let unavailable = with_origin(status(StatusCode::SERVICE_UNAVAILABLE), None);
+        assert_eq!(header(&unavailable, "access-control-allow-origin"), None);
     }
 
     #[test]

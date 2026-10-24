@@ -1,7 +1,8 @@
+import { AssetAudio } from "@/shared/ui/AssetAudio";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AudioLines, Cpu, HardDrive, Mic, Plus, Zap } from "lucide-react";
-import { AudioItem, Badge, Button, Collapsible, Field, fileSize, icon, IconButton, Input, ListGroup, ListRow, ListRowButton, SelectMenu, Switch, Text } from "@lettuceai/crisp";
+import { Badge, Button, Collapsible, Field, fileSize, icon, IconButton, Input, ListGroup, ListRow, ListRowButton, SelectMenu, Switch, Text } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { AssetRef, MicrophoneDevices, TranscribeOptions, WhisperInstalledModel } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -35,7 +36,7 @@ export function ModelTab({ api, phone, active, gpu, keepLoaded, onGpu, onKeepLoa
     <RecordingControls recording={recording} {...(active ? { modelName: modelName(active.id) } : {})} disabled={!active} onStop={() => { void recording.stop().then((audio) => { if (audio && active) void recording.transcribe(audio, active.id, options); }); }} />
     {recording.audio && !result && recording.phase === "idle" && <Button size="sm" variant="tonal" disabled={!active} onClick={transcribe}>{t("retryTranscribe")}</Button>}
     {result && <div className="space-y-3 border-t border-line pt-4"><p className="whitespace-pre-wrap text-base leading-relaxed text-fg">{result.text}</p><div className="space-y-1"><Text variant="label">{t("heard")}</Text><p className="whitespace-pre-wrap text-sm text-fg-3">{result.raw_text}</p></div><div className="flex flex-wrap items-center gap-1.5">{result.detected_language && <Badge>{whisperLanguages.find((item) => item.code === result.detected_language)?.name ?? result.detected_language}</Badge>}{recording.elapsed > 0 && <Badge>{t("seconds", { seconds: (recording.elapsed / 1000).toFixed(1) })}</Badge>}{result.applied_corrections.map((correction) => <Badge key={correction.correction_id} tone="accent">{t("pair", { left: correction.matched_text, right: correction.correct })}</Badge>)}</div><Collapsible variant="plain" title={t("segments", { count: result.segments.length })}><div className="space-y-1.5 pt-1">{result.segments.map((segment, index) => <div key={index} className="flex gap-3 text-sm"><span className="shrink-0 font-mono text-xs leading-5 text-fg-3">{t("range", { start: recordingTime(segment.start_ms), end: recordingTime(segment.end_ms) })}</span><span className="text-fg-2">{segment.text}</span></div>)}</div></Collapsible></div>}
-    {recording.audio && recording.phase === "idle" && <AudioItem src={recording.audio.url} title={t("recording")} actions={<IconButton label={t("saveExample")} onClick={() => { if (recording.audio) onSaveRecording({ audio: recording.audio, whisperOutput: result?.raw_text ?? null }); }}><Plus size={icon.md} /></IconButton>} />}
+    {recording.audio && recording.phase === "idle" && <AssetAudio src={recording.audio.url} title={t("recording")} actions={<IconButton label={t("saveExample")} onClick={() => { if (recording.audio) onSaveRecording({ audio: recording.audio, whisperOutput: result?.raw_text ?? null }); }}><Plus size={icon.md} /></IconButton>} />}
     {!recording.audio && recording.phase === "idle" && active && <Text variant="hint">{t("testHint")}</Text>}
   </div></ListGroup>;
   return phone ? <div className="space-y-7">{model}{test}{runtime}</div> : <div className="grid grid-cols-2 items-start gap-8"><div className="min-w-0 space-y-7">{model}{runtime}</div><div className="min-w-0">{test}</div></div>;

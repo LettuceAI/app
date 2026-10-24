@@ -70,6 +70,8 @@ Entity exports keep no durable publication state. A process crash can leave a de
 
 The existing asset scheme serves bounded image previews separately from originals and supplies private cache headers. Original image export and audio range responses retain their existing paths.
 
+Asset responses also allow fetch access from their owning webview's origin, including the actual development port, with an Origin cache variation. The CSP permits fetches to the managed asset scheme. This lets the shared audio adapter create playable Blob URLs on WebKitGTK, which refuses direct custom-scheme WAV playback; media still travels through the asset protocol rather than command IPC.
+
 Media usage has a typed read wrapper for action sheets, so grids can request catalog metadata without scanning every record for each tile.
 
 Legacy declared file associations for `uec`, `usc` and `lettuce` (`old-code/src-tauri/tauri.conf.json:35-77`, MIME types `application/x-uec+json`, `application/x-usc+json` and `application/zip`, macOS exported types, rank Owner) but nothing consumed an opened file: the only argument parsing is the window chrome flags (`old-code/src-tauri/src/app/bootstrap.rs:353`) and there is no `RunEvent::Opened` handler, no Android intent filter (`old-code/src-tauri/android-overrides/AndroidManifest.xml:28-33` has only the launcher filter) and no frontend receiver. The inbox, the intent filters and the associations here are new behavior. The associations now cover `lettuce` and `uec` only, with the MIME types `application/vnd.lettuceai.backup` and `application/vnd.lettuceai.uec+json`, because USC folds into the one card format and `application/zip` would claim every archive; the macOS exported type declarations and the Owner rank are not carried over.

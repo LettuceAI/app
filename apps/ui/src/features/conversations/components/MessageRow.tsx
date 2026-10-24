@@ -1,6 +1,7 @@
+import { AssetAudio } from "@/shared/ui/AssetAudio";
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
-import { AudioItem, Badge, cn, Highlight, InlineMarkdown, Message } from "@lettuceai/crisp";
+import { Badge, cn, Highlight, InlineMarkdown, Message } from "@lettuceai/crisp";
 import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings";
 import { authorOf, formatTime, mediaOf, type MediaItem, paragraphsOf, spacing, textOf, type Group } from "../data/messages";
 
@@ -31,7 +32,7 @@ export function Attached({ media }: { media: readonly MediaItem[] }) {
       )}
       {media.map((item) =>
         item.kind === "audio" ? (
-          <AudioItem key={item.id} title={item.name ?? t("message.audio")} src={item.url} />
+          <AssetAudio key={item.id} title={item.name ?? t("message.audio")} src={item.url} />
         ) : item.kind === "video" || item.kind === "document" ? (
           <Badge key={item.id} tone="neutral">{item.name ?? t(`message.${item.kind}`)}</Badge>
         ) : null,

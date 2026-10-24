@@ -34,7 +34,7 @@
         "media-src": "'self' lettuce-asset: http://lettuce-asset.localhost blob: data:",
         "style-src": "'self' 'unsafe-inline'",
         "script-src": "'self'",
-        "connect-src": "ipc: http://ipc.localhost",
+        "connect-src": "ipc: http://ipc.localhost lettuce-asset:",
         "font-src": "'self' data:"
       }
     }

@@ -1,9 +1,10 @@
+import { AssetAudio } from "@/shared/ui/AssetAudio";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
 import { BookOpen, FileAudio, Image, MoreHorizontal, User, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { AudioItem, Button, cn, FilterBar, icon, IconButton, MediaCard, MediaTile, Page, relativeTime, Spinner, useLongPress } from "@lettuceai/crisp";
+import { Button, cn, FilterBar, icon, IconButton, MediaCard, MediaTile, Page, relativeTime, Spinner, useLongPress } from "@lettuceai/crisp";
 import { FailureState } from "@/shared/ui/FailureState";
 import { MobileSettingsButton } from "@/shared/ui/MobileSettingsButton";
 import type { MediaLibraryItem } from "@/api/generated/bindings";
@@ -108,7 +109,7 @@ export function LibraryPage() {
   } else if (filter === "audio") {
     body = (
       <LibraryViewport items={pictures} itemKey={(item) => item.asset.asset_id} scrollRef={mainRef} gridClass="grid max-w-3xl grid-cols-1 gap-2">
-        {(item) => <AudioItem title={mediaName(item)} description={relativeTime(item.created_at, undefined, i18n.language)} badge={{ label: item.asset_kind === "synthesized_speech" ? t("menu.generated") : t("menu.uploaded"), tone: item.asset_kind === "synthesized_speech" ? "secondary" : "info" }} src={item.asset.url} actions={<IconButton label={t("menu.more", { name: mediaName(item) })} size="sm" onClick={() => open({ media: item.asset.asset_id })}><MoreHorizontal size={icon.md} /></IconButton>} />}
+        {(item) => <AssetAudio title={mediaName(item)} description={relativeTime(item.created_at, undefined, i18n.language)} badge={{ label: item.asset_kind === "synthesized_speech" ? t("menu.generated") : t("menu.uploaded"), tone: item.asset_kind === "synthesized_speech" ? "secondary" : "info" }} src={item.asset.url} actions={<IconButton label={t("menu.more", { name: mediaName(item) })} size="sm" onClick={() => open({ media: item.asset.asset_id })}><MoreHorizontal size={icon.md} /></IconButton>} />}
       </LibraryViewport>
     );
   } else {
