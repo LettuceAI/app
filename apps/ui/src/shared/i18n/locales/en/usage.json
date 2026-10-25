@@ -227,7 +227,12 @@
     "companion_growth": "Companion growth",
     "companion_consolidation": "Companion consolidation",
     "lorebook_generator": "Lorebook generator",
-    "lorebook_entry_generator": "Lorebook entry generator"
+    "lorebook_entry_generator": "Lorebook entry generator",
+    "lorebook_plan": "Lorebook plan",
+    "lorebook_entry_write": "Lorebook writing",
+    "lorebook_entry_refine": "Lorebook revision",
+    "lorebook_coherence": "Lorebook coherence",
+    "lorebook_keywords": "Lorebook keywords"
   },
   "noPrices": "No prices were reported in this range."
 }

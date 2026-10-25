@@ -5,12 +5,20 @@ import { BookOpen, User, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, icon, ListGroup, ListRow, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
-import type { FileSource, ImportPreview_Serialize } from "@/api/generated/bindings";
+import type {
+  FileSource,
+  ImportPreview_Serialize,
+  ImportCommitResult,
+} from "@/api/generated/bindings";
 import { commitImport, refreshLibrary } from "@/features/library";
 
 type Kind = "character" | "persona" | "lorebook";
 
-function detail(preview: ImportPreview_Serialize, fallback: string, entries: (count: number) => string): string {
+function detail(
+  preview: ImportPreview_Serialize,
+  fallback: string,
+  entries: (count: number) => string,
+): string {
   const { content } = preview;
   if (content.kind === "lorebook") return entries(content.entries.length);
   if (content.kind === "character") return content.content.description?.trim() || fallback;
@@ -18,7 +26,19 @@ function detail(preview: ImportPreview_Serialize, fallback: string, entries: (co
   return fallback;
 }
 
-export function ImportSheet({ api, source, preview, onClose }: { api: ApiClient; source: FileSource; preview: ImportPreview_Serialize; onClose: () => void }) {
+export function ImportSheet({
+  api,
+  source,
+  preview,
+  onClose,
+  onImported,
+}: {
+  api: ApiClient;
+  source: FileSource;
+  preview: ImportPreview_Serialize;
+  onClose: () => void;
+  onImported?: (result: ImportCommitResult) => void;
+}) {
   const { t } = useTranslation("opened-files");
   const { t: common } = useTranslation();
   const queryClient = useQueryClient();
@@ -31,6 +51,7 @@ export function ImportSheet({ api, source, preview, onClose }: { api: ApiClient;
     onSuccess: (result) => {
       onClose();
       void refreshLibrary(queryClient);
+      onImported?.(result);
       if (result.kind !== "imported") {
         toast.success(t("import.started"));
         return;
@@ -38,11 +59,18 @@ export function ImportSheet({ api, source, preview, onClose }: { api: ApiClient;
       const action = {
         label: t("import.open"),
         onClick: () => {
-          if (kind === "character") void navigate({ to: "/characters/$characterId/edit", params: { characterId: result.id } });
+          if (kind === "character")
+            void navigate({
+              to: "/characters/$characterId/edit",
+              params: { characterId: result.id },
+            });
           else void navigate({ to: "/library", search: { kind, item: result.id } });
         },
       };
-      if (result.warnings.length > 0) toast.warning(t("import.warnings", { count: result.warnings.length }), undefined, { action });
+      if (result.warnings.length > 0)
+        toast.warning(t("import.warnings", { count: result.warnings.length }), undefined, {
+          action,
+        });
       else toast.success(t("import.done", { name: preview.name }), undefined, { action });
     },
   });
@@ -55,16 +83,45 @@ export function ImportSheet({ api, source, preview, onClose }: { api: ApiClient;
       onClose={close}
       size="sm"
       title={t(`import.title.${kind}`)}
-      footer={<div className="flex gap-2">
-        <Button variant="secondary" className="flex-1" disabled={commit.isPending} onClick={close}>{t("cancel")}</Button>
-        <Button variant="primary" className="flex-1" loading={commit.isPending} onClick={() => commit.mutate()}>{commit.isError ? t("retry") : t("import.confirm")}</Button>
-      </div>}
+      footer={
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            className="flex-1"
+            disabled={commit.isPending}
+            onClick={close}
+          >
+            {t("cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            className="flex-1"
+            loading={commit.isPending}
+            onClick={() => commit.mutate()}
+          >
+            {commit.isError ? t("retry") : t("import.confirm")}
+          </Button>
+        </div>
+      }
     >
       <div className="space-y-4 pb-1">
         <ListGroup>
-          <ListRow icon={<Icon size={icon.lg} />} title={preview.name} description={detail(preview, t(`import.kind.${kind}`), (count) => t("import.entries", { count }))} />
+          <ListRow
+            icon={<Icon size={icon.lg} />}
+            title={preview.name}
+            description={detail(preview, t(`import.kind.${kind}`), (count) =>
+              t("import.entries", { count }),
+            )}
+          />
         </ListGroup>
-        {commit.isError && <Alert tone="danger" title={common(`errors.code.${isApiFailure(commit.error) ? commit.error.code : "internal"}`)} />}
+        {commit.isError && (
+          <Alert
+            tone="danger"
+            title={common(
+              `errors.code.${isApiFailure(commit.error) ? commit.error.code : "internal"}`,
+            )}
+          />
+        )}
       </div>
     </Sheet>
   );

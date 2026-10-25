@@ -243,6 +243,26 @@ pub async fn lorebook_project_draft_next(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn lorebook_project_write_all(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LorebookProjectJobRequest,
+) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
+    let context = context.snapshot()?;
+    api::lorebook_project_write_all(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn lorebook_project_stop(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LorebookProjectRevisionRequest,
+) -> Result<dto::LorebookProjectView, ApiError> {
+    let context = context.snapshot()?;
+    api::lorebook_project_stop(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn lorebook_project_refine(
     context: State<'_, ApiContextSlot>,
     request: dto::LorebookProjectRefineRequest,

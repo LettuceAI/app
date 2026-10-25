@@ -4,7 +4,11 @@ use specta_typescript::Typescript;
 use tauri::Runtime;
 use tauri_specta::{collect_commands, collect_events};
 
-use crate::{commands, events::AppEvent, host::{self, OpenedFiles}};
+use crate::{
+    commands,
+    events::AppEvent,
+    host::{self, OpenedFiles},
+};
 
 /// Where the generated TypeScript bindings are committed.
 pub const BINDINGS_PATH: &str = concat!(
@@ -180,6 +184,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::lorebooks::lorebook_project_cancel,
             commands::lorebooks::lorebook_generator_defaults,
             commands::lorebooks::lorebook_project_draft_next,
+            commands::lorebooks::lorebook_project_write_all,
+            commands::lorebooks::lorebook_project_stop,
             commands::lorebooks::lorebook_project_refine,
             commands::lorebooks::lorebook_project_coherence,
             commands::lorebooks::lorebook_project_commit,

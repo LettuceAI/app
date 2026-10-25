@@ -18,7 +18,12 @@ import {
   ChatMemoryPage,
   ConversationPage,
 } from "@/features/conversations";
-import { LibraryPage, validateLibrarySearch } from "@/features/library";
+import {
+  LibraryPage,
+  NewLorebookPage,
+  LorebookProjectPage,
+  validateLibrarySearch,
+} from "@/features/library";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
 import {
@@ -98,7 +103,42 @@ const libraryRoute = createRoute({
   beforeLoad: ({ search }) => {
     if (search.create === "character") throw redirect({ to: "/characters/new", replace: true });
     if (search.create === "persona") throw redirect({ to: "/personas/new", replace: true });
+    if (search.create === "lorebook")
+      throw redirect({ to: "/library/lorebooks/new", replace: true });
   },
+});
+const newLorebookRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/library/lorebooks/new",
+  component: NewLorebookPage,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { panel?: "character" | "persona" | "paste"; source?: string } => ({
+    ...(["character", "persona", "paste"].includes(String(search.panel))
+      ? { panel: search.panel as "character" | "persona" | "paste" }
+      : {}),
+    ...(typeof search.source === "string" ? { source: search.source } : {}),
+  }),
+});
+const lorebookProjectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/library/lorebooks/projects/$projectId",
+  component: LorebookProjectPage,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    step?: "outline" | "entries" | "save";
+    panel?: "plan" | "draft" | "refine";
+    entry?: string;
+  } => ({
+    ...(["outline", "entries", "save"].includes(String(search.step))
+      ? { step: search.step as "outline" | "entries" | "save" }
+      : {}),
+    ...(["plan", "draft", "refine"].includes(String(search.panel))
+      ? { panel: search.panel as "plan" | "draft" | "refine" }
+      : {}),
+    ...(typeof search.entry === "string" ? { entry: search.entry } : {}),
+  }),
 });
 const newCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -141,6 +181,8 @@ const settingsSectionRoute = createRoute({
     speechTab?: "model" | "vocabulary" | "corrections" | "examples";
     speechPanel?: "models" | "microphone" | "word" | "correction" | "example";
     speechItem?: string;
+    loreTab?: "scanning" | "lorebook" | "entry";
+    lorePicker?: string;
     usageTab?: "overview" | "requests" | "time" | "nanogpt";
     usageRange?: "today" | "7d" | "30d" | "all";
     usageProvider?: string;
@@ -156,6 +198,10 @@ const settingsSectionRoute = createRoute({
     custPanel?: "preview" | "theme";
     custTheme?: string;
   } => ({
+    ...(["scanning", "lorebook", "entry"].includes(String(search.loreTab))
+      ? { loreTab: search.loreTab as "scanning" | "lorebook" | "entry" }
+      : {}),
+    ...(typeof search.lorePicker === "string" ? { lorePicker: search.lorePicker } : {}),
     ...(["overview", "requests", "time", "nanogpt"].includes(String(search.usageTab))
       ? { usageTab: search.usageTab as "overview" | "requests" | "time" | "nanogpt" }
       : {}),
@@ -302,6 +348,8 @@ const routeTree = rootRoute.addChildren([
   groupsRoute,
   discoverRoute,
   libraryRoute,
+  newLorebookRoute,
+  lorebookProjectRoute,
   newCharacterRoute,
   editCharacterRoute,
   characterHistoryRoute,
@@ -341,6 +389,8 @@ declare module "@tanstack/history" {
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;
     usagePushed?: boolean;
+    lorebookPanelPushed?: boolean;
+    lorebookFlowPushed?: boolean;
     companionPickerPushed?: boolean;
     promptPushed?: boolean;
     panelPushed?: boolean;

@@ -30,6 +30,7 @@ export const queryKeys = {
   library: { all: ["library"] as const, counts: () => ["library", "counts"] as const },
   personas: { all: ["personas"] as const, list: () => ["personas", "list"] as const },
   lorebooks: { all: ["lorebooks"] as const, list: () => ["lorebooks", "list"] as const },
+  lorebookProjects: { all: ["lorebook-projects"] as const },
   home: {
     all: ["home"] as const,
     characters: () => [...queryKeys.home.all, "characters"] as const,
@@ -136,6 +137,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.media.library(),
   ],
   lorebooks_changed: () => [
+    queryKeys.lorebookProjects.all,
     queryKeys.lorebooks.all,
     queryKeys.conversations.all,
     queryKeys.library.all,
@@ -167,6 +169,9 @@ export const appEventInvalidations: AppEventInvalidations = {
   provider_quota: (event) => [queryKeys.usage.nano(event.account_id)],
   prompts_changed: () => [queryKeys.prompts.all],
   job_updated: (event) => [
+    ...(event.job.subject_detail?.type === "lorebook_project"
+      ? [queryKeys.lorebookProjects.all]
+      : []),
     queryKeys.jobs.lists(),
     queryKeys.jobs.detail(event.job.id),
     ...(["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state)

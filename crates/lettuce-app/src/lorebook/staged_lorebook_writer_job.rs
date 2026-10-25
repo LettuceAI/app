@@ -266,6 +266,53 @@ where
             + lettuce_models::GlobalModelSettingsRepository
             + lettuce_context::PromptRepository,
     {
+        self.prepare_atomic_writers(current, overrides, builtins, now, false)
+    }
+
+    pub fn prepare_atomic_all(
+        &self,
+        current: &StagedLorebookPlanningRun,
+        overrides: &lettuce_settings::LorebookGeneratorSelection,
+        builtins: &crate::BuiltInPromptIds,
+        now: TimestampMillis,
+    ) -> Result<
+        (
+            lettuce_creation::StagedLorebookWriterBatchInputs,
+            Vec<(lettuce_jobs::NewJob, lettuce_database::LorebookJobInput)>,
+        ),
+        StagedLorebookWriterAdmissionError,
+    >
+    where
+        P: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
+            + lettuce_context::PromptRepository,
+    {
+        self.prepare_atomic_writers(current, overrides, builtins, now, true)
+    }
+
+    fn prepare_atomic_writers(
+        &self,
+        current: &StagedLorebookPlanningRun,
+        overrides: &lettuce_settings::LorebookGeneratorSelection,
+        builtins: &crate::BuiltInPromptIds,
+        now: TimestampMillis,
+        all: bool,
+    ) -> Result<
+        (
+            lettuce_creation::StagedLorebookWriterBatchInputs,
+            Vec<(lettuce_jobs::NewJob, lettuce_database::LorebookJobInput)>,
+        ),
+        StagedLorebookWriterAdmissionError,
+    >
+    where
+        P: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
+            + lettuce_context::PromptRepository,
+    {
         let coordinator = crate::StagedLorebookCoordinator::new(self.projects, self.jobs);
         let selected = coordinator.project_overrides(current.request_id, overrides)?;
         let (profile, prompt, _) = coordinator.resolve_configured_stage(
@@ -284,10 +331,12 @@ where
             prompt_revision: prompt.revision,
         };
         let mut project = current.clone();
-        project.project = project
-            .project
-            .start_draft_batch(now)
-            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+        project.project = if all {
+            project.project.start_all_drafts(now)
+        } else {
+            project.project.start_draft_batch(now)
+        }
+        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.projects,
             crate::BuiltInPromptId::LorebookRuntime,

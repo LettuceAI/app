@@ -72,3 +72,5 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 - Staged runs gained configured input provenance, per-operation overrides and admitted prompt documents after the first slice; older run documents read these as absent.
 
 Commit is accepted during coherence review, preserving the legacy skip-coherence path (`old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:447-455,575-590`). Pending coherence proposals remain in the committed project as history. The staged API lifecycle regression fails at the old drafts-ready-only guard and passes with this transition.
+
+The staged project can select every currently pending/failed draft for one durable write action while keeping the original three-entry batch selector. stop_work preserves finished drafts and proposals, turns unfinished drafting statuses into failed review items, and advances revision so late planner/refine/coherence results cannot overwrite a stopped project. A later explicit write selects those unfinished items again; new failures are never automatically selected again by the same action.

@@ -422,7 +422,14 @@ fn render_context(
         messages,
         attributions: ContextAttributions {
             usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
-                operation_kind: Some("reply_helper".into()),
+                operation_kind: Some(
+                    (if run.refinement.is_some() {
+                        "lorebook_entry_refine"
+                    } else {
+                        "lorebook_entry_write"
+                    })
+                    .into(),
+                ),
                 ..Default::default()
             }),
             prompt: Some(PromptAttribution {

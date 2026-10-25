@@ -38,7 +38,10 @@ fn view(
         })
         .transpose()?
         .unwrap_or(false);
-    render_project_view(context, run, jobs, deleted)
+    let queued = db
+        .lorebook_project_queued_plan_ids(run.project.id)
+        .map_err(failure)?;
+    render_project_view(context, run, jobs, deleted, queued)
 }
 
 fn transaction_view(
@@ -61,7 +64,10 @@ fn transaction_view(
         })
         .transpose()?
         .unwrap_or(false);
-    render_project_view(context, run, jobs, deleted)
+    let queued = scope
+        .lorebook_project_queued_plan_ids(run.project.id)
+        .map_err(failure)?;
+    render_project_view(context, run, jobs, deleted, queued)
 }
 
 fn render_project_view(
@@ -69,14 +75,20 @@ fn render_project_view(
     run: &StagedLorebookPlanningRun,
     jobs: Vec<lettuce_jobs::JobSnapshot>,
     lorebook_deleted: bool,
+    queued_plans: Vec<LorebookEntryId>,
 ) -> Result<dto::LorebookProjectView, ApiError> {
     let project = &run.project;
+    let queued_plans = queued_plans
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
     let planner = jobs
         .iter()
         .find(|job| job.id == run.job_id)
         .ok_or_else(|| api_error(ApiErrorCode::Internal, "planner job missing"))?;
-    let failed = matches!(planner.state, JobState::Failed | JobState::Interrupted)
-        && project.stage == Stage::Planning;
+    let failed = matches!(
+        planner.state,
+        JobState::Failed | JobState::Interrupted | JobState::Cancelled
+    ) && project.stage == Stage::Planning;
     let plan_failure = failed
         .then(|| {
             planner.error.as_ref().map(|error| dto::JobFailureDto {
@@ -97,6 +109,23 @@ fn render_project_view(
         .filter(|job| !job.state.is_terminal())
         .map(|job| job.id.to_string())
         .collect();
+    let active_phase = jobs
+        .iter()
+        .filter(|job| !job.state.is_terminal())
+        .filter_map(|job| {
+            let key = job.idempotency_key.as_ref()?.as_str();
+            if key.starts_with("staged-lorebook-coherence-") {
+                Some((4, dto::LorebookProjectPhase::Coherence))
+            } else if key.starts_with("staged-lorebook-refine-") {
+                Some((3, dto::LorebookProjectPhase::Refining))
+            } else if key.starts_with("staged-lorebook-writer-") {
+                Some((2, dto::LorebookProjectPhase::Writing))
+            } else {
+                Some((1, dto::LorebookProjectPhase::Planning))
+            }
+        })
+        .max_by_key(|(priority, _)| *priority)
+        .map(|(_, phase)| phase);
     let coherence_changes = project
         .coherence_proposals
         .iter()
@@ -181,6 +210,7 @@ fn render_project_view(
                 source_id: source.source_id.clone(),
                 label: source.label.clone(),
                 document: source.asset_id.map(|id| context.asset_ref(id)),
+                text: source.asset_id.is_none().then(|| source.content.clone()),
             })
             .collect(),
         outline: project
@@ -209,7 +239,11 @@ fn render_project_view(
                         dto::LorebookDraftStatus::Pending
                     }
                     lettuce_creation::StagedLorebookDraftStatus::Drafting => {
-                        dto::LorebookDraftStatus::Drafting
+                        if queued_plans.contains(&draft.plan_id) {
+                            dto::LorebookDraftStatus::Pending
+                        } else {
+                            dto::LorebookDraftStatus::Drafting
+                        }
                     }
                     lettuce_creation::StagedLorebookDraftStatus::Drafted => {
                         dto::LorebookDraftStatus::Drafted
@@ -250,6 +284,7 @@ fn render_project_view(
             })
             .transpose()?,
         active_job_ids,
+        active_phase,
         plan_failure,
         revision: project.revision.get(),
         created_at: project.created_at.get(),
@@ -278,17 +313,45 @@ pub async fn lorebook_project_create(
                 &digest,
                 || {
                     let db = context.backend().database();
-                    let sources = request
+                    let source_labels = request
                         .sources
                         .iter()
                         .map(|source| match source {
-                            dto::LorebookProjectSourceInput::Text { label, text } => {
+                            dto::LorebookProjectSourceInput::Text { label, .. } => {
+                                Ok(label.clone())
+                            }
+                            dto::LorebookProjectSourceInput::Document { asset_id } => {
+                                let asset = context
+                                    .media()
+                                    .ok_or_else(|| {
+                                        api_error(
+                                            ApiErrorCode::Unavailable,
+                                            "media store unavailable",
+                                        )
+                                    })?
+                                    .open_ready(parse_id(asset_id, "asset_id")?)
+                                    .map_err(failure)?
+                                    .asset;
+                                Ok(asset
+                                    .provenance
+                                    .source_label
+                                    .filter(|label| !label.trim().is_empty())
+                                    .unwrap_or_else(|| asset_id.clone()))
+                            }
+                        })
+                        .collect::<Result<Vec<_>, ApiError>>()?;
+                    let sources = request
+                        .sources
+                        .iter()
+                        .zip(&source_labels)
+                        .map(|(source, label)| match source {
+                            dto::LorebookProjectSourceInput::Text { text, .. } => {
                                 Ok(crate::StagedLorebookIntakeSource::Text { label, body: text })
                             }
                             dto::LorebookProjectSourceInput::Document { asset_id } => {
                                 Ok(crate::StagedLorebookIntakeSource::Document {
                                     asset_id: parse_id(asset_id, "asset_id")?,
-                                    label: asset_id,
+                                    label,
                                 })
                             }
                         })
@@ -373,6 +436,7 @@ fn pending_view(
                 source_id: source.source_id.clone(),
                 label: source.label.clone(),
                 document: source.asset_id.map(|id| context.asset_ref(id)),
+                text: source.asset_id.is_none().then(|| source.content.clone()),
             })
             .collect(),
         outline: vec![],
@@ -380,6 +444,7 @@ fn pending_view(
         coherence_changes: vec![],
         commit: None,
         active_job_ids: vec![],
+        active_phase: None,
         plan_failure: None,
         revision: project.revision.get(),
         created_at: project.created_at.get(),
@@ -883,6 +948,7 @@ pub async fn lorebook_generator_defaults(
                 target_count: settings.settings.lorebook_generator.target_count(),
                 min_target_count: lettuce_creation::MIN_STAGED_LOREBOOK_TARGET_COUNT,
                 max_target_count: lettuce_creation::MAX_STAGED_LOREBOOK_TARGET_COUNT,
+                output_tokens: settings.settings.lorebook_generator.output_tokens(),
             })
         })
         .await
@@ -922,42 +988,65 @@ pub(super) fn admit_batch(
     inputs: lettuce_creation::StagedLorebookWriterBatchInputs,
     writers: Vec<(lettuce_jobs::NewJob, lettuce_database::LorebookJobInput)>,
 ) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
+    admit_writers(
+        context,
+        (client_operation_id, "lorebook_project_draft_next"),
+        digest,
+        run,
+        expected,
+        inputs,
+        writers,
+    )
+}
+
+fn admit_writers(
+    context: &ApiContext,
+    operation: (&str, &str),
+    digest: &str,
+    run: &StagedLorebookPlanningRun,
+    expected: lettuce_types::Revision,
+    inputs: lettuce_creation::StagedLorebookWriterBatchInputs,
+    writers: Vec<(lettuce_jobs::NewJob, lettuce_database::LorebookJobInput)>,
+) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
     context
         .backend()
         .database()
-        .commit_api_operation(
-            "lorebook_project_draft_next",
-            client_operation_id,
-            digest,
-            context.now(),
-            |scope| {
-                scope
-                    .admit_staged_lorebook_batch(
-                        run.request_id,
-                        expected,
-                        inputs,
-                        writers,
-                        context.now(),
-                    )
-                    .map(|jobs| dto::LorebookProjectBatchAccepted {
-                        job_ids: jobs.into_iter().map(|id| id.to_string()).collect(),
-                    })
-                    .map_err(|error| {
-                        super::Failure(match error {
-                            lettuce_jobs::StoreError::AlreadyActive => batch_running(
-                                scope
-                                    .lorebook_project_jobs(run.project.id)
-                                    .unwrap_or_default()
-                                    .iter()
-                                    .filter(|job| !job.state.is_terminal())
-                                    .map(|job| job.id.to_string())
-                                    .collect(),
-                            ),
-                            error => failure(error),
-                        })
-                    })
-            },
-        )
+        .commit_api_operation(operation.1, operation.0, digest, context.now(), |scope| {
+            (if operation.1 == "lorebook_project_write_all" {
+                scope.admit_staged_lorebook_all(
+                    run.request_id,
+                    expected,
+                    inputs,
+                    writers,
+                    context.now(),
+                )
+            } else {
+                scope.admit_staged_lorebook_batch(
+                    run.request_id,
+                    expected,
+                    inputs,
+                    writers,
+                    context.now(),
+                )
+            })
+            .map(|jobs| dto::LorebookProjectBatchAccepted {
+                job_ids: jobs.into_iter().map(|id| id.to_string()).collect(),
+            })
+            .map_err(|error| {
+                super::Failure(match error {
+                    lettuce_jobs::StoreError::AlreadyActive => batch_running(
+                        scope
+                            .lorebook_project_jobs(run.project.id)
+                            .unwrap_or_default()
+                            .iter()
+                            .filter(|job| !job.state.is_terminal())
+                            .map(|job| job.id.to_string())
+                            .collect(),
+                    ),
+                    error => failure(error),
+                })
+            })
+        })
         .map_err(|error| error.0)
 }
 
@@ -973,63 +1062,93 @@ pub async fn lorebook_project_draft_next(
     context: &ApiContext,
     request: dto::LorebookProjectJobRequest,
 ) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
+    draft_entries(context, request, false).await
+}
+
+pub async fn lorebook_project_write_all(
+    context: &ApiContext,
+    request: dto::LorebookProjectJobRequest,
+) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
+    draft_entries(context, request, true).await
+}
+
+async fn draft_entries(
+    context: &ApiContext,
+    request: dto::LorebookProjectJobRequest,
+    all: bool,
+) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
+    let command = if all {
+        "lorebook_project_write_all"
+    } else {
+        "lorebook_project_draft_next"
+    };
     let digest = crate::api::jobs::local::digest(&request)?;
     let expected = revision(request.expected_revision, "expected_revision")?;
     let result = context
         .blocking(move |context| {
             let operation_key = request.client_operation_id.clone();
-            with_api_replay(
-                context,
-                "lorebook_project_draft_next",
-                &operation_key,
-                &digest,
-                || {
-                    let db = context.backend().database();
-                    if let Some(receipt) = db
-                        .lookup_api_operation(
-                            "lorebook_project_draft_next",
-                            &request.client_operation_id,
-                        )
-                        .map_err(failure)?
-                    {
-                        if receipt.request_digest != digest {
-                            return Err(api_error(
-                                ApiErrorCode::Conflict,
-                                "the operation key was reused",
-                            ));
-                        }
-                        return serde_json::from_value(receipt.result).map_err(failure);
-                    }
-                    let run = load(context, &request.project_id)?;
-                    if run.project.drafts.iter().any(|draft| {
-                        draft.status == lettuce_creation::StagedLorebookDraftStatus::Drafting
-                    }) {
-                        return Err(batch_running(view(context, &run)?.active_job_ids));
-                    }
-                    if run.project.revision != expected {
+            with_api_replay(context, command, &operation_key, &digest, || {
+                let db = context.backend().database();
+                if let Some(receipt) = db
+                    .lookup_api_operation(command, &request.client_operation_id)
+                    .map_err(failure)?
+                {
+                    if receipt.request_digest != digest {
                         return Err(api_error(
                             ApiErrorCode::Conflict,
-                            "the project changed since it was read",
+                            "the operation key was reused",
                         ));
                     }
-                    let selected = overrides(context)?;
-                    prompt(
+                    return serde_json::from_value(receipt.result).map_err(failure);
+                }
+                let run = load(context, &request.project_id)?;
+                if run.project.drafts.iter().any(|draft| {
+                    draft.status == lettuce_creation::StagedLorebookDraftStatus::Drafting
+                }) {
+                    return Err(batch_running(view(context, &run)?.active_job_ids));
+                }
+                if run.project.revision != expected {
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "the project changed since it was read",
+                    ));
+                }
+                let selected = overrides(context)?;
+                prompt(
+                    context,
+                    selected.writer_prompt_id.ok_or_else(|| {
+                        api_error(ApiErrorCode::Unavailable, "writer prompt missing")
+                    })?,
+                    lettuce_context::PromptPurpose::LorebookGeneratorWriter,
+                )?;
+                let coordinator = context.backend().staged_lorebook_writer_coordinator();
+                let (inputs, writers) = (if all {
+                    coordinator.prepare_atomic_all(
+                        &run,
+                        &selected,
+                        context.backend().built_in_prompt_ids(),
+                        context.now(),
+                    )
+                } else {
+                    coordinator.prepare_atomic_batch(
+                        &run,
+                        &selected,
+                        context.backend().built_in_prompt_ids(),
+                        context.now(),
+                    )
+                })
+                .map_err(failure)?;
+                if all {
+                    admit_writers(
                         context,
-                        selected.writer_prompt_id.ok_or_else(|| {
-                            api_error(ApiErrorCode::Unavailable, "writer prompt missing")
-                        })?,
-                        lettuce_context::PromptPurpose::LorebookGeneratorWriter,
-                    )?;
-                    let (inputs, writers) = context
-                        .backend()
-                        .staged_lorebook_writer_coordinator()
-                        .prepare_atomic_batch(
-                            &run,
-                            &selected,
-                            context.backend().built_in_prompt_ids(),
-                            context.now(),
-                        )
-                        .map_err(failure)?;
+                        (&request.client_operation_id, command),
+                        &digest,
+                        &run,
+                        expected,
+                        inputs,
+                        writers,
+                    )
+                } else {
                     admit_batch(
                         context,
                         &request.client_operation_id,
@@ -1039,12 +1158,48 @@ pub async fn lorebook_project_draft_next(
                         inputs,
                         writers,
                     )
-                },
-            )
+                }
+            })
         })
         .await?;
     context.jobs().wake();
     Ok(result)
+}
+
+pub async fn lorebook_project_stop(
+    context: &ApiContext,
+    request: dto::LorebookProjectRevisionRequest,
+) -> Result<dto::LorebookProjectView, ApiError> {
+    let digest = crate::api::jobs::local::digest(&request)?;
+    let expected = revision(request.expected_revision, "expected_revision")?;
+    let view = context
+        .blocking(move |context| {
+            let run = load(context, &request.project_id)?;
+            let db = context.backend().database();
+            let result = db
+                .commit_api_operation(
+                    "lorebook_project_stop",
+                    &request.client_operation_id,
+                    &digest,
+                    context.now(),
+                    |scope| {
+                        scope
+                            .stop_staged_lorebook(run.request_id, expected, context.now())
+                            .map_err(|error| super::Failure(failure(error)))
+                            .and_then(|next| {
+                                transaction_view(context, scope, &next).map_err(super::Failure)
+                            })
+                    },
+                )
+                .map_err(|error| error.0)?;
+            for id in &result.active_job_ids {
+                context.jobs().cancel_running(parse_id(id, "job_id")?);
+            }
+            Ok(result)
+        })
+        .await?;
+    context.jobs().wake();
+    Ok(view)
 }
 
 pub async fn lorebook_project_refine(

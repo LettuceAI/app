@@ -43,6 +43,8 @@ import backdropImage from "@/shared/assets/customization/throne-room.webp";
 import seraAvatar from "@/shared/assets/customization/sera-face.webp";
 import hunterAvatar from "@/shared/assets/customization/hunter-face.webp";
 import { DETAILS, opts, type ChatLook, type Detail, type Opt } from "./options";
+import { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
+export { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
 
 export function Pick<T extends string>({
   value,
@@ -80,39 +82,6 @@ export function Pick<T extends string>({
       options={options}
       onChange={onChange}
     />
-  );
-}
-
-export function Row({
-  phone,
-  icon: rowIcon,
-  title,
-  description,
-  control,
-  tone,
-}: {
-  phone: boolean;
-  icon?: ReactNode;
-  title: string;
-  description?: ReactNode;
-  control: ReactNode;
-  tone?: "warning";
-}) {
-  if (!phone)
-    return (
-      <ListRow
-        icon={rowIcon}
-        title={title}
-        description={description}
-        {...(tone ? { tone } : {})}
-        trailing={control}
-      />
-    );
-  return (
-    <div>
-      <ListRow icon={rowIcon} title={title} description={description} {...(tone ? { tone } : {})} />
-      <div className={cn("-mt-1 px-4 pb-3", rowIcon && "pl-16")}>{control}</div>
-    </div>
   );
 }
 

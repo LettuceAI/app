@@ -85,7 +85,12 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
         let (job, _, _) = admit_job_detail_with_id_in(
-            &transaction, spec, operation_key, request_digest, detail, Some(id),
+            &transaction,
+            spec,
+            operation_key,
+            request_digest,
+            detail,
+            Some(id),
         )?;
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(job)
@@ -101,7 +106,13 @@ impl Database {
         detail: &serde_json::Value,
     ) -> Result<CreateJobResult, StoreError> {
         self.admit_memory_job_with_api_receipt(
-            conversation_id, branch_id, spec, operation_key, request_digest, detail, None,
+            conversation_id,
+            branch_id,
+            spec,
+            operation_key,
+            request_digest,
+            detail,
+            None,
         )
     }
 
@@ -123,16 +134,26 @@ impl Database {
         if let Some((command, key, digest, _)) = receipt
             && let Some(prior) = crate::api_operation_adapter::lookup_in(&transaction, command, key)
                 .map_err(|_| StoreError::Storage)?
-            {
-                if prior.request_digest != digest {
-                    return Err(StoreError::IdempotencyConflict);
-                }
-                let id = prior.result.get("job_id").and_then(serde_json::Value::as_str)
-                    .ok_or(StoreError::InvalidData)?.parse().map_err(|_| StoreError::InvalidData)?;
-                let job = select_ids(&transaction, [id])?.remove(&id)
-                    .ok_or(StoreError::InvalidData)?.snapshot;
-                return Ok(CreateJobResult { job, created: false });
+        {
+            if prior.request_digest != digest {
+                return Err(StoreError::IdempotencyConflict);
             }
+            let id = prior
+                .result
+                .get("job_id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(StoreError::InvalidData)?
+                .parse()
+                .map_err(|_| StoreError::InvalidData)?;
+            let job = select_ids(&transaction, [id])?
+                .remove(&id)
+                .ok_or(StoreError::InvalidData)?
+                .snapshot;
+            return Ok(CreateJobResult {
+                job,
+                created: false,
+            });
+        }
         let present: bool = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM conversation_branches branch
@@ -168,28 +189,59 @@ impl Database {
         let (job, _, created) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
         if let Some((command, key, digest, at)) = receipt {
-            crate::api_operation_adapter::insert_in(&transaction, &lettuce_transfer::BackupApiOperationReceipt {
-                result_format_version: 2, command: command.to_owned(), client_operation_id: key.to_owned(),
-                request_digest: digest.to_owned(), result: serde_json::json!({"job_id": job.id.to_string()}),
-                committed_at: at,
-            }).map_err(|_| StoreError::Storage)?;
+            crate::api_operation_adapter::insert_in(
+                &transaction,
+                &lettuce_transfer::BackupApiOperationReceipt {
+                    result_format_version: 2,
+                    command: command.to_owned(),
+                    client_operation_id: key.to_owned(),
+                    request_digest: digest.to_owned(),
+                    result: serde_json::json!({"job_id": job.id.to_string()}),
+                    committed_at: at,
+                },
+            )
+            .map_err(|_| StoreError::Storage)?;
         }
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(CreateJobResult { job, created })
     }
 
-    pub fn checkpoint_backup_job(&self, mutation: JobMutation, detail: &serde_json::Value) -> Result<JobSnapshot, StoreError> {
-        if !matches!(mutation, JobMutation::StageChanged { .. }) || !detail.is_object() { return Err(StoreError::InvalidData); }
+    pub fn checkpoint_backup_job(
+        &self,
+        mutation: JobMutation,
+        detail: &serde_json::Value,
+    ) -> Result<JobSnapshot, StoreError> {
+        if !matches!(mutation, JobMutation::StageChanged { .. }) || !detail.is_object() {
+            return Err(StoreError::InvalidData);
+        }
         let id = mutation.job_id();
         let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
         let before = load_with_children(&transaction, [id])?;
         let current = before.get(&id).ok_or(StoreError::NotFound)?;
-        if current.snapshot.state != lettuce_jobs::JobState::Running { return Err(StoreError::IllegalTransition); }
-        if !matches!(current.snapshot.kind, lettuce_jobs::JobKind::BackupExport | lettuce_jobs::JobKind::BackupRestore) { return Err(StoreError::InvalidData); }
-        let job = apply_to_job_set(&transaction, before, |store| store.append_and_transition(mutation))?;
-        let changed = transaction.execute("UPDATE job_details SET detail_json=?2 WHERE job_id=?1", params![id.to_string(), detail.to_string()]).map_err(|_| StoreError::Storage)?;
-        if changed != 1 { return Err(StoreError::InvalidData); }
+        if current.snapshot.state != lettuce_jobs::JobState::Running {
+            return Err(StoreError::IllegalTransition);
+        }
+        if !matches!(
+            current.snapshot.kind,
+            lettuce_jobs::JobKind::BackupExport | lettuce_jobs::JobKind::BackupRestore
+        ) {
+            return Err(StoreError::InvalidData);
+        }
+        let job = apply_to_job_set(&transaction, before, |store| {
+            store.append_and_transition(mutation)
+        })?;
+        let changed = transaction
+            .execute(
+                "UPDATE job_details SET detail_json=?2 WHERE job_id=?1",
+                params![id.to_string(), detail.to_string()],
+            )
+            .map_err(|_| StoreError::Storage)?;
+        if changed != 1 {
+            return Err(StoreError::InvalidData);
+        }
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(job)
     }
@@ -545,7 +597,14 @@ pub(crate) fn admit_job_detail_in(
     request_digest: &str,
     detail: &serde_json::Value,
 ) -> Result<(JobSnapshot, bool, bool), StoreError> {
-    admit_job_detail_with_id_in(transaction, spec, operation_key, request_digest, detail, None)
+    admit_job_detail_with_id_in(
+        transaction,
+        spec,
+        operation_key,
+        request_digest,
+        detail,
+        None,
+    )
 }
 
 fn admit_job_detail_with_id_in(
@@ -615,7 +674,13 @@ fn admit_job_detail_with_id_in(
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {
-    pub fn admit_entity_import_job(&self, spec: NewJob, key: &str, digest: &str, detail: &serde_json::Value) -> Result<JobSnapshot, StoreError> {
+    pub fn admit_entity_import_job(
+        &self,
+        spec: NewJob,
+        key: &str,
+        digest: &str,
+        detail: &serde_json::Value,
+    ) -> Result<JobSnapshot, StoreError> {
         let (job, _, _) = admit_job_detail_in(self.transaction, spec, key, digest, detail)?;
         Ok(job)
     }
@@ -631,7 +696,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
             )?;
         }
         let before = load_with_children(self.transaction, [mutation.job_id()])?;
-        apply_to_job_set(self.transaction, before, |store| store.append_and_transition(mutation))
+        apply_to_job_set(self.transaction, before, |store| {
+            store.append_and_transition(mutation)
+        })
     }
 }
 
@@ -823,7 +890,12 @@ pub(crate) fn retry_staged_planner_job(
         .remove(&previous_job_id)
         .ok_or(StoreError::NotFound)?;
     if previous.snapshot.kind != lettuce_jobs::JobKind::CreationRun
-        || previous.snapshot.state != lettuce_jobs::JobState::Failed
+        || !matches!(
+            previous.snapshot.state,
+            lettuce_jobs::JobState::Failed
+                | lettuce_jobs::JobState::Interrupted
+                | lettuce_jobs::JobState::Cancelled
+        )
     {
         return Err(StoreError::IllegalTransition);
     }
@@ -880,6 +952,46 @@ pub(crate) fn cancel_creation_project_jobs(
         }
         Ok(())
     })
+}
+
+fn writer_slot_available(transaction: &Transaction<'_>, id: JobId) -> Result<bool, StoreError> {
+    let writer: Option<(String, String, String)> = transaction.query_row(
+        "SELECT project_request_id, project_id, plan_id FROM creation_staged_lorebook_writer_runs WHERE job_id=?1",
+        [id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).optional().map_err(|_| StoreError::Storage)?;
+    let Some((request, project_id, plan_id)) = writer else {
+        return Ok(true);
+    };
+    let project = crate::lorebook::staged_lorebook_adapter::load_in(
+        transaction,
+        request.parse().map_err(|_| StoreError::InvalidData)?,
+    )
+    .map_err(|_| StoreError::InvalidData)?
+    .ok_or(StoreError::InvalidData)?;
+    let slot = project
+        .project
+        .outline
+        .iter()
+        .position(|plan| plan.id.to_string() == plan_id)
+        .ok_or(StoreError::InvalidData)?
+        % lettuce_creation::STAGED_LOREBOOK_DRAFT_BATCH_SIZE;
+    let active: Vec<String> = transaction.prepare(
+        "SELECT writer.plan_id FROM creation_staged_lorebook_writer_runs writer JOIN jobs job ON job.id=writer.job_id WHERE writer.project_id=?1 AND writer.job_id<>?2 AND job.state IN ('claimed','running','cancellation_requested','cleaning_up')",
+    ).map_err(|_| StoreError::Storage)?.query_map(params![project_id, id.to_string()], |row| row.get(0))
+        .map_err(|_| StoreError::Storage)?.collect::<rusqlite::Result<_>>().map_err(|_| StoreError::Storage)?;
+    for active_plan in active {
+        let active_slot = project
+            .project
+            .outline
+            .iter()
+            .position(|plan| plan.id.to_string() == active_plan)
+            .ok_or(StoreError::InvalidData)?
+            % lettuce_creation::STAGED_LOREBOOK_DRAFT_BATCH_SIZE;
+        if active_slot == slot {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Loads the job an idempotent create would return and the parent it would
@@ -1204,7 +1316,19 @@ impl JobStore for Database {
         let queued = enum_name(lettuce_jobs::JobState::Queued)?;
         self.write_job_set(
             |transaction| {
-                let rows = select_rows(transaction, "state=?1", &[&queued])?;
+                let mut rows = select_rows(transaction, "state=?1", &[&queued])?;
+                let blocked = rows
+                    .keys()
+                    .copied()
+                    .map(|id| {
+                        writer_slot_available(transaction, id).map(|available| (id, available))
+                    })
+                    .collect::<Result<Vec<_>, StoreError>>()?;
+                for (id, available) in blocked {
+                    if !available {
+                        rows.remove(&id);
+                    }
+                }
                 with_latest_events(transaction, rows)
             },
             |store| store.claim_next(worker_id, now, lease_for, allowed),
@@ -1219,9 +1343,19 @@ impl JobStore for Database {
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Option<Claim>, StoreError> {
+        let eligible = std::cell::Cell::new(true);
         self.write_job_set(
-            |transaction| load_with_children(transaction, [id]),
-            |store| store.claim(id, worker_id, now, lease_for, allowed),
+            |transaction| {
+                eligible.set(writer_slot_available(transaction, id)?);
+                load_with_children(transaction, [id])
+            },
+            |store| {
+                if eligible.get() {
+                    store.claim(id, worker_id, now, lease_for, allowed)
+                } else {
+                    Ok(None)
+                }
+            },
         )
     }
 
@@ -1601,12 +1735,30 @@ pub(crate) fn lorebook_project_jobs_in(
         .collect())
 }
 
+pub(crate) fn queued_lorebook_writer_plans_in(
+    connection: &rusqlite::Connection,
+    project: lettuce_types::CreationWorkflowId,
+) -> Result<Vec<lettuce_types::LorebookEntryId>, StoreError> {
+    connection.prepare(
+        "SELECT writer.plan_id FROM creation_staged_lorebook_writer_runs writer JOIN jobs job ON job.id=writer.job_id WHERE writer.project_id=?1 AND job.state='queued'",
+    ).map_err(|_| StoreError::Storage)?.query_map([project.to_string()], |row| row.get::<_, String>(0))
+        .map_err(|_| StoreError::Storage)?
+        .map(|row| row.map_err(|_| StoreError::Storage)?.parse().map_err(|_| StoreError::InvalidData))
+        .collect()
+}
+
 impl Database {
     pub fn lorebook_project_jobs(
         &self,
         project: lettuce_types::CreationWorkflowId,
     ) -> Result<Vec<JobSnapshot>, StoreError> {
         self.read_job_rows(|tx| lorebook_project_jobs_in(tx, project))
+    }
+    pub fn lorebook_project_queued_plan_ids(
+        &self,
+        project: lettuce_types::CreationWorkflowId,
+    ) -> Result<Vec<lettuce_types::LorebookEntryId>, StoreError> {
+        self.read_job_rows(|connection| queued_lorebook_writer_plans_in(connection, project))
     }
 }
 
@@ -1617,15 +1769,60 @@ mod tests {
         let database = crate::Database::open_in_memory().expect("fresh database");
         let id = lettuce_types::JobId::new();
         let detail = serde_json::json!({"kind":"app_data_reset"});
-        let first = database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, id).expect("admit");
+        let first = database
+            .admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, id)
+            .expect("admit");
         assert_eq!(first.id, id);
-        assert_eq!(database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, id).expect("replay"), first);
-        assert_eq!(database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "other digest", &detail, id), Err(lettuce_jobs::StoreError::IdempotencyConflict));
-        assert_eq!(database.admit_job_with_detail_and_id(spec("fresh-reset"), "fresh-reset", "digest", &detail, lettuce_types::JobId::new()), Err(lettuce_jobs::StoreError::IdempotencyConflict));
+        assert_eq!(
+            database
+                .admit_job_with_detail_and_id(
+                    spec("fresh-reset"),
+                    "fresh-reset",
+                    "digest",
+                    &detail,
+                    id
+                )
+                .expect("replay"),
+            first
+        );
+        assert_eq!(
+            database.admit_job_with_detail_and_id(
+                spec("fresh-reset"),
+                "fresh-reset",
+                "other digest",
+                &detail,
+                id
+            ),
+            Err(lettuce_jobs::StoreError::IdempotencyConflict)
+        );
+        assert_eq!(
+            database.admit_job_with_detail_and_id(
+                spec("fresh-reset"),
+                "fresh-reset",
+                "digest",
+                &detail,
+                lettuce_types::JobId::new()
+            ),
+            Err(lettuce_jobs::StoreError::IdempotencyConflict)
+        );
         let second = lettuce_types::JobId::new();
         database.connection().expect("connection").execute_batch("CREATE TRIGGER fail_control_receipt BEFORE INSERT ON job_operations BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;").expect("inject failure");
-        assert!(database.admit_job_with_detail_and_id(spec("next-reset"), "next-reset", "digest", &detail, second).is_err());
-        assert!(lettuce_jobs::JobStore::get(&database, second).expect("get rolled back job").is_none());
+        assert!(
+            database
+                .admit_job_with_detail_and_id(
+                    spec("next-reset"),
+                    "next-reset",
+                    "digest",
+                    &detail,
+                    second
+                )
+                .is_err()
+        );
+        assert!(
+            lettuce_jobs::JobStore::get(&database, second)
+                .expect("get rolled back job")
+                .is_none()
+        );
     }
     use std::{fs, sync::Arc, thread};
 
@@ -1655,50 +1852,129 @@ mod tests {
 
     #[test]
     fn memory_control_receipt_failure_rolls_back_admission_and_terminal_replays_keep_the_job() {
-        let path = std::env::temp_dir().join(format!("s4-memory-control-{}.sqlite", Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("s4-memory-control-{}.sqlite", Uuid::new_v4()));
         let database = Database::open(&path).expect("database");
-        let (conversation_id, _, _) = crate::memory::dynamic_memory_run_adapter::tests::conversation_fixture(&database);
-        let branch_id = crate::memory::dynamic_memory_run_adapter::tests::fixture_branch(&database, conversation_id);
-        let memory_spec = |key: &str| JobSpec::new(
-            JobKind::MemoryExtraction,
-            JobSubject::new(SubjectKind::Conversation, conversation_id.to_string()).expect("subject"),
-            OutcomeRef::Conversation(conversation_id),
-        ).with_resources(vec![ResourceClass::Cpu]).with_idempotency_key(IdempotencyKey::new(key).expect("key"));
+        let (conversation_id, _, _) =
+            crate::memory::dynamic_memory_run_adapter::tests::conversation_fixture(&database);
+        let branch_id = crate::memory::dynamic_memory_run_adapter::tests::fixture_branch(
+            &database,
+            conversation_id,
+        );
+        let memory_spec = |key: &str| {
+            JobSpec::new(
+                JobKind::MemoryExtraction,
+                JobSubject::new(SubjectKind::Conversation, conversation_id.to_string())
+                    .expect("subject"),
+                OutcomeRef::Conversation(conversation_id),
+            )
+            .with_resources(vec![ResourceClass::Cpu])
+            .with_idempotency_key(IdempotencyKey::new(key).expect("key"))
+        };
         let detail = serde_json::json!({"frozen": "original window"});
         let at = Timestamp::new(10);
-        database.connection().expect("connection").execute_batch(
-            "CREATE TRIGGER reject_memory_receipt BEFORE INSERT ON api_operation_receipts
-             BEGIN SELECT RAISE(ABORT, 'crash at receipt'); END;"
-        ).expect("inject");
-        assert!(database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
-            memory_spec("original-window"), "original-window", "original-window", &detail,
-            Some(("memory_trigger", "client-key", "digest", at))).is_err());
-        let count: i64 = database.connection().expect("connection").query_row("SELECT count(*) FROM jobs", [], |row| row.get(0)).expect("count");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(
+                "CREATE TRIGGER reject_memory_receipt BEFORE INSERT ON api_operation_receipts
+             BEGIN SELECT RAISE(ABORT, 'crash at receipt'); END;",
+            )
+            .expect("inject");
+        assert!(
+            database
+                .admit_memory_job_with_api_receipt(
+                    conversation_id,
+                    branch_id,
+                    memory_spec("original-window"),
+                    "original-window",
+                    "original-window",
+                    &detail,
+                    Some(("memory_trigger", "client-key", "digest", at))
+                )
+                .is_err()
+        );
+        let count: i64 = database
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM jobs", [], |row| row.get(0))
+            .expect("count");
         assert_eq!(count, 0, "a missing receipt must imply no admitted job");
-        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_memory_receipt").expect("remove injection");
-        let original = database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
-            memory_spec("original-window"), "original-window", "original-window", &detail,
-            Some(("memory_trigger", "client-key", "digest", at))).expect("admission");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER reject_memory_receipt")
+            .expect("remove injection");
+        let original = database
+            .admit_memory_job_with_api_receipt(
+                conversation_id,
+                branch_id,
+                memory_spec("original-window"),
+                "original-window",
+                "original-window",
+                &detail,
+                Some(("memory_trigger", "client-key", "digest", at)),
+            )
+            .expect("admission");
         let claimed_at = Timestamp::new(original.job.updated_at.get() + 1);
-        let claim = database.claim(original.job.id, WorkerId::new(), claimed_at,
-            Duration::from_secs(10), &availability()).expect("claim").expect("claimed");
-        database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at: claimed_at }).expect("start");
-        database.append_and_transition(JobMutation::Succeed { claim: claim.claim,
-            outcome: JobOutcome::Success { result_ref: OutcomeRef::Conversation(conversation_id) },
-            at: Timestamp::new(claimed_at.get() + 1),
-        }).expect("finished original job");
+        let claim = database
+            .claim(
+                original.job.id,
+                WorkerId::new(),
+                claimed_at,
+                Duration::from_secs(10),
+                &availability(),
+            )
+            .expect("claim")
+            .expect("claimed");
+        database
+            .append_and_transition(JobMutation::Start {
+                claim: claim.claim.clone(),
+                at: claimed_at,
+            })
+            .expect("start");
+        database
+            .append_and_transition(JobMutation::Succeed {
+                claim: claim.claim,
+                outcome: JobOutcome::Success {
+                    result_ref: OutcomeRef::Conversation(conversation_id),
+                },
+                at: Timestamp::new(claimed_at.get() + 1),
+            })
+            .expect("finished original job");
         drop(database);
         let database = Database::open(&path).expect("restart after completed admission");
-        let replay = database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
-            memory_spec("next-forced-window"), "next-forced-window", "next-forced-window", &serde_json::json!({"frozen":"changed window"}),
-            Some(("memory_trigger", "client-key", "digest", at))).expect("replay after completion");
+        let replay = database
+            .admit_memory_job_with_api_receipt(
+                conversation_id,
+                branch_id,
+                memory_spec("next-forced-window"),
+                "next-forced-window",
+                "next-forced-window",
+                &serde_json::json!({"frozen":"changed window"}),
+                Some(("memory_trigger", "client-key", "digest", at)),
+            )
+            .expect("replay after completion");
         assert_eq!(replay.job.id, original.job.id);
         assert!(!replay.created);
         assert_eq!(replay.job.state, JobState::Succeeded);
-        assert_eq!(database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
-            memory_spec("conflicting-window"), "conflicting-window", "conflicting-window", &detail,
-            Some(("memory_trigger", "client-key", "different digest", at))), Err(StoreError::IdempotencyConflict));
-        let count: i64 = database.connection().expect("connection").query_row("SELECT count(*) FROM jobs", [], |row| row.get(0)).expect("count");
+        assert_eq!(
+            database.admit_memory_job_with_api_receipt(
+                conversation_id,
+                branch_id,
+                memory_spec("conflicting-window"),
+                "conflicting-window",
+                "conflicting-window",
+                &detail,
+                Some(("memory_trigger", "client-key", "different digest", at))
+            ),
+            Err(StoreError::IdempotencyConflict)
+        );
+        let count: i64 = database
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM jobs", [], |row| row.get(0))
+            .expect("count");
         assert_eq!(count, 1);
         drop(database);
         std::fs::remove_file(path).expect("cleanup database");
@@ -2627,26 +2903,105 @@ mod tests {
     #[test]
     fn backup_publication_checkpoint_keeps_claim_cancel_and_rollback_guards() {
         let database = Database::open_in_memory().expect("database");
-        let spec = JobSpec::new(lettuce_jobs::JobKind::BackupExport, JobSubject::new(lettuce_jobs::SubjectKind::Backup, "checkpoint").expect("subject"), OutcomeRef::Request(lettuce_types::RequestId::new())).with_resources(vec![ResourceClass::DiskWrite]);
+        let spec = JobSpec::new(
+            lettuce_jobs::JobKind::BackupExport,
+            JobSubject::new(lettuce_jobs::SubjectKind::Backup, "checkpoint").expect("subject"),
+            OutcomeRef::Request(lettuce_types::RequestId::new()),
+        )
+        .with_resources(vec![ResourceClass::DiskWrite]);
         let original = serde_json::json!({"temporary":"owned.partial","size":null});
-        let job = database.admit_job_with_detail(spec, "backup-checkpoint", "digest", &original).expect("admit");
+        let job = database
+            .admit_job_with_detail(spec, "backup-checkpoint", "digest", &original)
+            .expect("admit");
         let at = job.updated_at;
-        let claim = database.claim(job.id, WorkerId::new(), at, Duration::from_secs(60), &availability()).expect("claim").expect("owned").claim;
-        database.append_and_transition(JobMutation::Start { claim: claim.clone(), at }).expect("start");
+        let claim = database
+            .claim(
+                job.id,
+                WorkerId::new(),
+                at,
+                Duration::from_secs(60),
+                &availability(),
+            )
+            .expect("claim")
+            .expect("owned")
+            .claim;
+        database
+            .append_and_transition(JobMutation::Start {
+                claim: claim.clone(),
+                at,
+            })
+            .expect("start");
         let updated = serde_json::json!({"temporary":"owned.partial","size":123});
-        let mutation = JobMutation::StageChanged { claim: claim.clone(), stage: lettuce_jobs::StageSnapshot::new("publish", true).expect("stage"), at };
+        let mutation = JobMutation::StageChanged {
+            claim: claim.clone(),
+            stage: lettuce_jobs::StageSnapshot::new("publish", true).expect("stage"),
+            at,
+        };
         let mut foreign = claim.clone();
         foreign.worker_id = WorkerId::new();
-        assert!(database.checkpoint_backup_job(JobMutation::StageChanged { claim: foreign, stage: lettuce_jobs::StageSnapshot::new("publish", true).expect("stage"), at }, &updated).is_err());
-        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").detail, original);
+        assert!(
+            database
+                .checkpoint_backup_job(
+                    JobMutation::StageChanged {
+                        claim: foreign,
+                        stage: lettuce_jobs::StageSnapshot::new("publish", true).expect("stage"),
+                        at
+                    },
+                    &updated
+                )
+                .is_err()
+        );
+        assert_eq!(
+            database
+                .job_detail(job.id)
+                .expect("detail")
+                .expect("stored")
+                .detail,
+            original
+        );
         database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_backup_checkpoint BEFORE UPDATE ON job_details BEGIN SELECT RAISE(ABORT,'injected'); END;").expect("inject");
-        assert_eq!(database.checkpoint_backup_job(mutation.clone(), &updated), Err(StoreError::Storage));
-        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").detail, original);
-        assert_ne!(database.get(job.id).expect("job").expect("exists").stage.name.as_str(), "publish");
-        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_backup_checkpoint;").expect("remove injection");
-        database.append_and_transition(JobMutation::RequestCancellation { id: job.id, reason: lettuce_jobs::CancellationReason::User, at }).expect("cancel");
+        assert_eq!(
+            database.checkpoint_backup_job(mutation.clone(), &updated),
+            Err(StoreError::Storage)
+        );
+        assert_eq!(
+            database
+                .job_detail(job.id)
+                .expect("detail")
+                .expect("stored")
+                .detail,
+            original
+        );
+        assert_ne!(
+            database
+                .get(job.id)
+                .expect("job")
+                .expect("exists")
+                .stage
+                .name
+                .as_str(),
+            "publish"
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER reject_backup_checkpoint;")
+            .expect("remove injection");
+        database
+            .append_and_transition(JobMutation::RequestCancellation {
+                id: job.id,
+                reason: lettuce_jobs::CancellationReason::User,
+                at,
+            })
+            .expect("cancel");
         assert!(database.checkpoint_backup_job(mutation, &updated).is_err());
-        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").detail, original);
+        assert_eq!(
+            database
+                .job_detail(job.id)
+                .expect("detail")
+                .expect("stored")
+                .detail,
+            original
+        );
     }
-
 }

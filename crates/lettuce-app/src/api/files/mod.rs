@@ -1,8 +1,10 @@
 pub(super) mod assets;
-pub(super) mod previews;
 pub(super) mod file_kind;
 #[cfg(test)]
+mod ingest_tests;
+#[cfg(test)]
 mod pick_tests;
+pub(super) mod previews;
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
@@ -65,11 +67,19 @@ pub trait FileAccess: Send + Sync {
         Err(FileAccessError::Unsupported)
     }
 
-    fn backup_temporary_location(&self, _target: Option<&str>, _name: &str) -> Result<String, FileAccessError> {
+    fn backup_temporary_location(
+        &self,
+        _target: Option<&str>,
+        _name: &str,
+    ) -> Result<String, FileAccessError> {
         Err(FileAccessError::Unsupported)
     }
 
-    fn create_backup_temporary(&self, _intent: &str, _protected: ExportProtection<'_>) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
+    fn create_backup_temporary(
+        &self,
+        _intent: &str,
+        _protected: ExportProtection<'_>,
+    ) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
         Err(FileAccessError::Unsupported)
     }
 
@@ -77,11 +87,21 @@ pub trait FileAccess: Send + Sync {
         Err(FileAccessError::Unsupported)
     }
 
-    fn backup_publication_candidates(&self, temporary: &str, _name: &str) -> Result<Vec<String>, FileAccessError> {
+    fn backup_publication_candidates(
+        &self,
+        temporary: &str,
+        _name: &str,
+    ) -> Result<Vec<String>, FileAccessError> {
         Ok(vec![temporary.to_owned()])
     }
 
-    fn publish_backup(&self, _temporary: &str, _target: Option<&str>, _name: &str, _protected: ExportProtection<'_>) -> Result<String, FileAccessError> {
+    fn publish_backup(
+        &self,
+        _temporary: &str,
+        _target: Option<&str>,
+        _name: &str,
+        _protected: ExportProtection<'_>,
+    ) -> Result<String, FileAccessError> {
         Err(FileAccessError::Unsupported)
     }
 
@@ -273,6 +293,20 @@ pub async fn assets_ingest(
             let media = context
                 .media()
                 .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no media store is open"))?;
+            let provenance = if role == dto::AssetIngestRole::SourceDocument {
+                AssetProvenanceV1 {
+                    source_label: Some(
+                        context
+                            .files()
+                            .describe(&uri)
+                            .map_err(IntoApiError::into_api_error)?
+                            .name,
+                    ),
+                    ..AssetProvenanceV1::default()
+                }
+            } else {
+                AssetProvenanceV1::default()
+            };
             let mut reader = context
                 .files()
                 .open(&uri)
@@ -282,6 +316,7 @@ pub async fn assets_ingest(
                 dto::AssetIngestRole::Background => AssetKind::BackgroundImage,
                 dto::AssetIngestRole::VoiceExample => AssetKind::OtherAudio,
                 dto::AssetIngestRole::ReferenceImage => AssetKind::OtherImage,
+                dto::AssetIngestRole::SourceDocument => AssetKind::SourceDocument,
                 dto::AssetIngestRole::Attachment => {
                     let header = self::file_kind::read_header(reader.as_mut())
                         .map_err(IntoApiError::into_api_error)?;
@@ -301,7 +336,7 @@ pub async fn assets_ingest(
                         kind,
                         AssetOrigin::Upload,
                         RetentionClass::Persistent,
-                        AssetProvenanceV1::default(),
+                        provenance,
                     ),
                 )
                 .map_err(|error| match error {

@@ -385,6 +385,7 @@ pub struct LorebookProjectSourceView {
     pub source_id: String,
     pub label: String,
     pub document: Option<crate::AssetRef>,
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -502,6 +503,7 @@ pub struct LorebookProjectView {
     pub commit: Option<LorebookProjectCommitView>,
     /// The jobs still queued or running for the project.
     pub active_job_ids: Vec<String>,
+    pub active_phase: Option<LorebookProjectPhase>,
     /// Why the last planner job failed, while the stage is `PlanFailed`.
     pub plan_failure: Option<crate::JobFailureDto>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -510,6 +512,16 @@ pub struct LorebookProjectView {
     pub created_at: i64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LorebookProjectPhase {
+    Planning,
+    Writing,
+    Refining,
+    Coherence,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -669,4 +681,5 @@ pub struct LorebookGeneratorDefaults {
     pub target_count: u32,
     pub min_target_count: u32,
     pub max_target_count: u32,
+    pub output_tokens: u32,
 }

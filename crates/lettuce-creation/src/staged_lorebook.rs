@@ -1480,6 +1480,18 @@ impl StagedLorebookProject {
     }
 
     pub fn start_draft_batch(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        self.start_drafts(now, STAGED_LOREBOOK_DRAFT_BATCH_SIZE)
+    }
+
+    pub fn start_all_drafts(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        self.start_drafts(now, self.drafts.len())
+    }
+
+    fn start_drafts(
+        &self,
+        now: TimestampMillis,
+        limit: usize,
+    ) -> Result<Self, StagedLorebookError> {
         if !matches!(
             self.stage,
             StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
@@ -1500,7 +1512,7 @@ impl StagedLorebookProject {
             if matches!(
                 draft.status,
                 StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Failed
-            ) && selected < STAGED_LOREBOOK_DRAFT_BATCH_SIZE
+            ) && selected < limit
             {
                 draft.status = StagedLorebookDraftStatus::Drafting;
                 selected += 1;
@@ -1523,6 +1535,32 @@ impl StagedLorebookProject {
             .revision
             .next()
             .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    pub fn stop_work(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        if matches!(
+            self.stage,
+            StagedLorebookStage::Committed | StagedLorebookStage::Cancelled
+        ) || now < self.updated_at
+        {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let mut next = self.clone();
+        for draft in &mut next.drafts {
+            if draft.status == StagedLorebookDraftStatus::Drafting {
+                draft.status = StagedLorebookDraftStatus::Failed;
+            }
+        }
+        if next.stage == StagedLorebookStage::Drafting {
+            next.finish_drafting_if_terminal();
+        }
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.validate()?;
         Ok(next)
     }
 

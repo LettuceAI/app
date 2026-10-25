@@ -1,5 +1,6 @@
 import { useParams } from "@tanstack/react-router";
 import { CompanionsPage } from "./companions/CompanionsPage";
+import { LorebooksPage } from "./lorebooks/LorebooksPage";
 import { UsagePage } from "./usage/UsagePage";
 import { SpeechPage } from "./speech/SpeechPage";
 import { ProvidersPage } from "./ProvidersPage";
@@ -15,6 +16,7 @@ import { CustomizationPage } from "./customization/CustomizationPage";
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
   const { section } = useParams({ from: "/settings/$section" });
+  if (section === "lorebooks") return <LorebooksPage />;
   if (section === "usage") return <UsagePage />;
   if (section === "companions") return <CompanionsPage />;
   if (section === "customization") return <CustomizationPage />;

@@ -1,20 +1,128 @@
 {
-  "title": "Library", "loadMore": "Load more", "search": "Search library", "show": "Show",
-  "filters": { "all": "All", "characters": "Characters", "personas": "Personas", "lorebooks": "Lorebooks", "images": "Images", "audio": "Audio" },
-  "kinds": { "character": "Character", "persona": "Persona", "lorebook": "Lorebook" },
-  "you": "You", "entries_one": "{{count}} entry", "entries_other": "{{count}} entries", "defaultPersona": "Persona · your default",
-  "menu": { "start": "Start chat", "edit_character": "Edit character", "edit_persona": "Edit persona", "edit_lorebook": "Edit lorebook", "default": "Use as default persona", "defaultHint": "For chats that don't pick another", "export": "Export", "export_character": "As a character card", "export_persona": "As a UEC file", "export_lorebook": "As a JSON file", "delete_character": "Delete character", "delete_persona": "Delete persona", "delete_lorebook": "Delete lorebook", "save": "Save to device", "deleteImage": "Delete image", "deleteAudio": "Delete recording", "avatar": "Use as {{name}}'s avatar", "more": "More for {{name}}", "background": "Background", "generated": "Generated", "uploaded": "Uploaded" },
-  "create": { "title": "Create", "description": "Add something to your library.", "character": "Someone to talk to", "persona": "Who you are in a chat", "lorebook": "World facts a character can draw on", "import": "Import a file", "importHint": "Character card, persona or lorebook", "new_character": "New character", "new_persona": "New persona", "new_lorebook": "New lorebook", "button_character": "Create character", "button_persona": "Create persona", "button_lorebook": "Create lorebook" },
-  "edit": { "name": "Name", "description": "Description", "hint_character": "Shown on the card and in the chat header.", "hint_persona": "Characters see this when you use the persona.", "placeholder_character": "e.g. Cassian", "placeholder_persona": "e.g. Hunter", "placeholder_lorebook": "e.g. The northern gate", "save": "Save", "create": "Create", "cancel": "Cancel" },
-  "delete": { "title": "Delete {{name}}?", "confirm": "Delete", "character": "Its chats and memories are deleted with it.", "persona": "The persona is removed from chats that use it.", "lorebook": "Characters and chats that use it lose access to its entries.", "image": "The image is removed from this device. Images still in use cannot be deleted.", "audio": "The recording is removed from this device. Recordings still in use cannot be deleted." },
-  "empty": {
-    "all": { "title": "Your library is empty", "description": "Characters, personas and lorebooks you create or import are kept here." },
-    "characters": { "title": "No characters yet", "description": "A character is who you talk to: a name, a history, a way of speaking." },
-    "personas": { "title": "No personas yet", "description": "A persona is who you are in a chat. Characters see its name and description." },
-    "lorebooks": { "title": "No lorebooks yet", "description": "World facts a character can draw on when they come up in conversation." },
-    "images": { "title": "No images yet", "description": "Images you generate in a chat are kept here." },
-    "audio": { "title": "No audio yet", "description": "Voice lines you generate or record are kept here." },
-    "matches": "Nothing matches “{{query}}”", "searchAll": "Try another name, or part of a description.", "searchSection": "Nothing in this section does. The rest of your library might.", "clear": "Clear search", "everything": "Search everything", "import": "Import"
+  "title": "Library",
+  "loadMore": "Load more",
+  "search": "Search library",
+  "show": "Show",
+  "filters": {
+    "all": "All",
+    "characters": "Characters",
+    "personas": "Personas",
+    "lorebooks": "Lorebooks",
+    "images": "Images",
+    "audio": "Audio"
   },
-  "toast": { "saved": "Changes saved", "created": "Added {{name}}", "deleted": "Deleted {{name}}", "default": "{{name}} is your default persona", "exported": "File exported", "imported": "File imported", "warnings_one": "File transferred with {{count}} warning", "warnings_other": "File transferred with {{count}} warnings", "mediaSaved": "Saved to device", "avatar": "Avatar updated" }
+  "kinds": {
+    "character": "Character",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "You",
+  "entries_one": "{{count}} entry",
+  "entries_other": "{{count}} entries",
+  "defaultPersona": "Persona · your default",
+  "menu": {
+    "start": "Start chat",
+    "edit_character": "Edit character",
+    "edit_persona": "Edit persona",
+    "edit_lorebook": "Edit lorebook",
+    "default": "Use as default persona",
+    "defaultHint": "For chats that don't pick another",
+    "export": "Export",
+    "export_character": "As a character card",
+    "export_persona": "As a UEC file",
+    "export_lorebook": "As a JSON file",
+    "delete_character": "Delete character",
+    "delete_persona": "Delete persona",
+    "delete_lorebook": "Delete lorebook",
+    "save": "Save to device",
+    "deleteImage": "Delete image",
+    "deleteAudio": "Delete recording",
+    "avatar": "Use as {{name}}'s avatar",
+    "more": "More for {{name}}",
+    "background": "Background",
+    "generated": "Generated",
+    "uploaded": "Uploaded"
+  },
+  "create": {
+    "title": "Create",
+    "description": "Add something to your library.",
+    "character": "Someone to talk to",
+    "persona": "Who you are in a chat",
+    "lorebook": "World facts a character can draw on",
+    "import": "Import a file",
+    "importHint": "Character card, persona or lorebook",
+    "new_character": "New character",
+    "new_persona": "New persona",
+    "new_lorebook": "New lorebook",
+    "button_character": "Create character",
+    "button_persona": "Create persona",
+    "button_lorebook": "Create lorebook"
+  },
+  "edit": {
+    "name": "Name",
+    "description": "Description",
+    "hint_character": "Shown on the card and in the chat header.",
+    "hint_persona": "Characters see this when you use the persona.",
+    "placeholder_character": "e.g. Cassian",
+    "placeholder_persona": "e.g. Hunter",
+    "placeholder_lorebook": "e.g. The northern gate",
+    "save": "Save",
+    "create": "Create",
+    "cancel": "Cancel"
+  },
+  "delete": {
+    "title": "Delete {{name}}?",
+    "confirm": "Delete",
+    "character": "Its chats and memories are deleted with it.",
+    "persona": "The persona is removed from chats that use it.",
+    "lorebook": "Characters and chats that use it lose access to its entries.",
+    "image": "The image is removed from this device. Images still in use cannot be deleted.",
+    "audio": "The recording is removed from this device. Recordings still in use cannot be deleted."
+  },
+  "empty": {
+    "all": {
+      "title": "Your library is empty",
+      "description": "Characters, personas and lorebooks you create or import are kept here."
+    },
+    "characters": {
+      "title": "No characters yet",
+      "description": "A character is who you talk to: a name, a history, a way of speaking."
+    },
+    "personas": {
+      "title": "No personas yet",
+      "description": "A persona is who you are in a chat. Characters see its name and description."
+    },
+    "lorebooks": {
+      "title": "No lorebooks yet",
+      "description": "World facts a character can draw on when they come up in conversation."
+    },
+    "images": {
+      "title": "No images yet",
+      "description": "Images you generate in a chat are kept here."
+    },
+    "audio": {
+      "title": "No audio yet",
+      "description": "Voice lines you generate or record are kept here."
+    },
+    "matches": "Nothing matches “{{query}}”",
+    "searchAll": "Try another name, or part of a description.",
+    "searchSection": "Nothing in this section does. The rest of your library might.",
+    "clear": "Clear search",
+    "everything": "Search everything",
+    "import": "Import"
+  },
+  "toast": {
+    "saved": "Changes saved",
+    "created": "Added {{name}}",
+    "deleted": "Deleted {{name}}",
+    "default": "{{name}} is your default persona",
+    "exported": "File exported",
+    "imported": "File imported",
+    "warnings_one": "File transferred with {{count}} warning",
+    "warnings_other": "File transferred with {{count}} warnings",
+    "mediaSaved": "Saved to device",
+    "avatar": "Avatar updated"
+  },
+  "draft": "Draft",
+  "untitledDraft": "Untitled lorebook draft"
 }

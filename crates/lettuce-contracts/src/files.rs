@@ -66,6 +66,7 @@ pub enum AssetIngestRole {
     Attachment,
     VoiceExample,
     ReferenceImage,
+    SourceDocument,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

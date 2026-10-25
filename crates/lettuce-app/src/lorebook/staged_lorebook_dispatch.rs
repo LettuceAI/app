@@ -133,12 +133,17 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             return Err(StagedLorebookPlannerDispatchError::InvalidWork);
         }
         let at = now.max(work.job.updated_at);
-        let result = if self
-            .runs
-            .load_staged_lorebook(work.run.request_id)?
-            .project
-            .stage
-            == lettuce_creation::StagedLorebookStage::Cancelled
+        let cancelled = self
+            .jobs
+            .get(work.run.job_id)?
+            .is_some_and(|job| job.cancellation.requested);
+        let result = if cancelled
+            || self
+                .runs
+                .load_staged_lorebook(work.run.request_id)?
+                .project
+                .stage
+                == lettuce_creation::StagedLorebookStage::Cancelled
         {
             Err(StagedLorebookPlannerExecutionError::Cancelled)
         } else {

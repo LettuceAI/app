@@ -169,6 +169,8 @@ export const commands = {
 	lorebookProjectCancel: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_cancel", { request })),
 	lorebookGeneratorDefaults: () => typedError<LorebookGeneratorDefaults, ApiError_Serialize>(__TAURI_INVOKE("lorebook_generator_defaults")),
 	lorebookProjectDraftNext: (request: LorebookProjectJobRequest) => typedError<LorebookProjectBatchAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_draft_next", { request })),
+	lorebookProjectWriteAll: (request: LorebookProjectJobRequest) => typedError<LorebookProjectBatchAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_write_all", { request })),
+	lorebookProjectStop: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_stop", { request })),
 	lorebookProjectRefine: (request: LorebookProjectRefineRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_refine", { request })),
 	lorebookProjectCoherence: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_coherence", { request })),
 	lorebookProjectCommit: (request: LorebookProjectCommitRequest) => typedError<LorebookProjectCommitView, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_commit", { request })),
@@ -799,7 +801,7 @@ export type AsrVoiceExampleView_Serialize = {
 };
 
 /**  What a picked image or audio file is for. */
-export type AssetIngestRole = "avatar" | "background" | "attachment" | "voice_example" | "reference_image";
+export type AssetIngestRole = "avatar" | "background" | "attachment" | "voice_example" | "reference_image" | "source_document";
 
 /**
  *  A stored media asset, its original URL and an optional image preview URL.
@@ -5197,6 +5199,7 @@ export type LorebookGeneratorDefaults = {
 	target_count: number,
 	min_target_count: number,
 	max_target_count: number,
+	output_tokens: number,
 };
 
 export type LorebookGetRequest = {
@@ -5348,6 +5351,8 @@ export type LorebookProjectPage = {
 	next_cursor: string | null,
 };
 
+export type LorebookProjectPhase = "planning" | "writing" | "refining" | "coherence";
+
 export type LorebookProjectRefineRequest = {
 	client_operation_id: string,
 	expected_revision: number,
@@ -5375,12 +5380,14 @@ export type LorebookProjectSourceView_Deserialize = {
 	source_id: string,
 	label: string,
 	document: AssetRef_Deserialize | null,
+	text: string | null,
 };
 
 export type LorebookProjectSourceView_Serialize = {
 	source_id: string,
 	label: string,
 	document: AssetRef_Serialize | null,
+	text: string | null,
 };
 
 export type LorebookProjectStage = "created" | "planning" |
@@ -5410,6 +5417,7 @@ export type LorebookProjectView_Deserialize = {
 	commit: LorebookProjectCommitView | null,
 	/**  The jobs still queued or running for the project. */
 	active_job_ids: string[],
+	active_phase: LorebookProjectPhase | null,
 	/**  Why the last planner job failed, while the stage is `PlanFailed`. */
 	plan_failure: JobFailureDto_Deserialize | null,
 	revision: number,
@@ -5430,6 +5438,7 @@ export type LorebookProjectView_Serialize = {
 	commit: LorebookProjectCommitView | null,
 	/**  The jobs still queued or running for the project. */
 	active_job_ids: string[],
+	active_phase: LorebookProjectPhase | null,
 	/**  Why the last planner job failed, while the stage is `PlanFailed`. */
 	plan_failure: JobFailureDto_Serialize | null,
 	revision: number,

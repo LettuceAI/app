@@ -539,7 +539,7 @@ fn render_context(
         messages,
         attributions: ContextAttributions {
             usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
-                operation_kind: Some("reply_helper".into()),
+                operation_kind: Some("lorebook_keywords".into()),
                 ..Default::default()
             }),
             prompt: Some(PromptAttribution {

@@ -393,7 +393,10 @@
       "title": "Memory",
       "subtitle": "How characters remember"
     },
-    "companions": { "title": "Companions", "subtitle": "Soul writer and emotion model" },
+    "companions": {
+      "title": "Companions",
+      "subtitle": "Soul writer and emotion model"
+    },
     "imageGeneration": {
       "title": "Image generation",
       "subtitle": "Generate and test images"
@@ -481,6 +484,10 @@
     "smartCreator": {
       "title": "Smart creator",
       "subtitle": "Build characters by chatting"
+    },
+    "lorebooks": {
+      "title": "Lorebooks",
+      "subtitle": "Keyword matching and the lorebook writers"
     }
   },
   "about": {

@@ -356,6 +356,463 @@ async fn staged_project(
     .expect("project")
 }
 
+async fn approved_project(
+    harness: &crate::api::tests::Harness,
+    key: &str,
+) -> dto::LorebookProjectView {
+    let project = staged_project(harness, key).await;
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: format!("{key}-plan"),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("plan");
+    execute(harness, &plan.job_id).await;
+    let planned = project_get(harness, &project.project_id).await;
+    lorebook_project_outline_approve(
+        &harness.context,
+        dto::LorebookProjectRevisionRequest {
+            client_operation_id: format!("{key}-approve"),
+            project_id: project.project_id,
+            expected_revision: planned.revision,
+        },
+    )
+    .await
+    .expect("approved outline")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn write_all_queues_every_entry_replays_and_limits_independent_claims() {
+    let harness = harness(Reply::LorebookTools);
+    let project = approved_project(&harness, "write-all").await;
+    let request = dto::LorebookProjectJobRequest {
+        client_operation_id: "write-all-action".into(),
+        project_id: project.project_id.clone(),
+        expected_revision: project.revision,
+    };
+    let all = lorebook_project_write_all(&harness.context, request.clone())
+        .await
+        .expect("all jobs");
+    assert_eq!(all.job_ids.len(), 5);
+    assert_eq!(
+        lorebook_project_write_all(&harness.context, request)
+            .await
+            .expect("replay"),
+        all
+    );
+    let waiting = project_get(&harness, &project.project_id).await;
+    assert!(
+        waiting
+            .drafts
+            .iter()
+            .all(|draft| draft.status == dto::LorebookDraftStatus::Pending)
+    );
+    assert_eq!(waiting.active_job_ids.len(), 5);
+    let mut claimed = Vec::new();
+    let mut deferred = Vec::new();
+    for id in &all.job_ids {
+        let job = JobStore::get(
+            harness.context.backend().database(),
+            id.parse().expect("id"),
+        )
+        .expect("job")
+        .expect("exists");
+        match LorebookHandler
+            .claim(&harness.context, &job, WorkerId::new())
+            .await
+            .expect("independent claim")
+        {
+            Some(work) => claimed.push((id.clone(), work)),
+            None => deferred.push(id.clone()),
+        }
+    }
+    assert_eq!(claimed.len(), 3);
+    assert_eq!(deferred.len(), 2);
+    assert!(
+        JobStore::claim_next(
+            harness.context.backend().database(),
+            WorkerId::new(),
+            TimestampMillis::now().expect("now"),
+            std::time::Duration::from_secs(60),
+            &lettuce_jobs::ResourceAvailability::all()
+        )
+        .expect("another worker")
+        .is_none()
+    );
+    let writing = project_get(&harness, &project.project_id).await;
+    assert_eq!(
+        writing
+            .drafts
+            .iter()
+            .filter(|draft| draft.status == dto::LorebookDraftStatus::Drafting)
+            .count(),
+        3
+    );
+    for (_, work) in claimed {
+        work.run(harness.context.clone(), Arc::new(Progress))
+            .await
+            .expect("write");
+    }
+    for id in deferred {
+        execute(&harness, &id).await;
+    }
+    let completed = project_get(&harness, &project.project_id).await;
+    assert_eq!(completed.stage, dto::LorebookProjectStage::DraftsReady);
+    assert!(completed.active_job_ids.is_empty());
+    assert_eq!(harness.provider.requests.lock().expect("requests").len(), 6);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn write_all_survives_reopen_without_an_attached_frontend() {
+    let directory =
+        std::env::temp_dir().join(format!("lorebook-write-restart-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&directory).expect("directory");
+    let path = directory.join("jobs.sqlite");
+    let backend = Arc::new(
+        crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("backend"),
+    );
+    let first = crate::api::tests::harness_over(
+        backend,
+        Reply::LorebookTools,
+        Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        Arc::new(NoModels),
+        Arc::new(crate::api::tests::NoImages),
+    );
+    let project = approved_project(&first, "reopen").await;
+    let all = lorebook_project_write_all(
+        &first.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "reopen-write".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("all jobs");
+    execute(&first, &all.job_ids[0]).await;
+    drop(first);
+    let backend = Arc::new(
+        crate::AppBackend::open(&path, TimestampMillis::now().expect("now"))
+            .expect("reopened backend"),
+    );
+    let restarted = crate::api::tests::harness_over(
+        backend,
+        Reply::LorebookTools,
+        Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        Arc::new(NoModels),
+        Arc::new(crate::api::tests::NoImages),
+    );
+    let runner = Arc::new(JobRunner::new(
+        restarted.context.clone(),
+        JobHandlers::standard(),
+    ));
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let running = Arc::clone(&runner);
+    let task = tokio::spawn(async move {
+        running
+            .run(async {
+                let _ = stopped.await;
+            })
+            .await;
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if project_get(&restarted, &project.project_id).await.stage
+                == dto::LorebookProjectStage::DraftsReady
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("native worker completes without UI admission");
+    stop.send(()).expect("shutdown");
+    task.await.expect("worker");
+    assert_eq!(
+        restarted.provider.requests.lock().expect("requests").len(),
+        4
+    );
+    drop(runner);
+    drop(restarted);
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_preserves_finished_entries_fences_claims_and_retries_only_unfinished_work() {
+    let harness = harness(Reply::LorebookTools);
+    let project = approved_project(&harness, "stop-writing").await;
+    let all = lorebook_project_write_all(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "before-stop".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("all jobs");
+    execute(&harness, &all.job_ids[0]).await;
+    let current = project_get(&harness, &project.project_id).await;
+    let written = current
+        .drafts
+        .iter()
+        .find(|draft| draft.status == dto::LorebookDraftStatus::Drafted)
+        .expect("written")
+        .clone();
+    let job = JobStore::get(
+        harness.context.backend().database(),
+        all.job_ids[1].parse().expect("id"),
+    )
+    .expect("job")
+    .expect("exists");
+    let claimed = LorebookHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("claimed");
+    let request = dto::LorebookProjectRevisionRequest {
+        client_operation_id: "stop-action".into(),
+        project_id: project.project_id.clone(),
+        expected_revision: current.revision,
+    };
+    let stopped = lorebook_project_stop(&harness.context, request.clone())
+        .await
+        .expect("stop");
+    assert_eq!(
+        lorebook_project_stop(&harness.context, request.clone())
+            .await
+            .expect("stop replay"),
+        stopped
+    );
+    assert_eq!(
+        stopped
+            .drafts
+            .iter()
+            .find(|draft| draft.plan_id == written.plan_id),
+        Some(&written)
+    );
+    claimed
+        .run(harness.context.clone(), Arc::new(Progress))
+        .await
+        .expect("cancelled settlement");
+    let after = project_get(&harness, &project.project_id).await;
+    assert!(after.active_job_ids.is_empty());
+    assert_eq!(
+        after
+            .drafts
+            .iter()
+            .filter(|draft| draft.status == dto::LorebookDraftStatus::Failed)
+            .count(),
+        4
+    );
+    let retried = lorebook_project_write_all(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "after-stop".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: after.revision,
+        },
+    )
+    .await
+    .expect("retry unfinished");
+    assert_eq!(retried.job_ids.len(), 4);
+    let resumed_id = retried.job_ids[0].parse().expect("resumed id");
+    let resumed_job = JobStore::get(harness.context.backend().database(), resumed_id)
+        .expect("job")
+        .expect("exists");
+    let resumed = LorebookHandler
+        .claim(&harness.context, &resumed_job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("resumed");
+    let cancellation = resumed.cancellation();
+    harness
+        .context
+        .jobs()
+        .start_running(resumed_id, cancellation.clone());
+    lorebook_project_stop(&harness.context, request)
+        .await
+        .expect("old stop replay");
+    assert!(!cancellation.is_cancelled());
+    resumed
+        .run(harness.context.clone(), Arc::new(Progress))
+        .await
+        .expect("resumed write");
+    harness.context.jobs().finish_running(resumed_id);
+    for id in retried.job_ids.into_iter().skip(1) {
+        execute(&harness, &id).await;
+    }
+    let done = project_get(&harness, &project.project_id).await;
+    assert_eq!(done.stage, dto::LorebookProjectStage::DraftsReady);
+    assert_eq!(
+        done.drafts
+            .iter()
+            .find(|draft| draft.plan_id == written.plan_id),
+        Some(&written)
+    );
+}
+
+#[tokio::test]
+async fn stopping_a_queued_plan_is_visible_and_can_be_retried() {
+    let harness = harness(Reply::LorebookTools);
+    let project = staged_project(&harness, "stop-plan").await;
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "queued-plan".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("plan");
+    let planning = project_get(&harness, &project.project_id).await;
+    let stopped = lorebook_project_stop(
+        &harness.context,
+        dto::LorebookProjectRevisionRequest {
+            client_operation_id: "stop-plan-action".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: planning.revision,
+        },
+    )
+    .await
+    .expect("stop");
+    assert_eq!(stopped.stage, dto::LorebookProjectStage::PlanFailed);
+    assert!(stopped.active_job_ids.is_empty());
+    let retried = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "retry-stopped-plan".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: stopped.revision,
+        },
+    )
+    .await
+    .expect("retry stopped plan");
+    assert_ne!(retried.job_id, plan.job_id);
+    execute(&harness, &retried.job_id).await;
+    assert_eq!(
+        project_get(&harness, &project.project_id).await.stage,
+        dto::LorebookProjectStage::AwaitingOutlineApproval
+    );
+}
+
+#[tokio::test]
+async fn write_all_does_not_automatically_readmit_newly_failed_entries() {
+    let harness = harness(Reply::LorebookTools);
+    let project = approved_project(&harness, "write-failures").await;
+    *harness.provider.response_hook.lock().expect("hook") = Some(Arc::new(|_, outcome| {
+        for candidate in &mut outcome.candidates {
+            candidate.tool_calls.clear();
+        }
+    }));
+    let all = lorebook_project_write_all(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "failed-entries-action".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("write jobs");
+    for id in &all.job_ids {
+        execute(&harness, id).await;
+    }
+    let failed = project_get(&harness, &project.project_id).await;
+    assert_eq!(failed.stage, dto::LorebookProjectStage::DraftsReady);
+    assert_eq!(
+        failed
+            .drafts
+            .iter()
+            .filter(|draft| draft.status == dto::LorebookDraftStatus::Failed)
+            .count(),
+        5
+    );
+    assert!(failed.active_job_ids.is_empty());
+    assert_eq!(harness.provider.requests.lock().expect("requests").len(), 6);
+    let runner = JobRunner::new(harness.context.clone(), JobHandlers::standard());
+    assert!(!runner.run_once().await.expect("no automatic retry"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finished_drafts_can_be_edited_and_approved_while_other_writers_are_queued() {
+    let harness = harness(Reply::LorebookTools);
+    let project = approved_project(&harness, "edit-queued").await;
+    let all = lorebook_project_write_all(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "edit-queued-write".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("write jobs");
+    execute(&harness, &all.job_ids[0]).await;
+    let current = project_get(&harness, &project.project_id).await;
+    let written = current
+        .drafts
+        .iter()
+        .find(|draft| draft.status == dto::LorebookDraftStatus::Drafted)
+        .expect("written");
+    let edited = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        lorebook_project_draft_update(
+            &harness.context,
+            dto::LorebookProjectDraftUpdateRequest {
+                client_operation_id: "edit-queued-content".into(),
+                project_id: project.project_id.clone(),
+                expected_revision: current.revision,
+                plan_id: written.plan_id.clone(),
+                title: "Edited while waiting".into(),
+                keywords: written.keywords.clone(),
+                content: written.content.clone(),
+                always_active: written.always_active,
+            },
+        ),
+    )
+    .await
+    .expect("transaction-scoped reads must not deadlock")
+    .expect("edited");
+    assert_eq!(
+        edited
+            .drafts
+            .iter()
+            .filter(|draft| draft.status == dto::LorebookDraftStatus::Pending)
+            .count(),
+        4
+    );
+    let approved = lorebook_project_draft_set_approved(
+        &harness.context,
+        dto::LorebookProjectDraftApprovalRequest {
+            client_operation_id: "approve-queued-content".into(),
+            project_id: project.project_id,
+            expected_revision: edited.revision,
+            plan_id: written.plan_id.clone(),
+            approved: true,
+        },
+    )
+    .await
+    .expect("approved while waiting");
+    let entry = approved
+        .drafts
+        .iter()
+        .find(|draft| draft.plan_id == written.plan_id)
+        .expect("entry");
+    assert_eq!(entry.title, "Edited while waiting");
+    assert_eq!(entry.status, dto::LorebookDraftStatus::Approved);
+}
+
 async fn execute(harness: &crate::api::tests::Harness, id: &str) {
     let db = harness.context.backend().database();
     let job = JobStore::get(db, id.parse().expect("job id"))
@@ -599,6 +1056,28 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
             .commit
             .expect("history")
             .lorebook_deleted
+    );
+    let requests = harness.provider.requests.lock().expect("requests");
+    let operations = requests
+        .iter()
+        .filter_map(|request| {
+            request
+                .context
+                .attributions
+                .usage_snapshot
+                .as_ref()?
+                .operation_kind
+                .as_deref()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        operations,
+        std::collections::BTreeSet::from([
+            "lorebook_plan",
+            "lorebook_entry_write",
+            "lorebook_entry_refine",
+            "lorebook_coherence",
+        ])
     );
 }
 
@@ -955,6 +1434,17 @@ async fn entry_force_uses_catalog_and_save_is_atomic_and_replayable() {
     {
         let requests = harness.provider.requests.lock().expect("requests");
         assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0]
+                .context
+                .attributions
+                .usage_snapshot
+                .as_ref()
+                .expect("usage attribution")
+                .operation_kind
+                .as_deref(),
+            Some("lorebook_entry_generator")
+        );
         assert!(
             !requests[0]
                 .tools
@@ -1406,6 +1896,17 @@ async fn keyword_draft_uses_the_first_text_model_not_the_default() {
     assert!(!requests.is_empty());
     for request in requests.iter() {
         assert_eq!(request.profile.chat_profile.model_profile_id, models[0].id);
+        assert_eq!(
+            request
+                .context
+                .attributions
+                .usage_snapshot
+                .as_ref()
+                .expect("usage attribution")
+                .operation_kind
+                .as_deref(),
+            Some("lorebook_keywords")
+        );
     }
 }
 

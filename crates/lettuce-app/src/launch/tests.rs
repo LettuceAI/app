@@ -38,9 +38,9 @@ use lettuce_conversations::{
 use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
 use lettuce_jobs::{
-    AttemptNo, CancellationPolicy, CancellationReason, Claim, ClaimRef, JobKind,
-    JobOutcome, JobState, LeaseId, OutcomeRef, RecoveryPolicy, ResourceAvailability, ResourceClass,
-    WorkerId, handle::CancellationToken, handle::JobHandle,
+    AttemptNo, CancellationPolicy, CancellationReason, Claim, ClaimRef, JobKind, JobOutcome,
+    JobState, LeaseId, OutcomeRef, RecoveryPolicy, ResourceAvailability, ResourceClass, WorkerId,
+    handle::CancellationToken, handle::JobHandle,
 };
 use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryRoundFinishReason, DynamicMemoryRunRepository,
@@ -1627,7 +1627,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                         provider_replay: None,
                     }],
                     provider_replay: None,
-                        media: Vec::new(),
+                    media: Vec::new(),
                 }],
                 usage: Some(InferenceUsage {
                     image_tokens: None,
@@ -1668,7 +1668,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                         },
                     ],
                     provider_replay: None,
-                            media: Vec::new(),
+                    media: Vec::new(),
                 }],
                 usage: Some(InferenceUsage {
                     image_tokens: None,
@@ -2021,7 +2021,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                         provider_replay: None,
                     }],
                     provider_replay: None,
-                        media: Vec::new(),
+                    media: Vec::new(),
                 }],
                 usage: None,
                 finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -2079,7 +2079,10 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             profile.chat_profile.model_profile_id,
             "a primary that fails before any tool call retries structured on the same model (legacy companion_soul_writer.rs 1034-1052, 1149-1252)"
         );
-        assert_eq!(alternate_requests[1].profile.tool_policy, ToolPolicy::Disabled);
+        assert_eq!(
+            alternate_requests[1].profile.tool_policy,
+            ToolPolicy::Disabled
+        );
         assert_eq!(
             alternate_requests[2].profile.chat_profile.model_profile_id,
             alternate_profile.chat_profile.model_profile_id
@@ -2117,7 +2120,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: None,
             finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -2212,20 +2215,28 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .count(),
         4
     );
-    assert!(retries.iter().any(|entry| entry.result
-        == Some(JobInferenceUsageResult::Response {
-            snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
-                operation_kind: Some("reply_helper".into()),
-                character_name: Some("Mira".into()),
-                model_name: Some(retry_request.profile.chat_profile.model_display_name.clone()),
-                provider_kind: Some(retry_request.profile.chat_profile.provider_kind.clone()),
-                provider_label: retry_request.profile.chat_profile.provider_label.clone(),
-                finish_reason: Some("error".into()),
-                ..Default::default()
-            })),
-            usage: Some(failed_usage.clone()),
-            provider_response_id: None
-        })));
+    assert!(retries.iter().any(|entry| {
+        entry.result
+            == Some(JobInferenceUsageResult::Response {
+                snapshot: Some(Box::new(lettuce_conversations::UsageRecordSnapshot {
+                    operation_kind: Some("reply_helper".into()),
+                    character_name: Some("Mira".into()),
+                    model_name: Some(
+                        retry_request
+                            .profile
+                            .chat_profile
+                            .model_display_name
+                            .clone(),
+                    ),
+                    provider_kind: Some(retry_request.profile.chat_profile.provider_kind.clone()),
+                    provider_label: retry_request.profile.chat_profile.provider_label.clone(),
+                    finish_reason: Some("error".into()),
+                    ..Default::default()
+                })),
+                usage: Some(failed_usage.clone()),
+                provider_response_id: None,
+            })
+    }));
     assert!(
         retries
             .iter()
@@ -2299,7 +2310,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: None,
             finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -2321,35 +2332,38 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             TimestampMillis::new(NOW.get() + 25),
         )
         .await
-        .expect("the round cap returns the partial draft (legacy companion_soul_writer.rs 1145-1147)");
+        .expect(
+            "the round cap returns the partial draft (legacy companion_soul_writer.rs 1145-1147)",
+        );
     assert_eq!(capped.draft["soul"]["traits"], "draft-7");
-    let calls_outcome = |calls: Vec<(&str, serde_json::Value)>, text: Option<&str>| InferenceOutcome {
-        provider_response_id: None,
-        candidates: vec![InferenceCandidate {
-            ordinal: 0,
-            parts: text
-                .map(|text| vec![MessagePart::Text { text: text.into() }])
-                .unwrap_or_default(),
-            tool_calls: calls
-                .into_iter()
-                .enumerate()
-                .map(|(index, (name, arguments))| ProposedToolCall {
-                    provider_call_id: Some(format!("{name}-{index}")),
-                    name: name.into(),
-                    arguments,
-                    raw_arguments: None,
-                    provider_replay: None,
-                })
-                .collect(),
-            provider_replay: None,
-                    media: Vec::new(),
-        }],
-        usage: None,
-        finish_reason: lettuce_conversations::FinishReason::Stop,
-        provider_finish_reason: None,
-        provider_request_id: None,
-        warning_codes: Vec::new(),
-    };
+    let calls_outcome =
+        |calls: Vec<(&str, serde_json::Value)>, text: Option<&str>| InferenceOutcome {
+            provider_response_id: None,
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: text
+                    .map(|text| vec![MessagePart::Text { text: text.into() }])
+                    .unwrap_or_default(),
+                tool_calls: calls
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (name, arguments))| ProposedToolCall {
+                        provider_call_id: Some(format!("{name}-{index}")),
+                        name: name.into(),
+                        arguments,
+                        raw_arguments: None,
+                        provider_replay: None,
+                    })
+                    .collect(),
+                provider_replay: None,
+                media: Vec::new(),
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        };
     let admit_writer = |offset: i64| {
         let request_id = RequestId::new();
         let writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
@@ -2391,23 +2405,36 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let (unknown_id, unknown_job) = admit_writer(27);
     let unknown_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
-            calls_outcome(vec![("set_mood", serde_json::json!({"mood": "calm"}))], None),
+            calls_outcome(
+                vec![("set_mood", serde_json::json!({"mood": "calm"}))],
+                None,
+            ),
             calls_outcome(vec![("done", serde_json::json!({}))], None),
         ])),
         requests: Mutex::new(Vec::new()),
     };
     crate::CompanionSoulWriterExecutionCoordinator::new(&database, &unknown_inference)
-        .run(unknown_id, &soul_writer_prompt, &JobHandle::new(unknown_job), None, NOW)
+        .run(
+            unknown_id,
+            &soul_writer_prompt,
+            &JobHandle::new(unknown_job),
+            None,
+            NOW,
+        )
         .await
         .expect("an unknown tool is answered and the loop continues");
     let unknown_requests = unknown_inference.requests.lock().expect("requests").clone();
     assert_eq!(unknown_requests.len(), 2);
     assert!(
-        unknown_requests[1].context.messages.iter().any(|message| message.parts.iter().any(|part| matches!(
-            part,
-            ProviderContextPart::ToolResult(result)
-                if result.name == "set_mood" && result.output.value["error"] == "unknown_tool"
-        ))),
+        unknown_requests[1]
+            .context
+            .messages
+            .iter()
+            .any(|message| message.parts.iter().any(|part| matches!(
+                part,
+                ProviderContextPart::ToolResult(result)
+                    if result.name == "set_mood" && result.output.value["error"] == "unknown_tool"
+            ))),
         "legacy answered an unknown tool with an unknown_tool result (companion_soul_writer.rs 954-958)"
     );
     assert_eq!(
@@ -2561,7 +2588,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                         provider_replay: None,
                     }],
                     provider_replay: None,
-                        media: Vec::new(),
+                    media: Vec::new(),
                 }],
                 usage: None,
                 finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -2582,7 +2609,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                         provider_replay: None,
                     }],
                     provider_replay: None,
-                        media: Vec::new(),
+                    media: Vec::new(),
                 }],
                 usage: None,
                 finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -2944,7 +2971,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -3149,7 +3176,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -3410,8 +3437,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .conversation
             .active_branch_id,
     )
-        .expect("memory")
-        .expect("memory space");
+    .expect("memory")
+    .expect("memory space");
     let admitted_failure = database
         .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
             run_id: failure_run_id,
@@ -3533,8 +3560,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 .conversation
                 .active_branch_id,
         )
-            .expect("memory")
-            .expect("memory space");
+        .expect("memory")
+        .expect("memory space");
         let admitted = database
             .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
                 run_id,
@@ -4907,7 +4934,12 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
     );
     let first = seed_named_character(&database, "Ada");
     let second = seed_named_character(&database, "Bea");
-    set_character_texts(&database, second, None, Some("Trusts {{char}} and {{user}}."));
+    set_character_texts(
+        &database,
+        second,
+        None,
+        Some("Trusts {{char}} and {{user}}."),
+    );
     let third = seed_named_character(&database, "Cy");
     set_character_texts(&database, third, Some(""), None);
     let fourth = seed_named_character(&database, "Dot");
@@ -7540,7 +7572,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -8367,7 +8399,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -8731,7 +8763,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -9094,7 +9126,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -9209,6 +9241,14 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         ),
         Err(lettuce_creation::StagedLorebookRepositoryError::Conflict)
     ));
+    writer_dispatcher
+        .settle(
+            refine_work,
+            Ok(refined.clone()),
+            CancellationReason::User,
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("settle completed refinement job");
     let coherence_at = TimestampMillis::new(NOW.get() + 21);
     let mut failed_refine_request = refine_request.clone();
     failed_refine_request.request_id = RequestId::new();
@@ -9407,7 +9447,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -10166,7 +10206,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                         provider_replay: None,
                     }],
                     provider_replay: None,
-                        media: Vec::new(),
+                    media: Vec::new(),
                 }],
                 usage: None,
                 finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -10289,7 +10329,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     assert_eq!(
         batch_evidence
             .iter()
-            .filter(|event| matches!(&event.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.error_message.as_deref() == Some("conversation dependency returned no result")))
+            .filter(|event| matches!(&event.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.operation_kind.as_deref() == Some("lorebook_entry_write") && snapshot.error_message.as_deref() == Some("conversation dependency returned no result")))
             .count(),
         1
     );
@@ -10639,8 +10679,8 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
             .conversation
             .active_branch_id,
     )
-        .expect("first memory space")
-        .expect("first memory space exists");
+    .expect("first memory space")
+    .expect("first memory space exists");
     let selected_memory_id = MemoryId::new();
     let memory_item = MemoryItem {
         id: selected_memory_id,
@@ -10701,8 +10741,8 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
             .conversation
             .active_branch_id,
     )
-        .expect("second memory space")
-        .expect("second memory space exists");
+    .expect("second memory space")
+    .expect("second memory space exists");
     let foreign_memory_id = MemoryId::new();
     MemoryRepository::compare_and_apply(
         &database,
@@ -10855,7 +10895,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,
@@ -11204,7 +11244,9 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 Err(crate::LorebookEntryExecutionError::Cancelled)
             ));
             assert_eq!(evidence.len(), 1);
-            assert!(matches!(&evidence[0].result, Some(JobInferenceUsageResult::Failure { cancelled: true, snapshot }) if snapshot.character_id == Some(character_id) && snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.finish_reason.as_deref() == Some("aborted") && snapshot.error_message.as_deref() == Some("conversation operation was cancelled")));
+            assert!(
+                matches!(&evidence[0].result, Some(JobInferenceUsageResult::Failure { cancelled: true, snapshot }) if snapshot.character_id == Some(character_id) && snapshot.operation_kind.as_deref() == Some("lorebook_entry_generator") && snapshot.finish_reason.as_deref() == Some("aborted") && snapshot.error_message.as_deref() == Some("conversation operation was cancelled"))
+            );
             assert_eq!(inference.requests.lock().expect("requests").len(), 1);
         } else {
             assert_eq!(result.expect("provider error fallback").attempts, 2);
@@ -11212,7 +11254,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
             assert!(
                 evidence
                     .iter()
-                    .any(|event| matches!(&event.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.character_id == Some(character_id) && snapshot.operation_kind.as_deref() == Some("reply_helper") && snapshot.error_message.as_deref() == Some("conversation dependency is unavailable")))
+                    .any(|event| matches!(&event.result, Some(JobInferenceUsageResult::Failure { cancelled: false, snapshot }) if snapshot.character_id == Some(character_id) && snapshot.operation_kind.as_deref() == Some("lorebook_entry_generator") && snapshot.error_message.as_deref() == Some("conversation dependency is unavailable")))
             );
             assert!(evidence.iter().any(|event| matches!(
                 event.result,
@@ -11666,9 +11708,9 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             .conversation
             .active_branch_id,
     )
-        .expect("memory space")
-        .expect("conversation memory")
-        .id;
+    .expect("memory space")
+    .expect("conversation memory")
+    .id;
     let run_id = DynamicMemoryRunId::new();
     let attempt_id = DynamicMemoryAttemptId::new();
     let job_id = lettuce_jobs::JobStore::create_or_get(
@@ -11788,7 +11830,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                     provider_replay: None,
                 }],
                 provider_replay: None,
-                    media: Vec::new(),
+                media: Vec::new(),
             }],
             usage: None,
             finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -14922,7 +14964,13 @@ async fn starter_scene_image(edit_after_admission: bool) {
     )
     .expect("timeline");
     let welcome = timeline.items.last().expect("welcome message");
-    let target = lettuce_conversations::SceneFollowUpTarget::StarterRevision(welcome.active_revision.as_ref().expect("starter revision").id);
+    let target = lettuce_conversations::SceneFollowUpTarget::StarterRevision(
+        welcome
+            .active_revision
+            .as_ref()
+            .expect("starter revision")
+            .id,
+    );
     let store = LocalMediaBlobStore::new(
         authority.managed_files(),
         authority
@@ -14961,12 +15009,32 @@ async fn starter_scene_image(edit_after_admission: bool) {
         .expect("start");
     assert_eq!(first.attempt, 1);
     if edit_after_admission {
-        lettuce_conversations::ConversationRepository::edit_message(&database, &lettuce_conversations::EditMessage {
-            conversation_id: conversation.id, message_id: welcome.message.id,
-            expected_revision: ConversationReader::get(&database, conversation.id).expect("conversation").conversation.revision,
-            operation: crate::conversation::edit_operation("starter-later-edit".into(), &[b"edit"]).expect("token"),
-            draft: lettuce_conversations::MessageEditDraft { parts: vec![MessagePart::Text { text: "Later edit".into() }], visibility: lettuce_conversations::MessageVisibility::Visible, pinned: false, scene_edited: false },
-        }, TimestampMillis::new(NOW.get()+10)).expect("edit while image queued");
+        lettuce_conversations::ConversationRepository::edit_message(
+            &database,
+            &lettuce_conversations::EditMessage {
+                conversation_id: conversation.id,
+                message_id: welcome.message.id,
+                expected_revision: ConversationReader::get(&database, conversation.id)
+                    .expect("conversation")
+                    .conversation
+                    .revision,
+                operation: crate::conversation::edit_operation(
+                    "starter-later-edit".into(),
+                    &[b"edit"],
+                )
+                .expect("token"),
+                draft: lettuce_conversations::MessageEditDraft {
+                    parts: vec![MessagePart::Text {
+                        text: "Later edit".into(),
+                    }],
+                    visibility: lettuce_conversations::MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .expect("edit while image queued");
     }
 
     run_scene_job(&database, &store, &provider, job.id, NOW.get() + 11).await;
@@ -15009,26 +15077,44 @@ async fn starter_scene_image(edit_after_admission: bool) {
     .find(|item| item.message.id == welcome.message.id)
     .expect("welcome message");
     if edit_after_admission {
-        assert_eq!(edited.active_revision.as_ref().expect("active edit").parts, vec![MessagePart::Text { text: "Later edit".into() }]);
-        let revisions = ConversationReader::page_message_revisions(&database, welcome.message.id, &lettuce_types::PageRequest::default()).expect("revision history");
-        let media = revisions.items.iter().flat_map(|revision| &revision.parts).filter(|part| matches!(part, MessagePart::MediaAsset { .. })).count();
+        assert_eq!(
+            edited.active_revision.as_ref().expect("active edit").parts,
+            vec![MessagePart::Text {
+                text: "Later edit".into()
+            }]
+        );
+        let revisions = ConversationReader::page_message_revisions(
+            &database,
+            welcome.message.id,
+            &lettuce_types::PageRequest::default(),
+        )
+        .expect("revision history");
+        let media = revisions
+            .items
+            .iter()
+            .flat_map(|revision| &revision.parts)
+            .filter(|part| matches!(part, MessagePart::MediaAsset { .. }))
+            .count();
         assert_eq!(media, 1);
     } else {
-    let parts = &edited.active_revision.as_ref().expect("revision").parts;
-    assert_eq!(
-        parts[..parts.len() - 1],
-        welcome.active_revision.as_ref().expect("revision").parts[..]
-    );
-    assert!(matches!(
-        parts.last(),
-        Some(MessagePart::MediaAsset {
-            role: lettuce_conversations::MediaAssetRole::Attachment,
-            ..
-        })
-    ));
+        let parts = &edited.active_revision.as_ref().expect("revision").parts;
+        assert_eq!(
+            parts[..parts.len() - 1],
+            welcome.active_revision.as_ref().expect("revision").parts[..]
+        );
+        assert!(matches!(
+            parts.last(),
+            Some(MessagePart::MediaAsset {
+                role: lettuce_conversations::MediaAssetRole::Attachment,
+                ..
+            })
+        ));
     }
-    let record = lettuce_image_generation::ImageGenerationRepository::get(&database, second.id).expect("second record");
-    follow_ups.settle(&record, false, TimestampMillis::new(NOW.get()+13)).expect("repeat settlement");
+    let record = lettuce_image_generation::ImageGenerationRepository::get(&database, second.id)
+        .expect("second record");
+    follow_ups
+        .settle(&record, false, TimestampMillis::new(NOW.get() + 13))
+        .expect("repeat settlement");
 
     let refused = SceneImageProvider {
         outcomes: Mutex::new(VecDeque::from([Err(
@@ -15072,18 +15158,50 @@ fn missing_and_archived_group_personas_follow_the_default() {
     let database = backend.database();
     let authored = seed_persona(database, "Authored");
     let fallback = seed_persona(database, "Default");
-    let revision = PersonaRepository::get_default_snapshot(database).expect("default").state.revision;
+    let revision = PersonaRepository::get_default_snapshot(database)
+        .expect("default")
+        .state
+        .revision;
     PersonaRepository::set_default(database, fallback, revision, NOW).expect("default");
     let first = seed_named_character(database, "First");
     let second = seed_named_character(database, "Second");
-    let id = seed_group(database, vec![member(first, 0), member(second, 1)], None, |group| group.persona = Selection::Explicit(authored));
-    let conversation = ConversationLaunchPlanner::new(database).launch_group(&group_request(id, "fallback-group"), NOW).expect("launch").value.conversation;
-    let mut group = GroupRepository::get(database, id).expect("group").expect("exists").group;
-    let persona = PersonaRepository::get(database, authored).expect("persona").expect("exists");
-    PersonaRepository::archive(database, lettuce_characters::PersonaArchiveRequest { persona_id: authored, expected_persona_revision: persona.revision, expected_default_revision: None, now: NOW }).expect("archive");
-    let selected = crate::generation::live_sources::live_persona(database, &conversation, Some(&group)).expect("resolve").expect("default");
+    let id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.persona = Selection::Explicit(authored),
+    );
+    let conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(id, "fallback-group"), NOW)
+        .expect("launch")
+        .value
+        .conversation;
+    let mut group = GroupRepository::get(database, id)
+        .expect("group")
+        .expect("exists")
+        .group;
+    let persona = PersonaRepository::get(database, authored)
+        .expect("persona")
+        .expect("exists");
+    PersonaRepository::archive(
+        database,
+        lettuce_characters::PersonaArchiveRequest {
+            persona_id: authored,
+            expected_persona_revision: persona.revision,
+            expected_default_revision: None,
+            now: NOW,
+        },
+    )
+    .expect("archive");
+    let selected =
+        crate::generation::live_sources::live_persona(database, &conversation, Some(&group))
+            .expect("resolve")
+            .expect("default");
     assert_eq!(selected.id, fallback);
     group.persona = Selection::Explicit(lettuce_types::PersonaId::new());
-    let selected = crate::generation::live_sources::live_persona(database, &conversation, Some(&group)).expect("resolve missing").expect("default");
+    let selected =
+        crate::generation::live_sources::live_persona(database, &conversation, Some(&group))
+            .expect("resolve missing")
+            .expect("default");
     assert_eq!(selected.id, fallback);
 }

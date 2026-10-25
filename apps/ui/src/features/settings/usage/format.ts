@@ -15,6 +15,11 @@ export const operations = [
   "companion_soul_writer",
   "companion_growth",
   "companion_consolidation",
+  "lorebook_plan",
+  "lorebook_entry_write",
+  "lorebook_entry_refine",
+  "lorebook_coherence",
+  "lorebook_keywords",
   "lorebook_generator",
   "lorebook_entry_generator",
 ] as const;

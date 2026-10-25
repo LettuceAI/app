@@ -1,7 +1,7 @@
-use lettuce_types::{RequestId, Revision};
 use lettuce_creation::{StagedLorebookPlanningRun, StagedLorebookRepositoryError};
 use lettuce_transfer::BackupApiOperationReceipt;
 use lettuce_types::TimestampMillis;
+use lettuce_types::{RequestId, Revision};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -173,7 +173,13 @@ impl ApiOperationTransaction<'_, '_> {
         entries: Vec<lettuce_context::PromptEntryDraft>,
         now: TimestampMillis,
     ) -> Result<lettuce_context::PromptDocument, lettuce_context::PromptRepositoryError> {
-        crate::catalog::prompt_adapter::create_user_draft_in(self.transaction, metadata, entries, now, Some(source))
+        crate::catalog::prompt_adapter::create_user_draft_in(
+            self.transaction,
+            metadata,
+            entries,
+            now,
+            Some(source),
+        )
     }
 
     pub fn import_prompt_file(
@@ -189,21 +195,32 @@ impl ApiOperationTransaction<'_, '_> {
         owner: lettuce_companions::SoulOwner,
         edit: lettuce_companions::SoulUserEdit,
         at: TimestampMillis,
-    ) -> Result<Option<lettuce_companions::SoulState>, lettuce_companions::SoulRepositoryError> {
+    ) -> Result<Option<lettuce_companions::SoulState>, lettuce_companions::SoulRepositoryError>
+    {
         let state = crate::companion::soul_adapter::get_in(self.transaction, owner)?;
         if let Some(state) = &state
             && let Some(change) = lettuce_companions::prepare_user_edit(state, edit, at)
                 .map_err(lettuce_companions::SoulRepositoryError::Invalid)?
         {
-            crate::companion::soul_adapter::apply_in(self.transaction, owner, lettuce_types::OperationRecordId::new(), change)?;
+            crate::companion::soul_adapter::apply_in(
+                self.transaction,
+                owner,
+                lettuce_types::OperationRecordId::new(),
+                change,
+            )?;
         }
         Ok(state)
     }
 
     pub fn upsert_companion_note(
-        &self, note: lettuce_companions::CompanionScheduledNote,
-    ) -> Result<lettuce_companions::CompanionScheduledNote, lettuce_companions::CompanionScheduledNoteError> {
-        if let Some(existing) = crate::memory::scheduled_note_adapter::load_in(self.transaction, note.id)?
+        &self,
+        note: lettuce_companions::CompanionScheduledNote,
+    ) -> Result<
+        lettuce_companions::CompanionScheduledNote,
+        lettuce_companions::CompanionScheduledNoteError,
+    > {
+        if let Some(existing) =
+            crate::memory::scheduled_note_adapter::load_in(self.transaction, note.id)?
             && existing.character_id != note.character_id
         {
             return Err(lettuce_companions::CompanionScheduledNoteError::NotFound);
@@ -211,25 +228,41 @@ impl ApiOperationTransaction<'_, '_> {
         crate::memory::scheduled_note_adapter::upsert_in(self.transaction, note)
     }
 
-    pub fn delete_companion_note(&self, id: uuid::Uuid) -> Result<(), lettuce_companions::CompanionScheduledNoteError> {
+    pub fn delete_companion_note(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<(), lettuce_companions::CompanionScheduledNoteError> {
         crate::memory::scheduled_note_adapter::delete_in(self.transaction, id)
     }
 
-    pub fn skip_memory_approval(&self, conversation_id: lettuce_types::ConversationId, branch_id: lettuce_types::ConversationBranchId, at: TimestampMillis) -> Result<(), ApiOperationError> {
+    pub fn skip_memory_approval(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        at: TimestampMillis,
+    ) -> Result<(), ApiOperationError> {
         self.transaction.execute("UPDATE dynamic_memory_pending_approvals SET pending=0, skipped=1, updated_at=?3 WHERE conversation_id=?1 AND branch_id=?2 AND pending=1",
             params![conversation_id.to_string(), branch_id.to_string(), at.get()]).map_err(storage)?;
         Ok(())
     }
 
     pub fn admit_soul_writer(
-        &self, spec: lettuce_jobs::JobSpec, mut run: lettuce_companions::CompanionSoulWriterRun,
+        &self,
+        spec: lettuce_jobs::JobSpec,
+        mut run: lettuce_companions::CompanionSoulWriterRun,
     ) -> Result<lettuce_jobs::JobSnapshot, ApiOperationError> {
         let key = format!("companion-soul-writer-{}", run.request_id);
         let (job, _, _) = crate::job_adapter::admit_job_detail_in(
-            self.transaction, spec, &key, &key, &serde_json::json!({"kind": "companion_soul_writer"}),
-        ).map_err(storage)?;
+            self.transaction,
+            spec,
+            &key,
+            &key,
+            &serde_json::json!({"kind": "companion_soul_writer"}),
+        )
+        .map_err(storage)?;
         run.job_id = job.id;
-        crate::companion::soul_writer_adapter::admit_run_in(self.transaction, run).map_err(storage)?;
+        crate::companion::soul_writer_adapter::admit_run_in(self.transaction, run)
+            .map_err(storage)?;
         Ok(job)
     }
 
@@ -681,6 +714,29 @@ impl ApiOperationTransaction<'_, '_> {
         writers: Vec<(lettuce_jobs::NewJob, crate::LorebookJobInput)>,
         now: TimestampMillis,
     ) -> Result<Vec<lettuce_types::JobId>, lettuce_jobs::StoreError> {
+        self.admit_staged_lorebook_writers(request_id, expected, inputs, writers, now, false)
+    }
+
+    pub fn admit_staged_lorebook_all(
+        &self,
+        request_id: RequestId,
+        expected: Revision,
+        inputs: lettuce_creation::StagedLorebookWriterBatchInputs,
+        writers: Vec<(lettuce_jobs::NewJob, crate::LorebookJobInput)>,
+        now: TimestampMillis,
+    ) -> Result<Vec<lettuce_types::JobId>, lettuce_jobs::StoreError> {
+        self.admit_staged_lorebook_writers(request_id, expected, inputs, writers, now, true)
+    }
+
+    fn admit_staged_lorebook_writers(
+        &self,
+        request_id: RequestId,
+        expected: Revision,
+        inputs: lettuce_creation::StagedLorebookWriterBatchInputs,
+        writers: Vec<(lettuce_jobs::NewJob, crate::LorebookJobInput)>,
+        now: TimestampMillis,
+        all: bool,
+    ) -> Result<Vec<lettuce_types::JobId>, lettuce_jobs::StoreError> {
         let current =
             crate::lorebook::staged_lorebook_adapter::load_in(self.transaction, request_id)
                 .map_err(|_| lettuce_jobs::StoreError::InvalidData)?
@@ -696,15 +752,15 @@ impl ApiOperationTransaction<'_, '_> {
         if current.project.revision != expected {
             return Err(lettuce_jobs::StoreError::IdempotencyConflict);
         }
-        let project =
-            crate::lorebook::staged_lorebook_adapter::start_staged_lorebook_draft_batch_in(
-                self.transaction,
-                request_id,
-                expected,
-                Some(inputs),
-                now,
-            )
-            .map_err(|_| lettuce_jobs::StoreError::IllegalTransition)?;
+        let project = crate::lorebook::staged_lorebook_adapter::start_staged_lorebook_drafts_in(
+            self.transaction,
+            request_id,
+            expected,
+            Some(inputs),
+            now,
+            all,
+        )
+        .map_err(|_| lettuce_jobs::StoreError::IllegalTransition)?;
         let plan_ids = project
             .project
             .drafts
@@ -747,6 +803,25 @@ impl ApiOperationTransaction<'_, '_> {
             &project,
         )?;
         Ok(project)
+    }
+    pub fn stop_staged_lorebook(
+        &self,
+        request_id: lettuce_types::RequestId,
+        expected: Revision,
+        now: TimestampMillis,
+    ) -> Result<lettuce_creation::StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::stop_staged_lorebook_in(
+            self.transaction,
+            request_id,
+            expected,
+            now,
+        )
+    }
+    pub fn lorebook_project_queued_plan_ids(
+        &self,
+        project: lettuce_types::CreationWorkflowId,
+    ) -> Result<Vec<lettuce_types::LorebookEntryId>, lettuce_jobs::StoreError> {
+        crate::job_adapter::queued_lorebook_writer_plans_in(self.transaction, project)
     }
     pub fn cancel_pending_lorebook_project(
         &self,

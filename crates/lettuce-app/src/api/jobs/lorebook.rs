@@ -53,6 +53,27 @@ impl JobHandler for LorebookHandler {
             || key.starts_with("lorebook-entry-generator-")
             || key.starts_with("lorebook-keyword-generator-")
         {
+            if key.starts_with("staged-lorebook-writer-")
+                || key.starts_with("staged-lorebook-refine-")
+            {
+                use lettuce_creation::{
+                    StagedLorebookRepository, StagedLorebookWriterRunRepository,
+                };
+                let id = request_id(context, job).ok()?;
+                let db = context.backend().database();
+                let run = db.load_staged_lorebook_writer_run(id).ok()?;
+                let project = db.load_staged_lorebook(run.project_request_id).ok()?;
+                let index = project
+                    .project
+                    .outline
+                    .iter()
+                    .position(|plan| plan.id == run.plan_id)?;
+                return Some(JobLane(format!(
+                    "lorebook-writer:{}:{}",
+                    run.project_id,
+                    index % lettuce_creation::STAGED_LOREBOOK_DRAFT_BATCH_SIZE
+                )));
+            }
             if is_planner_key(key) {
                 use lettuce_creation::StagedLorebookRepository;
                 let id = request_id(context, job).ok()?;

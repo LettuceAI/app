@@ -1018,6 +1018,33 @@ pub(crate) fn cancel_staged_lorebook_in(
     Ok(run)
 }
 
+pub(crate) fn stop_staged_lorebook_in(
+    transaction: &Transaction<'_>,
+    request_id: RequestId,
+    expected_revision: Revision,
+    now: TimestampMillis,
+) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+    let mut run =
+        load_in(transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+    if run.project.revision != expected_revision {
+        return Err(StagedLorebookRepositoryError::Conflict);
+    }
+    run.project = run
+        .project
+        .stop_work(now)
+        .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+    crate::job_adapter::cancel_creation_project_jobs(transaction, run.project.id, now)
+        .map_err(failure)?;
+    let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+    if transaction.execute(
+        "UPDATE creation_staged_lorebook_runs SET stage=?2, revision=?3, updated_at=?4, run_json=?5 WHERE request_id=?1 AND revision=?6",
+        params![request_id.to_string(), stage(run.project.stage), i64::try_from(run.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?],
+    ).map_err(failure)? != 1 {
+        return Err(StagedLorebookRepositoryError::Conflict);
+    }
+    Ok(run)
+}
+
 pub(crate) fn commit_staged_lorebook_in(
     transaction: &Transaction<'_>,
     request: lettuce_creation::StagedLorebookCommitRequest,
@@ -1368,6 +1395,24 @@ pub(crate) fn start_staged_lorebook_draft_batch_in(
     inputs: Option<lettuce_creation::StagedLorebookWriterBatchInputs>,
     now: TimestampMillis,
 ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+    start_staged_lorebook_drafts_in(
+        transaction,
+        request_id,
+        expected_revision,
+        inputs,
+        now,
+        false,
+    )
+}
+
+pub(crate) fn start_staged_lorebook_drafts_in(
+    transaction: &Transaction<'_>,
+    request_id: RequestId,
+    expected_revision: Revision,
+    inputs: Option<lettuce_creation::StagedLorebookWriterBatchInputs>,
+    now: TimestampMillis,
+    all: bool,
+) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
     let current =
         load_in(transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
     if !matches!(
@@ -1391,10 +1436,12 @@ pub(crate) fn start_staged_lorebook_draft_batch_in(
         return Err(StagedLorebookRepositoryError::Conflict);
     }
     let mut next = current;
-    next.project = next
-        .project
-        .start_draft_batch(now)
-        .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+    next.project = if all {
+        next.project.start_all_drafts(now)
+    } else {
+        next.project.start_draft_batch(now)
+    }
+    .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
     next.writer_batch_inputs = inputs;
     if next.project.draft_batch.is_none() {
         next.writer_batch_inputs = None;
