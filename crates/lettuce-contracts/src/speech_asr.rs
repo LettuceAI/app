@@ -43,6 +43,7 @@ pub struct WhisperInstalledModel {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct WhisperInstalledModels {
+    pub gpu_supported: bool,
     pub models: Vec<WhisperInstalledModel>,
 }
 

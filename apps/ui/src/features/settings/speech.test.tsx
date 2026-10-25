@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AsrCorrectionView, AsrVocabularyView, AsrVoiceExampleView, JobView, WhisperInstalledModel } from "@/api/generated/bindings";
+import type { AsrCorrectionView, AsrVocabularyView, AsrVoiceExampleView, JobView, WhisperInstalledModel, WhisperInstalledModels } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -18,12 +18,12 @@ const word: AsrVocabularyView = { id: "word1", term: "LettuceAI", category: "Nam
 const correction: AsrCorrectionView = { id: "correction1", wrong: "let us", correct: "LettuceAI", language: "en", scope: "character", confidence: 0.85, use_count: 9, accepted_count: 4, rejected_count: 1, seen_count: 7, last_seen_at: 9, user_approved: true, created_at: 1, updated_at: 1 };
 const example: AsrVoiceExampleView = { id: "example1", audio, expected_text: "Hello LettuceAI", whisper_output: "Hello let us", language: "en", scope: "conversation", vocabulary_term_id: "word1", correction_id: "correction1", created_at: 1, updated_at: 1 };
 const job = (patch: Partial<JobView> = {}): JobView => ({ id: "job1", kind: "speech_transcribe", subject: { kind: "speech_request", id: "request1" }, subject_detail: null, state: "succeeded", progress: { current: 0, total: null, unit: "items", label_code: null, bytes_per_second: null }, created_at: 1, updated_at: 2, failure: null, result: { type: "transcription", transcription: { request_id: "request1", audio: null, model_id: "base", raw_text: "Hello let us", text: "Hello LettuceAI", detected_language: "en", segments: [{ start_ms: 0, end_ms: 2000, text: "Hello let us" }], applied_corrections: [{ correction_id: "correction1", wrong: "let us", correct: "LettuceAI", matched_text: "let us" }] } }, ...patch });
-async function mount(options: { calls?: MockCallHandlers; streams?: MockStreamHandlers; tab?: string; phone?: boolean; mic?: string; path?: string } = {}) {
+async function mount(options: { calls?: MockCallHandlers; streams?: MockStreamHandlers; tab?: string; phone?: boolean; gpuSupported?: boolean; mic?: string; path?: string } = {}) {
   let ui_state = { onboarding: { completed: true }, ...(options.mic ? { speechMicrophoneId: options.mic } : {}) };
   const transport = createMockTransport({ calls: {
     appStatus: () => ok({ ...mockAppStatus, platform: options.phone === false ? "other" : "android", ui_state }),
     appUiStateUpdate: (request) => { ui_state = { ...ui_state, ...request.patch }; return ok({ state: ui_state }); },
-    whisperModelsList: () => ok({ models }),
+    whisperModelsList: () => ok({ models, gpu_supported: options.gpuSupported ?? false }),
     whisperCatalog: () => ok({ models: ["base", "small"].map((id) => ({ ...models[0]!, id, filename: `ggml-${id}.bin`, recommended: true, recommended_for_mobile: true, recommended_for_desktop: true, installed: id === "base" })) }),
     asrVocabularyList: () => ok([word]), asrCorrectionsList: () => ok([correction]), asrIgnoredSuggestionsList: () => ok([]), asrVoiceExamplesList: () => ok([example]), asrPromptPreview: () => ok("LettuceAI."),
     microphoneDevices: () => ok({ supported: true, devices: [{ id: "USB mic", label: "USB mic", selectable: true }] }),
@@ -41,6 +41,41 @@ const drawer = () => within(screen.getAllByRole("dialog").at(-1)!);
 const click = async (name: string | RegExp) => fireEvent.click(await screen.findByRole("button", { name }));
 
 describe("speech recognition settings", () => {
+  it("locks CPU on without a GPU backend and forces CPU for preload and test transcription", async () => {
+    const preload = vi.fn<NonNullable<MockCallHandlers["whisperPreload"]>>(() => ok(null));
+    const transcribe = vi.fn<NonNullable<MockCallHandlers["transcribeFile"]>>(() => ok({ job_id: "job1" }));
+    await mount({ phone: false, calls: { whisperPreload: preload, transcribeFile: transcribe } });
+    const cpu = await screen.findByRole("switch", { name: "Use CPU" });
+    expect(cpu.getAttribute("aria-checked")).toBe("true");
+    expect(cpu.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("switch", { name: "Use GPU" })).toBeNull();
+    await click("Load");
+    await waitFor(() => expect(preload).toHaveBeenCalledWith({ model_id: "base", run: expect.objectContaining({ use_gpu: false, force_cpu: true }) }));
+    await click("Record");
+    await click("Stop");
+    expect(await screen.findByText("Hello LettuceAI")).toBeTruthy();
+    expect(transcribe.mock.calls[0]?.[0].options?.run).toMatchObject({ use_gpu: false, force_cpu: true });
+  });
+
+  it("uses Whisper GPU support even when the general build label is normal", async () => {
+    const preload = vi.fn<NonNullable<MockCallHandlers["whisperPreload"]>>(() => ok(null));
+    await mount({ gpuSupported: true, calls: { whisperPreload: preload } });
+    expect((await screen.findByRole("switch", { name: "Use GPU" })).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("switch", { name: "Use CPU" })).toBeNull();
+    await click("Load");
+    await waitFor(() => expect(preload).toHaveBeenCalledWith({ model_id: "base", run: expect.objectContaining({ use_gpu: true, force_cpu: false }) }));
+  });
+
+  it.each([false, true])("uses the declared GPU capability (%s) when transcribing a saved example", async (gpuSupported) => {
+    const transcribe = vi.fn<NonNullable<MockCallHandlers["transcribeFile"]>>(() => ok({ job_id: "job1" }));
+    await mount({ tab: "examples", gpuSupported, calls: { transcribeFile: transcribe } });
+    await click("Edit");
+    await screen.findByRole("dialog");
+    fireEvent.click(drawer().getByRole("button", { name: "Transcribe" }));
+    await waitFor(() => expect(transcribe).toHaveBeenCalled());
+    expect(transcribe.mock.calls[0]?.[0].options?.run).toMatchObject({ use_gpu: gpuSupported, force_cpu: !gpuSupported });
+  });
+
   it("loads legacy scopes and priority and uses the backend prompt preview", async () => {
     const list = vi.fn<NonNullable<MockCallHandlers["asrVocabularyList"]>>(() => ok([word]));
     const preview = vi.fn(() => ok("Backend-selected prompt."));
@@ -100,7 +135,7 @@ describe("speech recognition settings", () => {
     const start = vi.fn<NonNullable<MockCallHandlers["audioCaptureStart"]>>(() => ok({ capture_id: "capture1" }));
     const stop = vi.fn<NonNullable<MockCallHandlers["audioCaptureStop"]>>(() => ok(audio));
     const transcribe = vi.fn<NonNullable<MockCallHandlers["transcribeFile"]>>(() => ok({ job_id: "job1" }));
-    await mount({ mic: "USB mic", calls: { audioCaptureStart: start, audioCaptureStop: stop, transcribeFile: transcribe } });
+    await mount({ mic: "USB mic", gpuSupported: true, calls: { audioCaptureStart: start, audioCaptureStop: stop, transcribeFile: transcribe } });
     fireEvent.click(await screen.findByRole("switch", { name: "Use GPU" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Extra words" }), { target: { value: "LettuceAI" } });
     await click("Record");
@@ -211,17 +246,17 @@ describe("speech recognition settings", () => {
   });
 
   it("shows a model skeleton while the installed inventory is loading", async () => {
-    let release!: (value: ReturnType<typeof ok<{ models: WhisperInstalledModel[] }>>) => void;
+    let release!: (value: ReturnType<typeof ok<WhisperInstalledModels>>) => void;
     await mount({ calls: { whisperModelsList: () => new Promise((resolve) => { release = resolve; }) } });
     expect(screen.getByRole("status", { name: "Loading speech recognition settings" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^base/ })).toBeNull();
-    await act(async () => { release(ok({ models })); });
+    await act(async () => { release(ok({ models, gpu_supported: false })); });
     expect(await screen.findByRole("button", { name: /^base/ })).toBeTruthy();
   });
 
   it("retries a failed model list", async () => {
     let failing = true;
-    await mount({ calls: { whisperModelsList: () => failing ? fail() : ok({ models }) } });
+    await mount({ calls: { whisperModelsList: () => failing ? fail() : ok({ models, gpu_supported: false }) } });
     expect(await screen.findByText(/available right now/)).toBeTruthy();
     failing = false;
     await click("Try again");

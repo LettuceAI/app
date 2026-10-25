@@ -196,6 +196,7 @@ pub async fn whisper_models_list(
                 .filter(|chosen| models.iter().any(|model| &model.model_id == chosen))
                 .or_else(|| models.first().map(|model| model.model_id.clone()));
             Ok(dto::WhisperInstalledModels {
+                gpu_supported: cfg!(any(feature = "asr-cuda", feature = "asr-vulkan", feature = "asr-metal", feature = "asr-rocm")),
                 models: models
                     .into_iter()
                     .map(|manifest| dto::WhisperInstalledModel {

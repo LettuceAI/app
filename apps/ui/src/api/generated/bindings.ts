@@ -8989,6 +8989,7 @@ export type WhisperInstalledModel = {
 };
 
 export type WhisperInstalledModels = {
+	gpu_supported: boolean,
 	models: WhisperInstalledModel[],
 };
 

@@ -11,24 +11,25 @@ import { microphoneOptions, recordingTime, modelName, runOptions, useSpeechActio
 import { useRecording } from "./use-recording";
 import { RecordingControls } from "./RecordingControls";
 
-export function ModelTab({ api, phone, active, gpu, keepLoaded, onGpu, onKeepLoaded, deviceId, devices, onDevice, onChoose, onMicrophone, onSaveRecording, downloads }: {
-  api: ApiClient; phone: boolean; active: WhisperInstalledModel | null; gpu: boolean; keepLoaded: boolean; onGpu: (value: boolean) => void; onKeepLoaded: (value: boolean) => void; deviceId: string | null; devices: MicrophoneDevices | undefined; onDevice: (value: string | null) => void; onChoose: () => void; onMicrophone: () => void; onSaveRecording: (value: { audio: AssetRef; whisperOutput: string | null }) => void; downloads: React.ReactNode;
+export function ModelTab({ api, phone, active, gpu, gpuSupported, keepLoaded, onGpu, onKeepLoaded, deviceId, devices, onDevice, onChoose, onMicrophone, onSaveRecording, downloads }: {
+  api: ApiClient; phone: boolean; active: WhisperInstalledModel | null; gpu: boolean; gpuSupported: boolean; keepLoaded: boolean; onGpu: (value: boolean) => void; onKeepLoaded: (value: boolean) => void; deviceId: string | null; devices: MicrophoneDevices | undefined; onDevice: (value: string | null) => void; onChoose: () => void; onMicrophone: () => void; onSaveRecording: (value: { audio: AssetRef; whisperOutput: string | null }) => void; downloads: React.ReactNode;
 }) {
   const { t } = useTranslation("settings", { keyPrefix: "speech" });
   const action = useSpeechAction();
   const recording = useRecording(api, deviceId);
   const [language, setLanguage] = useState("auto");
   const [extra, setExtra] = useState("");
-  const options: TranscribeOptions = { language: language === "auto" ? null : language, scopes: ["conversation", "global"], initial_prompt: extra.trim() || null, translate: false, detect_language: false, threads: null, run: runOptions(gpu), keep_model_loaded: keepLoaded };
+  const useGpu = gpuSupported && gpu;
+  const options: TranscribeOptions = { language: language === "auto" ? null : language, scopes: ["conversation", "global"], initial_prompt: extra.trim() || null, translate: false, detect_language: false, threads: null, run: runOptions(useGpu), keep_model_loaded: keepLoaded };
   const microphones = microphoneOptions(devices, deviceId, t("defaultMic"), t("micUnavailable"), (name) => t("micAmbiguous", { name }));
   const busy = recording.phase !== "idle" || action.isPending;
   const model = <section className="space-y-2"><ListGroup label={t("model")}><ListRowButton icon={<AudioLines size={icon.lg} />} tone={active ? "accent" : "warning"} title={active ? modelName(active.id) : t("noModel")} description={active ? <span>{t("metadata", { left: fileSize(active.size_bytes), right: t(active.english_only ? "englishOnly" : "multilingual") })}{!phone && <span className="block font-mono text-xs">{active.filename}</span>}</span> : t("noModelBody")} trailing={phone ? undefined : <Text variant="hint">{t(active ? "change" : "choose")}</Text>} onClick={onChoose} /></ListGroup>{downloads}<Text variant="hint" className="px-1">{t("privacy")}</Text></section>;
   const runtime = <section className="space-y-2"><ListGroup label={t("runtime")}>
-    <ListRow icon={<Zap size={icon.lg} />} title={t("gpu")} description={t("gpuBody")} trailing={<Switch checked={gpu} onChange={onGpu} disabled={busy} aria-label={t("gpu")} />} />
+    {gpuSupported ? <ListRow icon={<Zap size={icon.lg} />} title={t("gpu")} description={t("gpuBody")} trailing={<Switch checked={gpu} onChange={onGpu} disabled={busy} aria-label={t("gpu")} />} /> : <ListRow icon={<Cpu size={icon.lg} />} title={t("cpu")} description={t("cpuBody")} trailing={<Switch checked disabled onChange={() => onGpu(false)} aria-label={t("cpu")} />} />}
     <ListRow icon={<Cpu size={icon.lg} />} title={t("keepLoaded")} description={t("keepLoadedBody")} trailing={<Switch checked={keepLoaded} onChange={onKeepLoaded} disabled={busy} aria-label={t("keepLoaded")} />} />
-    <ListRow icon={<HardDrive size={icon.lg} />} title={t("loadedModel")} description={t(!active ? "pickFirst" : active.loaded ? "loadedBody" : "notLoadedBody")} trailing={<Button size="sm" className="shrink-0" variant={active?.loaded ? "ghost" : "tonal"} disabled={!active || busy} loading={action.isPending} onClick={() => action.mutate(() => active?.loaded ? api.call("whisperClearCache") : api.call("whisperPreload", { model_id: active?.id ?? null, run: runOptions(gpu) }))}>{t(active?.loaded ? "unload" : "load")}</Button>} />
+    <ListRow icon={<HardDrive size={icon.lg} />} title={t("loadedModel")} description={t(!active ? "pickFirst" : active.loaded ? "loadedBody" : "notLoadedBody")} trailing={<Button size="sm" className="shrink-0" variant={active?.loaded ? "ghost" : "tonal"} disabled={!active || busy} loading={action.isPending} onClick={() => action.mutate(() => active?.loaded ? api.call("whisperClearCache") : api.call("whisperPreload", { model_id: active?.id ?? null, run: runOptions(useGpu) }))}>{t(active?.loaded ? "unload" : "load")}</Button>} />
     {phone ? <ListRowButton icon={<Mic size={icon.lg} />} title={t("microphone")} description={microphones.find((item) => item.value === (deviceId ?? "default"))?.label} onClick={onMicrophone} /> : <ListRow icon={<Mic size={icon.lg} />} title={t("microphone")} description={t("microphoneBody")} trailing={<Field label={<span className="sr-only">{t("microphone")}</span>} className="w-52 shrink-0 space-y-0"><SelectMenu options={microphones} value={deviceId ?? "default"} disabled={busy || !devices?.supported} onChange={(value) => { if (value) onDevice(value === "default" ? null : value); }} /></Field>} />}
-  </ListGroup><Text variant="hint" className="px-1">{t("runtimeHint")}</Text>{action.isError && <FailureState error={action.error} size="sm" />}</section>;
+  </ListGroup><Text variant="hint" className="px-1">{t(gpuSupported ? "runtimeHint" : "cpuRuntimeHint")}</Text>{action.isError && <FailureState error={action.error} size="sm" />}</section>;
   const result = recording.result;
   const transcribe = () => { if (recording.audio && active) void recording.transcribe(recording.audio, active.id, options); };
   const test = <ListGroup label={t("tryIt")}><div className="space-y-4 p-4">
