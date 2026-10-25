@@ -314,6 +314,12 @@ fn apply(
             "local_runtime"
         }
         dto::SettingsPatch::UiPreferences { changes } => {
+            if changes.iter().any(|change| matches!(change, dto::UiPreferenceChange::ChatAppearance { .. }))
+                && !settings.ui_preferences.0.contains_key("appearanceInheritanceBaseline")
+            {
+                let baseline = settings.ui_preferences.0.get("chatAppearance").cloned().unwrap_or_else(|| serde_json::json!({}));
+                settings.ui_preferences.0.insert("appearanceInheritanceBaseline".to_owned(), baseline);
+            }
             for mut change in changes {
                 if let dto::UiPreferenceChange::LlamaSamplerPresets {
                     value: Some(presets),

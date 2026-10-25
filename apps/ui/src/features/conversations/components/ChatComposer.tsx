@@ -1,7 +1,15 @@
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Banner, Button, Composer, toast, useCompactLayout, type ComposerAttachment } from "@lettuceai/crisp";
+import {
+  Banner,
+  Button,
+  Composer,
+  toast,
+  useCompactLayout,
+  type ComposerAttachment,
+} from "@lettuceai/crisp";
+import { useChatLook } from "@/entities/preferences";
 import type { ApiClient, ApiFailure } from "@/api/client";
 import { dictationErrorKey, useDictation } from "../data/use-dictation";
 import type { MemoryBlockedReason, RequiredModel } from "@/api/generated/bindings";
@@ -12,11 +20,25 @@ export interface Blockers {
   memoryBlocked: MemoryBlockedReason | null;
 }
 
-export function ChatBanners({ blockers, swap, onEndSwap, onRetryMemory }: { blockers: Blockers; swap: boolean; onEndSwap: () => void; onRetryMemory: () => void }) {
+export function ChatBanners({
+  blockers,
+  swap,
+  onEndSwap,
+  onRetryMemory,
+}: {
+  blockers: Blockers;
+  swap: boolean;
+  onEndSwap: () => void;
+  onRetryMemory: () => void;
+}) {
   const { t } = useTranslation("conversations");
   const navigate = useNavigate();
   const models = (
-    <Button variant="secondary" size="sm" onClick={() => void navigate({ to: "/settings/$section", params: { section: "models" } })}>
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => void navigate({ to: "/settings/$section", params: { section: "models" } })}
+    >
       {t("banner.openModels")}
     </Button>
   );
@@ -25,18 +47,38 @@ export function ChatBanners({ blockers, swap, onEndSwap, onRetryMemory }: { bloc
     <div className="mb-2 space-y-2 empty:hidden">
       {named.length > 0 ? (
         <Banner tone="warning" action={models}>
-          {named.length === 1 ? t("banner.modelNamed", { model: named[0] }) : t("banner.modelsMissing", { models: named.join(", ") })}
+          {named.length === 1
+            ? t("banner.modelNamed", { model: named[0] })
+            : t("banner.modelsMissing", { models: named.join(", ") })}
         </Banner>
       ) : (
-        blockers.modelRequired && <Banner tone="warning" action={models}>{t("banner.modelRequired")}</Banner>
+        blockers.modelRequired && (
+          <Banner tone="warning" action={models}>
+            {t("banner.modelRequired")}
+          </Banner>
+        )
       )}
       {swap && (
-        <Banner tone="info" action={<Button variant="secondary" size="sm" onClick={onEndSwap}>{t("banner.endSwap")}</Button>}>
+        <Banner
+          tone="info"
+          action={
+            <Button variant="secondary" size="sm" onClick={onEndSwap}>
+              {t("banner.endSwap")}
+            </Button>
+          }
+        >
           {t("banner.swapActive")}
         </Banner>
       )}
       {blockers.memoryBlocked && (
-        <Banner tone="warning" action={<Button variant="secondary" size="sm" onClick={onRetryMemory}>{t("banner.memoryRetry")}</Button>}>
+        <Banner
+          tone="warning"
+          action={
+            <Button variant="secondary" size="sm" onClick={onRetryMemory}>
+              {t("banner.memoryRetry")}
+            </Button>
+          }
+        >
           {t("banner.memoryBlocked")}
         </Banner>
       )}
@@ -66,7 +108,21 @@ export interface ChatComposerProps {
   topSlot?: ReactNode;
 }
 
-export function ChatComposer({ api, conversationId, handle, name, sending, disabled, canContinue, onSend, onContinue, onStop, onAttach, topSlot }: ChatComposerProps) {
+export function ChatComposer({
+  api,
+  conversationId,
+  handle,
+  name,
+  sending,
+  disabled,
+  canContinue,
+  onSend,
+  onContinue,
+  onStop,
+  onAttach,
+  topSlot,
+}: ChatComposerProps) {
+  const look = useChatLook();
   const { t } = useTranslation("conversations");
   const { t: common } = useTranslation("common");
   const phone = useCompactLayout();
@@ -77,12 +133,17 @@ export function ChatComposer({ api, conversationId, handle, name, sending, disab
     draftRef.current = draft;
   });
 
-  useImperativeHandle(handle, () => ({
-    read: () => draftRef.current,
-    replace: (text) => setDraft(text),
-    attach: (attachment) => setAttachments((current) => [...current, attachment]),
-    append: (text) => setDraft((current) => (current.trimEnd() ? `${current.trimEnd()} ${text}` : text)),
-  }), []);
+  useImperativeHandle(
+    handle,
+    () => ({
+      read: () => draftRef.current,
+      replace: (text) => setDraft(text),
+      attach: (attachment) => setAttachments((current) => [...current, attachment]),
+      append: (text) =>
+        setDraft((current) => (current.trimEnd() ? `${current.trimEnd()} ${text}` : text)),
+    }),
+    [],
+  );
 
   const dictation = useDictation(api, conversationId, {
     onText: (text) => setDraft(text.trim()),
@@ -108,6 +169,8 @@ export function ChatComposer({ api, conversationId, handle, name, sending, disab
 
   return (
     <Composer
+      fontSize={look.composerFontSize}
+      {...(look.footerInputColorHex ? { color: look.footerInputColorHex } : {})}
       topSlot={topSlot}
       value={draft}
       onChange={setDraft}
@@ -115,7 +178,9 @@ export function ChatComposer({ api, conversationId, handle, name, sending, disab
       onStop={onStop}
       onAttach={onAttach}
       attachments={attachments}
-      onRemoveAttachment={(id) => setAttachments((current) => current.filter((attachment) => attachment.id !== id))}
+      onRemoveAttachment={(id) =>
+        setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+      }
       {...(canContinue ? { onContinue } : {})}
       mic={{
         active: dictation.phase !== "idle",

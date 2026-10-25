@@ -2,10 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
 import { ApiFailure } from "@/api/client";
-import type { GenerationEvent, RuntimeNoticeCode } from "@/api/generated/bindings";
+import type {
+  AppStatus,
+  GenerationEvent,
+  RuntimeNoticeCode,
+  SettingsUiAccessibilitySettingsHapticIntensity,
+} from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { GenerationStore, type GenerationFailure } from "./generation-store";
 import type { TimelinePage } from "./queries";
+import { object, playSound, usePreferences } from "@/entities/preferences";
+import { typingHaptic } from "@/api/haptics";
 
 export interface GenerationHooks {
   onError: (failure: ApiFailure) => void;
@@ -24,12 +31,20 @@ interface Run {
   controller: AbortController;
 }
 
-function untilShown(queryClient: QueryClient, conversationId: string, messageId: string, since: number): Promise<void> {
+function untilShown(
+  queryClient: QueryClient,
+  conversationId: string,
+  messageId: string,
+  since: number,
+): Promise<void> {
   const key = queryKeys.conversations.messages(conversationId);
   const shown = () => {
     const state = queryClient.getQueryState<InfiniteData<TimelinePage, string | null>>(key);
     if (!state?.data || state.status === "error") return true;
-    return state.dataUpdatedAt >= since && state.data.pages.some((entry) => entry.page.items.some((message) => message.id === messageId));
+    return (
+      state.dataUpdatedAt >= since &&
+      state.data.pages.some((entry) => entry.page.items.some((message) => message.id === messageId))
+    );
   };
   if (shown()) return Promise.resolve();
   return new Promise((resolve) => {
@@ -46,18 +61,29 @@ function requestStop(run: Run) {
 }
 
 export function currentRevision(queryClient: QueryClient, conversationId: string): number {
-  const data = queryClient.getQueryData<InfiniteData<TimelinePage, string | null>>(queryKeys.conversations.messages(conversationId));
+  const data = queryClient.getQueryData<InfiniteData<TimelinePage, string | null>>(
+    queryKeys.conversations.messages(conversationId),
+  );
   return data?.pages[0]?.view?.revision ?? 0;
 }
 
 /** Drops the cached older pages so the next refetch walks only the newest one. */
 export function trimTimeline(queryClient: QueryClient, conversationId: string): void {
-  queryClient.setQueryData<InfiniteData<TimelinePage, string | null>>(queryKeys.conversations.messages(conversationId), (data) =>
-    data && data.pages.length > 1 ? { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) } : data,
+  queryClient.setQueryData<InfiniteData<TimelinePage, string | null>>(
+    queryKeys.conversations.messages(conversationId),
+    (data) =>
+      data && data.pages.length > 1
+        ? { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) }
+        : data,
   );
 }
 
 export function useGeneration(api: ApiClient, conversationId: string, hooks: GenerationHooks) {
+  const preferences = usePreferences();
+  const preferencesRef = useRef(preferences.value);
+  useEffect(() => {
+    preferencesRef.current = preferences.value;
+  }, [preferences.value]);
   const queryClient = useQueryClient();
   const [store] = useState(() => new GenerationStore());
   const hooksRef = useRef(hooks);
@@ -94,7 +120,18 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
       start: (onEvent: (event: GenerationEvent) => void, signal: AbortSignal) => Promise<Accepted>,
     ): Promise<boolean> => {
       if (store.getMeta().active) return false;
-      const current: Run = { settled: false, stopRequested: false, controller: new AbortController() };
+      const current: Run = {
+        settled: false,
+        stopRequested: false,
+        controller: new AbortController(),
+      };
+      let lastHaptic = -Infinity;
+      let feedbackFailed = false;
+      const feedbackError = (error: unknown) => {
+        if (feedbackFailed) return;
+        feedbackFailed = true;
+        hooksRef.current.onError(ApiFailure.fromRejection(error));
+      };
       runs.current.add(current);
       if (hooksRef.current.isStuck()) trimTimeline(queryClient, conversationId);
       store.begin(targetId, userText);
@@ -115,10 +152,21 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
       const settle = async (event: GenerationEvent) => {
         if (current.settled) return;
         current.settled = true;
+        void playSound(
+          event.type === "completed" ? "success" : "failure",
+          preferencesRef.current,
+        ).catch(feedbackError);
         const hadText = store.getText().text.length > 0;
-        const refetch = () => queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+        const refetch = () =>
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.conversations.detail(conversationId),
+          });
         if (event.type === "failed") {
-          const failure = { code: event.code, turnId: event.turn_id, targetId: store.getMeta().targetId };
+          const failure = {
+            code: event.code,
+            turnId: event.turn_id,
+            targetId: store.getMeta().targetId,
+          };
           await refetch();
           store.fail(failure);
         } else if (event.type === "cancelled" && !hadText) {
@@ -143,14 +191,37 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
             learnTurn(event.turn_id);
             break;
           case "model_loading":
-            store.setLoading({ model: event.model_name, percent: event.percent, status: event.status });
+            store.setLoading({
+              model: event.model_name,
+              percent: event.percent,
+              status: event.status,
+            });
             break;
           case "notice":
             hooksRef.current.onNotice(event.code);
             break;
-          case "delta":
+          case "delta": {
+            const previousLength = store.getText().text.length;
             store.appendDelta(event.text, event.reasoning);
+            if (store.getText().text.length > previousLength && !feedbackFailed) {
+              const accessibility = object(preferencesRef.current.accessibility);
+              const platform = queryClient.getQueryData<AppStatus>(
+                queryKeys.app.status(),
+              )?.platform;
+              const now = performance.now();
+              if (
+                accessibility.haptics === true &&
+                (platform === "android" || platform === "ios") &&
+                now - lastHaptic >= 60
+              ) {
+                lastHaptic = now;
+                const intensity = (accessibility.hapticIntensity ??
+                  "light") as SettingsUiAccessibilitySettingsHapticIntensity;
+                void typingHaptic(intensity, platform).catch(feedbackError);
+              }
+            }
             break;
+          }
           case "completed":
           case "failed":
           case "cancelled":
@@ -163,6 +234,8 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
 
       try {
         const accepted = await start(onEvent, current.controller.signal);
+        if (accepted.user_message_id)
+          void playSound("send", preferencesRef.current).catch(feedbackError);
         if (!current.settled) {
           learnTurn(accepted.turn_id);
           if (accepted.user_message_id) store.setUserMessage(accepted.user_message_id);
@@ -170,12 +243,15 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
         return true;
       } catch (error) {
         const failure = ApiFailure.fromRejection(error);
+        void playSound("failure", preferencesRef.current).catch(feedbackError);
         current.settled = true;
         finish();
         if (restore) store.fail(restore);
         else store.clear();
         if (failure.code === "conflict") {
-          await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.conversations.detail(conversationId),
+          });
         }
         hooksRef.current.onError(failure);
         return false;
@@ -189,7 +265,16 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
       run(null, text, null, (onEvent, signal) =>
         api.stream(
           "conversationSend",
-          [{ conversation_id: conversationId, expected_revision: currentRevision(queryClient, conversationId), text, media, swap_places: swapPlaces, client_operation_id: crypto.randomUUID() }],
+          [
+            {
+              conversation_id: conversationId,
+              expected_revision: currentRevision(queryClient, conversationId),
+              text,
+              media,
+              swap_places: swapPlaces,
+              client_operation_id: crypto.randomUUID(),
+            },
+          ],
           onEvent,
           { signal },
         ),
@@ -248,7 +333,13 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
     return run(failure.targetId, null, failure, (onEvent, signal) =>
       api.stream(
         "conversationRetry",
-        [{ conversation_id: conversationId, turn_id: failure.turnId, client_operation_id: crypto.randomUUID() }],
+        [
+          {
+            conversation_id: conversationId,
+            turn_id: failure.turnId,
+            client_operation_id: crypto.randomUUID(),
+          },
+        ],
         onEvent,
         { signal },
       ),

@@ -487,6 +487,8 @@ pub struct SettingsUiChatAppearanceSettingsChatWidgetSlots {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum SettingsUiChatAppearanceSettingsUserBubbleColor {
+    #[serde(rename = "custom")]
+    Custom,
     #[serde(rename = "accent")]
     Accent,
     #[serde(rename = "info")]
@@ -500,6 +502,8 @@ pub enum SettingsUiChatAppearanceSettingsUserBubbleColor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum SettingsUiChatAppearanceSettingsAssistantBubbleColor {
+    #[serde(rename = "custom")]
+    Custom,
     #[serde(rename = "neutral")]
     Neutral,
     #[serde(rename = "accent")]
@@ -545,6 +549,9 @@ pub struct SettingsUiChatAppearanceSettings {
     )]
     #[cfg_attr(feature = "specta", specta(type = SettingsUiChatAppearanceSettingsFontSize, optional))]
     pub font_size: Option<SettingsUiChatAppearanceSettingsFontSize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "optional_choice")]
+    #[cfg_attr(feature = "specta", specta(type = SettingsUiChatAppearanceSettingsFontSize, optional))]
+    pub composer_font_size: Option<SettingsUiChatAppearanceSettingsFontSize>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1053,6 +1060,14 @@ pub enum SettingsUiNavEdge {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "key", deny_unknown_fields)]
 pub enum UiPreferenceChange {
+    #[serde(rename = "themePreset")]
+    ThemePreset { value: Option<String> },
+    #[serde(rename = "themeRadius")]
+    ThemeRadius { value: Option<SettingsUiThemeRadius> },
+    #[serde(rename = "themeDensity")]
+    ThemeDensity { value: Option<SettingsUiThemeDensity> },
+    #[serde(rename = "beetrootRain")]
+    BeetrootRain { value: Option<bool> },
     #[serde(rename = "theme")]
     Theme { value: Option<SettingsUiTheme> },
     #[serde(rename = "settingsCardOpacity")]
@@ -1106,6 +1121,16 @@ pub enum UiPreferenceChange {
         value: Option<Vec<SettingsUiLlamaSamplerPreset>>,
     },
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsUiThemeRadius { Sharp, Default, Round }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsUiThemeDensity { Default, Compact }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

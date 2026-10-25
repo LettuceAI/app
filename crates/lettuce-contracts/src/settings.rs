@@ -3,6 +3,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
+pub struct SettingsThemeDocument {
+    pub format_version: u32,
+    pub name: String,
+    pub colors: std::collections::BTreeMap<String, String>,
+    pub radius: Option<crate::SettingsUiThemeRadius>,
+    pub density: Option<crate::SettingsUiThemeDensity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingsThemeExportRequest {
+    pub document: SettingsThemeDocument,
+    pub target: Option<crate::FileTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
 pub struct SettingsGlobalSettings {
     pub pure_mode: SettingsPureMode,
     pub analytics_enabled: bool,

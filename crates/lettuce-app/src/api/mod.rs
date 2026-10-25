@@ -8,6 +8,7 @@ mod app;
 mod library;
 pub use app::content_filter::{content_filter_clear, content_filter_log};
 pub use app::settings::{settings_get, settings_sampler_defaults_update, settings_update};
+pub use app::themes::{settings_theme_read, settings_theme_export};
 pub use library::delete::{character_delete, group_delete, persona_delete};
 pub(crate) mod companion;
 mod context;

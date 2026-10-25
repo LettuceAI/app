@@ -262,6 +262,7 @@ pub(in crate::api) fn prepare(
         primary_text_color: card.appearance.text_colors.primary.clone(),
         secondary_text_color: card.appearance.text_colors.secondary.clone(),
         chat_appearance: chat.clone().into_native(slots),
+        chat_appearance_overrides: card.appearance.chat_overrides.clone(),
     };
     let prompt = |value: &Option<String>| -> Result<Option<PromptDocumentId>, ApiError> {
         value
@@ -666,6 +667,7 @@ pub(super) fn export(
                 secondary: presentation.secondary_text_color.clone(),
             },
             chat,
+            chat_overrides: presentation.chat_appearance_overrides.clone(),
         },
         scenes,
         default_scene,

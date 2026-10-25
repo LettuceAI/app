@@ -1065,6 +1065,9 @@ pub struct ConversationSettingsGetRequest {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationSettingsView {
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Unknown, optional))]
+    pub appearance: serde_json::Value,
     pub conversation_id: String,
     pub kind: ConversationKind,
     pub title: String,

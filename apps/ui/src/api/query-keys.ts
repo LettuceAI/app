@@ -8,8 +8,10 @@ export const queryKeys = {
   conversations: {
     all: ["conversations"] as const,
     lists: () => [...queryKeys.conversations.all, "list"] as const,
-    detail: (conversationId: string) => [...queryKeys.conversations.all, "detail", conversationId] as const,
-    messages: (conversationId: string) => [...queryKeys.conversations.detail(conversationId), "messages"] as const,
+    detail: (conversationId: string) =>
+      [...queryKeys.conversations.all, "detail", conversationId] as const,
+    messages: (conversationId: string) =>
+      [...queryKeys.conversations.detail(conversationId), "messages"] as const,
   },
   memory: {
     all: ["memory"] as const,
@@ -18,7 +20,8 @@ export const queryKeys = {
   characters: {
     all: ["characters"] as const,
     list: () => [...queryKeys.characters.all, "list"] as const,
-    draftDefault: (mode: LibraryInteractionMode = "roleplay") => [...queryKeys.characters.all, "draft-default", mode] as const,
+    draftDefault: (mode: LibraryInteractionMode = "roleplay") =>
+      [...queryKeys.characters.all, "draft-default", mode] as const,
   },
   prompts: {
     all: ["prompts"] as const,
@@ -34,7 +37,8 @@ export const queryKeys = {
   media: {
     all: ["media"] as const,
     library: () => [...queryKeys.media.all, "library"] as const,
-    avatarGradient: (assetId: string) => [...queryKeys.media.all, "avatar-gradient", assetId] as const,
+    avatarGradient: (assetId: string) =>
+      [...queryKeys.media.all, "avatar-gradient", assetId] as const,
   },
   settings: {
     all: ["settings"] as const,
@@ -62,7 +66,8 @@ export const queryKeys = {
   civitai: {
     all: ["civitai"] as const,
     auth: () => ["civitai", "auth"] as const,
-    search: (query: string, sort: string, period: string, base: string) => ["civitai", "search", query, sort, period, base] as const,
+    search: (query: string, sort: string, period: string, base: string) =>
+      ["civitai", "search", query, sort, period, base] as const,
     model: (modelId: number) => ["civitai", "model", modelId] as const,
   },
   speech: { all: ["speech"] as const },
@@ -104,23 +109,75 @@ export const appEventInvalidations: AppEventInvalidations = {
   conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
   memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id)],
   required_models_changed: () => [queryKeys.conversations.all],
-  onnx_models_unloaded: () => [queryKeys.conversations.all, queryKeys.embedding.all, queryKeys.speech.all],
-  character_changed: () => [queryKeys.characters.all, queryKeys.home.characters(), queryKeys.library.all, queryKeys.media.library(), queryKeys.memory.all],
-  persona_changed: () => [queryKeys.personas.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
-  lorebooks_changed: () => [queryKeys.lorebooks.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
-  models_changed: () => [queryKeys.models.all, queryKeys.providers.all, queryKeys.settings.all, queryKeys.localModels.all, queryKeys.localImages.all, queryKeys.speech.all],
+  onnx_models_unloaded: () => [
+    queryKeys.conversations.all,
+    queryKeys.embedding.all,
+    queryKeys.speech.all,
+  ],
+  character_changed: () => [
+    queryKeys.characters.all,
+    queryKeys.home.characters(),
+    queryKeys.library.all,
+    queryKeys.media.library(),
+    queryKeys.memory.all,
+  ],
+  persona_changed: () => [
+    queryKeys.personas.all,
+    queryKeys.conversations.all,
+    queryKeys.library.all,
+    queryKeys.media.library(),
+  ],
+  lorebooks_changed: () => [
+    queryKeys.lorebooks.all,
+    queryKeys.conversations.all,
+    queryKeys.library.all,
+    queryKeys.media.library(),
+  ],
+  models_changed: () => [
+    queryKeys.models.all,
+    queryKeys.providers.all,
+    queryKeys.settings.all,
+    queryKeys.localModels.all,
+    queryKeys.localImages.all,
+    queryKeys.speech.all,
+  ],
   database_reloaded: () => [[]],
-  settings_changed: (event) => event.section === "ui_state"
-    ? [queryKeys.settings.all, queryKeys.app.status()]
-    : [queryKeys.settings.all, queryKeys.providers.all, queryKeys.audioProviders.all, queryKeys.models.all, ...(event.section === "general" ? [queryKeys.localImages.all] : [])],
+  settings_changed: (event) =>
+    event.section === "ui_state"
+      ? [queryKeys.settings.all, queryKeys.app.status()]
+      : [
+          queryKeys.settings.all,
+          queryKeys.providers.all,
+          queryKeys.audioProviders.all,
+          queryKeys.models.all,
+          ...(event.section === "ui_preferences" ? [queryKeys.conversations.all] : []),
+          ...(event.section === "general" ? [queryKeys.localImages.all] : []),
+        ],
   content_filter_hit: () => [queryKeys.settings.filterLog()],
   prompts_changed: () => [queryKeys.prompts.all],
-  job_updated: (event) => [queryKeys.jobs.lists(), queryKeys.jobs.detail(event.job.id), ...(event.job.state === "succeeded" ? [queryKeys.media.library(), queryKeys.library.counts()] : []), ...(event.job.kind === "speech_transcribe" && ["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state) ? [queryKeys.speech.all] : []), ...((event.job.kind === "artifact_install" || event.job.kind === "maintenance") && ["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state) ? [queryKeys.localImages.all, queryKeys.loras.all, queryKeys.speech.all] : [])],
+  job_updated: (event) => [
+    queryKeys.jobs.lists(),
+    queryKeys.jobs.detail(event.job.id),
+    ...(event.job.state === "succeeded"
+      ? [queryKeys.media.library(), queryKeys.library.counts()]
+      : []),
+    ...(event.job.kind === "speech_transcribe" &&
+    ["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state)
+      ? [queryKeys.speech.all]
+      : []),
+    ...((event.job.kind === "artifact_install" || event.job.kind === "maintenance") &&
+    ["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state)
+      ? [queryKeys.localImages.all, queryKeys.loras.all, queryKeys.speech.all]
+      : []),
+  ],
 };
 
 /** The keys to invalidate for `event`; an event type the table does not know invalidates nothing. */
 export function invalidationsFor(event: AppEvent): readonly QueryKeyPrefix[] {
-  const table = appEventInvalidations as Record<string, ((event: AppEvent) => readonly QueryKeyPrefix[]) | undefined>;
+  const table = appEventInvalidations as Record<
+    string,
+    ((event: AppEvent) => readonly QueryKeyPrefix[]) | undefined
+  >;
   const rule = Object.hasOwn(table, event.type) ? table[event.type] : undefined;
   return rule ? rule(event) : [];
 }

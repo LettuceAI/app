@@ -20,6 +20,7 @@ pub(super) mod reset;
 #[cfg(test)]
 pub(super) mod reset_tests;
 pub(super) mod settings;
+pub(super) mod themes;
 #[cfg(test)]
 mod settings_tests;
 pub(super) mod startup;

@@ -184,6 +184,7 @@ pub(crate) fn settings_view(
                 ),
             };
             dto::ConversationSettingsView {
+                appearance: resolved_appearance(&global, character.as_ref().map(|record| &record.character.presentation))?,
                 conversation_id: conversation.id.to_string(),
                 kind: dto::ConversationKind::Direct,
                 title: conversation.title.clone(),
@@ -279,6 +280,7 @@ pub(crate) fn settings_view(
                 },
             };
             dto::ConversationSettingsView {
+                appearance: resolved_appearance(&global, None)?,
                 conversation_id: conversation.id.to_string(),
                 kind: dto::ConversationKind::Group,
                 title: conversation.title.clone(),
@@ -337,6 +339,42 @@ pub(crate) fn settings_view(
         }
     };
     Ok(view)
+}
+
+pub(crate) fn resolved_appearance(global: &lettuce_settings::GlobalSettings, presentation: Option<&lettuce_characters::CharacterPresentationV1>) -> Result<serde_json::Value, ApiError> {
+    let defaults = serde_json::to_value(lettuce_characters::ChatAppearanceV1::default()).map_err(source_error)?;
+    let camel = |key: &str| {
+        let mut parts = key.split('_');
+        let mut value = parts.next().unwrap_or_default().to_owned();
+        for part in parts {
+            let mut chars = part.chars();
+            if let Some(first) = chars.next() { value.extend(first.to_uppercase()); value.extend(chars); }
+        }
+        value
+    };
+    let mut value = serde_json::Map::new();
+    for (key, field) in defaults.as_object().into_iter().flatten() {
+        if key != "format_version" { value.insert(camel(key), field.clone()); }
+    }
+    let mut baseline = value.clone();
+    let preferences = &global.ui_preferences.0;
+    let previous = preferences.get("appearanceInheritanceBaseline").or_else(|| preferences.get("chatAppearance"));
+    if let Some(previous) = previous.and_then(serde_json::Value::as_object) { baseline.extend(previous.clone()); }
+    if let Some(current) = preferences.get("chatAppearance").and_then(serde_json::Value::as_object) { value.extend(current.clone()); }
+    if let Some(presentation) = presentation {
+        let appearance = serde_json::to_value(&presentation.chat_appearance).map_err(source_error)?;
+        for (key, field) in appearance.as_object().into_iter().flatten() {
+            if key == "format_version" { continue; }
+            let name = camel(key);
+            let same = match (baseline.get(&name), field) {
+                (Some(serde_json::Value::Number(left)), serde_json::Value::Number(right)) => left.as_f64() == right.as_f64(),
+                (left, right) => left == Some(right),
+            };
+            let overrides = presentation.chat_appearance_overrides.as_ref().map_or(!same, |fields| fields.contains(key));
+            if overrides { value.insert(name, field.clone()); }
+        }
+    }
+    Ok(serde_json::Value::Object(value))
 }
 
 fn choice<T: ToString>(id: Option<T>, source: dto::SettingSource) -> dto::SettingChoice {

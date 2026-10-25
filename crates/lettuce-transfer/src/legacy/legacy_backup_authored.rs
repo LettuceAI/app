@@ -2079,6 +2079,7 @@ fn validate_presentation(
         primary_text_color: value.primary_text_color.clone(),
         secondary_text_color: value.secondary_text_color.clone(),
         chat_appearance: value.chat_appearance.clone(),
+        chat_appearance_overrides: None,
     }
     .validate()
     .map_err(|_| malformed(LegacyBackupDocumentKind::Characters, "presentation"))

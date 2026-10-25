@@ -1,4 +1,10 @@
-import type { ConversationView, MediaPartKind, MessageRole, ParticipantView, TimelineMessage } from "@/api/generated/bindings";
+import type {
+  ConversationView,
+  MediaPartKind,
+  MessageRole,
+  ParticipantView,
+  TimelineMessage,
+} from "@/api/generated/bindings";
 
 export type Group = "only" | "start" | "middle" | "end";
 
@@ -8,7 +14,10 @@ export function groupOf(list: readonly TimelineMessage[], index: number): Group 
   if (!message) return "only";
   const role: MessageRole = message.role;
   if (role === "scene" || role === "system") return "only";
-  const same = (other: TimelineMessage | undefined) => other !== undefined && other.role === role && other.author_participant_id === message.author_participant_id;
+  const same = (other: TimelineMessage | undefined) =>
+    other !== undefined &&
+    other.role === role &&
+    other.author_participant_id === message.author_participant_id;
   const prev = same(list[index - 1]);
   const next = same(list[index + 1]);
   return prev && next ? "middle" : prev ? "end" : next ? "start" : "only";
@@ -26,18 +35,26 @@ export interface MediaItem {
 }
 
 export function mediaOf(message: TimelineMessage): MediaItem[] {
-  return message.parts.flatMap((part): MediaItem[] => (part.type === "media" ? [{ id: part.asset.asset_id, url: part.asset.url, kind: part.kind }] : []));
+  return message.parts.flatMap((part): MediaItem[] =>
+    part.type === "media"
+      ? [{ id: part.asset.asset_id, url: part.asset.url, kind: part.kind }]
+      : [],
+  );
 }
 
 export function paragraphsOf(text: string): string[] {
   return text.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0);
 }
 
-export function characterParticipant(view: Pick<ConversationView, "participants"> | undefined): ParticipantView | null {
+export function characterParticipant(
+  view: Pick<ConversationView, "participants"> | undefined,
+): ParticipantView | null {
   return view?.participants.find((participant) => participant.role === "character") ?? null;
 }
 
-export function userParticipant(view: Pick<ConversationView, "participants"> | undefined): ParticipantView | null {
+export function userParticipant(
+  view: Pick<ConversationView, "participants"> | undefined,
+): ParticipantView | null {
   return view?.participants.find((participant) => participant.role === "user") ?? null;
 }
 
@@ -46,18 +63,29 @@ export interface Author {
   avatar: string | null;
 }
 
-export function authorOf(participants: readonly ParticipantView[], message: TimelineMessage): Author | undefined {
+export function authorOf(
+  participants: readonly ParticipantView[],
+  message: TimelineMessage,
+): Author | undefined {
   if (message.role === "scene" || message.role === "system") return undefined;
   const found =
-    (message.author_participant_id ? participants.find((participant) => participant.id === message.author_participant_id) : undefined) ??
-    participants.find((participant) => participant.role === (message.role === "user" ? "user" : "character"));
+    (message.author_participant_id
+      ? participants.find((participant) => participant.id === message.author_participant_id)
+      : undefined) ??
+    participants.find(
+      (participant) => participant.role === (message.role === "user" ? "user" : "character"),
+    );
   return found ? { name: found.name, avatar: found.avatar?.url ?? null } : undefined;
 }
 
 export function sameDay(a: number, b: number): boolean {
   const left = new Date(a);
   const right = new Date(b);
-  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
 }
 
 export function formatTime(timestamp: number, locale: string): string {
@@ -69,7 +97,10 @@ export type DayLabel = { kind: "today" } | { kind: "yesterday" } | { kind: "date
 export function dayLabel(timestamp: number, now: number, locale: string): DayLabel {
   if (sameDay(timestamp, now)) return { kind: "today" };
   if (sameDay(timestamp, now - 24 * 60 * 60 * 1000)) return { kind: "yesterday" };
-  return { kind: "date", text: new Intl.DateTimeFormat(locale, { dateStyle: "long" }).format(timestamp) };
+  return {
+    kind: "date",
+    text: new Intl.DateTimeFormat(locale, { dateStyle: "long" }).format(timestamp),
+  };
 }
 
 export interface MessageStats {
@@ -108,7 +139,9 @@ export function statsOf(summary: unknown): MessageStats | null {
 }
 
 /** The loaded messages oldest first, from pages kept newest first. */
-export function flattenPages<T extends { page: { items: TimelineMessage[] } }>(pages: readonly T[]): TimelineMessage[] {
+export function flattenPages<T extends { page: { items: TimelineMessage[] } }>(
+  pages: readonly T[],
+): TimelineMessage[] {
   const seen = new Set<string>();
   const out: TimelineMessage[] = [];
   for (const page of [...pages].reverse()) {
@@ -121,6 +154,8 @@ export function flattenPages<T extends { page: { items: TimelineMessage[] } }>(p
   return out;
 }
 
-export function spacing(group: Group): string {
-  return group === "start" || group === "only" ? "mt-5" : "mt-1";
+export function spacing(group: Group, gap: "tight" | "normal" | "relaxed" = "relaxed"): string {
+  return group === "start" || group === "only"
+    ? { tight: "mt-2", normal: "mt-3", relaxed: "mt-5" }[gap]
+    : "mt-1";
 }

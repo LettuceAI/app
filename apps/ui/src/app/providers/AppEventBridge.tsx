@@ -8,13 +8,14 @@ import { invalidationsFor } from "@/api/query-keys";
 export interface AppEventBridgeProps {
   api: ApiClient;
   queryClient: QueryClient;
+  onDatabaseReload?: () => void;
 }
 
 /**
  * Subscribes once to the application event stream and invalidates the queries each event affects.
  * Once the subscription is live it invalidates every query, covering events that fired before it.
  */
-export function AppEventBridge({ api, queryClient }: AppEventBridgeProps) {
+export function AppEventBridge({ api, queryClient, onDatabaseReload }: AppEventBridgeProps) {
   const { t } = useTranslation("common");
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
 
@@ -23,11 +24,19 @@ export function AppEventBridge({ api, queryClient }: AppEventBridgeProps) {
     let unsubscribe: (() => void) | undefined;
     api
       .subscribe((event) => {
+        if (event.type === "database_reloaded") onDatabaseReload?.();
         if (event.type === "onnx_models_unloaded") {
           const names = { eidos: "Eidos", thymos: "Thymos", kokoro: "Kokoro" };
-          toast.warning(t("onnxModelsUnloaded", { models: event.models.map((model) => names[model]).join(", ") }), undefined, { id: "onnx-memory-pressure" });
+          toast.warning(
+            t("onnxModelsUnloaded", {
+              models: event.models.map((model) => names[model]).join(", "),
+            }),
+            undefined,
+            { id: "onnx-memory-pressure" },
+          );
         }
-        for (const queryKey of invalidationsFor(event)) void queryClient.invalidateQueries({ queryKey });
+        for (const queryKey of invalidationsFor(event))
+          void queryClient.invalidateQueries({ queryKey });
       })
       .then((stop) => {
         if (!active) {
@@ -44,7 +53,7 @@ export function AppEventBridge({ api, queryClient }: AppEventBridgeProps) {
       active = false;
       unsubscribe?.();
     };
-  }, [api, queryClient, t]);
+  }, [api, queryClient, t, onDatabaseReload]);
 
   if (failure) throw failure.error;
   return null;

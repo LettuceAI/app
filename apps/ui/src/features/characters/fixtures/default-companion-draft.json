@@ -81,6 +81,7 @@
   },
   "media": [],
   "presentation": {
+    "chat_appearance_overrides": [],
     "format_version": 1,
     "card_style": "circle",
     "avatar_crop": null,

@@ -1623,3 +1623,32 @@ async fn an_add_keeps_the_membership_the_group_had_at_commit() {
     assert!(member_view(&after, cleo).is_some_and(|cleo| cleo.enabled));
     assert!(member_view(&after, dan).is_some_and(|dan| dan.enabled));
 }
+
+#[test]
+fn customization_sparse_appearance_inherits_each_unselected_field() {
+    let mut global = lettuce_settings::GlobalSettings::default();
+    global.ui_preferences.0.insert("chatAppearance".to_owned(), serde_json::json!({"fontSize":"large","bubbleRadius":"sharp","composerFontSize":"xlarge","footerInputColorHex":"#123456"}));
+    let mut presentation = lettuce_characters::CharacterPresentationV1::default();
+    presentation.chat_appearance.bubble_radius = lettuce_characters::BubbleRadius::Pill;
+    presentation.chat_appearance_overrides = Some(["bubble_radius".to_owned()].into_iter().collect());
+    let value = super::settings::resolved_appearance(&global, Some(&presentation)).expect("appearance");
+    assert_eq!(value["fontSize"], "large");
+    assert_eq!(value["bubbleRadius"], "pill");
+    assert_eq!(value["composerFontSize"], "xlarge");
+    assert_eq!(value["footerInputColorHex"], "#123456");
+}
+
+#[test]
+fn customization_legacy_snapshots_keep_differences_and_inherit_old_global_matches() {
+    let mut global = lettuce_settings::GlobalSettings::default();
+    global.ui_preferences.0.insert("appearanceInheritanceBaseline".to_owned(), serde_json::json!({"fontSize":"medium","bubbleOpacity":35}));
+    global.ui_preferences.0.insert("chatAppearance".to_owned(), serde_json::json!({"fontSize":"xlarge","bubbleOpacity":80}));
+    let mut presentation = lettuce_characters::CharacterPresentationV1::default();
+    presentation.chat_appearance_overrides = None;
+    let value = super::settings::resolved_appearance(&global, Some(&presentation)).expect("appearance");
+    assert_eq!(value["fontSize"], "xlarge");
+    assert_eq!(value["bubbleOpacity"], 80);
+    presentation.chat_appearance.font_size = lettuce_characters::FontSize::Large;
+    let value = super::settings::resolved_appearance(&global, Some(&presentation)).expect("appearance");
+    assert_eq!(value["fontSize"], "large");
+}

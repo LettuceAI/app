@@ -5,6 +5,7 @@ import { MotionConfig } from "framer-motion";
 import type { i18n } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import type { ApiClient } from "@/api/client";
+import { PreferencesProvider, usePreferences } from "@/entities/preferences";
 import { FatalErrorBoundary } from "../error-boundaries/FatalErrorBoundary";
 import { AppEventBridge } from "./AppEventBridge";
 
@@ -31,12 +32,19 @@ export interface AppProvidersProps extends ShellProvidersProps {
   queryClient: QueryClient;
 }
 
+function PreferenceEvents({ api, queryClient }: { api: ApiClient; queryClient: QueryClient }) {
+  const { reset } = usePreferences();
+  return <AppEventBridge api={api} queryClient={queryClient} onDatabaseReload={reset} />;
+}
+
 export function AppProviders({ i18n, api, queryClient, children }: AppProvidersProps) {
   return (
     <ShellProviders i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <AppEventBridge api={api} queryClient={queryClient} />
-        {children}
+        <PreferencesProvider api={api}>
+          <PreferenceEvents api={api} queryClient={queryClient} />
+          {children}
+        </PreferencesProvider>
         <Toaster position="top-center" />
         <ConfirmHost />
       </QueryClientProvider>

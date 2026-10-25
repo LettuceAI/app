@@ -829,6 +829,8 @@ pub struct CharacterPresentationV1 {
     pub primary_text_color: Option<String>,
     pub secondary_text_color: Option<String>,
     pub chat_appearance: ChatAppearanceV1,
+    #[serde(default)]
+    pub chat_appearance_overrides: Option<BTreeSet<String>>,
 }
 
 impl Default for CharacterPresentationV1 {
@@ -845,6 +847,7 @@ impl Default for CharacterPresentationV1 {
             primary_text_color: None,
             secondary_text_color: None,
             chat_appearance: ChatAppearanceV1::default(),
+            chat_appearance_overrides: Some(BTreeSet::new()),
         }
     }
 }
@@ -875,6 +878,12 @@ impl CharacterPresentationV1 {
         }
         validate_optional_color("primary_text_color", self.primary_text_color.as_ref())?;
         validate_optional_color("secondary_text_color", self.secondary_text_color.as_ref())?;
+        if let Some(fields) = &self.chat_appearance_overrides {
+            let value = serde_json::to_value(&self.chat_appearance).map_err(|_| ValidationError::InvalidValue { field: "chat_appearance_overrides" })?;
+            if fields.iter().any(|key| key == "format_version" || value.get(key).is_none()) {
+                return Err(ValidationError::InvalidValue { field: "chat_appearance_overrides" });
+            }
+        }
         self.chat_appearance.validate()
     }
 }
@@ -981,5 +990,30 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&first));
         assert!(ids.contains(&second));
+    }
+}
+
+#[cfg(test)]
+mod customization_tests {
+    use super::*;
+
+    #[test]
+    fn customization_new_presentations_inherit_and_old_json_stays_recognizable() {
+        let presentation = CharacterPresentationV1::default();
+        assert_eq!(presentation.chat_appearance_overrides.as_ref().map(BTreeSet::len), Some(0));
+        let mut value = serde_json::to_value(&presentation).expect("presentation");
+        value.as_object_mut().expect("object").remove("chat_appearance_overrides");
+        let old: CharacterPresentationV1 = serde_json::from_value(value).expect("old presentation");
+        assert!(old.chat_appearance_overrides.is_none());
+        old.validate().expect("valid old presentation");
+    }
+
+    #[test]
+    fn customization_override_names_must_identify_real_appearance_fields() {
+        let mut presentation = CharacterPresentationV1::default();
+        presentation.chat_appearance_overrides = Some(["font_size".to_owned()].into_iter().collect());
+        presentation.validate().expect("known field");
+        presentation.chat_appearance_overrides = Some(["format_version".to_owned()].into_iter().collect());
+        assert!(presentation.validate().is_err());
     }
 }

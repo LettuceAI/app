@@ -382,6 +382,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::providers::certificates_import,
             commands::providers::certificates_remove,
             commands::settings::settings_get,
+            commands::settings::settings_theme_read,
+            commands::settings::settings_theme_export,
             commands::settings::settings_update,
             commands::settings::settings_sampler_defaults_update,
             commands::settings::content_filter_log,

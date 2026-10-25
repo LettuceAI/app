@@ -1,5 +1,9 @@
 # lettuce-app: legacy parity notes
 
+Customization retains revision-fenced ui_preferences updates and captures the previous chatAppearance baseline before its first edit. Conversation settings now resolve appearance per field: new character presentations inherit by default, explicit override sets win, and legacy snapshots retain differences from that baseline. Number comparisons treat integer and floating-point representations equally. The existing full snapshots cannot recover old explicit choices equal to the old global value. No data rewrite is performed.
+
+settings_theme_read accepts validated version-1 theme documents and legacy color-preset version 1 from the existing file adapter. settings_theme_export uses the existing protected atomic entity publication path, including Android publication without a target. These commands exchange configuration DTOs and file handles, without media payloads. Frontend group-bar/widget rendering remains explicitly deferred.
+
 Engine, upscaler and catalog model installs expose their exact target in typed job subject details, using the existing local-model-job record (2026-10-22). This lets Engine and Image models restore the matching Install/Download lock when reopened instead of relying on a component's request state; job admission still joins an existing installation and startup recovery remains unchanged.
 
 Automatic scene images can be disabled independently of scene availability (user decision, 2026-10-22). Both generation input paths then omit the built-in scene image protocol, and reply finalization strips any stale tag without scheduling a follow-up. Manual scene prompt writing and image generation remain available. Legacy used scene availability and reply mode together (`old-code/src/ui/pages/chats/hooks/useChatEnhancementsController.ts:79-88,252-288`).

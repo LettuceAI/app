@@ -371,6 +371,8 @@ export const commands = {
 	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_import", { request })),
 	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_remove", { request })),
 	settingsGet: () => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_get")),
+	settingsThemeRead: (source: FileSource) => typedError<SettingsThemeDocument, ApiError_Serialize>(__TAURI_INVOKE("settings_theme_read", { source })),
+	settingsThemeExport: (request: SettingsThemeExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("settings_theme_export", { request })),
 	settingsUpdate: (request: SettingsCommandInput<SettingsUpdateRequest_Deserialize>) => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_update", { request })),
 	settingsSamplerDefaultsUpdate: (request: SettingsCommandInput<SettingsSamplerDefaultsUpdateRequest>) => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_sampler_defaults_update", { request })),
 	contentFilterLog: () => typedError<ContentFilterLogView, ApiError_Serialize>(__TAURI_INVOKE("content_filter_log")),
@@ -1925,6 +1927,7 @@ export type ConversationSettingsView = ConversationSettingsView_Serialize | Conv
  *  reset. Group-only fields are none for a one-to-one chat.
  */
 export type ConversationSettingsView_Deserialize = {
+	appearance?: unknown,
 	conversation_id: string,
 	kind: ConversationKind,
 	title: string,
@@ -1962,6 +1965,7 @@ export type ConversationSettingsView_Deserialize = {
  *  reset. Group-only fields are none for a one-to-one chat.
  */
 export type ConversationSettingsView_Serialize = {
+	appearance?: unknown,
 	conversation_id: string,
 	kind: ConversationKind,
 	title: string,
@@ -4257,6 +4261,7 @@ export type LibraryCharacterPresentationV1_Deserialize = {
 	primary_text_color: string | null,
 	secondary_text_color: string | null,
 	chat_appearance: LibraryChatAppearanceV1_Deserialize,
+	chat_appearance_overrides?: string[] | null,
 };
 
 export type LibraryCharacterPresentationV1_Serialize = {
@@ -4271,6 +4276,7 @@ export type LibraryCharacterPresentationV1_Serialize = {
 	primary_text_color: string | null,
 	secondary_text_color: string | null,
 	chat_appearance: LibraryChatAppearanceV1_Serialize,
+	chat_appearance_overrides?: string[] | null,
 };
 
 export type LibraryCharacterProfile = LibraryCharacterProfile_Serialize | LibraryCharacterProfile_Deserialize;
@@ -8075,6 +8081,19 @@ export type SettingsStableDiffusionSettings = {
 	cpp: SettingsStableDiffusionCppBinding,
 };
 
+export type SettingsThemeDocument = {
+	format_version: number,
+	name: string,
+	colors: { [key in string]: string },
+	radius: SettingsUiThemeRadius | null,
+	density: SettingsUiThemeDensity | null,
+};
+
+export type SettingsThemeExportRequest = {
+	document: SettingsThemeDocument,
+	target: FileTarget | null,
+};
+
 export type SettingsUiAccessibilitySettings = SettingsUiAccessibilitySettings_Serialize | SettingsUiAccessibilitySettings_Deserialize;
 
 export type SettingsUiAccessibilitySettingsHapticIntensity = "light" | "medium" | "heavy" | "soft" | "rigid";
@@ -8100,7 +8119,7 @@ export type SettingsUiAccessibilitySound_Serialize = Record<string, never>;
 
 export type SettingsUiChatAppearanceSettings = SettingsUiChatAppearanceSettings_Serialize | SettingsUiChatAppearanceSettings_Deserialize;
 
-export type SettingsUiChatAppearanceSettingsAssistantBubbleColor = "neutral" | "accent" | "info" | "secondary";
+export type SettingsUiChatAppearanceSettingsAssistantBubbleColor = "custom" | "neutral" | "accent" | "info" | "secondary";
 
 export type SettingsUiChatAppearanceSettingsAvatarShape = "circle" | "rounded" | "hidden";
 
@@ -8159,10 +8178,11 @@ export type SettingsUiChatAppearanceSettingsTextMode = "auto" | "light" | "dark"
 
 export type SettingsUiChatAppearanceSettingsTimestampFormat = "relative" | "time" | "datetime";
 
-export type SettingsUiChatAppearanceSettingsUserBubbleColor = "accent" | "info" | "secondary" | "warning";
+export type SettingsUiChatAppearanceSettingsUserBubbleColor = "custom" | "accent" | "info" | "secondary" | "warning";
 
 export type SettingsUiChatAppearanceSettings_Deserialize = {
 	fontSize?: SettingsUiChatAppearanceSettingsFontSize,
+	composerFontSize?: SettingsUiChatAppearanceSettingsFontSize,
 	lineSpacing?: SettingsUiChatAppearanceSettingsLineSpacing,
 	bubbleStyle?: SettingsUiChatAppearanceSettingsBubbleStyle,
 	bubbleRadius?: SettingsUiChatAppearanceSettingsBubbleRadius,
@@ -8277,6 +8297,10 @@ export type SettingsUiNavigationSide = "left" | "right";
 export type SettingsUiNavigationStyle = "bottom" | "bottomLabels" | "dock" | "sidebar" | "floatingSidebar" | "header";
 
 export type SettingsUiTheme = "light" | "dark";
+
+export type SettingsUiThemeDensity = "default" | "compact";
+
+export type SettingsUiThemeRadius = "sharp" | "default" | "round";
 
 export type SettingsUpdateRequest = SettingsUpdateRequest_Serialize | SettingsUpdateRequest_Deserialize;
 
@@ -8740,9 +8764,9 @@ export type TtsSynthesizeRequest_Serialize = {
 
 export type UiPreferenceChange = UiPreferenceChange_Serialize | UiPreferenceChange_Deserialize;
 
-export type UiPreferenceChange_Deserialize = { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Deserialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Deserialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Deserialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Deserialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Deserialize[] | null };
+export type UiPreferenceChange_Deserialize = { key: "themePreset"; value: string | null } | { key: "themeRadius"; value: SettingsUiThemeRadius | null } | { key: "themeDensity"; value: SettingsUiThemeDensity | null } | { key: "beetrootRain"; value: boolean | null } | { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Deserialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Deserialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Deserialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Deserialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Deserialize[] | null };
 
-export type UiPreferenceChange_Serialize = { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Serialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Serialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Serialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Serialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Serialize[] | null };
+export type UiPreferenceChange_Serialize = { key: "themePreset"; value: string | null } | { key: "themeRadius"; value: SettingsUiThemeRadius | null } | { key: "themeDensity"; value: SettingsUiThemeDensity | null } | { key: "beetrootRain"; value: boolean | null } | { key: "theme"; value: SettingsUiTheme | null } | { key: "settingsCardOpacity"; value: number | null } | { key: "customColors"; value: SettingsUiCustomColors_Serialize | null } | { key: "customColorPresets"; value: SettingsUiCustomColorPreset_Serialize[] | null } | { key: "chatsViewMode"; value: SettingsUiChatsViewMode | null } | { key: "groupChatsViewMode"; value: SettingsUiGroupChatsViewMode | null } | { key: "accessibility"; value: SettingsUiAccessibilitySettings_Serialize | null } | { key: "navigationStyle"; value: SettingsUiNavigationStyle | null } | { key: "navigationSide"; value: SettingsUiNavigationSide | null } | { key: "headerStyle"; value: SettingsUiHeaderStyle | null } | { key: "navItems"; value: SettingsUiNavItemsItem[] | null } | { key: "navAlign"; value: SettingsUiNavAlign | null } | { key: "navEdge"; value: SettingsUiNavEdge | null } | { key: "chatAppearance"; value: SettingsUiChatAppearanceSettings_Serialize | null } | { key: "llamaSamplerPresets"; value: SettingsUiLlamaSamplerPreset_Serialize[] | null };
 
 export type UsageClearBeforeRequest = {
 	before: number,

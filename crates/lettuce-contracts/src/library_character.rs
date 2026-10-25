@@ -652,6 +652,9 @@ pub struct LibraryCharacterPresentationV1 {
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub secondary_text_color: Option<String>,
     pub chat_appearance: LibraryChatAppearanceV1,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub chat_appearance_overrides: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

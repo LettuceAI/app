@@ -3,8 +3,20 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApiClient } from "@/api/client";
-import type { ConversationSettingsView, ConversationView, GenerationEvent, TimelineMessage } from "@/api/generated/bindings";
-import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
+import type {
+  ConversationSettingsView,
+  ConversationView,
+  GenerationEvent,
+  TimelineMessage,
+  SettingsView,
+} from "@/api/generated/bindings";
+import { typingHaptic } from "@/api/haptics";
+import {
+  createMockTransport,
+  mockAppStatus,
+  type MockCallHandlers,
+  type MockStreamHandlers,
+} from "@/api/mock-transport";
 import { QueryClient } from "@tanstack/react-query";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -13,33 +25,81 @@ import { selectCandidate } from "./data/actions";
 import { GenerationStore } from "./data/generation-store";
 import { groupOf, statsOf } from "./data/messages";
 
-vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/api/window-controls", () => ({
+  createWindowController: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/api/haptics", () => ({ typingHaptic: vi.fn().mockResolvedValue(undefined) }));
 
-function message(id: string, role: TimelineMessage["role"], text: string, patch: Partial<TimelineMessage> = {}): TimelineMessage {
+function message(
+  id: string,
+  role: TimelineMessage["role"],
+  text: string,
+  patch: Partial<TimelineMessage> = {},
+): TimelineMessage {
   return {
-    id, role, author_participant_id: role === "user" ? "pu" : role === "assistant" ? "pc" : null, parts: [{ type: "text", text }], reasoning: null,
-    created_at: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null, ...patch,
+    id,
+    role,
+    author_participant_id: role === "user" ? "pu" : role === "assistant" ? "pc" : null,
+    parts: [{ type: "text", text }],
+    reasoning: null,
+    created_at: 1_700_000_000_000,
+    candidate_index: null,
+    candidate_count: 1,
+    pinned: false,
+    scene_image: null,
+    ...patch,
   };
 }
 
-function view(messages: TimelineMessage[], patch: Partial<ConversationView> = {}): ConversationView {
+function view(
+  messages: TimelineMessage[],
+  patch: Partial<ConversationView> = {},
+): ConversationView {
   return {
-    id: "c1", origin_conversation_id: null, origin_message_id: null, kind: "direct", title: "Harbour", branch: { branch_id: "b", head_message_id: null },
+    id: "c1",
+    origin_conversation_id: null,
+    origin_message_id: null,
+    kind: "direct",
+    title: "Harbour",
+    branch: { branch_id: "b", head_message_id: null },
     participants: [
       { id: "pu", role: "user", name: "Hunter", character_id: null, avatar: null },
       { id: "pc", role: "character", name: "Cassian", character_id: "ch1", avatar: null },
     ],
-    messages: { items: messages, next_cursor: null }, pending_turn_id: null, can_send: true, revision: 4, settings_revision: 2, archived: false,
-    source: { type: "direct", character_id: "ch1" }, chat_mode: null, missing_models: [], memory_blocked: null, ...patch,
+    messages: { items: messages, next_cursor: null },
+    pending_turn_id: null,
+    can_send: true,
+    revision: 4,
+    settings_revision: 2,
+    archived: false,
+    source: { type: "direct", character_id: "ch1" },
+    chat_mode: null,
+    missing_models: [],
+    memory_blocked: null,
+    ...patch,
   };
 }
 
 const settings: ConversationSettingsView = {
-  conversation_id: "c1", kind: "direct", title: "Harbour", revision: 4, settings_revision: 2, author_note: null,
-  persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null,
-  lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
-  scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" }, chat_mode: null,
-  disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never,
+  conversation_id: "c1",
+  kind: "direct",
+  title: "Harbour",
+  revision: 4,
+  settings_revision: 2,
+  author_note: null,
+  persona: { id: null, source: "app_default" },
+  prompt: { id: null, source: "app_default" },
+  roleplay_prompt: null,
+  lorebooks: { ids: [], source: "app_default" },
+  model: { id: "m1", source: "character" },
+  background: { asset: null, hidden: false, source: "character" },
+  scene: { id: null, source: "app_default" },
+  memory: { mode: "manual", source: "app_default" },
+  chat_mode: null,
+  disable_character_lorebooks: null,
+  speaker_selection: null,
+  members: null,
+  model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never,
 };
 
 interface Setup {
@@ -54,15 +114,59 @@ async function open(setup: Setup = {}) {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       calls: {
-        appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: setup.platform ?? "other", ui_state: { onboarding: { completed: true } } } }),
-        conversationOpen: () => ({ status: "ok", data: view((setup.messages ?? (() => [message("a1", "assistant", "Sit down.")]))()) }),
+        appStatus: () => ({
+          status: "ok",
+          data: {
+            ...mockAppStatus,
+            platform: setup.platform ?? "other",
+            ui_state: { onboarding: { completed: true } },
+          },
+        }),
+        conversationOpen: () => ({
+          status: "ok",
+          data: view((setup.messages ?? (() => [message("a1", "assistant", "Sit down.")]))()),
+        }),
         conversationSettingsGet: () => ({ status: "ok", data: settings }),
-        modelsList: () => ({ status: "ok", data: { models: [], default_model_id: null, revision: 1 } }),
+        modelsList: () => ({
+          status: "ok",
+          data: { models: [], default_model_id: null, revision: 1 },
+        }),
         providerAccountsList: () => ({ status: "ok", data: [] }),
-        memoryGet: () => ({ status: "ok", data: { items: [], allowed_categories: ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"], summary: null, revision: 1, status: { run_mode: "auto", interval: 10, messages_since_last_cycle: 0, messages_until_next_cycle: 10, total_conversation_messages: 1, pending_approval_count: null, skipped: false, latest_cycle_status: null, latest_job_id: null, failure: null, paused_reason: null } } }),
+        memoryGet: () => ({
+          status: "ok",
+          data: {
+            items: [],
+            allowed_categories: [
+              "character_trait",
+              "relationship",
+              "plot_event",
+              "world_detail",
+              "preference",
+              "other",
+            ],
+            summary: null,
+            revision: 1,
+            status: {
+              run_mode: "auto",
+              interval: 10,
+              messages_since_last_cycle: 0,
+              messages_until_next_cycle: 10,
+              total_conversation_messages: 1,
+              pending_approval_count: null,
+              skipped: false,
+              latest_cycle_status: null,
+              latest_job_id: null,
+              failure: null,
+              paused_reason: null,
+            },
+          },
+        }),
         llmMetricsForMessage: () => ({ status: "ok", data: null }),
         charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
-        conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
+        conversationsLatestByCharacter: () => ({
+          status: "ok",
+          data: { items: [], next_cursor: null },
+        }),
         conversationsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         ...setup.calls,
       },
@@ -91,16 +195,130 @@ async function typeAndSend(text: string) {
 const accepted = { status: "ok" as const, data: { user_message_id: "u1", turn_id: "t1" } };
 
 describe("conversation screen", () => {
+  it("applies the saved composer font and color to the actual chat composer", async () => {
+    await open({
+      calls: {
+        settingsGet: () => ({
+          status: "ok",
+          data: {
+            global: {
+              ui_preferences: {
+                chatAppearance: { composerFontSize: "xlarge", footerInputColorHex: "#123456" },
+              },
+            },
+            revision: 1,
+          } as unknown as SettingsView,
+        }),
+      },
+    });
+    const composer = await screen.findByPlaceholderText("Message Cassian…");
+    await waitFor(() => expect(composer.classList.contains("text-xl")).toBe(true));
+    expect(composer.getAttribute("style")).toContain("1.75rem");
+    expect(composer.closest("[style*='background-color']")?.getAttribute("style")).toContain(
+      "rgb(18, 52, 86)",
+    );
+  });
+
+  it("only pulses haptics for completion text on mobile and keeps the 60 ms interval", async () => {
+    const pulse = vi.mocked(typingHaptic).mockClear();
+    const now = vi.spyOn(performance, "now").mockReturnValue(1000);
+    let emit: ((event: GenerationEvent) => void) | undefined;
+    await open({
+      platform: "android",
+      calls: {
+        settingsGet: () => ({
+          status: "ok",
+          data: {
+            global: {
+              ui_preferences: { accessibility: { haptics: true, hapticIntensity: "heavy" } },
+            },
+            revision: 1,
+          } as unknown as SettingsView,
+        }),
+      },
+      streams: {
+        conversationSend: (_args, onEvent) => {
+          emit = onEvent;
+          onEvent({ type: "started", turn_id: "t1" });
+          return accepted;
+        },
+      },
+    });
+    await typeAndSend("Hello");
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+    await act(async () => {
+      emit!({ type: "delta", turn_id: "t1", text: null, reasoning: "Thinking" });
+      emit!({ type: "delta", turn_id: "t1", text: "Hello", reasoning: null });
+      emit!({ type: "delta", turn_id: "t1", text: " there", reasoning: null });
+    });
+    expect(pulse).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(1070);
+    await act(async () => emit!({ type: "delta", turn_id: "t1", text: ".", reasoning: null }));
+    expect(pulse).toHaveBeenCalledTimes(2);
+    expect(pulse).toHaveBeenLastCalledWith("heavy", "android");
+    now.mockReturnValue(1140);
+    await act(async () =>
+      emit!({
+        type: "delta",
+        turn_id: "t1",
+        text: "<img>A hidden scene prompt</img>",
+        reasoning: null,
+      }),
+    );
+    expect(pulse).toHaveBeenCalledTimes(2);
+    now.mockRestore();
+  });
+
+  it("ignores saved haptic settings during desktop generation", async () => {
+    const pulse = vi.mocked(typingHaptic).mockClear();
+    let emit: ((event: GenerationEvent) => void) | undefined;
+    await open({
+      platform: "other",
+      calls: {
+        settingsGet: () => ({
+          status: "ok",
+          data: {
+            global: {
+              ui_preferences: { accessibility: { haptics: true, hapticIntensity: "heavy" } },
+            },
+            revision: 1,
+          } as unknown as SettingsView,
+        }),
+      },
+      streams: {
+        conversationSend: (_args, onEvent) => {
+          emit = onEvent;
+          onEvent({ type: "started", turn_id: "t1" });
+          return accepted;
+        },
+      },
+    });
+    await typeAndSend("Hello");
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+    await act(async () => emit!({ type: "delta", turn_id: "t1", text: "Hello", reasoning: null }));
+    expect(pulse).not.toHaveBeenCalled();
+  });
+
   it("updates one top progress toast during model loading and removes it when ready", async () => {
     let emitEvent: (event: GenerationEvent) => void = () => {};
-    await open({ streams: {
-      conversationSend: (_args, emit) => {
-        emitEvent = emit;
-        emit({ type: "started", turn_id: "t1" });
-        emit({ type: "model_loading", turn_id: "t1", stage: "gpu_offload", status: "loading", percent: 25, model_name: "Gemma.gguf", gpus: null });
-        return accepted;
+    await open({
+      streams: {
+        conversationSend: (_args, emit) => {
+          emitEvent = emit;
+          emit({ type: "started", turn_id: "t1" });
+          emit({
+            type: "model_loading",
+            turn_id: "t1",
+            stage: "gpu_offload",
+            status: "loading",
+            percent: 25,
+            model_name: "Gemma.gguf",
+            gpus: null,
+          });
+          return accepted;
+        },
       },
-    } });
+    });
     await typeAndSend("Hi");
     const progress = await screen.findByRole("progressbar");
     expect(progress.getAttribute("aria-valuenow")).toBe("25");
@@ -108,12 +326,30 @@ describe("conversation screen", () => {
     expect(screen.queryByText("Loading Gemma.gguf, 25%")).toBeNull();
     expect(screen.queryByRole("status", { name: "Typing" })).toBeNull();
     await act(async () => {
-      emitEvent({ type: "model_loading", turn_id: "t1", stage: "gpu_offload", status: "loading", percent: 95, model_name: "Gemma.gguf", gpus: null });
+      emitEvent({
+        type: "model_loading",
+        turn_id: "t1",
+        stage: "gpu_offload",
+        status: "loading",
+        percent: 95,
+        model_name: "Gemma.gguf",
+        gpus: null,
+      });
     });
     expect(screen.getAllByRole("progressbar")).toHaveLength(1);
-    await waitFor(() => expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("95"));
+    await waitFor(() =>
+      expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("95"),
+    );
     await act(async () => {
-      emitEvent({ type: "model_loading", turn_id: "t1", stage: "gpu_offload", status: "loaded", percent: 100, model_name: "Gemma.gguf", gpus: null });
+      emitEvent({
+        type: "model_loading",
+        turn_id: "t1",
+        stage: "gpu_offload",
+        status: "loaded",
+        percent: 100,
+        model_name: "Gemma.gguf",
+        gpus: null,
+      });
     });
     await waitFor(() => expect(screen.queryByRole("progressbar")).toBeNull());
     expect(screen.getByRole("status", { name: "Typing" })).toBeTruthy();
@@ -121,14 +357,16 @@ describe("conversation screen", () => {
 
   it("pauses the cursor for an image prompt and resumes it for visible text", async () => {
     let emitEvent: (event: GenerationEvent) => void = () => {};
-    await open({ streams: {
-      conversationSend: (_args, emit) => {
-        emitEvent = emit;
-        emit({ type: "started", turn_id: "t1" });
-        emit({ type: "delta", turn_id: "t1", text: "He nods.", reasoning: null });
-        return accepted;
+    await open({
+      streams: {
+        conversationSend: (_args, emit) => {
+          emitEvent = emit;
+          emit({ type: "started", turn_id: "t1" });
+          emit({ type: "delta", turn_id: "t1", text: "He nods.", reasoning: null });
+          return accepted;
+        },
       },
-    } });
+    });
     await typeAndSend("Hi");
     const cursor = () => document.querySelector('span[aria-hidden="true"].animate-pulse');
     expect(cursor()).not.toBeNull();
@@ -136,7 +374,9 @@ describe("conversation screen", () => {
       emitEvent({ type: "delta", turn_id: "t1", text: "<img>a sunny street", reasoning: null });
     });
     expect(await screen.findByText("Writing the image prompt")).toBeTruthy();
-    expect(screen.getByText("Writing the image prompt").closest("[data-sonner-toaster]")).not.toBeNull();
+    expect(
+      screen.getByText("Writing the image prompt").closest("[data-sonner-toaster]"),
+    ).not.toBeNull();
     expect(screen.getByText("He nods.")).toBeTruthy();
     expect(screen.queryByText(/a sunny street/)).toBeNull();
     expect(cursor()).toBeNull();
@@ -148,25 +388,31 @@ describe("conversation screen", () => {
     expect(cursor()).not.toBeNull();
   });
 
-  it.each(["failed", "cancelled", "unmount"] as const)("dismisses generation progress on %s", async (ending) => {
-    let emitEvent: (event: GenerationEvent) => void = () => {};
-    const runtime = await open({ streams: {
-      conversationSend: (_args, emit) => {
-        emitEvent = emit;
-        emit({ type: "started", turn_id: "t1" });
-        emit({ type: "delta", turn_id: "t1", text: "He nods. <img>sunny", reasoning: null });
-        return accepted;
-      },
-    } });
-    await typeAndSend("Hi");
-    expect(await screen.findByText("Writing the image prompt")).toBeTruthy();
-    await act(async () => {
-      if (ending === "unmount") await runtime.router.navigate({ to: "/" });
-      else if (ending === "failed") emitEvent({ type: "failed", turn_id: "t1", code: "provider_unavailable" });
-      else emitEvent({ type: "cancelled", turn_id: "t1" });
-    });
-    await waitFor(() => expect(screen.queryByText("Writing the image prompt")).toBeNull());
-  });
+  it.each(["failed", "cancelled", "unmount"] as const)(
+    "dismisses generation progress on %s",
+    async (ending) => {
+      let emitEvent: (event: GenerationEvent) => void = () => {};
+      const runtime = await open({
+        streams: {
+          conversationSend: (_args, emit) => {
+            emitEvent = emit;
+            emit({ type: "started", turn_id: "t1" });
+            emit({ type: "delta", turn_id: "t1", text: "He nods. <img>sunny", reasoning: null });
+            return accepted;
+          },
+        },
+      });
+      await typeAndSend("Hi");
+      expect(await screen.findByText("Writing the image prompt")).toBeTruthy();
+      await act(async () => {
+        if (ending === "unmount") await runtime.router.navigate({ to: "/" });
+        else if (ending === "failed")
+          emitEvent({ type: "failed", turn_id: "t1", code: "provider_unavailable" });
+        else emitEvent({ type: "cancelled", turn_id: "t1" });
+      });
+      await waitFor(() => expect(screen.queryByText("Writing the image prompt")).toBeNull());
+    },
+  );
 
   it("puts streamed deltas into one visible bubble before the reply is stored", async () => {
     let stored = [message("a1", "assistant", "Sit down.")];
@@ -191,7 +437,9 @@ describe("conversation screen", () => {
     await act(async () => {
       emitEvent({ type: "completed", turn_id: "t1", message_id: "a2" });
     });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Stop generating" })).toBeNull(),
+    );
     expect(screen.getAllByText("Hello")).toHaveLength(1);
     expect(screen.getAllByText("Hi")).toHaveLength(1);
   });
@@ -200,22 +448,36 @@ describe("conversation screen", () => {
     let changed = false;
     const proceed = vi.fn<NonNullable<MockStreamHandlers["conversationSend"]>>(() => {
       changed = true;
-      return { status: "error", error: { code: "conflict", message: "The branch changed", details: null } };
+      return {
+        status: "error",
+        error: { code: "conflict", message: "The branch changed", details: null },
+      };
     });
     await open({
       calls: {
-        conversationOpen: () => ({ status: "ok", data: changed
-          ? view([message("a2", "assistant", "The newly selected branch")], { revision: 5, branch: { branch_id: "new-branch", head_message_id: "a2" } })
-          : view([message("a1", "assistant", "The original branch")]),
+        conversationOpen: () => ({
+          status: "ok",
+          data: changed
+            ? view([message("a2", "assistant", "The newly selected branch")], {
+                revision: 5,
+                branch: { branch_id: "new-branch", head_message_id: "a2" },
+              })
+            : view([message("a1", "assistant", "The original branch")]),
         }),
       },
       streams: { conversationSend: proceed },
     });
     await typeAndSend("Keep my draft");
     await waitFor(() => expect(proceed).toHaveBeenCalled());
-    expect(proceed.mock.calls[0]?.[0]).toMatchObject([{ conversation_id: "c1", expected_revision: 4 }]);
+    expect(proceed.mock.calls[0]?.[0]).toMatchObject([
+      { conversation_id: "c1", expected_revision: 4 },
+    ]);
     expect(await screen.findByText("The newly selected branch")).toBeTruthy();
-    await waitFor(() => expect((screen.getByPlaceholderText("Message Cassian…") as HTMLTextAreaElement).value).toBe("Keep my draft"));
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText("Message Cassian…") as HTMLTextAreaElement).value).toBe(
+        "Keep my draft",
+      ),
+    );
     expect(proceed).toHaveBeenCalledTimes(1);
   });
 
@@ -292,7 +554,10 @@ describe("conversation screen", () => {
           emit({ type: "failed", turn_id: "t1", code: "timed_out" });
           return accepted;
         },
-        conversationRetry: () => ({ status: "error", error: { code: "unavailable", message: "x", details: null } }),
+        conversationRetry: () => ({
+          status: "error",
+          error: { code: "unavailable", message: "x", details: null },
+        }),
       },
     });
     await typeAndSend("Hi");
@@ -303,38 +568,87 @@ describe("conversation screen", () => {
   });
 
   it("offers regenerate only on the latest assistant message", async () => {
-    await open({ messages: () => [message("a1", "assistant", "Old reply."), message("u1", "user", "Go on."), message("a2", "assistant", "New reply.")] });
+    await open({
+      messages: () => [
+        message("a1", "assistant", "Old reply."),
+        message("u1", "user", "Go on."),
+        message("a2", "assistant", "New reply."),
+      ],
+    });
     fireEvent.contextMenu(await screen.findByText("Old reply."));
     await screen.findByRole("button", { name: /Copy text/ });
     expect(screen.queryByRole("button", { name: /Regenerate/ })).toBeNull();
     cleanup();
-    await open({ messages: () => [message("a1", "assistant", "Old reply."), message("u1", "user", "Go on."), message("a2", "assistant", "New reply.")] });
+    await open({
+      messages: () => [
+        message("a1", "assistant", "Old reply."),
+        message("u1", "user", "Go on."),
+        message("a2", "assistant", "New reply."),
+      ],
+    });
     fireEvent.contextMenu(await screen.findByText("New reply."));
     expect(await screen.findByRole("button", { name: /Regenerate/ })).toBeTruthy();
   });
 
   it("regenerates an assistant message from its menu", async () => {
-    const regenerate = vi.fn((_args: unknown[]) => ({ status: "ok" as const, data: { turn_id: "t3" } }));
+    const regenerate = vi.fn((_args: unknown[]) => ({
+      status: "ok" as const,
+      data: { turn_id: "t3" },
+    }));
     await open({ streams: { conversationRegenerate: regenerate } });
     fireEvent.contextMenu(await screen.findByText("Sit down."));
     fireEvent.click(await screen.findByRole("button", { name: /Regenerate/ }));
     await waitFor(() => expect(regenerate).toHaveBeenCalled());
-    expect(regenerate.mock.calls[0]?.[0]).toMatchObject([{ conversation_id: "c1", message_id: "a1", expected_revision: 4 }]);
+    expect(regenerate.mock.calls[0]?.[0]).toMatchObject([
+      { conversation_id: "c1", message_id: "a1", expected_revision: 4 },
+    ]);
   });
 
   it("selects the neighbouring reply variant through its candidate id", async () => {
-    const select = vi.fn(() => ({ status: "ok" as const, data: { message: message("a1", "assistant", "x"), revision: 5 } }));
+    const select = vi.fn(() => ({
+      status: "ok" as const,
+      data: { message: message("a1", "assistant", "x"), revision: 5 },
+    }));
     const api = createApiClient(
       createMockTransport({
         calls: {
-          messageCandidates: () => ({ status: "ok", data: { items: [{ id: "k0", index: 0, author_participant_id: null, parts: [], reasoning: null, created_at: 1 }, { id: "k1", index: 1, author_participant_id: null, parts: [], reasoning: null, created_at: 2 }], next_cursor: null } }),
+          messageCandidates: () => ({
+            status: "ok",
+            data: {
+              items: [
+                {
+                  id: "k0",
+                  index: 0,
+                  author_participant_id: null,
+                  parts: [],
+                  reasoning: null,
+                  created_at: 1,
+                },
+                {
+                  id: "k1",
+                  index: 1,
+                  author_participant_id: null,
+                  parts: [],
+                  reasoning: null,
+                  created_at: 2,
+                },
+              ],
+              next_cursor: null,
+            },
+          }),
           messageCandidateSelect: select,
         },
       }),
     );
-    const done = await selectCandidate({ api, queryClient: new QueryClient(), conversationId: "c1", isStuck: () => true }, message("a1", "assistant", "x", { candidate_index: 0, candidate_count: 2 }), 1);
+    const done = await selectCandidate(
+      { api, queryClient: new QueryClient(), conversationId: "c1", isStuck: () => true },
+      message("a1", "assistant", "x", { candidate_index: 0, candidate_count: 2 }),
+      1,
+    );
     expect(done).toBe(true);
-    expect(select).toHaveBeenCalledWith(expect.objectContaining({ message_id: "a1", candidate_id: "k1" }));
+    expect(select).toHaveBeenCalledWith(
+      expect.objectContaining({ message_id: "a1", candidate_id: "k1" }),
+    );
   });
 
   it("disables delete for a pinned message", async () => {
@@ -346,7 +660,10 @@ describe("conversation screen", () => {
   });
 
   it("asks before rewinding and then deletes everything after the message", async () => {
-    const rewind = vi.fn(() => ({ status: "ok" as const, data: { outcome: { type: "tombstoned" as const, removed: ["a2"] }, revision: 5 } }));
+    const rewind = vi.fn(() => ({
+      status: "ok" as const,
+      data: { outcome: { type: "tombstoned" as const, removed: ["a2"] }, revision: 5 },
+    }));
     await open({
       messages: () => [message("a1", "assistant", "First."), message("u1", "user", "Second.")],
       calls: { messagesDeleteAfter: rewind },
@@ -355,7 +672,11 @@ describe("conversation screen", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Rewind to here/ }));
     expect(rewind).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Rewind" }));
-    await waitFor(() => expect(rewind).toHaveBeenCalledWith(expect.objectContaining({ conversation_id: "c1", message_id: "a1", expected_revision: 4 })));
+    await waitFor(() =>
+      expect(rewind).toHaveBeenCalledWith(
+        expect.objectContaining({ conversation_id: "c1", message_id: "a1", expected_revision: 4 }),
+      ),
+    );
   });
 
   it("hides the tab bar on a phone and keeps it on the home page", async () => {
@@ -371,17 +692,31 @@ describe("conversation screen", () => {
     let compact = false;
     const listeners = new Set<() => void>();
     vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-      matches: compact && query.includes("max-width"), media: query, onchange: null,
-      addEventListener: (_type: string, listener: unknown) => { listeners.add(listener as () => void); },
-      removeEventListener: (_type: string, listener: unknown) => { listeners.delete(listener as () => void); },
-      addListener() {}, removeListener() {}, dispatchEvent: () => false,
+      matches: compact && query.includes("max-width"),
+      media: query,
+      onchange: null,
+      addEventListener: (_type: string, listener: unknown) => {
+        listeners.add(listener as () => void);
+      },
+      removeEventListener: (_type: string, listener: unknown) => {
+        listeners.delete(listener as () => void);
+      },
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
     }));
     await open();
     const field = await screen.findByPlaceholderText("Message Cassian…");
     fireEvent.change(field, { target: { value: "Keep my unfinished reply" } });
     for (const next of [true, false]) {
-      act(() => { compact = next; for (const listener of [...listeners]) listener(); });
-      expect(await screen.findByPlaceholderText("Message Cassian…")).toHaveProperty("value", "Keep my unfinished reply");
+      act(() => {
+        compact = next;
+        for (const listener of [...listeners]) listener();
+      });
+      expect(await screen.findByPlaceholderText("Message Cassian…")).toHaveProperty(
+        "value",
+        "Keep my unfinished reply",
+      );
     }
   });
 
@@ -395,14 +730,30 @@ describe("conversation screen", () => {
 
 describe("conversation data", () => {
   it("groups a run from the same speaker and leaves narration alone", () => {
-    const list = [message("1", "assistant", "a"), message("2", "assistant", "b"), message("3", "scene", "c"), message("4", "user", "d")];
-    expect([0, 1, 2, 3].map((index) => groupOf(list, index))).toEqual(["start", "end", "only", "only"]);
+    const list = [
+      message("1", "assistant", "a"),
+      message("2", "assistant", "b"),
+      message("3", "scene", "c"),
+      message("4", "user", "d"),
+    ];
+    expect([0, 1, 2, 3].map((index) => groupOf(list, index))).toEqual([
+      "start",
+      "end",
+      "only",
+      "only",
+    ]);
   });
 
   it("reads the runtime summary and omits what is missing", () => {
-    expect(statsOf({ modelName: "/models/gemma.gguf", completionTokens: 12, ttftMs: 500 })).toEqual({
-      model: "gemma", promptTokens: null, completionTokens: 12, tokensPerSecond: null, firstTokenSeconds: 0.5,
-    });
+    expect(statsOf({ modelName: "/models/gemma.gguf", completionTokens: 12, ttftMs: 500 })).toEqual(
+      {
+        model: "gemma",
+        promptTokens: null,
+        completionTokens: 12,
+        tokensPerSecond: null,
+        firstTokenSeconds: 0.5,
+      },
+    );
     expect(statsOf({})).toBeNull();
   });
 

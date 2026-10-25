@@ -13,6 +13,7 @@
         "@tanstack/react-router": "^1.170.39",
         "@tanstack/react-virtual": "^3.14.13",
         "@tauri-apps/api": "3.0.0-alpha.2",
+        "@tauri-apps/plugin-haptics": "3.0.0-alpha.3",
         "@tauri-apps/plugin-opener": "3.0.0-alpha.3",
         "framer-motion": "^13.4.4",
         "i18next": "^26.4.2",
@@ -238,6 +239,8 @@
     "@tauri-apps/cli-win32-ia32-msvc": ["@tauri-apps/cli-win32-ia32-msvc@3.0.0-alpha.4", "", { "os": "win32", "cpu": "ia32" }, "sha512-v8J3IgwgFsOiuDPLCScYGAQjQZKj+46o1mMRVcx4gYo1JV9P6o/hblJX5nMT/oTTGdsAgao5PZNxUlX8WJGMFA=="],
 
     "@tauri-apps/cli-win32-x64-msvc": ["@tauri-apps/cli-win32-x64-msvc@3.0.0-alpha.4", "", { "os": "win32", "cpu": "x64" }, "sha512-BfEHaKBdNImxb9KOVji9hROEVnPWl2ImshQmV9ASC61jraX2/xCJ+YNdaAi7yA18qAyQVb/CszsfhFWJHT+YbA=="],
+
+    "@tauri-apps/plugin-haptics": ["@tauri-apps/plugin-haptics@3.0.0-alpha.3", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.2" } }, "sha512-cQnS7Uv0rGixA1we+VDjh7bFI+KNo8x3BjF/Ibg8KjGJQWENgaHNAUnbUJnSnbFv+JYZAe3ywf2GptNDvMkdcA=="],
 
     "@tauri-apps/plugin-opener": ["@tauri-apps/plugin-opener@3.0.0-alpha.3", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.2" } }, "sha512-UnmgVn/8TZmXKf9s6dhX8jvSKsb4mVeefSJ3aL9NxeUwXCvaYRVCDU7hTqmbTAwwxKRmIqZ6h0LeT+5/e4zBAg=="],
 

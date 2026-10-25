@@ -4,6 +4,7 @@ import { Message, motion as m } from "@lettuceai/crisp";
 import { spacing, type Author, type Group } from "../data/messages";
 import type { GenerationStore } from "../data/generation-store";
 import { MessageBody } from "./MessageRow";
+import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 
 export interface StreamingReplyProps {
   store: GenerationStore;
@@ -13,14 +14,25 @@ export interface StreamingReplyProps {
 }
 
 export function StreamingReply({ store, author, group, pinned }: StreamingReplyProps) {
-  const { text, reasoning, loading, imagePrompt } = useSyncExternalStore(store.subscribeText, store.getText);
+  const look = useChatLook();
+  const appearance = useMessageAppearance();
+  const { text, reasoning, loading, imagePrompt } = useSyncExternalStore(
+    store.subscribeText,
+    store.getText,
+  );
   const waiting = text.length === 0;
   const preparing = loading !== null || imagePrompt;
   const state = preparing ? "idle" : waiting ? "typing" : "streaming";
   if (preparing && waiting && !reasoning) return null;
   return (
-    <motion.div className={spacing(group)} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={m.quick}>
+    <motion.div
+      className={spacing(group, look.messageGap)}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={m.quick}
+    >
       <Message
+        appearance={appearance}
         role="assistant"
         {...(author ? { author } : {})}
         {...(pinned ? { pinned } : {})}
@@ -36,9 +48,23 @@ export function StreamingReply({ store, author, group, pinned }: StreamingReplyP
 }
 
 export function PendingReply({ author, group }: { author: Author | undefined; group: Group }) {
+  const look = useChatLook();
+  const appearance = useMessageAppearance();
   return (
-    <motion.div className={spacing(group)} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={m.quick}>
-      <Message role="assistant" {...(author ? { author } : {})} group={group} state="typing" className="mt-0!" />
+    <motion.div
+      className={spacing(group, look.messageGap)}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={m.quick}
+    >
+      <Message
+        appearance={appearance}
+        role="assistant"
+        {...(author ? { author } : {})}
+        group={group}
+        state="typing"
+        className="mt-0!"
+      />
     </motion.div>
   );
 }

@@ -48,6 +48,8 @@ pub struct Appearance {
     pub custom_gradient: CustomGradient,
     pub text_colors: TextColors,
     pub chat: ChatAppearance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_overrides: Option<std::collections::BTreeSet<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

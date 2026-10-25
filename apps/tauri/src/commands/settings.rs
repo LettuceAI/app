@@ -4,6 +4,20 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn settings_theme_read(context: State<'_, ApiContextSlot>, source: dto::FileSource) -> Result<dto::SettingsThemeDocument, ApiError> {
+    let context = context.snapshot()?;
+    api::settings_theme_read(&context, source).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn settings_theme_export(context: State<'_, ApiContextSlot>, request: dto::SettingsThemeExportRequest) -> Result<dto::EntityExportResult, ApiError> {
+    let context = context.snapshot()?;
+    api::settings_theme_export(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn settings_get(
     context: State<'_, ApiContextSlot>,
 ) -> Result<dto::SettingsView, ApiError> {

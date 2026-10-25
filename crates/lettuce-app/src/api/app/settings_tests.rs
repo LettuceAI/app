@@ -840,6 +840,7 @@ async fn models_folder_relocation_worker_emits_device_settings_changed() {
     worker.abort();
 }
 
+
 #[tokio::test]
 async fn onnx_settings_patch_uses_device_revision_and_preserves_other_choices() {
     let h = harness(Reply::Text("Hello."));
@@ -859,4 +860,35 @@ async fn onnx_settings_patch_uses_device_revision_and_preserves_other_choices() 
     }).await.expect_err("stale device revision");
     assert_eq!(error.code, ApiErrorCode::Conflict);
     assert_eq!(settings_get(&h.context).await.expect("unchanged"), after);
+}
+
+#[tokio::test]
+async fn customization_appearance_baseline_is_captured_once_with_revision_fencing() {
+    let h = harness(Reply::Text("Hello."));
+    let before = settings_get(&h.context).await.expect("settings");
+    let first = serde_json::from_value::<dto::SettingsUpdateRequest>(serde_json::json!({"expected_revision":before.revision,"patch":{"section":"ui_preferences","changes":[{"key":"chatAppearance","value":{"fontSize":"large","composerFontSize":"xlarge","footerInputColorHex":"#123456"}}]}})).expect("request");
+    let saved = settings_update(&h.context, first).await.expect("saved");
+    assert_eq!(saved.global.ui_preferences["appearanceInheritanceBaseline"], serde_json::json!({}));
+    assert_eq!(saved.global.ui_preferences["chatAppearance"]["composerFontSize"], "xlarge");
+    let second = serde_json::from_value::<dto::SettingsUpdateRequest>(serde_json::json!({"expected_revision":saved.revision,"patch":{"section":"ui_preferences","changes":[{"key":"chatAppearance","value":{"fontSize":"small"}}]}})).expect("request");
+    let saved = settings_update(&h.context, second).await.expect("saved");
+    assert_eq!(saved.global.ui_preferences["appearanceInheritanceBaseline"], serde_json::json!({}));
+}
+
+#[tokio::test]
+async fn customization_theme_file_round_trip_and_legacy_import_use_native_files() {
+    let h = harness(Reply::Text("Hello."));
+    let root = std::env::temp_dir().join(format!("lettuce-theme-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("directory");
+    let path = root.join("theme.json");
+    let document: dto::SettingsThemeDocument = serde_json::from_value(serde_json::json!({"format_version":1,"name":"Ocean","colors":{"surface":"#08141e","fg":"#e5edf3","accent":"#72bed5"},"radius":"round","density":"compact"})).expect("theme");
+    let result = crate::api::settings_theme_export(&h.context, dto::SettingsThemeExportRequest { document: document.clone(), target: Some(dto::FileTarget { uri: path.display().to_string() }) }).await.expect("export");
+    let imported = crate::api::settings_theme_read(&h.context, dto::FileSource { uri: result.uri }).await.expect("read");
+    assert_eq!(imported, document);
+    std::fs::write(&path, serde_json::to_vec(&serde_json::json!({"type":"color-preset","version":1,"preset":{"name":"Legacy Ocean","colors":{"surface":"#08141e","fg":"#e5edf3","accent":"#72bed5"},"settingsCardOpacity":80}})).expect("json")).expect("write");
+    let imported = crate::api::settings_theme_read(&h.context, dto::FileSource { uri: path.display().to_string() }).await.expect("legacy read");
+    assert_eq!(imported.name, "Legacy Ocean");
+    assert_eq!(imported.colors, document.colors);
+    assert!(imported.radius.is_none());
+    std::fs::remove_dir_all(root).expect("cleanup");
 }

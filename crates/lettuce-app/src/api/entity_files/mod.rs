@@ -1608,7 +1608,7 @@ fn text_body(content: String) -> impl FnOnce(&mut dyn Write) -> Result<(), ApiEr
     }
 }
 
-fn publish(
+pub(super) fn publish(
     context: &ApiContext,
     target: Option<dto::FileTarget>,
     name: String,

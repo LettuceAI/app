@@ -1,16 +1,47 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type PointerEvent,
+} from "react";
 import { ArrowDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Alert, Button, cn, EmptyState, icon, IconButton, MessageDivider, Message, useCompactLayout } from "@lettuceai/crisp";
+import {
+  Alert,
+  Button,
+  cn,
+  EmptyState,
+  icon,
+  IconButton,
+  MessageDivider,
+  Message,
+  useCompactLayout,
+} from "@lettuceai/crisp";
 import { MessageSquare } from "lucide-react";
 import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings";
 import type { GenerationStore } from "../data/generation-store";
-import { authorOf, dayLabel, groupOf, sameDay, spacing, textOf, type Author, type MediaItem } from "../data/messages";
+import {
+  authorOf,
+  dayLabel,
+  groupOf,
+  sameDay,
+  spacing,
+  textOf,
+  type Author,
+  type MediaItem,
+} from "../data/messages";
 import type { Timeline as TimelineData } from "../data/use-timeline";
 import { Attached, MessageBody, MessageRow } from "./MessageRow";
 import { PendingReply, StreamingReply } from "./StreamingReply";
+import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 
 export interface TimelineProps {
+  columnStyle?: CSSProperties;
   timeline: TimelineData;
   store: GenerationStore;
   onStick: (stuck: boolean) => void;
@@ -31,9 +62,26 @@ export interface TimelineProps {
 const nearBottom = 80;
 
 export function Timeline({
-  timeline, store, onStick, participants, user, character, pendingTurn, pendingMedia, locale, query, focusId, menuFor, onMenu, onVariant, onRetry,
+  timeline,
+  store,
+  onStick,
+  participants,
+  user,
+  character,
+  pendingTurn,
+  pendingMedia,
+  locale,
+  query,
+  focusId,
+  menuFor,
+  onMenu,
+  onVariant,
+  onRetry,
+  columnStyle,
 }: TimelineProps) {
   const { t } = useTranslation("conversations");
+  const look = useChatLook();
+  const appearance = useMessageAppearance();
   const phone = useCompactLayout();
   const meta = useSyncExternalStore(store.subscribeMeta, store.getMeta);
   const scroller = useRef<HTMLDivElement>(null);
@@ -54,7 +102,16 @@ export function Timeline({
   const touchY = useRef<number | null>(null);
   const focused = useRef<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
-  const { messages, hasOlder, loadingOlder, loadOlder, hasNewer, loadNewer, windowed, jumpToLatest } = timeline;
+  const {
+    messages,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
+    hasNewer,
+    loadNewer,
+    windowed,
+    jumpToLatest,
+  } = timeline;
   const needle = query.trim().toLowerCase();
   const lastMessage = messages[messages.length - 1];
   const latestAssistantId = !windowed && lastMessage?.role === "assistant" ? lastMessage.id : null;
@@ -113,10 +170,20 @@ export function Timeline({
   useEffect(() => {
     const root = scroller.current;
     const target = top.current;
-    if (!root || !target || !hasOlder || loadingOlder || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) requestOlder();
-    }, { root });
+    if (
+      !root ||
+      !target ||
+      !hasOlder ||
+      loadingOlder ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) requestOlder();
+      },
+      { root },
+    );
     observer.observe(target);
     return () => observer.disconnect();
   }, [hasOlder, loadingOlder, requestOlder, firstId]);
@@ -125,9 +192,12 @@ export function Timeline({
     const root = scroller.current;
     const target = bottom.current;
     if (!root || !target || !hasNewer || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) loadNewer();
-    }, { root });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadNewer();
+      },
+      { root },
+    );
     observer.observe(target);
     return () => observer.disconnect();
   }, [hasNewer, loadNewer, messages.length]);
@@ -151,7 +221,11 @@ export function Timeline({
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
-    if (stick.current && !dragging.current && el.scrollHeight - el.scrollTop - el.clientHeight > 2) {
+    if (
+      stick.current &&
+      !dragging.current &&
+      el.scrollHeight - el.scrollTop - el.clientHeight > 2
+    ) {
       el.scrollTop = el.scrollHeight;
       lastTop.current = el.scrollTop;
       setAtBottom(true);
@@ -184,7 +258,9 @@ export function Timeline({
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   };
 
-  const showUser = meta.userText !== null && !(meta.userMessageId && messages.some((message) => message.id === meta.userMessageId));
+  const showUser =
+    meta.userText !== null &&
+    !(meta.userMessageId && messages.some((message) => message.id === meta.userMessageId));
   const trailing = meta.active && meta.targetId === null;
   const regenerating = meta.active ? meta.targetId : null;
 
@@ -199,25 +275,48 @@ export function Timeline({
           const y = event.touches[0]?.clientY;
           if (y !== undefined && touchY.current !== null && y > touchY.current + 4) leave();
         }}
-        onKeyDown={(event) => (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") && leave()}
+        onKeyDown={(event) =>
+          (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") && leave()
+        }
         onPointerDown={onPointerDown}
-        className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
-        <div ref={content} className={cn("pb-6 pt-3", phone ? "px-3" : "px-6")}>
+        className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]"
+      >
+        <div ref={content} style={columnStyle} className={cn("pb-6 pt-3", phone ? "px-3" : "px-6")}>
           <div ref={top} aria-hidden className="h-px" />
-          {loadingOlder && <p role="status" className="pb-2 text-center text-2xs text-fg-3">{t("timeline.loadingOlder")}</p>}
+          {loadingOlder && (
+            <p role="status" className="pb-2 text-center text-2xs text-fg-3">
+              {t("timeline.loadingOlder")}
+            </p>
+          )}
           {messages.length === 0 && !showUser && !trailing && (
-            <EmptyState size="sm" icon={<MessageSquare size={icon.lg} />} title={t("timeline.empty")} />
+            <EmptyState
+              size="sm"
+              icon={<MessageSquare size={icon.lg} />}
+              title={t("timeline.empty")}
+            />
           )}
           {messages.map((message, index) => {
             const previous = messages[index - 1];
-            const label = !previous || !sameDay(previous.created_at, message.created_at) ? dayLabel(message.created_at, now, locale) : null;
+            const label =
+              !previous || !sameDay(previous.created_at, message.created_at)
+                ? dayLabel(message.created_at, now, locale)
+                : null;
             const group = groupOf(messages, index);
             const dimmed = needle.length > 0 && !textOf(message).toLowerCase().includes(needle);
             return (
               <Fragment key={message.id}>
-                {label && <MessageDivider>{label.kind === "date" ? label.text : t(`timeline.${label.kind}`)}</MessageDivider>}
+                {label && (
+                  <MessageDivider>
+                    {label.kind === "date" ? label.text : t(`timeline.${label.kind}`)}
+                  </MessageDivider>
+                )}
                 {regenerating === message.id ? (
-                  <StreamingReply store={store} author={authorOf(participants, message)} group={group} pinned={message.pinned} />
+                  <StreamingReply
+                    store={store}
+                    author={authorOf(participants, message)}
+                    group={group}
+                    pinned={message.pinned}
+                  />
                 ) : (
                   <MessageRow
                     message={message}
@@ -236,8 +335,17 @@ export function Timeline({
             );
           })}
           {showUser && (
-            <div className={spacing("only")}>
-              <Message role="user" {...(user ? { author: user } : {})} group="only" className="mt-0!" {...(pendingMedia.length > 0 ? { attachments: <Attached media={pendingMedia} /> } : {})}>
+            <div className={spacing("only", look.messageGap)}>
+              <Message
+                appearance={appearance}
+                role="user"
+                {...(user ? { author: user } : {})}
+                group="only"
+                className="mt-0!"
+                {...(pendingMedia.length > 0
+                  ? { attachments: <Attached media={pendingMedia} /> }
+                  : {})}
+              >
                 <MessageBody text={meta.userText ?? ""} query="" />
               </Message>
             </div>
@@ -250,7 +358,11 @@ export function Timeline({
                 tone="danger"
                 title={t("failure.title")}
                 description={t(`failure.code.${meta.failure.code}`)}
-                action={<Button variant="secondary" size="sm" onClick={onRetry}>{t("failure.retry")}</Button>}
+                action={
+                  <Button variant="secondary" size="sm" onClick={onRetry}>
+                    {t("failure.retry")}
+                  </Button>
+                }
                 onDismiss={() => store.dismissFailure()}
               />
             </div>
@@ -260,7 +372,13 @@ export function Timeline({
       </div>
       {(!atBottom || windowed) && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <IconButton label={t("timeline.jumpToLatest")} shape="round" variant="secondary" onClick={jump} className="pointer-events-auto shadow-raised">
+          <IconButton
+            label={t("timeline.jumpToLatest")}
+            shape="round"
+            variant="secondary"
+            onClick={jump}
+            className="pointer-events-auto shadow-raised"
+          >
             <ArrowDown size={icon.md} />
           </IconButton>
         </div>

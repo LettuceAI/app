@@ -1,25 +1,7 @@
 import type { i18n } from "i18next";
 import { fallbackLanguage } from "@/shared/i18n";
 
-const retainedLocales = new Set(["en", "es", "fr", "de", "ja", "pl", "pt", "no", "id", "fil", "nl", "el", "hi", "it", "vi", "ru", "ko", "tr", "zh-Hans", "zh-Hant"]);
-
-function requestedLocales(): string[] {
-  return typeof navigator === "undefined" ? [] : [navigator.language, ...(navigator.languages ?? [])];
-}
-
-/** The first of the browser's languages the app has, or null. */
-export function matchRequestedLocale(requested: readonly string[] = requestedLocales()): string | null {
-  for (const locale of requested) {
-    if (retainedLocales.has(locale)) return locale;
-    const normalized = locale.toLowerCase();
-    if (["zh", "zh-cn"].includes(normalized)) return "zh-Hans";
-    if (["zh-tw", "zh-hk", "zh-mo"].includes(normalized)) return "zh-Hant";
-    const base = normalized.split("-")[0];
-    const match = [...retainedLocales].find((candidate) => candidate.toLowerCase() === base);
-    if (match) return match;
-  }
-  return null;
-}
+import { matchRequestedLocale, retainedLocales } from "@/shared/i18n/device-locale";
 
 /**
  * The stored choice first, then a legacy choice, then the device. With `systemFirst`
@@ -31,6 +13,9 @@ export function selectDeviceLocale(
   readLegacy: () => string | null,
   systemFirst = false,
 ): string {
+  if (state.localeChoice === "system") return matchRequestedLocale() ?? fallbackLanguage;
+  if (typeof state.localeChoice === "string" && retainedLocales.has(state.localeChoice))
+    return state.localeChoice;
   if (systemFirst) {
     const system = matchRequestedLocale();
     if (system) return system;
@@ -44,8 +29,13 @@ export function selectDeviceLocale(
 }
 
 /** Switches the app language when the system's language for the app changes while it runs. */
-export function followSystemLocale(localization: i18n, store: (locale: string) => Promise<void>): () => void {
+export function followSystemLocale(
+  localization: i18n,
+  store: (locale: string) => Promise<void>,
+  shouldFollow: () => boolean = () => true,
+): () => void {
   const onChange = () => {
+    if (!shouldFollow()) return;
     const next = matchRequestedLocale();
     if (!next || next === localization.language) return;
     void localization.changeLanguage(next);

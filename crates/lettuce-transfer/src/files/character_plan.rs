@@ -165,6 +165,7 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
             primary_text_color: presentation.primary_text_color.clone(),
             secondary_text_color: presentation.secondary_text_color.clone(),
             chat_appearance: presentation.chat_appearance.clone(),
+            chat_appearance_overrides: None,
         },
         image_recommendation: candidate.image_recommendation.as_ref().map(|value| {
             ImageRecommendation {

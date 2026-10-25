@@ -1,5 +1,7 @@
 # lettuce-transfer: legacy parity notes
 
+UEC3 character appearance includes an optional chatOverrides set, preserving native per-field inheritance across export/import without requiring it in older cards. Legacy backup and authored-file snapshots keep the absent-set marker so the application can distinguish their historical full appearance from a new inheriting character. Existing appearance fields and widget configurations stay intact.
+
 Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each legacy import path preserves, where it deliberately differs, and how the backup format got here. The crate README describes the current design.
 
 ## Backup format

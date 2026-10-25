@@ -8,10 +8,12 @@ import { ImageSettingsPage } from "./image/ImageSettingsPage";
 import { ReplyHelperPage } from "./reply-helper/ReplyHelperPage";
 import { PromptsPage } from "./prompts/PromptsPage";
 import { BackupPage } from "./backup/BackupPage";
+import { CustomizationPage } from "./customization/CustomizationPage";
 
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
   const { section } = useParams({ from: "/settings/$section" });
+  if (section === "customization") return <CustomizationPage />;
   if (section === "speech") return <SpeechPage />;
   if (section === "providers") return <ProvidersPage />;
   if (section === "models") return <ModelsPage />;
