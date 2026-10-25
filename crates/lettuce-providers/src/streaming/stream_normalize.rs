@@ -166,7 +166,10 @@ impl StreamNormalizer {
         &mut self,
         record: &StreamRecord,
     ) -> Result<Vec<StreamDelta>, StreamNormalizeError> {
-        if self.terminal {
+        if record.data.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        if self.terminal && self.protocol != StreamProtocol::Gemini {
             return Err(StreamNormalizeError::DataAfterTerminal);
         }
         match self.protocol {
@@ -175,6 +178,10 @@ impl StreamNormalizer {
             StreamProtocol::Gemini => self.consume_gemini(record),
             StreamProtocol::Ollama => self.consume_ollama(record),
         }
+    }
+
+    pub(crate) fn can_stop_reading(&self) -> bool {
+        self.terminal && self.protocol != StreamProtocol::Gemini
     }
 
     #[cfg(test)]
@@ -850,6 +857,15 @@ impl StreamNormalizer {
         if let Some(error) = provider_error(&value) {
             return Err(error);
         }
+        if self.terminal
+            && (value.get("usageMetadata").is_none_or(|usage| !usage.is_object())
+                || value.get("promptFeedback").is_some()
+                || value.get("candidates").is_some_and(|candidates| {
+                    !candidates.as_array().is_some_and(Vec::is_empty)
+                }))
+        {
+            return Err(StreamNormalizeError::DataAfterTerminal);
+        }
         if value
             .get("promptFeedback")
             .and_then(|feedback| feedback.get("blockReason"))
@@ -864,14 +880,18 @@ impl StreamNormalizer {
             self.terminal = true;
         }
         if let Some(usage) = value.get("usageMetadata") {
-            self.input_tokens = token(usage, &["promptTokenCount"]);
-            self.cached_input_tokens = token(usage, &["cachedContentTokenCount"]);
-            self.reasoning_tokens = token(usage, &["thoughtsTokenCount"]);
-            self.output_tokens = token(usage, &["candidatesTokenCount"]);
-            (self.image_tokens, self.audio_tokens, self.total_tokens) = usage
+            self.input_tokens = token(usage, &["promptTokenCount"]).or(self.input_tokens);
+            self.cached_input_tokens = token(usage, &["cachedContentTokenCount"])
+                .or(self.cached_input_tokens);
+            self.reasoning_tokens = token(usage, &["thoughtsTokenCount"]).or(self.reasoning_tokens);
+            self.output_tokens = token(usage, &["candidatesTokenCount"]).or(self.output_tokens);
+            let (image_tokens, audio_tokens, total_tokens) = usage
                 .as_object()
                 .map(crate::common::usage_modalities)
                 .unwrap_or_default();
+            self.image_tokens = image_tokens.or(self.image_tokens);
+            self.audio_tokens = audio_tokens.or(self.audio_tokens);
+            self.total_tokens = total_tokens.or(self.total_tokens);
         }
         let mut deltas = Vec::new();
         if let Some(candidate) = value
@@ -2033,5 +2053,80 @@ mod tests {
         assert_eq!(status, Some(400));
         assert_eq!(code.as_deref(), Some("BAD_REQUEST"));
         assert!(message.unwrap().len() <= 2048);
+    }
+
+    #[test]
+    fn gemini_usage_trailers_preserve_earlier_counts_and_reject_more_content() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"answer"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"thoughtsTokenCount":3}}"#)).unwrap();
+        assert!(!normalizer.can_stop_reading());
+        normalizer.consume(&record(r#"{"usageMetadata":{"candidatesTokenCount":2,"totalTokenCount":9}}"#)).unwrap();
+        assert_eq!(normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"duplicate"}]}}]}"#)), Err(StreamNormalizeError::DataAfterTerminal));
+        let (_, outcome) = normalizer.finish().unwrap();
+        let usage = outcome.usage.unwrap();
+        assert_eq!(usage.input_tokens, 4);
+        assert_eq!(usage.output_tokens, 2);
+        assert_eq!(usage.reasoning_tokens, Some(3));
+        assert_eq!(usage.total_tokens, Some(9));
+    }
+
+    #[test]
+    fn gemini_usage_trailers_do_not_hide_provider_errors() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"answer"}]},"finishReason":"STOP"}]}"#)).unwrap();
+        assert!(matches!(normalizer.consume(&record(r#"{"error":{"code":503,"message":"unavailable"}}"#)), Err(StreamNormalizeError::Provider { status: Some(503), .. })));
+    }
+
+    #[test]
+    fn every_provider_family_preserves_unicode_and_json_escapes_at_every_byte_split() {
+        use crate::streaming::stream_framing::{StreamFormat, StreamFramer};
+        let expected = "İıŞşĞğÖöÜüÇç 漢字 한글 العربية हिन्दी e\u{301} 👩🏽‍💻 🥬 𐍈\n\r\n\t\u{0} \\\"";
+        let fixtures = [
+            (StreamProtocol::OpenAi, StreamFormat::Sse, serde_json::json!({
+                "choices": [{"delta": {"content": expected}, "finish_reason": "stop"}]
+            }).to_string(), "data: [DONE]\n\n"),
+            (StreamProtocol::Anthropic, StreamFormat::Sse, serde_json::json!({
+                "type": "content_block_delta", "delta": {"type": "text_delta", "text": expected}
+            }).to_string(), "data: {\"type\":\"message_stop\"}\n\n"),
+            (StreamProtocol::Gemini, StreamFormat::Sse, serde_json::json!({
+                "candidates": [{"content": {"parts": [{"text": expected}]}, "finishReason": "STOP"}]
+            }).to_string(), ""),
+            (StreamProtocol::Ollama, StreamFormat::Ndjson, serde_json::json!({
+                "message": {"content": expected}, "done": true
+            }).to_string(), ""),
+        ];
+        for (protocol, format, payload, tail) in fixtures {
+            let wire = match format {
+                StreamFormat::Sse => format!("data: {payload}\n\n{tail}"),
+                StreamFormat::Ndjson => format!("{payload}\n"),
+            };
+            for split in 0..=wire.len() {
+                let mut framer = StreamFramer::new(format);
+                let mut normalizer = StreamNormalizer::new(protocol, None);
+                let mut emitted = String::new();
+                for chunk in [&wire.as_bytes()[..split], &wire.as_bytes()[split..]] {
+                    for record in framer.records(chunk) {
+                        for delta in normalizer.consume(&record.unwrap()).unwrap() {
+                            if let StreamDelta::Text(text) = delta {
+                                emitted.push_str(&text);
+                            }
+                        }
+                    }
+                }
+                let (tail, outcome) = normalizer.finish().unwrap();
+                for delta in tail {
+                    if let StreamDelta::Text(text) = delta {
+                        emitted.push_str(&text);
+                    }
+                }
+                assert_eq!(emitted, expected, "{protocol:?}, split {split}");
+                assert_eq!(outcome.candidates[0].parts, vec![MessagePart::Text {
+                    text: expected.to_owned(),
+                }], "{protocol:?}, split {split}");
+            }
+        }
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        let deltas = normalizer.consume(&record(r#"{"choices":[{"delta":{"content":"\u0130\u6f22\ud83d\udc69\ud83c\udffd\u200d\ud83d\udcbb"}}]}"#)).unwrap();
+        assert_eq!(deltas, vec![StreamDelta::Text("İ漢👩🏽‍💻".to_owned())]);
     }
 }

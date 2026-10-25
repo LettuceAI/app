@@ -553,7 +553,19 @@ mod integration_tests {
             "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{payload}",
             payload.len()
         );
-        let (endpoint, captured) = test_server(response).await;
+        let (request, outcome, events) = run_raw_stream_fixture(
+            kind, protocol, endpoint_suffix, response.into_bytes(),
+        ).await;
+        (request, outcome.expect("stream outcome"), events)
+    }
+
+    async fn run_raw_stream_fixture(
+        kind: &str,
+        protocol: ProviderProtocol,
+        endpoint_suffix: &str,
+        response: Vec<u8>,
+    ) -> (String, Result<InferenceOutcome, lettuce_conversations::PortError>, Vec<GenerationStreamEvent>) {
+        let (endpoint, captured) = fragmented_test_server(vec![response]).await;
         let store = Arc::new(RecordingSecretStore::default());
         let owner = lettuce_settings::SecretOwnerId::new();
         let key_ref = SecretRef::new();
@@ -599,7 +611,7 @@ mod integration_tests {
             });
         }
         inference.stream_sink = Some(sink_id);
-        let outcome = adapter.run(inference).await.expect("stream outcome");
+        let outcome = adapter.run(inference).await;
         runtime
             .unregister_stream(sink_id)
             .expect("unregister stream");
@@ -816,6 +828,121 @@ mod integration_tests {
             if kind == "openai" {
                 assert_eq!(body["prompt_cache_retention"], "in_memory");
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn all_remote_sse_families_preserve_unicode_and_final_usage() {
+        let fixtures = [
+            ("openai", ProviderProtocol::OpenAiCompatible, concat!(
+                "\u{feff}: heartbeat\revent: ping\r\rdata:\r\r",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"café 🥬\"},\"finish_reason\":\"stop\"}]}\r\r",
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\r\r",
+                "data: [DONE]\r\r",
+            )),
+            ("openrouter", ProviderProtocol::OpenAiCompatible, concat!(
+                ": OPENROUTER PROCESSING\r\n\r\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"café 🥬\"},\"finish_reason\":\"stop\"}]}\r\n\r\n",
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\r\n\r\n",
+                "data: [DONE]\r\n\r\n",
+            )),
+            ("anthropic", ProviderProtocol::Anthropic, concat!(
+                "\u{feff}: heartbeat\revent: ping\r\rdata:\r\r",
+                "event: content_block_delta\rdata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"café 🥬\"}}\r\r",
+                "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":4,\"output_tokens\":2}}\r\r",
+                "data: {\"type\":\"message_stop\"}\r\r",
+            )),
+            ("gemini", ProviderProtocol::Gemini, concat!(
+                "\u{feff}: heartbeat\revent: ping\r\rdata:\r\r",
+                "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"café 🥬\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":4}}\r\r",
+                "data: {\"usageMetadata\":{\"candidatesTokenCount\":2,\"totalTokenCount\":6}}\r\r",
+                ": final heartbeat",
+            )),
+        ];
+        for (kind, protocol, payload) in fixtures {
+            let (_, outcome, events) = run_stream_fixture(kind, protocol, "", payload).await;
+            assert_eq!(events, vec![GenerationStreamEvent::TextDelta {
+                text: "café 🥬".to_owned(),
+            }], "{kind}");
+            let usage = outcome.usage.expect("final usage");
+            assert_eq!(usage.input_tokens, 4, "{kind}");
+            assert_eq!(usage.output_tokens, 2, "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_terminal_events_complete_before_a_broken_http_tail() {
+        let fixtures = [
+            ("openai", ProviderProtocol::OpenAiCompatible, "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"),
+            ("openrouter", ProviderProtocol::OpenAiCompatible, "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"),
+            ("anthropic", ProviderProtocol::Anthropic, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"answer\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"),
+            ("ollama", ProviderProtocol::Ollama, "{\"message\":{\"content\":\"answer\"},\"done\":true}\n"),
+        ];
+        for (kind, protocol, payload) in fixtures {
+            let mut response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                payload.len() + 1024,
+            ).into_bytes();
+            response.extend_from_slice(b"data: \xff\n\n");
+            let (_, outcome, events) = run_raw_stream_fixture(kind, protocol, "", response).await;
+            assert!(outcome.is_ok(), "{kind}: {outcome:?}");
+            assert_eq!(events.len(), 1, "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_truncated_http_body_before_completion_fails_each_sse_family() {
+        let fixtures = [
+            ("openai", ProviderProtocol::OpenAiCompatible, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n"),
+            ("anthropic", ProviderProtocol::Anthropic, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"),
+            ("gemini", ProviderProtocol::Gemini, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial\"}]}}]}\n\n"),
+        ];
+        for (kind, protocol, payload) in fixtures {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                payload.len() + 1024,
+            ).into_bytes();
+            let (_, outcome, events) = run_raw_stream_fixture(kind, protocol, "", response).await;
+            assert_eq!(outcome, Err(lettuce_conversations::PortError::Unavailable), "{kind}");
+            assert_eq!(events, vec![GenerationStreamEvent::TextDelta {
+                text: "partial".to_owned(),
+            }], "{kind}");
+        }
+    }
+
+
+    #[tokio::test]
+    async fn clean_http_eof_without_required_completion_is_unavailable() {
+        for (kind, protocol, payload) in [
+            ("anthropic", ProviderProtocol::Anthropic, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"),
+            ("gemini", ProviderProtocol::Gemini, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial\"}]}}]}\n\n"),
+        ] {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{payload}", payload.len(),
+            ).into_bytes();
+            let (_, outcome, _) = run_raw_stream_fixture(kind, protocol, "", response).await;
+            assert_eq!(outcome, Err(lettuce_conversations::PortError::Unavailable), "{kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn all_remote_sse_families_surface_in_band_errors_with_http_200() {
+        let fixtures = [
+            ("openrouter", ProviderProtocol::OpenAiCompatible, "data: {\"error\":{\"code\":502,\"message\":\"upstream unavailable\"},\"choices\":[{\"finish_reason\":\"error\",\"delta\":{}}]}\n\n"),
+            ("openai", ProviderProtocol::OpenAiCompatible, "data: {\"error\":{\"code\":\"server_error\",\"message\":\"upstream unavailable\"}}\n\n"),
+            ("anthropic", ProviderProtocol::Anthropic, "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"upstream unavailable\"}}\n\n"),
+            ("gemini", ProviderProtocol::Gemini, "data: {\"error\":{\"code\":503,\"status\":\"UNAVAILABLE\",\"message\":\"upstream unavailable\"}}\n\n"),
+        ];
+        for (kind, protocol, payload) in fixtures {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{payload}", payload.len(),
+            ).into_bytes();
+            let (_, outcome, events) = run_raw_stream_fixture(kind, protocol, "", response).await;
+            let Err(lettuce_conversations::PortError::Provider(failure)) = outcome else {
+                panic!("{kind}: expected a provider error, got {outcome:?}");
+            };
+            assert_eq!(failure.message.as_deref(), Some("upstream unavailable"), "{kind}");
+            assert!(events.is_empty(), "{kind}");
         }
     }
 

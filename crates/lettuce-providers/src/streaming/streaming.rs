@@ -96,13 +96,17 @@ async fn stream_deltas(
         let Some(chunk) = next_chunk(&mut response, runtime, request.cancellation).await? else {
             break;
         };
-        for record in framer.push(&chunk).map_err(map_framing)? {
+        for record in framer.records(&chunk) {
+            let record = record.map_err(map_framing)?;
             for delta in normalizer
                 .consume(&record)
                 .map_err(|error| map_normalize(error, provider_request_id.clone()))?
             {
                 *sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
                 emit_recorded(runtime, request, *sequence, delta, emitted).await?;
+            }
+            if normalizer.can_stop_reading() {
+                return Ok(());
             }
         }
     }
@@ -234,6 +238,7 @@ pub(crate) async fn emit(
 }
 
 fn map_framing(error: FramingError) -> AdapterError {
+    tracing::warn!(error = %error, "provider stream framing failed");
     match error {
         FramingError::InvalidUtf8 => AdapterError::MalformedResponse,
         FramingError::RecordTooLarge(_) => AdapterError::Transport,
@@ -241,10 +246,19 @@ fn map_framing(error: FramingError) -> AdapterError {
 }
 
 fn map_normalize(error: StreamNormalizeError, request_id: Option<String>) -> AdapterError {
+    let reason = match &error {
+        StreamNormalizeError::MalformedJson => "malformed_json",
+        StreamNormalizeError::DataAfterTerminal => "data_after_terminal",
+        StreamNormalizeError::PrematureEof => "premature_eof",
+        StreamNormalizeError::OutputTooLarge { .. } => "output_too_large",
+        StreamNormalizeError::EmptyResponse => "empty_response",
+        StreamNormalizeError::Provider { .. } => "provider_error",
+    };
+    tracing::warn!(reason, "provider stream normalization failed");
     match error {
         StreamNormalizeError::MalformedJson
-        | StreamNormalizeError::DataAfterTerminal
-        | StreamNormalizeError::PrematureEof => AdapterError::MalformedResponse,
+        | StreamNormalizeError::DataAfterTerminal => AdapterError::MalformedResponse,
+        StreamNormalizeError::PrematureEof => AdapterError::Transport,
         StreamNormalizeError::OutputTooLarge { .. } => AdapterError::Transport,
         StreamNormalizeError::EmptyResponse => AdapterError::EmptyResponse,
         StreamNormalizeError::Provider {

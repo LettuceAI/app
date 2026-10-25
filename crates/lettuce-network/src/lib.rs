@@ -105,6 +105,7 @@ pub struct JsonResponseStream {
     received_bytes: usize,
     error_body_limit: usize,
     idle_timeout: Duration,
+    terminal: Option<Result<(), JsonClientError>>,
 }
 
 impl fmt::Debug for JsonResponseStream {
@@ -123,17 +124,50 @@ impl JsonResponseStream {
     /// Reads the next response chunk with an idle timeout. The total size of
     /// a streamed body is not bounded. `None` is a clean end of stream.
     pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, JsonClientError> {
-        let chunk = tokio::time::timeout(self.idle_timeout, self.response.chunk())
-            .await
-            .map_err(|_| JsonClientError::Transport)?
-            .map_err(|_| JsonClientError::Transport)?;
+        if let Some(terminal) = self.terminal {
+            return terminal.map(|()| None);
+        }
+        let chunk = match tokio::time::timeout(self.idle_timeout, self.response.chunk()).await {
+            Ok(Ok(chunk)) => chunk,
+            Ok(Err(error)) => {
+                let (io_kind, io_code, cause_depth) = io_failure(&error);
+                tracing::warn!(
+                    status = self.status,
+                    received_bytes = self.received_bytes,
+                    http_version = ?self.response.version(),
+                    timeout = error.is_timeout(),
+                    connect = error.is_connect(),
+                    body = error.is_body(),
+                    decode = error.is_decode(),
+                    io_kind = ?io_kind,
+                    io_code = ?io_code,
+                    cause_depth,
+                    "HTTP response stream read failed",
+                );
+                self.terminal = Some(Err(JsonClientError::Transport));
+                return Err(JsonClientError::Transport);
+            }
+            Err(_) => {
+                tracing::warn!(
+                    status = self.status,
+                    received_bytes = self.received_bytes,
+                    idle_timeout_ms = self.idle_timeout.as_millis(),
+                    reason = "idle_timeout",
+                    "HTTP response stream read failed",
+                );
+                self.terminal = Some(Err(JsonClientError::Transport));
+                return Err(JsonClientError::Transport);
+            }
+        };
         let Some(chunk) = chunk else {
+            self.terminal = Some(Ok(()));
             return Ok(None);
         };
-        self.received_bytes = self
-            .received_bytes
-            .checked_add(chunk.len())
-            .ok_or(JsonClientError::ResponseTooLarge)?;
+        let Some(received_bytes) = self.received_bytes.checked_add(chunk.len()) else {
+            self.terminal = Some(Err(JsonClientError::ResponseTooLarge));
+            return Err(JsonClientError::ResponseTooLarge);
+        };
+        self.received_bytes = received_bytes;
         Ok(Some(chunk.to_vec()))
     }
 
@@ -156,6 +190,24 @@ impl JsonResponseStream {
         }
         Ok(body)
     }
+}
+
+fn io_failure(error: &(dyn std::error::Error + 'static)) -> (Option<std::io::ErrorKind>, Option<i32>, usize) {
+    let mut io_kind = None;
+    let mut io_code = None;
+    let mut cause_depth = 0;
+    let mut source = Some(error);
+    while let Some(cause) = source {
+        if let Some(error) = cause.downcast_ref::<std::io::Error>() {
+            io_kind = Some(error.kind());
+            io_code = error.raw_os_error();
+        }
+        source = cause.source();
+        if source.is_some() {
+            cause_depth += 1;
+        }
+    }
+    (io_kind, io_code, cause_depth)
 }
 
 impl fmt::Debug for JsonResponse {
@@ -1334,12 +1386,14 @@ fn response_stream(
     JsonResponseStream {
         status: response.status().as_u16(),
         request_id: bounded_header(&response, "x-request-id")
-            .or_else(|| bounded_header(&response, "request-id")),
+            .or_else(|| bounded_header(&response, "request-id"))
+            .or_else(|| bounded_header(&response, "x-generation-id")),
         retry_after: bounded_header(&response, "retry-after"),
         response,
         received_bytes: 0,
         error_body_limit,
         idle_timeout,
+        terminal: None,
     }
 }
 
@@ -1502,7 +1556,8 @@ async fn read_response_limited(
 ) -> Result<JsonResponse, JsonClientError> {
     let status = response.status().as_u16();
     let request_id = bounded_header(&response, "x-request-id")
-        .or_else(|| bounded_header(&response, "request-id"));
+        .or_else(|| bounded_header(&response, "request-id"))
+        .or_else(|| bounded_header(&response, "x-generation-id"));
     let retry_after = bounded_header(&response, "retry-after");
     let content_type = bounded_header(&response, "content-type");
     if response
@@ -1894,6 +1949,80 @@ mod tests {
 
     fn client() -> JsonClient {
         JsonClient::new().expect("client")
+    }
+
+    #[tokio::test]
+    async fn a_broken_stream_keeps_its_failure_and_is_never_replayed() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stream server");
+        let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+        let (sent, received) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut buffer = [0_u8; 4096];
+            let mut request = Vec::new();
+            while request.windows(4).position(|part| part == b"\r\n\r\n")
+                .is_none_or(|start| request.len() < start + 4 + b"{}".len())
+            {
+                let read = socket.read(&mut buffer).await.expect("request");
+                assert_ne!(read, 0);
+                request.extend_from_slice(&buffer[..read]);
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Generation-Id: gen-canary\r\n\r\n1\r\nx\r\n").await.expect("response");
+            drop(socket);
+            let _ = sent.send(());
+            assert!(tokio::time::timeout(Duration::from_millis(100), listener.accept()).await.is_err());
+        });
+        let mut stream = client().post_json_stream(
+            &endpoint, "/chat", b"{}".to_vec(), &[], JsonAuth::None, Vec::new(), RequestPolicy::GENERATION,
+        ).await.expect("stream headers");
+        received.await.expect("server closed");
+        assert_eq!(stream.request_id.as_deref(), Some("gen-canary"));
+        assert_eq!(stream.next_chunk().await.expect("first byte"), Some(b"x".to_vec()));
+        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        assert_eq!(stream.received_bytes, 1);
+        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn stream_idle_timeout_is_terminal_without_replaying_the_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stream server");
+        let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+        let (release, released) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut buffer = [0_u8; 4096];
+            let mut request = Vec::new();
+            while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                let read = socket.read(&mut buffer).await.expect("request");
+                assert_ne!(read, 0);
+                request.extend_from_slice(&buffer[..read]);
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").await.expect("headers");
+            let _ = released.await;
+        });
+        let response = reqwest::Client::new().get(&endpoint).send().await.expect("headers");
+        let mut stream = response_stream(response, Duration::ZERO, 1024);
+        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        assert_eq!(stream.received_bytes, 0);
+        let _ = release.send(());
+        server.await.expect("server");
+    }
+
+    #[test]
+    fn transport_diagnostics_keep_only_safe_io_metadata() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("https://example.test/?key=secret-canary")]
+        struct Outer(#[source] std::io::Error);
+        let error = Outer(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "body-canary"));
+        let details = io_failure(&error);
+        assert_eq!(details.0, Some(std::io::ErrorKind::ConnectionReset));
+        assert_eq!(details.1, None);
+        assert_eq!(details.2, 1);
+        let diagnostic = format!("{details:?}");
+        assert!(!diagnostic.contains("secret-canary"));
+        assert!(!diagnostic.contains("body-canary"));
     }
 
     #[tokio::test]
