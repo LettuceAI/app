@@ -110,6 +110,10 @@ fn row_view(row: lettuce_usage::UsageReportRow) -> dto::UsageRow {
 
 fn totals_view(totals: lettuce_usage::UsageReportTotals) -> dto::UsageTotals {
     dto::UsageTotals {
+        cached_prompt_tokens: totals.cached_prompt_tokens,
+        cache_write_tokens: totals.cache_write_tokens,
+        reasoning_tokens: totals.reasoning_tokens,
+        cache_reporting_requests: totals.cache_reporting_requests,
         requests: totals.requests,
         successful_requests: totals.successful_requests,
         failed_requests: totals.failed_requests,
@@ -154,6 +158,28 @@ pub async fn usage_query(
                 items: page.items.into_iter().map(row_view).collect(),
                 next_cursor: page.next_cursor,
             })
+        })
+        .await
+}
+
+pub async fn usage_get(
+    context: &ApiContext,
+    request: dto::UsageGetRequest,
+) -> Result<Option<dto::UsageRow>, ApiError> {
+    if request.id.trim().is_empty() {
+        return Err(super::error::invalid_field("id", "usage id is empty"));
+    }
+    context
+        .blocking(move |context| {
+            use lettuce_usage::UsageReportRepository;
+            Ok(context
+                .backend()
+                .database()
+                .read_usage_report()
+                .map_err(report_error)?
+                .into_iter()
+                .find(|row| row.id == request.id)
+                .map(row_view))
         })
         .await
 }
@@ -206,10 +232,13 @@ pub async fn usage_stats(
 pub async fn usage_export_csv(
     context: &ApiContext,
     request: dto::UsageExportCsvRequest,
-) -> Result<(), ApiError> {
-    use super::error::IntoApiError;
+) -> Result<dto::EntityExportResult, ApiError> {
     let filters = filters(request.filters)?;
-    if request.target.uri.trim().is_empty() {
+    if request
+        .target
+        .as_ref()
+        .is_some_and(|target| target.uri.trim().is_empty())
+    {
         return Err(super::error::invalid_field(
             "target.uri",
             "export target is empty",
@@ -218,7 +247,6 @@ pub async fn usage_export_csv(
     context
         .blocking(move |context| {
             use lettuce_usage::UsageReportRepository;
-            use std::io::Write;
             let rows = context
                 .backend()
                 .database()
@@ -228,23 +256,19 @@ pub async fn usage_export_csv(
                 .filter(|row| filters.matches(row))
                 .collect::<Vec<_>>();
             let csv = lettuce_usage::usage_csv(&rows).map_err(report_error)?;
-            let protection = super::files::FileExportProtection::new(context)?;
-            let mut output = context
-                .files()
-                .create_export(&request.target.uri, None, &|uri, target| {
-                    protection.protects(uri, target)
-                })
-                .map_err(IntoApiError::into_api_error)?;
-            output.write_all(csv.as_bytes()).map_err(|error| ApiError {
-                code: ApiErrorCode::Unavailable,
-                message: error.to_string(),
-                details: Some(dto::ApiErrorDetails::UsageStorage),
-            })?;
-            output.flush().map_err(|error| ApiError {
-                code: ApiErrorCode::Unavailable,
-                message: error.to_string(),
-                details: Some(dto::ApiErrorDetails::UsageStorage),
-            })
+            super::entity_files::publish(
+                context,
+                request.target,
+                "usage.csv".to_owned(),
+                |output| {
+                    output.write_all(csv.as_bytes()).map_err(|error| ApiError {
+                        code: ApiErrorCode::Unavailable,
+                        message: error.to_string(),
+                        details: Some(dto::ApiErrorDetails::UsageStorage),
+                    })
+                },
+                Vec::new(),
+            )
         })
         .await
 }

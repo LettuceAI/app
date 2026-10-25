@@ -4,6 +4,13 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn usage_get(context: State<'_, ApiContextSlot>, request: dto::UsageGetRequest) -> Result<Option<dto::UsageRow>, ApiError> {
+    let context = context.snapshot()?;
+    api::usage_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn usage_query(
     context: State<'_, ApiContextSlot>,
     request: dto::UsageQueryRequest,
@@ -27,7 +34,7 @@ pub async fn usage_stats(
 pub async fn usage_export_csv(
     context: State<'_, ApiContextSlot>,
     request: dto::UsageExportCsvRequest,
-) -> Result<(), ApiError> {
+) -> Result<dto::EntityExportResult, ApiError> {
     let context = context.snapshot()?;
     api::usage_export_csv(&context, request).await
 }

@@ -35,6 +35,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::app::app_usage_days,
             commands::usage::usage_clear_before,
             commands::usage::usage_query,
+            commands::usage::usage_get,
             commands::usage::usage_stats,
             commands::usage::usage_export_csv,
             commands::usage::usage_recalculate_costs,

@@ -72,6 +72,12 @@ export const queryKeys = {
     model: (modelId: number) => ["civitai", "model", modelId] as const,
   },
   speech: { all: ["speech"] as const },
+  usage: {
+    all: ["usage"] as const,
+    time: () => ["usage", "time"] as const,
+    clock: () => ["usage", "clock"] as const,
+    nano: (id: string) => ["usage", "nano", id] as const,
+  },
   backups: { all: ["backups"] as const, list: () => ["backups", "list"] as const },
   embedding: {
     all: ["embedding"] as const,
@@ -96,6 +102,7 @@ type AppEventInvalidations = {
 /** Which cached queries an application event makes stale; each key invalidates everything under it. */
 export const appEventInvalidations: AppEventInvalidations = {
   generation_settled: (event) => [
+    queryKeys.usage.all,
     queryKeys.conversations.lists(),
     queryKeys.home.characters(),
     queryKeys.media.library(),
@@ -156,10 +163,15 @@ export const appEventInvalidations: AppEventInvalidations = {
           ...(event.section === "general" ? [queryKeys.localImages.all] : []),
         ],
   content_filter_hit: () => [queryKeys.settings.filterLog()],
+  app_usage_changed: () => [queryKeys.usage.time(), queryKeys.usage.clock()],
+  provider_quota: (event) => [queryKeys.usage.nano(event.account_id)],
   prompts_changed: () => [queryKeys.prompts.all],
   job_updated: (event) => [
     queryKeys.jobs.lists(),
     queryKeys.jobs.detail(event.job.id),
+    ...(["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state)
+      ? [queryKeys.usage.all]
+      : []),
     ...(event.job.state === "succeeded"
       ? [queryKeys.media.library(), queryKeys.library.counts()]
       : []),

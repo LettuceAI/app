@@ -1,6 +1,7 @@
 import { createInstance, type i18n } from "i18next";
 import { initReactI18next } from "react-i18next";
 import characters from "./locales/en/characters.json";
+import usage from "./locales/en/usage.json";
 import companions from "./locales/en/companions.json";
 import customization from "./locales/en/customization.json";
 import common from "./locales/en/common.json";
@@ -18,6 +19,7 @@ export const defaultNamespace = "common";
 
 export const resources = {
   en: {
+    usage,
     companions,
     customization,
     prompts,

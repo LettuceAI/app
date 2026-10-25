@@ -33,9 +33,9 @@ async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncat
     let output = root.join("usage.csv");
     let request = dto::UsageExportCsvRequest {
         filters: dto::UsageFilters::default(),
-        target: dto::FileTarget {
+        target: Some(dto::FileTarget {
             uri: output.to_string_lossy().into_owned(),
-        },
+        }),
     };
     crate::api::usage_export_csv(&h.context, request.clone())
         .await
@@ -51,9 +51,9 @@ async fn usage_csv_exports_to_a_target_and_refuses_database_files_before_truncat
         let error = crate::api::usage_export_csv(
             &h.context,
             dto::UsageExportCsvRequest {
-                target: dto::FileTarget {
+                target: Some(dto::FileTarget {
                     uri: target.to_string_lossy().into_owned(),
-                },
+                }),
                 ..request.clone()
             },
         )

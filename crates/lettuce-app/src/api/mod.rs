@@ -213,7 +213,7 @@ pub use app::metrics::{llm_metrics_clear, llm_metrics_for_message, llm_metrics_g
 
 mod usage;
 pub use usage::billing::usage_recalculate_costs;
-pub use usage::{usage_clear_before, usage_export_csv, usage_query, usage_stats};
+pub use usage::{usage_clear_before, usage_export_csv, usage_get, usage_query, usage_stats};
 
 pub use app::reset::{AppResetHost, app_data_reset};
 pub use app::storage::{storage_database_file_delete, storage_database_files_list, storage_summary};

@@ -147,6 +147,11 @@ pub struct UsageReportTotals {
     pub pending_requests: u64,
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    pub cached_prompt_tokens: Option<u64>,
+    pub cache_write_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_reporting_requests: u64,
     pub total_tokens: Option<u64>,
     pub total_cost: Option<f64>,
     pub unknown_token_requests: u64,
@@ -194,6 +199,12 @@ impl UsageReportTotals {
         };
         sum(&mut self.prompt_tokens, row.prompt_tokens)?;
         sum(&mut self.completion_tokens, row.completion_tokens)?;
+        sum(&mut self.cached_prompt_tokens, row.cached_prompt_tokens)?;
+        sum(&mut self.cache_write_tokens, row.cache_write_tokens)?;
+        sum(&mut self.reasoning_tokens, row.reasoning_tokens)?;
+        if row.cached_prompt_tokens.is_some() {
+            increment(&mut self.cache_reporting_requests)?;
+        }
         let tokens = match (row.total_tokens, row.prompt_tokens, row.completion_tokens) {
             (Some(total), _, _) => Some(total),
             (None, Some(input), Some(output)) => Some(
@@ -268,6 +279,20 @@ pub fn usage_report_stats(
 mod tests {
     use super::*;
     use crate::{UsageReportRow, UsageReportStatus};
+
+    #[test]
+    fn usage_dashboard_totals_keep_cache_reasoning_and_unknown_coverage() {
+        let rows = vec![UsageReportRow { id: "reported".into(), timestamp: 1, status: UsageReportStatus::Succeeded, prompt_tokens: Some(100), cached_prompt_tokens: Some(40), cache_write_tokens: Some(10), completion_tokens: Some(20), reasoning_tokens: Some(5), ..Default::default() }, UsageReportRow { id: "unknown".into(), timestamp: 2, status: UsageReportStatus::Failed, ..Default::default() }];
+        let stats = usage_report_stats(&rows, &UsageReportFilters::default(), UsageReportGroup::Day, "UTC").expect("stats");
+        assert_eq!(stats.totals.cached_prompt_tokens, Some(40));
+        assert_eq!(stats.totals.cache_write_tokens, Some(10));
+        assert_eq!(stats.totals.reasoning_tokens, Some(5));
+        assert_eq!(stats.totals.cache_reporting_requests, 1);
+        assert_eq!(stats.totals.unknown_token_requests, 1);
+        assert_eq!(stats.totals.total_tokens, Some(120));
+        assert_eq!(stats.totals.total_cost, None);
+        assert_eq!(stats.groups[0].totals, stats.totals);
+    }
 
     #[test]
     fn query_pages_tied_times_binds_the_cursor_and_uses_inclusive_legacy_dates() {

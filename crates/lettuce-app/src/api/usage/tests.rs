@@ -5,6 +5,19 @@ use lettuce_usage::JobUsageLedger;
 use std::sync::Arc;
 
 #[tokio::test]
+async fn usage_dashboard_detail_reloads_a_single_report_identity() {
+    let h = harness(Reply::Text("Reply."));
+    let conversation = launch(&h, "usage-detail-launch").await;
+    send(&h, &conversation, "usage-detail-send", "Hello", Arc::new(RecordingStream::default())).await.expect("send");
+    crate::api::ConversationGenerationWorker::new(h.context.clone()).run_once().await.expect("reply");
+    let rows = crate::api::usage_query(&h.context, dto::UsageQueryRequest { filters: dto::UsageFilters::default(), sort: dto::UsageSort::NewestFirst, cursor: None, limit: 25 }).await.expect("rows");
+    let row = rows.items.first().expect("reported row");
+    let detail = crate::api::usage_get(&h.context, dto::UsageGetRequest { id: row.id.clone() }).await.expect("detail");
+    assert_eq!(detail.as_ref(), Some(row));
+    assert!(crate::api::usage_get(&h.context, dto::UsageGetRequest { id: "missing".into() }).await.expect("missing").is_none());
+}
+
+#[tokio::test]
 async fn openrouter_chat_admits_a_durable_automatic_cost_job_after_the_reply() {
     use lettuce_jobs::{JobKind, JobQuery, JobState, JobStore};
     use lettuce_types::PageRequest;

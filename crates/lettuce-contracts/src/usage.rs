@@ -10,6 +10,13 @@ pub struct UsageRecalculateCostsRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
+pub struct UsageGetRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
 pub struct UsageClearBeforeRequest {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub before: i64,
@@ -84,6 +91,15 @@ pub struct UsageRow {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct UsageTotals {
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub cached_prompt_tokens: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub cache_write_tokens: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub cache_reporting_requests: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub requests: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -213,5 +229,5 @@ pub struct UsageStats {
 #[serde(deny_unknown_fields)]
 pub struct UsageExportCsvRequest {
     pub filters: UsageFilters,
-    pub target: crate::FileTarget,
+    pub target: Option<crate::FileTarget>,
 }

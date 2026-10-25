@@ -94,3 +94,5 @@ Library listing adds optional search_description on CharactersListRequest and op
 Library image references add an optional preview URL without changing asset identities or original URLs. Audio and document references do not offer image previews.
 
 Library usage discovery is an explicit list projection with default full-reference behavior and a separate typed on-demand read. Asset identities and mutation contracts are unchanged.
+
+The Usage dashboard adds `UsageGetRequest` for one report-row identity, optional cached-input/cache-write/reasoning totals and a defaulted cache-reporting request count. Native report arithmetic retains unknown values; reporting coverage is separate from a zero count. `UsageExportCsvRequest.target` is optional so Android can use shared native Downloads publication; the command returns `EntityExportResult` with the published URI and no CSV payload. Tauri bindings are generated from these contracts.

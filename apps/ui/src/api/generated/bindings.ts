@@ -24,8 +24,9 @@ export const commands = {
 	appUsageDays: () => typedError<AppUsageDaysView, ApiError_Serialize>(__TAURI_INVOKE("app_usage_days")),
 	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError_Serialize>(__TAURI_INVOKE("usage_clear_before", { request })),
 	usageQuery: (request: UsageQueryRequest_Deserialize) => typedError<UsagePage, ApiError_Serialize>(__TAURI_INVOKE("usage_query", { request })),
-	usageStats: (request: UsageStatsRequest) => typedError<UsageStats, ApiError_Serialize>(__TAURI_INVOKE("usage_stats", { request })),
-	usageExportCsv: (request: UsageExportCsvRequest_Deserialize) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("usage_export_csv", { request })),
+	usageGet: (request: UsageGetRequest) => typedError<UsageRow | null, ApiError_Serialize>(__TAURI_INVOKE("usage_get", { request })),
+	usageStats: (request: UsageStatsRequest) => typedError<UsageStats_Serialize, ApiError_Serialize>(__TAURI_INVOKE("usage_stats", { request })),
+	usageExportCsv: (request: UsageExportCsvRequest_Deserialize) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("usage_export_csv", { request })),
 	usageRecalculateCosts: (request: UsageRecalculateCostsRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("usage_recalculate_costs", { request })),
 	storageDatabaseFilesList: () => typedError<DatabaseFileView[], ApiError_Serialize>(__TAURI_INVOKE("storage_database_files_list")),
 	storageOptimize: (request: StorageOptimizeRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("storage_optimize", { request })),
@@ -8786,12 +8787,12 @@ export type UsageExportCsvRequest = UsageExportCsvRequest_Serialize | UsageExpor
 
 export type UsageExportCsvRequest_Deserialize = {
 	filters: UsageFilters_Deserialize,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type UsageExportCsvRequest_Serialize = {
 	filters: UsageFilters_Serialize,
-	target: FileTarget,
+	target: FileTarget | null,
 };
 
 export type UsageFilters = UsageFilters_Serialize | UsageFilters_Deserialize;
@@ -8814,12 +8815,24 @@ export type UsageFilters_Serialize = {
 	status: UsageStatus | null,
 };
 
+export type UsageGetRequest = {
+	id: string,
+};
+
 export type UsageGroupBy = "day" | "model" | "provider" | "character" | "operation";
 
-export type UsageGroupTotals = {
+export type UsageGroupTotals = UsageGroupTotals_Serialize | UsageGroupTotals_Deserialize;
+
+export type UsageGroupTotals_Deserialize = {
 	key: string | null,
 	label: string | null,
-	totals: UsageTotals,
+	totals: UsageTotals_Deserialize,
+};
+
+export type UsageGroupTotals_Serialize = {
+	key: string | null,
+	label: string | null,
+	totals: UsageTotals_Serialize,
 };
 
 export type UsagePage = {
@@ -8888,10 +8901,7 @@ export type UsageRow = {
 
 export type UsageSort = "newest_first" | "oldest_first";
 
-export type UsageStats = {
-	totals: UsageTotals,
-	groups: UsageGroupTotals[],
-};
+export type UsageStats = UsageStats_Serialize | UsageStats_Deserialize;
 
 export type UsageStatsRequest = {
 	range: UsageDateRange,
@@ -8900,9 +8910,44 @@ export type UsageStatsRequest = {
 	time_zone: string,
 };
 
+export type UsageStats_Deserialize = {
+	totals: UsageTotals_Deserialize,
+	groups: UsageGroupTotals_Deserialize[],
+};
+
+export type UsageStats_Serialize = {
+	totals: UsageTotals_Serialize,
+	groups: UsageGroupTotals_Serialize[],
+};
+
 export type UsageStatus = "pending" | "succeeded" | "failed" | "cancelled" | "interrupted";
 
-export type UsageTotals = {
+export type UsageTotals = UsageTotals_Serialize | UsageTotals_Deserialize;
+
+export type UsageTotals_Deserialize = {
+	cached_prompt_tokens: number | null,
+	cache_write_tokens: number | null,
+	reasoning_tokens: number | null,
+	cache_reporting_requests?: number,
+	requests: number,
+	successful_requests: number,
+	failed_requests: number,
+	cancelled_requests: number,
+	interrupted_requests: number,
+	pending_requests: number,
+	prompt_tokens: number | null,
+	completion_tokens: number | null,
+	total_tokens: number | null,
+	total_cost: number | null,
+	unknown_token_requests: number,
+	unknown_cost_requests: number,
+};
+
+export type UsageTotals_Serialize = {
+	cached_prompt_tokens: number | null,
+	cache_write_tokens: number | null,
+	reasoning_tokens: number | null,
+	cache_reporting_requests: number,
 	requests: number,
 	successful_requests: number,
 	failed_requests: number,

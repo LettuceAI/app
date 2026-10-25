@@ -488,9 +488,9 @@ async fn usage_commands_report_real_legacy_rows_without_reconstructing_message_c
     assert_eq!(stats.groups[0].key.as_deref(), Some("openrouter"));
     let output = std::env::temp_dir().join(format!("legacy-usage-{}.csv", lettuce_types::OperationId::new()));
     crate::api::usage_export_csv(&harness.context, lettuce_contracts::UsageExportCsvRequest {
-        filters: lettuce_contracts::UsageFilters::default(), target: lettuce_contracts::FileTarget {
+        filters: lettuce_contracts::UsageFilters::default(), target: Some(lettuce_contracts::FileTarget {
             uri: output.to_string_lossy().into_owned()
-        }
+        })
     }).await.expect("legacy CSV export");
     let csv = std::fs::read_to_string(&output).expect("CSV");
     assert_eq!(csv.lines().count(), 2);

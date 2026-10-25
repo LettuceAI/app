@@ -141,12 +141,47 @@ const settingsSectionRoute = createRoute({
     speechTab?: "model" | "vocabulary" | "corrections" | "examples";
     speechPanel?: "models" | "microphone" | "word" | "correction" | "example";
     speechItem?: string;
+    usageTab?: "overview" | "requests" | "time" | "nanogpt";
+    usageRange?: "today" | "7d" | "30d" | "all";
+    usageProvider?: string;
+    usageStatus?: string;
+    usageOperation?: string;
+    usageModel?: string;
+    usagePanel?: "request" | "clear";
+    usageRequest?: string;
+    usageAccount?: string;
     compTab?: "writer" | "emotions";
     compPicker?: "primary" | "fallback" | "prompt";
     custTab?: "general" | "theme" | "chat";
     custPanel?: "preview" | "theme";
     custTheme?: string;
   } => ({
+    ...(["overview", "requests", "time", "nanogpt"].includes(String(search.usageTab))
+      ? { usageTab: search.usageTab as "overview" | "requests" | "time" | "nanogpt" }
+      : {}),
+    ...(["today", "7d", "30d", "all"].includes(String(search.usageRange))
+      ? { usageRange: search.usageRange as "today" | "7d" | "30d" | "all" }
+      : {}),
+    ...(["all", "pending", "succeeded", "failed", "cancelled", "interrupted"].includes(
+      String(search.usageStatus),
+    )
+      ? { usageStatus: search.usageStatus as string }
+      : {}),
+    ...(typeof search.usageProvider === "string" ? { usageProvider: search.usageProvider } : {}),
+    ...(typeof search.usageOperation === "string" ? { usageOperation: search.usageOperation } : {}),
+    ...(typeof search.usageModel === "string" ? { usageModel: search.usageModel } : {}),
+    ...(typeof search.usageAccount === "string" ? { usageAccount: search.usageAccount } : {}),
+    ...(search.usagePanel === "clear" ||
+    (search.usagePanel === "request" &&
+      typeof search.usageRequest === "string" &&
+      search.usageRequest)
+      ? { usagePanel: search.usagePanel }
+      : {}),
+    ...(search.usagePanel === "request" &&
+    typeof search.usageRequest === "string" &&
+    search.usageRequest
+      ? { usageRequest: search.usageRequest }
+      : {}),
     ...(search.compTab === "writer" || search.compTab === "emotions"
       ? { compTab: search.compTab }
       : {}),
@@ -305,6 +340,7 @@ declare module "@tanstack/history" {
     speechPanelPushed?: boolean;
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;
+    usagePushed?: boolean;
     companionPickerPushed?: boolean;
     promptPushed?: boolean;
     panelPushed?: boolean;
