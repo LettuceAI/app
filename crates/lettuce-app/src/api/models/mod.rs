@@ -24,6 +24,8 @@ pub(super) mod profiles;
 mod profiles_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod memory_cycle_tests;
 
 use std::{
     path::{Path, PathBuf},
