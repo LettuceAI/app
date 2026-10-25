@@ -1,5 +1,7 @@
 # lettuce-contracts: status notes
 
+Names/time placement accepts below alongside inside and above in both native character presentation and UI preferences. The Bottom control uses the existing Crisp below layout; older saved choices retain their meaning.
+
 Customization adds typed UI preference changes for the active theme preset, radius, density and beetroot effect; chat appearance gains composerFontSize and explicit custom bubble colors. Theme file commands carry a versioned configuration document and FileSource/FileTarget. Character presentation has a backward-compatible optional set of overridden appearance fields, and conversation settings expose the natively resolved appearance. Old missing override sets remain distinguishable from a new empty set.
 
 Facts about `lettuce-contracts` that are not architecture. The crate README describes the current design.

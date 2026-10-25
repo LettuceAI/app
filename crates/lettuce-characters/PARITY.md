@@ -1,5 +1,7 @@
 # lettuce-characters: legacy parity notes
 
+New chat appearances default to normal line spacing, filled bubbles and a below-bubble byline (user decision, 2026-10-25). Existing inside/above placements remain readable. Stored presentations and explicit override masks are retained; no existing appearance is rewritten.
+
 Character presentation now distinguishes an empty per-field chat-appearance override set on new characters from an absent set in historical full snapshots. Missing fields deserialize without rewriting old data, and override names must identify real appearance fields. The application resolver keeps legacy visual differences against its retained global baseline and applies global choices to inherited fields. Historical explicit choices equal to that baseline cannot be reconstructed from full snapshots.
 
 Facts about how `lettuce-characters` relates to the legacy app (2.2.x). The crate README describes the current design; this file keeps the comparison.

@@ -499,6 +499,7 @@ pub enum TimestampFormat {
 pub enum MessageHeaderPlacement {
     Inside,
     Above,
+    Below,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -699,15 +700,15 @@ impl Default for ChatAppearanceV1 {
         Self {
             format_version: 1,
             font_size: FontSize::Medium,
-            line_spacing: LineSpacing::Relaxed,
-            bubble_style: BubbleStyle::Bordered,
+            line_spacing: LineSpacing::Normal,
+            bubble_style: BubbleStyle::Filled,
             bubble_radius: BubbleRadius::Rounded,
             bubble_max_width: BubbleMaxWidth::Normal,
             bubble_padding: BubblePadding::Normal,
             show_message_author: false,
             show_message_timestamp: false,
             timestamp_format: TimestampFormat::Relative,
-            message_header_placement: MessageHeaderPlacement::Inside,
+            message_header_placement: MessageHeaderPlacement::Below,
             show_message_model: false,
             show_message_input_tokens: false,
             show_message_output_tokens: false,
@@ -996,6 +997,16 @@ mod tests {
 #[cfg(test)]
 mod customization_tests {
     use super::*;
+
+    #[test]
+    fn customization_defaults_use_filled_bubbles_normal_spacing_and_bottom_byline() {
+        let appearance = ChatAppearanceV1::default();
+        assert_eq!(appearance.line_spacing, LineSpacing::Normal);
+        assert_eq!(appearance.bubble_style, BubbleStyle::Filled);
+        assert_eq!(appearance.message_header_placement, MessageHeaderPlacement::Below);
+        assert_eq!(serde_json::to_value(appearance).expect("appearance")["message_header_placement"], "below");
+        assert_eq!(serde_json::from_value::<MessageHeaderPlacement>(serde_json::json!("inside")).expect("old placement"), MessageHeaderPlacement::Inside);
+    }
 
     #[test]
     fn customization_new_presentations_inherit_and_old_json_stays_recognizable() {

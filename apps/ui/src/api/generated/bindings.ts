@@ -4533,7 +4533,7 @@ export type LibraryMemoryPolicy = "manual" | "dynamic";
 
 export type LibraryMessageGap = "tight" | "normal" | "relaxed";
 
-export type LibraryMessageHeaderPlacement = "inside" | "above";
+export type LibraryMessageHeaderPlacement = "inside" | "above" | "below";
 
 export type LibraryMessageInfoPlacement = "below_header" | "below_header_outside" | "inside_bubble" | "below_bubble";
 
@@ -8156,7 +8156,7 @@ export type SettingsUiChatAppearanceSettingsLineSpacing = "tight" | "normal" | "
 
 export type SettingsUiChatAppearanceSettingsMessageGap = "tight" | "normal" | "relaxed";
 
-export type SettingsUiChatAppearanceSettingsMessageHeaderPlacement = "inside" | "above";
+export type SettingsUiChatAppearanceSettingsMessageHeaderPlacement = "inside" | "above" | "below";
 
 export type SettingsUiChatAppearanceSettingsMessageInfoPlacement = "belowHeader" | "belowHeaderOutside" | "insideBubble" | "belowBubble";
 

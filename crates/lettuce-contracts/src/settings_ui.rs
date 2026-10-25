@@ -300,6 +300,8 @@ pub enum SettingsUiChatAppearanceSettingsMessageHeaderPlacement {
     Inside,
     #[serde(rename = "above")]
     Above,
+    #[serde(rename = "below")]
+    Below,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

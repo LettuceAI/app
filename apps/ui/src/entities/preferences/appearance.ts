@@ -20,7 +20,8 @@ export function chatAppearance(look: ChatLook): MessageAppearance {
     style: look.bubbleStyle,
     avatar: look.avatarShape,
     avatarSize: look.avatarSize,
-    headerPlacement: look.messageHeaderPlacement === "above" ? "outside" : "inside",
+    headerPlacement:
+      look.messageHeaderPlacement === "above" ? "outside" : look.messageHeaderPlacement,
     showAuthor: look.showMessageAuthor,
     showTimestamp: look.showMessageTimestamp,
     gap: look.messageGap,

@@ -43,6 +43,7 @@
   "placement": "Placement",
   "inTheBubble": "In the bubble",
   "aboveIt": "Above it",
+  "bottom": "Bottom",
   "replyDetails": "Reply details",
   "showUnderReplies": "Show under replies",
   "modelTokenCountsAndSpeed": "Model, token counts and speed",

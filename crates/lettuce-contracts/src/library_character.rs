@@ -399,6 +399,7 @@ pub enum LibraryTimestampFormat {
 pub enum LibraryMessageHeaderPlacement {
     Inside,
     Above,
+    Below,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

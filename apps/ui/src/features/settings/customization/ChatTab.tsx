@@ -420,6 +420,7 @@ export function ChatSettings({
             opts([
               ["inside", t("inTheBubble")],
               ["above", t("aboveIt")],
+              ["below", t("bottom")],
             ] as const),
           )}
       </ListGroup>

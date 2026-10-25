@@ -275,7 +275,13 @@
         "mostDownloaded": "Most downloaded",
         "newest": "Newest",
         "period": "Period",
-        "periods": { "AllTime": "All time", "Year": "Year", "Month": "Month", "Week": "Week", "Day": "Today" },
+        "periods": {
+          "AllTime": "All time",
+          "Year": "Year",
+          "Month": "Month",
+          "Week": "Week",
+          "Day": "Today"
+        },
         "base": "Base model",
         "allBases": "All base models",
         "version": "Version",
@@ -387,6 +393,7 @@
       "title": "Memory",
       "subtitle": "How characters remember"
     },
+    "companions": { "title": "Companions", "subtitle": "Soul writer and emotion model" },
     "imageGeneration": {
       "title": "Image generation",
       "subtitle": "Generate and test images"

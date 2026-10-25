@@ -81,6 +81,25 @@ async function mount(
 }
 
 describe("customization settings", () => {
+  it("offers Bottom as the default byline placement and persists a switch back to it", async () => {
+    const page = await mount({
+      tab: "chat",
+      value: { chatAppearance: { showMessageAuthor: true } },
+    });
+    const bottom = await screen.findByRole("radio", { name: "Bottom" });
+    expect(bottom.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Above it" }));
+    await waitFor(() =>
+      expect(page.current().chatAppearance).toMatchObject({ messageHeaderPlacement: "above" }),
+    );
+    fireEvent.click(bottom);
+    await waitFor(() =>
+      expect(page.current().chatAppearance).toEqual({
+        showMessageAuthor: true,
+        messageHeaderPlacement: "below",
+      }),
+    );
+  });
   it("shows shaped skeletons until settings are loaded", async () => {
     let release!: (value: ReturnType<typeof ok<SettingsView>>) => void;
     await mount({

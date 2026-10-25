@@ -141,10 +141,18 @@ const settingsSectionRoute = createRoute({
     speechTab?: "model" | "vocabulary" | "corrections" | "examples";
     speechPanel?: "models" | "microphone" | "word" | "correction" | "example";
     speechItem?: string;
+    compTab?: "writer" | "emotions";
+    compPicker?: "primary" | "fallback" | "prompt";
     custTab?: "general" | "theme" | "chat";
     custPanel?: "preview" | "theme";
     custTheme?: string;
   } => ({
+    ...(search.compTab === "writer" || search.compTab === "emotions"
+      ? { compTab: search.compTab }
+      : {}),
+    ...(["primary", "fallback", "prompt"].includes(String(search.compPicker))
+      ? { compPicker: search.compPicker as "primary" | "fallback" | "prompt" }
+      : {}),
     ...(["general", "theme", "chat"].includes(String(search.custTab))
       ? { custTab: search.custTab as "general" | "theme" | "chat" }
       : {}),
@@ -297,6 +305,7 @@ declare module "@tanstack/history" {
     speechPanelPushed?: boolean;
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;
+    companionPickerPushed?: boolean;
     promptPushed?: boolean;
     panelPushed?: boolean;
     libraryOverlayPushed?: boolean;

@@ -56,6 +56,7 @@ export const queryKeys = {
     list: () => [...queryKeys.models.all, "list"] as const,
   },
   audioProviders: { all: ["audio-providers"] as const },
+  companions: { all: ["companions"] as const, emotion: () => ["companions", "emotion"] as const },
   companionNotes: {
     all: ["companion-notes"] as const,
     list: (characterId: string) => ["companion-notes", "list", characterId] as const,
@@ -134,6 +135,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.media.library(),
   ],
   models_changed: () => [
+    queryKeys.companions.all,
     queryKeys.models.all,
     queryKeys.providers.all,
     queryKeys.settings.all,
@@ -167,7 +169,12 @@ export const appEventInvalidations: AppEventInvalidations = {
       : []),
     ...((event.job.kind === "artifact_install" || event.job.kind === "maintenance") &&
     ["succeeded", "failed", "cancelled", "interrupted"].includes(event.job.state)
-      ? [queryKeys.localImages.all, queryKeys.loras.all, queryKeys.speech.all]
+      ? [
+          queryKeys.localImages.all,
+          queryKeys.loras.all,
+          queryKeys.speech.all,
+          queryKeys.companions.all,
+        ]
       : []),
   ],
 };

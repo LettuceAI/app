@@ -9,7 +9,7 @@ export interface ChatLook {
   showMessageAuthor: boolean;
   showMessageTimestamp: boolean;
   timestampFormat: "relative" | "time" | "datetime";
-  messageHeaderPlacement: "inside" | "above";
+  messageHeaderPlacement: "inside" | "above" | "below";
   details: Detail[];
   messageInfoPlacement: "belowHeader" | "belowHeaderOutside" | "insideBubble" | "belowBubble";
   messageInfoSize: "small" | "medium" | "large";
@@ -56,16 +56,16 @@ export const DETAILS: readonly { value: Detail }[] = (
 
 export const CHAT_DEFAULTS: ChatLook = {
   fontSize: "medium",
-  lineSpacing: "relaxed",
+  lineSpacing: "normal",
   composerFontSize: "medium",
-  bubbleStyle: "bordered",
+  bubbleStyle: "filled",
   bubbleRadius: "rounded",
   bubbleMaxWidth: "normal",
   bubblePadding: "normal",
   showMessageAuthor: false,
   showMessageTimestamp: false,
   timestampFormat: "relative",
-  messageHeaderPlacement: "inside",
+  messageHeaderPlacement: "below",
   details: [],
   messageInfoPlacement: "belowBubble",
   messageInfoSize: "small",
