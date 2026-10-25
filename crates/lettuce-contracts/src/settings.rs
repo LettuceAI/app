@@ -651,6 +651,10 @@ pub enum SettingsPatch {
     Embedding {
         value: SettingsEmbeddingSettings,
     },
+    DeviceOnnx {
+        model: SettingsOnnxModel,
+        keep_model_loaded: bool,
+    },
     DeviceEmbedding {
         model_version: Option<SettingsEmbeddingVersion>,
         max_tokens: Option<u16>,
@@ -698,6 +702,8 @@ pub struct SettingsDeviceView {
     pub embedding_model_version: Option<SettingsEmbeddingVersion>,
     pub embedding_max_tokens: Option<u16>,
     pub embedding_keep_model_loaded: bool,
+    pub thymos_keep_model_loaded: bool,
+    pub kokoro_keep_model_loaded: bool,
     pub llm_models_dir: Option<String>,
     pub dictation_model_id: Option<String>,
     pub trusted_certificates: Vec<crate::TrustedCertificateView>,
@@ -776,4 +782,13 @@ impl<T: Serialize> Serialize for SettingsCommandInput<T> {
             .map_err(serde::ser::Error::custom)?
             .serialize(serializer)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsOnnxModel {
+    Eidos,
+    Thymos,
+    Kokoro,
 }

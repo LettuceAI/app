@@ -90,6 +90,11 @@ pub async fn content_filter_clear(context: &ApiContext) -> Result<(), ApiError> 
 
 pub(super) fn publish_settings_changes(context: &ApiContext) -> Result<(), ApiError> {
     let sections = context.take_settings_sections();
+    if sections.contains(&"device") || sections.contains(&"embedding") {
+        context.onnx_models().refresh_settings(||
+            lettuce_settings::DeviceSettingsStore::load_device_settings(context.backend().database())
+        ).map_err(settings_error)?;
+    }
     let refreshed = refresh_logging(context).map(|_| ());
     for section in sections {
         context.emit(dto::ApiEvent::SettingsChanged {
@@ -106,6 +111,13 @@ pub(in crate::api) async fn publish_pending(context: &ApiContext) {
 }
 
 pub(super) async fn run_events(context: ApiContext, stopped: impl Future<Output = ()>) {
+    #[cfg(not(test))]
+    let _pressure_monitor = {
+        let manager = context.onnx_models().clone();
+        lettuce_platform::MemoryPressureMonitor::subscribe(move || manager.memory_warning())
+            .map_err(|error| tracing::debug!(%error, "native memory pressure notifications are unavailable"))
+            .ok()
+    };
     let signal = context.content_filter().hit_signal();
     let stopped = std::pin::pin!(stopped);
     let mut stopped = stopped;
@@ -117,6 +129,15 @@ pub(super) async fn run_events(context: ApiContext, stopped: impl Future<Output 
             () = context.settings_changed() => {
                 if let Err(error) = context.blocking(publish_settings_changes).await {
                     tracing::error!(?error, "settings change delivery failed");
+                }
+                continue;
+            }
+            () = context.onnx_models().notified() => {
+                if let Err(error) = context.blocking(|context| {
+                    context.onnx_models().check();
+                    Ok(())
+                }).await {
+                    tracing::warn!(?error, "ONNX memory pressure check failed");
                 }
                 continue;
             }

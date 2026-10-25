@@ -55,6 +55,7 @@ impl ProviderBackupRestoreWriter for Database {
         let device = lettuce_settings::DeviceSettings {
             trusted_certificates: graph.device.trusted_certificates.clone(),
             embedding: graph.device.embedding,
+            onnx: graph.device.onnx,
             llm_models_dir: None,
             speech: graph.device.speech.clone(),
             retained_model_roots: Default::default(),
@@ -979,6 +980,10 @@ pub(crate) mod tests {
                 max_tokens: Some(1024),
                 keep_model_loaded: true,
             },
+            onnx: lettuce_settings::DeviceOnnxSettings {
+                thymos_keep_model_loaded: false,
+                kokoro_keep_model_loaded: true,
+            },
             llm_models_dir: Some("/data/models".into()),
             retained_model_roots: Default::default(),
             speech: lettuce_settings::DeviceSpeechSettings {
@@ -997,6 +1002,7 @@ pub(crate) mod tests {
             settings.trusted_certificates
         );
         assert_eq!(graph.device.embedding, settings.embedding);
+        assert_eq!(graph.device.onnx, settings.onnx);
         assert_eq!(graph.device.app_usage_days.len(), 1);
 
         let restored = Database::open(root.join("restored.sqlite3")).expect("restored database");
@@ -1017,6 +1023,7 @@ pub(crate) mod tests {
                 .speech,
             settings.speech
         );
+        assert_eq!(restored.load_device_settings().expect("restored retention").onnx, settings.onnx);
         source
             .add_app_usage("2026-09-20", 500, lettuce_types::TimestampMillis::new(2))
             .expect("usage after the backup");

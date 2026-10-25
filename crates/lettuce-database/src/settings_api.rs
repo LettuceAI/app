@@ -109,6 +109,29 @@ impl Database {
         Ok(result)
     }
 
+    pub fn save_device_onnx_retention(
+        &self,
+        model: lettuce_settings::OnnxModelKind,
+        keep: bool,
+        expected: lettuce_types::Revision,
+    ) -> Result<Snapshot, GlobalSettingsStoreError> {
+        let mut connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let (_, _, mut device, revision) = snapshot(&transaction)?;
+        if revision != expected {
+            return Err(GlobalSettingsStoreError::StaleRevision);
+        }
+        device.set_keep_onnx_model_loaded(model, keep);
+        device.validate()?;
+        self.changes.settings_section("device");
+        crate::replace_device_settings_in(&transaction, &device)
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let result = snapshot(&transaction)?;
+        transaction.commit().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        Ok(result)
+    }
+
     pub fn settings_snapshot(&self) -> Result<Snapshot, GlobalSettingsStoreError> {
         let mut connection = self
             .connection()
@@ -211,6 +234,25 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn onnx_retention_preferences_are_independent_and_device_revision_fenced() {
+        use lettuce_settings::{DeviceSettingsStore, OnnxModelKind};
+        let database = Database::open_in_memory().expect("database");
+        let before = database.settings_snapshot().expect("snapshot");
+        let after = database.save_device_onnx_retention(OnnxModelKind::Eidos, true, before.3).expect("retain Eidos");
+        assert!(after.2.embedding.keep_model_loaded);
+        assert!(after.2.onnx.thymos_keep_model_loaded);
+        assert!(!after.2.onnx.kokoro_keep_model_loaded);
+        assert_eq!(before.0, after.0);
+        assert_eq!(database.save_device_onnx_retention(OnnxModelKind::Kokoro, true, before.3), Err(GlobalSettingsStoreError::StaleRevision));
+        assert_eq!(database.load_device_settings().expect("unchanged"), after.2);
+        let after = database.save_device_onnx_retention(OnnxModelKind::Kokoro, true, after.3).expect("retain Kokoro");
+        let after = database.save_device_onnx_retention(OnnxModelKind::Thymos, false, after.3).expect("release Thymos");
+        assert!(after.2.embedding.keep_model_loaded);
+        assert!(!after.2.onnx.thymos_keep_model_loaded);
+        assert!(after.2.onnx.kokoro_keep_model_loaded);
+    }
 
     #[test]
     fn device_embedding_cas_rollback_and_retry_preserve_global_and_other_device_fields() {

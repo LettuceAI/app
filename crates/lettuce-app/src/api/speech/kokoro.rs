@@ -241,9 +241,9 @@ pub async fn kokoro_uninstall_model(
             let model = store
                 .recorded_model(variant(&request.variant)?)
                 .map_err(failed)?;
-            crate::remove_managed_kokoro_model(&store, &model)
-                .map(|removed| removed.removed)
-                .map_err(failed)
+            let removed = crate::remove_managed_kokoro_model(&store, &model).map_err(failed)?;
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Kokoro);
+            Ok(removed.removed)
         })
         .await
 }

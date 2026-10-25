@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_model_hub::{
     KokoroArtifactRole, KokoroInstallError, KokoroInstallStore, RemoteKokoroModel,
@@ -17,15 +18,28 @@ pub enum KokoroNativeSynthesisError {
     Runtime(#[from] KokoroRuntimeError),
 }
 
-#[derive(Debug)]
+type KokoroSessionCache = crate::onnx_models::OnnxSessionCache<
+    (std::path::PathBuf, u64, Option<std::time::SystemTime>), Mutex<OnnxKokoroRuntime>,
+>;
+
 pub struct KokoroNativeSynthesisCoordinator {
     installs: KokoroInstallStore,
+    cache: Arc<KokoroSessionCache>,
+    settings: Option<Arc<dyn lettuce_settings::DeviceSettingsStore>>,
 }
 
 impl KokoroNativeSynthesisCoordinator {
     #[must_use]
-    pub const fn new(installs: KokoroInstallStore) -> Self {
-        Self { installs }
+    pub fn new(installs: KokoroInstallStore) -> Self {
+        Self::with_cache(installs, crate::onnx_models::OnnxModelManager::new(|_| {}), None)
+    }
+
+    pub(crate) fn with_cache(
+        installs: KokoroInstallStore,
+        manager: Arc<crate::onnx_models::OnnxModelManager>,
+        settings: Option<Arc<dyn lettuce_settings::DeviceSettingsStore>>,
+    ) -> Self {
+        Self { installs, cache: crate::onnx_models::OnnxSessionCache::new(lettuce_settings::OnnxModelKind::Kokoro, manager), settings }
     }
 
     pub(crate) fn synthesize(
@@ -48,15 +62,29 @@ impl KokoroNativeSynthesisCoordinator {
             .iter()
             .find(|file| file.role == KokoroArtifactRole::Model)
             .ok_or(KokoroNativeSynthesisError::MissingAssets)?;
-        let mut runtime = OnnxKokoroRuntime::load(&model.path, runtime)?;
+        let metadata = std::fs::metadata(&model.path).map_err(|_| KokoroRuntimeError::ModelLoad)?;
+        if let Some(settings) = &self.settings {
+            self.cache.refresh_settings(|| settings.load_device_settings())
+                .map_err(|_| KokoroRuntimeError::Unavailable)?;
+        }
+        let loaded = self.cache.acquire((model.path.clone(), metadata.len(), metadata.modified().ok()), || {
+            OnnxKokoroRuntime::load(&model.path, runtime).map(|runtime| Arc::new(Mutex::new(runtime)))
+        })?;
+        let mut runtime = loaded.lock().map_err(|_| KokoroRuntimeError::Unavailable)?;
         synthesize_kokoro_tokens(
-            &mut runtime,
+            &mut *runtime,
             &phonemization.token_ids,
             voice,
             speed,
             cancellation,
         )
         .map_err(Into::into)
+    }
+}
+
+impl std::fmt::Debug for KokoroNativeSynthesisCoordinator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KokoroNativeSynthesisCoordinator").finish_non_exhaustive()
     }
 }
 

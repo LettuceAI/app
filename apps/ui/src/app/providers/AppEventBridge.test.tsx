@@ -1,5 +1,8 @@
+import { I18nextProvider } from "react-i18next";
+import { toast } from "@lettuceai/crisp";
+import { createTestI18n } from "@/shared/testing/i18n";
 import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApiClient } from "@/api/client";
 import type { AppEvent, JobView } from "@/api/generated/bindings";
 import { createMockTransport } from "@/api/mock-transport";
@@ -9,6 +12,7 @@ import { createQueryClient } from "./query-client";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 const job: JobView = {
@@ -42,8 +46,9 @@ async function setup() {
   seed();
   const invalidated = () =>
     keys.filter((key) => queryClient.getQueryState(key)?.isInvalidated).map((key) => key.join("/"));
+  const i18n = await createTestI18n("en");
   const view = await act(async () =>
-    render(<AppEventBridge api={createApiClient(transport)} queryClient={queryClient} />),
+    render(<I18nextProvider i18n={i18n}><AppEventBridge api={createApiClient(transport)} queryClient={queryClient} /></I18nextProvider>),
   );
   const afterSubscribe = invalidated();
   seed();
@@ -51,6 +56,16 @@ async function setup() {
 }
 
 describe("AppEventBridge", () => {
+  it("warns when idle ONNX models were released without changing settings", async () => {
+    const warning = vi.spyOn(toast, "warning").mockReturnValue("warning");
+    const { transport, queryClient } = await setup();
+    const key = queryKeys.settings.all;
+    queryClient.setQueryData(key, { keep: true });
+    await act(async () => transport.emitAppEvent({ type: "onnx_models_unloaded", models: ["eidos", "kokoro"] }));
+    expect(warning).toHaveBeenCalledWith("Released idle models to free memory: Eidos, Kokoro. They will load again when needed.", undefined, { id: "onnx-memory-pressure" });
+    expect(queryClient.getQueryData(key)).toEqual({ keep: true });
+  });
+
   it("invalidates every query once the subscription is live, covering events it missed", async () => {
     const { afterSubscribe } = await setup();
     expect(afterSubscribe).toEqual([

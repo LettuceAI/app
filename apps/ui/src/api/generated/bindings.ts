@@ -507,7 +507,7 @@ export type ApiEvent_Deserialize = { type: "database_reloaded" } | { type: "sync
  *  summary, revision, cycle, approval or dismissal state. Every chat that
  *  shares the memory gets one.
  */
-{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } |
+{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } | { type: "onnx_models_unloaded"; models: SettingsOnnxModel[] } |
 /**
  *  The companion effect of a reply settled (`message_companion_effect`
  *  reads it).
@@ -538,7 +538,7 @@ export type ApiEvent_Serialize = { type: "database_reloaded" } | { type: "sync_c
  *  summary, revision, cycle, approval or dismissal state. Every chat that
  *  shares the memory gets one.
  */
-{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } |
+{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } | { type: "onnx_models_unloaded"; models: SettingsOnnxModel[] } |
 /**
  *  The companion effect of a reply settled (`message_companion_effect`
  *  reads it).
@@ -7756,6 +7756,8 @@ export type SettingsDeviceView = {
 	embedding_model_version: SettingsEmbeddingVersion | null,
 	embedding_max_tokens: number | null,
 	embedding_keep_model_loaded: boolean,
+	thymos_keep_model_loaded: boolean,
+	kokoro_keep_model_loaded: boolean,
 	llm_models_dir: string | null,
 	dictation_model_id: string | null,
 	trusted_certificates: TrustedCertificateView[],
@@ -7975,15 +7977,17 @@ export type SettingsOllamaOptions = {
 	stop: string[] | null,
 };
 
+export type SettingsOnnxModel = "eidos" | "thymos" | "kokoro";
+
 export type SettingsOpenRouterOptions = {
 	pinned_provider: string | null,
 };
 
 export type SettingsPatch = SettingsPatch_Serialize | SettingsPatch_Deserialize;
 
-export type SettingsPatch_Deserialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
+export type SettingsPatch_Deserialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_onnx"; model: SettingsOnnxModel; keep_model_loaded: boolean } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
 
-export type SettingsPatch_Serialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
+export type SettingsPatch_Serialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_onnx"; model: SettingsOnnxModel; keep_model_loaded: boolean } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
 
 export type SettingsPromptCacheRetention = "in_memory" | "five_minutes" | "one_hour" | "twenty_four_hours";
 

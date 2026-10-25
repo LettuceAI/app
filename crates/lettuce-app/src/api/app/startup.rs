@@ -370,7 +370,7 @@ async fn adopt_legacy_embedding(context: &ApiContext) {
     match adopted {
         Ok(Some(_)) => {
             tracing::info!("adopted the legacy v4 embedding model");
-            context.models_changed();
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Eidos);
         }
         Ok(None) => {}
         Err(error) => {

@@ -17,6 +17,7 @@ const MAX_PATH_BYTES: usize = 4096;
 pub struct DeviceSettings {
     pub trusted_certificates: Vec<TrustedCertificate>,
     pub embedding: DeviceEmbeddingSettings,
+    pub onnx: DeviceOnnxSettings,
     /// Where GGUF downloads go (image models in its `image` folder); unset
     /// means the app's own models folder.
     pub llm_models_dir: Option<String>,
@@ -69,6 +70,46 @@ pub struct DeviceEmbeddingSettings {
     pub model_version: Option<EmbeddingModelVersion>,
     pub max_tokens: Option<u16>,
     pub keep_model_loaded: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnnxModelKind {
+    Eidos,
+    Thymos,
+    Kokoro,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DeviceOnnxSettings {
+    pub thymos_keep_model_loaded: bool,
+    pub kokoro_keep_model_loaded: bool,
+}
+
+impl Default for DeviceOnnxSettings {
+    fn default() -> Self {
+        Self { thymos_keep_model_loaded: true, kokoro_keep_model_loaded: false }
+    }
+}
+
+impl DeviceSettings {
+    #[must_use]
+    pub fn keep_onnx_model_loaded(&self, model: OnnxModelKind) -> bool {
+        match model {
+            OnnxModelKind::Eidos => self.embedding.keep_model_loaded,
+            OnnxModelKind::Thymos => self.onnx.thymos_keep_model_loaded,
+            OnnxModelKind::Kokoro => self.onnx.kokoro_keep_model_loaded,
+        }
+    }
+
+    pub fn set_keep_onnx_model_loaded(&mut self, model: OnnxModelKind, keep: bool) {
+        match model {
+            OnnxModelKind::Eidos => self.embedding.keep_model_loaded = keep,
+            OnnxModelKind::Thymos => self.onnx.thymos_keep_model_loaded = keep,
+            OnnxModelKind::Kokoro => self.onnx.kokoro_keep_model_loaded = keep,
+        }
+    }
 }
 
 impl DeviceEmbeddingSettings {
@@ -196,5 +237,19 @@ mod tests {
             serde_json::to_string(&EmbeddingModelVersion::V5).expect("json"),
             "\"v5\""
         );
+    }
+}
+
+#[cfg(test)]
+mod onnx_settings_tests {
+    use super::*;
+    #[test]
+    fn older_device_settings_keep_existing_embedding_and_emotion_defaults() {
+        let settings: DeviceSettings = serde_json::from_str(r#"{"embedding":{"keep_model_loaded":true}}"#).expect("legacy settings");
+        assert!(settings.embedding.keep_model_loaded);
+        assert!(settings.onnx.thymos_keep_model_loaded);
+        assert!(!settings.onnx.kokoro_keep_model_loaded);
+        let stored = serde_json::to_string(&settings).expect("write");
+        assert_eq!(serde_json::from_str::<DeviceSettings>(&stored).expect("read"), settings);
     }
 }

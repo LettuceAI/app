@@ -21,6 +21,8 @@ mod install;
 mod keys;
 mod managed;
 mod model;
+mod memory;
+mod memory_pressure;
 mod recovery;
 mod trash;
 
@@ -54,3 +56,7 @@ mod file_lock_tests;
 
 #[cfg(test)]
 mod database_files_tests;
+
+pub use memory::{MemorySnapshot, system_memory};
+
+pub use memory_pressure::MemoryPressureMonitor;

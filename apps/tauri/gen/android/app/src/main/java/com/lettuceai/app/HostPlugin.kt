@@ -2,6 +2,8 @@ package com.lettuceai.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -38,6 +40,28 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
   private var launchIntentRead = false
   private var notificationsRequested = false
   private var workActive = false
+  private var memoryWarningPending = false
+  private val memoryCallbacks = object : ComponentCallbacks2 {
+    override fun onConfigurationChanged(configuration: Configuration) {}
+    override fun onLowMemory() { memoryWarning() }
+    override fun onTrimMemory(level: Int) {
+      if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+          level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+          level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) memoryWarning()
+    }
+  }
+
+  init { activity.application.registerComponentCallbacks(memoryCallbacks) }
+
+  override fun onDestroy(activity: AppCompatActivity) {
+    activity.application.unregisterComponentCallbacks(memoryCallbacks)
+  }
+
+  @Synchronized
+  private fun memoryWarning() {
+    memoryWarningPending = true
+    flush()
+  }
 
   @Command
   @Synchronized
@@ -70,6 +94,10 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
 
   private fun flush() {
     val target = channel ?: return
+    if (memoryWarningPending) {
+      memoryWarningPending = false
+      target.send(JSObject().put("memoryPressure", true))
+    }
     if (pending.isEmpty()) return
     val items = JSArray()
     pending.forEach { items.put(it) }

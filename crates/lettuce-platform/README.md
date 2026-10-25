@@ -73,3 +73,10 @@ The database-directory capability can check whether an opened export target has 
 Database sidecar validation and explicit deletion cover WAL, shared memory, the write gate, the use lease and the read-only marker. Every sidecar passes the same regular-file and no-symlink preflight before any sidecar is removed.
 
 Database moves are confined to checked database names and SQLite sidecars. Publication refuses replacement, verifies the expected file identity, synchronizes the directory and supports an exact replay after interruption. The application lifecycle journal decides which direction a pending move must finish.
+
+
+## Memory pressure
+
+`system_memory` reads total and available system RAM through sysinfo. `MemoryPressureMonitor` subscribes to Linux PSI using rustix, Windows resource notifications using windows-sys, or Apple dispatch memory-pressure warnings using dispatch2 and block2. Platform bindings and handle ownership come from these crates; the module declares no native functions itself. The Android host forwards application `ComponentCallbacks2` warnings. Subscribers enqueue work; they do not unload sessions on OS callback threads. Native monitor resources are released when the event worker stops.
+
+Linux uses `MEMORY_PRESSURE_WATCH` only for a cgroup `memory.pressure` path, otherwise `/proc/pressure/memory`, with a 200 ms partial-stall threshold in a two-second window. PSI access can be unavailable due to system policy; the application logs that and retains the checks at job/model activity boundaries. No recurring memory polling task is added. Platform API references: [Linux PSI](https://www.kernel.org/doc/html/v6.6/accounting/psi.html), [Windows resource notifications](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-creatememoryresourcenotification), [Apple memory-pressure source](https://developer.apple.com/documentation/Dispatch/DISPATCH_SOURCE_TYPE_MEMORYPRESSURE).

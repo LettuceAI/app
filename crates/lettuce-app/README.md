@@ -801,3 +801,12 @@ media_library_list accepts include_references (omitted means true). Library grid
 Conversation sends accept the visible conversation revision and refuse a stale revision before appending a message or materializing group members. Exact operation replays still return their original result. Older callers may omit this field; the UI always sends it and refreshes the conversation after a conflict while keeping the draft.
 
 Continue uses an inherited fork point until the selected branch has its own head; regenerating a parent-owned reply from a child remains unsupported.
+
+
+## ONNX session retention
+
+Eidos, Thymos and Kokoro have independent device preferences and caches. Eidos uses the existing embedding preference; Thymos defaults to retained and Kokoro defaults to released, preserving prior behavior. Enabling all three keeps all three sessions available after their first use. Eidos token counting and embedding in one memory operation share a session even when retention is disabled. Concurrent operations using the same model configuration share its session. A configuration change affects new operations; existing work completes with its original session.
+
+The ONNX manager checks system available memory before loads, after operations, and when jobs change. With less than 10 percent of total system RAM available, it releases idle ONNX sessions in completion order and stops when headroom recovers. Native memory warnings request release of every idle ONNX cache; active operations finish before their session is released. Preferences stay enabled, and the next use reloads on demand. Actual pressure evictions emit `OnnxModelsUnloaded` for a UI warning. llama.cpp and sd.cpp contribute to system memory usage but are never evicted or cancelled by this manager. This is best-effort pressure handling, not a reservation or an OOM guarantee.
+
+Device settings and backup state include the two new retention flags; older data defaults them during deserialization. The `device_onnx` patch changes only its selected model and uses the device revision. Installing, choosing or removing one ONNX model invalidates only its cache. Whole-context resets still invalidate all three.

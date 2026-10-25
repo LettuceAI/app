@@ -19,7 +19,7 @@ export function useSettingsWrite(api: ApiClient): SettingsWrite {
       const patch = build(current);
       if (!patch) return current;
       try {
-        const view = await api.call("settingsUpdate", { patch, expected_revision: current.revision });
+        const view = await api.call("settingsUpdate", { patch, expected_revision: patch.section === "device_embedding" || patch.section === "device_onnx" ? current.device.revision : current.revision });
         queryClient.setQueryData(queryKeys.settings.detail(), view);
         void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all });
         return view;

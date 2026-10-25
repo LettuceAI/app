@@ -1408,6 +1408,7 @@ fn read_device_state(
     Ok(lettuce_transfer::BackupDeviceState {
         trusted_certificates: settings.trusted_certificates,
         embedding: settings.embedding,
+        onnx: settings.onnx,
         speech: settings.speech,
         app_usage_days,
     })

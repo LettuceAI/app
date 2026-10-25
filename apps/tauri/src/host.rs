@@ -214,7 +214,15 @@ mod android {
         let target = app.clone();
         let channel = Channel::<serde_json::Value>::new(move |body| {
             match body {
-                InvokeResponseBody::Json(json) => deliver(&target, parse_batch(&json)),
+                InvokeResponseBody::Json(json) => {
+                    let pressure = serde_json::from_str::<serde_json::Value>(&json).ok()
+                        .is_some_and(|value| value.get("memoryPressure").and_then(serde_json::Value::as_bool) == Some(true));
+                    if pressure {
+                        if let Some(slot) = target.try_state::<lettuce_app::api::ApiContextSlot>()
+                            && let Ok(context) = slot.snapshot()
+                        { context.memory_warning(); }
+                    } else { deliver(&target, parse_batch(&json)); }
+                },
                 InvokeResponseBody::Raw(_) => {
                     tracing::warn!("an Android opened-items message was not JSON");
                 }

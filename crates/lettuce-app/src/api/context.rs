@@ -10,7 +10,6 @@ use std::{
 use lettuce_contracts::{ApiError, ApiErrorCode, GenerationEvent};
 use lettuce_conversations::InferencePort;
 use lettuce_database::Database;
-use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, EmbeddingVector};
 use lettuce_image_generation::ImageProviderPort;
 use lettuce_jobs::{Clock, SystemClock, handle::CancellationToken};
 use lettuce_media::LocalMediaBlobStore;
@@ -26,7 +25,7 @@ use super::models::local::LocalModelsState;
 use super::models::{ApiEmbedding, ApiEmotion, InstalledModels, ModelLoader, ModelSlots};
 use crate::{
     AppActiveUsageTracker, AppBackend, AppDatabaseLocation, CompanionEmotionEngine,
-    EmbeddingGenerationError, MemoryEmbeddingEngine,
+    MemoryEmbeddingEngine,
 };
 
 const PRIVATE_PERSISTENT_DIRECTORY: &str = "private-persistent-v2";
@@ -89,6 +88,7 @@ struct ApiContextInner {
     sync: super::sync::SyncState,
     parts: ApiContextParts,
     models: ModelSlots,
+    onnx_models: Arc<crate::onnx_models::OnnxModelManager>,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
     speakers: Mutex<HashMap<GenerationTurnId, GenerationEvent>>,
     wake: tokio::sync::Notify,
@@ -173,6 +173,18 @@ impl ApiContext {
         if !parts.asset_url_base.ends_with('/') {
             parts.asset_url_base.push('/');
         }
+        let onnx_events = parts.events.clone();
+        let onnx_models = crate::onnx_models::OnnxModelManager::new(move |models| {
+            onnx_events.emit(lettuce_contracts::ApiEvent::OnnxModelsUnloaded {
+                models: models.into_iter().map(|model| match model {
+                    lettuce_settings::OnnxModelKind::Eidos => lettuce_contracts::SettingsOnnxModel::Eidos,
+                    lettuce_settings::OnnxModelKind::Thymos => lettuce_contracts::SettingsOnnxModel::Thymos,
+                    lettuce_settings::OnnxModelKind::Kokoro => lettuce_contracts::SettingsOnnxModel::Kokoro,
+                }).collect(),
+            });
+        });
+        let pressure = onnx_models.clone();
+        parts.backend.database().on_job_change(move || pressure.notify());
         let library_events = parts.events.clone();
         parts.backend.database().on_library_change(move |kind, id| {
             let event = match kind {
@@ -255,7 +267,8 @@ impl ApiContext {
                 maintenance: super::app::maintenance::MaintenanceGate::default(),
                 active_work: Arc::default(),
                 sync: super::sync::SyncState::default(),
-                models: ModelSlots::new(Arc::clone(&parts.models)),
+                models: ModelSlots::new(Arc::clone(&parts.models), onnx_models.clone()),
+                onnx_models,
                 parts,
                 streams: Mutex::new(HashMap::new()),
                 speakers: Mutex::new(HashMap::new()),
@@ -681,6 +694,19 @@ impl ApiContext {
         Arc::new(ApiEmotion::new(self.clone()))
     }
 
+    pub(crate) fn onnx_models(&self) -> &Arc<crate::onnx_models::OnnxModelManager> {
+        &self.inner.onnx_models
+    }
+
+    pub fn memory_warning(&self) {
+        self.inner.onnx_models.memory_warning();
+    }
+
+    pub(crate) fn onnx_model_changed(&self, kind: lettuce_settings::OnnxModelKind) {
+        self.inner.onnx_models.invalidate(kind);
+        self.emit(lettuce_contracts::ApiEvent::RequiredModelsChanged);
+    }
+
     pub(crate) fn models(&self) -> &ModelSlots {
         &self.inner.models
     }
@@ -1100,33 +1126,6 @@ fn storage_error(what: &str, error: impl std::fmt::Display) -> ApiError {
         ApiErrorCode::Unavailable,
         format!("{what} is unavailable: {error}"),
     )
-}
-
-/// Stands in until an embedding model is loaded; every embedding is
-/// unavailable, which retrieval treats as having no vectors.
-#[derive(Debug)]
-pub(super) struct UnavailableEmbedding;
-
-impl MemoryEmbeddingEngine for UnavailableEmbedding {
-    fn source_revision(&self) -> &str {
-        ""
-    }
-
-    fn dimensions(&self) -> EmbeddingDimensions {
-        EmbeddingDimensions::from_preference(None)
-    }
-
-    fn count_tokens(&self, _text: &str) -> Result<u32, EmbeddingGenerationError> {
-        Err(EmbeddingGenerationError::Unavailable)
-    }
-
-    fn embed_memory(
-        &self,
-        _request: &EmbeddingRequest,
-        _cancellation: &CancellationToken,
-    ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
-        Err(EmbeddingGenerationError::Unavailable)
-    }
 }
 
 pub(crate) struct WeakApiContext(std::sync::Weak<ApiContextInner>);

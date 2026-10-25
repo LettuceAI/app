@@ -18,6 +18,7 @@ mod creation;
 mod image;
 mod speech;
 mod models;
+mod onnx_models;
 mod files;
 mod legacy;
 mod backup;

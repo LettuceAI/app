@@ -1284,6 +1284,13 @@
     "usageGroups": "Groups"
   },
   "memory": {
+    "onnx": {
+      "group": "Models in memory",
+      "eidos": "Keep Eidos loaded",
+      "thymos": "Keep Thymos loaded",
+      "kokoro": "Keep Kokoro loaded",
+      "body": "Reuse the model between tasks. Idle models may be released when memory is low."
+    },
     "title": "Memory",
     "subtitle": "How characters remember",
     "manual": {

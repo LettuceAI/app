@@ -69,6 +69,8 @@ fn view(
             }),
             embedding_max_tokens: device.embedding.max_tokens,
             embedding_keep_model_loaded: device.embedding.keep_model_loaded,
+            thymos_keep_model_loaded: device.onnx.thymos_keep_model_loaded,
+            kokoro_keep_model_loaded: device.onnx.kokoro_keep_model_loaded,
             llm_models_dir: device.llm_models_dir,
             dictation_model_id: device.speech.dictation_model_id,
             trusted_certificates: crate::api::providers::certificate_view(
@@ -284,6 +286,7 @@ fn apply(
             settings.embedding = convert(value, "embedding")?;
             "embedding"
         }
+        dto::SettingsPatch::DeviceOnnx { .. } => return Err(invalid_field("device_onnx", "device patch requires its own revision")),
         dto::SettingsPatch::DeviceEmbedding {
             model_version,
             max_tokens,
@@ -389,7 +392,7 @@ pub async fn settings_update(
             let database = context.backend().database();
             let (mut stored, sampler, _, device_revision) =
                 database.settings_snapshot().map_err(settings_error)?;
-            let is_device = matches!(&request.patch, dto::SettingsPatch::DeviceEmbedding { .. });
+            let is_device = matches!(&request.patch, dto::SettingsPatch::DeviceEmbedding { .. } | dto::SettingsPatch::DeviceOnnx { .. });
             let expected = if is_device {
                 device_revision
             } else {
@@ -400,6 +403,16 @@ pub async fn settings_update(
                     ApiErrorCode::Conflict,
                     "settings revision is stale",
                 ));
+            }
+            if let dto::SettingsPatch::DeviceOnnx { model, keep_model_loaded } = request.patch {
+                let model = match model {
+                    dto::SettingsOnnxModel::Eidos => lettuce_settings::OnnxModelKind::Eidos,
+                    dto::SettingsOnnxModel::Thymos => lettuce_settings::OnnxModelKind::Thymos,
+                    dto::SettingsOnnxModel::Kokoro => lettuce_settings::OnnxModelKind::Kokoro,
+                };
+                let result = view(database.save_device_onnx_retention(model, keep_model_loaded, device_revision)
+                    .map_err(settings_error)?)?;
+                return Ok(finish_committed(result, || super::content_filter::publish_settings_changes(context)));
             }
             let mut device_embedding = None;
             let section = apply(context, &mut stored, request.patch, &mut device_embedding)?;

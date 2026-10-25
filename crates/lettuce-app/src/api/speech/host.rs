@@ -137,7 +137,7 @@ impl SpeechHost for InstalledSpeech {
         let built: Arc<dyn TtsRuntime> = Arc::new(
             context
                 .backend()
-                .tts_runtime(
+                .tts_runtime_with_cache(
                     &tls,
                     KokoroInstallStore::open(&root).map_err(|error| unavailable(&error))?,
                     KokoroVoiceInstallStore::open(&root).map_err(|error| unavailable(&error))?,
@@ -146,6 +146,7 @@ impl SpeechHost for InstalledSpeech {
                         folder,
                         context.resource_dir().map(std::path::PathBuf::from),
                     ),
+                    context.onnx_models().clone(),
                 )
                 .map_err(|error| unavailable(&error))?,
         );

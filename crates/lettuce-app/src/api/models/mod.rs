@@ -1,7 +1,9 @@
 //! The optional embedding and emotion models. Nothing loads them at startup:
 //! a chat that needs one checks it before its turn starts, which loads it
 //! once (fetching ONNX Runtime first when the device has none), and the
-//! loaded model is kept until an install, switch or removal changes it.
+//! operation holds one session throughout its work. Independent device
+//! preferences retain idle Eidos, Thymos and Kokoro sessions between tasks;
+//! memory pressure can release idle sessions without changing those choices.
 
 pub(super) mod hugging_face;
 #[cfg(test)]
@@ -25,7 +27,7 @@ mod tests;
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use async_trait::async_trait;
@@ -40,7 +42,6 @@ use lettuce_settings::{DeviceSettingsStore, GlobalSettingsStore};
 use lettuce_types::ConversationId;
 
 use super::ApiContext;
-use super::context::UnavailableEmbedding;
 use super::error::{IntoApiError, api_error, model_error};
 use crate::{
     CompanionEmotionEngine, CompanionEmotionGenerationError, EmbeddingGenerationError,
@@ -244,39 +245,33 @@ impl ModelLoader for InstalledModels {
     }
 }
 
-enum Slot<T> {
-    Unknown,
-    Loaded(T),
-    Absent,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EmbeddingCacheKey {
+    version: Option<lettuce_settings::EmbeddingModelVersion>,
+    max_tokens: Option<u16>,
+    dimensions: Option<u16>,
+    root: Option<String>,
 }
 
-/// The context's model slots: each model loads once, on first use, and is
-/// forgotten by `ApiContext::models_changed`.
 pub(crate) struct ModelSlots {
     loader: Arc<dyn ModelLoader>,
-    embedding: Mutex<Slot<Arc<dyn MemoryEmbeddingEngine>>>,
-    emotion: Mutex<Slot<Arc<dyn CompanionEmotionEngine>>>,
-    active_embeddings: Mutex<Vec<std::sync::Weak<dyn MemoryEmbeddingEngine>>>,
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    manager: Arc<crate::onnx_models::OnnxModelManager>,
+    embedding: Arc<crate::onnx_models::OnnxSessionCache<EmbeddingCacheKey, dyn MemoryEmbeddingEngine>>,
+    emotion: Arc<crate::onnx_models::OnnxSessionCache<Option<String>, dyn CompanionEmotionEngine>>,
 }
 
 impl ModelSlots {
-    pub(crate) fn new(loader: Arc<dyn ModelLoader>) -> Self {
+    pub(crate) fn new(loader: Arc<dyn ModelLoader>, manager: Arc<crate::onnx_models::OnnxModelManager>) -> Self {
         Self {
             loader,
-            embedding: Mutex::new(Slot::Unknown),
-            emotion: Mutex::new(Slot::Unknown),
-            active_embeddings: Mutex::new(Vec::new()),
+            embedding: crate::onnx_models::OnnxSessionCache::new(lettuce_settings::OnnxModelKind::Eidos, manager.clone()),
+            emotion: crate::onnx_models::OnnxSessionCache::new(lettuce_settings::OnnxModelKind::Thymos, manager.clone()),
+            manager,
         }
     }
 
     pub(crate) fn unload_embedding(&self) {
-        *lock(&self.embedding) = Slot::Unknown;
+        self.manager.invalidate(lettuce_settings::OnnxModelKind::Eidos);
     }
 
     pub(crate) async fn prepare_embedding(&self, context: &ApiContext) -> Result<(), ApiError> {
@@ -309,47 +304,23 @@ impl ModelSlots {
     }
 
     pub(crate) fn forget(&self) {
-        *lock(&self.embedding) = Slot::Unknown;
-        *lock(&self.emotion) = Slot::Unknown;
+        for kind in [lettuce_settings::OnnxModelKind::Eidos, lettuce_settings::OnnxModelKind::Thymos, lettuce_settings::OnnxModelKind::Kokoro] {
+            self.manager.invalidate(kind);
+        }
     }
 
-    /// Whether `model` is installed, from its install record; a loaded model
-    /// is installed.
     pub(crate) fn installed(&self, context: &ApiContext, model: RequiredModel) -> bool {
-        self.known(model) == Some(true) || self.loader.installed(context, model)
+        let current = match model {
+            RequiredModel::Embedding => self.embedding.has_current(),
+            RequiredModel::Emotion => self.emotion.has_current(),
+        };
+        current || self.loader.installed(context, model)
     }
 
     pub(crate) fn is_loaded(&self, model: RequiredModel) -> bool {
         match model {
-            RequiredModel::Embedding => {
-                matches!(&*lock(&self.embedding), Slot::Loaded(_))
-                    || lock(&self.active_embeddings)
-                        .iter()
-                        .any(|engine| engine.strong_count() > 0)
-            }
-            RequiredModel::Emotion => matches!(&*lock(&self.emotion), Slot::Loaded(_)),
-        }
-    }
-
-    fn known(&self, model: RequiredModel) -> Option<bool> {
-        match model {
-            RequiredModel::Embedding => match &*lock(&self.embedding) {
-                Slot::Loaded(_) => Some(true),
-                Slot::Absent => Some(false),
-                Slot::Unknown => None,
-            },
-            RequiredModel::Emotion => match &*lock(&self.emotion) {
-                Slot::Loaded(_) => Some(true),
-                Slot::Absent => Some(false),
-                Slot::Unknown => None,
-            },
-        }
-    }
-
-    fn mark_absent(&self, model: RequiredModel) {
-        match model {
-            RequiredModel::Embedding => *lock(&self.embedding) = Slot::Absent,
-            RequiredModel::Emotion => *lock(&self.emotion) = Slot::Absent,
+            RequiredModel::Embedding => self.embedding.is_loaded(),
+            RequiredModel::Emotion => self.emotion.is_loaded(),
         }
     }
 
@@ -360,7 +331,7 @@ impl ModelSlots {
         context: &ApiContext,
         model: RequiredModel,
     ) -> Result<(), ApiError> {
-        context
+        let current = context
             .blocking(move |context| {
                 let root =
                     context
@@ -374,20 +345,25 @@ impl ModelSlots {
                 {
                     super::jobs::local::folder_move_active(context)?;
                 }
-                Ok(())
+                let (stored, _, device, _) = context.backend().database().settings_snapshot()
+                    .map_err(super::app::settings_error)?;
+                Ok(match model {
+                    RequiredModel::Embedding => context.models().embedding.contains(&EmbeddingCacheKey {
+                        version: device.embedding.model_version,
+                        max_tokens: device.embedding.max_tokens,
+                        dimensions: stored.settings.embedding.dimensions,
+                        root: device.retained_model_roots.embedding,
+                    }),
+                    RequiredModel::Emotion => context.models().emotion.contains(&device.retained_model_roots.thymos),
+                })
             })
             .await?;
-        match self.known(model) {
-            Some(true) => return Ok(()),
-            Some(false) => return Err(model_error(ApiErrorCode::ModelRequired, model)),
-            None => {}
-        }
+        if current { return Ok(()); }
         let loader = Arc::clone(&self.loader);
         let installed = context
             .blocking(move |context| Ok(loader.installed(context, model)))
             .await?;
         if !installed {
-            self.mark_absent(model);
             return Err(model_error(ApiErrorCode::ModelRequired, model));
         }
         if !self.loader.prepare(context).await {
@@ -431,55 +407,53 @@ impl ModelSlots {
     }
 
     pub(crate) fn resolve_embedding(
-        &self,
-        context: &ApiContext,
-    ) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
-        let mut slot = lock(&self.embedding);
-        let keep_loaded = match context.backend().database().load_device_settings() {
-            Ok(device) => device.embedding.keep_model_loaded,
-            Err(error) => {
-                tracing::warn!(%error, "embedding settings could not be read");
-                return ModelLoad::Unavailable;
-            }
+        &self, context: &ApiContext,
+    ) -> ModelLoad<crate::onnx_models::OnnxModelLease<dyn MemoryEmbeddingEngine>> {
+        let Ok((stored, _, device, _)) = context.backend().database().settings_snapshot() else {
+            return ModelLoad::Unavailable;
         };
-        if !keep_loaded {
-            *slot = Slot::Unknown;
-            let loaded = self.loader.embedding(context);
-            if let ModelLoad::Loaded(engine) = &loaded {
-                let mut active = lock(&self.active_embeddings);
-                active.retain(|engine| engine.strong_count() > 0);
-                active.push(Arc::downgrade(engine));
+        if self.manager.refresh_settings(|| context.backend().database().load_device_settings()).is_err() {
+            return ModelLoad::Unavailable;
+        }
+        let key = EmbeddingCacheKey {
+            version: device.embedding.model_version,
+            max_tokens: device.embedding.max_tokens,
+            dimensions: stored.settings.embedding.dimensions,
+            root: device.retained_model_roots.embedding,
+        };
+        match self.embedding.acquire(key, || {
+            match self.loader.embedding(context) {
+                ModelLoad::Loaded(engine) => Ok(engine),
+                ModelLoad::NotInstalled => Err(false),
+                ModelLoad::Unavailable => Err(true),
             }
-            return loaded;
+        }) {
+            Ok(engine) => ModelLoad::Loaded(engine),
+            Err(false) => ModelLoad::NotInstalled,
+            Err(true) => ModelLoad::Unavailable,
         }
-        match &*slot {
-            Slot::Loaded(engine) => return ModelLoad::Loaded(Arc::clone(engine)),
-            Slot::Absent => return ModelLoad::NotInstalled,
-            Slot::Unknown => {}
-        }
-        let loaded = self.loader.embedding(context);
-        match &loaded {
-            ModelLoad::Loaded(engine) => *slot = Slot::Loaded(Arc::clone(engine)),
-            ModelLoad::NotInstalled => *slot = Slot::Absent,
-            ModelLoad::Unavailable => {}
-        }
-        loaded
     }
 
-    fn resolve_emotion(&self, context: &ApiContext) -> ModelLoad<Arc<dyn CompanionEmotionEngine>> {
-        let mut slot = lock(&self.emotion);
-        match &*slot {
-            Slot::Loaded(engine) => return ModelLoad::Loaded(Arc::clone(engine)),
-            Slot::Absent => return ModelLoad::NotInstalled,
-            Slot::Unknown => {}
+    fn resolve_emotion(
+        &self, context: &ApiContext,
+    ) -> ModelLoad<crate::onnx_models::OnnxModelLease<dyn CompanionEmotionEngine>> {
+        let Ok(device) = context.backend().database().load_device_settings() else {
+            return ModelLoad::Unavailable;
+        };
+        if self.manager.refresh_settings(|| context.backend().database().load_device_settings()).is_err() {
+            return ModelLoad::Unavailable;
         }
-        let loaded = self.loader.emotion(context);
-        match &loaded {
-            ModelLoad::Loaded(engine) => *slot = Slot::Loaded(Arc::clone(engine)),
-            ModelLoad::NotInstalled => *slot = Slot::Absent,
-            ModelLoad::Unavailable => {}
+        match self.emotion.acquire(device.retained_model_roots.thymos, || {
+            match self.loader.emotion(context) {
+                ModelLoad::Loaded(engine) => Ok(engine),
+                ModelLoad::NotInstalled => Err(false),
+                ModelLoad::Unavailable => Err(true),
+            }
+        }) {
+            Ok(engine) => ModelLoad::Loaded(engine),
+            Err(false) => ModelLoad::NotInstalled,
+            Err(true) => ModelLoad::Unavailable,
         }
-        loaded
     }
 }
 
@@ -651,43 +625,30 @@ pub(crate) async fn require_conversation_models(
 pub(crate) struct ApiEmbedding {
     context: ApiContext,
     metadata: OnceLock<(String, EmbeddingDimensions, SimilarityCalibration)>,
+    resolved: Mutex<Option<crate::onnx_models::OnnxModelLease<dyn MemoryEmbeddingEngine>>>,
 }
 
 impl ApiEmbedding {
     pub(crate) fn new(context: ApiContext) -> Self {
-        Self {
-            context,
-            metadata: OnceLock::new(),
-        }
+        Self { context, metadata: OnceLock::new(), resolved: Mutex::new(None) }
     }
 
-    fn engine(&self) -> Arc<dyn MemoryEmbeddingEngine> {
+    fn engine(&self) -> Result<crate::onnx_models::OnnxModelLease<dyn MemoryEmbeddingEngine>, EmbeddingGenerationError> {
+        let mut resolved = self.resolved.lock().map_err(|_| EmbeddingGenerationError::Unavailable)?;
+        if let Some(engine) = resolved.as_ref() { return Ok(engine.clone()); }
         match self.context.models().resolve_embedding(&self.context) {
-            ModelLoad::Loaded(engine) => engine,
-            ModelLoad::NotInstalled | ModelLoad::Unavailable => Arc::new(UnavailableEmbedding),
+            ModelLoad::Loaded(engine) => {
+                *resolved = Some(engine.clone());
+                Ok(engine)
+            }
+            ModelLoad::NotInstalled | ModelLoad::Unavailable => Err(EmbeddingGenerationError::Unavailable),
         }
-    }
-
-    fn consistent_engine(
-        &self,
-    ) -> Result<Arc<dyn MemoryEmbeddingEngine>, EmbeddingGenerationError> {
-        let engine = self.engine();
-        if let Some((revision, dimensions, _)) = self.metadata.get()
-            && (revision != engine.source_revision() || *dimensions != engine.dimensions())
-        {
-            return Err(EmbeddingGenerationError::Unavailable);
-        }
-        Ok(engine)
     }
 
     fn metadata(&self) -> &(String, EmbeddingDimensions, SimilarityCalibration) {
-        self.metadata.get_or_init(|| {
-            let engine = self.engine();
-            (
-                engine.source_revision().to_owned(),
-                engine.dimensions(),
-                engine.calibration(),
-            )
+        self.metadata.get_or_init(|| match self.engine() {
+            Ok(engine) => (engine.source_revision().to_owned(), engine.dimensions(), engine.calibration()),
+            Err(_) => (String::new(), EmbeddingDimensions::from_preference(None), SimilarityCalibration::RawCosine),
         })
     }
 }
@@ -706,7 +667,7 @@ impl MemoryEmbeddingEngine for ApiEmbedding {
     }
 
     fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {
-        self.consistent_engine()?.count_tokens(text)
+        self.engine()?.count_tokens(text)
     }
 
     fn embed_memory(
@@ -714,7 +675,7 @@ impl MemoryEmbeddingEngine for ApiEmbedding {
         request: &EmbeddingRequest,
         cancellation: &CancellationToken,
     ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
-        self.consistent_engine()?
+        self.engine()?
             .embed_memory(request, cancellation)
     }
 
@@ -727,14 +688,14 @@ impl MemoryEmbeddingEngine for ApiEmbedding {
 /// classification. A companion send fails when it is unavailable.
 pub(crate) struct ApiEmotion {
     context: ApiContext,
-    resolved: OnceLock<Option<Arc<dyn CompanionEmotionEngine>>>,
+    resolved: Mutex<Option<crate::onnx_models::OnnxModelLease<dyn CompanionEmotionEngine>>>,
 }
 
 impl ApiEmotion {
     pub(crate) fn new(context: ApiContext) -> Self {
         Self {
             context,
-            resolved: OnceLock::new(),
+            resolved: Mutex::new(None),
         }
     }
 }
@@ -745,16 +706,17 @@ impl CompanionEmotionEngine for ApiEmotion {
         text: &str,
         cancellation: &CancellationToken,
     ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError> {
-        let engine = self.resolved.get_or_init(|| {
-            match self.context.models().resolve_emotion(&self.context) {
-                ModelLoad::Loaded(engine) => Some(engine),
-                ModelLoad::NotInstalled | ModelLoad::Unavailable => None,
+        let engine = {
+            let mut resolved = self.resolved.lock().map_err(|_| CompanionEmotionGenerationError::Unavailable)?;
+            if resolved.is_none() {
+                match self.context.models().resolve_emotion(&self.context) {
+                    ModelLoad::Loaded(engine) => *resolved = Some(engine),
+                    ModelLoad::NotInstalled | ModelLoad::Unavailable => return Err(CompanionEmotionGenerationError::Unavailable),
+                }
             }
-        });
-        match engine {
-            Some(engine) => engine.classify_emotion(text, cancellation),
-            None => Err(CompanionEmotionGenerationError::Unavailable),
-        }
+            resolved.as_ref().cloned().ok_or(CompanionEmotionGenerationError::Unavailable)?
+        };
+        engine.classify_emotion(text, cancellation)
     }
 
     fn requires_model(&self) -> bool {

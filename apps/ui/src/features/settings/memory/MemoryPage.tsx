@@ -143,6 +143,21 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
         />
       </ListGroup>
 
+      <ListGroup label={t("memory.onnx.group")}>
+        {([
+          ["eidos", view.device.embedding_keep_model_loaded],
+          ["thymos", view.device.thymos_keep_model_loaded],
+          ["kokoro", view.device.kokoro_keep_model_loaded],
+        ] as const).map(([model, loaded]) => (
+          <ListRow
+            key={model}
+            title={t(`memory.onnx.${model}`)}
+            description={t("memory.onnx.body")}
+            trailing={<Switch checked={loaded} onChange={(keep) => void write(() => ({ section: "device_onnx", model, keep_model_loaded: keep }))} aria-label={t(`memory.onnx.${model}`)} />}
+          />
+        ))}
+      </ListGroup>
+
       <ListGroup label={t("memory.dynamic.group")}>
         <ListRow
           icon={<Brain size={icon.lg} />}
@@ -207,13 +222,6 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
               title={t("memory.embedding.capacity")}
               description={t("memory.embedding.capacityBody")}
               trailing={<Segmented<string> size="sm" aria-label={t("memory.embedding.capacity")} value={String(tokens)} onChange={(next) => void write((latest) => ({ section: "device_embedding", model_version: latest.device.embedding_model_version, max_tokens: Number(next), keep_model_loaded: latest.device.embedding_keep_model_loaded }))} options={capacities.map((value) => ({ value: String(value), label: new Intl.NumberFormat(i18n.language, { useGrouping: false }).format(value) }))} />}
-            />
-          )}
-          {installed && (
-            <ListRow
-              title={t("memory.embedding.keepLoaded")}
-              description={t("memory.embedding.keepLoadedBody")}
-              trailing={<Switch checked={view.device.embedding_keep_model_loaded} onChange={(keep) => void write((latest) => ({ section: "device_embedding", model_version: latest.device.embedding_model_version, max_tokens: latest.device.embedding_max_tokens, keep_model_loaded: keep }))} aria-label={t("memory.embedding.keepLoaded")} />}
             />
           )}
         </ListGroup>

@@ -62,6 +62,7 @@ pub struct BackupGlobalSettings {
 pub struct BackupDeviceState {
     pub trusted_certificates: Vec<lettuce_settings::TrustedCertificate>,
     pub embedding: lettuce_settings::DeviceEmbeddingSettings,
+    pub onnx: lettuce_settings::DeviceOnnxSettings,
     pub speech: lettuce_settings::DeviceSpeechSettings,
     pub app_usage_days: Vec<BackupAppUsageDay>,
 }
@@ -1659,6 +1660,7 @@ fn validate_device_state(device: &mut BackupDeviceState) -> Result<(), ProviderB
     lettuce_settings::DeviceSettings {
         trusted_certificates: device.trusted_certificates.clone(),
         embedding: device.embedding,
+        onnx: device.onnx,
         llm_models_dir: None,
         speech: device.speech.clone(),
         retained_model_roots: Default::default(),

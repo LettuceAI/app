@@ -812,21 +812,44 @@ async fn a_companion_send_without_an_emotion_engine_is_model_required() {
 }
 
 #[test]
-fn keep_loaded_off_releases_the_embedding_between_uses() {
-    use lettuce_settings::DeviceSettingsStore;
+fn keep_loaded_off_reuses_one_session_for_the_whole_operation() {
     let models = CountingModels::new(true, true);
     let harness = harness_with_models(Arc::clone(&models));
     let engine = harness.context.embedding();
+    assert_eq!(engine.source_revision(), "fixed");
     assert_eq!(engine.count_tokens("First use."), Ok(1));
     assert_eq!(engine.count_tokens("Second use."), Ok(1));
+    assert_eq!(models.loads.load(Ordering::SeqCst), 1);
+    assert!(harness.context.models().is_loaded(RequiredModel::Embedding));
+    drop(engine);
+    assert!(!harness.context.models().is_loaded(RequiredModel::Embedding));
+    let next = harness.context.embedding();
+    assert_eq!(next.count_tokens("New operation."), Ok(1));
     assert_eq!(models.loads.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn retained_embedding_is_reused_and_refreshes_only_its_configuration() {
+    use lettuce_settings::DeviceSettingsStore;
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(Arc::clone(&models));
     let database = harness.context.backend().database();
-    let mut device = database.load_device_settings().expect("device settings");
-    device.embedding.keep_model_loaded = true;
-    database.update_device_settings(&|current| current.clone_from(&device)).expect("save setting");
-    assert_eq!(engine.count_tokens("Third use."), Ok(1));
-    assert_eq!(engine.count_tokens("Fourth use."), Ok(1));
+    database.update_device_settings(&|device| device.embedding.keep_model_loaded = true).expect("retain");
+    for _ in 0..3 {
+        let engine = harness.context.embedding();
+        assert_eq!(engine.count_tokens("Reusable."), Ok(1));
+    }
+    assert_eq!(models.loads.load(Ordering::SeqCst), 1);
+    database.update_device_settings(&|device| device.embedding.max_tokens = Some(1024)).expect("tokens");
+    assert_eq!(harness.context.embedding().count_tokens("New configuration."), Ok(1));
+    assert_eq!(models.loads.load(Ordering::SeqCst), 2);
+    database.update_device_settings(&|device| device.embedding.keep_model_loaded = false).expect("release");
+    let engine = harness.context.embedding();
+    assert_eq!(engine.count_tokens("Release after this operation."), Ok(1));
     assert_eq!(models.loads.load(Ordering::SeqCst), 3);
+    assert!(harness.context.models().is_loaded(RequiredModel::Embedding));
+    drop(engine);
+    assert!(!harness.context.models().is_loaded(RequiredModel::Embedding));
 }
 
 struct ComparisonModels {
@@ -1115,4 +1138,19 @@ async fn headless_model_guards_reach_missing_model_errors_and_install_recovery()
     assert_eq!(status.code, ApiErrorCode::ModelRequired);
     crate::api::jobs::install::recover_queued_installs(context)
         .expect("no roots do not abort install recovery");
+}
+
+
+#[tokio::test]
+async fn invalidated_active_sessions_finish_without_admitting_new_work_for_a_removed_model() {
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(models.clone());
+    let old = harness.context.embedding();
+    assert_eq!(old.count_tokens("Existing work."), Ok(1));
+    models.installed.store(false, Ordering::SeqCst);
+    harness.context.models_changed();
+    assert!(harness.context.models().is_loaded(RequiredModel::Embedding));
+    assert!(!harness.context.models().installed(&harness.context, RequiredModel::Embedding));
+    assert_eq!(harness.context.models().require(&harness.context, RequiredModel::Embedding).await.expect_err("removed").code, ApiErrorCode::ModelRequired);
+    assert_eq!(old.count_tokens("Existing work can finish."), Ok(1));
 }

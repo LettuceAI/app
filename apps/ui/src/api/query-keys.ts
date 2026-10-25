@@ -104,6 +104,7 @@ export const appEventInvalidations: AppEventInvalidations = {
   conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
   memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id)],
   required_models_changed: () => [queryKeys.conversations.all],
+  onnx_models_unloaded: () => [queryKeys.conversations.all, queryKeys.embedding.all, queryKeys.speech.all],
   character_changed: () => [queryKeys.characters.all, queryKeys.home.characters(), queryKeys.library.all, queryKeys.media.library(), queryKeys.memory.all],
   persona_changed: () => [queryKeys.personas.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],
   lorebooks_changed: () => [queryKeys.lorebooks.all, queryKeys.conversations.all, queryKeys.library.all, queryKeys.media.library()],

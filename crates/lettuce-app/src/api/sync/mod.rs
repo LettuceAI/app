@@ -843,7 +843,7 @@ async fn run(
         .unresolved_conversation_forks()
         .map_err(|_| failure(ApiErrorCode::Unavailable, dto::SyncFailure::Storage))?
         .len();
-    context.models_changed();
+    context.emit(dto::ApiEvent::RequiredModelsChanged);
     Ok(dto::SyncStatus::Completed {
         counts: dto::SyncCounts {
             sent_changes: changes.sent as u64,

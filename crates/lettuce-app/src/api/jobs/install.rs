@@ -904,7 +904,7 @@ async fn run_claimed(
             InstallSource::Artifact(source),
         ) => match *finish {
             InstallFinish::CompanionEmotion { root, remote } => {
-                context.models_changed();
+                context.onnx_model_changed(lettuce_settings::OnnxModelKind::Thymos);
                 let result = ArtifactInstallCoordinator::new(database)
                     .run(claimed, source.as_ref(), reason, now)
                     .await
@@ -912,13 +912,13 @@ async fn run_claimed(
                 if let ArtifactInstallRunResult::Succeeded { .. } = result {
                     crate::finish_companion_emotion_install(database, &root, &remote)
                         .map_err(internal)?;
-                    context.models_changed();
+                    context.onnx_model_changed(lettuce_settings::OnnxModelKind::Thymos);
                 }
             }
             finish => {
                 let reload = matches!(finish, InstallFinish::Embedding { .. });
                 if reload {
-                    context.models_changed();
+                    context.onnx_model_changed(lettuce_settings::OnnxModelKind::Eidos);
                 }
                 let finisher = context.clone();
                 let job_id = claimed.job.id;
@@ -937,7 +937,7 @@ async fn run_claimed(
                     .await
                     .map_err(internal)?;
                 if reload && matches!(result, ArtifactInstallRunResult::Succeeded { .. }) {
-                    context.models_changed();
+                    context.onnx_model_changed(lettuce_settings::OnnxModelKind::Eidos);
                 }
             }
         },
@@ -963,6 +963,7 @@ async fn run_claimed(
                 .run(claimed, source.as_ref(), reason, now)
                 .await
                 .map_err(internal)?;
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Kokoro);
         }
         (
             InstallWork::KokoroVoices { install_root, .. },
@@ -1119,7 +1120,7 @@ async fn finish_artifact(
                 })
                 .await
                 .map_err(|error| error.message)?;
-            context.models_changed();
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Eidos);
             context
                 .models()
                 .prepare_embedding(context)

@@ -539,6 +539,19 @@ impl AppBackend {
         phonemizer: Arc<dyn lettuce_platform::EspeakPhonemizer>,
         onnx_runtime: crate::OnnxRuntimePaths,
     ) -> Result<crate::ApplicationTtsRuntime, lettuce_network::JsonClientError> {
+        self.tts_runtime_with_cache(tls_policy, models, voices, phonemizer, onnx_runtime,
+            crate::onnx_models::OnnxModelManager::new(|_| {}))
+    }
+
+    pub(crate) fn tts_runtime_with_cache(
+        &self,
+        tls_policy: &lettuce_network::TlsPolicy,
+        models: lettuce_model_hub::KokoroInstallStore,
+        voices: lettuce_model_hub::KokoroVoiceInstallStore,
+        phonemizer: Arc<dyn lettuce_platform::EspeakPhonemizer>,
+        onnx_runtime: crate::OnnxRuntimePaths,
+        cache: Arc<crate::onnx_models::OnnxModelManager>,
+    ) -> Result<crate::ApplicationTtsRuntime, lettuce_network::JsonClientError> {
         let remote = Arc::new(self.remote_tts_runtime(tls_policy)?);
         let kokoro = Arc::new(crate::KokoroTtsRuntime::new(
             models,
@@ -548,7 +561,7 @@ impl AppBackend {
                 Arc::clone(&self.database),
                 onnx_runtime,
             )),
-        ));
+        ).with_cache(cache, Arc::clone(&self.database) as Arc<dyn lettuce_settings::DeviceSettingsStore>));
         Ok(crate::ApplicationTtsRuntime::new(remote, kokoro))
     }
 
@@ -644,7 +657,7 @@ impl AppBackend {
     }
 
     #[must_use]
-    pub const fn kokoro_native_synthesis(
+    pub fn kokoro_native_synthesis(
         &self,
         installs: lettuce_model_hub::KokoroInstallStore,
     ) -> crate::KokoroNativeSynthesisCoordinator {

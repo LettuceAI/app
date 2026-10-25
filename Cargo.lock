@@ -3157,15 +3157,19 @@ dependencies = [
 name = "lettuce-platform"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "cap-primitives",
  "cap-std",
+ "dispatch2",
  "fs4",
  "lettuce-types",
  "libloading",
  "rustix",
  "same-file",
+ "sysinfo",
  "thiserror 2.0.20",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

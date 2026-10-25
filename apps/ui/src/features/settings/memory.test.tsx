@@ -34,7 +34,7 @@ const memory: SettingsDynamicMemorySettings = {
 
 function viewOf(patch: Partial<SettingsView["global"]> = {}, revision = 7): SettingsView {
   return {
-    device: { revision: 1, embedding_model_version: null, embedding_max_tokens: null, embedding_keep_model_loaded: false, llm_models_dir: null, dictation_model_id: null, trusted_certificates: [] },
+    device: { revision: 1, embedding_model_version: null, embedding_max_tokens: null, embedding_keep_model_loaded: false, thymos_keep_model_loaded: true, kokoro_keep_model_loaded: false, llm_models_dir: null, dictation_model_id: null, trusted_certificates: [] },
     global: {
       dynamic_memory: memory,
       group_dynamic_memory: null,
@@ -58,7 +58,8 @@ function backend(initial: SettingsView) {
   const get = vi.fn(() => ok(view));
   const update = vi.fn((request: SettingsUpdateRequest_Deserialize) => {
     requests.push(request);
-    if (request.expected_revision !== view.revision) return { status: "error" as const, error: { code: "conflict" as const, message: "stale", details: null } };
+    const devicePatch = request.patch.section === "device_onnx" || request.patch.section === "device_embedding";
+    if (request.expected_revision !== (devicePatch ? view.device.revision : view.revision)) return { status: "error" as const, error: { code: "conflict" as const, message: "stale", details: null } };
     const patch: SettingsPatch_Deserialize = request.patch;
     const global = { ...view.global };
     if (patch.section === "dynamic_memory") global.dynamic_memory = patch.value;
@@ -66,7 +67,10 @@ function backend(initial: SettingsView) {
     else if (patch.section === "dynamic_memory_sampler") global.dynamic_memory_llama_sampler_overwrite_enabled = patch.enabled;
     else if (patch.section === "dynamic_memory_prompts") global.dynamic_memory_prompts = patch.value;
     else if (patch.section === "general" && patch.manual_mode_context_window !== null) global.manual_mode_context_window = patch.manual_mode_context_window;
-    view = { ...view, global, revision: view.revision + 1 };
+    if (patch.section === "device_onnx") {
+      const field = { eidos: "embedding_keep_model_loaded", thymos: "thymos_keep_model_loaded", kokoro: "kokoro_keep_model_loaded" } as const;
+      view = { ...view, device: { ...view.device, [field[patch.model]]: patch.keep_model_loaded, revision: view.device.revision + 1 } };
+    } else view = { ...view, global, revision: view.revision + 1 };
     return ok(view);
   });
   return { get, update, requests, current: () => view };
@@ -112,6 +116,25 @@ async function commit(title: string, value: string) {
 const lastPatch = (store: ReturnType<typeof backend>) => store.requests.at(-1)!.patch;
 
 describe("memory settings page", () => {
+  it("saves three independent model preferences using device revisions even when dynamic memory is off", async () => {
+    const { store } = await mount(viewOf({ dynamic_memory: { ...memory, enabled: false } }));
+    const switches = ["Keep Eidos loaded", "Keep Thymos loaded", "Keep Kokoro loaded"] as const;
+    for (const name of switches) expect(screen.getByRole("switch", { name })).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: switches[0] }));
+    await waitFor(() => expect(store.requests).toHaveLength(1));
+    expect(store.requests[0]).toMatchObject({ expected_revision: 1, patch: { section: "device_onnx", model: "eidos", keep_model_loaded: true } });
+    await waitFor(() => expect(screen.getByRole("switch", { name: switches[0] }).getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(screen.getByRole("switch", { name: switches[2] }));
+    await waitFor(() => expect(store.requests).toHaveLength(2));
+    expect(store.requests[1]).toMatchObject({ expected_revision: 2, patch: { section: "device_onnx", model: "kokoro", keep_model_loaded: true } });
+    await waitFor(() => expect(screen.getByRole("switch", { name: switches[2] }).getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(screen.getByRole("switch", { name: switches[1] }));
+    await waitFor(() => expect(store.requests).toHaveLength(3));
+    expect(store.requests[2]).toMatchObject({ expected_revision: 3, patch: { section: "device_onnx", model: "thymos", keep_model_loaded: false } });
+    expect(store.current().device).toMatchObject({ embedding_keep_model_loaded: true, thymos_keep_model_loaded: false, kokoro_keep_model_loaded: true });
+    expect(store.current().revision).toBe(7);
+  });
+
   it("is listed with its subtitle and the direct helper sections", async () => {
     const i18n = await createTestI18n("en");
     const runtime = await createAppRuntime({

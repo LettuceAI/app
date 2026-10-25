@@ -270,6 +270,8 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ## Decisions
 
+- 2026-10-25 (user decision): Eidos, Thymos and Kokoro have three independent keep-loaded preferences and independent ONNX caches. All can remain loaded together. Active operations keep their session until completion; memory pressure releases idle ONNX sessions, warns through an app event and leaves preferences enabled for demand reload. System available RAM includes llama.cpp and sd.cpp usage; this manager never unloads their models. Eidos retention remains in the existing embedding device preference; Thymos defaults on and Kokoro off to preserve existing behavior. An Eidos operation now shares one load across token counting and embedding when retention is off. Model changes invalidate only their own cache; sync reads current configuration keys without flushing unrelated sessions. Whole-context resets and folder moves invalidate all ONNX caches.
+
 - 2026-09-11: speakers whose character is gone become disabled, muted "Unknown" members of an imported group conversation.
 - 2026-09-14: a group launch accepts companion characters as ordinary members. Imported companion sessions bind the character's shared pool, taking the legacy shared companion memory or else the most recently updated session's memories. Backup restore and legacy load are replacements, never merges.
 - 2026-09-23: the legacy OpenAI-compatible host API is not ported. The legacy `<<image:{json}>>` directive is dropped; only the scene tag remains. App usage tracking was redesigned with the user. The AMD integrated GPU of a unified-memory machine is included in local diffusion placement.

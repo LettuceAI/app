@@ -1,4 +1,5 @@
 {
+  "onnxModelsUnloaded": "Released idle models to free memory: {{models}}. They will load again when needed.",
   "app": {
     "name": "LettuceAI"
   },

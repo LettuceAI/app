@@ -312,6 +312,7 @@ pub enum ApiEvent {
         conversation_id: String,
     },
     RequiredModelsChanged,
+    OnnxModelsUnloaded { models: Vec<crate::SettingsOnnxModel> },
     /// The companion effect of a reply settled (`message_companion_effect`
     /// reads it).
     MessageEffectSettled {

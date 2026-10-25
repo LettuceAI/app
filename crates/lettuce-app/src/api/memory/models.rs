@@ -73,7 +73,7 @@ pub async fn embedding_choose(
             crate::EmbeddingModelCoordinator::new(&root, context.backend().database())
                 .choose(family(request.family))
                 .map_err(embedding_error)?;
-            context.models_changed();
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Eidos);
             Ok(())
         })
         .await
@@ -106,7 +106,7 @@ pub async fn embedding_remove(
                 crate::EmbeddingModelCoordinator::new(&root, context.backend().database())
                     .remove(family(request.family))
                     .map_err(embedding_error)?;
-            context.models_changed();
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Eidos);
             Ok(removed)
         })
         .await
@@ -235,7 +235,7 @@ pub async fn companion_emotion_remove(context: &ApiContext) -> Result<bool, ApiE
                     ) => api_error(ApiErrorCode::Busy, "a Thymos install is active"),
                     error => api_error(ApiErrorCode::Internal, error.to_string()),
                 })?;
-            context.models_changed();
+            context.onnx_model_changed(lettuce_settings::OnnxModelKind::Thymos);
             Ok(removed)
         })
         .await

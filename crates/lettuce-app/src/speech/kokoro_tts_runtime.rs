@@ -72,6 +72,7 @@ pub struct KokoroTtsRuntime {
     voices: KokoroVoiceInstallStore,
     phonemizer: Arc<dyn EspeakPhonemizer>,
     onnx_runtime: Arc<dyn KokoroOnnxRuntimeProvider>,
+    native: Arc<KokoroNativeSynthesisCoordinator>,
 }
 
 impl KokoroTtsRuntime {
@@ -83,12 +84,22 @@ impl KokoroTtsRuntime {
         onnx_runtime: Arc<dyn KokoroOnnxRuntimeProvider>,
     ) -> Self {
         Self {
+            native: Arc::new(KokoroNativeSynthesisCoordinator::new(models.clone())),
             models,
             voices,
             phonemizer,
             onnx_runtime,
         }
     }
+    pub(crate) fn with_cache(
+        mut self,
+        manager: Arc<crate::onnx_models::OnnxModelManager>,
+        settings: Arc<dyn lettuce_settings::DeviceSettingsStore>,
+    ) -> Self {
+        self.native = Arc::new(KokoroNativeSynthesisCoordinator::with_cache(self.models.clone(), manager, Some(settings)));
+        self
+    }
+
 }
 
 impl fmt::Debug for KokoroTtsRuntime {
@@ -122,6 +133,7 @@ impl TtsRuntime for KokoroTtsRuntime {
         let speed = parse_speed(request.prompt.as_deref());
         let text = request.text.clone();
         let models = self.models.clone();
+        let native = self.native.clone();
         let voices = self.voices.clone();
         let phonemizer = Arc::clone(&self.phonemizer);
         let runtime = self
@@ -169,8 +181,7 @@ impl TtsRuntime for KokoroTtsRuntime {
                     },
                 )
                 .map_err(map_phonemization_error)?;
-            let bytes = KokoroNativeSynthesisCoordinator::new(models)
-                .synthesize(
+            let bytes = native.synthesize(
                     &model,
                     runtime,
                     &phonemization,

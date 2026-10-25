@@ -839,3 +839,24 @@ async fn models_folder_relocation_worker_emits_device_settings_changed() {
     );
     worker.abort();
 }
+
+#[tokio::test]
+async fn onnx_settings_patch_uses_device_revision_and_preserves_other_choices() {
+    let h = harness(Reply::Text("Hello."));
+    let before = settings_get(&h.context).await.expect("settings");
+    let after = settings_update(&h.context, dto::SettingsUpdateRequest {
+        expected_revision: before.device.revision,
+        patch: dto::SettingsPatch::DeviceOnnx { model: dto::SettingsOnnxModel::Kokoro, keep_model_loaded: true },
+    }).await.expect("retain Kokoro");
+    assert!(after.device.kokoro_keep_model_loaded);
+    assert_eq!(after.device.thymos_keep_model_loaded, before.device.thymos_keep_model_loaded);
+    assert_eq!(after.device.embedding_keep_model_loaded, before.device.embedding_keep_model_loaded);
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(after.device.revision, before.device.revision + 1);
+    let error = settings_update(&h.context, dto::SettingsUpdateRequest {
+        expected_revision: before.device.revision,
+        patch: dto::SettingsPatch::DeviceOnnx { model: dto::SettingsOnnxModel::Eidos, keep_model_loaded: true },
+    }).await.expect_err("stale device revision");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+    assert_eq!(settings_get(&h.context).await.expect("unchanged"), after);
+}
