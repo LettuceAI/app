@@ -6,6 +6,10 @@ The workspace currently uses local sibling checkouts of `tauri`, `tauri-specta`,
 
 For an isolated debug launch, pass a separate identifier and `app.appDirectoriesOverride` through a Tauri configuration file.
 
+The opener plugin handles About's project URLs with the system's default browser on desktop and mobile. Its main-window capability permits only the configured website, Discord invite and LettuceAI/app repository URLs; file opening and automatic link interception are disabled.
+
+The haptics plugin is registered, with impact-feedback permission on Android and iOS. Frontend completion-stream feedback and intensity controls are not connected yet.
+
 ## Startup and shutdown
 
 `run()` installs logging (`lettuce-observability`), builds the tauri-specta command and event registry and starts Tauri. In debug builds it first writes the TypeScript bindings to `apps/ui/src/api/generated/bindings.ts`.

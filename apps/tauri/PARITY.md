@@ -1,5 +1,9 @@
 # lettuce-tauri: legacy parity notes
 
+About's project links use Tauri opener 3.0.0-alpha.3 on all shell platforms. The main window can open only the configured project HTTPS destinations, without file or explicit application permissions. This retains legacy's default-browser URL handling (`old-code/src/core/utils/openExternal.ts`) while moving error presentation and retry into the UI and removing the native-failure browser fallback. No update-check or auto-update mechanism is added.
+
+Haptics is installed and registered with mobile-only impact-feedback permission (user decision, 2026-10-25). Legacy triggers intensity-configured impact feedback during completion streaming, gated by the haptics setting and mobile platform and throttled to 60 ms (`old-code/src/ui/pages/chats/hooks/useChatEnhancementsController.ts:105-119`, `old-code/src/ui/pages/group-chats/GroupChatPage.tsx:422-436`). Frontend wiring, existing intensity controls and stream triggers are deliberately deferred at the user's request.
+
 Local runtime warning toasts become typed request-scoped notices (`old-code/src-tauri/src/llama_cpp/mod.rs:2598-2607,3544-3556`), and the job channel carries throughput and text separately instead of the global heartbeat (`old-code/src/ui/pages/chats/CompanionMemoryPage.tsx:645-655`). Runtime report signals carry model ids instead of paths (`old-code/src-tauri/src/llama_cpp/mod.rs:480-490`). The shell forwards the application events without business rules.
 
 Generation speaker signals replace group status events (`old-code/src-tauri/src/group_chat_manager/mod.rs:314-335,6584-6592`); the application supplies the resolved character and replays it to late attachments.

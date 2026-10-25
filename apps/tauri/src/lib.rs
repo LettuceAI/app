@@ -46,6 +46,8 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let app = app.plugin(tauri_plugin_android_fs::init());
     let app = app
+        .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
+        .plugin(tauri_plugin_haptics::init())
         .plugin(host::plugin())
         .invoke_handler(invoke_handler)
         .register_asynchronous_uri_scheme_protocol(

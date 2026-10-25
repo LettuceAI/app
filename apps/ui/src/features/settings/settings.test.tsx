@@ -1,18 +1,24 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiFailure } from "@/api/client";
+import { openExternalUrl } from "@/api/external-links";
 import { createMockTransport, mockAppStatus } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/api/external-links", () => ({ openExternalUrl: vi.fn().mockResolvedValue(undefined) }));
+
+beforeEach(() => vi.mocked(openExternalUrl).mockReset().mockResolvedValue(undefined));
 
 async function renderAt(path: string, platform: "other" | "android" = "other") {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       calls: {
         appStatus: () => ({ status: "ok", data: { ...mockAppStatus, version: "9.9.9", platform, ui_state: { onboarding: { completed: true } } } }),
+        jobsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
       },
     }),
     history: createMemoryHistory({ initialEntries: [path] }),
@@ -29,6 +35,46 @@ afterEach(() => {
 });
 
 describe("settings routes", () => {
+  it("opens About community links and the changelog", async () => {
+    await renderAt("/settings/about");
+    await screen.findByText("Standard");
+    for (const [name, url] of [
+      [/^Website/, "https://www.lettuceai.app"],
+      [/^Discord/, "https://discord.gg/745bEttw2r"],
+      [/^Source code/, "https://github.com/LettuceAI/app"],
+      [/Release notes for 9\.9\.9/, "https://www.lettuceai.app/changelog"],
+    ] as const) {
+      const row = screen.getByRole("button", { name });
+      await waitFor(() => expect(row.hasAttribute("disabled")).toBe(false));
+      fireEvent.click(row);
+      await waitFor(() => expect(openExternalUrl).toHaveBeenLastCalledWith(url));
+    }
+    expect(screen.queryByText("External links are not available in this build.")).toBeNull();
+  });
+
+  it("prefills the actual bug-report form with this build's version and platform", async () => {
+    await renderAt("/settings/about", "android");
+    fireEvent.click(await screen.findByRole("button", { name: /^Report a problem/ }));
+    await waitFor(() => expect(openExternalUrl).toHaveBeenCalledOnce());
+    const url = new URL(vi.mocked(openExternalUrl).mock.calls[0]![0]);
+    expect(url.origin + url.pathname).toBe("https://github.com/LettuceAI/app/issues/new");
+    expect(url.searchParams.get("template")).toBe("bug_report.yml");
+    expect(url.searchParams.get("version")).toBe("9.9.9 (normal)");
+    expect(url.searchParams.get("platform")).toBe("Android");
+  });
+
+  it("shows opener failures and retries the same link", async () => {
+    vi.mocked(openExternalUrl).mockRejectedValueOnce(new ApiFailure("unavailable", "private host diagnostic", null));
+    await renderAt("/settings/about");
+    fireEvent.click(await screen.findByRole("button", { name: /^Website/ }));
+    expect(await screen.findByText("Couldn't open the link")).toBeTruthy();
+    expect(screen.queryByText("private host diagnostic")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(openExternalUrl).toHaveBeenCalledTimes(2));
+    expect(openExternalUrl).toHaveBeenLastCalledWith("https://www.lettuceai.app");
+    await waitFor(() => expect(screen.queryByText("Couldn't open the link")).toBeNull());
+  });
+
   it("lists every group and opens About", async () => {
     const runtime = await renderAt("/settings", "android");
     expect(await screen.findByText("Intelligence")).toBeTruthy();

@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "haptics",
+  "description": "Completion-stream impact feedback on mobile devices.",
+  "windows": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": ["haptics:allow-impact-feedback"]
+}

@@ -480,7 +480,7 @@
     "information": "This build",
     "website": "Website",
     "discord": "Discord",
-    "linksUnavailable": "External links are not available in this build.",
+    "openLinkFailed": "Couldn't open the link",
     "updates": "Software updates",
     "updatesUnavailable": "Update checks are not available in this build.",
     "checkNow": "Check now",

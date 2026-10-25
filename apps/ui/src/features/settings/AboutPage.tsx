@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowUpRight, Bug, Check, ClipboardCopy, CodeXml, Globe, MessagesSquare, RefreshCw, RotateCcw } from "lucide-react";
-import { Button, confirm, icon, IconButton, ListGroup, ListRow, ListRowButton, LoadingState, Switch } from "@lettuceai/crisp";
+import { Button, confirm, ErrorState, icon, IconButton, ListGroup, ListRow, ListRowButton, LoadingState, Switch } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
+import { openExternalUrl } from "@/api/external-links";
 import { queryKeys } from "@/api/query-keys";
 import { FailureState } from "@/shared/ui/FailureState";
 import { lettuceLogo } from "@/shared/assets";
+import { projectLinks } from "@/shared/links";
 import { useSettingsLayout } from "./data";
 
 export function AboutPage() {
@@ -20,6 +22,18 @@ export function AboutPage() {
   const { standalone: tabs } = useSettingsLayout();
   const [resetting, setResetting] = useState(false);
   const [copied, setCopied] = useState<"version" | "details" | null>(null);
+  const externalLink = useMutation({ mutationFn: (url: string) => openExternalUrl(url) });
+  const openLink = (url: string) => externalLink.mutate(url);
+
+  const reportProblem = () => {
+    if (!status.data) return;
+    const url = new URL(`${projectLinks.source}/issues/new`);
+    url.searchParams.set("template", "bug_report.yml");
+    url.searchParams.set("version", `${status.data.version} (${status.data.build_variant})`);
+    const platform = { android: "Android", ios: "iOS", windows: "Windows", macos: "macOS", linux: "Linux", other: "" }[status.data.platform];
+    if (platform) url.searchParams.set("platform", platform);
+    openLink(url.href);
+  };
 
   const external = <ArrowUpRight size={icon.md} className="text-fg-4" />;
   const facts = status.data
@@ -103,6 +117,7 @@ export function AboutPage() {
             </header>
 
             <div className="space-y-7">
+              {externalLink.isError && <ErrorState size="sm" title={t("about.openLinkFailed")} description={common("errors.code.unavailable")} retryLabel={common("actions.retry")} onRetry={() => { if (externalLink.variables) openLink(externalLink.variables); }} />}
               <ListGroup>
                 <div className="flex items-center gap-4 px-4 py-4">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-fill-2 text-fg-3">
@@ -119,16 +134,15 @@ export function AboutPage() {
                   description={t("about.automaticUpdatesBody")}
                   trailing={<Switch checked={false} onChange={() => {}} disabled aria-label={t("about.automaticUpdates")} />}
                 />
-                <ListRowButton title={t("about.whatsNew")} description={t("about.whatsNewBody", { version: status.data.version })} chevron={false} trailing={external} disabled />
+                <ListRowButton title={t("about.whatsNew")} description={t("about.whatsNewBody", { version: status.data.version })} chevron={false} trailing={external} disabled={externalLink.isPending} onClick={() => openLink(projectLinks.changelog)} />
               </ListGroup>
 
               <div className="grid gap-7 @[48rem]:grid-cols-[minmax(0,1fr)_17rem] @[48rem]:items-start">
-                <ListGroup label={t("about.community")} aria-describedby="about-links-unavailable">
-                  <ListRowButton icon={<Globe size={icon.lg} />} title={t("about.website")} description={t("about.websiteBody")} chevron={false} trailing={external} disabled />
-                  <ListRowButton icon={<MessagesSquare size={icon.lg} />} title={t("about.discord")} description={t("about.discordBody")} chevron={false} trailing={external} disabled />
-                  <ListRowButton icon={<CodeXml size={icon.lg} />} title={t("about.sourceCode")} description={t("about.sourceCodeBody")} chevron={false} trailing={external} disabled />
-                  <ListRowButton icon={<Bug size={icon.lg} />} title={t("about.reportProblem")} description={t("about.reportProblemBody")} chevron={false} trailing={external} disabled />
-                  <p id="about-links-unavailable" className="px-4 py-3 text-xs text-fg-3">{t("about.linksUnavailable")}</p>
+                <ListGroup label={t("about.community")}>
+                  <ListRowButton icon={<Globe size={icon.lg} />} title={t("about.website")} description={t("about.websiteBody")} chevron={false} trailing={external} disabled={externalLink.isPending} onClick={() => openLink(projectLinks.website)} />
+                  <ListRowButton icon={<MessagesSquare size={icon.lg} />} title={t("about.discord")} description={t("about.discordBody")} chevron={false} trailing={external} disabled={externalLink.isPending} onClick={() => openLink(projectLinks.discord)} />
+                  <ListRowButton icon={<CodeXml size={icon.lg} />} title={t("about.sourceCode")} description={t("about.sourceCodeBody")} chevron={false} trailing={external} disabled={externalLink.isPending} onClick={() => openLink(projectLinks.source)} />
+                  <ListRowButton icon={<Bug size={icon.lg} />} title={t("about.reportProblem")} description={t("about.reportProblemBody")} chevron={false} trailing={external} disabled={externalLink.isPending} onClick={reportProblem} />
                 </ListGroup>
 
                 <div className="space-y-7">

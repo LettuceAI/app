@@ -98,6 +98,8 @@ tauri-runtime-wry = "=3.0.0-alpha.4"
 tauri-build = { version = "=3.0.0-alpha.3", default-features = false }
 tauri-plugin-android-fs = { path = "../tauri-plugin-android-fs", default-features = false }
 tauri-plugin-dialog = { version = "=3.0.0-alpha.3", default-features = false, features = ["xdg-portal"] }
+tauri-plugin-opener = "=3.0.0-alpha.3"
+tauri-plugin-haptics = "=3.0.0-alpha.3"
 tauri-plugin-single-window = { path = "../tauri-plugin-single-window" }
 tauri-specta = { path = "../tauri-specta", features = ["derive", "typescript"] }
 tar = "0.4"
