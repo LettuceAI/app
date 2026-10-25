@@ -126,5 +126,19 @@
       "storage_failure": "The model couldn't be saved on this device. Check the free space and try again.",
       "timed_out": "The download took too long. Try again to continue."
     }
+  },
+  "structuredFallback": {
+    "title": "When the model can't use tools",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Compact. Works with most models."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "For models that write XML more reliably than JSON."
+      }
+    },
+    "hint": "Tool calls are tried first. This format is only used when the model doesn't support them."
   }
 }

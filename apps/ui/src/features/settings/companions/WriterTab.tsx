@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Check, Cpu, FileText, Globe, LifeBuoy } from "lucide-react";
+import { Cpu, FileText, Globe, LifeBuoy } from "lucide-react";
 import { Alert, icon, ListGroup, ListRowButton, Skeleton, Text } from "@lettuceai/crisp";
 import type { SettingsCompanionSoulWriterSettings } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { modelsQuery } from "@/features/conversations";
 import { promptsQuery } from "@/features/characters";
 import { FailureState } from "@/shared/ui/FailureState";
+import { StructuredFallbackSelector } from "@/shared/ui/StructuredFallbackSelector";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { useSettingsApi } from "../data";
 import { CompanionPicker, type CompanionPickerId, type WriterModel } from "./CompanionPicker";
@@ -131,29 +132,10 @@ export function WriterTab({
             />
           )}
         </section>
-        <section className="space-y-2">
-          <ListGroup label={t("formatGroup")}>
-            {(["json", "xml"] as const).map((format) => (
-              <ListRowButton
-                key={format}
-                title={t(`formats.${format}.title`)}
-                description={t(`formats.${format}.body`)}
-                tone={format === value.structured_fallback_format ? "accent" : "neutral"}
-                chevron={false}
-                aria-pressed={format === value.structured_fallback_format}
-                trailing={
-                  format === value.structured_fallback_format ? (
-                    <Check size={icon.md} className="text-accent" />
-                  ) : undefined
-                }
-                onClick={() => void onChange({ structured_fallback_format: format })}
-              />
-            ))}
-          </ListGroup>
-          <Text variant="hint" className="px-1">
-            {t("formatHint")}
-          </Text>
-        </section>
+        <StructuredFallbackSelector
+          value={value.structured_fallback_format}
+          onChange={(format) => void onChange({ structured_fallback_format: format })}
+        />
         <section className="space-y-2">
           <ListGroup label={t("promptGroup")}>
             <ListRowButton

@@ -38,6 +38,7 @@ import { ModelMark } from "@/entities/provider";
 import { promptsQuery } from "@/features/characters";
 import { generatorDefaultsQuery } from "@/entities/lorebook";
 import { FailureState } from "@/shared/ui/FailureState";
+import { StructuredFallbackSelector } from "@/shared/ui/StructuredFallbackSelector";
 import { SliderValue } from "@/shared/ui/SliderValue";
 import { SettingsControlRow } from "@/shared/ui/SettingsControlRow";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
@@ -214,36 +215,6 @@ export function LorebooksPage() {
       />
     );
   };
-  const format =
-    settings &&
-    (tab === "entry"
-      ? settings.lorebook_entry_generator.structured_fallback_format
-      : settings.lorebook_generator.structured_fallback_format);
-  const formats = (
-    <section className="space-y-2">
-      <ListGroup label={t("settings.formatGroup")}>
-        {(["json", "xml"] as const).map((value) => (
-          <ListRowButton
-            key={value}
-            title={t(`settings.formats.${value}`)}
-            description={t(`settings.formatBodies.${value}`)}
-            chevron={false}
-            trailing={
-              format === value ? <Check size={icon.md} className="text-accent" /> : undefined
-            }
-            onClick={() =>
-              void state.update(
-                tab === "entry"
-                  ? { type: "entry", patch: { structured_fallback_format: value } }
-                  : { type: "generator", patch: { structured_fallback_format: value } },
-              )
-            }
-          />
-        ))}
-      </ListGroup>
-      <Text variant="hint">{t("settings.formatHint")}</Text>
-    </section>
-  );
   const filtered = choices.filter(
     ({ model, account }) =>
       !q ||
@@ -447,7 +418,20 @@ export function LorebooksPage() {
                 )}
               </section>
             )}
-            {formats}
+            <StructuredFallbackSelector
+              value={
+                tab === "entry"
+                  ? settings.lorebook_entry_generator.structured_fallback_format
+                  : settings.lorebook_generator.structured_fallback_format
+              }
+              onChange={(structured_fallback_format) =>
+                void state.update(
+                  tab === "entry"
+                    ? { type: "entry", patch: { structured_fallback_format } }
+                    : { type: "generator", patch: { structured_fallback_format } },
+                )
+              }
+            />
             <section className="space-y-2">
               <ListGroup label={t(tab === "entry" ? "settings.prompts" : "settings.stepPrompts")}>
                 {(tab === "entry"

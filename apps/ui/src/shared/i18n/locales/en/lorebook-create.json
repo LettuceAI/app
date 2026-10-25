@@ -260,16 +260,6 @@
     "replyLimitBody": "Tokens per model call",
     "replyLimitHint": "Raise the reply limit if entries come back cut off.",
     "default": "Default",
-    "formatGroup": "When the model can’t use tools",
-    "formats": {
-      "json": "JSON",
-      "xml": "XML"
-    },
-    "formatBodies": {
-      "json": "Compact. Works with most models.",
-      "xml": "For models that write XML more reliably than JSON."
-    },
-    "formatHint": "Tool calls are tried first. This format is only used when the model doesn’t support them.",
     "stepPrompts": "Prompts for each step",
     "prompts": "Prompts",
     "promptsHint": "Make your own in System prompts.",

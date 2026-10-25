@@ -11,12 +11,6 @@
   "writerModel": "Writer model",
   "backupModel": "Backup model",
   "backupHint": "The backup model takes over when the writer model fails or returns something unusable.",
-  "formatGroup": "When the model can't use tools",
-  "formats": {
-    "json": { "title": "JSON", "body": "Compact. Works with most models." },
-    "xml": { "title": "XML", "body": "For models that write XML more reliably than JSON." }
-  },
-  "formatHint": "The writer asks for tool calls first. This format is only used when the model doesn't support them.",
   "promptGroup": "Prompt",
   "writerPrompt": "Soul writer prompt",
   "promptHint": "Make your own in System prompts.",

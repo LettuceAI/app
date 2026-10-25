@@ -61,6 +61,11 @@ async function mount(tab = "lorebook", gate?: Promise<void>) {
     const patch = request.patch;
     if (patch.section === "lorebook_generator")
       current = { ...current, global: { ...current.global, lorebook_generator: patch.value } };
+    if (patch.section === "lorebook_entry_generator")
+      current = {
+        ...current,
+        global: { ...current.global, lorebook_entry_generator: patch.value },
+      };
     if (patch.section === "general")
       current = {
         ...current,
@@ -133,6 +138,25 @@ it.each([
   expect((screen.getByRole("slider", { name: label }) as HTMLInputElement).value).toBe(
     String(value),
   );
+});
+
+it.each([
+  ["lorebook", "lorebook_generator"],
+  ["entry", "lorebook_entry_generator"],
+])("saves the shared format selection to the %s writer", async (tab, section) => {
+  const { write } = await mount(tab);
+  const xml = await screen.findByRole("button", { name: /^XML/ });
+  expect(screen.getByRole("button", { name: /^JSON/ }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(xml);
+  await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+  const patch = write.mock.calls[0]![0].patch;
+  expect(patch.section).toBe(section);
+  expect(
+    (patch.section === "lorebook_generator" || patch.section === "lorebook_entry_generator") &&
+      patch.value.structured_fallback_format,
+  ).toBe("xml");
+  expect(screen.getByRole("button", { name: /^XML/ }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: /^JSON/ }).getAttribute("aria-pressed")).toBe("false");
 });
 
 it("cancels a typed value with Escape and bounds committed values", async () => {
