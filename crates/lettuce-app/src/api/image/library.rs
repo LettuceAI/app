@@ -1,6 +1,7 @@
 //! The LoRA library, Hugging Face image bundles, the image model files on
 //! disk and CivitAI.
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::path::PathBuf;
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
@@ -264,6 +265,7 @@ fn asset_dto(asset: BundleAsset) -> dto::ImageBundleAsset {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn asset_of(asset: dto::ImageBundleAsset) -> BundleAsset {
     BundleAsset {
         selection_id: asset.selection_id,
@@ -306,6 +308,7 @@ pub async fn hf_image_bundle_files(
     })
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn busy_download(path: &std::path::Path) -> ApiError {
     api_error(
         ApiErrorCode::Busy,
@@ -317,6 +320,7 @@ fn busy_download(path: &std::path::Path) -> ApiError {
 /// (path, hash) set, a wanted hash that is not empty having to equal the
 /// running one, or `Busy` when any other running download shares a path or a
 /// hash with them.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn running_bundle(
     context: &ApiContext,
     wanted: &[(PathBuf, String)],

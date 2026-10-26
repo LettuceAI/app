@@ -7,15 +7,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, ApiErrorDetails};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use lettuce_models::{
     LlamaCppSettings, LlamaGpuDistributionMode, LlamaKvPlacement, LlamaKvType, LlamaMtpPlacement,
     ModelProfileRepository, ProviderAccountRepository, ProviderProtocol,
 };
 use lettuce_settings::DeviceSettingsStore;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use lettuce_types::ModelProfileId;
 
 use crate::api::ApiContext;
-use crate::api::error::{api_error, invalid_field, parse_id};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::api::error::parse_id;
+use crate::api::error::{api_error, invalid_field};
 use crate::{HuggingFaceBrowser, ModelFileReference, ModelFileReferences, ModelPathField};
 
 type ResidentFiles = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
@@ -127,6 +131,7 @@ pub(crate) fn local_path(source: &dto::FileSource, field: &str) -> Result<String
     Ok(path.to_owned())
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn optional_path(
     source: Option<&dto::FileSource>,
     field: &str,
@@ -158,6 +163,7 @@ pub(crate) fn models_root(context: &ApiContext) -> Result<PathBuf, ApiError> {
     ))
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn kv_type(value: Option<&String>, field: &str) -> Result<Option<String>, ApiError> {
     value
         .map(|name| {
@@ -168,12 +174,14 @@ fn kv_type(value: Option<&String>, field: &str) -> Result<Option<String>, ApiErr
         .transpose()
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn kv_type_name(kv_type: LlamaKvType) -> Option<String> {
     serde_json::to_value(kv_type)
         .ok()
         .and_then(|value| value.as_str().map(ToOwned::to_owned))
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const fn distribution_name(mode: LlamaGpuDistributionMode) -> &'static str {
     match mode {
         LlamaGpuDistributionMode::Balanced => "balanced",
@@ -183,6 +191,7 @@ const fn distribution_name(mode: LlamaGpuDistributionMode) -> &'static str {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const fn kv_placement_name(placement: LlamaKvPlacement) -> &'static str {
     match placement {
         LlamaKvPlacement::Auto => "auto",
@@ -192,6 +201,7 @@ const fn kv_placement_name(placement: LlamaKvPlacement) -> &'static str {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const fn draft_placement_name(placement: LlamaMtpPlacement) -> &'static str {
     match placement {
         LlamaMtpPlacement::Auto => "auto",
@@ -200,6 +210,7 @@ const fn draft_placement_name(placement: LlamaMtpPlacement) -> &'static str {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const fn distribution(mode: dto::LlamaGpuDistribution) -> LlamaGpuDistributionMode {
     match mode {
         dto::LlamaGpuDistribution::Balanced => LlamaGpuDistributionMode::Balanced,
@@ -209,6 +220,7 @@ const fn distribution(mode: dto::LlamaGpuDistribution) -> LlamaGpuDistributionMo
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const fn kv_placement(placement: dto::LlamaKvPlacement) -> LlamaKvPlacement {
     match placement {
         dto::LlamaKvPlacement::Auto => LlamaKvPlacement::Auto,
@@ -218,6 +230,7 @@ const fn kv_placement(placement: dto::LlamaKvPlacement) -> LlamaKvPlacement {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const fn draft_placement(placement: dto::LlamaDraftPlacement) -> LlamaMtpPlacement {
     match placement {
         dto::LlamaDraftPlacement::Auto => LlamaMtpPlacement::Auto,
@@ -229,12 +242,14 @@ const fn draft_placement(placement: dto::LlamaDraftPlacement) -> LlamaMtpPlaceme
 /// A model file and the llama.cpp settings its estimate uses, as the
 /// runtime reads them.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) struct LlamaFileSettings {
     pub model_path: String,
     pub settings: LlamaCppSettings,
 }
 
 /// The editor's draft as the settings a saved model would hold.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn draft_settings(draft: &dto::LlamaSettingsDraft) -> Result<LlamaCppSettings, ApiError> {
     let parse = |value: Option<&String>, field: &str| -> Result<Option<LlamaKvType>, ApiError> {
         kv_type(value, field)?
@@ -276,6 +291,7 @@ fn draft_settings(draft: &dto::LlamaSettingsDraft) -> Result<LlamaCppSettings, A
 }
 
 /// A saved llama.cpp model's file and settings.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) fn saved_llama_model(
     context: &ApiContext,
     model_profile_id: &str,
@@ -299,6 +315,7 @@ pub(crate) fn saved_llama_model(
     })
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 async fn llama_target(
     context: &ApiContext,
     target: dto::LlamaModelTarget,
@@ -377,6 +394,7 @@ fn context_info_request(
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn to_u32(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }

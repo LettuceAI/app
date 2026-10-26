@@ -165,6 +165,7 @@ impl JobHostState {
         self.send_watches(job_id, watches, event, terminal);
     }
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn deliver_fenced(
         &self,
         job_id: JobId,
@@ -296,6 +297,7 @@ impl JobHostState {
     }
 
     /// Every install this process holds for the runner.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn installs(&self) -> Vec<(JobId, InstallWork)> {
         lock(&self.installs)
             .iter()

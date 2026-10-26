@@ -117,6 +117,7 @@ fn create_export_path(
     prepare_export(uri, target, source, protected)
 }
 
+#[cfg(not(target_os = "android"))]
 fn backup_target_path(target: &str) -> Result<std::path::PathBuf, FileAccessError> {
     let target = path(target)?;
     let name = target.file_name().ok_or(FileAccessError::Unsupported)?;
@@ -130,6 +131,7 @@ fn backup_target_path(target: &str) -> Result<std::path::PathBuf, FileAccessErro
         .join(name))
 }
 
+#[cfg(not(target_os = "android"))]
 fn backup_temporary_location_path(
     target: Option<&str>,
     name: &str,
@@ -145,6 +147,7 @@ fn backup_temporary_location_path(
         .map_err(|_| FileAccessError::Unsupported)
 }
 
+#[cfg(not(target_os = "android"))]
 fn create_backup_temporary_path(
     intent: &str,
     protected: ExportProtection<'_>,
@@ -160,6 +163,7 @@ fn create_backup_temporary_path(
     Ok((intent.to_owned(), Box::new(file)))
 }
 
+#[cfg(not(target_os = "android"))]
 fn publish_backup_path(
     temporary: &str,
     target: Option<&str>,
@@ -184,6 +188,7 @@ fn publish_backup_path(
     Ok(target.to_owned())
 }
 
+#[cfg(not(target_os = "android"))]
 fn publish_backup_durable(temporary: &Path, target: &Path) -> Result<(), FileAccessError> {
     std::fs::rename(temporary, target).map_err(|failure| access_error(&failure))?;
     #[cfg(not(target_os = "windows"))]
@@ -332,6 +337,19 @@ impl<R: Runtime> AndroidFileAccess<R> {
         self.0.android_fs()
     }
 
+    #[allow(deprecated)]
+    fn backup_directory(&self) -> Result<std::path::PathBuf, FileAccessError> {
+        Ok(self
+            .fs()
+            .public_storage()
+            .resolve_path(
+                None,
+                tauri_plugin_android_fs::PublicGeneralPurposeDir::Download,
+            )
+            .map_err(platform_error)?
+            .join("LettuceAI"))
+    }
+
     fn metadata_error(&self) -> FileAccessError {
         let public = self.fs().public_storage();
         let permission = match public.check_permission() {
@@ -352,7 +370,6 @@ impl<R: Runtime> AndroidFileAccess<R> {
         &self,
         intent: &str,
     ) -> Result<tauri_plugin_android_fs::FsUri, FileAccessError> {
-        use tauri_plugin_android_fs::PublicGeneralPurposeDir;
         let public = self.fs().public_storage();
         if !public.check_permission().map_err(platform_error)? {
             return Err(FileAccessError::PermissionDenied);
@@ -364,10 +381,7 @@ impl<R: Runtime> AndroidFileAccess<R> {
         {
             return Err(FileAccessError::Io);
         }
-        let directory = public
-            .resolve_path(None, PublicGeneralPurposeDir::Download)
-            .map_err(platform_error)?
-            .join("LettuceAI");
+        let directory = self.backup_directory()?;
         let intent = path(intent)?;
         if intent.parent() != Some(directory.as_path())
             || !intent.file_name().is_some_and(|name| {
@@ -404,16 +418,11 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         target: Option<&str>,
         name: &str,
     ) -> Result<String, FileAccessError> {
-        use tauri_plugin_android_fs::PublicGeneralPurposeDir;
         if target.is_some() || Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) {
             return Err(FileAccessError::Unsupported);
         }
         Ok(self
-            .fs()
-            .public_storage()
-            .resolve_path(None, PublicGeneralPurposeDir::Download)
-            .map_err(platform_error)?
-            .join("LettuceAI")
+            .backup_directory()?
             .join(name)
             .to_string_lossy()
             .into_owned())
@@ -436,10 +445,7 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         {
             return Err(FileAccessError::Io);
         }
-        let directory = public
-            .resolve_path(None, PublicGeneralPurposeDir::Download)
-            .map_err(platform_error)?
-            .join("LettuceAI");
+        let directory = self.backup_directory()?;
         let intent = path(intent)?;
         if intent.parent() != Some(directory.as_path()) {
             return Err(FileAccessError::Unsupported);
@@ -488,7 +494,7 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         temporary: &str,
         name: &str,
     ) -> Result<Vec<String>, FileAccessError> {
-        use tauri_plugin_android_fs::{FsUri, PublicGeneralPurposeDir};
+        use tauri_plugin_android_fs::FsUri;
         let uri = platform_uri(temporary).ok_or(FileAccessError::Unsupported)?;
         if self.fs().open_file_readable(&uri).is_ok() {
             return Ok(vec![temporary.to_owned()]);
@@ -498,10 +504,7 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
             failure => return Err(failure),
         }
         let public = self.fs().public_storage();
-        let directory = public
-            .resolve_path(None, PublicGeneralPurposeDir::Download)
-            .map_err(platform_error)?
-            .join("LettuceAI");
+        let directory = self.backup_directory()?;
         let entries = match self.fs().read_dir(&FsUri::from_path(&directory)) {
             Ok(entries) => entries,
             Err(_) => {

@@ -136,6 +136,7 @@ pub(crate) enum LocalModelJobResult {
 }
 
 /// The detail a Hugging Face image bundle install is stored with.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) fn image_bundle_detail(
     bundle_id: &str,
     display_name: &str,

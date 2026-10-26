@@ -14,6 +14,7 @@ use lettuce_image_generation::sd_runtime::layout::runtime_is_installed;
 use lettuce_image_generation::sd_runtime::policy::ComputePolicy;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use lettuce_image_generation::sd_runtime::releases::RuntimeAsset;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use lettuce_image_generation::sd_runtime::releases::RuntimeRelease;
 use lettuce_image_generation::{DiffusionComponentRole, diffusion_catalog};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -92,6 +93,7 @@ pub(crate) fn fit_estimate(estimate: FitEstimate) -> dto::SdFitEstimate {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn runtime_release(release: RuntimeRelease) -> dto::SdRuntimeRelease {
     dto::SdRuntimeRelease {
         tag: release.tag,

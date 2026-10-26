@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 struct State {
     published: Vec<String>,
     queued: Vec<(u64, Vec<String>)>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     next_ticket: u64,
     blocked: Vec<(u64, PathBuf)>,
     next_block: u64,
@@ -89,12 +90,14 @@ impl ModelFileRegistry {
         )
     }
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn publish(&self, files: Vec<String>) {
         self.lock().published = distinct(files);
     }
 
     /// Records a request's files; refused when one is inside a blocked
     /// folder.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn enqueue(&self, files: Vec<String>) -> Result<u64, FolderMoving> {
         let mut state = self.lock();
         if let Some((path, folder)) = files.iter().find_map(|file| {
@@ -112,6 +115,7 @@ impl ModelFileRegistry {
         Ok(ticket)
     }
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn finish(&self, ticket: u64) {
         self.lock().queued.retain(|(queued, _)| *queued != ticket);
     }

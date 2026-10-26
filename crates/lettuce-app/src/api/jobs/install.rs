@@ -1005,6 +1005,7 @@ fn record_refusal(context: &ApiContext, job_id: JobId, repository: &str) -> Resu
 
 /// Completes an install whose files are verified, as the job's `install`
 /// stage; an error fails the job.
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(unused_variables))]
 async fn finish_artifact(
     context: &ApiContext,
     job_id: JobId,
