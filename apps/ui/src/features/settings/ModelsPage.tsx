@@ -210,8 +210,24 @@ export function ModelsPage() {
         title={t("sections.models.title")}
         meta={models.data ? String(models.data.models.length) : undefined}
         {...back}
+        className="relative"
+        footer={
+          phone &&
+          !models.isPending && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-end px-6">
+              <Button
+                className="pointer-events-auto shadow-raised"
+                variant="primary"
+                leading={<Plus size={icon.md} />}
+                onClick={() => void navigate({ to: "/settings/models/new" })}
+              >
+                {t("manage.add")}
+              </Button>
+            </div>
+          )
+        }
         padding="none"
-        contentClassName={`pb-10 pt-1 space-y-6 ${phone ? "px-4" : "px-8"}`}
+        contentClassName={`pt-1 space-y-6 ${phone ? "px-4 pb-24" : "px-8 pb-10"}`}
         actions={
           <div className="flex items-center gap-1">
             {tools.map((tool) =>
@@ -281,15 +297,17 @@ export function ModelsPage() {
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <Button
-              variant="tonal"
-              size="sm"
-              className="ml-1"
-              leading={<Plus size={icon.sm} />}
-              onClick={() => void navigate({ to: "/settings/models/new" })}
-            >
-              {t("manage.add")}
-            </Button>
+            {!phone && (
+              <Button
+                variant="tonal"
+                size="sm"
+                className="ml-1"
+                leading={<Plus size={icon.sm} />}
+                onClick={() => void navigate({ to: "/settings/models/new" })}
+              >
+                {t("manage.add")}
+              </Button>
+            )}
           </div>
         }
       >

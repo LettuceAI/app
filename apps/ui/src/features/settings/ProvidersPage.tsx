@@ -42,18 +42,37 @@ export function ProvidersPage() {
       <Page
         title={t("sections.providers.title")}
         {...back}
+        className="relative"
+        footer={
+          phone &&
+          !query.isPending && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-end px-6">
+              <Button
+                className="pointer-events-auto shadow-raised"
+                variant="primary"
+                disabled={tab === "llm" && !catalog.data?.length}
+                leading={<Plus size={icon.md} />}
+                onClick={() => setEditor({ audio: tab === "audio" })}
+              >
+                {t("manage.add")}
+              </Button>
+            </div>
+          )
+        }
         padding="none"
-        contentClassName={`pb-10 pt-1 space-y-4 ${phone ? "px-4" : "px-8"}`}
+        contentClassName={`pt-1 space-y-4 ${phone ? "px-4 pb-24" : "px-8 pb-10"}`}
         actions={
-          <Button
-            variant="tonal"
-            size="sm"
-            disabled={tab === "llm" && !catalog.data?.length}
-            leading={<Plus size={icon.sm} />}
-            onClick={() => setEditor({ audio: tab === "audio" })}
-          >
-            {t("manage.add")}
-          </Button>
+          phone ? undefined : (
+            <Button
+              variant="tonal"
+              size="sm"
+              disabled={tab === "llm" && !catalog.data?.length}
+              leading={<Plus size={icon.sm} />}
+              onClick={() => setEditor({ audio: tab === "audio" })}
+            >
+              {t("manage.add")}
+            </Button>
+          )
         }
       >
         <Tabs value={tab} onChange={setTab}>
