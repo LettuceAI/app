@@ -2078,5 +2078,35 @@
       "concurrent": "Every part stays loaded, so images start right away.",
       "time_share": "Parts are swapped in and out, so each image takes a little longer to start."
     }
+  },
+  "dataReset": {
+    "intro": "Start over with an empty app, as on the first launch.",
+    "cleared": "Cleared",
+    "kept": "Kept",
+    "items": {
+      "chats": "Characters, personas and chats",
+      "library": "Lorebooks, prompts, memories and pictures",
+      "settings": "Settings and preferences",
+      "providers": "Provider accounts, their keys and downloaded models",
+      "previous": "Your current data",
+      "previousBody": "Saved as a separate file on this device, not deleted"
+    },
+    "after": "The app restarts when it finishes.",
+    "afterMobile": "The app closes when it finishes. Open it again to set it up.",
+    "action": "Reset all data",
+    "confirmTitle": "Reset all data?",
+    "confirmBody": "Your chats, characters and settings are cleared and the app restarts.",
+    "confirmBodyMobile": "Your chats, characters and settings are cleared and the app closes.",
+    "confirm": "Reset",
+    "starting": "Starting the reset",
+    "running": "Resetting",
+    "stages": {
+      "preflight": "Checking the app is ready",
+      "workers": "Stopping background work",
+      "database": "Creating a fresh database",
+      "webview_storage": "Clearing saved app state",
+      "restart": "Restarting"
+    },
+    "failed": "The reset did not finish. Your data was not changed."
   }
 }
