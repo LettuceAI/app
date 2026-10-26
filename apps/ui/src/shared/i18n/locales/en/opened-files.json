@@ -49,6 +49,10 @@
     "confirm": "Restore",
     "done": "Backup restored",
     "notBackup": "That file is not a LettuceAI backup.",
+    "models": {
+      "title": "Download the models your data needs",
+      "required": "These features stop working without them, so they have to be downloaded before you continue."
+    },
     "warnings_one": "Backup restored with {{count}} warning",
     "warnings_other": "Backup restored with {{count}} warnings",
     "failure": {

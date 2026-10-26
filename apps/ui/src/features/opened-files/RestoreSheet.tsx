@@ -7,6 +7,7 @@ import { isApiFailure, type ApiClient } from "@/api/client";
 import type { BackupHeaderView, FileSource, JobView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job";
+import { checkRestoredModels } from "./restored-models";
 
 const STAGES = { current: ["decode", "stage", "write", "verify", "switch"], legacy: ["decode", "stage", "write", "switch"] } as const;
 type Stage = (typeof STAGES.current)[number];
@@ -54,6 +55,7 @@ export function RestoreSheet({ api, source, header, onClose }: { api: ApiClient;
     const warnings = view.result?.type === "backup_restored" ? view.result.warnings.length : 0;
     if (warnings > 0) toast.warning(t("restore.warnings", { count: warnings }));
     else toast.success(t("restore.done"));
+    checkRestoredModels();
   };
 
   const restore = async () => {

@@ -19,7 +19,7 @@ import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { isSettingsSection, SidebarSettings, WhatsNewSheet } from "@/features/settings";
 import { LibraryCreateSheet } from "@/features/library";
-import { OpenedFiles } from "@/features/opened-files";
+import { OpenedFiles, RestoredModelsSheet } from "@/features/opened-files";
 import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
 import { CreateSheet } from "./CreateSheet";
 import { useSidebarExpanded } from "./sidebarState";
@@ -213,6 +213,7 @@ export function AppShell() {
           <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
           <OpenedFiles api={api} held={welcome} />
           <WhatsNewSheet />
+          <RestoredModelsSheet api={api} />
           {controller &&
             desktop &&
             windowPlatform !== "macos" &&
