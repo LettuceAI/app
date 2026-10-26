@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, FileUp, UserPlus, UserRound } from "lucide-react";
+import { BookOpen, BookText, FileUp, UserPlus, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import { isApiFailure } from "@/api/client";
 import { importCharacterCard } from "@/features/home";
 
-export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api: ApiClient; open: boolean; onClose: () => void; onCreate: (kind: "character" | "persona") => void; onDiscover: () => void }) {
+export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api: ApiClient; open: boolean; onClose: () => void; onCreate: (kind: "character" | "persona" | "lorebook") => void; onDiscover: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -46,6 +46,15 @@ export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api:
             onClick={() => {
               onClose();
               onCreate("persona");
+            }}
+          />
+          <ListRowButton
+            icon={<BookText size={icon.lg} />}
+            title={t("create.lorebook")}
+            description={t("create.lorebookBody")}
+            onClick={() => {
+              onClose();
+              onCreate("lorebook");
             }}
           />
           <ListRowButton icon={<FileUp size={icon.lg} />} title={t("create.import")} description={t("create.importBody")} chevron={false} disabled={busy} onClick={importCard} />
