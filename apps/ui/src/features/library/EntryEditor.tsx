@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { Radar } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Button, Field, Input, Sheet, Textarea, toast } from "@lettuceai/crisp";
+import { Button, Field, icon, IconButton, Input, Sheet, Textarea, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import { createEntry, refreshLibrary, saveEntry } from "./data/actions";
 import type { EntryKind, EntryView } from "./data/queries";
@@ -27,6 +29,7 @@ export function EntryEditor({
   const { t } = useTranslation("library");
   const { t: common } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [original] = useState(loaded);
   const [name, setName] = useState(() =>
     original?.kind === "persona" ? original.view.draft.title : (original?.view.lorebook.name ?? ""),
@@ -58,6 +61,23 @@ export function EntryEditor({
       }}
       size="sm"
       title={original ? t(`menu.edit_${kind}`) : t(`create.new_${kind}`)}
+      rightAction={
+        original?.kind === "lorebook" ? (
+          <IconButton
+            label={t("triggerPreview")}
+            disabled={mutation.isPending}
+            onClick={() => {
+              void navigate({
+                to: "/library/lorebooks/$lorebookId/preview",
+                params: { lorebookId: original.view.lorebook.id },
+                replace: true,
+              });
+            }}
+          >
+            <Radar size={icon.md} />
+          </IconButton>
+        ) : undefined
+      }
       footer={
         <div className="flex gap-2">
           <Button

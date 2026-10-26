@@ -5553,6 +5553,8 @@ export type LorebookPreviewEntry = {
 	entry_id: string,
 	title: string,
 	matched_keywords: string[],
+	matched_message_ids: string[],
+	matched_in_composer: boolean,
 	always_active: boolean,
 	token_count: number,
 };
@@ -5782,6 +5784,8 @@ export type LorebookTriggerPreview = {
 	entries: LorebookPreviewEntry[],
 	skipped: LorebookSkippedSource[],
 	scan_depth: number,
+	scanned_message_ids: string[],
+	active_lorebook_ids: string[],
 };
 
 /**

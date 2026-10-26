@@ -22,6 +22,7 @@ import {
   LibraryPage,
   NewLorebookPage,
   LorebookProjectPage,
+  LorebookPreviewPage,
   validateLibrarySearch,
 } from "@/features/library";
 import { HomePage } from "@/features/home";
@@ -131,6 +132,17 @@ const newLorebookRoute = createRoute({
       ? { panel: search.panel as "character" | "persona" | "paste" }
       : {}),
     ...(typeof search.source === "string" ? { source: search.source } : {}),
+  }),
+});
+const lorebookPreviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/library/lorebooks/$lorebookId/preview",
+  component: LorebookPreviewPage,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { mode?: "conversation" | "editor"; chat?: string } => ({
+    ...(search.mode === "editor" || search.mode === "conversation" ? { mode: search.mode } : {}),
+    ...(typeof search.chat === "string" ? { chat: search.chat } : {}),
   }),
 });
 const lorebookProjectRoute = createRoute({
@@ -415,6 +427,7 @@ const routeTree = rootRoute.addChildren([
   libraryRoute,
   newLorebookRoute,
   lorebookProjectRoute,
+  lorebookPreviewRoute,
   newCharacterRoute,
   editCharacterRoute,
   characterHistoryRoute,

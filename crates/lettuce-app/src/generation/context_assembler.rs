@@ -930,6 +930,17 @@ where
                 resolve_lorebook_activation(&tier, scan_text, latest_user_message, scan_depth)
                     .map_err(|_| ContextAssemblyError::LorebookActivation)?;
             lore.skipped.extend(activation.skipped);
+            for source in activation.sources {
+                if !lore.sources.iter().any(|(id, _)| *id == source.lorebook_id) {
+                    let policy = tier
+                        .iter()
+                        .find(|candidate| candidate.lorebook_id == source.lorebook_id)
+                        .and_then(|candidate| candidate.details.as_ref())
+                        .map(|details| details.book.detection_policy)
+                        .ok_or(ContextAssemblyError::LorebookActivation)?;
+                    lore.sources.push((source.lorebook_id, policy));
+                }
+            }
             for entry in activation.entries {
                 if !lore
                     .entries
@@ -952,7 +963,7 @@ where
         conversation_id: ConversationId,
         composer_text: Option<&str>,
         speaker: Option<CharacterId>,
-    ) -> Result<(TurnLore, u8), ContextAssemblyError>
+    ) -> Result<TurnLorePreview, ContextAssemblyError>
     where
         S: ConversationReader,
     {
@@ -1047,7 +1058,59 @@ where
             latest_user_message.as_deref(),
             usize::from(scan_depth),
         )?;
-        Ok((lore, scan_depth))
+        let recent_message_ids = (if direct { &visible } else { &history })
+            .iter()
+            .filter(|item| active_text(item).is_some())
+            .rev()
+            .take(usize::from(scan_depth).saturating_sub(usize::from(composer.is_some())))
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>();
+        let latest_user_id = composer
+            .is_none()
+            .then(|| {
+                history
+                    .iter()
+                    .rev()
+                    .find(|item| {
+                        item.message.role == MessageRole::User && active_text(item).is_some()
+                    })
+                    .map(|item| item.message.id)
+            })
+            .flatten();
+        let scans = lore
+            .sources
+            .iter()
+            .map(|(id, policy)| LorebookPreviewScan {
+                lorebook_id: *id,
+                message_ids: match policy {
+                    lettuce_context::DetectionPolicy::RecentMessageWindow => {
+                        recent_message_ids.clone()
+                    }
+                    lettuce_context::DetectionPolicy::LatestUserMessage => {
+                        latest_user_id.into_iter().collect()
+                    }
+                },
+                composer: composer.is_some()
+                    && (*policy == lettuce_context::DetectionPolicy::LatestUserMessage
+                        || scan_depth > 0),
+            })
+            .collect::<Vec<_>>();
+        let scanned_messages = visible
+            .iter()
+            .filter(|item| {
+                scans
+                    .iter()
+                    .any(|scan| scan.message_ids.contains(&item.message.id))
+            })
+            .filter_map(|item| active_text(item).map(|text| (item.message.id, text)))
+            .collect();
+        Ok(TurnLorePreview {
+            lore,
+            scan_depth,
+            scanned_messages,
+            composer: composer.map(str::to_owned),
+            scans,
+        })
     }
 
     /// The lorebooks a turn activates, read live each turn in ordered tiers.
@@ -3106,8 +3169,23 @@ fn parts(item: &TimelineItem) -> Vec<MessagePart> {
 /// The lore a turn activates and the sources it skipped.
 #[derive(Debug, Default)]
 pub(crate) struct TurnLore {
+    pub sources: Vec<(lettuce_types::LorebookId, lettuce_context::DetectionPolicy)>,
     pub entries: Vec<ResolvedLorebookEntry>,
     pub skipped: Vec<lettuce_context::SkippedLorebookSource>,
+}
+
+pub(crate) struct TurnLorePreview {
+    pub lore: TurnLore,
+    pub scan_depth: u8,
+    pub scanned_messages: Vec<(lettuce_types::MessageId, String)>,
+    pub composer: Option<String>,
+    pub scans: Vec<LorebookPreviewScan>,
+}
+
+pub(crate) struct LorebookPreviewScan {
+    pub lorebook_id: lettuce_types::LorebookId,
+    pub message_ids: Vec<lettuce_types::MessageId>,
+    pub composer: bool,
 }
 
 /// The texts a turn scans for keywords (the latest `scan_depth` of the

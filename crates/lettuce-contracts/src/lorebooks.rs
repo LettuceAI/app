@@ -253,6 +253,8 @@ pub struct LorebookPreviewEntry {
     pub entry_id: String,
     pub title: String,
     pub matched_keywords: Vec<String>,
+    pub matched_message_ids: Vec<String>,
+    pub matched_in_composer: bool,
     pub always_active: bool,
     pub token_count: u32,
 }
@@ -273,6 +275,8 @@ pub struct LorebookTriggerPreview {
     pub entries: Vec<LorebookPreviewEntry>,
     pub skipped: Vec<LorebookSkippedSource>,
     pub scan_depth: u8,
+    pub scanned_message_ids: Vec<String>,
+    pub active_lorebook_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

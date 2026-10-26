@@ -6,3 +6,5 @@ export { commitImport, exportEntry, refreshLibrary } from "./data/actions";
 
 export { NewLorebookPage } from "./lorebook-create/NewLorebookPage";
 export { LorebookProjectPage } from "./lorebook-create/LorebookProjectPage";
+
+export { LorebookPreviewPage } from "./lorebook-preview/LorebookPreviewPage";

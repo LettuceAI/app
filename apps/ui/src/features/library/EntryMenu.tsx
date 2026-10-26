@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Download, MessageSquarePlus, Pencil, Trash2, UserCheck } from "lucide-react";
+import { BookOpen, Download, MessageSquarePlus, Pencil, Radar, Trash2, UserCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
@@ -154,6 +154,20 @@ export function EntryMenu({
                 } else setMode("edit");
               }}
             />
+            {entry.kind === "lorebook" && (
+              <ListRowButton
+                icon={<Radar size={icon.lg} />}
+                title={t("triggerPreview")}
+                disabled={busy || !ready}
+                onClick={() => {
+                  void navigate({
+                    to: "/library/lorebooks/$lorebookId/preview",
+                    params: { lorebookId: entry.id },
+                    replace: true,
+                  });
+                }}
+              />
+            )}
             {entry.kind === "persona" && !entry.isDefault && (
               <ListRowButton
                 icon={<UserCheck size={icon.lg} />}

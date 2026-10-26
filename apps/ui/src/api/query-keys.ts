@@ -30,7 +30,11 @@ export const queryKeys = {
   },
   library: { all: ["library"] as const, counts: () => ["library", "counts"] as const },
   personas: { all: ["personas"] as const, list: () => ["personas", "list"] as const },
-  lorebooks: { all: ["lorebooks"] as const, list: () => ["lorebooks", "list"] as const },
+  lorebooks: {
+    all: ["lorebooks"] as const,
+    list: () => ["lorebooks", "list"] as const,
+    previews: () => ["lorebooks", "trigger-preview"] as const,
+  },
   lorebookProjects: { all: ["lorebook-projects"] as const },
   home: {
     all: ["home"] as const,
@@ -110,13 +114,19 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.media.library(),
     queryKeys.library.counts(),
     queryKeys.conversations.detail(event.conversation_id),
+    queryKeys.lorebooks.previews(),
   ],
   conversation_changed: (event) => [
     queryKeys.conversations.lists(),
     queryKeys.home.characters(),
     queryKeys.conversations.detail(event.conversation_id),
+    queryKeys.lorebooks.previews(),
   ],
-  conversation_removed: () => [queryKeys.conversations.lists(), queryKeys.home.characters()],
+  conversation_removed: () => [
+    queryKeys.conversations.lists(),
+    queryKeys.home.characters(),
+    queryKeys.lorebooks.previews(),
+  ],
   memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id)],
   required_models_changed: () => [queryKeys.conversations.all],
   onnx_models_unloaded: () => [
@@ -125,6 +135,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.speech.all,
   ],
   character_changed: () => [
+    queryKeys.lorebooks.previews(),
     queryKeys.characters.all,
     queryKeys.home.characters(),
     queryKeys.library.all,
@@ -132,11 +143,13 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.memory.all,
   ],
   persona_changed: () => [
+    queryKeys.lorebooks.previews(),
     queryKeys.personas.all,
     queryKeys.conversations.all,
     queryKeys.library.all,
     queryKeys.media.library(),
   ],
+  group_changed: () => [queryKeys.lorebooks.previews()],
   lorebooks_changed: () => [
     queryKeys.lorebookProjects.all,
     queryKeys.lorebooks.all,
@@ -159,6 +172,7 @@ export const appEventInvalidations: AppEventInvalidations = {
       ? [queryKeys.settings.all, queryKeys.app.status()]
       : [
           queryKeys.settings.all,
+          queryKeys.lorebooks.previews(),
           queryKeys.providers.all,
           queryKeys.audioProviders.all,
           queryKeys.models.all,

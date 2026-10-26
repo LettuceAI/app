@@ -466,7 +466,16 @@ pub async fn lorebook_trigger_preview(
     context
         .blocking(move |context| {
             let database = context.backend().database();
-            let (entries, skipped, scan_depth, editor) = match request {
+            let (
+                entries,
+                skipped,
+                scan_depth,
+                editor,
+                sources,
+                scanned_messages,
+                composer,
+                scans,
+            ) = match request {
                 dto::LorebookTriggerPreviewRequest::Conversation {
                     conversation_id,
                     composer_text,
@@ -477,7 +486,7 @@ pub async fn lorebook_trigger_preview(
                         .as_deref()
                         .map(|id| parse_id::<CharacterId>(id, "speaker_character_id"))
                         .transpose()?;
-                    let (lore, scan_depth) =
+                    let preview =
                         crate::ConversationContextAssembler::new(database)
                             .preview_turn_lore(conversation_id, composer_text.as_deref(), speaker)
                             .map_err(|error| match error {
@@ -486,7 +495,16 @@ pub async fn lorebook_trigger_preview(
                                 }
                                 error => api_error(ApiErrorCode::Unavailable, error.to_string()),
                             })?;
-                    (lore.entries, lore.skipped, scan_depth, false)
+                    (
+                        preview.lore.entries,
+                        preview.lore.skipped,
+                        preview.scan_depth,
+                        false,
+                        preview.lore.sources,
+                        preview.scanned_messages,
+                        preview.composer,
+                        preview.scans,
+                    )
                 }
                 dto::LorebookTriggerPreviewRequest::Editor { lorebook_id, text } => {
                     let id: LorebookId = parse_id(&lorebook_id, "lorebook_id")?;
@@ -499,6 +517,7 @@ pub async fn lorebook_trigger_preview(
                         .ok_or_else(|| api_error(ApiErrorCode::NotFound, "lorebook not found"))?;
                     let mut book = details.book.clone();
                     book.status = LifecycleStatus::Active;
+                    let policy = book.detection_policy;
                     let activation = lettuce_context::resolve_lorebook_activation(
                         &[lettuce_context::LorebookActivationSource {
                             provenance: LorebookSourceProvenance::Conversation {
@@ -515,7 +534,24 @@ pub async fn lorebook_trigger_preview(
                         usize::from(scan_depth),
                     )
                     .map_err(|error| invalid_field("lorebook_id", error.to_string()))?;
-                    (activation.entries, activation.skipped, scan_depth, true)
+                    (
+                        activation.entries,
+                        activation.skipped,
+                        scan_depth,
+                        true,
+                        activation
+                            .sources
+                            .into_iter()
+                            .map(|source| (source.lorebook_id, policy))
+                            .collect(),
+                        Vec::new(),
+                        Some(text),
+                        vec![crate::generation::context_assembler::LorebookPreviewScan {
+                            lorebook_id: id,
+                            message_ids: Vec::new(),
+                            composer: policy == DetectionPolicy::LatestUserMessage || scan_depth > 0,
+                        }],
+                    )
                 }
             };
             let counts = lettuce_context::count_tokens_batch(
@@ -542,6 +578,23 @@ pub async fn lorebook_trigger_preview(
                         entry_id: entry.entry.id.to_string(),
                         title: entry.entry.title.clone(),
                         matched_keywords: entry.matched_keywords.clone(),
+                        matched_message_ids: scanned_messages
+                            .iter()
+                            .filter(|(id, text)| {
+                                scans.iter().any(|scan| {
+                                    scan.lorebook_id == entry.source.lorebook_id
+                                        && scan.message_ids.contains(id)
+                                }) && preview_keyword_match(entry, text)
+                            })
+                            .map(|(id, _)| id.to_string())
+                            .collect(),
+                        matched_in_composer: composer
+                            .as_deref()
+                            .is_some_and(|text| {
+                                scans.iter().any(|scan| {
+                                    scan.lorebook_id == entry.source.lorebook_id && scan.composer
+                                }) && preview_keyword_match(entry, text)
+                            }),
                         always_active: entry.always_active,
                         token_count,
                     })
@@ -563,9 +616,27 @@ pub async fn lorebook_trigger_preview(
                     })
                     .collect(),
                 scan_depth,
+                scanned_message_ids: scanned_messages
+                    .iter()
+                    .map(|(id, _)| id.to_string())
+                    .collect(),
+                active_lorebook_ids: sources.iter().map(|(id, _)| id.to_string()).collect(),
             })
         })
         .await
+}
+
+fn preview_keyword_match(entry: &lettuce_context::ResolvedLorebookEntry, text: &str) -> bool {
+    !entry.always_active
+        && entry.matched_keywords.iter().any(|keyword| {
+            lettuce_context::keyword_matches_with_mode(
+                keyword,
+                text,
+                entry.entry.case_sensitive,
+                entry.entry.match_mode,
+            )
+            .unwrap_or(false)
+        })
 }
 
 pub(super) fn emit_deletion(context: &ApiContext, result: &dto::SourceDeleteResult) {

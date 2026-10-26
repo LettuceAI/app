@@ -66,6 +66,8 @@ Local runtime notices carry a typed code on a generation or job stream. `JobEven
 
 Turn and job `ModelLoading` events carry typed `ModelLoadStage` and `ModelLoadStatus`, an integer overall percentage, the model name and optional `ModelLoadGpuProgress` rows. Loaded and Failed remain explicit terminal load statuses, separate from generation or job settlement.
 
+LorebookTriggerPreview includes the runtime scanned_message_ids in timeline order and active_lorebook_ids for resolved sources, including books without active entries. Scanned IDs combine the sources each book actually consults: its recent window or its latest user message, which can precede that window. Each LorebookPreviewEntry carries matched_message_ids and matched_in_composer, computed by the runtime keyword matcher within its own book's source; always-active entries have no match attribution. Editor previews have no scanned timeline IDs.
+
 Lorebook and prompt DTOs carry aggregate revisions and operation keys, typed configured-source failures, preview explanations, staged project state and historical source names with deleted markers. Generator commands return existing job DTOs rather than inline inference results.
 
 Provider control commands export the catalog, secret-free account views, saved-or-draft verification requests, verification results and public OpenRouter endpoint metadata to TypeScript. Verification errors carry HTTP status and a redacted provider message in ApiErrorDetails so the UI can display the provider's reason. TrustedCertificateView contains identity, filename, import time and validity metadata.

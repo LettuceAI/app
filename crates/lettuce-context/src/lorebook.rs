@@ -362,7 +362,7 @@ pub(crate) fn keyword_matches(
     keyword_matches_with_mode(keyword, text, case_sensitive, KeywordMatchMode::Literal)
 }
 
-pub(crate) fn keyword_matches_with_mode(
+pub fn keyword_matches_with_mode(
     keyword: &str,
     text: &str,
     case_sensitive: bool,

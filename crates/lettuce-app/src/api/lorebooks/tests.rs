@@ -736,6 +736,16 @@ async fn trigger_preview_matches_what_the_next_turn_injects() {
         ]
     );
     assert_eq!(shown.entries[1].matched_keywords, vec!["dragon".to_owned()]);
+    assert!(!shown.entries[0].matched_in_composer);
+    assert!(shown.entries[0].matched_message_ids.is_empty());
+    assert!(shown.entries[1].matched_in_composer);
+    assert_eq!(
+        shown.active_lorebook_ids,
+        vec![
+            character_book.lorebook.id.clone(),
+            persona_book.lorebook.id.clone()
+        ]
+    );
     assert!(shown.entries.iter().all(|entry| entry.token_count > 0));
     send(
         &harness,
@@ -789,6 +799,14 @@ async fn trigger_preview_matches_what_the_next_turn_injects() {
     )
     .await
     .expect("editor");
+    assert!(editor.scanned_message_ids.is_empty());
+    assert_eq!(editor.active_lorebook_ids, vec![persona_book.lorebook.id]);
+    assert!(
+        editor
+            .entries
+            .iter()
+            .all(|entry| entry.matched_in_composer && entry.matched_message_ids.is_empty())
+    );
     assert_eq!(
         editor
             .entries
@@ -1014,4 +1032,239 @@ async fn hard_delete_removes_the_id_from_an_explicit_launch_selection() {
             .revision
             > revision
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trigger_preview_attributes_only_the_runtime_scan_window() {
+    let harness = harness(Reply::Text("A dragon reply."));
+    let database = harness.context.backend().database();
+    let mut stored = lettuce_settings::GlobalSettingsStore::load(database).expect("settings");
+    stored.settings.lorebook_scan_depth = 2;
+    lettuce_settings::GlobalSettingsStore::save(
+        database,
+        stored.settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("settings saved");
+    let book = create(
+        &harness,
+        "window",
+        "Window",
+        vec![
+            entry("Dragon", "Dragons fly.", Some("dragon")),
+            entry("Always", "Always included.", None),
+            entry("Outside", "Outside window.", Some("outside")),
+        ],
+    )
+    .await;
+    bind_character(&harness, harness.character_id, &book.lorebook.id);
+    let chat = launch(&harness, "window-chat").await;
+    for (key, text) in [("old", "outside dragon"), ("new", "the dragon arrives")] {
+        send(
+            &harness,
+            &chat,
+            key,
+            text,
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("send");
+        run_generation(&harness).await;
+    }
+    let timeline = conversation_messages(
+        &harness.context,
+        dto::ConversationMessagesRequest {
+            conversation_id: chat.clone(),
+            before_cursor: None,
+            after_cursor: None,
+            limit: Some(100),
+        },
+    )
+    .await
+    .expect("messages");
+    let expected = timeline
+        .items
+        .iter()
+        .rev()
+        .take(2)
+        .map(|message| message.id.clone())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>();
+    let shown = lorebook_trigger_preview(
+        &harness.context,
+        dto::LorebookTriggerPreviewRequest::Conversation {
+            conversation_id: chat.clone(),
+            composer_text: None,
+            speaker_character_id: None,
+        },
+    )
+    .await
+    .expect("preview");
+    assert_eq!(shown.scanned_message_ids, expected);
+    assert_eq!(shown.entries[0].matched_message_ids, expected);
+    assert!(shown.entries[1].matched_message_ids.is_empty());
+    assert!(!shown.entries.iter().any(|entry| entry.title == "Outside"));
+    assert!(shown.entries.iter().all(|entry| !entry.matched_in_composer));
+    let composer = preview(&harness, &chat, "dragon composer", None).await;
+    assert_eq!(composer.scanned_message_ids, vec![expected[1].clone()]);
+    assert_eq!(
+        composer.entries[0].matched_message_ids,
+        composer.scanned_message_ids
+    );
+    assert!(composer.entries[0].matched_in_composer);
+    assert!(composer.entries[1].matched_message_ids.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trigger_preview_attributes_each_books_actual_detection_source() {
+    let harness = harness(Reply::Text("A dragon reply."));
+    let database = harness.context.backend().database();
+    let mut stored = lettuce_settings::GlobalSettingsStore::load(database).expect("settings");
+    stored.settings.lorebook_scan_depth = 1;
+    lettuce_settings::GlobalSettingsStore::save(
+        database,
+        stored.settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("settings saved");
+    let latest = lorebook_create(
+        &harness.context,
+        dto::LorebookCreateRequest {
+            client_operation_id: "latest-user-book".into(),
+            metadata: dto::LorebookMetadataInput {
+                name: "Latest user".into(),
+                detection: dto::LorebookDetection::LatestUserMessage,
+                icon_asset_id: None,
+            },
+            entries: vec![entry("User dragon", "User lore.", Some("dragon"))],
+        },
+    )
+    .await
+    .expect("latest user lorebook");
+    bind_character(&harness, harness.character_id, &latest.lorebook.id);
+    let chat = launch(&harness, "policy-chat").await;
+    send(
+        &harness,
+        &chat,
+        "user-dragon",
+        "A dragon arrives",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    run_generation(&harness).await;
+    let timeline = conversation_messages(
+        &harness.context,
+        dto::ConversationMessagesRequest {
+            conversation_id: chat.clone(),
+            before_cursor: None,
+            after_cursor: None,
+            limit: Some(100),
+        },
+    )
+    .await
+    .expect("messages");
+    let user_id = timeline
+        .items
+        .iter()
+        .rev()
+        .find(|message| message.role == dto::MessageRole::User)
+        .expect("user")
+        .id
+        .clone();
+    let assistant_id = timeline
+        .items
+        .iter()
+        .rev()
+        .find(|message| message.role == dto::MessageRole::Assistant)
+        .expect("assistant")
+        .id
+        .clone();
+    let latest_only = lorebook_trigger_preview(
+        &harness.context,
+        dto::LorebookTriggerPreviewRequest::Conversation {
+            conversation_id: chat.clone(),
+            composer_text: None,
+            speaker_character_id: None,
+        },
+    )
+    .await
+    .expect("latest user preview");
+    assert_eq!(latest_only.entries.len(), 1);
+    assert_eq!(latest_only.scanned_message_ids, vec![user_id.clone()]);
+    assert_eq!(
+        latest_only.entries[0].matched_message_ids,
+        vec![user_id.clone()]
+    );
+    assert!(!latest_only.entries[0].matched_in_composer);
+    let recent = create(
+        &harness,
+        "recent-policy-book",
+        "Recent",
+        vec![entry("Recent dragon", "Recent lore.", Some("dragon"))],
+    )
+    .await;
+    bind_character(&harness, harness.character_id, &recent.lorebook.id);
+    let mixed = lorebook_trigger_preview(
+        &harness.context,
+        dto::LorebookTriggerPreviewRequest::Conversation {
+            conversation_id: chat.clone(),
+            composer_text: None,
+            speaker_character_id: None,
+        },
+    )
+    .await
+    .expect("mixed policy preview");
+    assert_eq!(
+        mixed.scanned_message_ids,
+        vec![user_id.clone(), assistant_id.clone()]
+    );
+    assert_eq!(
+        mixed
+            .entries
+            .iter()
+            .find(|entry| entry.lorebook_id == latest.lorebook.id)
+            .expect("latest entry")
+            .matched_message_ids,
+        vec![user_id]
+    );
+    assert_eq!(
+        mixed
+            .entries
+            .iter()
+            .find(|entry| entry.lorebook_id == recent.lorebook.id)
+            .expect("recent entry")
+            .matched_message_ids,
+        vec![assistant_id]
+    );
+    let composer = preview(&harness, &chat, "dragon composer", None).await;
+    assert_eq!(composer.entries.len(), 2);
+    assert!(composer.scanned_message_ids.is_empty());
+    assert!(
+        composer
+            .entries
+            .iter()
+            .all(|entry| entry.matched_in_composer && entry.matched_message_ids.is_empty())
+    );
+    let unrelated = preview(&harness, &chat, "unrelated", None).await;
+    assert!(unrelated.entries.is_empty());
+    assert!(unrelated.scanned_message_ids.is_empty());
+    assert_eq!(unrelated.active_lorebook_ids.len(), 2);
+    let editor = lorebook_trigger_preview(
+        &harness.context,
+        dto::LorebookTriggerPreviewRequest::Editor {
+            lorebook_id: latest.lorebook.id,
+            text: "dragon".into(),
+        },
+    )
+    .await
+    .expect("latest user editor preview");
+    assert_eq!(editor.entries.len(), 1);
+    assert!(editor.scanned_message_ids.is_empty());
+    assert!(editor.entries[0].matched_message_ids.is_empty());
+    assert!(editor.entries[0].matched_in_composer);
 }
