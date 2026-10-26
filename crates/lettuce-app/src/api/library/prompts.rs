@@ -879,7 +879,8 @@ fn sample_context(
         context_summary: fragment("preview_sample_summary")?,
         key_memories,
         content_rules: crate::generation::pure_mode_rules::content_rules(database, pure_mode)
-            .map_err(|_| runtime_text_error())?,
+            .map_err(|_| runtime_text_error())?
+            .unwrap_or_default(),
         user_name: persona_name.clone(),
         user_description: persona_description,
         ai_name: character_name.clone(),
