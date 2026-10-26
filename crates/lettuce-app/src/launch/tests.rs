@@ -7165,7 +7165,7 @@ fn memory_is_inherited_from_the_character_policy() {
             assert!(memory.selected_revision_ids.is_empty());
             assert!(memory.policy_ref.is_none());
             let policy = memory.dynamic_policy.as_ref().expect("dynamic policy");
-            assert_eq!(policy.max_entries, 50);
+            assert_eq!(policy.max_entries, 200);
             assert_eq!(policy.retrieval_limit, 5);
         }
         other => panic!("expected inherited memory, got {other:?}"),
