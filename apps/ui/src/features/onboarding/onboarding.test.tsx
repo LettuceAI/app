@@ -487,6 +487,21 @@ describe("completion and skip", () => {
     expect(screen.queryByText("Chats need an AI before they can reply")).toBeNull();
   });
 
+  it("restores a picked backup from other options", async () => {
+    const pick = vi.fn(() => ({ status: "ok" as const, data: { sources: [{ uri: "/downloads/x.lettuce" }] } }));
+    await renderApp({
+      calls: {
+        filesPickOpen: pick,
+        backupInspect: () => ({ status: "ok", data: { version: 2, created_at: 1, app_version: "2.3.0" } }),
+      },
+    });
+    await click("Other options");
+    await click(/Restore a backup/);
+    expect(await screen.findByText("Restore backup")).toBeTruthy();
+    expect(pick).toHaveBeenCalledWith({ kinds: ["backup"], multiple: false });
+    await waitFor(() => expect(screen.queryByText("Skip setup")).toBeNull());
+  });
+
   it("warns first when no model exists", async () => {
     const ui = vi.fn((request: { patch: Record<string, unknown> }) => ({
       status: "ok" as const,

@@ -338,6 +338,8 @@
     "language": "Language",
     "skip": "Skip setup",
     "skipBody": "Look around first. Chats need an AI before they can reply.",
+    "restore": "Restore a backup",
+    "restoreBody": "Bring back chats, characters and settings from a .lettuce file",
     "languageTitle": "Language",
     "warning": {
       "title": "Chats need an AI before they can reply",

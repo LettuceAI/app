@@ -17,6 +17,7 @@ import {
 } from "./data/completion";
 import { canConnect, classifyConnectError, connectProvider } from "./data/connect";
 import { MemoryDownloadSheet, useEmbeddingInstall } from "@/entities/embedding";
+import { RestoreSheet, usePickBackup, type PickedBackup } from "@/features/opened-files";
 import { externalModelId, saveChosenModel } from "./data/models";
 import { catalogQuery, useApi } from "./data/queries";
 import { useAction } from "./data/use-action";
@@ -75,6 +76,11 @@ export function OnboardingPage() {
   const phone = useCompactLayout();
   const [state, dispatch] = useReducer(flowReducer, initialFlow);
   const [other, setOther] = useState(false);
+  const [restoreFrom, setRestoreFrom] = useState<PickedBackup | null>(null);
+  const backup = usePickBackup(api, (picked) => {
+    setOther(false);
+    setRestoreFrom(picked);
+  });
   const [otherKey, setOtherKey] = useState(0);
   const [skipWarning, setSkipWarning] = useState(false);
   const [memorySheet, setMemorySheet] = useState(false);
@@ -452,9 +458,12 @@ export function OnboardingPage() {
           onClose={() => setOther(false)}
           onSkip={skip.run}
           onLanguage={changeLanguage}
+          onRestore={() => void backup.pick()}
+          picking={backup.picking}
           skipping={skip.busy}
           skipError={skip.error}
         />
+        {restoreFrom && <RestoreSheet api={api} source={restoreFrom.source} header={restoreFrom.header} onClose={() => setRestoreFrom(null)} />}
         <SkipWarningSheet
           open={skipWarning}
           onClose={() => setSkipWarning(false)}

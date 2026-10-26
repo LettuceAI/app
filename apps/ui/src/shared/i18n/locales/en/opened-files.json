@@ -48,6 +48,7 @@
       "backup_file_busy": "The file is in use by another app.",
       "backup_file_unavailable": "The backup file could not be read.",
       "backup_file_unsupported": "This backup was made by a version the app cannot read.",
+    "notBackup": "That file is not a LettuceAI backup.",
       "backup_source_is_target": "The backup is the file the app is using.",
       "backup_cancelled": "The restore was cancelled.",
       "backup_retry_required": "The restore did not finish. Try again.",

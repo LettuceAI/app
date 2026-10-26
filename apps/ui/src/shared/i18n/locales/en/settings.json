@@ -1442,8 +1442,7 @@
     "restore": {
       "group": "Restore",
       "title": "Restore from a file",
-      "body": "Pick a .lettuce backup",
-      "notBackup": "That file is not a LettuceAI backup."
+      "body": "Pick a .lettuce backup"
     },
     "saved": {
       "group": "Saved backups",
