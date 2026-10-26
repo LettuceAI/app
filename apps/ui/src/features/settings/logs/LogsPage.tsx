@@ -686,8 +686,10 @@ function LogViewer({
             setLineSheet(l);
           }}
           className={cn(
-            "flex h-auto min-h-0 w-full cursor-default select-text justify-start whitespace-normal rounded-none border-l-2 py-0 text-left font-mono font-normal",
-            phone ? "flex-col px-4 py-1.5" : "gap-3 pl-4 pr-6",
+            "flex h-auto min-h-0 w-full cursor-default select-text justify-start whitespace-normal rounded-none border-l-2 py-0 text-left font-mono font-normal [&>span]:w-full [&>span]:min-w-0",
+            phone
+              ? "gap-0.5 px-4 py-1.5 [&>span]:flex-col [&>span]:items-start"
+              : "gap-3 pl-4 pr-6",
             SIZE_CLASS[size],
             l.level === "error"
               ? "border-danger bg-danger/5"
