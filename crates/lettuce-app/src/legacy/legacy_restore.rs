@@ -509,6 +509,76 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn a_legacy_source_with_a_retired_engine_account_restores_the_rest() {
+        let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("filesystem authority");
+        let location = AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+            .expect("database location");
+        let secrets = InMemorySecretStore::new();
+        let workspace = root.join("legacy-restore-workspace");
+        let coordinator =
+            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
+        let engine = lettuce_types::ProviderAccountId::new();
+        let kept = lettuce_types::ProviderAccountId::new();
+        let kept_model = lettuce_types::ModelProfileId::new();
+        let document = |kind, value: serde_json::Value| lettuce_transfer::LegacyBackupDocument {
+            kind,
+            bytes: zeroize::Zeroizing::new(serde_json::to_vec(&value).expect("document")),
+        };
+        let compatibility =
+            lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                warnings: Vec::new(),
+                version: 1,
+                created_at: 1_700_000_000_000,
+                app_version: "2.2.5".into(),
+                source_hash: ContentHash::parse("ce".repeat(32)).expect("source hash"),
+                documents: vec![
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::ProviderCredentials,
+                        serde_json::json!([
+                            {"id": engine, "provider_id": "lettuce-engine", "label": "Engine", "api_key": "retired", "config": "not-json"},
+                            {"id": kept, "provider_id": "openrouter", "label": "Router", "api_key": "kept-secret"}
+                        ]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Models,
+                        serde_json::json!([
+                            {"id": lettuce_types::ModelProfileId::new(), "name": "engine", "display_name": "Engine", "provider_id": "lettuce-engine", "provider_credential_id": engine, "provider_label": "Engine", "created_at": 1},
+                            {"id": kept_model, "name": "gpt-4o", "display_name": "GPT-4o", "provider_id": "openrouter", "provider_credential_id": kept, "provider_label": "Router", "created_at": 1}
+                        ]),
+                    ),
+                ],
+                media: Vec::new(),
+            })
+            .expect("compatibility plan");
+        let plan = compatibility.legacy_import_plan();
+        let receipt = coordinator
+            .replace(
+                &LegacyDatabaseImportPlan {
+                    compatibility,
+                    plan,
+                    preserved: Vec::new(),
+                    message_conflicts: Vec::new(),
+                },
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_100),
+            )
+            .await
+            .expect("a retired engine account does not block the restore");
+        let graph = Database::open(&receipt.database_path)
+            .expect("restored database")
+            .read_provider_backup_graph()
+            .expect("restored graph");
+        assert_eq!(graph.accounts.len(), 1);
+        assert_eq!(graph.accounts[0].id, kept);
+        assert_eq!(graph.profiles.len(), 1);
+        assert_eq!(graph.profiles[0].id, kept_model);
+    }
+
+    #[tokio::test]
     async fn a_legacy_source_with_provider_secrets_replaces_the_active_database() {
         let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
         std::fs::create_dir_all(&root).expect("fixture root");

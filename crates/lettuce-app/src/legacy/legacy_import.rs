@@ -276,10 +276,12 @@ fn validate_plan(
 
 fn legacy_value_skip(skip: &lettuce_transfer::LegacyImportSkip, prefixes: &[&str]) -> bool {
     use lettuce_transfer::LegacyImportSkipReason::{MalformedLegacyValue, UnknownLegacyValue};
-    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 13] = [
+    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 15] = [
         ("provider_credentials.config", MalformedLegacyValue),
         ("provider_credentials.config.sproutUrl", MalformedLegacyValue),
         ("provider_credentials.headers", MalformedLegacyValue),
+        ("provider_credentials.provider_id", UnknownLegacyValue),
+        ("models.provider_id", UnknownLegacyValue),
         ("models.input_scopes", MalformedLegacyValue),
         ("models.output_scopes", MalformedLegacyValue),
         ("models.advanced_model_settings", MalformedLegacyValue),
@@ -1202,6 +1204,21 @@ mod tests {
             &skip,
             &["provider_credentials.", "models."]
         ));
+    }
+
+    #[test]
+    fn retired_engine_skips_are_accepted_provider_skips() {
+        for field in ["provider_credentials.provider_id", "models.provider_id"] {
+            let skip = lettuce_transfer::LegacyImportSkip {
+                kind: lettuce_transfer::LegacyImportSkipKind::LegacyValue,
+                source_key: format!("{field}:engine-1"),
+                reason: lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue,
+            };
+            assert!(super::legacy_value_skip(
+                &skip,
+                &["provider_credentials.", "models."]
+            ));
+        }
     }
 
     #[test]
