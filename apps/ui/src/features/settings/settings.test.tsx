@@ -8,7 +8,9 @@ import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
 
-vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/api/window-controls", () => ({
+  createWindowController: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("@/api/external-links", () => ({ openExternalUrl: vi.fn().mockResolvedValue(undefined) }));
 
 beforeEach(() => vi.mocked(openExternalUrl).mockReset().mockResolvedValue(undefined));
@@ -17,7 +19,15 @@ async function renderAt(path: string, platform: "other" | "android" = "other") {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       calls: {
-        appStatus: () => ({ status: "ok", data: { ...mockAppStatus, version: "9.9.9", platform, ui_state: { onboarding: { completed: true } } } }),
+        appStatus: () => ({
+          status: "ok",
+          data: {
+            ...mockAppStatus,
+            version: "9.9.9",
+            platform,
+            ui_state: { onboarding: { completed: true } },
+          },
+        }),
         jobsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
       },
     }),
@@ -35,14 +45,13 @@ afterEach(() => {
 });
 
 describe("settings routes", () => {
-  it("opens About community links and the changelog", async () => {
+  it("opens About community links", async () => {
     await renderAt("/settings/about");
     await screen.findByText("Standard");
     for (const [name, url] of [
       [/^Website/, "https://www.lettuceai.app"],
       [/^Discord/, "https://discord.gg/745bEttw2r"],
       [/^Source code/, "https://github.com/LettuceAI/app"],
-      [/Release notes for 9\.9\.9/, "https://www.lettuceai.app/changelog"],
     ] as const) {
       const row = screen.getByRole("button", { name });
       await waitFor(() => expect(row.hasAttribute("disabled")).toBe(false));
@@ -64,7 +73,9 @@ describe("settings routes", () => {
   });
 
   it("shows opener failures and retries the same link", async () => {
-    vi.mocked(openExternalUrl).mockRejectedValueOnce(new ApiFailure("unavailable", "private host diagnostic", null));
+    vi.mocked(openExternalUrl).mockRejectedValueOnce(
+      new ApiFailure("unavailable", "private host diagnostic", null),
+    );
     await renderAt("/settings/about");
     fireEvent.click(await screen.findByRole("button", { name: /^Website/ }));
     expect(await screen.findByText("Couldn't open the link")).toBeTruthy();

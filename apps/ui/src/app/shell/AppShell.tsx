@@ -1,4 +1,12 @@
-import { AppShell as CrispAppShell, cn, CrispStringsProvider, icon, TitleBar, useCompactLayout, type NavDestination } from "@lettuceai/crisp";
+import {
+  AppShell as CrispAppShell,
+  cn,
+  CrispStringsProvider,
+  icon,
+  TitleBar,
+  useCompactLayout,
+  type NavDestination,
+} from "@lettuceai/crisp";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -9,7 +17,7 @@ import type { WindowEdge } from "@/api/window-controls";
 import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages";
 import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
-import { isSettingsSection, SidebarSettings } from "@/features/settings";
+import { isSettingsSection, SidebarSettings, WhatsNewSheet } from "@/features/settings";
 import { LibraryCreateSheet } from "@/features/library";
 import { OpenedFiles } from "@/features/opened-files";
 import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
@@ -45,7 +53,9 @@ export function AppShell() {
   const welcome = pathname === "/welcome" || pathname === "/welcome-back";
   const tabs = compact || mobile;
   const { enabled: sidebarOnDetailPages } = useSidebarOnDetailPages(api);
-  const mainScreen = Object.entries(destinations).some(([id, path]) => id !== "settings" && pathname === path);
+  const mainScreen = Object.entries(destinations).some(
+    ([id, path]) => id !== "settings" && pathname === path,
+  );
   const navigationHidden = !mainScreen && (tabs || !sidebarOnDetailPages);
   useAndroidBack(platform, welcome || mainScreen);
   const [sidebarOpen, setSidebarOpen] = useSidebarExpanded(api);
@@ -61,74 +71,165 @@ export function AppShell() {
     { id: "discover", label: t("navigation.discover"), icon: <Compass size={icon.lg} /> },
     { id: "library", label: t("navigation.library"), icon: <Library size={icon.lg} /> },
   ];
-  const settings: NavDestination<Destination> = { id: "settings", label: t("navigation.settings"), icon: <Settings size={icon.lg} /> };
+  const settings: NavDestination<Destination> = {
+    id: "settings",
+    label: t("navigation.settings"),
+    icon: <Settings size={icon.lg} />,
+  };
   const inSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const settingsMode = inSettings && !tabs && sidebarOnDetailPages;
-  const backToApp: NavDestination<Destination> = { id: "chats", label: t("navigation.backToApp"), icon: <ArrowLeft size={icon.lg} /> };
-  const section = pathname.startsWith("/settings/") ? pathname.slice("/settings/".length).split("/")[0] ?? "" : "";
+  const backToApp: NavDestination<Destination> = {
+    id: "chats",
+    label: t("navigation.backToApp"),
+    icon: <ArrowLeft size={icon.lg} />,
+  };
+  const section = pathname.startsWith("/settings/")
+    ? (pathname.slice("/settings/".length).split("/")[0] ?? "")
+    : "";
   useEffect(() => {
-    if (settingsMode && pathname === "/settings") void navigate({ to: "/settings/$section", params: { section: "about" }, replace: true });
+    if (settingsMode && pathname === "/settings")
+      void navigate({ to: "/settings/$section", params: { section: "about" }, replace: true });
   }, [settingsMode, pathname, navigate]);
   const titleBar = desktop ? (
     <TitleBar
       title={t("app.name")}
       platform={windowPlatform}
       className="relative [&>div:first-child]:pointer-events-none"
-      {...(controller ? {
-        onMinimize: () => perform(() => controller.minimize()),
-        onMaximize: () => perform(() => controller.toggleMaximize()),
-        onClose: () => perform(() => controller.close()),
-      } : {})}
+      {...(controller
+        ? {
+            onMinimize: () => perform(() => controller.minimize()),
+            onMaximize: () => perform(() => controller.toggleMaximize()),
+            onClose: () => perform(() => controller.close()),
+          }
+        : {})}
     >
       <DownloadsMenu />
     </TitleBar>
   ) : null;
   return (
     <DownloadsProvider api={api}>
-    <CrispStringsProvider strings={{ navPrimary: t("navigation.primary"), navCreate: t("navigation.create"), navCollapse: t("navigation.collapse"), navCollapseSidebar: t("navigation.collapseSidebar"), navExpandSidebar: t("navigation.expandSidebar"), titleBarMinimize: t("window.minimize"), titleBarMaximize: t("window.maximize"), titleBarClose: t("window.close") }}>
-    <div className={cn("relative flex h-full min-h-0 flex-col overflow-clip bg-surface text-fg", desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line")}>
-      {failed && <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">{t("window.failed")}</p>}
-      {welcome ? (
-        <>
-          {titleBar}
-          <div className="@container relative min-h-0 flex-1 overflow-clip"><Outlet /></div>
-        </>
-      ) : (
-        <CrispAppShell
-          className={cn("overflow-clip", !tabs && !sidebarOpen && "[&_nav_.scrollbar-thin]:[scrollbar-width:none] [&_nav_.scrollbar-thin::-webkit-scrollbar]:hidden")}
-          items={settingsMode ? [backToApp] : items}
-          {...(tabs ? {} : { footerItems: [settings] })}
-          value={destinationOf(pathname)}
-          onChange={(id) => { void navigate({ to: id === "settings" && settingsMode ? "/" : destinations[id] }); }}
-          {...(tabs ? { onCreate: () => setCreateOpen(true), createLabel: t("navigation.create") } : {})}
-          navStyle={navigationHidden ? "header" : tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"}
-          {...(tabs ? {} : {
-            onNavToggle: () => setSidebarOpen(!sidebarOpen),
-            ...(settingsMode ? {
-              navSection: <SidebarSettings active={isSettingsSection(section) ? section : null} onOpen={(id) => { void navigate({ to: "/settings/$section", params: { section: id } }); }} />,
-            } : {
-              onCreate: () => setCreateOpen(true),
-              createLabel: t("navigation.create"),
-              navSection: <SidebarRecents api={api} onOpen={(chat) => chats.openConversation(chat.id)} heldId={chatMenu?.chat.id ?? null} onMenu={setChatMenu} />,
-            }),
-          })}
-          titleBar={titleBar}
+      <CrispStringsProvider
+        strings={{
+          navPrimary: t("navigation.primary"),
+          navCreate: t("navigation.create"),
+          navCollapse: t("navigation.collapse"),
+          navCollapseSidebar: t("navigation.collapseSidebar"),
+          navExpandSidebar: t("navigation.expandSidebar"),
+          titleBarMinimize: t("window.minimize"),
+          titleBarMaximize: t("window.maximize"),
+          titleBarClose: t("window.close"),
+        }}
+      >
+        <div
+          className={cn(
+            "relative flex h-full min-h-0 flex-col overflow-clip bg-surface text-fg",
+            desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line",
+          )}
         >
-          <Outlet />
-        </CrispAppShell>
-      )}
-      {pathname === "/library" ? <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} /> : <CreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} onCreate={(kind) => { void navigate({ to: kind === "persona" ? "/personas/new" : "/characters/new" }); }} onDiscover={() => { void navigate({ to: destinations.discover }); }} />}
-      <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
-      <OpenedFiles api={api} held={welcome} />
-      {controller && desktop && windowPlatform !== "macos" && !expanded && resizeEdges.map(([edge, className]) => (
-        <div key={edge} aria-hidden className={cn("absolute z-50 touch-none", className)} onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.preventDefault();
-          perform(() => controller.resize(edge));
-        }} />
-      ))}
-    </div>
-    </CrispStringsProvider>
+          {failed && (
+            <p role="alert" className="shrink-0 bg-danger/10 px-4 py-2 text-sm text-danger">
+              {t("window.failed")}
+            </p>
+          )}
+          {welcome ? (
+            <>
+              {titleBar}
+              <div className="@container relative min-h-0 flex-1 overflow-clip">
+                <Outlet />
+              </div>
+            </>
+          ) : (
+            <CrispAppShell
+              className={cn(
+                "overflow-clip",
+                !tabs &&
+                  !sidebarOpen &&
+                  "[&_nav_.scrollbar-thin]:[scrollbar-width:none] [&_nav_.scrollbar-thin::-webkit-scrollbar]:hidden",
+              )}
+              items={settingsMode ? [backToApp] : items}
+              {...(tabs ? {} : { footerItems: [settings] })}
+              value={destinationOf(pathname)}
+              onChange={(id) => {
+                void navigate({ to: id === "settings" && settingsMode ? "/" : destinations[id] });
+              }}
+              {...(tabs
+                ? { onCreate: () => setCreateOpen(true), createLabel: t("navigation.create") }
+                : {})}
+              navStyle={
+                navigationHidden ? "header" : tabs ? "tabs" : sidebarOpen ? "sidebar" : "rail"
+              }
+              {...(tabs
+                ? {}
+                : {
+                    onNavToggle: () => setSidebarOpen(!sidebarOpen),
+                    ...(settingsMode
+                      ? {
+                          navSection: (
+                            <SidebarSettings
+                              active={isSettingsSection(section) ? section : null}
+                              onOpen={(id) => {
+                                void navigate({
+                                  to: "/settings/$section",
+                                  params: { section: id },
+                                });
+                              }}
+                            />
+                          ),
+                        }
+                      : {
+                          onCreate: () => setCreateOpen(true),
+                          createLabel: t("navigation.create"),
+                          navSection: (
+                            <SidebarRecents
+                              api={api}
+                              onOpen={(chat) => chats.openConversation(chat.id)}
+                              heldId={chatMenu?.chat.id ?? null}
+                              onMenu={setChatMenu}
+                            />
+                          ),
+                        }),
+                  })}
+              titleBar={titleBar}
+            >
+              <Outlet />
+            </CrispAppShell>
+          )}
+          {pathname === "/library" ? (
+            <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} />
+          ) : (
+            <CreateSheet
+              api={api}
+              open={createOpen}
+              onClose={() => setCreateOpen(false)}
+              onCreate={(kind) => {
+                void navigate({ to: kind === "persona" ? "/personas/new" : "/characters/new" });
+              }}
+              onDiscover={() => {
+                void navigate({ to: destinations.discover });
+              }}
+            />
+          )}
+          <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
+          <OpenedFiles api={api} held={welcome} />
+          <WhatsNewSheet />
+          {controller &&
+            desktop &&
+            windowPlatform !== "macos" &&
+            !expanded &&
+            resizeEdges.map(([edge, className]) => (
+              <div
+                key={edge}
+                aria-hidden
+                className={cn("absolute z-50 touch-none", className)}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  perform(() => controller.resize(edge));
+                }}
+              />
+            ))}
+        </div>
+      </CrispStringsProvider>
     </DownloadsProvider>
   );
 }

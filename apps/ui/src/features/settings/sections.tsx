@@ -27,6 +27,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { icon } from "@lettuceai/crisp";
+import { projectLinks } from "@/shared/links";
 
 export const settingsSectionIds = [
   "providers",
@@ -64,6 +65,7 @@ export interface SettingsSection {
   id: SettingsSectionId;
   icon: ReactNode;
   danger?: boolean;
+  externalUrl?: string;
 }
 
 export interface SettingsGroup {
@@ -118,8 +120,8 @@ export const settingsGroups: readonly SettingsGroup[] = [
       { id: "help", icon: glyph(HelpCircle) },
       { id: "whatsNew", icon: glyph(Sparkles) },
       { id: "about", icon: glyph(Info) },
-      { id: "changelog", icon: glyph(ScrollText) },
-      { id: "docs", icon: glyph(BookOpen) },
+      { id: "changelog", icon: glyph(ScrollText), externalUrl: projectLinks.changelog },
+      { id: "docs", icon: glyph(BookOpen), externalUrl: projectLinks.docs },
       { id: "logs", icon: glyph(FileCode) },
       { id: "guide", icon: glyph(HelpCircle) },
     ],
@@ -135,6 +137,7 @@ export const settingsGroups: readonly SettingsGroup[] = [
 
 /** The sections that have a page so far; the rest are listed but cannot be opened yet. */
 export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set([
+  "help",
   "logs",
   "usage",
   "customization",

@@ -53,14 +53,22 @@ export interface RouterContext {
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
+  validateSearch: (search: Record<string, unknown>): { settingsPanel?: "whatsNew" } => ({
+    ...(search.settingsPanel === "whatsNew" ? { settingsPanel: "whatsNew" as const } : {}),
+  }),
   beforeLoad: ({ context, location }) => {
     const query = appStatusQuery(context.api);
     const checkGate = (status: AppStatus) => {
+      const setupReplay =
+        onboardingCompleted(status) &&
+        new URLSearchParams(location.searchStr).get("setup") === "true";
       const target = onboardingRedirect(
         { completed: onboardingCompleted(status), legacy: legacyMigrationOffered(status) },
         location.pathname,
+        setupReplay,
       );
       if (target) throw redirect({ to: target, replace: true });
+      return { setupReplay: setupReplay && location.pathname === welcomePath };
     };
     const cached = context.queryClient.getQueryData(query.queryKey);
     if (cached) {
@@ -78,6 +86,9 @@ const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", comp
 const welcomeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: welcomePath,
+  validateSearch: (search: Record<string, unknown>): { setup?: true } => ({
+    ...(search.setup === true || search.setup === "true" ? { setup: true as const } : {}),
+  }),
   component: OnboardingPage,
 });
 const welcomeBackRoute = createRoute({
@@ -417,6 +428,8 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 
 declare module "@tanstack/history" {
   interface HistoryState {
+    settingsPanelPushed?: boolean;
+    setupReplayPushed?: boolean;
     speechPanelPushed?: boolean;
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;

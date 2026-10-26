@@ -2807,7 +2807,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lettuce-app"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2867,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-characters"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "lettuce-companions",
  "lettuce-types",
@@ -2878,7 +2878,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-companions"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "chrono",
  "lettuce-conversations",
@@ -2892,7 +2892,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-context"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "blake3",
  "lettuce-types",
@@ -2905,7 +2905,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-contracts"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "lettuce-types",
  "serde",
@@ -2916,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-conversations"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "blake3",
@@ -2932,7 +2932,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-creation"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "blake3",
  "lettuce-context",
@@ -2949,7 +2949,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-database"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2986,7 +2986,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-embeddings"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "flate2",
  "lettuce-companions",
@@ -3005,7 +3005,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-image-generation"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3030,7 +3030,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-inference"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "lettuce-conversations",
@@ -3046,7 +3046,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-jobs"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "lettuce-types",
  "serde",
@@ -3058,7 +3058,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-local-llm"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -3076,7 +3076,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-media"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "blake3",
  "lettuce-platform",
@@ -3088,7 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-memory"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "lettuce-conversations",
  "lettuce-types",
@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-model-hub"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "blake3",
  "flate2",
@@ -3120,7 +3120,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-models"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "lettuce-settings",
  "lettuce-types",
@@ -3131,7 +3131,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-network"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "lettuce-settings",
  "reqwest 0.12.28",
@@ -3142,7 +3142,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-observability"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "chrono",
  "lettuce-types",
@@ -3155,7 +3155,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-platform"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "block2",
  "cap-primitives",
@@ -3174,7 +3174,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-providers"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3200,7 +3200,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-settings"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "android-native-keyring-store",
  "argon2",
@@ -3220,7 +3220,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-speech"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3243,7 +3243,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-sync"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "blake3",
  "lettuce-characters",
@@ -3260,7 +3260,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-tauri"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "cpal",
@@ -3292,7 +3292,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-transfer"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-types"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "serde",
  "thiserror 2.0.20",
@@ -3336,7 +3336,7 @@ dependencies = [
 
 [[package]]
 name = "lettuce-usage"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "jiff",

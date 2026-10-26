@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouteContext, useRouter } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn, IconButton, icon, motion as m, Surface, useCompactLayout } from "@lettuceai/crisp";
 import { art, artTall } from "./assets";
 import { ActionButton } from "./components/ui";
 import { guideContent } from "./content/guide-content";
 import { learnSlides } from "./content/slides";
-import { applyManualMemory, completeOnboarding, enableAutomaticMemory, hasEidosInstalled } from "./data/completion";
+import {
+  applyManualMemory,
+  completeOnboarding,
+  enableAutomaticMemory,
+  hasEidosInstalled,
+} from "./data/completion";
 import { canConnect, classifyConnectError, connectProvider } from "./data/connect";
 import { MemoryDownloadSheet, useEmbeddingInstall } from "@/entities/embedding";
 import { externalModelId, saveChosenModel } from "./data/models";
@@ -30,9 +35,12 @@ import { SkipWarningSheet } from "./sheets/SkipWarningSheet";
 
 const foregroundOnArt = "#ffffff";
 
-const phoneVeil = "linear-gradient(to bottom, rgb(0 0 0 / 0) 0%, rgb(0 0 0 / 0.55) 26%, rgb(0 0 0 / 0.68) 100%)";
-const desktopVeil = "linear-gradient(to bottom, rgb(0 0 0 / 0) 0%, rgb(0 0 0 / 0.5) 28%, rgb(0 0 0 / 0.66) 100%)";
-const phoneMask = "linear-gradient(to bottom, black calc(100% - 8rem), transparent calc(100% - 4.5rem))";
+const phoneVeil =
+  "linear-gradient(to bottom, rgb(0 0 0 / 0) 0%, rgb(0 0 0 / 0.55) 26%, rgb(0 0 0 / 0.68) 100%)";
+const desktopVeil =
+  "linear-gradient(to bottom, rgb(0 0 0 / 0) 0%, rgb(0 0 0 / 0.5) 28%, rgb(0 0 0 / 0.66) 100%)";
+const phoneMask =
+  "linear-gradient(to bottom, black calc(100% - 8rem), transparent calc(100% - 4.5rem))";
 
 interface Primary {
   label: string;
@@ -47,6 +55,23 @@ export function OnboardingPage() {
   const api = useApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
+  const setupReplay = useRouteContext({
+    from: "__root__",
+    select: (context) => context.setupReplay,
+  });
+  const replayPushed = useLocation({ select: (location) => location.state.setupReplayPushed });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const exitSetup = () => {
+    if (replayPushed && router.history.canGoBack()) router.history.back();
+    else void navigate({ to: "/settings", replace: true });
+  };
   const phone = useCompactLayout();
   const [state, dispatch] = useReducer(flowReducer, initialFlow);
   const [other, setOther] = useState(false);
@@ -67,11 +92,16 @@ export function OnboardingPage() {
   );
 
   const descriptor = catalog.data?.find((entry) => entry.kind === state.providerKind) ?? null;
-  const routeName = state.route === "provider" ? (descriptor?.display_name ?? "") : t(`guide.routes.${state.route}`);
+  const routeName =
+    state.route === "provider"
+      ? (descriptor?.display_name ?? "")
+      : t(`guide.routes.${state.route}`);
 
   const finishApp = async () => {
-    await completeOnboarding(services);
-    await navigate({ to: "/", replace: true });
+    if (!mounted.current) return;
+    if (!setupReplay) await completeOnboarding(services);
+    if (!mounted.current) return;
+    await navigate({ to: "/", search: {}, replace: true });
   };
 
   const connect = useAction(async () => {
@@ -83,6 +113,7 @@ export function OnboardingPage() {
       flow: state,
       fallbackLabel: t("connect.form.namePlaceholder", { name: routeName }),
     });
+    if (!mounted.current) return;
     dispatch({ type: "patch", patch: { account } });
     dispatch({ type: "go", step: "model" });
   }, classifyConnectError);
@@ -90,6 +121,7 @@ export function OnboardingPage() {
   const saveModel = useAction(async () => {
     if (externalModelId(state) === "") return;
     const savedModel = await saveChosenModel({ api, queryClient, flow: state });
+    if (!mounted.current) return;
     dispatch({ type: "patch", patch: { savedModel } });
     dispatch({ type: "go", step: "memory" });
   });
@@ -100,7 +132,9 @@ export function OnboardingPage() {
       await finishApp();
       return;
     }
-    if (await hasEidosInstalled(services)) {
+    const installed = await hasEidosInstalled(services);
+    if (!mounted.current) return;
+    if (installed) {
       await enableAutomaticMemory(services, state.savedModel?.id ?? null, true);
       await finishApp();
       return;
@@ -116,6 +150,7 @@ export function OnboardingPage() {
 
   const skip = useAction(async () => {
     const models = await api.call("modelsList");
+    if (!mounted.current) return;
     if (models.models.length > 0) {
       await finishApp();
       return;
@@ -131,7 +166,16 @@ export function OnboardingPage() {
     await i18n.changeLanguage(locale);
   };
 
-  const value: OnboardingContextValue = { state, dispatch, phone, guides, catalog, connect, saveModel, finish };
+  const value: OnboardingContextValue = {
+    state,
+    dispatch,
+    phone,
+    guides,
+    catalog,
+    connect,
+    saveModel,
+    finish,
+  };
   const { step } = state;
   const guideActive = step === "gemini" || step === "openrouter";
   const onGuideKey = guideActive && state.guide === guides[step];
@@ -177,12 +221,16 @@ export function OnboardingPage() {
     step === "learn"
       ? {
           label: lastSlide ? t("actions.gotIt") : t("actions.next"),
-          onClick: () => (lastSlide ? dispatch({ type: "go", step: "path" }) : dispatch({ type: "patch", patch: { slide: state.slide + 1 } })),
+          onClick: () =>
+            lastSlide
+              ? dispatch({ type: "go", step: "path" })
+              : dispatch({ type: "patch", patch: { slide: state.slide + 1 } }),
         }
       : guideActive && !onGuideKey
         ? {
             label: state.guide === guides[step] - 1 ? t("actions.haveKey") : t("actions.next"),
-            onClick: () => dispatch({ type: "patch", patch: { guide: state.guide + 1, guideSlide: 0 } }),
+            onClick: () =>
+              dispatch({ type: "patch", patch: { guide: state.guide + 1, guideSlide: 0 } }),
           }
         : onGuideKey
           ? connectPrimary
@@ -249,16 +297,27 @@ export function OnboardingPage() {
   return (
     <OnboardingContext.Provider value={value}>
       <Surface fg={foregroundOnArt} tone="dark" className="flex h-full flex-col bg-black">
-        <img src={phone ? artTall : art} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+        <img
+          src={phone ? artTall : art}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
         <motion.div
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{ background: phone ? phoneVeil : desktopVeil }}
           initial={false}
-          animate={{ opacity: step === "welcome" ? 0 : step === "learn" || step === "path" ? 0.6 : 1 }}
+          animate={{
+            opacity: step === "welcome" ? 0 : step === "learn" || step === "path" ? 0.6 : 1,
+          }}
           transition={m.settle}
         />
-        <div className={cn("relative z-10 box-content flex h-14 shrink-0 items-center pt-[var(--safe-top)]", phone ? "px-3" : "px-6")}>
+        <div
+          className={cn(
+            "relative z-10 box-content flex h-14 shrink-0 items-center pt-[var(--safe-top)]",
+            phone ? "px-3" : "px-6",
+          )}
+        >
           {step !== "welcome" && (
             <IconButton
               label={t("header.back")}
@@ -270,7 +329,19 @@ export function OnboardingPage() {
             </IconButton>
           )}
           <span className="flex-1" />
-          {step !== "welcome" && <span className="text-sm text-fg-3">{whereText(progress.where)}</span>}
+          {step !== "welcome" && (
+            <span className="text-sm text-fg-3">{whereText(progress.where)}</span>
+          )}
+          {setupReplay && (
+            <IconButton
+              label={t("actions.exitSetup")}
+              variant="ghost"
+              shape="round"
+              onClick={exitSetup}
+            >
+              <X size={icon.lg} />
+            </IconButton>
+          )}
         </div>
         {phone ? (
           step !== "welcome" && (
@@ -278,7 +349,10 @@ export function OnboardingPage() {
               {Array.from({ length: progress.segments }, (_, index) => (
                 <span
                   key={index}
-                  className={cn("h-1 flex-1 rounded-full transition-colors motion-slow", index < progress.filled ? "bg-accent" : "bg-white/15")}
+                  className={cn(
+                    "h-1 flex-1 rounded-full transition-colors motion-slow",
+                    index < progress.filled ? "bg-accent" : "bg-white/15",
+                  )}
                 />
               ))}
             </div>
@@ -295,8 +369,15 @@ export function OnboardingPage() {
         )}
         <div
           ref={scroller}
-          className={cn("relative z-10 flex min-h-0 flex-1 flex-col", phone ? "overflow-y-auto [scrollbar-width:none]" : "overflow-hidden")}
-          style={phone && step !== "welcome" ? { maskImage: phoneMask, WebkitMaskImage: phoneMask } : undefined}
+          className={cn(
+            "relative z-10 flex min-h-0 flex-1 flex-col",
+            phone ? "overflow-y-auto [scrollbar-width:none]" : "overflow-hidden",
+          )}
+          style={
+            phone && step !== "welcome"
+              ? { maskImage: phoneMask, WebkitMaskImage: phoneMask }
+              : undefined
+          }
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -311,17 +392,33 @@ export function OnboardingPage() {
               <div
                 className={cn(
                   "mx-auto flex w-full min-h-0 flex-1 flex-col",
-                  phone ? "px-5 pb-[calc(var(--safe-bottom,0px)+3rem)]" : workbench ? "max-w-6xl px-10 pb-8" : "max-w-5xl px-10 pb-5",
+                  phone
+                    ? "px-5 pb-[calc(var(--safe-bottom,0px)+3rem)]"
+                    : workbench
+                      ? "max-w-6xl px-10 pb-8"
+                      : "max-w-5xl px-10 pb-5",
                 )}
               >
-                <div className={cn("flex min-h-0 flex-1 flex-col", !phone && "overflow-y-auto [scrollbar-width:none]")}>
+                <div
+                  className={cn(
+                    "flex min-h-0 flex-1 flex-col",
+                    !phone && "overflow-y-auto [scrollbar-width:none]",
+                  )}
+                >
                   {screen}
                   {phone && step !== "welcome" && <div aria-hidden className="h-28 shrink-0" />}
                 </div>
                 {!phone && !workbench && (
                   <div className="flex h-16 shrink-0 items-end gap-3">
                     <span className="flex-1" />
-                    {primary && <ActionButton label={primary.label} disabled={primary.disabled ?? false} loading={primary.loading ?? false} onClick={primary.onClick} />}
+                    {primary && (
+                      <ActionButton
+                        label={primary.label}
+                        disabled={primary.disabled ?? false}
+                        loading={primary.loading ?? false}
+                        onClick={primary.onClick}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -338,7 +435,13 @@ export function OnboardingPage() {
               transition={m.settle}
               className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 px-5 pt-3 pb-[calc(var(--safe-bottom,0px)+1.25rem)]"
             >
-              <ActionButton label={primary.label} disabled={primary.disabled ?? false} loading={primary.loading ?? false} block onClick={primary.onClick} />
+              <ActionButton
+                label={primary.label}
+                disabled={primary.disabled ?? false}
+                loading={primary.loading ?? false}
+                block
+                onClick={primary.onClick}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -372,7 +475,12 @@ export function OnboardingPage() {
             dispatch({ type: "patch", patch: { memory: "manual" } });
             setMemorySheet(false);
           }}
-          done={{ label: t("actions.openApp"), onClick: openApp.run, loading: openApp.busy, error: openApp.error }}
+          done={{
+            label: t("actions.openApp"),
+            onClick: openApp.run,
+            loading: openApp.busy,
+            error: openApp.error,
+          }}
         />
       </Surface>
     </OnboardingContext.Provider>

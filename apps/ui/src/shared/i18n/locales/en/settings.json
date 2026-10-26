@@ -511,8 +511,6 @@
     },
     "dev": "Development build",
     "release": "Stable release",
-    "resetOnboarding": "Run setup again",
-    "resetOnboardingBody": "You go through the first-run setup again. Your characters, chats and settings stay.",
     "tagline": "Characters, companions and stories with any model you like. Your chats live on your devices.",
     "versionChip": "Version {{version}}",
     "copyVersion": "Copy version",
@@ -527,10 +525,7 @@
     "reportProblem": "Report a problem",
     "reportProblemBody": "Opens a GitHub issue with your version filled in",
     "copyDetails": "Copy for a bug report",
-    "copied": "Copied",
-    "troubleshooting": "Troubleshooting",
-    "resetOnboardingTitle": "Run setup again?",
-    "resetOnboardingHint": "Your data stays"
+    "copied": "Copied"
   },
   "manage": {
     "add": "Add",

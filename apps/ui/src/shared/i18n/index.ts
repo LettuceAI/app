@@ -1,6 +1,8 @@
 import { createInstance, type i18n } from "i18next";
 import { initReactI18next } from "react-i18next";
 import logs from "./locales/en/logs.json";
+import help from "./locales/en/help.json";
+import updates from "./locales/en/updates.json";
 import characters from "./locales/en/characters.json";
 import lorebookCreate from "./locales/en/lorebook-create.json";
 import usage from "./locales/en/usage.json";
@@ -21,6 +23,8 @@ export const defaultNamespace = "common";
 
 export const resources = {
   en: {
+    help,
+    updates,
     logs,
     "lorebook-create": lorebookCreate,
     usage,

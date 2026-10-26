@@ -1,6 +1,6 @@
 {
   "name": "lettuceai",
-  "version": "0.1.0",
+  "version": "3.0.0",
   "description": "A local-first AI roleplay app for desktop and mobile.",
   "private": true,
   "type": "module",
@@ -14,7 +14,12 @@
   "bugs": {
     "url": "https://github.com/LettuceAI/mobile-app/issues"
   },
-  "keywords": ["ai", "roleplay", "chat", "tauri"],
+  "keywords": [
+    "ai",
+    "roleplay",
+    "chat",
+    "tauri"
+  ],
   "packageManager": "bun@1.4.3",
   "scripts": {
     "setup": "bun install --frozen-lockfile && cd apps/ui && bun install --frozen-lockfile",

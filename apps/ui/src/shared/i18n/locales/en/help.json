@@ -1,0 +1,103 @@
+{
+  "title": "Help & FAQ",
+  "subtitle": "The basics, API keys, privacy and common questions",
+  "sections": {
+    "gettingStarted": "Getting started",
+    "privacySafety": "Privacy & safety",
+    "modelsProviders": "Models & providers",
+    "charactersChats": "Characters & chats"
+  },
+  "stillStuck": {
+    "title": "Still stuck?",
+    "docsTitle": "Full documentation",
+    "docsDescription": "Guides and reference for LettuceAI",
+    "discordTitle": "Join the Discord",
+    "discordDescription": "Ask the community or report a bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "What is LettuceAI?",
+      "answer": "LettuceAI is a chat app for AI characters. You choose the provider and model that write the replies, and your chats and characters stay on your device. Cloud providers use your own account; supported local models run on your computer."
+    },
+    "whatIsApiKey": {
+      "question": "What is an API key and why do I need one? (BYOK explained)",
+      "answer": "BYOK means Bring Your Own Key. An API key lets LettuceAI send requests to a provider using your account. Create a key with the provider, then add it in Settings > Providers. Requests go from your device to that provider, which applies its own billing and limits. Supported local models do not need a cloud API key. Treat a key like a password and do not share it."
+    },
+    "cheapestStart": {
+      "question": "What's the cheapest or easiest way to start?",
+      "answer": "Use Setup guide to connect a provider and choose a model. Compare the provider's current prices, free tiers and request limits before adding credit. Start with a small budget and check Settings > Usage analytics as you chat. On desktop, supported local models are another option if your computer has enough memory and storage."
+    },
+    "alternative": {
+      "question": "Is this an alternative to other AI chat apps?",
+      "answer": "Yes. LettuceAI lets you choose the provider, model and character setup instead of tying every chat to one service. You manage your own provider account and keep your data on your device. A short setup connects the model you want to use."
+    },
+    "cost": {
+      "question": "How much does it cost?",
+      "answer": "LettuceAI is free. A cloud provider may charge your account for requests or offer a free tier. Its rates depend on the model, the amount of text sent and generated, and any image or audio features you use. Check the provider's pricing before choosing a model. Usage analytics shows reported tokens and known costs; missing prices are not the same as free requests."
+    },
+    "apiKeySafe": {
+      "question": "Is my API key safe?",
+      "answer": "Provider credentials are stored locally and used to connect to the provider you configure. LettuceAI does not relay your requests through its own chat server. Only enter keys for services you trust, check custom provider URLs carefully, and protect your device and backup files."
+    },
+    "chatsStored": {
+      "question": "Where are my chats stored? Can anyone read them?",
+      "answer": "Chats are saved in the app's local database. When a cloud model replies, the prompt and relevant conversation context are sent to your chosen provider. That provider processes the request under its own privacy policy. Anyone with access to your device or exported backups may also be able to read your data."
+    },
+    "chatsDeleted": {
+      "question": "Can my chats get deleted on their own?",
+      "answer": "LettuceAI does not keep a server copy that can restore your chats. Deleting a chat, resetting the app, uninstalling it, clearing app storage or losing the device can remove local data. Keep backups of anything you want to preserve."
+    },
+    "editRemotely": {
+      "question": "Can someone edit my data remotely?",
+      "answer": "LettuceAI has no remote administration service for your local chats and characters. Your chosen provider generates replies but does not manage the app's database. Keep your device and any files you import or share secure."
+    },
+    "shutdown": {
+      "question": "What happens to my data if LettuceAI shuts down?",
+      "answer": "Your saved chats and characters remain on your device and can be read without a LettuceAI account. Cloud replies still depend on your provider being available and your account working. Keep a copy of your data with Settings > Backup & restore."
+    },
+    "training": {
+      "question": "Will providers train on my conversations?",
+      "answer": "That depends on the provider, your account type and its current data policy. LettuceAI cannot change those terms. Read the provider's privacy and retention settings before sending sensitive information. Supported local models process their prompts on your computer."
+    },
+    "whatIsModel": {
+      "question": "What's a 'model'? Which should I pick?",
+      "answer": "A model is the AI that writes the replies. Models differ in writing style, speed, context length, hardware requirements and price. Add a provider in Settings > Providers, then configure a model in Settings > Models. You can set an app default or choose a model for an individual character or chat."
+    },
+    "freeProviders": {
+      "question": "Are there free providers?",
+      "answer": "Some providers offer free models or free usage tiers, with their own account requirements and rate limits. Availability can change, so check the provider's current terms. A free tier may still need an API key. Supported local models do not charge per request, but use your computer's hardware, storage and power."
+    },
+    "freeVsPaid": {
+      "question": "What's the difference between free and paid providers?",
+      "answer": "Free and paid plans can differ in available models, request limits, response speed, privacy terms and support. The details belong to each provider; a paid plan does not automatically mean a particular privacy policy. You can connect more than one provider and choose a model to fit each chat."
+    },
+    "whatIsToken": {
+      "question": "What is a token?",
+      "answer": "A token is a small piece of text, such as a word or part of a word. The exact split depends on the model and language. A request includes input tokens from the prompt and conversation context, plus output tokens from the reply. Providers may price these differently. Long histories and long replies can increase usage."
+    },
+    "noDefaultModel": {
+      "question": "I see 'no default model configured'",
+      "answer": "Open Settings > Models and add a model from a configured provider. Then set an app default or choose a model in the character's settings. A character or chat can override the default, so check its model selection if replies still do not start."
+    },
+    "cloudVsLocal": {
+      "question": "What's the difference between cloud and local models?",
+      "answer": "Cloud models run on the provider's hardware and need a connection to that service. Supported local models run on your desktop computer and need enough memory and storage. Local model installation and runtime controls are available on desktop; use a connected provider on mobile."
+    },
+    "whatIsCharacter": {
+      "question": "What's a character? Can I make my own?",
+      "answer": "A character has a name, image and description that shape how it talks. Use the create button to make one, or import a character card in Library. Edit its description and model settings to change how future replies are generated."
+    },
+    "whatIsPersona": {
+      "question": "What's a persona?",
+      "answer": "A persona describes your side of the conversation: your name and details the character should know about you. Create or import personas in Library, then choose the one you want to use for a chat."
+    },
+    "charactersPrivate": {
+      "question": "Are the characters I create private?",
+      "answer": "Characters you create are stored on your device. Exporting and sharing a character card lets other people read it. When you chat with a cloud model, the character details used in its prompt are also sent to your chosen provider."
+    },
+    "backupMove": {
+      "question": "How do I back up or move to another device?",
+      "answer": "Open Settings > Backup & restore to create a backup file. Keep it somewhere safe. To move devices, install LettuceAI on the other device and restore that file there. Follow the restore screen's warnings before replacing existing data."
+    }
+  }
+}

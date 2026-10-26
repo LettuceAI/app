@@ -16,6 +16,7 @@
     "other": "Other options"
   },
   "actions": {
+    "exitSetup": "Back to settings",
     "next": "Next",
     "gotIt": "Got it",
     "haveKey": "I have my key",

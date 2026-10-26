@@ -4,7 +4,7 @@ exclude = ["old-code"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "3.0.0"
 edition = "2024"
 rust-version = "1.98"
 authors = ["MegalithOfficial"]
