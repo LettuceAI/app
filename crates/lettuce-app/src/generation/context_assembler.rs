@@ -138,7 +138,7 @@ where
         } else {
             request.validate()
         }
-        .map_err(|_| ContextAssemblyError::InvalidRequest)?;
+        .map_err(|reason| ContextAssemblyError::InvalidRequest { reason })?;
         if !empty_preview {
             validate_message_ancestry(&aggregate.branches, &request)?;
         }
@@ -159,7 +159,7 @@ where
             ) {
                 ContextAssemblyError::MissingSpeaker
             } else {
-                ContextAssemblyError::InvalidRequest
+                ContextAssemblyError::InvalidRequest { reason: error }
             }
         })?;
 

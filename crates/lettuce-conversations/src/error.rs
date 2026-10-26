@@ -1,6 +1,6 @@
 use lettuce_types::Revision;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ValidationError {
     #[error("revision must be at least one")]
     ZeroRevision,

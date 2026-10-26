@@ -2602,8 +2602,8 @@ pub enum PortError {
 /// telemetry without accidentally logging prompt content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ContextAssemblyError {
-    #[error("context request is invalid")]
-    InvalidRequest,
+    #[error("context request is invalid: {reason}")]
+    InvalidRequest { reason: crate::ValidationError },
     #[error("conversation is unavailable")]
     ConversationUnavailable,
     #[error("snapshot is unavailable ({kind:?})")]
@@ -2831,7 +2831,9 @@ mod tests {
     #[test]
     fn context_assembly_errors_do_not_include_authored_text() {
         let errors = [
-            ContextAssemblyError::InvalidRequest,
+            ContextAssemblyError::InvalidRequest {
+                reason: crate::ValidationError::InvalidReference { field: "timeline" },
+            },
             ContextAssemblyError::ConversationUnavailable,
             ContextAssemblyError::SnapshotUnavailable {
                 kind: SnapshotDocumentKind::Prompt,
