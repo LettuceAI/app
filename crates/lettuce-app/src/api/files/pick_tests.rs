@@ -7,13 +7,14 @@ use super::pick_filter;
 use crate::api::tests::{RecordingEvents, StdFiles};
 use crate::api::{
     ApiContext, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
-    files_pick_open, files_pick_save,
+    files_pick_directory, files_pick_open, files_pick_save,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Pick {
     Open(PickFilter, bool),
     Save(String, PickFilter),
+    Directory,
 }
 
 struct PickingFiles {
@@ -58,6 +59,50 @@ impl FileAccess for PickingFiles {
             .push(Pick::Save(suggested_name.to_owned(), filter.clone()));
         Ok(self.saved.clone())
     }
+
+    fn pick_directory(&self) -> Result<Option<String>, FileAccessError> {
+        self.calls.lock().expect("calls").push(Pick::Directory);
+        Ok(self.saved.clone())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn directory_picker_returns_native_path_and_explicit_cancellation() {
+    for path in [Some("/home/user/models".to_owned()), None] {
+        let files = Arc::new(PickingFiles {
+            picked: Vec::new(),
+            saved: path.clone(),
+            calls: Mutex::new(Vec::new()),
+        });
+        let result = files_pick_directory(&context(files.clone()))
+            .await
+            .expect("picker");
+        assert_eq!(result.path, path);
+        assert_eq!(*files.calls.lock().expect("calls"), vec![Pick::Directory]);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn directory_picker_rejects_non_filesystem_results() {
+    for path in ["relative/models", "content://models", ""] {
+        let files = Arc::new(PickingFiles {
+            picked: Vec::new(),
+            saved: Some(path.to_owned()),
+            calls: Mutex::new(Vec::new()),
+        });
+        let error = files_pick_directory(&context(files))
+            .await
+            .expect_err("invalid folder");
+        assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn directory_picker_reports_platform_unsupported() {
+    let error = files_pick_directory(&context(Arc::new(StdFiles)))
+        .await
+        .expect_err("unsupported");
+    assert_eq!(error.code, ApiErrorCode::Unsupported);
 }
 
 fn context(files: Arc<dyn FileAccess>) -> ApiContext {

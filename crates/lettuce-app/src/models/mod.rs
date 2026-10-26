@@ -2,6 +2,7 @@ pub(crate) mod artifact_install;
 pub(crate) mod civitai_browser;
 pub(crate) mod gguf_downloads;
 pub(crate) mod gguf_library;
+pub(crate) mod hf_canonical_preview;
 pub(crate) mod hf_image_bundles;
 pub(crate) mod hugging_face_browser;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

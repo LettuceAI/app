@@ -38,6 +38,15 @@ pub async fn files_pick_open(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn files_pick_directory(
+    context: State<'_, ApiContextSlot>,
+) -> Result<dto::DirectoryPicked, ApiError> {
+    let context = context.snapshot()?;
+    api::files_pick_directory(&context).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn files_pick_save(
     context: State<'_, ApiContextSlot>,
     request: FilesPickSaveRequest,

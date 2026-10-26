@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{GpuModeDto, RunnabilityLabel};
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfBrowserLinks {
+    pub repository_base: String,
+    pub ollama_prefix: String,
+}
+
 /// Chat models (GGUF files) or image models.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -251,6 +259,10 @@ pub struct HfPlanChoice {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct HfRecommendationRequest {
+    #[serde(default)]
+    pub gpu_policy: Option<HfGpuPolicy>,
+    #[serde(default)]
+    pub sidecars: Option<HfPreviewSidecars>,
     pub model_id: String,
     pub revision: Option<String>,
     pub files: Vec<HfRunnabilityFile>,
@@ -424,6 +436,8 @@ pub struct HfModelArch {
     pub expert_count: Option<u64>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub expert_used_count: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub nextn_predict_layers: Option<u64>,
     pub is_moe: bool,
     pub active_weight_ratio: Option<f64>,
     pub incomplete_parse: bool,
@@ -488,6 +502,7 @@ pub struct HfKvType {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct HfRecommendation {
+    pub preview: Option<HfCanonicalRecommendation>,
     pub hardware_available: bool,
     pub metadata_available: bool,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -528,6 +543,8 @@ pub enum HfModelOffload {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct HfDownloadSetup {
+    #[serde(default)]
+    pub gpu_policy: Option<HfGpuPolicy>,
     pub display_name: Option<String>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub context_length: Option<u64>,
@@ -572,4 +589,88 @@ pub enum HfTokenStatus {
 #[serde(deny_unknown_fields)]
 pub struct HfAuthSaveRequest {
     pub token: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfGpuPolicy {
+    pub multi_gpu_enabled: bool,
+    pub gpu_device_ids: Vec<u32>,
+    pub single_gpu_device_id: Option<u32>,
+    pub distribution: Option<String>,
+    pub manual_layers: Vec<crate::LlamaGpuLayers>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub priority_vram_limit_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HfCanonicalKv {
+    pub kv_type: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub cache_bytes: u64,
+    pub recommended_context: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HfCanonicalFile {
+    pub nextn_predict_layers: Option<u32>,
+    pub filename: String,
+    pub label: Option<crate::RunnabilityLabel>,
+    pub max_context: Option<u32>,
+    pub recommended_context: Option<u32>,
+    pub gpu_optimal_context: Option<u32>,
+    pub kv_types: Vec<HfCanonicalKv>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HfCanonicalPlan {
+    pub unified_memory: bool,
+    pub filename: String,
+    pub context_length: u32,
+    pub label: crate::RunnabilityLabel,
+    pub gpu_layers: u32,
+    pub total_layers: u32,
+    pub offload_kqv: bool,
+    pub memory_fit: Vec<HfCanonicalMemoryFit>,
+    pub gpu_policy: HfGpuPolicy,
+    pub placement: Option<crate::LlamaPlacement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HfCanonicalRecommendation {
+    pub devices: Vec<crate::LlamaDevice>,
+    pub files: Vec<HfCanonicalFile>,
+    pub selected: Option<HfCanonicalPlan>,
+    pub recommended_filename: Option<String>,
+    pub gpu_policy: HfGpuPolicy,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HfPreviewSidecars {
+    pub mmproj: Option<HfRunnabilityFile>,
+    pub mtp: Option<HfRunnabilityFile>,
+    pub mtp_bundled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct HfCanonicalMemoryFit {
+    pub gpu: bool,
+    pub devices: Vec<String>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub capacity_bytes: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub available_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub model_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub context_bytes: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub working_bytes: u64,
 }

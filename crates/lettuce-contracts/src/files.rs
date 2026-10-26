@@ -130,6 +130,13 @@ pub struct FileSavePicked {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
+pub struct DirectoryPicked {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
 pub struct MediaSaveToRequest {
     pub asset_id: String,
     pub target: FileTarget,

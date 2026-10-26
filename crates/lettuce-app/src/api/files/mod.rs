@@ -124,6 +124,10 @@ pub trait FileAccess: Send + Sync {
     ) -> Result<Option<String>, FileAccessError> {
         Err(FileAccessError::Unsupported)
     }
+
+    fn pick_directory(&self) -> Result<Option<String>, FileAccessError> {
+        Err(FileAccessError::Unsupported)
+    }
 }
 
 /// The extensions a desktop dialog filters on and the MIME types an Android
@@ -230,6 +234,26 @@ pub async fn files_pick_open(
                     .map(|uri| dto::FileSource { uri })
                     .collect(),
             })
+        })
+        .await
+}
+
+pub async fn files_pick_directory(context: &ApiContext) -> Result<dto::DirectoryPicked, ApiError> {
+    context
+        .blocking(move |context| {
+            let path = context
+                .files()
+                .pick_directory()
+                .map_err(IntoApiError::into_api_error)?;
+            if path.as_ref().is_some_and(|path| {
+                !std::path::Path::new(path).is_absolute() || path.contains("://")
+            }) {
+                return Err(invalid_field(
+                    "path",
+                    "the selected directory is not an absolute filesystem path",
+                ));
+            }
+            Ok(dto::DirectoryPicked { path })
         })
         .await
 }

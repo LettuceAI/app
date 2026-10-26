@@ -4,6 +4,7 @@
 use serde::Deserialize;
 
 pub const HUGGING_FACE_ENDPOINT: &str = "https://huggingface.co";
+pub const HUGGING_FACE_OLLAMA_PREFIX: &str = "hf.co/";
 
 /// Sends an authored Hugging Face request through the shared HTTP transport.
 /// Catalogs and pins use this boundary; consumers never construct an HF HTTP call.

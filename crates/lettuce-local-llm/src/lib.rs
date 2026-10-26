@@ -9,6 +9,7 @@
 pub mod context;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod context_info;
+pub mod context_preview;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod dflash;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

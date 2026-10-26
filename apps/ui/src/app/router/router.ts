@@ -30,6 +30,8 @@ import {
   builtSettingsSections,
   isSettingsSection,
   ModelEditorPage,
+  ModelBrowserPage,
+  type BrowserSearch,
   SettingsIndexPage,
   SettingsSectionPage,
 } from "@/features/settings";
@@ -373,6 +375,26 @@ const chatBranchesRoute = createRoute({
   component: ChatBranchesPage,
 });
 
+const modelBrowserRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/model-browser",
+  component: ModelBrowserPage,
+  validateSearch: (input: Record<string, unknown>): BrowserSearch => ({
+    ...(input.token === true ? { token: true } : {}),
+    ...(input.kind === "image" || input.kind === "text" ? { kind: input.kind } : {}),
+    ...(input.view === "downloaded" ? { view: input.view } : {}),
+    ...(typeof input.repo === "string" ? { repo: input.repo } : {}),
+    ...(typeof input.author === "string" ? { author: input.author } : {}),
+    ...(typeof input.destination === "string" ? { destination: input.destination } : {}),
+    ...(input.tab === "info" || input.tab === "download" ? { tab: input.tab } : {}),
+    ...(typeof input.profile === "string" ? { profile: input.profile } : {}),
+    ...(typeof input.role === "string" ? { role: input.role } : {}),
+    ...(input.imageStep === "search" || input.imageStep === "repo" || input.imageStep === "review"
+      ? { imageStep: input.imageStep }
+      : {}),
+  }),
+});
+
 const newModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/models/new",
@@ -399,6 +421,7 @@ const routeTree = rootRoute.addChildren([
   newPersonaRoute,
   settingsRoute,
   settingsSectionRoute,
+  modelBrowserRoute,
   newModelRoute,
   editModelRoute,
   chatRoute,
@@ -428,6 +451,7 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 
 declare module "@tanstack/history" {
   interface HistoryState {
+    hfBrowserPushed?: boolean | undefined;
     settingsPanelPushed?: boolean;
     setupReplayPushed?: boolean;
     speechPanelPushed?: boolean;

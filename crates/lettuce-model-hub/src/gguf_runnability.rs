@@ -43,22 +43,28 @@ impl GgufModelMeta {
 pub const GGUF_HEADER_PROBE_BYTES: u64 = 524_288;
 pub const GGUF_HEADER_RETRY_BYTES: u64 = 10_485_760;
 
-struct GgufReader<'a> {
+pub(crate) struct GgufReader<'a> {
     data: &'a [u8],
-    pos: usize,
+    pub(crate) pos: usize,
+    pub(crate) needed: usize,
 }
 
 impl<'a> GgufReader<'a> {
-    const fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
+    pub(crate) const fn new(data: &'a [u8]) -> Self {
+        Self {
+            data,
+            pos: 0,
+            needed: 0,
+        }
     }
 
-    const fn remaining(&self) -> usize {
+    pub(crate) const fn remaining(&self) -> usize {
         self.data.len().saturating_sub(self.pos)
     }
 
-    fn read_bytes(&mut self, n: usize) -> Option<&'a [u8]> {
+    pub(crate) fn read_bytes(&mut self, n: usize) -> Option<&'a [u8]> {
         if self.pos.checked_add(n)? > self.data.len() {
+            self.needed = self.pos.checked_add(n)?;
             return None;
         }
         let slice = &self.data[self.pos..self.pos + n];
@@ -70,27 +76,28 @@ impl<'a> GgufReader<'a> {
         self.read_bytes(N)?.try_into().ok()
     }
 
-    fn read_u8(&mut self) -> Option<u8> {
+    pub(crate) fn read_u8(&mut self) -> Option<u8> {
         self.read_bytes(1).map(|bytes| bytes[0])
     }
 
-    fn read_u32(&mut self) -> Option<u32> {
+    pub(crate) fn read_u32(&mut self) -> Option<u32> {
         self.read_array().map(u32::from_le_bytes)
     }
 
-    fn read_u64(&mut self) -> Option<u64> {
+    pub(crate) fn read_u64(&mut self) -> Option<u64> {
         self.read_array().map(u64::from_le_bytes)
     }
 
-    fn read_string(&mut self) -> Option<String> {
+    pub(crate) fn read_string(&mut self) -> Option<String> {
         let len = usize::try_from(self.read_u64()?).ok()?;
         if len > self.remaining() {
+            self.needed = self.pos.checked_add(len)?;
             return None;
         }
         String::from_utf8(self.read_bytes(len)?.to_vec()).ok()
     }
 
-    fn skip_value(&mut self, value_type: u32) -> Option<()> {
+    pub(crate) fn skip_value(&mut self, value_type: u32) -> Option<()> {
         match value_type {
             0 | 1 | 7 => {
                 self.read_bytes(1)?;
@@ -124,7 +131,7 @@ impl<'a> GgufReader<'a> {
         clippy::cast_possible_wrap,
         reason = "signed GGUF integers are reinterpreted as the header parser always did"
     )]
-    fn read_value_as_u64(&mut self, value_type: u32) -> Option<u64> {
+    pub(crate) fn read_value_as_u64(&mut self, value_type: u32) -> Option<u64> {
         match value_type {
             0 => self.read_u8().map(u64::from),
             1 => self.read_u8().map(|value| value as i8 as u64),
@@ -305,7 +312,7 @@ pub fn gguf_meta_with_retry(
     parse_gguf_meta(&data).or(first)
 }
 
-fn quant_quality_score(quant: &str) -> f64 {
+pub fn quant_quality_score(quant: &str) -> f64 {
     match quant.to_uppercase().as_str() {
         "F32" | "BF16" | "F16" | "UD-BF16" => 100.0,
         "UD-Q8_K_XL" => 96.0,

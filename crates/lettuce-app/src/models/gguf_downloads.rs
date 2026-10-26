@@ -227,6 +227,7 @@ impl HuggingFaceBrowser {
 /// How a downloaded GGUF model is set up, as chosen when it was queued.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GgufModelSetup {
+    pub gpu_policy: Option<lettuce_contracts::HfGpuPolicy>,
     pub display_name: Option<String>,
     pub context_length: Option<u64>,
     pub kv_type: Option<String>,
@@ -249,8 +250,8 @@ impl GgufModelSetup {
     fn advanced_model_settings(&self, installed: &InstalledGguf) -> Map<String, Value> {
         let gpu_layers = match self.model_offload {
             ModelOffload::Cpu => Some(0),
-            ModelOffload::Gpu => self.gpu_layers,
-            ModelOffload::Auto | ModelOffload::Mixed => None,
+            ModelOffload::Gpu | ModelOffload::Mixed => self.gpu_layers,
+            ModelOffload::Auto => None,
         };
         let context_length = self
             .context_length
@@ -261,6 +262,12 @@ impl GgufModelSetup {
             "contextLength": context_length,
             "llamaKvType": self.kv_type.as_deref().filter(|kv| !kv.is_empty()).unwrap_or("q8_0"),
             "llamaGpuLayers": gpu_layers,
+            "llamaMultiGpuEnabled": self.gpu_policy.as_ref().map(|policy| policy.multi_gpu_enabled),
+            "llamaGpuDeviceIds": self.gpu_policy.as_ref().map(|policy| &policy.gpu_device_ids),
+            "llamaSingleGpuDeviceId": self.gpu_policy.as_ref().and_then(|policy| policy.single_gpu_device_id),
+            "llamaGpuDistributionMode": self.gpu_policy.as_ref().and_then(|policy| policy.distribution.as_deref()),
+            "llamaGpuManualLayers": self.gpu_policy.as_ref().map(|policy| policy.manual_layers.iter().map(|layer| json!({ "deviceId": layer.device_id, "layers": layer.layers })).collect::<Vec<_>>()),
+            "llamaPriorityVramLimitBytes": self.gpu_policy.as_ref().and_then(|policy| policy.priority_vram_limit_bytes),
             "llamaOffloadKqv": self.offload_kqv,
             "llamaMmprojPath": installed.mmproj_path,
             "llamaMtpEnabled": (installed.mtp_path.is_some() || self.mtp_bundled).then_some(true),
@@ -536,7 +543,7 @@ mod tests {
         assert_ne!(again.id, profile.id);
         assert_eq!(again.provider_account_id, profile.provider_account_id);
         assert_eq!(again.display_name, "Mine");
-        assert_eq!(again.config.llama_cpp.gpu_layers, None);
+        assert_eq!(again.config.llama_cpp.gpu_layers, Some(20));
         assert_eq!(again.config.llama_cpp.mtp_enabled, None);
         assert_eq!(
             ModelProfileRepository::get(database, again.id)

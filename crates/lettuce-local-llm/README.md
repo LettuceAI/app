@@ -35,7 +35,7 @@ The offload planner, the context sizing and the runnability scoring (in `lettuce
 
 `KvCacheTypes` carries separate K and V cache types (`kv_type_k` and `kv_type_v`, both or neither, never beside `kv_type`). With one shared type every formula runs the original expression; with different types each half is billed at its own type's bytes per value, which is how llama.cpp allocates the two tensors. The context params, compute probe, drafter, context key and runtime report (`k=<type>,v=<type>`) follow the pair.
 
-`llama` measures what the planner needs: model metadata with weights kept on the CPU, KV geometry, GGUF unit costs, head dimensions and the compute buffer projected without allocating. Each is cached per model path for the life of the process.
+`llama` measures what the planner needs: model metadata without allocating or reading weight payloads, KV geometry, GGUF unit costs, head dimensions and the compute buffer projected without allocating. Each is cached per model path for the life of the process.
 
 `context` sizes the context itself: the (context, batch) fallback ladder, the OOM classifier and its error detail, the effective VRAM (backend free memory capped by the Windows DXGI budget), per-device VRAM alignment (missing devices imputed from the smallest reported one), the recommended context and the CPU fallback limits. It keeps its own older KV-per-value table. Formulas read a `ModelShape` rather than the model.
 

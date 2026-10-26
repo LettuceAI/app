@@ -79,7 +79,7 @@ pub use files::assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, rea
 pub use files::previews::read_asset_preview;
 pub use files::{
     ExportProtection, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
-    assets_ingest, files_inspect, files_pick_open, files_pick_save,
+    assets_ingest, files_inspect, files_pick_directory, files_pick_open, files_pick_save,
 };
 pub use image::{
     avatar_gradient, avatar_prompt, civitai_auth_clear, civitai_auth_save, civitai_auth_status,
@@ -123,8 +123,8 @@ pub use memory::models::{
     embedding_unload,
 };
 pub use models::hugging_face::{
-    hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_download,
-    hf_model_files, hf_readme, hf_recommendation, hf_runnability, hf_search,
+    hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_browser_links,
+    hf_download, hf_model_files, hf_readme, hf_recommendation, hf_runnability, hf_search,
 };
 pub use models::local::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,

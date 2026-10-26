@@ -503,7 +503,7 @@ pub fn reserve_device_vram(
     adjusted
 }
 
-fn estimated_runtime_reserve_bytes(
+pub fn estimated_runtime_reserve_bytes(
     metadata: &LlamaModelMetadata,
     available_vram_bytes: u64,
     planned_context: u32,
@@ -532,7 +532,9 @@ pub struct MemoryFootprint {
 
 impl MemoryFootprint {
     pub fn used_bytes(self) -> u64 {
-        self.model_bytes.saturating_add(self.context_bytes).saturating_add(self.working_bytes)
+        self.model_bytes
+            .saturating_add(self.context_bytes)
+            .saturating_add(self.working_bytes)
     }
 }
 
@@ -541,22 +543,56 @@ pub fn estimate_memory_footprints(
     request: OffloadRequest<'_>,
     gpu_layers: u32,
 ) -> (MemoryFootprint, MemoryFootprint) {
-    let context = request.requested_context.unwrap_or(model.metadata.max_context_length).clamp(1, model.metadata.max_context_length.max(1));
-    let (ram_weights, gpu_weights) = model_weight_split_bytes(&model.metadata, model.costs, gpu_layers);
-    let kv = model.geometry.map(|geometry| geometry.total_bytes(context, request.n_batch, request.kv_types))
-        .unwrap_or_else(|| estimate_kv_bytes_per_token(&model.metadata, request.kv_types).unwrap_or(0).saturating_mul(u64::from(context)))
+    let context = request
+        .requested_context
+        .unwrap_or(model.metadata.max_context_length)
+        .clamp(1, model.metadata.max_context_length.max(1));
+    let (ram_weights, gpu_weights) =
+        model_weight_split_bytes(&model.metadata, model.costs, gpu_layers);
+    let kv = model
+        .geometry
+        .map(|geometry| geometry.total_bytes(context, request.n_batch, request.kv_types))
+        .unwrap_or_else(|| {
+            estimate_kv_bytes_per_token(&model.metadata, request.kv_types)
+                .unwrap_or(0)
+                .saturating_mul(u64::from(context))
+        })
         .saturating_mul(if request.bundled_mtp_draft { 2 } else { 1 });
     let gpu_kv = gpu_layers > 0 && request.resolved_offload_kqv != Some(false);
     let gpu_working = if gpu_layers > 0 {
-        estimated_runtime_reserve_bytes(&model.metadata, request.available_vram_bytes.unwrap_or(0), context, request.n_batch, request.flash_attention_policy)
-            .saturating_add(request.sidecar_vram_reserve_bytes)
-    } else { 0 };
+        estimated_runtime_reserve_bytes(
+            &model.metadata,
+            request.available_vram_bytes.unwrap_or(0),
+            context,
+            request.n_batch,
+            request.flash_attention_policy,
+        )
+        .saturating_add(request.sidecar_vram_reserve_bytes)
+    } else {
+        0
+    };
     let ram_working = if gpu_layers < model.metadata.offload_layer_count() {
-        estimated_runtime_reserve_bytes(&model.metadata, request.available_memory_bytes.unwrap_or(0), context, request.n_batch, request.flash_attention_policy)
-    } else { 0 };
+        estimated_runtime_reserve_bytes(
+            &model.metadata,
+            request.available_memory_bytes.unwrap_or(0),
+            context,
+            request.n_batch,
+            request.flash_attention_policy,
+        )
+    } else {
+        0
+    };
     (
-        MemoryFootprint { model_bytes: ram_weights, context_bytes: if gpu_kv { 0 } else { kv }, working_bytes: ram_working },
-        MemoryFootprint { model_bytes: gpu_weights, context_bytes: if gpu_kv { kv } else { 0 }, working_bytes: gpu_working },
+        MemoryFootprint {
+            model_bytes: ram_weights,
+            context_bytes: if gpu_kv { 0 } else { kv },
+            working_bytes: ram_working,
+        },
+        MemoryFootprint {
+            model_bytes: gpu_weights,
+            context_bytes: if gpu_kv { kv } else { 0 },
+            working_bytes: gpu_working,
+        },
     )
 }
 
@@ -909,6 +945,27 @@ fn distribution_fits(offloaded: &[u64], split: &[f32], device_free: &[u64]) -> b
         .all(|(used, free)| used <= free)
 }
 
+pub fn multi_gpu_placement_fits(
+    unit_costs: &[u64],
+    total: u32,
+    split: &[f32],
+    device_free: &[u64],
+) -> bool {
+    let mut sum = 0.0;
+    let cumulative: Vec<_> = split
+        .iter()
+        .map(|weight| {
+            sum += *weight;
+            sum
+        })
+        .collect();
+    distribution_fits(
+        &offloaded_units(unit_costs, total),
+        &cumulative,
+        device_free,
+    )
+}
+
 fn largest_total_that_fits(
     unit_costs: &[u64],
     auto_total: u32,
@@ -1169,7 +1226,8 @@ pub fn plan_multi_gpu_distribution(
 #[cfg(test)]
 mod tests {
     use super::{
-        FlashAttentionPolicy, LlamaModelMetadata, OffloadModel, OffloadRequest, KvCacheTypes, KvCacheGeometry, KvLayerGeometry, estimate_memory_footprints, candidate_gpu_layers,
+        FlashAttentionPolicy, KvCacheGeometry, KvCacheTypes, KvLayerGeometry, LlamaModelMetadata,
+        OffloadModel, OffloadRequest, candidate_gpu_layers, estimate_memory_footprints,
         estimated_runtime_reserve_bytes, model_weight_split_bytes, plan_multi_gpu_distribution,
         reserve_device_vram, select_mtp_gpu_device,
     };
@@ -1177,33 +1235,66 @@ mod tests {
     #[test]
     fn memory_fit_tracks_context_precision_and_cpu_gpu_placement() {
         let metadata = large_context_metadata();
-        let model = OffloadModel { metadata, costs: None, geometry: None };
+        let model = OffloadModel {
+            metadata,
+            costs: None,
+            geometry: None,
+        };
         let request = OffloadRequest {
             available_memory_bytes: Some(16 * 1024 * 1024 * 1024),
             available_vram_bytes: Some(12 * 1024 * 1024 * 1024),
-            requested_context: Some(8192), n_batch: 512, resolved_offload_kqv: Some(true),
-            kv_types: KvCacheTypes::uniform(Some("f16")), flash_attention_policy: FlashAttentionPolicy::Auto,
-            sidecar_vram_reserve_bytes: 0, bundled_mtp_draft: false,
+            requested_context: Some(8192),
+            n_batch: 512,
+            resolved_offload_kqv: Some(true),
+            kv_types: KvCacheTypes::uniform(Some("f16")),
+            flash_attention_policy: FlashAttentionPolicy::Auto,
+            sidecar_vram_reserve_bytes: 0,
+            bundled_mtp_draft: false,
         };
         let (_, small) = estimate_memory_footprints(model, request, metadata.offload_layer_count());
-        let (_, large) = estimate_memory_footprints(model, OffloadRequest { requested_context: Some(16384), ..request }, metadata.offload_layer_count());
+        let (_, large) = estimate_memory_footprints(
+            model,
+            OffloadRequest {
+                requested_context: Some(16384),
+                ..request
+            },
+            metadata.offload_layer_count(),
+        );
         assert_eq!(large.context_bytes, small.context_bytes * 2);
         assert_eq!(large.model_bytes, small.model_bytes);
-        let (_, quantized) = estimate_memory_footprints(model, OffloadRequest { kv_types: KvCacheTypes::from_settings(None, Some("q8_0"), Some("q8_0")), ..request }, metadata.offload_layer_count());
+        let (_, quantized) = estimate_memory_footprints(
+            model,
+            OffloadRequest {
+                kv_types: KvCacheTypes::from_settings(None, Some("q8_0"), Some("q8_0")),
+                ..request
+            },
+            metadata.offload_layer_count(),
+        );
         assert!(quantized.context_bytes < small.context_bytes);
         let (ram, gpu) = estimate_memory_footprints(model, request, 0);
         assert_eq!(ram.model_bytes, metadata.model_size_bytes);
         assert_eq!(ram.context_bytes, small.context_bytes);
         assert_eq!(gpu.used_bytes(), 0);
         assert!(ram.working_bytes > 0);
-        let (_, scratch) = estimate_memory_footprints(model, OffloadRequest { flash_attention_policy: FlashAttentionPolicy::Disabled, ..request }, metadata.offload_layer_count());
+        let (_, scratch) = estimate_memory_footprints(
+            model,
+            OffloadRequest {
+                flash_attention_policy: FlashAttentionPolicy::Disabled,
+                ..request
+            },
+            metadata.offload_layer_count(),
+        );
         assert!(scratch.working_bytes > small.working_bytes);
     }
 
     #[test]
     fn explicit_kv_placement_controls_estimated_cache_memory() {
         let metadata = large_context_metadata();
-        let model = OffloadModel { metadata, costs: None, geometry: None };
+        let model = OffloadModel {
+            metadata,
+            costs: None,
+            geometry: None,
+        };
         for (placement, offload, on_gpu) in [
             ("pin", false, true),
             ("split", false, true),
@@ -1215,13 +1306,17 @@ mod tests {
                 available_vram_bytes: Some(12 * 1024 * 1024 * 1024),
                 requested_context: Some(8192),
                 n_batch: 512,
-                resolved_offload_kqv: crate::request::resolve_kv_offload(Some(placement), Some(offload)),
+                resolved_offload_kqv: crate::request::resolve_kv_offload(
+                    Some(placement),
+                    Some(offload),
+                ),
                 kv_types: KvCacheTypes::uniform(Some("f16")),
                 flash_attention_policy: FlashAttentionPolicy::Auto,
                 sidecar_vram_reserve_bytes: 0,
                 bundled_mtp_draft: false,
             };
-            let (ram, gpu) = estimate_memory_footprints(model, request, metadata.offload_layer_count());
+            let (ram, gpu) =
+                estimate_memory_footprints(model, request, metadata.offload_layer_count());
             assert_eq!(gpu.context_bytes > 0, on_gpu, "{placement}");
             assert_eq!(ram.context_bytes > 0, !on_gpu, "{placement}");
             let (cpu, gpu) = estimate_memory_footprints(model, request, 0);
@@ -1232,9 +1327,21 @@ mod tests {
 
     #[test]
     fn full_sliding_window_cache_is_reflected_in_memory_fit() {
-        let geometry = KvCacheGeometry::new(vec![KvLayerGeometry { n_head_kv: 8, n_embd_head_k: 128, n_embd_head_v: 128, is_swa: true }], 1024).expect("geometry");
+        let geometry = KvCacheGeometry::new(
+            vec![KvLayerGeometry {
+                n_head_kv: 8,
+                n_embd_head_k: 128,
+                n_embd_head_v: 128,
+                is_swa: true,
+            }],
+            1024,
+        )
+        .expect("geometry");
         let full = geometry.clone().with_swa_full(true);
-        assert!(full.total_bytes(16384, 512, KvCacheTypes::uniform(Some("f16"))) > geometry.total_bytes(16384, 512, KvCacheTypes::uniform(Some("f16"))));
+        assert!(
+            full.total_bytes(16384, 512, KvCacheTypes::uniform(Some("f16")))
+                > geometry.total_bytes(16384, 512, KvCacheTypes::uniform(Some("f16")))
+        );
     }
 
     fn large_context_metadata() -> LlamaModelMetadata {

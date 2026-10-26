@@ -7,25 +7,37 @@ use crate::RunnabilityHardware;
 
 const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SproutGpu {
+pub struct SproutGpu {
     #[serde(default)]
-    memory_free: u64,
+    pub index: Option<u32>,
     #[serde(default)]
-    device_type: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub backend: String,
+    #[serde(default)]
+    pub memory_total: u64,
+    #[serde(default)]
+    pub memory_free: u64,
+    #[serde(default)]
+    pub device_type: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SproutSpecs {
+pub struct SproutSpecs {
+    #[serde(default)]
+    pub total_memory_bytes: u64,
     schema_version: u32,
     #[serde(default)]
-    available_memory_bytes: u64,
+    pub available_memory_bytes: u64,
     #[serde(default)]
-    unified_memory: bool,
+    pub unified_memory: bool,
     #[serde(default)]
-    gpus: Vec<SproutGpu>,
+    pub gpus: Vec<SproutGpu>,
 }
 
 /// The specs endpoint of a Sprout base URL.
@@ -95,4 +107,16 @@ mod tests {
         );
         assert_eq!(sprout_specs_url("http://h:1/"), "http://h:1/specs");
     }
+}
+
+pub fn sprout_preview_specs(endpoint: &str, body: &[u8]) -> Result<SproutSpecs, String> {
+    let specs: SproutSpecs = serde_json::from_slice(body)
+        .map_err(|error| format!("Invalid Sprout response from {endpoint}: {error}"))?;
+    if specs.schema_version != SUPPORTED_SCHEMA_VERSION {
+        return Err(format!(
+            "Unsupported Sprout schema version {}; expected {SUPPORTED_SCHEMA_VERSION}",
+            specs.schema_version
+        ));
+    }
+    Ok(specs)
 }

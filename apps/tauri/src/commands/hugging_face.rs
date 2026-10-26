@@ -1,11 +1,20 @@
 use lettuce_app::api::{self, ApiContextSlot};
 use lettuce_contracts::{
     ApiError, HfAuthSaveRequest, HfAuthor, HfAuthorRequest, HfAvatars, HfAvatarsRequest,
-    HfDownloadRequest, HfModelInfo, HfModelRequest, HfReadme, HfReadmeRequest, HfRecommendation,
-    HfRecommendationRequest, HfRunnability, HfRunnabilityRequest, HfSearchRequest, HfSearchResults,
-    HfTokenStatus, JobAccepted,
+    HfBrowserLinks, HfDownloadRequest, HfModelInfo, HfModelRequest, HfReadme, HfReadmeRequest,
+    HfRecommendation, HfRecommendationRequest, HfRunnability, HfRunnabilityRequest,
+    HfSearchRequest, HfSearchResults, HfTokenStatus, JobAccepted,
 };
 use tauri::State;
+
+#[tauri::command]
+#[specta::specta]
+pub async fn hf_browser_links(
+    context: State<'_, ApiContextSlot>,
+) -> Result<HfBrowserLinks, ApiError> {
+    let _context = context.snapshot()?;
+    Ok(api::hf_browser_links())
+}
 
 #[tauri::command]
 #[specta::specta]

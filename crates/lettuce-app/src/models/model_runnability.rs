@@ -45,8 +45,8 @@ impl GgufHeaderSource for ArtifactDownloadClient {
             length,
             token,
         )
-            .await
-            .ok()
+        .await
+        .ok()
     }
 }
 
@@ -97,11 +97,11 @@ pub async fn runnability_hardware<S: SecretStore + ?Sized>(
 
 /// The hardware behind an Ollama account's Sprout probe; `None` when the
 /// account has no active probe.
-pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
+pub(crate) async fn sprout_specs_bytes<S: SecretStore + ?Sized>(
     client: &lettuce_network::JsonClient,
     secrets: &S,
     account: &lettuce_models::ProviderAccount,
-) -> Result<Option<RunnabilityHardware>, String> {
+) -> Result<Option<Vec<u8>>, String> {
     let Some(sprout) = account.config.active_sprout() else {
         return Ok(None);
     };
@@ -146,7 +146,18 @@ pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
             lettuce_network::status_text(response.status)
         ));
     }
-    lettuce_model_hub::sprout_hardware(&endpoint, &response.body).map(Some)
+    Ok(Some(response.body))
+}
+
+pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
+    client: &lettuce_network::JsonClient,
+    secrets: &S,
+    account: &lettuce_models::ProviderAccount,
+) -> Result<Option<RunnabilityHardware>, String> {
+    sprout_specs_bytes(client, secrets, account)
+        .await?
+        .map(|body| lettuce_model_hub::sprout_hardware("Sprout", &body))
+        .transpose()
 }
 
 /// A repository at a revision: the commit the model page pinned, else

@@ -34,6 +34,18 @@ pub enum LlamaRuntimeError {
 
 static SHARED_BACKEND: OnceLock<Arc<LlamaBackend>> = OnceLock::new();
 
+pub fn gguf_tensor_storage(kind: u32) -> Option<(u64, u64)> {
+    if kind >= llama_cpp_sys_2::GGML_TYPE_COUNT {
+        return None;
+    }
+    let block = unsafe { llama_cpp_sys_2::ggml_blck_size(kind) };
+    let bytes = unsafe { llama_cpp_sys_2::ggml_type_size(kind) };
+    if block <= 0 || bytes == 0 {
+        return None;
+    }
+    Some((u64::try_from(block).ok()?, u64::try_from(bytes).ok()?))
+}
+
 /// The process-wide llama.cpp backend; llama.cpp allows one.
 pub fn shared_backend() -> Result<Arc<LlamaBackend>, LlamaRuntimeError> {
     if let Some(backend) = SHARED_BACKEND.get() {
@@ -246,12 +258,21 @@ fn gguf_head_dims(model_path: &str, fallback: u64) -> (u64, u64) {
     )
 }
 
-fn load_model_metadata_uncached(model_path: &str) -> Result<LlamaModelMetadata, LlamaRuntimeError> {
+#[derive(Clone, Debug)]
+pub struct ModelPreviewData {
+    pub metadata: LlamaModelMetadata,
+    pub costs: Option<ModelOffloadCosts>,
+    pub geometry: Option<KvCacheGeometry>,
+}
+
+pub fn load_model_preview(model_path: &str) -> Result<ModelPreviewData, LlamaRuntimeError> {
     let backend = shared_backend()?;
     let model = LlamaModel::load_from_file(
         backend.as_ref(),
         model_path,
-        &LlamaModelParams::default().with_n_gpu_layers(0),
+        &LlamaModelParams::default()
+            .with_n_gpu_layers(0)
+            .with_no_alloc(true),
     )
     .map_err(|error| LlamaRuntimeError::ModelLoad(error.to_string()))?;
 
@@ -260,24 +281,37 @@ fn load_model_metadata_uncached(model_path: &str) -> Result<LlamaModelMetadata, 
     let implied_head_dim = (n_embd / n_head).max(1);
     let (n_embd_head_k, n_embd_head_v) = gguf_head_dims(model_path, implied_head_dim);
 
-    if let Ok(mut cache) = cache(&KV_GEOMETRY_CACHE).lock() {
-        cache.insert(model_path.to_string(), load_kv_geometry_from_model(&model));
-    }
+    let geometry = load_kv_geometry_from_model(&model);
 
-    Ok(LlamaModelMetadata {
-        model_size_bytes: model.size(),
-        layer_count: model.n_layer().max(1),
-        nextn_layer_count: model.n_layer_nextn(),
-        max_context_length: model.n_ctx_train().max(1),
-        n_embd,
-        n_head,
-        n_head_kv: u64::from(model.n_head_kv()).max(1),
-        n_embd_head_k,
-        n_embd_head_v,
+    Ok(ModelPreviewData {
+        costs: load_offload_costs_uncached(model_path),
+        geometry,
+        metadata: LlamaModelMetadata {
+            model_size_bytes: model.size(),
+            layer_count: model.n_layer().max(1),
+            nextn_layer_count: model.n_layer_nextn(),
+            max_context_length: model.n_ctx_train().max(1),
+            n_embd,
+            n_head,
+            n_head_kv: u64::from(model.n_head_kv()).max(1),
+            n_embd_head_k,
+            n_embd_head_v,
+        },
     })
 }
 
-/// The model's shape, loaded once per path (weights stay on the CPU).
+fn load_model_metadata_uncached(model_path: &str) -> Result<LlamaModelMetadata, LlamaRuntimeError> {
+    let preview = load_model_preview(model_path)?;
+    if let Ok(mut geometry) = cache(&KV_GEOMETRY_CACHE).lock() {
+        geometry.insert(model_path.to_owned(), preview.geometry);
+    }
+    if let Ok(mut costs) = cache(&MODEL_OFFLOAD_COSTS_CACHE).lock() {
+        costs.insert(model_path.to_owned(), preview.costs);
+    }
+    Ok(preview.metadata)
+}
+
+/// The model's shape, loaded once per path without allocating weights.
 pub fn load_model_metadata(model_path: &str) -> Result<LlamaModelMetadata, LlamaRuntimeError> {
     if let Some(metadata) = cache(&MODEL_METADATA_CACHE)
         .lock()

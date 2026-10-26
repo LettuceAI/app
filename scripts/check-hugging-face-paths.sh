@@ -75,7 +75,7 @@ while IFS= read -r source; do
 done < <(rg -l -e "$hf_terms" --glob '*.rs' "$crate_root" "$app_root" || true)
 ui_source="$app_root/ui/src"
 if [[ -d "$ui_source" ]]; then
-  ui_found="$(rg -n -e 'huggingface\.co|hf\.co' "$ui_source" --glob '!**/api/generated/**' || true)"
+  ui_found="$(rg -n -e '(huggingface\.co|hf\.co)([^[:alnum:]_]|$)' "$ui_source" --glob '!**/api/generated/**' --glob '!**/*.test.*' || true)"
   if [[ -n "$ui_found" ]]; then
     hf_violations+="$ui_found"$'\n'
   fi

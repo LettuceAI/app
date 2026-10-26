@@ -54,7 +54,10 @@ pub(crate) struct StoredArtifact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum LocalModelJobDetail {
-    WhisperModelInstall { model_id: String, filename: String },
+    WhisperModelInstall {
+        model_id: String,
+        filename: String,
+    },
     EmbeddingInstall {
         root: PathBuf,
         pin: lettuce_model_hub::EmbeddingPin,
@@ -278,7 +281,9 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
             },
         });
     let detail = match detail {
-        LocalModelJobDetail::WhisperModelInstall { model_id, filename } => dto::JobSubjectDetail::WhisperModelInstall { model_id, filename },
+        LocalModelJobDetail::WhisperModelInstall { model_id, filename } => {
+            dto::JobSubjectDetail::WhisperModelInstall { model_id, filename }
+        }
         LocalModelJobDetail::EmbeddingInstall { pin, .. } => dto::JobSubjectDetail::ModelDownload {
             repo: pin.family.repository().to_owned(),
             file: "embedding".into(),
@@ -311,18 +316,42 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
             bundle_id,
             display_name,
         },
-        LocalModelJobDetail::SdRuntimeInstall { release, asset, backend } => {
-            dto::JobSubjectDetail::SdRuntimeInstall { release, asset, backend }
-        }
+        LocalModelJobDetail::SdRuntimeInstall {
+            release,
+            asset,
+            backend,
+        } => dto::JobSubjectDetail::SdRuntimeInstall {
+            release,
+            asset,
+            backend,
+        },
         LocalModelJobDetail::SdUpscalerInstall { filename } => {
             dto::JobSubjectDetail::SdUpscalerInstall { filename }
         }
-        LocalModelJobDetail::SdModelInstall { profile_id, variant_id, runtime_release, runtime_asset, display_name } => {
-            dto::JobSubjectDetail::SdModelInstall { profile_id, variant_id, runtime_release, runtime_asset, display_name }
-        }
-        LocalModelJobDetail::SdLoraInstall { model_id, version_id, file_id, filename } => {
-            dto::JobSubjectDetail::SdLoraInstall { model_id, version_id, file_id, filename }
-        }
+        LocalModelJobDetail::SdModelInstall {
+            profile_id,
+            variant_id,
+            runtime_release,
+            runtime_asset,
+            display_name,
+        } => dto::JobSubjectDetail::SdModelInstall {
+            profile_id,
+            variant_id,
+            runtime_release,
+            runtime_asset,
+            display_name,
+        },
+        LocalModelJobDetail::SdLoraInstall {
+            model_id,
+            version_id,
+            file_id,
+            filename,
+        } => dto::JobSubjectDetail::SdLoraInstall {
+            model_id,
+            version_id,
+            file_id,
+            filename,
+        },
     };
     LocalJobView {
         detail: Some(detail),
@@ -474,6 +503,7 @@ pub(crate) fn folder_move_active(context: &ApiContext) -> Result<(), ApiError> {
 
 fn gguf_model_setup(setup: &dto::HfDownloadSetup, mtp_bundled: bool) -> GgufModelSetup {
     GgufModelSetup {
+        gpu_policy: setup.gpu_policy.clone(),
         display_name: setup.display_name.clone(),
         context_length: setup.context_length,
         kv_type: setup.kv_type.clone(),

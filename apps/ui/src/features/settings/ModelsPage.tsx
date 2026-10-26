@@ -75,15 +75,22 @@ export function ModelsPage() {
   const api = useSettingsApi();
   const { phone, back } = useSettingsLayout();
   const { accounts } = useProviderData();
-  const models = useQuery({ queryKey: queryKeys.models.list(), queryFn: () => api.call("modelsList") });
+  const models = useQuery({
+    queryKey: queryKeys.models.list(),
+    queryFn: () => api.call("modelsList"),
+  });
   const status = useQuery(appStatusQuery(api));
   const mobile = status.data?.platform === "android" || status.data?.platform === "ios";
   const hasOllama = accounts.data?.some((account) => account.provider_kind === "ollama") ?? false;
-  const tools = mobile ? modelTools.filter((tool) => tool.id === "browse" && hasOllama) : modelTools;
+  const tools = mobile
+    ? modelTools.filter((tool) => tool.id === "browse" && hasOllama)
+    : modelTools;
   const action = useSettingsAction();
   const [group, setGroup] = useModelListView(api);
   const [search, setSearch] = useState("");
-  const [collapsedSearchProviders, setCollapsedSearchProviders] = useState<Set<string>>(() => new Set());
+  const [collapsedSearchProviders, setCollapsedSearchProviders] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set());
   const [menu, setSelectedMenu] = useState<ModelView | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -91,9 +98,10 @@ export function ModelsPage() {
     setMenuOpen(value !== null);
     if (value) setSelectedMenu(value);
   };
-  const [tool, setTool] = useState<"browse" | "runtime" | "loras" | null>(null);
+  const [tool, setTool] = useState<"runtime" | "loras" | null>(null);
   const closingTool = useClosingValue(tool);
-  const provider = (model: ModelView) => accounts.data?.find((p) => p.id === model.provider_account_id);
+  const provider = (model: ModelView) =>
+    accounts.data?.find((p) => p.id === model.provider_account_id);
   const query = search.trim().toLocaleLowerCase();
   const visibleModels = (models.data?.models ?? []).filter((model) =>
     [model.display_name, model.external_model_id, provider(model)?.label ?? ""].some((value) =>
@@ -102,7 +110,10 @@ export function ModelsPage() {
   );
   const groups = new Map<string, ModelView[]>();
   for (const model of visibleModels) {
-    groups.set(model.provider_account_id, [...(groups.get(model.provider_account_id) ?? []), model]);
+    groups.set(model.provider_account_id, [
+      ...(groups.get(model.provider_account_id) ?? []),
+      model,
+    ]);
   }
   const openMenu = (model: ModelView) => {
     action.reset();
@@ -117,13 +128,18 @@ export function ModelsPage() {
       modelFileLabel(model),
       ...modelCapabilities(model).map((capability) => t(`models.capability.${capability}`)),
     ];
-    const hasMark = account && (vendorOf(model.external_model_id) || providerLogo(account.provider_kind));
+    const hasMark =
+      account && (vendorOf(model.external_model_id) || providerLogo(account.provider_kind));
     return (
       <ListRowButton
         key={model.id}
         icon={
           hasMark ? (
-            <ModelMark modelId={model.external_model_id} providerKind={account.provider_kind} name={model.display_name} />
+            <ModelMark
+              modelId={model.external_model_id}
+              providerKind={account.provider_kind}
+              name={model.display_name}
+            />
           ) : local ? (
             <Cpu size={icon.lg} />
           ) : (
@@ -137,9 +153,13 @@ export function ModelsPage() {
             {parts.map((part, index) => (
               <span
                 key={`${index}-${part}`}
-                className={index === (grouped ? 0 : 1) ? "min-w-0 truncate font-mono text-xs" : undefined}
+                className={
+                  index === (grouped ? 0 : 1) ? "min-w-0 truncate font-mono text-xs" : undefined
+                }
               >
-                {index > 0 && <span className="mr-1.5 text-fg-4 before:content-['·']" aria-hidden />}
+                {index > 0 && (
+                  <span className="mr-1.5 text-fg-4 before:content-['·']" aria-hidden />
+                )}
                 {part}
               </span>
             ))}
@@ -153,7 +173,9 @@ export function ModelsPage() {
           ) : undefined
         }
         chevron={!isDefault}
-        onClick={() => void navigate({ to: "/settings/models/$modelId", params: { modelId: model.id } })}
+        onClick={() =>
+          void navigate({ to: "/settings/models/$modelId", params: { modelId: model.id } })
+        }
         onContextMenu={(event) => {
           event.preventDefault();
           openMenu(model);
@@ -175,8 +197,12 @@ export function ModelsPage() {
     ) : (
       <List size={icon.lg} />
     );
-  const viewTitle = group === "providerColumns" ? "models.providerColumns" : group === "provider" ? "models.byProvider" : "models.allModels";
-
+  const viewTitle =
+    group === "providerColumns"
+      ? "models.providerColumns"
+      : group === "provider"
+        ? "models.byProvider"
+        : "models.allModels";
 
   return (
     <>
@@ -190,11 +216,37 @@ export function ModelsPage() {
           <div className="flex items-center gap-1">
             {tools.map((tool) =>
               phone ? (
-                <IconButton key={tool.id} label={t(`models.${tool.id}`)} variant="ghost" onClick={() => setTool(tool.id)}>
+                <IconButton
+                  key={tool.id}
+                  label={t(`models.${tool.id}`)}
+                  variant="ghost"
+                  onClick={() =>
+                    tool.id === "browse"
+                      ? void navigate({
+                          to: "/settings/model-browser",
+                          search: {},
+                        })
+                      : setTool(tool.id)
+                  }
+                >
                   {tool.icon}
                 </IconButton>
               ) : (
-                <Button key={tool.id} variant="ghost" size="sm" leading={tool.icon} title={t(`models.${tool.id}Hint`)} onClick={() => setTool(tool.id)}>
+                <Button
+                  key={tool.id}
+                  variant="ghost"
+                  size="sm"
+                  leading={tool.icon}
+                  title={t(`models.${tool.id}Hint`)}
+                  onClick={() =>
+                    tool.id === "browse"
+                      ? void navigate({
+                          to: "/settings/model-browser",
+                          search: {},
+                        })
+                      : setTool(tool.id)
+                  }
+                >
                   {t(`models.${tool.id}Short`)}
                 </Button>
               ),
@@ -206,7 +258,11 @@ export function ModelsPage() {
                 </IconButton>
               </MenuTrigger>
               <MenuContent align="end">
-                <MenuItem icon={<List size={icon.md} />} selected={group === "all"} onSelect={() => setGroup("all")}>
+                <MenuItem
+                  icon={<List size={icon.md} />}
+                  selected={group === "all"}
+                  onSelect={() => setGroup("all")}
+                >
                   {t("models.allModels")}
                 </MenuItem>
                 <MenuItem
@@ -225,7 +281,13 @@ export function ModelsPage() {
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <Button variant="tonal" size="sm" className="ml-1" leading={<Plus size={icon.sm} />} onClick={() => void navigate({ to: "/settings/models/new" })}>
+            <Button
+              variant="tonal"
+              size="sm"
+              className="ml-1"
+              leading={<Plus size={icon.sm} />}
+              onClick={() => void navigate({ to: "/settings/models/new" })}
+            >
               {t("manage.add")}
             </Button>
           </div>
@@ -292,12 +354,14 @@ export function ModelsPage() {
                           aria-controls={listId}
                           className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-1 text-left text-fg-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                           onClick={() =>
-                            (query ? setCollapsedSearchProviders : setCollapsedProviders)((current) => {
-                              const next = new Set(current);
-                              if (next.has(id)) next.delete(id);
-                              else next.add(id);
-                              return next;
-                            })
+                            (query ? setCollapsedSearchProviders : setCollapsedProviders)(
+                              (current) => {
+                                const next = new Set(current);
+                                if (next.has(id)) next.delete(id);
+                                else next.add(id);
+                                return next;
+                              },
+                            )
                           }
                         >
                           <ChevronDown
@@ -318,7 +382,10 @@ export function ModelsPage() {
                             group === "providerColumns" ? (
                               row(model, true)
                             ) : (
-                              <div key={model.id} className="min-w-0 bg-surface-1 [&>button]:h-full">
+                              <div
+                                key={model.id}
+                                className="min-w-0 bg-surface-1 [&>button]:h-full"
+                              >
                                 {row(model, true)}
                               </div>
                             ),
@@ -350,7 +417,10 @@ export function ModelsPage() {
               title={t("manage.edit")}
               description={t("models.editHint")}
               onClick={() => {
-                void navigate({ to: "/settings/models/$modelId", params: { modelId: menu.id } });
+                void navigate({
+                  to: "/settings/models/$modelId",
+                  params: { modelId: menu.id },
+                });
                 setMenu(null);
               }}
             />
@@ -358,11 +428,17 @@ export function ModelsPage() {
               disabled={action.isPending}
               icon={<Star size={icon.lg} />}
               tone="accent"
-              title={t(menu.id === models.data?.default_model_id ? "models.alreadyDefault" : "models.setDefault")}
+              title={t(
+                menu.id === models.data?.default_model_id
+                  ? "models.alreadyDefault"
+                  : "models.setDefault",
+              )}
               description={t("models.defaultHint")}
               chevron={false}
               trailing={
-                menu.id === models.data?.default_model_id ? <Check size={icon.md} className="text-accent" /> : undefined
+                menu.id === models.data?.default_model_id ? (
+                  <Check size={icon.md} className="text-accent" />
+                ) : undefined
               }
               onClick={() => {
                 if (menu.id === models.data?.default_model_id) {
@@ -390,7 +466,11 @@ export function ModelsPage() {
                     suggested_name: `${menu.display_name.replace(/[/\\]/g, "_")}.uec`,
                     kind: "any",
                   });
-                  if (picked.target) await api.call("modelExport", { id: menu.id, target: picked.target });
+                  if (picked.target)
+                    await api.call("modelExport", {
+                      id: menu.id,
+                      target: picked.target,
+                    });
                 })
               }
             />
@@ -404,7 +484,9 @@ export function ModelsPage() {
                 run(() =>
                   api.call("modelDuplicate", {
                     model_id: menu.id,
-                    display_name: t("models.copyName", { name: menu.display_name }),
+                    display_name: t("models.copyName", {
+                      name: menu.display_name,
+                    }),
                     expected_revision: menu.revision,
                     client_operation_id: crypto.randomUUID(),
                   }),
@@ -424,7 +506,12 @@ export function ModelsPage() {
         )}
       </Sheet>
       {closingTool.shown && (
-        <ModelTools key={closingTool.session} open={tool !== null} tool={closingTool.shown} onClose={() => setTool(null)} />
+        <ModelTools
+          key={closingTool.session}
+          open={tool !== null}
+          tool={closingTool.shown}
+          onClose={() => setTool(null)}
+        />
       )}
     </>
   );
@@ -443,7 +530,8 @@ function modelCapabilities(model: ModelView): ModelCapability[] {
   if (model.kind === "image") return ["imageGeneration"];
   const capabilities: ModelCapability[] = [];
   if (model.kind === "chat" && model.input_scopes.includes("image")) capabilities.push("vision");
-  if (model.input_scopes.includes("audio") || model.output_scopes.includes("audio")) capabilities.push("audio");
+  if (model.input_scopes.includes("audio") || model.output_scopes.includes("audio"))
+    capabilities.push("audio");
   return capabilities;
 }
 

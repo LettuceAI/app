@@ -11,15 +11,10 @@
     "core:window:allow-close",
     "core:window:allow-start-dragging",
     "core:window:allow-start-resize-dragging",
+    "opener:allow-reveal-items-in-dir",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [
-        { "url": "https://www.lettuceai.app" },
-        { "url": "https://www.lettuceai.app/*" },
-        { "url": "https://discord.gg/745bEttw2r" },
-        { "url": "https://github.com/LettuceAI/app" },
-        { "url": "https://github.com/LettuceAI/app/*" }
-      ]
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
     }
   ]
 }

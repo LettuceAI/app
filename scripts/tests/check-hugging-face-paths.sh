@@ -19,6 +19,9 @@ for location in lettuce-app/src/whisper.rs lettuce-app/src/embedding.rs lettuce-
 done
 printf '%s\n' '#[cfg(test)]' 'mod tests {' '    const URL: &str = "https://huggingface.co/api/models/test";' '}' > "$fixture/crates/lettuce-app/src/whisper.rs"
 check
+printf '%s\n' 'const key = "hf.context";' > "$fixture/apps/ui/src/translation.ts"
+printf '%s\n' 'const url = "https://huggingface.co/models";' > "$fixture/apps/ui/src/catalog.test.ts"
+check
 printf '%s\n' 'const url = "https://huggingface.co/models";' > "$fixture/apps/ui/src/catalog.ts"
 if check; then
   echo "Hugging Face URL escaped into the frontend" >&2

@@ -22,6 +22,13 @@ pub struct HuggingFaceBrowser {
     client: JsonClient,
     endpoint: String,
     avatars: Mutex<HashMap<String, String>>,
+    pub(crate) preview_models: Mutex<
+        HashMap<
+            (String, String, String),
+            std::sync::Arc<super::hf_canonical_preview::CanonicalFileMetadata>,
+        >,
+    >,
+    pub(crate) preview_headers: Mutex<HashMap<(String, String, String), Vec<u8>>>,
     pub(crate) headers: Mutex<HashMap<(String, String, String), lettuce_model_hub::GgufModelMeta>>,
 }
 
@@ -92,6 +99,8 @@ impl HuggingFaceBrowser {
             endpoint: endpoint.into(),
             avatars: Mutex::new(HashMap::new()),
             headers: Mutex::new(HashMap::new()),
+            preview_headers: Mutex::new(HashMap::new()),
+            preview_models: Mutex::new(HashMap::new()),
         }
     }
 

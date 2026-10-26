@@ -200,6 +200,7 @@ export const commands = {
 	legacyDatabaseImport: (request: LegacyDatabaseImportRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("legacy_database_import", { request })),
 	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef_Serialize, ApiError_Serialize>(__TAURI_INVOKE("assets_ingest", { request })),
 	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_open", { request })),
+	filesPickDirectory: () => typedError<DirectoryPicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_directory")),
 	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_save", { request })),
 	appStatus: () => typedError<AppStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("app_status")),
 	legacyState: () => typedError<LegacyState_Serialize, ApiError_Serialize>(__TAURI_INVOKE("legacy_state")),
@@ -262,14 +263,15 @@ export const commands = {
 	avatarPrompt: (request: AvatarPromptRequest) => typedError<AvatarPrompt, ApiError_Serialize>(__TAURI_INVOKE("avatar_prompt", { request })),
 	avatarGradient: (request: AvatarGradientRequest) => typedError<AvatarGradient, ApiError_Serialize>(__TAURI_INVOKE("avatar_gradient", { request })),
 	imageDesignReference: (request: ImageDesignReferenceRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_design_reference", { request })),
+	hfBrowserLinks: () => typedError<HfBrowserLinks, ApiError_Serialize>(__TAURI_INVOKE("hf_browser_links")),
 	hfSearch: (request: HfSearchRequest) => typedError<HfSearchResults, ApiError_Serialize>(__TAURI_INVOKE("hf_search", { request })),
 	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo, ApiError_Serialize>(__TAURI_INVOKE("hf_model_files", { request })),
 	hfReadme: (request: HfReadmeRequest) => typedError<HfReadme, ApiError_Serialize>(__TAURI_INVOKE("hf_readme", { request })),
 	hfAuthor: (request: HfAuthorRequest) => typedError<HfAuthor, ApiError_Serialize>(__TAURI_INVOKE("hf_author", { request })),
 	hfAvatars: (request: HfAvatarsRequest) => typedError<HfAvatars, ApiError_Serialize>(__TAURI_INVOKE("hf_avatars", { request })),
 	hfRunnability: (request: HfRunnabilityRequest) => typedError<HfRunnability, ApiError_Serialize>(__TAURI_INVOKE("hf_runnability", { request })),
-	hfRecommendation: (request: HfRecommendationRequest) => typedError<HfRecommendation, ApiError_Serialize>(__TAURI_INVOKE("hf_recommendation", { request })),
-	hfDownload: (request: HfDownloadRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("hf_download", { request })),
+	hfRecommendation: (request: HfRecommendationRequest_Deserialize) => typedError<HfRecommendation, ApiError_Serialize>(__TAURI_INVOKE("hf_recommendation", { request })),
+	hfDownload: (request: HfDownloadRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("hf_download", { request })),
 	hfAuthStatus: () => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_status")),
 	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_save", { request })),
 	hfAuthClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_clear")),
@@ -2221,6 +2223,10 @@ export type DictationStopRequest_Serialize = {
 	options: TranscribeOptions_Serialize,
 };
 
+export type DirectoryPicked = {
+	path: string | null,
+};
+
 /**  An image model file on disk below the image models folders. */
 export type DownloadedImageModel = {
 	model_id: string,
@@ -2635,11 +2641,69 @@ export type HfBestRecommendation = {
 /**  Chat models (GGUF files) or image models. */
 export type HfBrowseMode = "llm" | "image";
 
+export type HfBrowserLinks = {
+	repository_base: string,
+	ollama_prefix: string,
+};
+
+export type HfCanonicalFile = {
+	nextn_predict_layers: number | null,
+	filename: string,
+	label: RunnabilityLabel | null,
+	max_context: number | null,
+	recommended_context: number | null,
+	gpu_optimal_context: number | null,
+	kv_types: HfCanonicalKv[],
+};
+
+export type HfCanonicalKv = {
+	kv_type: string,
+	cache_bytes: number,
+	recommended_context: number | null,
+};
+
+export type HfCanonicalMemoryFit = {
+	gpu: boolean,
+	devices: string[],
+	capacity_bytes: number | null,
+	available_bytes: number,
+	model_bytes: number,
+	context_bytes: number,
+	working_bytes: number,
+};
+
+export type HfCanonicalPlan = {
+	unified_memory: boolean,
+	filename: string,
+	context_length: number,
+	label: RunnabilityLabel,
+	gpu_layers: number,
+	total_layers: number,
+	offload_kqv: boolean,
+	memory_fit: HfCanonicalMemoryFit[],
+	gpu_policy: HfGpuPolicy,
+	placement: LlamaPlacement | null,
+};
+
+export type HfCanonicalRecommendation = {
+	devices: LlamaDevice[],
+	files: HfCanonicalFile[],
+	selected: HfCanonicalPlan | null,
+	recommended_filename: string | null,
+	gpu_policy: HfGpuPolicy,
+};
+
 /**
  *  Downloads a GGUF file with its projector and MTP draft model as one
  *  job, pinned to `revision` (the current one when absent).
  */
-export type HfDownloadRequest = {
+export type HfDownloadRequest = HfDownloadRequest_Serialize | HfDownloadRequest_Deserialize;
+
+/**
+ *  Downloads a GGUF file with its projector and MTP draft model as one
+ *  job, pinned to `revision` (the current one when absent).
+ */
+export type HfDownloadRequest_Deserialize = {
 	repo: string,
 	revision: string | null,
 	file: string,
@@ -2647,7 +2711,23 @@ export type HfDownloadRequest = {
 	mtp_file: string | null,
 	/**  The model file carries its own MTP head. */
 	mtp_bundled: boolean,
-	setup: HfDownloadSetup,
+	setup: HfDownloadSetup_Deserialize,
+	client_operation_id: string,
+};
+
+/**
+ *  Downloads a GGUF file with its projector and MTP draft model as one
+ *  job, pinned to `revision` (the current one when absent).
+ */
+export type HfDownloadRequest_Serialize = {
+	repo: string,
+	revision: string | null,
+	file: string,
+	mmproj_file: string | null,
+	mtp_file: string | null,
+	/**  The model file carries its own MTP head. */
+	mtp_bundled: boolean,
+	setup: HfDownloadSetup_Serialize,
 	client_operation_id: string,
 };
 
@@ -2655,7 +2735,29 @@ export type HfDownloadRequest = {
  *  How a downloaded model is set up; with `create_model` it becomes a
  *  llama.cpp model (an existing one with the same file is reused).
  */
-export type HfDownloadSetup = {
+export type HfDownloadSetup = HfDownloadSetup_Serialize | HfDownloadSetup_Deserialize;
+
+/**
+ *  How a downloaded model is set up; with `create_model` it becomes a
+ *  llama.cpp model (an existing one with the same file is reused).
+ */
+export type HfDownloadSetup_Deserialize = {
+	gpu_policy?: HfGpuPolicy | null,
+	display_name: string | null,
+	context_length: number | null,
+	kv_type: string | null,
+	offload_kqv: boolean | null,
+	gpu_layers: number | null,
+	model_offload: HfModelOffload | null,
+	create_model: boolean,
+};
+
+/**
+ *  How a downloaded model is set up; with `create_model` it becomes a
+ *  llama.cpp model (an existing one with the same file is reused).
+ */
+export type HfDownloadSetup_Serialize = {
+	gpu_policy: HfGpuPolicy | null,
 	display_name: string | null,
 	context_length: number | null,
 	kv_type: string | null,
@@ -2686,6 +2788,15 @@ export type HfFileRecommendation = {
 	 *  sidecars.
 	 */
 	max_context_by_kv_type: HfKvContextLimit[],
+};
+
+export type HfGpuPolicy = {
+	multi_gpu_enabled: boolean,
+	gpu_device_ids: number[],
+	single_gpu_device_id: number | null,
+	distribution: string | null,
+	manual_layers: LlamaGpuLayers[],
+	priority_vram_limit_bytes: number | null,
 };
 
 /**  How much memory the planner's choice leaves. */
@@ -2751,6 +2862,7 @@ export type HfModelArch = {
 	context_length: number | null,
 	expert_count: number | null,
 	expert_used_count: number | null,
+	nextn_predict_layers: number | null,
 	is_moe: boolean,
 	active_weight_ratio: number | null,
 	incomplete_parse: boolean,
@@ -2869,6 +2981,12 @@ export type HfPlanUpgrade = {
 	score: number,
 };
 
+export type HfPreviewSidecars = {
+	mmproj: HfRunnabilityFile | null,
+	mtp: HfRunnabilityFile | null,
+	mtp_bundled: boolean,
+};
+
 /**  The model card without its front matter. */
 export type HfReadme = {
 	markdown: string,
@@ -2883,6 +3001,7 @@ export type HfReadmeRequest = {
  *  planner shows. `gpu_layer_count` is every block plus the output layer.
  */
 export type HfRecommendation = {
+	preview: HfCanonicalRecommendation | null,
 	hardware_available: boolean,
 	metadata_available: boolean,
 	available_ram: number,
@@ -2906,7 +3025,32 @@ export type HfRecommendation = {
  *  (the projector and draft model chosen) and `plan` (the planner's
  *  current choice) shape the planner's limits and report.
  */
-export type HfRecommendationRequest = {
+export type HfRecommendationRequest = HfRecommendationRequest_Serialize | HfRecommendationRequest_Deserialize;
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest_Deserialize = {
+	gpu_policy?: HfGpuPolicy | null,
+	sidecars?: HfPreviewSidecars | null,
+	model_id: string,
+	revision: string | null,
+	files: HfRunnabilityFile[],
+	ollama_account_id: string | null,
+	sidecar_reserve_bytes: number | null,
+	plan: HfPlanChoice | null,
+};
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest_Serialize = {
+	gpu_policy: HfGpuPolicy | null,
+	sidecars: HfPreviewSidecars | null,
 	model_id: string,
 	revision: string | null,
 	files: HfRunnabilityFile[],

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_model_hub::{HfBrowseMode, HfSearch, RunnabilityFile, RunnabilityHardware};
-use lettuce_models::ProviderAccountRepository;
+use lettuce_models::{GlobalModelSettingsRepository, ProviderAccountRepository};
 use lettuce_types::ProviderAccountId;
 
 use super::local::runnability_defaults;
@@ -16,6 +16,13 @@ use crate::api::error::{api_error, hf_error, invalid_field, parse_id};
 
 fn browser(context: &ApiContext) -> Result<Arc<HuggingFaceBrowser>, ApiError> {
     context.local_models().browser(context)
+}
+
+pub fn hf_browser_links() -> dto::HfBrowserLinks {
+    dto::HfBrowserLinks {
+        repository_base: lettuce_model_hub::HUGGING_FACE_ENDPOINT.to_owned(),
+        ollama_prefix: lettuce_model_hub::HUGGING_FACE_OLLAMA_PREFIX.to_owned(),
+    }
 }
 
 const fn mode(mode: dto::HfBrowseMode) -> HfBrowseMode {
@@ -434,6 +441,37 @@ pub async fn hf_recommendation(
         .filter(|revision| !revision.is_empty())
         .unwrap_or("main")
         .to_owned();
+    let canonical_hardware =
+        canonical_hardware(context, request.ollama_account_id.as_deref()).await?;
+    let canonical_defaults = context
+        .blocking(|context| {
+            context
+                .backend()
+                .database()
+                .global_model_settings()
+                .map(|(settings, _)| settings.llama_cpp)
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
+        })
+        .await?;
+    let preview = match canonical_hardware {
+        Some(hardware) => Some(
+            crate::models::hf_canonical_preview::canonical_recommendation(
+                browser(context)?.as_ref(),
+                context.secret_store().as_ref(),
+                &header_source()?,
+                crate::RemoteModel {
+                    id: &model_id,
+                    revision: &revision,
+                },
+                &request,
+                &hardware,
+                &canonical_defaults,
+            )
+            .await
+            .map_err(hf_error)?,
+        ),
+        None => None,
+    };
     let hardware = hardware(context, request.ollama_account_id.as_deref()).await?;
     let files = runnability_files(&request.files);
     let (recommendation, metadata_available) = match hardware {
@@ -460,6 +498,7 @@ pub async fn hf_recommendation(
         .as_ref()
         .and_then(|choice| plan_report(&recommendation, choice, sidecar_reserve_bytes));
     Ok(dto::HfRecommendation {
+        preview,
         hardware_available: hardware.is_some(),
         metadata_available,
         available_ram: recommendation.available_ram,
@@ -479,6 +518,7 @@ pub async fn hf_recommendation(
             context_length: arch.meta.context_length,
             expert_count: arch.meta.expert_count,
             expert_used_count: arch.meta.expert_used_count,
+            nextn_predict_layers: arch.meta.nextn_predict_layers,
             is_moe: arch.is_moe,
             active_weight_ratio: arch.active_weight_ratio,
             incomplete_parse: arch.incomplete_parse,
@@ -584,4 +624,39 @@ pub async fn hf_auth_clear(context: &ApiContext) -> Result<(), ApiError> {
         .clear_token(context.secret_store().as_ref())
         .await
         .map_err(hf_error)
+}
+
+async fn canonical_hardware(
+    context: &ApiContext,
+    account_id: Option<&str>,
+) -> Result<Option<lettuce_local_llm::context_preview::PreviewHardware>, ApiError> {
+    let Some(id) = account_id else {
+        return Ok(crate::models::hf_canonical_preview::local_preview_hardware());
+    };
+    let id: ProviderAccountId = parse_id(id, "ollama_account_id")?;
+    let account = context
+        .blocking(move |context| {
+            ProviderAccountRepository::get(context.backend().database(), id)
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
+        })
+        .await?
+        .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the account was not found"))?;
+    let tls = context
+        .backend()
+        .tls_policy()
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let client = lettuce_network::JsonClient::with_tls(&tls)
+        .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+    let bytes = crate::models::model_runnability::sprout_specs_bytes(
+        &client,
+        context.secret_store().as_ref(),
+        &account,
+    )
+    .await
+    .map_err(|error| api_error(ApiErrorCode::Unavailable, error))?;
+    bytes
+        .as_deref()
+        .map(crate::models::hf_canonical_preview::sprout_preview_hardware)
+        .transpose()
+        .map_err(|error| api_error(ApiErrorCode::Unavailable, error))
 }
