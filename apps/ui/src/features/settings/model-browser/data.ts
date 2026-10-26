@@ -1,8 +1,29 @@
 import { useEffect, useState } from "react";
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { HfSort, ImageComponentRole, ProviderAccountView } from "@/api/generated/bindings";
+import type {
+  HfCanonicalPlan,
+  HfPlanGpuMode,
+  HfRecommendationRequest,
+  HfSort,
+  ImageComponentRole,
+  ProviderAccountView,
+} from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+
+export function fitSettingsKey(
+  request: Pick<HfRecommendationRequest, "gpu_policy" | "sidecars" | "plan">,
+) {
+  const sidecars = request.sidecars;
+  return JSON.stringify({
+    gpu_policy: request.gpu_policy ?? null,
+    sidecars: sidecars?.mmproj || sidecars?.mtp || sidecars?.mtp_bundled ? sidecars : null,
+    context_length: request.plan?.context_length ?? 8192,
+    model_offload: request.plan?.model_offload ?? "auto",
+    kv_placement: request.plan?.kv_placement ?? "auto",
+    kv_type: request.plan?.kv_type ?? "q8_0",
+  });
+}
 
 export const pageSize = 30;
 export const browserKey = ["hf-browser"] as const;
@@ -114,3 +135,44 @@ export function useBrowserDebounce<T>(value: T, delay = 180) {
 
 export const repositoryUrl = (base: string, repo: string) =>
   new URL(repo, `${base.replace(/\/+$/, "")}/`).href;
+
+export type PlacementKey =
+  | "full"
+  | "near_full"
+  | "kv_spill"
+  | "most_layers"
+  | "half_layers"
+  | "few_layers"
+  | "cpu"
+  | "shared";
+
+const modeKeys: Record<HfPlanGpuMode, Exclude<PlacementKey, "shared">> = {
+  full: "full",
+  near_full: "near_full",
+  kv_spill: "kv_spill",
+  kv_heavy_spill: "kv_spill",
+  ram_model_vram_ctx: "few_layers",
+  ram_model_ram_ctx: "cpu",
+  most_layers: "most_layers",
+  half_layers: "half_layers",
+  few_layers: "few_layers",
+  cpu: "cpu",
+  gpu_unavailable: "cpu",
+};
+
+export const placementKey = (plan: HfCanonicalPlan): PlacementKey =>
+  plan.unified_memory ? "shared" : modeKeys[plan.gpu_mode];
+
+export const runStatus = (label: string) =>
+  label === "unrunnable" ? "no" : label === "excellent" || label === "good" ? "yes" : "borderline";
+
+export function prettyPipeline(tag: string | null) {
+  if (!tag) return null;
+  const text = tag.replaceAll("-", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export const contextTokens = (value: number) =>
+  value >= 1024 ? `${Math.round(value / 1024)}K` : String(value);
+
+export const separator = "·";

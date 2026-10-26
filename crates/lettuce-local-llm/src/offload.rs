@@ -80,23 +80,34 @@ pub struct SmartGpuOffloadPlan {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelOffloadCosts {
     unit_bytes: Vec<u64>,
+    host_copy_bytes: u64,
 }
 
 impl ModelOffloadCosts {
     /// Per-unit weight bytes from a GGUF tensor index: `blk.N.*` tensors
-    /// belong to unit N, `token_embd*` stays on the CPU, and everything else
-    /// is the output unit, which also carries the embedding when the model
-    /// ties its head (no `output.weight`).
+    /// belong to unit N, `token_embd*` and `per_layer_token_embd*` stay on
+    /// the CPU, the per-layer projection belongs to unit 0, and everything
+    /// else is the output unit. A model that ties its head (no
+    /// `output.weight`) also puts a copy of the embedding on the output unit
+    /// while the CPU keeps the original.
     pub fn from_tensors<'a>(tensors: impl IntoIterator<Item = (&'a str, u64)>) -> Option<Self> {
         let mut blocks: BTreeMap<u32, u64> = BTreeMap::new();
         let mut output_bytes = 0u64;
         let mut input_bytes = 0u64;
+        let mut first_block_extra = 0u64;
         let mut has_output_weight = false;
 
         for (name, size) in tensors {
+            if name.starts_with("per_layer_token_embd") {
+                continue;
+            }
             if let Some(block) = block_index(name) {
                 let entry = blocks.entry(block).or_default();
                 *entry = entry.saturating_add(size);
+            } else if name.starts_with("per_layer_model_proj")
+                || name.starts_with("per_layer_proj_norm")
+            {
+                first_block_extra = first_block_extra.saturating_add(size);
             } else if name.starts_with("token_embd") {
                 input_bytes = input_bytes.saturating_add(size);
             } else {
@@ -108,8 +119,10 @@ impl ModelOffloadCosts {
         }
 
         let n_layer_all = usize::try_from(*blocks.keys().max()? + 1).ok()?;
+        let mut host_copy_bytes = 0;
         if !has_output_weight {
             output_bytes = output_bytes.saturating_add(input_bytes);
+            host_copy_bytes = input_bytes;
         }
 
         let mut unit_bytes = vec![0u64; n_layer_all + 1];
@@ -118,13 +131,27 @@ impl ModelOffloadCosts {
                 *slot = bytes;
             }
         }
+        unit_bytes[0] = unit_bytes[0].saturating_add(first_block_extra);
         unit_bytes[n_layer_all] = output_bytes;
 
-        Some(Self { unit_bytes })
+        Some(Self {
+            unit_bytes,
+            host_copy_bytes,
+        })
     }
 
     pub fn unit_count(&self) -> u32 {
         u32::try_from(self.unit_bytes.len()).unwrap_or(u32::MAX)
+    }
+
+    /// Weight bytes the CPU still holds for a tensor that also has a copy on
+    /// the output unit, once that unit is offloaded.
+    pub fn host_copy_bytes(&self, gpu_layers: u32) -> u64 {
+        if gpu_layers > 0 {
+            self.host_copy_bytes
+        } else {
+            0
+        }
     }
 
     pub fn gpu_bytes(&self, gpu_layers: u32) -> u64 {
@@ -225,6 +252,7 @@ impl<'a> KvCacheTypes<'a> {
 pub struct KvCacheGeometry {
     layers: Vec<KvLayerGeometry>,
     n_swa: u32,
+    shared_kv_layers: u32,
 }
 
 fn block_index(tensor_name: &str) -> Option<u32> {
@@ -237,7 +265,21 @@ impl KvCacheGeometry {
     /// `None` when the model reports no attention layers.
     #[must_use]
     pub fn new(layers: Vec<KvLayerGeometry>, n_swa: u32) -> Option<Self> {
-        (!layers.is_empty()).then_some(Self { layers, n_swa })
+        (!layers.is_empty()).then_some(Self {
+            layers,
+            n_swa,
+            shared_kv_layers: 0,
+        })
+    }
+
+    /// The last `shared` layers reuse an earlier layer's cache and hold none
+    /// of their own. A count that would leave no cache at all is ignored.
+    #[must_use]
+    pub fn with_shared_kv_layers(mut self, shared: u32) -> Self {
+        if (shared as usize) < self.layers.len() {
+            self.shared_kv_layers = shared;
+        }
+        self
     }
 
     pub fn with_swa_full(mut self, full: bool) -> Self {
@@ -269,9 +311,14 @@ impl KvCacheGeometry {
         let shared = kv_types.shared();
         let k_bytes_per_value = kv_bytes_per_value(kv_types.k);
         let v_bytes_per_value = kv_bytes_per_value(kv_types.v);
+        let own_cache_layers = self.layers.len() - self.shared_kv_layers as usize;
         self.layers
             .iter()
-            .map(|layer| {
+            .enumerate()
+            .map(|(index, layer)| {
+                if index >= own_cache_layers {
+                    return 0;
+                }
                 let cells = self.cells_for_layer(layer.is_swa, planned_context, n_ubatch);
                 let n_head_kv = u64::from(layer.n_head_kv);
                 if let Some(shared) = shared {
@@ -549,8 +596,7 @@ pub fn estimate_memory_footprints(
         .clamp(1, model.metadata.max_context_length.max(1));
     let (ram_weights, gpu_weights) =
         model_weight_split_bytes(&model.metadata, model.costs, gpu_layers);
-    let kv = model
-        .geometry
+    let kv = windowed_geometry(model.geometry, request.swa_full)
         .map(|geometry| geometry.total_bytes(context, request.n_batch, request.kv_types))
         .unwrap_or_else(|| {
             estimate_kv_bytes_per_token(&model.metadata, request.kv_types)
@@ -659,7 +705,8 @@ pub fn model_weight_split_bytes(
         let gpu_weight_bytes = costs.gpu_bytes(gpu_layers);
         let cpu_weight_bytes = metadata
             .model_size_bytes
-            .saturating_sub(gpu_weight_bytes.min(metadata.model_size_bytes));
+            .saturating_sub(gpu_weight_bytes.min(metadata.model_size_bytes))
+            .saturating_add(costs.host_copy_bytes(gpu_layers));
         return (cpu_weight_bytes, gpu_weight_bytes);
     }
     let total_layers = metadata.offload_layer_count();
@@ -740,6 +787,11 @@ pub struct OffloadRequest<'a> {
     pub flash_attention_policy: FlashAttentionPolicy,
     pub sidecar_vram_reserve_bytes: u64,
     pub bundled_mtp_draft: bool,
+    pub swa_full: bool,
+}
+
+fn windowed_geometry(geometry: Option<&KvCacheGeometry>, swa_full: bool) -> Option<KvCacheGeometry> {
+    geometry.map(|geometry| geometry.clone().with_swa_full(swa_full))
 }
 
 /// Plans GPU layers and context for one model. `measure_compute` is asked
@@ -760,13 +812,15 @@ pub fn plan_smart_gpu_offload(
         flash_attention_policy,
         sidecar_vram_reserve_bytes,
         bundled_mtp_draft,
+        swa_full,
     } = request;
     let metadata = model.metadata;
     let costs = model.costs;
     let total_layers = costs
         .map(ModelOffloadCosts::unit_count)
         .unwrap_or_else(|| metadata.offload_layer_count());
-    let geometry = model.geometry;
+    let planned_geometry = windowed_geometry(model.geometry, swa_full);
+    let geometry = planned_geometry.as_ref();
     let available_vram = available_vram_bytes.unwrap_or(0);
     let effective_vram_budget_bytes = available_vram.saturating_mul(9) / 10;
     let bytes_per_layer = metadata
@@ -1250,6 +1304,7 @@ mod tests {
             flash_attention_policy: FlashAttentionPolicy::Auto,
             sidecar_vram_reserve_bytes: 0,
             bundled_mtp_draft: false,
+            swa_full: false,
         };
         let (_, small) = estimate_memory_footprints(model, request, metadata.offload_layer_count());
         let (_, large) = estimate_memory_footprints(
@@ -1314,6 +1369,7 @@ mod tests {
                 flash_attention_policy: FlashAttentionPolicy::Auto,
                 sidecar_vram_reserve_bytes: 0,
                 bundled_mtp_draft: false,
+                swa_full: false,
             };
             let (ram, gpu) =
                 estimate_memory_footprints(model, request, metadata.offload_layer_count());
@@ -1505,6 +1561,7 @@ mod offload_cost_tests {
     fn costs(units: &[u64]) -> ModelOffloadCosts {
         ModelOffloadCosts {
             unit_bytes: units.to_vec(),
+            host_copy_bytes: 0,
         }
     }
 
@@ -1607,10 +1664,7 @@ mod offload_cost_tests {
                 is_swa: !global,
             });
         }
-        KvCacheGeometry {
-            layers,
-            n_swa: 1024,
-        }
+        KvCacheGeometry::new(layers, 1024).expect("layers")
     }
 
     #[test]
@@ -1761,6 +1815,91 @@ mod offload_cost_tests {
         assert_eq!(
             geometry.total_bytes(8192, 512, same),
             geometry.total_bytes(8192, 512, KvCacheTypes::uniform(Some("q8_0")))
+        );
+    }
+
+    #[test]
+    fn the_per_layer_embedding_stays_on_the_cpu_and_its_projection_follows_block_zero() {
+        let costs = ModelOffloadCosts::from_tensors([
+            ("blk.0.attn_k.weight", 10),
+            ("blk.1.attn_k.weight", 20),
+            ("per_layer_token_embd.weight", 5000),
+            ("per_layer_model_proj.weight", 7),
+            ("per_layer_proj_norm.weight", 3),
+            ("output_norm.weight", 2),
+            ("output.weight", 100),
+            ("token_embd.weight", 300),
+        ])
+        .expect("costs");
+        assert_eq!(costs.unit_count(), 3);
+        assert_eq!(costs.gpu_bytes(1), 102);
+        assert_eq!(costs.gpu_bytes(2), 122);
+        assert_eq!(costs.gpu_bytes(3), 142);
+        assert_eq!(costs.host_copy_bytes(3), 0);
+    }
+
+    #[test]
+    fn a_tied_embedding_keeps_its_host_copy_once_the_output_unit_is_offloaded() {
+        let costs = ModelOffloadCosts::from_tensors([
+            ("blk.0.attn_k.weight", 10),
+            ("blk.1.attn_k.weight", 20),
+            ("per_layer_token_embd.weight", 5000),
+            ("output_norm.weight", 2),
+            ("token_embd.weight", 300),
+        ])
+        .expect("costs");
+        let metadata = LlamaModelMetadata {
+            model_size_bytes: 5332,
+            layer_count: 2,
+            nextn_layer_count: 0,
+            max_context_length: 4096,
+            n_embd: 8,
+            n_head: 1,
+            n_head_kv: 1,
+            n_embd_head_k: 8,
+            n_embd_head_v: 8,
+        };
+        assert_eq!(costs.gpu_bytes(1), 302);
+        assert_eq!(
+            model_weight_split_bytes(&metadata, Some(&costs), 0),
+            (5332, 0)
+        );
+        assert_eq!(
+            model_weight_split_bytes(&metadata, Some(&costs), 1),
+            (5332 - 302 + 300, 302)
+        );
+        assert_eq!(
+            model_weight_split_bytes(&metadata, Some(&costs), 3),
+            (5000 + 300, 332)
+        );
+    }
+
+    #[test]
+    fn shared_kv_layers_hold_no_cache_of_their_own() {
+        let layers = (0..6)
+            .map(|index| KvLayerGeometry {
+                n_head_kv: 2,
+                n_embd_head_k: 16,
+                n_embd_head_v: 16,
+                is_swa: index % 3 != 2,
+            })
+            .collect::<Vec<_>>();
+        let geometry = KvCacheGeometry::new(layers, 128).expect("layers");
+        let f16 = KvCacheTypes::uniform(Some("f16"));
+        let full = geometry.bytes_per_layer(1024, 512, f16);
+        assert!(full.iter().all(|bytes| *bytes > 0));
+        let shared = geometry.clone().with_shared_kv_layers(2);
+        let per_layer = shared.bytes_per_layer(1024, 512, f16);
+        assert_eq!(per_layer[..4], full[..4]);
+        assert_eq!(per_layer[4..], [0, 0]);
+        assert_eq!(
+            shared.total_bytes(1024, 512, f16),
+            full[..4].iter().sum::<u64>()
+        );
+        let unchanged = geometry.clone().with_shared_kv_layers(6);
+        assert_eq!(
+            unchanged.total_bytes(1024, 512, f16),
+            geometry.total_bytes(1024, 512, f16)
         );
     }
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{GpuModeDto, RunnabilityLabel};
+use crate::RunnabilityLabel;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -81,6 +81,10 @@ pub struct HfModelRequest {
 #[serde(deny_unknown_fields)]
 pub struct HfModelFile {
     pub filename: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub parts: Vec<HfFilePart>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub size: u64,
     pub quantization: String,
@@ -109,6 +113,7 @@ pub struct HfModelInfo {
     pub context_length: Option<u64>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub parameter_count: Option<u64>,
+    pub last_modified: Option<String>,
     pub files: Vec<HfModelFile>,
 }
 
@@ -211,22 +216,19 @@ pub struct HfAvatars {
 #[serde(deny_unknown_fields)]
 pub struct HfRunnabilityFile {
     pub filename: String,
+    #[serde(default)]
+    pub parts: Vec<HfFilePart>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub size: u64,
 }
 
-/// Files of `model_id` judged against this machine, or against the machine
-/// behind an Ollama account's Sprout probe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct HfRunnabilityRequest {
-    pub model_id: String,
-    /// The commit to read headers at (`HfModelInfo::revision`); `main` when
-    /// absent.
-    pub revision: Option<String>,
-    pub files: Vec<HfRunnabilityFile>,
-    pub ollama_account_id: Option<String>,
+pub struct HfFilePart {
+    pub filename: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub size: u64,
 }
 
 /// Where the planner is asked to keep the KV cache.
@@ -391,30 +393,6 @@ pub struct HfPlan {
     pub generation_speed: HfSpeed,
     /// The KV offload a download with this choice stores.
     pub offload_kqv: Option<bool>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct HfRunnabilityScore {
-    pub filename: String,
-    pub score: u32,
-    pub label: RunnabilityLabel,
-    pub fits_in_ram: bool,
-    pub fits_in_vram: bool,
-    pub gpu_mode: GpuModeDto,
-}
-
-/// Scores per file. `hardware_available` is false for an Ollama account
-/// without a Sprout probe (no scores then); `metadata_available` is false
-/// when the GGUF header could not be read, so the KV cache is not counted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct HfRunnability {
-    pub hardware_available: bool,
-    pub metadata_available: bool,
-    pub scores: Vec<HfRunnabilityScore>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -635,6 +613,11 @@ pub struct HfCanonicalPlan {
     pub gpu_layers: u32,
     pub total_layers: u32,
     pub offload_kqv: bool,
+    /// Where the estimate puts the model and its KV cache.
+    pub gpu_mode: HfPlanGpuMode,
+    /// Absent when the placement has no speed rating, as on unified memory.
+    pub prefill_speed: Option<HfSpeed>,
+    pub generation_speed: Option<HfSpeed>,
     pub memory_fit: Vec<HfCanonicalMemoryFit>,
     pub gpu_policy: HfGpuPolicy,
     pub placement: Option<crate::LlamaPlacement>,
@@ -647,6 +630,12 @@ pub struct HfCanonicalRecommendation {
     pub files: Vec<HfCanonicalFile>,
     pub selected: Option<HfCanonicalPlan>,
     pub recommended_filename: Option<String>,
+    #[serde(default)]
+    pub recommended_kv_type: Option<String>,
+    /// A higher-quality file of the request that runs as well as the
+    /// selected one at its context, KV type and offload.
+    #[serde(default)]
+    pub upgrade: Option<String>,
     pub gpu_policy: HfGpuPolicy,
 }
 

@@ -107,9 +107,9 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - The saved-voice flow passes the provider voice id to the user-voice save; the legacy flow did not refresh the provider cache there, so neither does this.
 - Kokoro keeps the legacy starter pack, model override, blend document and optional `lexicon.json`.
 - Downloads delete their partial on cancel or permanent failure, as legacy deleted its `.tmp` on cancel, stall and failure. Whisper and Kokoro check at use time only what legacy checked, that the files are present.
-- `register_downloaded_gguf` adds the model the old browser created; the first model becomes the default as legacy's `addOrUpdateModel` did. Sprout runnability uses the remote hardware as legacy did.
+- `register_downloaded_gguf` adds the model the old browser created; the first model becomes the default as legacy's `addOrUpdateModel` did. The fit preview of an Ollama account uses the remote hardware its Sprout probe reports, as legacy's runnability did.
 - The GGUF models folder, the image folder below a chosen one (`hf_browser/mod.rs` 502-507), the download path `<folder>/<owner--repo>/<file>` (2646-2660), the delete rules and the folder move's refusal of a destination that already holds an entry follow legacy. `llama_devices` returns an empty list on mobile and the llama commands refuse there, as legacy did (`llama_cpp/mod.rs` 5320-5423).
-- Runnability and recommendations assume the settings' `llama_default_context_length` and `llama_default_kv_cache_type` as legacy's `llama_runtime_defaults` did (`hf_browser/mod.rs` 1416-1439). Pull progress is written at most every 150 ms, legacy's throttle (`ollama/mod.rs` 1025-1026).
+- The legacy `hf_runnability` and `local_file_runnability` commands are removed with their scoring (no caller was left in the rewrite's UI); the settings' `llama_default_context_length` and `llama_default_kv_cache_type` they assumed (`hf_browser/mod.rs` 1416-1439) remain settings. Pull progress is written at most every 150 ms, legacy's throttle (`ollama/mod.rs` 1025-1026).
 - ONNX Runtime follows legacy `ensure_ort_init`, reusing legacy's download folder; Kokoro calls it first on every platform as legacy's TTS commands did. The download is checked by size, as legacy checked nothing.
 
 ### Files

@@ -1283,6 +1283,7 @@ impl Run<'_> {
             effective_gpu_layers = Some(normalized);
         }
         let active_mmproj_path = rt.mmproj_path.as_deref().filter(|_| media_requested);
+        let planned_mmproj_path = rt.mmproj_path.as_deref();
         let dflash_external_path = if rt.dflash_enabled && !media_requested {
             resolve_drafter(rt.dflash_model_path.as_deref(), model_path)
         } else {
@@ -1345,7 +1346,7 @@ impl Run<'_> {
             mtp_gpu_reserve_bytes,
         );
         let sidecar_vram_reserve_bytes = if backend_supports_gpu_offload {
-            let mmproj_reserve = active_mmproj_path
+            let mmproj_reserve = planned_mmproj_path
                 .and_then(|path| std::fs::metadata(path).ok())
                 .map_or(0, |meta| meta.len());
             let mtp_reserve = if mtp_drafter_on_gpu {
@@ -1374,7 +1375,7 @@ impl Run<'_> {
             "ubatch": rt.ubatch_size,
             "computeBatch": rt.compute_batch_size,
             "flashAttention": flash_attention_type(flash_policy),
-            "mmprojPath": active_mmproj_path,
+            "mmprojPath": planned_mmproj_path,
             "mtpEnabled": rt.mtp_enabled,
             "mtpPlacement": rt.mtp_placement,
             "mtpModelPath": mtp_external_path,
@@ -1449,6 +1450,7 @@ impl Run<'_> {
                     flash_attention_policy: flash_policy,
                     sidecar_vram_reserve_bytes,
                     bundled_mtp_draft: mtp_bundled,
+                    swa_full: rt.swa_full == Some(true),
                 },
             )?;
             smart_kv_aware_layer_estimate = Some(plan.estimated_gpu_layers);
@@ -1638,7 +1640,7 @@ impl Run<'_> {
                     .single_gpu_device_id
                     .map(|device_id| vec![device_id])
                     .unwrap_or_default();
-                let fit_margins = measure_mmproj_fit_margins(active_mmproj_path, &fit_devices)?;
+                let fit_margins = measure_mmproj_fit_margins(planned_mmproj_path, &fit_devices)?;
                 match fit_model_params(
                     model_path,
                     &fit_devices,

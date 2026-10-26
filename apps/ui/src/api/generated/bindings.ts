@@ -216,7 +216,6 @@ export const commands = {
 	localModelAdopt: (request: LocalModelAdoptRequest) => typedError<LocalModelAdopted, ApiError_Serialize>(__TAURI_INVOKE("local_model_adopt", { request })),
 	localModelsDirGet: () => typedError<LocalModelsDir, ApiError_Serialize>(__TAURI_INVOKE("local_models_dir_get")),
 	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("local_models_dir_set", { request })),
-	localFileRunnability: (request: LocalFileRunnabilityRequest) => typedError<LocalFileRunnability, ApiError_Serialize>(__TAURI_INVOKE("local_file_runnability", { request })),
 	imageGenerate: (request: ImageGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_generate", { request })),
 	imageUpscale: (request: ImageUpscaleRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_upscale", { request })),
 	imageCapabilities: (request: ImageCapabilitiesRequest) => typedError<ImageCapabilities, ApiError_Serialize>(__TAURI_INVOKE("image_capabilities", { request })),
@@ -265,12 +264,11 @@ export const commands = {
 	imageDesignReference: (request: ImageDesignReferenceRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_design_reference", { request })),
 	hfBrowserLinks: () => typedError<HfBrowserLinks, ApiError_Serialize>(__TAURI_INVOKE("hf_browser_links")),
 	hfSearch: (request: HfSearchRequest) => typedError<HfSearchResults, ApiError_Serialize>(__TAURI_INVOKE("hf_search", { request })),
-	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo, ApiError_Serialize>(__TAURI_INVOKE("hf_model_files", { request })),
+	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo_Serialize, ApiError_Serialize>(__TAURI_INVOKE("hf_model_files", { request })),
 	hfReadme: (request: HfReadmeRequest) => typedError<HfReadme, ApiError_Serialize>(__TAURI_INVOKE("hf_readme", { request })),
 	hfAuthor: (request: HfAuthorRequest) => typedError<HfAuthor, ApiError_Serialize>(__TAURI_INVOKE("hf_author", { request })),
 	hfAvatars: (request: HfAvatarsRequest) => typedError<HfAvatars, ApiError_Serialize>(__TAURI_INVOKE("hf_avatars", { request })),
-	hfRunnability: (request: HfRunnabilityRequest) => typedError<HfRunnability, ApiError_Serialize>(__TAURI_INVOKE("hf_runnability", { request })),
-	hfRecommendation: (request: HfRecommendationRequest_Deserialize) => typedError<HfRecommendation, ApiError_Serialize>(__TAURI_INVOKE("hf_recommendation", { request })),
+	hfRecommendation: (request: HfRecommendationRequest_Deserialize) => typedError<HfRecommendation_Serialize, ApiError_Serialize>(__TAURI_INVOKE("hf_recommendation", { request })),
 	hfDownload: (request: HfDownloadRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("hf_download", { request })),
 	hfAuthStatus: () => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_status")),
 	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_save", { request })),
@@ -286,9 +284,9 @@ export const commands = {
 	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_retry", { request })),
 	memorySkip: (request: MemorySkipRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_skip", { request })),
 	memoryCycles: (request: MemoryCyclesRequest) => typedError<MemoryCyclePage, ApiError_Serialize>(__TAURI_INVOKE("memory_cycles", { request })),
-	companionStateGet: (request: CompanionStateGetRequest) => typedError<CompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("companion_state_get", { request })),
 	memoryCycleRevert: (request: MemoryCycleRevertRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_cycle_revert", { request })),
 	memoryErrorDismiss: (request: MemoryErrorDismissRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_error_dismiss", { request })),
+	companionStateGet: (request: CompanionStateGetRequest) => typedError<CompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("companion_state_get", { request })),
 	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_get", { request })),
 	companionSoulGrowthClear: (request: CompanionSoulGrowthClearRequest) => typedError<number, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_clear", { request })),
 	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
@@ -1442,6 +1440,8 @@ export type CompanionRelationshipDefaults = {
 	trust: number | null,
 	affection: number | null,
 	tension: number | null,
+};
+
 export type CompanionRelationshipView = {
 	closeness: number | null,
 	trust: number | null,
@@ -1450,8 +1450,6 @@ export type CompanionRelationshipView = {
 	stability: number | null,
 	interaction_count: number,
 	last_interaction_at: number,
-};
-
 };
 
 /**  The authored configuration of a companion character. */
@@ -1542,6 +1540,8 @@ export type CompanionSoulWriterRunRequest = {
 	user_notes: string | null,
 	model_profile_id: string | null,
 	client_operation_id: string,
+};
+
 export type CompanionStateGetRequest = {
 	conversation_id: string,
 };
@@ -1565,8 +1565,6 @@ export type CompanionStateView = {
 	confidence: number | null,
 	emotions_updated_at: number,
 	updated_at: number,
-};
-
 };
 
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
@@ -2433,9 +2431,6 @@ export type GenerationEvent = { type: "started"; turn_id: string } | { type: "mo
 
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal" | "database_write_fenced";
 
-/**  Where a model and its KV cache would live. */
-export type GpuModeDto = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu";
-
 export type GradientColor = {
 	r: number,
 	g: number,
@@ -2716,16 +2711,43 @@ export type HfCanonicalPlan = {
 	gpu_layers: number,
 	total_layers: number,
 	offload_kqv: boolean,
+	/**  Where the estimate puts the model and its KV cache. */
+	gpu_mode: HfPlanGpuMode,
+	/**  Absent when the placement has no speed rating, as on unified memory. */
+	prefill_speed: HfSpeed | null,
+	generation_speed: HfSpeed | null,
 	memory_fit: HfCanonicalMemoryFit[],
 	gpu_policy: HfGpuPolicy,
 	placement: LlamaPlacement | null,
 };
 
-export type HfCanonicalRecommendation = {
+export type HfCanonicalRecommendation = HfCanonicalRecommendation_Serialize | HfCanonicalRecommendation_Deserialize;
+
+export type HfCanonicalRecommendation_Deserialize = {
 	devices: LlamaDevice[],
 	files: HfCanonicalFile[],
 	selected: HfCanonicalPlan | null,
 	recommended_filename: string | null,
+	recommended_kv_type?: string | null,
+	/**
+	 *  A higher-quality file of the request that runs as well as the
+	 *  selected one at its context, KV type and offload.
+	 */
+	upgrade?: string | null,
+	gpu_policy: HfGpuPolicy,
+};
+
+export type HfCanonicalRecommendation_Serialize = {
+	devices: LlamaDevice[],
+	files: HfCanonicalFile[],
+	selected: HfCanonicalPlan | null,
+	recommended_filename: string | null,
+	recommended_kv_type: string | null,
+	/**
+	 *  A higher-quality file of the request that runs as well as the
+	 *  selected one at its context, KV type and offload.
+	 */
+	upgrade: string | null,
 	gpu_policy: HfGpuPolicy,
 };
 
@@ -2808,6 +2830,11 @@ export type HfDownloadSetup_Serialize = {
  *  token, replace it, accept the repository's license, or wait.
  */
 export type HfFailure = { type: "token_missing" } | { type: "token_invalid" } | { type: "gated_access"; model_id: string } | { type: "not_found" } | { type: "rate_limited" } | { type: "offline" };
+
+export type HfFilePart = {
+	filename: string,
+	size: number,
+};
 
 export type HfFileRecommendation = {
 	filename: string,
@@ -2904,8 +2931,23 @@ export type HfModelArch = {
 	incomplete_parse: boolean,
 };
 
-export type HfModelFile = {
+export type HfModelFile = HfModelFile_Serialize | HfModelFile_Deserialize;
+
+export type HfModelFile_Deserialize = {
 	filename: string,
+	display_name?: string | null,
+	parts?: HfFilePart[],
+	size: number,
+	quantization: string,
+	is_mmproj: boolean,
+	is_mtp: boolean,
+	imatrix: boolean,
+};
+
+export type HfModelFile_Serialize = {
+	filename: string,
+	display_name: string | null,
+	parts: HfFilePart[],
 	size: number,
 	quantization: string,
 	is_mmproj: boolean,
@@ -2914,7 +2956,10 @@ export type HfModelFile = {
 };
 
 /**  A repository's downloadable files, smallest first, and its GGUF summary. */
-export type HfModelInfo = {
+export type HfModelInfo = HfModelInfo_Serialize | HfModelInfo_Deserialize;
+
+/**  A repository's downloadable files, smallest first, and its GGUF summary. */
+export type HfModelInfo_Deserialize = {
 	model_id: string,
 	/**
 	 *  The commit the files were listed at; runnability and downloads pass
@@ -2928,7 +2973,27 @@ export type HfModelInfo = {
 	architecture: string | null,
 	context_length: number | null,
 	parameter_count: number | null,
-	files: HfModelFile[],
+	last_modified: string | null,
+	files: HfModelFile_Deserialize[],
+};
+
+/**  A repository's downloadable files, smallest first, and its GGUF summary. */
+export type HfModelInfo_Serialize = {
+	model_id: string,
+	/**
+	 *  The commit the files were listed at; runnability and downloads pass
+	 *  it back.
+	 */
+	revision: string | null,
+	author: string,
+	likes: number,
+	downloads: number,
+	tags: string[],
+	architecture: string | null,
+	context_length: number | null,
+	parameter_count: number | null,
+	last_modified: string | null,
+	files: HfModelFile_Serialize[],
 };
 
 export type HfModelOffload = "auto" | "cpu" | "gpu" | "mixed";
@@ -3017,9 +3082,17 @@ export type HfPlanUpgrade = {
 	score: number,
 };
 
-export type HfPreviewSidecars = {
-	mmproj: HfRunnabilityFile | null,
-	mtp: HfRunnabilityFile | null,
+export type HfPreviewSidecars = HfPreviewSidecars_Serialize | HfPreviewSidecars_Deserialize;
+
+export type HfPreviewSidecars_Deserialize = {
+	mmproj: HfRunnabilityFile_Deserialize | null,
+	mtp: HfRunnabilityFile_Deserialize | null,
+	mtp_bundled: boolean,
+};
+
+export type HfPreviewSidecars_Serialize = {
+	mmproj: HfRunnabilityFile_Serialize | null,
+	mtp: HfRunnabilityFile_Serialize | null,
 	mtp_bundled: boolean,
 };
 
@@ -3036,8 +3109,53 @@ export type HfReadmeRequest = {
  *  The recommended file, context and KV type, with the limits the download
  *  planner shows. `gpu_layer_count` is every block plus the output layer.
  */
-export type HfRecommendation = {
-	preview: HfCanonicalRecommendation | null,
+export type HfRecommendation = HfRecommendation_Serialize | HfRecommendation_Deserialize;
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest = HfRecommendationRequest_Serialize | HfRecommendationRequest_Deserialize;
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest_Deserialize = {
+	gpu_policy?: HfGpuPolicy | null,
+	sidecars?: HfPreviewSidecars_Deserialize | null,
+	model_id: string,
+	revision: string | null,
+	files: HfRunnabilityFile_Deserialize[],
+	ollama_account_id: string | null,
+	sidecar_reserve_bytes: number | null,
+	plan: HfPlanChoice | null,
+};
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest_Serialize = {
+	gpu_policy: HfGpuPolicy | null,
+	sidecars: HfPreviewSidecars_Serialize | null,
+	model_id: string,
+	revision: string | null,
+	files: HfRunnabilityFile_Serialize[],
+	ollama_account_id: string | null,
+	sidecar_reserve_bytes: number | null,
+	plan: HfPlanChoice | null,
+};
+
+/**
+ *  The recommended file, context and KV type, with the limits the download
+ *  planner shows. `gpu_layer_count` is every block plus the output layer.
+ */
+export type HfRecommendation_Deserialize = {
+	preview: HfCanonicalRecommendation_Deserialize | null,
 	hardware_available: boolean,
 	metadata_available: boolean,
 	available_ram: number,
@@ -3057,84 +3175,43 @@ export type HfRecommendation = {
 };
 
 /**
- *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
- *  (the projector and draft model chosen) and `plan` (the planner's
- *  current choice) shape the planner's limits and report.
+ *  The recommended file, context and KV type, with the limits the download
+ *  planner shows. `gpu_layer_count` is every block plus the output layer.
  */
-export type HfRecommendationRequest = HfRecommendationRequest_Serialize | HfRecommendationRequest_Deserialize;
-
-/**
- *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
- *  (the projector and draft model chosen) and `plan` (the planner's
- *  current choice) shape the planner's limits and report.
- */
-export type HfRecommendationRequest_Deserialize = {
-	gpu_policy?: HfGpuPolicy | null,
-	sidecars?: HfPreviewSidecars | null,
-	model_id: string,
-	revision: string | null,
-	files: HfRunnabilityFile[],
-	ollama_account_id: string | null,
-	sidecar_reserve_bytes: number | null,
-	plan: HfPlanChoice | null,
-};
-
-/**
- *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
- *  (the projector and draft model chosen) and `plan` (the planner's
- *  current choice) shape the planner's limits and report.
- */
-export type HfRecommendationRequest_Serialize = {
-	gpu_policy: HfGpuPolicy | null,
-	sidecars: HfPreviewSidecars | null,
-	model_id: string,
-	revision: string | null,
-	files: HfRunnabilityFile[],
-	ollama_account_id: string | null,
-	sidecar_reserve_bytes: number | null,
-	plan: HfPlanChoice | null,
+export type HfRecommendation_Serialize = {
+	preview: HfCanonicalRecommendation_Serialize | null,
+	hardware_available: boolean,
+	metadata_available: boolean,
+	available_ram: number,
+	available_vram: number,
+	supports_gpu_offload: boolean,
+	unified_memory: boolean,
+	total_available: number,
+	kv_base_per_token: number | null,
+	kv_context_cap: number | null,
+	model_max_context: number,
+	arch: HfModelArch | null,
+	files: HfFileRecommendation[],
+	best: HfBestRecommendation | null,
+	gpu_layer_count: number | null,
+	kv_types: HfKvType[],
+	plan: HfPlan | null,
 };
 
 export type HfRunStatus = "yes" | "borderline" | "no";
 
-/**
- *  Scores per file. `hardware_available` is false for an Ollama account
- *  without a Sprout probe (no scores then); `metadata_available` is false
- *  when the GGUF header could not be read, so the KV cache is not counted.
- */
-export type HfRunnability = {
-	hardware_available: boolean,
-	metadata_available: boolean,
-	scores: HfRunnabilityScore[],
-};
+export type HfRunnabilityFile = HfRunnabilityFile_Serialize | HfRunnabilityFile_Deserialize;
 
-export type HfRunnabilityFile = {
+export type HfRunnabilityFile_Deserialize = {
 	filename: string,
+	parts?: HfFilePart[],
 	size: number,
 };
 
-/**
- *  Files of `model_id` judged against this machine, or against the machine
- *  behind an Ollama account's Sprout probe.
- */
-export type HfRunnabilityRequest = {
-	model_id: string,
-	/**
-	 *  The commit to read headers at (`HfModelInfo::revision`); `main` when
-	 *  absent.
-	 */
-	revision: string | null,
-	files: HfRunnabilityFile[],
-	ollama_account_id: string | null,
-};
-
-export type HfRunnabilityScore = {
+export type HfRunnabilityFile_Serialize = {
 	filename: string,
-	score: number,
-	label: RunnabilityLabel,
-	fits_in_ram: boolean,
-	fits_in_vram: boolean,
-	gpu_mode: GpuModeDto,
+	parts: HfFilePart[],
+	size: number,
 };
 
 /**  A model search. `limit` defaults to 20 and is capped at 100. */
@@ -5037,31 +5114,6 @@ export type LlmMetricsPage = {
 };
 
 /**
- *  How well a model file runs here. Without its GGUF header
- *  (`metadata_available` false) the KV cache is not counted.
- */
-export type LocalFileRunnability = {
-	score: number,
-	label: RunnabilityLabel,
-	fits_in_ram: boolean,
-	fits_in_vram: boolean,
-	memory_score: number,
-	gpu_score: number,
-	kv_score: number,
-	gpu_mode: GpuModeDto,
-	quant_score: number,
-	available_ram: number,
-	available_vram: number,
-	model_size: number,
-	quantization: string,
-	metadata_available: boolean,
-};
-
-export type LocalFileRunnabilityRequest = {
-	target: LocalRunnabilityTarget,
-};
-
-/**
  *  Moves a model file into the models folder, in a folder named after
  *  `model_name` (else the file's name).
  */
@@ -5142,18 +5194,6 @@ export type LocalModelsDirSetRequest = {
 	path: string,
 	move_existing: boolean,
 	client_operation_id: string,
-};
-
-export type LocalRunnabilityTarget = { type: "draft"; model: FileSource; sidecars: LocalSidecarsDraft } | { type: "saved"; model_profile_id: string };
-
-/**  The files loaded next to a model the editor has not saved. */
-export type LocalSidecarsDraft = {
-	mmproj: FileSource | null,
-	mtp_enabled: boolean,
-	mtp_placement: LlamaDraftPlacement | null,
-	mtp_model: FileSource | null,
-	dflash_enabled: boolean,
-	dflash_model: FileSource | null,
 };
 
 export type LogAppendRequest = {

@@ -598,9 +598,12 @@ describe("local model tools", () => {
           architecture: null,
           context_length: null,
           parameter_count: null,
+          last_modified: null,
           files: [
             {
               filename: "model.gguf",
+              display_name: null,
+              parts: [],
               size: 1024,
               quantization: "Q4_K_M",
               is_mmproj: false,
@@ -618,10 +621,6 @@ describe("local model tools", () => {
       hfReadme: () => ({ status: "ok", data: { markdown: "Model information" } }),
       hfAvatars: () => ({ status: "ok", data: { avatars: [] } }),
       localModelsList: () => ({ status: "ok", data: { files: [] } }),
-      hfRunnability: () => ({
-        status: "ok",
-        data: { hardware_available: false, metadata_available: false, scores: [] },
-      }),
       hfRecommendation: () => ({
         status: "ok",
         data: {
@@ -650,7 +649,7 @@ describe("local model tools", () => {
     await click(/author\/model/);
     await click("Choose a file");
     await click(/Q4_K_M/);
-    await click("Download");
+    await click("Download Q4_K_M");
     await waitFor(() => expect(download).toHaveBeenCalled());
     expect(download.mock.calls[0]?.[0]).toMatchObject({
       repo: "author/model",

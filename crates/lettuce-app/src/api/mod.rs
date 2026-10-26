@@ -125,12 +125,11 @@ pub use memory::models::{
 };
 pub use models::hugging_face::{
     hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_browser_links,
-    hf_download, hf_model_files, hf_readme, hf_recommendation, hf_runnability, hf_search,
+    hf_download, hf_model_files, hf_readme, hf_recommendation, hf_search,
 };
 pub use models::local::{
-    llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,
-    local_model_adopt, local_model_delete, local_models_dir_get, local_models_dir_set,
-    local_models_list,
+    llama_chat_template, llama_context_info, llama_devices, llama_unload, local_model_adopt,
+    local_model_delete, local_models_dir_get, local_models_dir_set, local_models_list,
 };
 pub use models::ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};

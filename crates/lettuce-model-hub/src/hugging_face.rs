@@ -1,6 +1,7 @@
 //! The Hugging Face model browser: request shapes, response parsing and the
 //! error texts the app shows for each response.
 
+use crate::{HfFilePart, group_gguf_files};
 use serde::Deserialize;
 
 pub const HUGGING_FACE_ENDPOINT: &str = "https://huggingface.co";
@@ -502,7 +503,7 @@ pub fn parse_avatar(body: &[u8]) -> Option<String> {
 
 #[must_use]
 pub fn model_detail_request(model_id: &str) -> HfRequest {
-    HfRequest::new(format!("/api/models/{model_id}"))
+    HfRequest::new(format!("/api/models/{model_id}")).with("blobs", "true")
 }
 
 /// A bundle role search: the 100 top models for `sort`, optionally by
@@ -649,7 +650,7 @@ pub fn parse_repo_tree(body: &[u8]) -> Result<Vec<HfTreeEntry>, serde_json::Erro
 /// The repository's current revision with every file's size and digest.
 #[must_use]
 pub fn model_pin_request(model_id: &str) -> HfRequest {
-    model_detail_request(model_id).with("blobs", "true")
+    model_detail_request(model_id)
 }
 
 /// The repository at `revision` with every file's size and digest.
@@ -815,6 +816,33 @@ pub fn pinned_files(
     })
 }
 
+pub fn pinned_gguf_files(
+    model_id: &str,
+    body: &[u8],
+    filenames: &[&str],
+) -> Result<HfPinnedFiles, HfBrowseError> {
+    let mut expanded = Vec::new();
+    for filename in filenames {
+        if let Some(shard) = crate::GgufShardName::parse(filename) {
+            if shard.index != 1 {
+                return Err(HfBrowseError::Message(
+                    "A split model must start at its first part.".to_owned(),
+                ));
+            }
+            expanded.extend((1..=shard.count).map(|index| shard.filename(index)));
+        } else {
+            expanded.push((*filename).to_owned());
+        }
+    }
+    expanded.sort();
+    expanded.dedup();
+    pinned_files(
+        model_id,
+        body,
+        &expanded.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
+}
+
 const MAX_RESOLVE_SEGMENT_BYTES: usize = 256;
 const MAX_RESOLVE_FILENAME_BYTES: usize = 1024;
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
@@ -933,15 +961,8 @@ pub fn strip_endpoint_prefix(value: &str) -> &str {
 }
 
 #[must_use]
-pub fn model_tree_request(model_id: &str, mode: HfBrowseMode) -> HfRequest {
-    HfRequest::new(format!("/api/models/{model_id}/tree/main")).with(
-        "recursive",
-        if mode == HfBrowseMode::Image {
-            "true"
-        } else {
-            "false"
-        },
-    )
+pub fn model_tree_request(model_id: &str, _mode: HfBrowseMode) -> HfRequest {
+    HfRequest::new(format!("/api/models/{model_id}/tree/main")).with("recursive", "true")
 }
 
 #[must_use]
@@ -957,6 +978,8 @@ pub fn whoami_request() -> HfRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HfModelFile {
     pub filename: String,
+    pub display_name: Option<String>,
+    pub parts: Vec<HfFilePart>,
     pub size: u64,
     pub quantization: String,
     pub is_mmproj: bool,
@@ -976,6 +999,7 @@ pub struct HfModelInfo {
     pub architecture: Option<String>,
     pub context_length: Option<u64>,
     pub parameter_count: Option<u64>,
+    pub last_modified: Option<String>,
     pub files: Vec<HfModelFile>,
 }
 
@@ -993,6 +1017,8 @@ struct ModelDetail {
     tags: Vec<String>,
     #[serde(default)]
     author: Option<String>,
+    #[serde(default, rename = "lastModified")]
+    last_modified: Option<String>,
     #[serde(default)]
     siblings: Vec<Sibling>,
     #[serde(default)]
@@ -1002,6 +1028,10 @@ struct ModelDetail {
 #[derive(Deserialize)]
 struct Sibling {
     rfilename: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    lfs: Option<TreeLfs>,
 }
 
 #[derive(Deserialize, Default)]
@@ -1063,13 +1093,20 @@ pub fn model_info(
         })
         .map(|sibling| HfModelFile {
             filename: sibling.rfilename.clone(),
-            size: sizes.get(&sibling.rfilename).copied().unwrap_or(0),
+            display_name: None,
+            parts: Vec::new(),
+            size: sibling
+                .lfs
+                .as_ref()
+                .map_or(sibling.size, |lfs| lfs.size)
+                .max(sizes.get(&sibling.rfilename).copied().unwrap_or(0)),
             quantization: extract_quantization(&sibling.rfilename),
             is_mmproj: sibling.rfilename.to_lowercase().contains("mmproj"),
             is_mtp: is_mtp_asset(&sibling.rfilename),
             imatrix: is_imatrix_quant(&sibling.rfilename),
         })
         .collect::<Vec<_>>();
+    files = group_gguf_files(files);
     files.sort_by_key(|file| file.size);
     let gguf = detail.gguf.unwrap_or_default();
     Ok(HfModelInfo {
@@ -1082,6 +1119,7 @@ pub fn model_info(
         architecture: gguf.architecture,
         context_length: gguf.context_length,
         parameter_count: gguf.total,
+        last_modified: detail.last_modified,
         files,
     })
 }
@@ -1475,6 +1513,24 @@ mod tests {
                 .map(|result| (result.model_id.as_str(), result.author.as_str()))
                 .collect::<Vec<_>>(),
             vec![("b/two", "b"), ("a/one", "a")]
+        );
+    }
+
+    #[test]
+    fn model_info_carries_the_last_modified_time() {
+        let info = |detail: &[u8]| model_info("org/model", detail, b"[]", HfBrowseMode::Llm);
+        assert_eq!(
+            info(br#"{"modelId": "org/model", "lastModified": "2026-09-01T10:00:00.000Z"}"#)
+                .expect("info")
+                .last_modified
+                .as_deref(),
+            Some("2026-09-01T10:00:00.000Z")
+        );
+        assert_eq!(
+            info(br#"{"modelId": "org/model"}"#)
+                .expect("info")
+                .last_modified,
+            None
         );
     }
 

@@ -2,7 +2,16 @@ import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal } from "lucide-react";
+import {
+  Copy,
+  Cpu,
+  FolderOpen,
+  Image as ImageIcon,
+  MoreHorizontal,
+  Plus,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import {
   Button,
   confirm,
@@ -15,22 +24,25 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuSeparator,
   MenuTrigger,
+  relativeTime,
   SearchField,
   Table,
   Text,
   toast,
+  Tooltip,
 } from "@lettuceai/crisp";
 import type { LocalModelFile, ProviderAccountView } from "@/api/generated/bindings";
 import { revealLocalModel } from "@/api/local-model-files";
 import { queryKeys } from "@/api/query-keys";
 import { minimalModelConfig } from "@/entities/model";
 import { FailureState } from "@/shared/ui/FailureState";
-import { useSettingsAction, useSettingsApi } from "../data";
+import { useSettingsAction, useSettingsApi, useSettingsLayout } from "../data";
 import { useByteSize } from "../image/local-data";
 import { FolderMoves } from "./FolderMoves";
 import { useFolderMoves } from "./folder-move-data";
-import { browserKey } from "./data";
+import { browserKey, separator } from "./data";
 
 export function DownloadedModels({ account }: { account: ProviderAccountView | undefined }) {
   return account ? <OllamaDownloaded key={account.id} account={account} /> : <LocalDownloaded />;
@@ -42,6 +54,7 @@ function LocalDownloaded() {
   const client = useQueryClient();
   const action = useSettingsAction();
   const size = useByteSize();
+  const { phone } = useSettingsLayout();
   const [search, setSearch] = useState("");
   const createOperations = useRef(new Map<string, string>());
   const providerOperation = useRef(crypto.randomUUID());
@@ -94,15 +107,7 @@ function LocalDownloaded() {
       );
     await refresh();
   };
-  const openFile = async (file: LocalModelFile) => {
-    const reference = file.used_by.find((item) => item.model_profile_id);
-    if (reference?.model_profile_id) {
-      await navigate({
-        to: "/settings/models/$modelId",
-        params: { modelId: reference.model_profile_id },
-      });
-      return;
-    }
+  const makeModel = async (file: LocalModelFile) => {
     const currentAccounts = await client.fetchQuery({
       queryKey: queryKeys.providers.accounts(),
       queryFn: () => api.call("providerAccountsList"),
@@ -178,115 +183,165 @@ function LocalDownloaded() {
       folderMoves.admit(accepted.job_id);
       await refresh();
     });
-  const menus = (file: LocalModelFile) => (
-    <Menu>
-      <MenuTrigger>
-        <IconButton label={file.filename}>
-          <MoreHorizontal size={icon.md} />
-        </IconButton>
-      </MenuTrigger>
-      <MenuContent align="end">
-        {((!file.is_mmproj && !file.is_mtp && !file.is_dflash) ||
-          file.used_by.some((reference) => reference.model_profile_id)) && (
-          <MenuItem onSelect={() => action.mutate(() => openFile(file))}>
-            {t(
-              file.used_by.some((reference) => reference.model_profile_id)
-                ? "hf.openModel"
-                : "hf.makeModel",
-            )}
-          </MenuItem>
-        )}
-        <MenuItem
-          onSelect={() =>
-            action.mutate(async () => {
-              await navigator.clipboard.writeText(file.path);
-              toast.success(t("hf.copied"));
-            })
-          }
-        >
-          {t("hf.copyPath")}
-        </MenuItem>
-        <MenuItem onSelect={() => action.mutate(() => revealLocalModel(file.path))}>
-          {t("hf.showFolder")}
-        </MenuItem>
-        <MenuItem danger onSelect={() => action.mutate(() => deleteFile(file))}>
-          {t("hf.delete")}
-        </MenuItem>
-      </MenuContent>
-    </Menu>
-  );
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchField
-          className="min-w-0 flex-1"
-          value={search}
-          onChange={setSearch}
-          aria-label={t("hf.search")}
-          placeholder={t("hf.search")}
-        />
-        <Button
-          variant="secondary"
-          loading={action.isPending}
-          onClick={() =>
-            action.mutate(async () => {
-              const picked = await api.call("filesPickOpen", {
-                kinds: ["gguf_model"],
-                multiple: true,
-              });
-              for (const source of picked.sources)
-                await api.call("localModelAdopt", { source, model_name: null });
-              await refresh();
-            })
-          }
-        >
-          {t("hf.addFile")}
-        </Button>
-      </div>
-      {dir.isPending ? (
-        <LoadingState />
-      ) : dir.isError ? (
-        <FailureState error={dir.error} onRetry={() => void dir.refetch()} />
-      ) : (
-        <ListGroup>
-          <ListRow
-            title={t("hf.folder")}
-            description={dir.data.path}
-            trailing={
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={action.isPending || folderMoves.active}
-                onClick={move}
-              >
-                {t("hf.change")}
-              </Button>
+  const menus = (file: LocalModelFile) => {
+    const models = file.used_by.filter((reference) => reference.model_profile_id);
+    return (
+      <Menu>
+        <MenuTrigger>
+          <IconButton label={file.filename} size="sm">
+            <MoreHorizontal size={icon.sm} />
+          </IconButton>
+        </MenuTrigger>
+        <MenuContent align="end" className="w-60">
+          {models.map((reference) => (
+            <MenuItem
+              key={reference.model_profile_id}
+              icon={<Cpu size={icon.md} />}
+              onSelect={() =>
+                void navigate({
+                  to: "/settings/models/$modelId",
+                  params: { modelId: reference.model_profile_id! },
+                })
+              }
+            >
+              {t("hf.openNamed", { name: reference.display_name ?? t("hf.globalDefaults") })}
+            </MenuItem>
+          ))}
+          {models.length === 0 && !file.is_mmproj && !file.is_mtp && !file.is_dflash && (
+            <MenuItem
+              icon={<Plus size={icon.md} />}
+              onSelect={() => action.mutate(() => makeModel(file))}
+            >
+              {t("hf.makeModel")}
+            </MenuItem>
+          )}
+          <MenuItem
+            icon={<Copy size={icon.md} />}
+            onSelect={() =>
+              action.mutate(async () => {
+                await navigator.clipboard.writeText(file.path);
+                toast.success(t("hf.copied"));
+              })
             }
+          >
+            {t("hf.copyPath")}
+          </MenuItem>
+          <MenuItem
+            icon={<FolderOpen size={icon.md} />}
+            onSelect={() => action.mutate(() => revealLocalModel(file.path))}
+          >
+            {t("hf.showFolder")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            danger
+            icon={<Trash2 size={icon.md} />}
+            onSelect={() => action.mutate(() => deleteFile(file))}
+          >
+            {t("hf.deleteFile")}
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+    );
+  };
+  const kindLabel = (file: LocalModelFile) =>
+    file.is_mmproj
+      ? t("hf.visionKind")
+      : file.is_mtp
+        ? t("hf.mtpKind")
+        : file.is_dflash
+          ? t("hf.dflashKind")
+          : file.quantization;
+  const usedBy = (file: LocalModelFile) =>
+    file.used_by.map((item) => item.display_name ?? t("hf.globalDefaults")).join(", ");
+  const total = files.data?.files.reduce((sum, file) => sum + file.size, 0) ?? 0;
+  return (
+    <div className="space-y-3">
+      <div className={phone ? "flex flex-col gap-2" : "flex items-center gap-2"}>
+        <div className="min-w-0 flex-1">
+          <SearchField
+            size="sm"
+            value={search}
+            onChange={setSearch}
+            aria-label={t("hf.localSearch")}
+            placeholder={t("hf.localSearch")}
           />
-          <ListRow
-            title={t("hf.size")}
-            trailing={size(files.data?.files.reduce((sum, file) => sum + file.size, 0) ?? 0)}
-          />
-        </ListGroup>
-      )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Tooltip content={t("hf.folderTooltip")}>
+            <Button
+              size="sm"
+              variant="secondary"
+              leading={<FolderOpen size={icon.sm} />}
+              disabled={dir.isPending || dir.isError || action.isPending || folderMoves.active}
+              onClick={move}
+            >
+              <span className="max-w-64 truncate font-mono text-xs">{dir.data?.path ?? ""}</span>
+              <span className="text-fg-3">{[separator, size(total)].join(" ")}</span>
+            </Button>
+          </Tooltip>
+          <Button
+            size="sm"
+            variant="secondary"
+            leading={<Plus size={icon.sm} />}
+            loading={action.isPending}
+            onClick={() =>
+              action.mutate(async () => {
+                const picked = await api.call("filesPickOpen", {
+                  kinds: ["gguf_model"],
+                  multiple: true,
+                });
+                for (const source of picked.sources)
+                  await api.call("localModelAdopt", { source, model_name: null });
+                await refresh();
+              })
+            }
+          >
+            {t("hf.addFile")}
+          </Button>
+        </div>
+      </div>
+      {dir.isError && <FailureState error={dir.error} onRetry={() => void dir.refetch()} />}
       <FolderMoves state={folderMoves} />
       {files.isPending ? (
         <LoadingState />
       ) : files.isError ? (
         <FailureState error={files.error} onRetry={() => void files.refetch()} />
+      ) : rows.length === 0 ? (
+        <EmptyState title={t("hf.noDownloads")} description={t("hf.noDownloadsBody")} />
+      ) : phone ? (
+        <ListGroup>
+          {rows.map((file) => (
+            <ListRow
+              key={file.path}
+              title={<span className="block truncate font-mono text-sm">{file.filename}</span>}
+              description={
+                file.used_by.length
+                  ? t("hf.usedByLine", {
+                      kind: kindLabel(file),
+                      size: size(file.size),
+                      models: usedBy(file),
+                    })
+                  : t("hf.notUsedLine", { kind: kindLabel(file), size: size(file.size) })
+              }
+              trailing={menus(file)}
+            />
+          ))}
+        </ListGroup>
       ) : (
         <Table
           rows={rows}
           rowKey={(file) => file.path}
-          empty={<EmptyState title={t("hf.noDownloads")} description={t("hf.noDownloadsBody")} />}
           columns={[
             {
               key: "file",
               header: t("hf.file"),
               cell: (file) => (
                 <div className="min-w-0">
-                  <Text className="block max-w-80 truncate">{file.filename}</Text>
-                  <Text variant="hint" className="block truncate">
+                  <Text className="block max-w-80 truncate font-mono text-sm" title={file.path}>
+                    {file.filename}
+                  </Text>
+                  <Text variant="hint" className="block truncate text-xs">
                     {file.repo}
                   </Text>
                 </div>
@@ -296,18 +351,28 @@ function LocalDownloaded() {
               key: "kind",
               header: t("hf.kind"),
               cell: (file) =>
-                file.is_mmproj
-                  ? t("hf.visionKind")
-                  : file.is_mtp
-                    ? t("hf.mtpKind")
-                    : file.is_dflash
-                      ? t("hf.dflashKind")
-                      : file.quantization,
+                file.is_mmproj ? (
+                  <span className="flex items-center gap-1.5">
+                    <ImageIcon size={icon.sm} />
+                    {kindLabel(file)}
+                  </span>
+                ) : file.is_mtp ? (
+                  <span className="flex items-center gap-1.5">
+                    <Zap size={icon.sm} />
+                    {kindLabel(file)}
+                  </span>
+                ) : (
+                  <span className="font-mono text-xs">{kindLabel(file)}</span>
+                ),
             },
             {
               key: "arch",
               header: t("hf.arch"),
-              cell: (file) => file.architecture ?? t("hf.unknown"),
+              cell: (file) => (
+                <span className="font-mono text-xs text-fg-3">
+                  {file.architecture ?? t("hf.unknown")}
+                </span>
+              ),
             },
             {
               key: "size",
@@ -319,11 +384,13 @@ function LocalDownloaded() {
               key: "used",
               header: t("hf.usedBy"),
               cell: (file) =>
-                file.used_by
-                  .map((item) => item.display_name ?? t("hf.globalDefaults"))
-                  .join(", ") || t("hf.unused"),
+                file.used_by.length ? (
+                  <span className="block max-w-44 truncate">{usedBy(file)}</span>
+                ) : (
+                  <span className="text-fg-4">{t("hf.unused")}</span>
+                ),
             },
-            { key: "menu", header: t("hf.file"), cell: menus },
+            { key: "menu", header: "", cell: menus },
           ]}
         />
       )}
@@ -336,36 +403,110 @@ function OllamaDownloaded({ account }: { account: ProviderAccountView }) {
   const api = useSettingsApi();
   const size = useByteSize();
   const action = useSettingsAction();
+  const { phone } = useSettingsLayout();
   const [search, setSearch] = useState("");
   const models = useQuery({
     queryKey: [...browserKey, "ollama", account.id],
     queryFn: () => api.call("ollamaModelsList", { provider_account_id: account.id }),
   });
+  const rows = (models.data?.models ?? []).filter((item) =>
+    `${item.name} ${item.family ?? ""} ${item.quantization_level ?? ""}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase()),
+  );
+  const remove = (name: string) =>
+    action.mutate(async () => {
+      if (
+        !(await confirm({
+          title: t("hf.deleteServer", { name }),
+          confirmLabel: t("hf.delete"),
+          cancelLabel: t("manage.cancel"),
+          destructive: true,
+        }))
+      )
+        return;
+      await api.call("ollamaModelDelete", {
+        provider_account_id: account.id,
+        model: name,
+      });
+      await models.refetch();
+    });
+  const deleteButton = (name: string) => (
+    <IconButton
+      size="sm"
+      label={`${t("hf.delete")} ${name}`}
+      disabled={action.isPending}
+      onClick={() => remove(name)}
+    >
+      <Trash2 size={icon.sm} />
+    </IconButton>
+  );
   return (
-    <div className="space-y-4">
-      <SearchField
-        value={search}
-        onChange={setSearch}
-        placeholder={t("hf.search")}
-        aria-label={t("hf.search")}
-      />
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <SearchField
+            size="sm"
+            value={search}
+            onChange={setSearch}
+            placeholder={t("hf.serverSearch")}
+            aria-label={t("hf.serverSearch")}
+          />
+        </div>
+        {models.data && (
+          <Text variant="hint" className="shrink-0 tabular-nums">
+            {t("hf.modelsTotal", {
+              count: models.data.models.length,
+              size: size(models.data.models.reduce((sum, item) => sum + (item.size ?? 0), 0)),
+            })}
+          </Text>
+        )}
+      </div>
       {models.isPending ? (
         <LoadingState />
       ) : models.isError ? (
         <FailureState error={models.error} onRetry={() => void models.refetch()} />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={t("hf.serverEmpty", { name: account.label })}
+          description={t("hf.serverEmptyBody")}
+        />
+      ) : phone ? (
+        <ListGroup>
+          {rows.map((item) => (
+            <ListRow
+              key={item.name}
+              title={<span className="block truncate font-mono text-sm">{item.name}</span>}
+              description={[
+                item.family,
+                item.parameter_size,
+                item.quantization_level,
+                item.size === null ? null : size(item.size),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              trailing={deleteButton(item.name)}
+            />
+          ))}
+        </ListGroup>
       ) : (
         <Table
-          rows={models.data.models.filter((item) =>
-            item.name.toLowerCase().includes(search.toLowerCase()),
-          )}
+          rows={rows}
           rowKey={(item) => item.name}
-          empty={<EmptyState title={t("hf.noDownloads")} />}
           columns={[
-            { key: "name", header: t("hf.name"), cell: (item) => item.name },
+            {
+              key: "name",
+              header: t("hf.name"),
+              cell: (item) => (
+                <span className="block max-w-96 truncate font-mono text-sm">{item.name}</span>
+              ),
+            },
             {
               key: "family",
               header: t("hf.family"),
-              cell: (item) => item.family ?? t("hf.unknown"),
+              cell: (item) => (
+                <span className="font-mono text-xs text-fg-2">{item.family ?? t("hf.unknown")}</span>
+              ),
             },
             {
               key: "params",
@@ -375,7 +516,11 @@ function OllamaDownloaded({ account }: { account: ProviderAccountView }) {
             {
               key: "quant",
               header: t("hf.quant"),
-              cell: (item) => item.quantization_level ?? t("hf.unknown"),
+              cell: (item) => (
+                <span className="font-mono text-xs text-fg-2">
+                  {item.quantization_level ?? t("hf.unknown")}
+                </span>
+              ),
             },
             {
               key: "size",
@@ -388,42 +533,10 @@ function OllamaDownloaded({ account }: { account: ProviderAccountView }) {
               header: t("hf.changed"),
               cell: (item) =>
                 item.modified_at
-                  ? new Intl.DateTimeFormat(i18n.language, {
-                      dateStyle: "medium",
-                    }).format(new Date(item.modified_at))
+                  ? relativeTime(new Date(item.modified_at), undefined, i18n.language)
                   : t("hf.unknown"),
             },
-            {
-              key: "delete",
-              header: t("hf.delete"),
-              cell: (item) => (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={action.isPending}
-                  onClick={() =>
-                    action.mutate(async () => {
-                      if (
-                        !(await confirm({
-                          title: t("hf.deleteServer", { name: item.name }),
-                          confirmLabel: t("hf.delete"),
-                          cancelLabel: t("manage.cancel"),
-                          destructive: true,
-                        }))
-                      )
-                        return;
-                      await api.call("ollamaModelDelete", {
-                        provider_account_id: account.id,
-                        model: item.name,
-                      });
-                      await models.refetch();
-                    })
-                  }
-                >
-                  {t("hf.delete")}
-                </Button>
-              ),
-            },
+            { key: "delete", header: "", cell: (item) => deleteButton(item.name) },
           ]}
         />
       )}

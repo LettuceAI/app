@@ -421,12 +421,7 @@ impl LlamaGenerationRequest {
                 .unwrap_or(MTP_DRAFT_DEFAULT)
                 .min(MTP_DRAFT_MAX),
             mtp_model_path: trimmed_non_empty(input.mtp_model_path.as_deref()),
-            mtp_placement: input
-                .mtp_placement
-                .as_deref()
-                .map(|value| value.trim().to_ascii_lowercase())
-                .filter(|value| matches!(value.as_str(), "auto" | "gpu" | "cpu"))
-                .unwrap_or_else(|| "auto".to_string()),
+            mtp_placement: normalized_mtp_placement(input.mtp_placement.as_deref()),
             dflash_enabled: input.dflash_enabled,
             dflash_draft_tokens: input
                 .dflash_draft_tokens
@@ -457,6 +452,15 @@ impl ResolvedRuntime {
             self.kv_type_v.as_deref(),
         )
     }
+}
+
+/// `auto`, `gpu` or `cpu`; anything else is `auto`.
+#[must_use]
+pub fn normalized_mtp_placement(value: Option<&str>) -> String {
+    value
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| matches!(value.as_str(), "auto" | "gpu" | "cpu"))
+        .unwrap_or_else(|| "auto".to_string())
 }
 
 fn trimmed_non_empty(value: Option<&str>) -> Option<String> {
@@ -802,6 +806,9 @@ mod tests {
         assert_eq!(runtime.compute_batch_size, 512);
         assert_eq!(runtime.mtp_draft_tokens, MTP_DRAFT_MAX);
         assert_eq!(runtime.mtp_placement, "gpu");
+        assert_eq!(normalized_mtp_placement(Some("  CPU ")), "cpu");
+        assert_eq!(normalized_mtp_placement(Some("elsewhere")), "auto");
+        assert_eq!(normalized_mtp_placement(None), "auto");
         assert_eq!(runtime.chat_template_preset, None);
         request.runtime.mtp_draft_tokens = None;
         assert_eq!(

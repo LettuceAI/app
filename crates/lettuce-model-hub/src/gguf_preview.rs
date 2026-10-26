@@ -1,6 +1,8 @@
 use crate::gguf_runnability::GgufReader;
 use std::collections::{BTreeMap, HashSet};
 
+pub const GGUF_PREVIEW_METADATA_BYTES: u64 = 32 * 1024 * 1024;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GgufPreviewTensor {
     pub name: String,
@@ -17,6 +19,8 @@ pub struct GgufPreviewMetadata {
     pub tensors: Vec<GgufPreviewTensor>,
     pub tensor_data_offset: u64,
     pub split_count: u64,
+    pub split_no: u64,
+    pub split_tensors_count: Option<u64>,
 }
 
 impl GgufPreviewMetadata {
@@ -55,11 +59,17 @@ fn numeric_values(reader: &mut GgufReader<'_>, kind: u32) -> Option<Vec<u64>> {
         if length > reader.remaining() {
             return None;
         }
-        (0..length)
-            .map(|_| reader.read_value_as_u64(inner))
-            .collect()
+        (0..length).map(|_| read_numeric(reader, inner)).collect()
     } else {
-        reader.read_value_as_u64(kind).map(|value| vec![value])
+        read_numeric(reader, kind).map(|value| vec![value])
+    }
+}
+
+fn read_numeric(reader: &mut GgufReader<'_>, kind: u32) -> Option<u64> {
+    if kind == 7 {
+        reader.read_u8().map(u64::from)
+    } else {
+        reader.read_value_as_u64(kind)
     }
 }
 
@@ -111,6 +121,8 @@ pub fn parse_gguf_preview(data: &[u8]) -> Option<GgufPreviewMetadata> {
     let mut values = BTreeMap::new();
     let mut alignment = 32;
     let mut split_count = 1;
+    let mut split_no = 0;
+    let mut split_tensors_count = None;
     for _ in 0..entries {
         let key = reader.read_string()?;
         let kind = reader.read_u32()?;
@@ -120,6 +132,10 @@ pub fn parse_gguf_preview(data: &[u8]) -> Option<GgufPreviewMetadata> {
             alignment = reader.read_value_as_u64(kind)?;
         } else if key == "split.count" {
             split_count = reader.read_value_as_u64(kind)?;
+        } else if key == "split.no" {
+            split_no = reader.read_value_as_u64(kind)?;
+        } else if key == "split.tensors.count" {
+            split_tensors_count = Some(reader.read_value_as_u64(kind)?);
         } else if key.contains(".attention.")
             || key.ends_with(".block_count")
             || key.ends_with(".embedding_length")
@@ -183,12 +199,19 @@ pub fn parse_gguf_preview(data: &[u8]) -> Option<GgufPreviewMetadata> {
     }
     let offset =
         u64::try_from(reader.pos).ok()?.checked_add(alignment - 1)? / alignment * alignment;
+    let architecture = match architecture {
+        Some(value) if !value.is_empty() => value,
+        None if split_count > 1 && split_no > 0 && split_no < split_count => String::new(),
+        _ => return None,
+    };
     Some(GgufPreviewMetadata {
-        architecture: architecture?,
+        architecture,
         values,
         tensors: index,
         tensor_data_offset: offset,
         split_count,
+        split_no,
+        split_tensors_count,
     })
 }
 
@@ -291,5 +314,34 @@ mod tests {
         let dimension = marker + "token_embd.weight".len() + 4;
         data[dimension..dimension + 8].copy_from_slice(&u64::MAX.to_le_bytes());
         assert!(parse_gguf_preview(&data).is_none());
+    }
+}
+
+#[cfg(test)]
+mod split_metadata_tests {
+    #[test]
+    fn real_qwen_secondary_shard_has_a_complete_index_without_model_metadata() {
+        let bytes = include_bytes!("../tests/fixtures/qwen38-bf16-secondary-header.gguf");
+        let header = super::parse_gguf_preview(bytes).expect("complete secondary header");
+        assert!(header.architecture.is_empty());
+        assert!(header.values.is_empty());
+        assert_eq!(header.split_count, 2);
+        assert_eq!(header.split_no, 1);
+        assert_eq!(header.split_tensors_count, Some(866));
+        assert_eq!(header.tensors.len(), 31);
+        assert_eq!(header.tensor_data_offset, bytes.len() as u64);
+        let mut invalid = bytes.to_vec();
+        let key = b"split.no";
+        let at = invalid
+            .windows(key.len())
+            .position(|window| window == key)
+            .expect("split number")
+            + key.len()
+            + 4;
+        invalid[at..at + 2].copy_from_slice(&0u16.to_le_bytes());
+        assert!(
+            super::parse_gguf_preview(&invalid).is_none(),
+            "a first shard without architecture is not a complete model"
+        );
     }
 }

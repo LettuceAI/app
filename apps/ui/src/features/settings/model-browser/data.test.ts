@@ -1,7 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { contextValue, hasSprout, parameterBillions, repoFromLink } from "./data";
+import { fitSettingsKey, contextValue, hasSprout, parameterBillions, repoFromLink } from "./data";
 
 describe("Hugging Face browser input", () => {
+  it("reuses fit badges across file switches only for the same GPU, context and sidecar settings", () => {
+    const plan = {
+      filename: "one.gguf",
+      context_length: 8192,
+      kv_type: "q8_0",
+      model_offload: "auto" as const,
+      kv_placement: "auto" as const,
+    };
+    const initial = fitSettingsKey({ gpu_policy: null, sidecars: null, plan: null });
+    const current = {
+      gpu_policy: null,
+      sidecars: { mmproj: null, mtp: null, mtp_bundled: false },
+      plan,
+    };
+    expect(fitSettingsKey(current)).toBe(initial);
+    expect(fitSettingsKey({ ...current, plan: { ...plan, filename: "two.gguf" } })).toBe(initial);
+    expect(fitSettingsKey({ ...current, plan: { ...plan, context_length: 32768 } })).not.toBe(
+      initial,
+    );
+    expect(
+      fitSettingsKey({ ...current, sidecars: { ...current.sidecars, mtp_bundled: true } }),
+    ).not.toBe(initial);
+    expect(
+      fitSettingsKey({
+        ...current,
+        gpu_policy: {
+          multi_gpu_enabled: true,
+          gpu_device_ids: [2, 7],
+          single_gpu_device_id: null,
+          distribution: null,
+          manual_layers: [],
+          priority_vram_limit_bytes: null,
+        },
+      }),
+    ).not.toBe(initial);
+  });
+
   it("opens the repository from actual Hugging Face URLs, including file links", () => {
     expect(
       repoFromLink(

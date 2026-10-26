@@ -87,8 +87,11 @@ impl GgufDownload {
     /// The file name without `.gguf`, else the repository name.
     #[must_use]
     pub fn default_display_name(&self) -> String {
-        let base = self
-            .model_file
+        let logical = lettuce_model_hub::GgufShardName::parse(&self.model_file)
+            .map(|shard| shard.display_name());
+        let base = logical
+            .as_deref()
+            .unwrap_or(&self.model_file)
             .rsplit('/')
             .next()
             .unwrap_or(&self.model_file);
@@ -191,11 +194,21 @@ impl HuggingFaceBrowser {
                 ),
             ));
         }
-        let pinned = lettuce_model_hub::pinned_files(
+        let pinned = lettuce_model_hub::pinned_gguf_files(
             &download.model_id,
             &response.body,
             &download.filenames(),
         )?;
+        if pinned.files.iter().any(|file| {
+            lettuce_model_hub::GgufShardName::parse(&file.path).is_some()
+                && file.sha256.as_ref().is_none_or(|digest| {
+                    digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+        }) {
+            return Err(HfBrowseError::Message(
+                "Every split model part requires a SHA-256 digest before download.".to_owned(),
+            ));
+        }
         let artifacts = pinned
             .files
             .into_iter()
@@ -554,5 +567,73 @@ mod tests {
                 .context_length,
             Some(32768)
         );
+    }
+    #[tokio::test]
+    async fn split_install_pins_all_parts_as_one_job_and_requires_every_sha256() {
+        for with_hashes in [true, false] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+            let address = listener.local_addr().expect("address");
+            tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.expect("accept");
+                let mut buffer = [0u8; 4096];
+                let _ = stream.read(&mut buffer).await.expect("request");
+                let siblings: Vec<_> = (1..=2).map(|index| {
+                    let mut file = json!({"rfilename":format!("nested/model-Q8_0-{index:05}-of-00002.gguf"),"size":index*10,"blobId":"c".repeat(40)});
+                    if with_hashes { file["lfs"] = json!({"size":index*10,"sha256":"a".repeat(64)}); }
+                    file
+                }).collect();
+                let body = json!({"sha":"b".repeat(40),"siblings":siblings}).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("response");
+            });
+            let browser = HuggingFaceBrowser::with_endpoint(
+                lettuce_network::JsonClient::new().expect("client"),
+                format!("http://{address}"),
+            );
+            let download = GgufDownload {
+                model_id: "org/model".to_owned(),
+                model_file: "nested/model-Q8_0-00001-of-00002.gguf".to_owned(),
+                mmproj_file: None,
+                mtp_file: None,
+            };
+            let result = browser
+                .gguf_install_plan(
+                    &InMemorySecretStore::default(),
+                    Path::new("/models"),
+                    &download,
+                    None,
+                )
+                .await;
+            if !with_hashes {
+                assert!(result.is_err());
+                continue;
+            }
+            let plan = result.expect("complete pinned install");
+            assert_eq!(plan.artifacts.len(), 2);
+            assert_eq!(plan.total_bytes(), 30);
+            assert!(plan.artifacts.iter().all(|part| {
+                part.artifact
+                    .sha256
+                    .as_ref()
+                    .is_some_and(|digest| digest.len() == 64)
+            }));
+            assert_eq!(
+                plan.install_id,
+                "hf-gguf:org/model:nested/model-Q8_0-00001-of-00002.gguf"
+            );
+            assert!(
+                download
+                    .installed(Path::new("/models"))
+                    .model_path
+                    .ends_with("nested/model-Q8_0-00001-of-00002.gguf")
+            );
+            assert_eq!(download.default_display_name(), "model-Q8_0");
+        }
     }
 }

@@ -2,7 +2,12 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::{collections::HashSet, fmt, time::Duration, sync::{Arc, RwLock, Weak}};
+use std::{
+    collections::HashSet,
+    fmt,
+    sync::{Arc, RwLock, Weak},
+    time::Duration,
+};
 
 use lettuce_settings::{HeaderName, SecretValue};
 use reqwest::{Url, header, redirect};
@@ -192,7 +197,9 @@ impl JsonResponseStream {
     }
 }
 
-fn io_failure(error: &(dyn std::error::Error + 'static)) -> (Option<std::io::ErrorKind>, Option<i32>, usize) {
+fn io_failure(
+    error: &(dyn std::error::Error + 'static),
+) -> (Option<std::io::ErrorKind>, Option<i32>, usize) {
     let mut io_kind = None;
     let mut io_code = None;
     let mut cause_depth = 0;
@@ -318,7 +325,9 @@ impl ArtifactDownloadClient {
         for root in roots {
             builder = builder.add_root_certificate(root);
         }
-        let client = builder.build().map_err(|_| ArtifactDownloadError::Transport)?;
+        let client = builder
+            .build()
+            .map_err(|_| ArtifactDownloadError::Transport)?;
         Ok(Self {
             client,
             hugging_face_token: None,
@@ -360,22 +369,26 @@ impl ArtifactDownloadClient {
         for root in trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)? {
             builder = builder.add_root_certificate(root);
         }
-        let client = builder.build().map_err(|_| ArtifactDownloadError::Transport)?;
-        let mut response =
-            tokio::time::timeout_at(
-                deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
-                client.get(url).send(),
-            )
-                .await
-                .map_err(|_| ArtifactDownloadError::TimedOut)?
-                .map_err(|_| ArtifactDownloadError::Transport)?;
+        let client = builder
+            .build()
+            .map_err(|_| ArtifactDownloadError::Transport)?;
+        let mut response = tokio::time::timeout_at(
+            deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
+            client.get(url).send(),
+        )
+        .await
+        .map_err(|_| ArtifactDownloadError::TimedOut)?
+        .map_err(|_| ArtifactDownloadError::Transport)?;
         if response.status() != reqwest::StatusCode::OK {
             return Err(ArtifactDownloadError::Refused {
                 status: response.status().as_u16(),
                 signed_in: false,
             });
         }
-        if response.content_length().is_some_and(|size| size > max_bytes) {
+        if response
+            .content_length()
+            .is_some_and(|size| size > max_bytes)
+        {
             return Err(ArtifactDownloadError::InvalidResponse);
         }
         let mut bytes = Vec::new();
@@ -383,9 +396,9 @@ impl ArtifactDownloadClient {
             deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
             response.chunk(),
         )
-            .await
-            .map_err(|_| ArtifactDownloadError::TimedOut)?
-            .map_err(|_| ArtifactDownloadError::Transport)?
+        .await
+        .map_err(|_| ArtifactDownloadError::TimedOut)?
+        .map_err(|_| ArtifactDownloadError::Transport)?
         {
             if (bytes.len() as u64).saturating_add(chunk.len() as u64) > max_bytes {
                 return Err(ArtifactDownloadError::InvalidResponse);
@@ -498,18 +511,46 @@ impl ArtifactDownloadClient {
         length: u64,
         token: Option<&SecretValue>,
     ) -> Result<Vec<u8>, ArtifactDownloadError> {
+        self.read_hugging_face_range(url, endpoint, (0, length), None, token)
+            .await
+    }
+
+    pub async fn read_hugging_face_range(
+        &self,
+        url: &str,
+        endpoint: &str,
+        range: (u64, u64),
+        expected_size: Option<u64>,
+        token: Option<&SecretValue>,
+    ) -> Result<Vec<u8>, ArtifactDownloadError> {
+        self.read_hugging_face_range_url(https_url(url)?, endpoint, range, expected_size, token)
+            .await
+    }
+
+    async fn read_hugging_face_range_url(
+        &self,
+        url: Url,
+        endpoint: &str,
+        range: (u64, u64),
+        expected_size: Option<u64>,
+        token: Option<&SecretValue>,
+    ) -> Result<Vec<u8>, ArtifactDownloadError> {
+        let (offset, length) = range;
+        let end = offset
+            .checked_add(length)
+            .and_then(|end| end.checked_sub(1))
+            .ok_or(ArtifactDownloadError::InvalidRequest)?;
         if length == 0 {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
         let limit = usize::try_from(length).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
-        let url = https_url(url)?;
         let token =
             token.filter(|_| https_url(endpoint).is_ok_and(|origin| same_origin(&url, &origin)));
         let mut request = self
             .client
             .get(url)
             .header(header::USER_AGENT, "LettuceAI/1.0")
-            .header(header::RANGE, format!("bytes=0-{}", length - 1));
+            .header(header::RANGE, format!("bytes={offset}-{end}"));
         if let Some(token) = token {
             request = request.header(header::AUTHORIZATION, Self::bearer(token)?);
         }
@@ -518,6 +559,38 @@ impl ArtifactDownloadClient {
             .map_err(|_| ArtifactDownloadError::TimedOut)?
             .map_err(|_| ArtifactDownloadError::Transport)?;
         if !response.status().is_success() {
+            return Err(ArtifactDownloadError::InvalidResponse);
+        }
+        if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+            let raw = response
+                .headers()
+                .get(header::CONTENT_RANGE)
+                .and_then(|value| value.to_str().ok())
+                .ok_or(ArtifactDownloadError::InvalidResponse)?;
+            let (extent, total) = raw
+                .strip_prefix("bytes ")
+                .and_then(|raw| raw.split_once('/'))
+                .ok_or(ArtifactDownloadError::InvalidResponse)?;
+            let (start, last) = extent
+                .split_once('-')
+                .ok_or(ArtifactDownloadError::InvalidResponse)?;
+            let start = start
+                .parse::<u64>()
+                .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+            let last = last
+                .parse::<u64>()
+                .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+            let total = total
+                .parse::<u64>()
+                .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+            if start != offset
+                || last != end.min(total.saturating_sub(1))
+                || last < start
+                || expected_size.is_some_and(|expected| expected != total)
+            {
+                return Err(ArtifactDownloadError::InvalidResponse);
+            }
+        } else if offset != 0 {
             return Err(ArtifactDownloadError::InvalidResponse);
         }
         let mut bytes = Vec::with_capacity(limit.min(1 << 20));
@@ -555,7 +628,8 @@ impl ArtifactDownloadClient {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
         let token = self.civitai_token_for(&url);
-        self.open(url, offset, expected_size, token.as_deref()).await
+        self.open(url, offset, expected_size, token.as_deref())
+            .await
     }
 
     async fn open(
@@ -754,16 +828,31 @@ impl fmt::Debug for JsonClient {
     }
 }
 
-pub struct WeakJsonClient { tls: Weak<RwLock<JsonTlsClients>>, max_response_bytes: usize }
+pub struct WeakJsonClient {
+    tls: Weak<RwLock<JsonTlsClients>>,
+    max_response_bytes: usize,
+}
 impl fmt::Debug for WeakJsonClient {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { formatter.write_str("WeakJsonClient") }
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("WeakJsonClient")
+    }
 }
 impl WeakJsonClient {
-    pub fn upgrade(&self) -> Option<JsonClient> { self.tls.upgrade().map(|tls| JsonClient { tls, max_response_bytes: self.max_response_bytes }) }
+    pub fn upgrade(&self) -> Option<JsonClient> {
+        self.tls.upgrade().map(|tls| JsonClient {
+            tls,
+            max_response_bytes: self.max_response_bytes,
+        })
+    }
 }
 
 impl JsonClient {
-    pub fn downgrade(&self) -> WeakJsonClient { WeakJsonClient { tls: Arc::downgrade(&self.tls), max_response_bytes: self.max_response_bytes } }
+    pub fn downgrade(&self) -> WeakJsonClient {
+        WeakJsonClient {
+            tls: Arc::downgrade(&self.tls),
+            max_response_bytes: self.max_response_bytes,
+        }
+    }
     pub fn new() -> Result<Self, JsonClientError> {
         Self::with_tls(&TlsPolicy::default())
     }
@@ -787,7 +876,10 @@ impl JsonClient {
 
     pub fn reload_tls(&self, policy: &TlsPolicy) -> Result<(), JsonClientError> {
         let clients = Self::build_tls(policy)?;
-        *self.tls.write().map_err(|_| JsonClientError::ClientConfiguration)? = clients;
+        *self
+            .tls
+            .write()
+            .map_err(|_| JsonClientError::ClientConfiguration)? = clients;
         Ok(())
     }
 
@@ -801,10 +893,21 @@ impl JsonClient {
     }
 
     fn client(&self, policy: RequestPolicy) -> Result<reqwest::Client, JsonClientError> {
-        let clients = self.tls.read().map_err(|_| JsonClientError::ClientConfiguration)?;
+        let clients = self
+            .tls
+            .read()
+            .map_err(|_| JsonClientError::ClientConfiguration)?;
         Ok(if policy.timeout == RequestTimeout::GenerationOnce {
-            if policy.allow_invalid_tls { clients.insecure_once.clone() } else { clients.strict_once.clone() }
-        } else if policy.allow_invalid_tls { clients.insecure.clone() } else { clients.strict.clone() })
+            if policy.allow_invalid_tls {
+                clients.insecure_once.clone()
+            } else {
+                clients.strict_once.clone()
+            }
+        } else if policy.allow_invalid_tls {
+            clients.insecure.clone()
+        } else {
+            clients.strict.clone()
+        })
     }
 
     /// Sends one logical GET and buffers the JSON (or error) body.
@@ -957,8 +1060,7 @@ impl JsonClient {
             .body(body);
         let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
-        self.send_with_headers(request, secret_headers, 0)
-            .await
+        self.send_with_headers(request, secret_headers, 0).await
     }
 
     /// Starts a JSON POST while leaving the response body attached to the
@@ -1178,47 +1280,82 @@ impl fmt::Debug for BulkHttpClient {
     }
 }
 
-pub struct WeakBulkHttpClient { tls: Weak<RwLock<BulkTlsClients>> }
+pub struct WeakBulkHttpClient {
+    tls: Weak<RwLock<BulkTlsClients>>,
+}
 impl fmt::Debug for WeakBulkHttpClient {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { formatter.write_str("WeakBulkHttpClient") }
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("WeakBulkHttpClient")
+    }
 }
 impl WeakBulkHttpClient {
-    pub fn upgrade(&self) -> Option<BulkHttpClient> { self.tls.upgrade().map(|tls| BulkHttpClient { tls }) }
+    pub fn upgrade(&self) -> Option<BulkHttpClient> {
+        self.tls.upgrade().map(|tls| BulkHttpClient { tls })
+    }
 }
 
 impl BulkHttpClient {
-    pub fn downgrade(&self) -> WeakBulkHttpClient { WeakBulkHttpClient { tls: Arc::downgrade(&self.tls) } }
+    pub fn downgrade(&self) -> WeakBulkHttpClient {
+        WeakBulkHttpClient {
+            tls: Arc::downgrade(&self.tls),
+        }
+    }
     pub fn new() -> Result<Self, JsonClientError> {
         Self::with_tls(&TlsPolicy::default())
     }
 
     pub fn with_tls(policy: &TlsPolicy) -> Result<Self, JsonClientError> {
-        Ok(Self { tls: Arc::new(RwLock::new(Self::build_tls(policy)?)) })
+        Ok(Self {
+            tls: Arc::new(RwLock::new(Self::build_tls(policy)?)),
+        })
     }
 
     fn build_tls(policy: &TlsPolicy) -> Result<BulkTlsClients, JsonClientError> {
         let roots = trusted_roots(policy)?;
-        let mut fetch = reqwest::Client::builder().redirect(redirect::Policy::limited(MAX_ARTIFACT_REDIRECTS)).connect_timeout(CONNECT_TIMEOUT).timeout(GENERATION_TIMEOUT);
-        for root in &roots { fetch = fetch.add_root_certificate(root.clone()); }
+        let mut fetch = reqwest::Client::builder()
+            .redirect(redirect::Policy::limited(MAX_ARTIFACT_REDIRECTS))
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(GENERATION_TIMEOUT);
+        for root in &roots {
+            fetch = fetch.add_root_certificate(root.clone());
+        }
         Ok(BulkTlsClients {
-            strict: build_client(&roots, false)?, insecure: build_client(&roots, true)?,
-            fetch: fetch.build().map_err(|_| JsonClientError::ClientConfiguration)?,
+            strict: build_client(&roots, false)?,
+            insecure: build_client(&roots, true)?,
+            fetch: fetch
+                .build()
+                .map_err(|_| JsonClientError::ClientConfiguration)?,
         })
     }
 
     pub fn reload_tls(&self, policy: &TlsPolicy) -> Result<(), JsonClientError> {
         let clients = Self::build_tls(policy)?;
-        *self.tls.write().map_err(|_| JsonClientError::ClientConfiguration)? = clients;
+        *self
+            .tls
+            .write()
+            .map_err(|_| JsonClientError::ClientConfiguration)? = clients;
         Ok(())
     }
 
     fn client(&self, allow_invalid_tls: bool) -> Result<reqwest::Client, JsonClientError> {
-        let clients = self.tls.read().map_err(|_| JsonClientError::ClientConfiguration)?;
-        Ok(if allow_invalid_tls { clients.insecure.clone() } else { clients.strict.clone() })
+        let clients = self
+            .tls
+            .read()
+            .map_err(|_| JsonClientError::ClientConfiguration)?;
+        Ok(if allow_invalid_tls {
+            clients.insecure.clone()
+        } else {
+            clients.strict.clone()
+        })
     }
 
     fn fetch_client(&self) -> Result<reqwest::Client, JsonClientError> {
-        Ok(self.tls.read().map_err(|_| JsonClientError::ClientConfiguration)?.fetch.clone())
+        Ok(self
+            .tls
+            .read()
+            .map_err(|_| JsonClientError::ClientConfiguration)?
+            .fetch
+            .clone())
     }
 
     #[expect(
@@ -1422,10 +1559,16 @@ pub fn validate_tls_policy(policy: &TlsPolicy) -> Result<(), JsonClientError> {
 fn parse_trusted_roots(pem: &str) -> Result<Vec<reqwest::Certificate>, JsonClientError> {
     let roots = reqwest::Certificate::from_pem_bundle(pem.as_bytes())
         .map_err(|_| JsonClientError::ClientConfiguration)?;
-    if roots.is_empty() { return Err(JsonClientError::ClientConfiguration); }
+    if roots.is_empty() {
+        return Err(JsonClientError::ClientConfiguration);
+    }
     let mut builder = reqwest::Client::builder();
-    for root in &roots { builder = builder.add_root_certificate(root.clone()); }
-    builder.build().map_err(|_| JsonClientError::ClientConfiguration)?;
+    for root in &roots {
+        builder = builder.add_root_certificate(root.clone());
+    }
+    builder
+        .build()
+        .map_err(|_| JsonClientError::ClientConfiguration)?;
     Ok(roots)
 }
 
@@ -1497,7 +1640,10 @@ fn same_host_redirects() -> redirect::Policy {
 fn retries_for(policy: RequestPolicy) -> u32 {
     match policy.timeout {
         RequestTimeout::Generation => MAX_RETRIES,
-        RequestTimeout::GenerationOnce | RequestTimeout::Probe | RequestTimeout::Transfer | RequestTimeout::Browse => 0,
+        RequestTimeout::GenerationOnce
+        | RequestTimeout::Probe
+        | RequestTimeout::Transfer
+        | RequestTimeout::Browse => 0,
     }
 }
 
@@ -1513,9 +1659,10 @@ fn timeout_for(policy: RequestPolicy) -> Duration {
 fn idle_timeout_for(policy: RequestPolicy) -> Duration {
     match policy.timeout {
         RequestTimeout::Transfer => GENERATION_TIMEOUT,
-        RequestTimeout::Generation | RequestTimeout::GenerationOnce | RequestTimeout::Probe | RequestTimeout::Browse => {
-            timeout_for(policy)
-        }
+        RequestTimeout::Generation
+        | RequestTimeout::GenerationOnce
+        | RequestTimeout::Probe
+        | RequestTimeout::Browse => timeout_for(policy),
     }
 }
 
@@ -1631,8 +1778,11 @@ fn resolve_header_collection(
         });
         secrets.push(header);
     }
-    let account_header =
-        |name: &str| secrets.iter().any(|header| header.name.as_str().eq_ignore_ascii_case(name));
+    let account_header = |name: &str| {
+        secrets
+            .iter()
+            .any(|header| header.name.as_str().eq_ignore_ascii_case(name))
+    };
     let auth_name = match &auth {
         JsonAuth::Bearer(_) => Some("authorization".to_owned()),
         JsonAuth::Header { name, .. } => {
@@ -1718,7 +1868,6 @@ fn is_transport_reserved_header(name: &str) -> bool {
             | "proxy-connection"
     )
 }
-
 
 fn validate_query(query: &[JsonQueryParameter<'_>]) -> Result<(), JsonClientError> {
     if query.len() > 16 {
@@ -1849,7 +1998,12 @@ mod tests {
 
     #[test]
     fn invalid_pem_is_a_typed_client_error() {
-        assert!(validate_tls_policy(&TlsPolicy { trusted_roots_pem: vec!["not a PEM certificate".into()] }).is_err());
+        assert!(
+            validate_tls_policy(&TlsPolicy {
+                trusted_roots_pem: vec!["not a PEM certificate".into()]
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -1952,15 +2106,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn hf_header_ranges_validate_nonzero_offsets_and_do_not_read_huge_full_bodies() {
+        let client = ArtifactDownloadClient::new().expect("client");
+        let (endpoint, request) = test_server("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 32-63/1099511627776\r\nContent-Length: 32\r\n\r\n01234567890123456789012345678901").await;
+        let bytes = client
+            .read_hugging_face_range_url(
+                Url::parse(&endpoint).expect("url"),
+                "https://example.test",
+                (32, 32),
+                Some(1u64 << 40),
+                None,
+            )
+            .await
+            .expect("range");
+        assert_eq!(bytes.len(), 32);
+        let request = String::from_utf8(request.await.expect("request")).expect("utf8");
+        assert!(request.to_ascii_lowercase().contains("range: bytes=32-63"));
+        for response in [
+            "HTTP/1.1 200 OK\r\nContent-Length: 1099511627776\r\n\r\n01234567890123456789012345678901",
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-31/1099511627776\r\nContent-Length: 32\r\n\r\n01234567890123456789012345678901",
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 32-63/9999999999999\r\nContent-Length: 32\r\n\r\n01234567890123456789012345678901",
+        ] {
+            let (endpoint, _) = test_server(response).await;
+            assert_eq!(
+                client
+                    .read_hugging_face_range_url(
+                        Url::parse(&endpoint).expect("url"),
+                        "https://example.test",
+                        (32, 32),
+                        Some(1u64 << 40),
+                        None
+                    )
+                    .await,
+                Err(ArtifactDownloadError::InvalidResponse)
+            );
+        }
+        let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nContent-Length: 1099511627776\r\n\r\n01234567890123456789012345678901").await;
+        let prefix = client
+            .read_hugging_face_range_url(
+                Url::parse(&endpoint).expect("url"),
+                "https://example.test",
+                (0, 16),
+                Some(1u64 << 40),
+                None,
+            )
+            .await
+            .expect("bounded prefix");
+        assert_eq!(prefix.len(), 16);
+    }
+
+    #[tokio::test]
     async fn a_broken_stream_keeps_its_failure_and_is_never_replayed() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stream server");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stream server");
         let endpoint = format!("http://{}", listener.local_addr().expect("address"));
         let (sent, received) = oneshot::channel();
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.expect("accept");
             let mut buffer = [0_u8; 4096];
             let mut request = Vec::new();
-            while request.windows(4).position(|part| part == b"\r\n\r\n")
+            while request
+                .windows(4)
+                .position(|part| part == b"\r\n\r\n")
                 .is_none_or(|start| request.len() < start + 4 + b"{}".len())
             {
                 let read = socket.read(&mut buffer).await.expect("request");
@@ -1970,14 +2178,30 @@ mod tests {
             socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX-Generation-Id: gen-canary\r\n\r\n1\r\nx\r\n").await.expect("response");
             drop(socket);
             let _ = sent.send(());
-            assert!(tokio::time::timeout(Duration::from_millis(100), listener.accept()).await.is_err());
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err()
+            );
         });
-        let mut stream = client().post_json_stream(
-            &endpoint, "/chat", b"{}".to_vec(), &[], JsonAuth::None, Vec::new(), RequestPolicy::GENERATION,
-        ).await.expect("stream headers");
+        let mut stream = client()
+            .post_json_stream(
+                &endpoint,
+                "/chat",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect("stream headers");
         received.await.expect("server closed");
         assert_eq!(stream.request_id.as_deref(), Some("gen-canary"));
-        assert_eq!(stream.next_chunk().await.expect("first byte"), Some(b"x".to_vec()));
+        assert_eq!(
+            stream.next_chunk().await.expect("first byte"),
+            Some(b"x".to_vec())
+        );
         assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
         assert_eq!(stream.received_bytes, 1);
         assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
@@ -1986,7 +2210,9 @@ mod tests {
 
     #[tokio::test]
     async fn stream_idle_timeout_is_terminal_without_replaying_the_request() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind stream server");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stream server");
         let endpoint = format!("http://{}", listener.local_addr().expect("address"));
         let (release, released) = oneshot::channel();
         let server = tokio::spawn(async move {
@@ -1998,10 +2224,17 @@ mod tests {
                 assert_ne!(read, 0);
                 request.extend_from_slice(&buffer[..read]);
             }
-            socket.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").await.expect("headers");
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+                .await
+                .expect("headers");
             let _ = released.await;
         });
-        let response = reqwest::Client::new().get(&endpoint).send().await.expect("headers");
+        let response = reqwest::Client::new()
+            .get(&endpoint)
+            .send()
+            .await
+            .expect("headers");
         let mut stream = response_stream(response, Duration::ZERO, 1024);
         assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
         assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
@@ -2015,7 +2248,10 @@ mod tests {
         #[derive(Debug, thiserror::Error)]
         #[error("https://example.test/?key=secret-canary")]
         struct Outer(#[source] std::io::Error);
-        let error = Outer(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "body-canary"));
+        let error = Outer(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "body-canary",
+        ));
         let details = io_failure(&error);
         assert_eq!(details.0, Some(std::io::ErrorKind::ConnectionReset));
         assert_eq!(details.1, None);
@@ -2372,21 +2608,36 @@ mod tests {
     #[tokio::test]
     async fn avatar_download_has_one_total_deadline_despite_arriving_chunks() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
         let endpoint = format!("http://{}/avatar", listener.local_addr().expect("address"));
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.expect("accept");
             let mut request = [0; 4096];
             let size = stream.read(&mut request).await.expect("request");
             assert!(size > 0);
-            stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.expect("header");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("header");
             for _ in 0..20 {
-                if stream.write_all(b"1\r\nx\r\n").await.is_err() { return; }
+                if stream.write_all(b"1\r\nx\r\n").await.is_err() {
+                    return;
+                }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             let _ = stream.write_all(b"0\r\n\r\n").await;
         });
-        let result = ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 1024, Duration::from_millis(80)).await;
+        let result = ArtifactDownloadClient::download_avatar(
+            &TlsPolicy::default(),
+            &endpoint,
+            1024,
+            Duration::from_millis(80),
+        )
+        .await;
         assert_eq!(result, Err(ArtifactDownloadError::TimedOut));
         server.abort();
     }
@@ -2398,19 +2649,34 @@ mod tests {
             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n9\r\n123456789\r\n0\r\n\r\n",
         ] {
             let (endpoint, _) = test_server(response).await;
-            let error = ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 8, Duration::from_secs(180))
-                .await
-                .expect_err("avatar limit");
+            let error = ArtifactDownloadClient::download_avatar(
+                &TlsPolicy::default(),
+                &endpoint,
+                8,
+                Duration::from_secs(180),
+            )
+            .await
+            .expect_err("avatar limit");
             assert_eq!(error, ArtifactDownloadError::InvalidResponse);
         }
         let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nok\r\n0\r\n\r\n").await;
         let client = ArtifactDownloadClient::new().expect("client");
         assert_eq!(
-            ArtifactDownloadClient::download_avatar(&TlsPolicy::default(), &endpoint, 8, Duration::from_secs(180)).await.expect("unknown size"),
+            ArtifactDownloadClient::download_avatar(
+                &TlsPolicy::default(),
+                &endpoint,
+                8,
+                Duration::from_secs(180)
+            )
+            .await
+            .expect("unknown size"),
             b"ok"
         );
         assert_eq!(
-            client.open_https(&endpoint, 0, 2).await.expect_err("strict artifact"),
+            client
+                .open_https(&endpoint, 0, 2)
+                .await
+                .expect_err("strict artifact"),
             ArtifactDownloadError::InvalidRequest
         );
     }
@@ -2608,7 +2874,10 @@ mod tests {
             .expect("request");
         let raw = String::from_utf8(request.await.expect("request")).expect("utf8");
         let head = raw.to_ascii_lowercase();
-        assert!(head.starts_with("post /chat?api-version=2024-10-21 "), "{raw}");
+        assert!(
+            head.starts_with("post /chat?api-version=2024-10-21 "),
+            "{raw}"
+        );
         assert!(head.contains("user-agent: rp-proxy"));
         assert!(!head.contains("user-agent: lettuceai"));
         assert!(head.contains("authorization: basic abc"));

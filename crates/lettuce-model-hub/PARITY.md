@@ -4,7 +4,7 @@ Facts about how `lettuce-model-hub` relates to the legacy app (2.2.x). The crate
 
 ## Legacy parity
 
-- The runnability formulas are frozen ports of legacy's; `tests/fixtures/legacy_runnability.txt` pins every output against the legacy functions run on the same fixtures.
+- The legacy per-file runnability scores, the downloaded-file score and the recommendation scorer are gone with the `hf_runnability` and `local_file_runnability` commands; the download planner keeps its own frozen formulas.
 - Whisper model ids, English-only and quantization detection, and the general, mobile and desktop recommendation sets are legacy's. The durable catalog keeps legacy's file name sorting, so an omitted selection resolves to the same first installed model chat and group chat used.
 - Legacy Whisper discovery is bounded to legacy's two-level `models/whisper/<variant>/ggml-<variant>.bin` layout.
 - Kokoro inventory keeps legacy's desktop FP32, FP16 and Int8 variants, the mobile-only Int8 restriction, nested-before-flat ONNX lookup and the `model_uint8.onnx` Int8 fallback. The install pins legacy's four-file bundle. Voice ids keep legacy's ASCII alphanumeric, underscore and hyphen rule.

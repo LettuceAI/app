@@ -1,9 +1,9 @@
 use lettuce_app::api::{self, ApiContextSlot};
 use lettuce_contracts::{
     ApiError, JobAccepted, LlamaChatTemplate, LlamaChatTemplateRequest, LlamaContextInfo,
-    LlamaContextInfoRequest, LlamaDeviceList, LocalFileRunnability, LocalFileRunnabilityRequest,
-    LocalModelAdoptRequest, LocalModelAdopted, LocalModelDeleteRequest, LocalModelDeleted,
-    LocalModelList, LocalModelsDir, LocalModelsDirSetRequest,
+    LlamaContextInfoRequest, LlamaDeviceList, LocalModelAdoptRequest, LocalModelAdopted,
+    LocalModelDeleteRequest, LocalModelDeleted, LocalModelList, LocalModelsDir,
+    LocalModelsDirSetRequest,
 };
 use tauri::State;
 
@@ -89,14 +89,4 @@ pub async fn local_models_dir_set(
 ) -> Result<JobAccepted, ApiError> {
     let context = context.snapshot()?;
     api::local_models_dir_set(&context, request).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn local_file_runnability(
-    context: State<'_, ApiContextSlot>,
-    request: LocalFileRunnabilityRequest,
-) -> Result<LocalFileRunnability, ApiError> {
-    let context = context.snapshot()?;
-    api::local_file_runnability(&context, request).await
 }

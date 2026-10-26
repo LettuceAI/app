@@ -11,14 +11,12 @@ use lettuce_models::{
     LlamaCppSettings, LlamaGpuDistributionMode, LlamaKvPlacement, LlamaKvType, LlamaMtpPlacement,
     ModelProfileRepository, ProviderAccountRepository, ProviderProtocol,
 };
-use lettuce_settings::{DeviceSettingsStore, GlobalSettingsStore};
+use lettuce_settings::DeviceSettingsStore;
 use lettuce_types::ModelProfileId;
 
 use crate::api::ApiContext;
 use crate::api::error::{api_error, invalid_field, parse_id};
-use crate::{
-    HuggingFaceBrowser, LocalModelSidecars, ModelFileReference, ModelFileReferences, ModelPathField,
-};
+use crate::{HuggingFaceBrowser, ModelFileReference, ModelFileReferences, ModelPathField};
 
 type ResidentFiles = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
 
@@ -157,22 +155,6 @@ pub(crate) fn models_root(context: &ApiContext) -> Result<PathBuf, ApiError> {
     Ok(crate::llm_models_root(
         &device_settings(context)?,
         app_folder(context)?,
-    ))
-}
-
-/// The local runnability defaults the settings hold.
-pub(crate) fn runnability_defaults(
-    context: &ApiContext,
-) -> Result<lettuce_model_hub::RunnabilityDefaults, ApiError> {
-    let settings = GlobalSettingsStore::load(context.backend().database())
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
-        .settings;
-    Ok(lettuce_model_hub::RunnabilityDefaults::new(
-        settings.llama_default_context_length.map(u64::from),
-        settings
-            .llama_default_kv_cache_type
-            .map(lettuce_settings::LlamaDefaultKvCacheType::as_str)
-            .filter(|kv| *kv != "auto"),
     ))
 }
 
@@ -345,9 +327,15 @@ fn context_info_request(
         context_length: None,
         batch_size: settings.batch_size,
         flash_attention: settings.flash_attention.map(|policy| match policy {
-            lettuce_models::LlamaFlashAttention::Auto => lettuce_local_llm::offload::FlashAttentionPolicy::Auto,
-            lettuce_models::LlamaFlashAttention::Enabled => lettuce_local_llm::offload::FlashAttentionPolicy::Enabled,
-            lettuce_models::LlamaFlashAttention::Disabled => lettuce_local_llm::offload::FlashAttentionPolicy::Disabled,
+            lettuce_models::LlamaFlashAttention::Auto => {
+                lettuce_local_llm::offload::FlashAttentionPolicy::Auto
+            }
+            lettuce_models::LlamaFlashAttention::Enabled => {
+                lettuce_local_llm::offload::FlashAttentionPolicy::Enabled
+            }
+            lettuce_models::LlamaFlashAttention::Disabled => {
+                lettuce_local_llm::offload::FlashAttentionPolicy::Disabled
+            }
         }),
         swa_full: settings.swa_full,
         llama_offload_kqv: settings.offload_kqv,
@@ -437,7 +425,10 @@ pub async fn llama_context_info(
     {
         use lettuce_local_llm::context_info::ContextInfoError;
         if request.context_length == Some(0) {
-            return Err(invalid_field("context_length", "context length must be positive"));
+            return Err(invalid_field(
+                "context_length",
+                "context length must be positive",
+            ));
         }
         if request.batch_size == Some(0) {
             return Err(invalid_field("batch_size", "batch size must be positive"));
@@ -446,11 +437,20 @@ pub async fn llama_context_info(
         let mut estimate = context_info_request(file);
         estimate.context_length = request.context_length;
         estimate.batch_size = request.batch_size.or(estimate.batch_size);
-        estimate.flash_attention = request.flash_attention.map(|policy| match policy {
-            dto::SettingsLlamaFlashAttention::Auto => lettuce_local_llm::offload::FlashAttentionPolicy::Auto,
-            dto::SettingsLlamaFlashAttention::Enabled => lettuce_local_llm::offload::FlashAttentionPolicy::Enabled,
-            dto::SettingsLlamaFlashAttention::Disabled => lettuce_local_llm::offload::FlashAttentionPolicy::Disabled,
-        }).or(estimate.flash_attention);
+        estimate.flash_attention = request
+            .flash_attention
+            .map(|policy| match policy {
+                dto::SettingsLlamaFlashAttention::Auto => {
+                    lettuce_local_llm::offload::FlashAttentionPolicy::Auto
+                }
+                dto::SettingsLlamaFlashAttention::Enabled => {
+                    lettuce_local_llm::offload::FlashAttentionPolicy::Enabled
+                }
+                dto::SettingsLlamaFlashAttention::Disabled => {
+                    lettuce_local_llm::offload::FlashAttentionPolicy::Disabled
+                }
+            })
+            .or(estimate.flash_attention);
         estimate.swa_full = request.swa_full.or(estimate.swa_full);
         let info = context
             .backend()
@@ -466,7 +466,19 @@ pub async fn llama_context_info(
                 error => api_error(ApiErrorCode::Unavailable, error.to_string()),
             })?;
         Ok(dto::LlamaContextInfo {
-            memory_fit: info.memory_fit.into_iter().map(|fit| dto::LlamaMemoryFit { gpu: fit.gpu, devices: fit.devices, capacity_bytes: fit.capacity_bytes, available_bytes: fit.available_bytes, model_bytes: fit.model_bytes, context_bytes: fit.context_bytes, working_bytes: fit.working_bytes }).collect(),
+            memory_fit: info
+                .memory_fit
+                .into_iter()
+                .map(|fit| dto::LlamaMemoryFit {
+                    gpu: fit.gpu,
+                    devices: fit.devices,
+                    capacity_bytes: fit.capacity_bytes,
+                    available_bytes: fit.available_bytes,
+                    model_bytes: fit.model_bytes,
+                    context_bytes: fit.context_bytes,
+                    working_bytes: fit.working_bytes,
+                })
+                .collect(),
             max_context_length: info.max_context_length,
             recommended_context_length: info.recommended_context_length,
             available_memory_bytes: info.available_memory_bytes,
@@ -564,10 +576,11 @@ pub async fn llama_unload(context: &ApiContext) -> Result<(), ApiError> {
 pub(crate) async fn unload_if_resident(context: &ApiContext, path: &str) -> Result<bool, ApiError> {
     let resident = context.local_models().resident_files(context);
     let target = Path::new(path);
-    if !resident
-        .iter()
-        .any(|file| crate::models::gguf_library::paths_equal(Path::new(file), target))
-    {
+    if !resident.iter().any(|file| {
+        lettuce_local_llm::model_files::gguf_model_paths(target)
+            .iter()
+            .any(|target| crate::models::gguf_library::paths_equal(Path::new(file), target))
+    }) {
         return Ok(false);
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -877,108 +890,4 @@ pub async fn local_models_dir_set(
         return Err(unsupported_on_mobile("Moving the models folder"));
     }
     crate::api::jobs::admit_models_folder_move(context, request).await
-}
-
-fn sidecar_path(source: Option<&dto::FileSource>, field: &str) -> Result<Option<String>, ApiError> {
-    optional_path(source, field)
-}
-
-/// How well a model file runs here with the editor's sidecars, or a saved
-/// model with its own.
-pub async fn local_file_runnability(
-    context: &ApiContext,
-    request: dto::LocalFileRunnabilityRequest,
-) -> Result<dto::LocalFileRunnability, ApiError> {
-    let file = match request.target {
-        dto::LocalRunnabilityTarget::Draft { model, sidecars } => LlamaFileSettings {
-            model_path: local_path(&model, "model")?,
-            settings: LlamaCppSettings {
-                mmproj_path: sidecar_path(sidecars.mmproj.as_ref(), "mmproj")?,
-                mtp_enabled: Some(sidecars.mtp_enabled),
-                mtp_placement: sidecars.mtp_placement.map(draft_placement),
-                mtp_model_path: sidecar_path(sidecars.mtp_model.as_ref(), "mtp_model")?,
-                dflash_enabled: Some(sidecars.dflash_enabled),
-                dflash_model_path: sidecar_path(sidecars.dflash_model.as_ref(), "dflash_model")?,
-                ..LlamaCppSettings::default()
-            },
-        },
-        dto::LocalRunnabilityTarget::Saved { model_profile_id } => {
-            context
-                .blocking(move |context| saved_llama_model(context, &model_profile_id))
-                .await?
-        }
-    };
-    context
-        .blocking(move |context| {
-            let defaults = runnability_defaults(context)?;
-            let settings = &file.settings;
-            let sidecars = LocalModelSidecars {
-                mmproj_path: settings.mmproj_path.as_deref(),
-                mtp_enabled: settings.mtp_enabled.unwrap_or(false),
-                mtp_on_cpu: settings.mtp_placement == Some(LlamaMtpPlacement::Cpu),
-                mtp_model_path: settings.mtp_model_path.as_deref(),
-                dflash_enabled: settings.dflash_enabled.unwrap_or(false),
-                dflash_model_path: settings.dflash_model_path.as_deref(),
-            };
-            let (runnability, metadata_available) = crate::local_file_runnability(
-                &file.model_path,
-                &sidecars,
-                crate::local_runnability_hardware(),
-                defaults,
-            )
-            .map_err(|error| {
-                if error == "File does not exist" {
-                    api_error(ApiErrorCode::NotFound, error)
-                } else {
-                    api_error(ApiErrorCode::Unavailable, error)
-                }
-            })?;
-            let configuration = runnability.configuration;
-            Ok(dto::LocalFileRunnability {
-                score: configuration.score,
-                label: runnability_label(runnability.label),
-                fits_in_ram: configuration.fits_in_ram,
-                fits_in_vram: configuration.fits_in_vram,
-                memory_score: configuration.memory_score,
-                gpu_score: configuration.gpu_score,
-                kv_score: configuration.kv_score,
-                gpu_mode: gpu_mode(configuration.gpu_mode),
-                quant_score: runnability.quant_score,
-                available_ram: runnability.available_ram,
-                available_vram: runnability.available_vram,
-                model_size: runnability.model_size,
-                quantization: runnability.quantization,
-                metadata_available,
-            })
-        })
-        .await
-}
-
-pub(crate) const fn runnability_label(
-    label: lettuce_model_hub::RunnabilityLabel,
-) -> dto::RunnabilityLabel {
-    use lettuce_model_hub::RunnabilityLabel as Label;
-    match label {
-        Label::Excellent => dto::RunnabilityLabel::Excellent,
-        Label::Good => dto::RunnabilityLabel::Good,
-        Label::Marginal => dto::RunnabilityLabel::Marginal,
-        Label::Poor => dto::RunnabilityLabel::Poor,
-        Label::Unrunnable => dto::RunnabilityLabel::Unrunnable,
-    }
-}
-
-pub(crate) const fn gpu_mode(mode: lettuce_model_hub::GpuMode) -> dto::GpuModeDto {
-    use lettuce_model_hub::GpuMode;
-    match mode {
-        GpuMode::Full => dto::GpuModeDto::Full,
-        GpuMode::NearFull => dto::GpuModeDto::NearFull,
-        GpuMode::KvSpill => dto::GpuModeDto::KvSpill,
-        GpuMode::KvHeavySpill => dto::GpuModeDto::KvHeavySpill,
-        GpuMode::RamModelVramCtx => dto::GpuModeDto::RamModelVramCtx,
-        GpuMode::RamModelRamCtx => dto::GpuModeDto::RamModelRamCtx,
-        GpuMode::MostLayers => dto::GpuModeDto::MostLayers,
-        GpuMode::HalfLayers => dto::GpuModeDto::HalfLayers,
-        GpuMode::FewLayers => dto::GpuModeDto::FewLayers,
-        GpuMode::Cpu => dto::GpuModeDto::Cpu,
-    }
 }

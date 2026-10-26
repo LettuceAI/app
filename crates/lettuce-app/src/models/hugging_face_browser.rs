@@ -15,7 +15,7 @@ use lettuce_settings::{
 
 const AVATAR_CONCURRENCY: usize = 6;
 
-/// Browses Hugging Face; avatars and the GGUF headers read for runnability
+/// Browses Hugging Face; avatars and the GGUF headers read for fit previews
 /// are cached for the browser's lifetime.
 #[derive(Debug)]
 pub struct HuggingFaceBrowser {
@@ -29,7 +29,6 @@ pub struct HuggingFaceBrowser {
         >,
     >,
     pub(crate) preview_headers: Mutex<HashMap<(String, String, String), Vec<u8>>>,
-    pub(crate) headers: Mutex<HashMap<(String, String, String), lettuce_model_hub::GgufModelMeta>>,
 }
 
 fn message(text: impl Into<String>) -> HfBrowseError {
@@ -98,7 +97,6 @@ impl HuggingFaceBrowser {
             client,
             endpoint: endpoint.into(),
             avatars: Mutex::new(HashMap::new()),
-            headers: Mutex::new(HashMap::new()),
             preview_headers: Mutex::new(HashMap::new()),
             preview_models: Mutex::new(HashMap::new()),
         }
@@ -432,6 +430,14 @@ impl HuggingFaceBrowser {
                 ),
             ));
         }
+        let listed = lettuce_model_hub::model_info(model_id, &detail.body, b"[]", mode)?;
+        if listed
+            .files
+            .iter()
+            .all(|file| file.size > 0 && file.parts.iter().all(|part| part.size > 0))
+        {
+            return Ok(listed);
+        }
         let tree = self
             .get(
                 &lettuce_model_hub::model_tree_request(model_id, mode),
@@ -665,7 +671,7 @@ mod tests {
             .expect("author models");
         assert_eq!(found[0].model_id, "org/a");
         let requests = seen.lock().expect("seen").clone();
-        assert!(requests[1].starts_with("GET /api/models/org/m/tree/main?recursive=false "));
+        assert!(requests[1].starts_with("GET /api/models/org/m/tree/main?recursive=true "));
         assert!(requests[5].starts_with(
             "GET /api/models?author=org&filter=gguf&limit=50&sort=downloads&direction=-1&offset=0 "
         ));

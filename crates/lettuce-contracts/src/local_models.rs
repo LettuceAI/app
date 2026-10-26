@@ -306,39 +306,6 @@ pub struct LocalModelsDirSetRequest {
     pub client_operation_id: String,
 }
 
-/// The files loaded next to a model the editor has not saved.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct LocalSidecarsDraft {
-    pub mmproj: Option<FileSource>,
-    pub mtp_enabled: bool,
-    pub mtp_placement: Option<LlamaDraftPlacement>,
-    pub mtp_model: Option<FileSource>,
-    pub dflash_enabled: bool,
-    pub dflash_model: Option<FileSource>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum LocalRunnabilityTarget {
-    Draft {
-        model: FileSource,
-        sidecars: LocalSidecarsDraft,
-    },
-    Saved {
-        model_profile_id: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct LocalFileRunnabilityRequest {
-    pub target: LocalRunnabilityTarget,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
@@ -348,48 +315,6 @@ pub enum RunnabilityLabel {
     Marginal,
     Poor,
     Unrunnable,
-}
-
-/// Where a model and its KV cache would live.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "snake_case")]
-pub enum GpuModeDto {
-    Full,
-    NearFull,
-    KvSpill,
-    KvHeavySpill,
-    RamModelVramCtx,
-    RamModelRamCtx,
-    MostLayers,
-    HalfLayers,
-    FewLayers,
-    Cpu,
-}
-
-/// How well a model file runs here. Without its GGUF header
-/// (`metadata_available` false) the KV cache is not counted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct LocalFileRunnability {
-    pub score: u32,
-    pub label: RunnabilityLabel,
-    pub fits_in_ram: bool,
-    pub fits_in_vram: bool,
-    pub memory_score: u32,
-    pub gpu_score: u32,
-    pub kv_score: u32,
-    pub gpu_mode: GpuModeDto,
-    pub quant_score: u32,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub available_ram: u64,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub available_vram: u64,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub model_size: u64,
-    pub quantization: String,
-    pub metadata_available: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

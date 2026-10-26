@@ -2,8 +2,8 @@ use lettuce_app::api::{self, ApiContextSlot};
 use lettuce_contracts::{
     ApiError, HfAuthSaveRequest, HfAuthor, HfAuthorRequest, HfAvatars, HfAvatarsRequest,
     HfBrowserLinks, HfDownloadRequest, HfModelInfo, HfModelRequest, HfReadme, HfReadmeRequest,
-    HfRecommendation, HfRecommendationRequest, HfRunnability, HfRunnabilityRequest,
-    HfSearchRequest, HfSearchResults, HfTokenStatus, JobAccepted,
+    HfRecommendation, HfRecommendationRequest, HfSearchRequest, HfSearchResults, HfTokenStatus,
+    JobAccepted,
 };
 use tauri::State;
 
@@ -64,16 +64,6 @@ pub async fn hf_avatars(
 ) -> Result<HfAvatars, ApiError> {
     let context = context.snapshot()?;
     api::hf_avatars(&context, request).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn hf_runnability(
-    context: State<'_, ApiContextSlot>,
-    request: HfRunnabilityRequest,
-) -> Result<HfRunnability, ApiError> {
-    let context = context.snapshot()?;
-    api::hf_runnability(&context, request).await
 }
 
 #[tauri::command]

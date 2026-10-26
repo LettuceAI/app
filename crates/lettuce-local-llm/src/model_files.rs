@@ -139,6 +139,40 @@ impl ModelFileRegistry {
     }
 }
 
+pub fn gguf_model_paths(path: &Path) -> Vec<PathBuf> {
+    let Some(name) = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(".gguf"))
+    else {
+        return vec![path.to_owned()];
+    };
+    let Some((prefix, total)) = name.rsplit_once("-of-") else {
+        return vec![path.to_owned()];
+    };
+    let Some((stem, index)) = prefix.rsplit_once('-') else {
+        return vec![path.to_owned()];
+    };
+    if index.len() != 5
+        || total.len() != 5
+        || !index
+            .bytes()
+            .chain(total.bytes())
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return vec![path.to_owned()];
+    }
+    let (Ok(index), Ok(total)) = (index.parse::<u32>(), total.parse::<u32>()) else {
+        return vec![path.to_owned()];
+    };
+    if index == 0 || total < 2 || index > total {
+        return vec![path.to_owned()];
+    }
+    (1..=total)
+        .map(|part| path.with_file_name(format!("{stem}-{part:05}-of-{total:05}.gguf")))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

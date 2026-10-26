@@ -12,7 +12,7 @@ use llama_cpp_2::context::params::{KvCacheType, LlamaContextParams};
 use llama_cpp_2::gguf::GgufContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::model::LlamaModel;
-use llama_cpp_2::model::params::LlamaModelParams;
+use llama_cpp_2::model::params::{LlamaModelParams, MemoryProjection};
 use llama_cpp_sys_2::llama_flash_attn_type;
 
 use crate::offload::{
@@ -92,7 +92,7 @@ pub fn parse_kv_cache_type(value: &str) -> Option<KvCacheType> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct ComputeProbeKey {
+struct ProjectionKey {
     model_path_hash: u64,
     n_gpu_layers: u32,
     planned_context: u32,
@@ -100,11 +100,12 @@ struct ComputeProbeKey {
     offload_kqv: Option<bool>,
     flash_attention_policy: FlashAttentionPolicy,
     kv_type_hash: u64,
+    swa_full: Option<bool>,
 }
 
 type Cache<K, V> = OnceLock<Mutex<HashMap<K, V>>>;
 
-static COMPUTE_PROBE_CACHE: Cache<ComputeProbeKey, Option<u64>> = OnceLock::new();
+static PROJECTION_CACHE: Cache<ProjectionKey, Option<MemoryProjection>> = OnceLock::new();
 static KV_GEOMETRY_CACHE: Cache<String, Option<KvCacheGeometry>> = OnceLock::new();
 static MODEL_OFFLOAD_COSTS_CACHE: Cache<String, Option<ModelOffloadCosts>> = OnceLock::new();
 static MODEL_METADATA_CACHE: Cache<String, LlamaModelMetadata> = OnceLock::new();
@@ -120,56 +121,70 @@ fn stable_hash(value: &str) -> u64 {
     hasher.finish()
 }
 
-/// The device compute buffer llama.cpp would allocate for this shape,
-/// projected without allocating memory.
-pub fn measure_device_compute_bytes(
-    model_path: &str,
-    n_gpu_layers: u32,
-    planned_context: u32,
-    n_batch: u32,
-    offload_kqv: Option<bool>,
-    kv_types: KvCacheTypes<'_>,
-    flash_attention_policy: FlashAttentionPolicy,
-) -> Option<u64> {
-    let key = ComputeProbeKey {
+/// The context shape llama.cpp is asked to project memory for.
+#[derive(Clone, Copy, Debug)]
+pub struct ProjectionShape<'a> {
+    pub n_gpu_layers: u32,
+    pub planned_context: u32,
+    pub n_batch: u32,
+    pub offload_kqv: Option<bool>,
+    pub kv_types: KvCacheTypes<'a>,
+    pub flash_attention_policy: FlashAttentionPolicy,
+    pub swa_full: Option<bool>,
+}
+
+/// What llama.cpp would allocate for this shape on the devices and on the
+/// host, projected from the model's tensor index without allocating or
+/// reading weights, so a metadata-only file projects like the full one.
+pub fn project_memory(model_path: &str, shape: ProjectionShape<'_>) -> Option<MemoryProjection> {
+    let key = ProjectionKey {
         model_path_hash: stable_hash(model_path),
-        n_gpu_layers,
-        planned_context,
-        n_batch,
-        offload_kqv,
-        flash_attention_policy,
-        kv_type_hash: stable_hash(kv_types.label().as_deref().unwrap_or("")),
+        n_gpu_layers: shape.n_gpu_layers,
+        planned_context: shape.planned_context,
+        n_batch: shape.n_batch,
+        offload_kqv: shape.offload_kqv,
+        flash_attention_policy: shape.flash_attention_policy,
+        kv_type_hash: stable_hash(shape.kv_types.label().as_deref().unwrap_or("")),
+        swa_full: shape.swa_full,
     };
-    if let Some(cached) = cache(&COMPUTE_PROBE_CACHE).lock().ok()?.get(&key).copied() {
+    if let Some(cached) = cache(&PROJECTION_CACHE).lock().ok()?.get(&key).copied() {
         return cached;
     }
 
-    let mut model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
+    let mut model_params = LlamaModelParams::default().with_n_gpu_layers(shape.n_gpu_layers);
     let mut context_params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(planned_context.max(1)))
-        .with_n_batch(n_batch.max(1))
-        .with_n_ubatch(n_batch.max(1))
-        .with_flash_attention_policy(flash_attention_type(flash_attention_policy));
-    if let Some(offload) = offload_kqv {
+        .with_n_ctx(NonZeroU32::new(shape.planned_context.max(1)))
+        .with_n_batch(shape.n_batch.max(1))
+        .with_n_ubatch(shape.n_batch.max(1))
+        .with_flash_attention_policy(flash_attention_type(shape.flash_attention_policy));
+    if let Some(offload) = shape.offload_kqv {
         context_params = context_params.with_offload_kqv(offload);
     }
-    if let Some(k_type) = kv_types.k.and_then(parse_kv_cache_type) {
+    if let Some(swa_full) = shape.swa_full {
+        context_params = context_params.with_swa_full(swa_full);
+    }
+    if let Some(k_type) = shape.kv_types.k.and_then(parse_kv_cache_type) {
         context_params = context_params.with_type_k(k_type);
     }
-    if let Some(v_type) = kv_types.v.and_then(parse_kv_cache_type) {
+    if let Some(v_type) = shape.kv_types.v.and_then(parse_kv_cache_type) {
         context_params = context_params.with_type_v(v_type);
     }
     model_params = model_params.with_no_alloc(true);
 
-    let measured = model_params
-        .project_memory(Path::new(model_path), &context_params)
-        .map(|projection| projection.device_compute)
-        .filter(|bytes| *bytes > 0);
+    let projected = model_params.project_memory(Path::new(model_path), &context_params);
 
-    if let Ok(mut cache) = cache(&COMPUTE_PROBE_CACHE).lock() {
-        cache.insert(key, measured);
+    if let Ok(mut cache) = cache(&PROJECTION_CACHE).lock() {
+        cache.insert(key, projected);
     }
-    measured
+    projected
+}
+
+/// The device compute buffer llama.cpp would allocate for this shape,
+/// projected without allocating memory.
+pub fn measure_device_compute_bytes(model_path: &str, shape: ProjectionShape<'_>) -> Option<u64> {
+    project_memory(model_path, shape)
+        .map(|projection| projection.device_compute)
+        .filter(|bytes| *bytes > 0)
 }
 
 fn load_kv_geometry_from_model(model: &LlamaModel) -> Option<KvCacheGeometry> {
@@ -208,11 +223,19 @@ pub fn load_kv_geometry(model_path: &str) -> Option<KvCacheGeometry> {
 }
 
 fn load_offload_costs_uncached(model_path: &str) -> Option<ModelOffloadCosts> {
-    let gguf = GgufContext::from_file(Path::new(model_path))?;
-    let tensors = (0..gguf.n_tensors())
-        .filter_map(|index| Some((gguf.tensor_name(index)?, gguf.tensor_size(index))))
-        .collect::<Vec<_>>();
-    ModelOffloadCosts::from_tensors(tensors)
+    let mut tensors = Vec::new();
+    let mut names = std::collections::HashSet::new();
+    for path in crate::model_files::gguf_model_paths(Path::new(model_path)) {
+        let gguf = GgufContext::from_file(&path)?;
+        for index in 0..gguf.n_tensors() {
+            let name = gguf.tensor_name(index)?.to_owned();
+            if !names.insert(name.clone()) {
+                return None;
+            }
+            tensors.push((name, gguf.tensor_size(index)));
+        }
+    }
+    ModelOffloadCosts::from_tensors(tensors.iter().map(|(name, size)| (name.as_str(), *size)))
 }
 
 /// Per-unit weight bytes from the model's GGUF tensor index.
@@ -233,29 +256,41 @@ pub fn load_offload_costs(model_path: &str) -> Option<ModelOffloadCosts> {
     costs
 }
 
-fn gguf_head_dims(model_path: &str, fallback: u64) -> (u64, u64) {
+struct GgufAttention {
+    key_length: u64,
+    value_length: u64,
+    shared_kv_layers: u32,
+}
+
+fn gguf_attention(model_path: &str, fallback: u64) -> GgufAttention {
+    let default = GgufAttention {
+        key_length: fallback,
+        value_length: fallback,
+        shared_kv_layers: 0,
+    };
     let Some(gguf) = GgufContext::from_file(Path::new(model_path)) else {
-        return (fallback, fallback);
+        return default;
     };
     let arch_idx = gguf.find_key("general.architecture");
     if arch_idx < 0 {
-        return (fallback, fallback);
+        return default;
     }
     let Some(arch) = gguf.val_str(arch_idx) else {
-        return (fallback, fallback);
+        return default;
     };
-    let read = |suffix: &str| -> Option<u64> {
+    let read = |suffix: &str| -> Option<u32> {
         let idx = gguf.find_key(&format!("{arch}.attention.{suffix}"));
         if idx < 0 {
             return None;
         }
         let value = gguf.val_u32(idx);
-        (value > 0).then(|| u64::from(value))
+        (value > 0).then_some(value)
     };
-    (
-        read("key_length").unwrap_or(fallback),
-        read("value_length").unwrap_or(fallback),
-    )
+    GgufAttention {
+        key_length: read("key_length").map_or(fallback, u64::from),
+        value_length: read("value_length").map_or(fallback, u64::from),
+        shared_kv_layers: read("shared_kv_layers").unwrap_or(0),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -279,9 +314,10 @@ pub fn load_model_preview(model_path: &str) -> Result<ModelPreviewData, LlamaRun
     let n_embd = u64::try_from(model.n_embd()).unwrap_or(0).max(1);
     let n_head = u64::from(model.n_head()).max(1);
     let implied_head_dim = (n_embd / n_head).max(1);
-    let (n_embd_head_k, n_embd_head_v) = gguf_head_dims(model_path, implied_head_dim);
+    let attention = gguf_attention(model_path, implied_head_dim);
 
-    let geometry = load_kv_geometry_from_model(&model);
+    let geometry = load_kv_geometry_from_model(&model)
+        .map(|geometry| geometry.with_shared_kv_layers(attention.shared_kv_layers));
 
     Ok(ModelPreviewData {
         costs: load_offload_costs_uncached(model_path),
@@ -294,8 +330,8 @@ pub fn load_model_preview(model_path: &str) -> Result<ModelPreviewData, LlamaRun
             n_embd,
             n_head,
             n_head_kv: u64::from(model.n_head_kv()).max(1),
-            n_embd_head_k,
-            n_embd_head_v,
+            n_embd_head_k: attention.key_length,
+            n_embd_head_v: attention.value_length,
         },
     })
 }
@@ -347,12 +383,15 @@ pub fn plan_smart_gpu_offload(
         |n_gpu_layers, planned_context| {
             measure_device_compute_bytes(
                 model_path,
-                n_gpu_layers,
-                planned_context,
-                request.n_batch,
-                request.resolved_offload_kqv,
-                request.kv_types,
-                request.flash_attention_policy,
+                ProjectionShape {
+                    n_gpu_layers,
+                    planned_context,
+                    n_batch: request.n_batch,
+                    offload_kqv: request.resolved_offload_kqv,
+                    kv_types: request.kv_types,
+                    flash_attention_policy: request.flash_attention_policy,
+                    swa_full: Some(request.swa_full),
+                },
             )
         },
     ))
@@ -465,6 +504,7 @@ mod real_model_plan {
                 flash_attention_policy: FlashAttentionPolicy::Auto,
                 sidecar_vram_reserve_bytes: 0,
                 bundled_mtp_draft: bundled,
+                swa_full: false,
             },
         )
         .expect("plan");

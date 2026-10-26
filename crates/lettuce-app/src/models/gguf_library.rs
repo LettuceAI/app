@@ -106,6 +106,30 @@ pub fn downloaded_ggufs(root: &Path, skipped: &[PathBuf]) -> Result<Vec<Download
             }
         }
     }
+    let mut grouped: std::collections::BTreeMap<(String, String, u32), Vec<DownloadedGguf>> =
+        std::collections::BTreeMap::new();
+    let mut singles = Vec::new();
+    for file in found {
+        if let Some(shard) = lettuce_model_hub::GgufShardName::parse(&file.filename) {
+            grouped
+                .entry((file.model_id.clone(), shard.stem, shard.count))
+                .or_default()
+                .push(file);
+        } else {
+            singles.push(file);
+        }
+    }
+    for ((_, stem, _), mut group) in grouped {
+        group.sort_by(|a, b| a.filename.cmp(&b.filename));
+        let size = group
+            .iter()
+            .fold(0u64, |sum, part| sum.saturating_add(part.size));
+        let mut first = group.remove(0);
+        first.filename = format!("{stem}.gguf");
+        first.size = size;
+        singles.push(first);
+    }
+    let mut found = singles;
     found.sort_by(|a, b| (&a.model_id, &a.filename).cmp(&(&b.model_id, &b.filename)));
     Ok(found)
 }
@@ -130,7 +154,16 @@ pub struct ModelFileReference {
 
 fn same_file_path(candidate: Option<&str>, target: &str) -> bool {
     candidate.is_some_and(|candidate| {
-        !candidate.is_empty() && candidate.replace('\\', "/") == target.replace('\\', "/")
+        let candidate = candidate.replace('\\', "/");
+        let target = target.replace('\\', "/");
+        candidate == target
+            || match (
+                lettuce_model_hub::GgufShardName::parse(&candidate),
+                lettuce_model_hub::GgufShardName::parse(&target),
+            ) {
+                (Some(a), Some(b)) => a.stem == b.stem && a.count == b.count,
+                _ => false,
+            }
     })
 }
 
@@ -263,13 +296,19 @@ pub fn delete_downloaded_model(
     if !deletable_model(root, image_roots, file_path)? {
         return Ok(());
     }
-    let path = PathBuf::from(file_path);
-    std::fs::remove_file(&path).map_err(|error| format!("Failed to delete model file: {error}"))?;
-    if let Some(parent) = path.parent()
-        && parent != root
-        && !image_roots.iter().any(|image| parent == image)
-    {
-        let _ = std::fs::remove_dir(parent);
+    let paths = lettuce_local_llm::model_files::gguf_model_paths(Path::new(file_path));
+    for path in &paths {
+        deletable_model(root, image_roots, &path.to_string_lossy())?;
+    }
+    for path in paths.into_iter().filter(|path| path.exists()) {
+        std::fs::remove_file(&path)
+            .map_err(|error| format!("Failed to delete model file: {error}"))?;
+        if let Some(parent) = path.parent()
+            && parent != root
+            && !image_roots.iter().any(|image| parent == image)
+        {
+            let _ = std::fs::remove_dir(parent);
+        }
     }
     Ok(())
 }
@@ -417,55 +456,89 @@ fn paths_only_rebinding(before: &[u8], after: &[u8], from: &Path, to: &Path) -> 
                 for (key, value) in values {
                     if key == "path" {
                         if let Some(path) = value.as_str()
-                            && let Ok(relative) = Path::new(path).strip_prefix(from) {
-                            *value = serde_json::Value::String(to.join(relative).to_string_lossy().into_owned());
+                            && let Ok(relative) = Path::new(path).strip_prefix(from)
+                        {
+                            *value = serde_json::Value::String(
+                                to.join(relative).to_string_lossy().into_owned(),
+                            );
                         }
-                    } else { rewrite(value, from, to); }
+                    } else {
+                        rewrite(value, from, to);
+                    }
                 }
             }
-            serde_json::Value::Array(values) => { for value in values { rewrite(value, from, to); } }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rewrite(value, from, to);
+                }
+            }
             _ => {}
         }
     }
-    let Ok(mut before) = serde_json::from_slice::<serde_json::Value>(before) else { return false; };
-    let Ok(after) = serde_json::from_slice::<serde_json::Value>(after) else { return false; };
+    let Ok(mut before) = serde_json::from_slice::<serde_json::Value>(before) else {
+        return false;
+    };
+    let Ok(after) = serde_json::from_slice::<serde_json::Value>(after) else {
+        return false;
+    };
     rewrite(&mut before, from, to);
     before == after
 }
 
-fn redundant_tree_with_rebindings(candidate: &Path, retained: &Path, partial: bool, bindings: Option<(&Path, &[ReboundManifest], bool)>) -> std::io::Result<bool> {
+fn redundant_tree_with_rebindings(
+    candidate: &Path,
+    retained: &Path,
+    partial: bool,
+    bindings: Option<(&Path, &[ReboundManifest], bool)>,
+) -> std::io::Result<bool> {
     use std::io::Read;
     let candidate_meta = std::fs::symlink_metadata(candidate)?;
     let retained_meta = std::fs::symlink_metadata(retained)?;
     if candidate_meta.is_dir() && retained_meta.is_dir() {
         for entry in std::fs::read_dir(candidate)? {
             let entry = entry?;
-            if !redundant_tree_with_rebindings(&entry.path(), &retained.join(entry.file_name()), partial, bindings)? {
+            if !redundant_tree_with_rebindings(
+                &entry.path(),
+                &retained.join(entry.file_name()),
+                partial,
+                bindings,
+            )? {
                 return Ok(false);
             }
         }
         return Ok(true);
     }
-    if candidate_meta.is_file() && retained_meta.is_file()
+    if candidate_meta.is_file()
+        && retained_meta.is_file()
         && let Some((root, records, reverse)) = bindings
         && let Ok(relative) = candidate.strip_prefix(root)
-        && let Some(record) = records.iter().find(|record| record.relative_path == relative) {
+        && let Some(record) = records
+            .iter()
+            .find(|record| record.relative_path == relative)
+    {
         let candidate_bytes = std::fs::read(candidate)?;
         let retained_bytes = std::fs::read(retained)?;
         let candidate_hash = blake3::hash(&candidate_bytes).to_hex().to_string();
         let retained_hash = blake3::hash(&retained_bytes).to_hex().to_string();
-        if reverse && candidate_hash == record.before_hash && retained_hash == record.before_hash { return Ok(true); }
-        let other_root = retained.ancestors().nth(relative.components().count())
+        if reverse && candidate_hash == record.before_hash && retained_hash == record.before_hash {
+            return Ok(true);
+        }
+        let other_root = retained
+            .ancestors()
+            .nth(relative.components().count())
             .ok_or_else(|| std::io::Error::other("invalid rebound manifest path"))?;
         return Ok(if reverse {
-            candidate_hash == record.after_hash && retained_hash == record.before_hash
+            candidate_hash == record.after_hash
+                && retained_hash == record.before_hash
                 && paths_only_rebinding(&retained_bytes, &candidate_bytes, other_root, root)
         } else {
-            candidate_hash == record.before_hash && retained_hash == record.after_hash
+            candidate_hash == record.before_hash
+                && retained_hash == record.after_hash
                 && paths_only_rebinding(&candidate_bytes, &retained_bytes, root, other_root)
         });
     }
-    if !candidate_meta.is_file() || !retained_meta.is_file()
+    if !candidate_meta.is_file()
+        || !retained_meta.is_file()
         || candidate_meta.len() > retained_meta.len()
         || (!partial && candidate_meta.len() != retained_meta.len())
     {
@@ -488,7 +561,12 @@ fn redundant_tree_with_rebindings(candidate: &Path, retained: &Path, partial: bo
 }
 
 /// Removes the copies in `to` whose original is still in `from` unchanged.
-fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry], rebindings: &[ReboundManifest]) -> Vec<String> {
+fn undo_copies(
+    from: &Path,
+    to: &Path,
+    entries: &[ManifestEntry],
+    rebindings: &[ReboundManifest],
+) -> Vec<String> {
     let mut kept = Vec::new();
     for entry in entries {
         let copy = to.join(&entry.name);
@@ -501,7 +579,15 @@ fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry], rebindings: &[
             }
         }
         if measure(&from.join(&entry.name)) == Some(entry.measure)
-            && matches!(redundant_tree_with_rebindings(&copy, &from.join(&entry.name), true, Some((to, rebindings, true))), Ok(true))
+            && matches!(
+                redundant_tree_with_rebindings(
+                    &copy,
+                    &from.join(&entry.name),
+                    true,
+                    Some((to, rebindings, true))
+                ),
+                Ok(true)
+            )
         {
             if let Err(error) = remove_path(&copy) {
                 tracing::warn!(path = %copy.display(), %error, "a models folder copy could not be removed");
@@ -516,7 +602,12 @@ fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry], rebindings: &[
 }
 
 /// Removes the originals in `from` whose copy in `to` is complete.
-fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry], rebindings: &[ReboundManifest]) -> Vec<String> {
+fn remove_originals(
+    from: &Path,
+    to: &Path,
+    entries: &[ManifestEntry],
+    rebindings: &[ReboundManifest],
+) -> Vec<String> {
     let mut kept = Vec::new();
     for entry in entries {
         let original = from.join(&entry.name);
@@ -529,10 +620,23 @@ fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry], rebinding
             }
         }
         let copied = measure(&to.join(&entry.name)).is_some_and(|copy| {
-            (copy.bytes == entry.measure.bytes || rebindings.iter().any(|record| record.relative_path.starts_with(&entry.name)))
+            (copy.bytes == entry.measure.bytes
+                || rebindings
+                    .iter()
+                    .any(|record| record.relative_path.starts_with(&entry.name)))
                 && copy.files == entry.measure.files
         });
-        if copied && matches!(redundant_tree_with_rebindings(&original, &to.join(&entry.name), false, Some((from, rebindings, false))), Ok(true)) {
+        if copied
+            && matches!(
+                redundant_tree_with_rebindings(
+                    &original,
+                    &to.join(&entry.name),
+                    false,
+                    Some((from, rebindings, false))
+                ),
+                Ok(true)
+            )
+        {
             if let Err(error) = remove_path(&original) {
                 tracing::warn!(path = %original.display(), %error, "a moved original could not be removed");
                 kept.push(entry.name.clone());
@@ -555,28 +659,43 @@ fn read_manifest(to: &Path) -> Result<Option<MoveManifest>, String> {
     }
 }
 
-fn record_manifest_rebinding(to: &Path, move_id: &str, path: &Path, before: &[u8], after: &[u8]) -> Result<(), String> {
+fn record_manifest_rebinding(
+    to: &Path,
+    move_id: &str,
+    path: &Path,
+    before: &[u8],
+    after: &[u8],
+) -> Result<(), String> {
     use std::io::Write;
     let relative = path.strip_prefix(to).map_err(|error| error.to_string())?;
-    if !relative.components().all(|part| matches!(part, std::path::Component::Normal(_))) {
+    if !relative
+        .components()
+        .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
         return Err("the rebound manifest is outside the target folder".into());
     }
     if std::fs::read(path).map_err(|error| error.to_string())? != before {
         return Err("the copied model manifest changed before relocation".into());
     }
-    let mut manifest = read_manifest(to)?.filter(|manifest| manifest.move_id == move_id)
+    let mut manifest = read_manifest(to)?
+        .filter(|manifest| manifest.move_id == move_id)
         .ok_or_else(|| "the move manifest is missing".to_owned())?;
     manifest.rebound_files.push(ReboundManifest {
-        relative_path: relative.to_owned(), before_hash: blake3::hash(before).to_hex().to_string(),
+        relative_path: relative.to_owned(),
+        before_hash: blake3::hash(before).to_hex().to_string(),
         after_hash: blake3::hash(after).to_hex().to_string(),
     });
     let bytes = serde_json::to_vec(&manifest).map_err(|error| error.to_string())?;
     let next = to.join(format!("{MODELS_MOVE_MANIFEST}.next"));
     let mut file = std::fs::File::create(&next).map_err(|error| error.to_string())?;
-    file.write_all(&bytes).and_then(|()| file.sync_all()).map_err(|error| error.to_string())?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| error.to_string())?;
     std::fs::rename(next, to.join(MODELS_MOVE_MANIFEST)).map_err(|error| error.to_string())?;
     #[cfg(not(target_os = "windows"))]
-    std::fs::File::open(to).and_then(|file| file.sync_all()).map_err(|error| error.to_string())?;
+    std::fs::File::open(to)
+        .and_then(|file| file.sync_all())
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -612,14 +731,19 @@ pub enum FolderMoveError {
     Storage(String),
 }
 
-pub(crate) fn check_models_data_overlap(app_folder: &Path, path: &Path) -> Result<(), FolderMoveError> {
+pub(crate) fn check_models_data_overlap(
+    app_folder: &Path,
+    path: &Path,
+) -> Result<(), FolderMoveError> {
     fn resolve(path: &Path) -> Result<PathBuf, FolderMoveError> {
         let absolute = std::path::absolute(path).map_err(copy_error)?;
         let mut resolved = PathBuf::new();
         for component in absolute.components() {
             match component {
                 std::path::Component::CurDir => {}
-                std::path::Component::ParentDir => { resolved.pop(); }
+                std::path::Component::ParentDir => {
+                    resolved.pop();
+                }
                 component => resolved.push(component.as_os_str()),
             }
             if let Ok(canonical) = std::fs::canonicalize(&resolved) {
@@ -630,7 +754,10 @@ pub(crate) fn check_models_data_overlap(app_folder: &Path, path: &Path) -> Resul
     }
     let app = resolve(app_folder)?;
     let chosen = resolve(path)?;
-    let defaults = [resolve(&app_folder.join("models"))?, resolve(&default_root(app_folder))?];
+    let defaults = [
+        resolve(&app_folder.join("models"))?,
+        resolve(&default_root(app_folder))?,
+    ];
     if defaults.contains(&chosen) {
         return Ok(());
     }
@@ -788,8 +915,16 @@ fn migrate_models_dir(
     let undo = |error: FolderMoveError| {
         let rebindings = match read_manifest(to) {
             Ok(Some(manifest)) => manifest.rebound_files,
-            Ok(None) => return FolderMoveError::Copy(format!("{error}; the move journal is missing, so copies were preserved")),
-            Err(cause) => return FolderMoveError::Copy(format!("{error}; copies were preserved because the move journal could not be read: {cause}")),
+            Ok(None) => {
+                return FolderMoveError::Copy(format!(
+                    "{error}; the move journal is missing, so copies were preserved"
+                ));
+            }
+            Err(cause) => {
+                return FolderMoveError::Copy(format!(
+                    "{error}; copies were preserved because the move journal could not be read: {cause}"
+                ));
+            }
         };
         let kept = undo_copies(from, to, &entries, &rebindings);
         if kept.is_empty() {
@@ -808,7 +943,8 @@ fn migrate_models_dir(
         return Err(undo(FolderMoveError::Cancelled));
     }
     let rewired = commit().map_err(undo)?;
-    let recorded = read_manifest(to).map_err(FolderMoveError::Copy)?
+    let recorded = read_manifest(to)
+        .map_err(FolderMoveError::Copy)?
         .ok_or_else(|| FolderMoveError::Copy("the committed move manifest is missing".into()))?;
     let kept = remove_originals(from, to, &entries, &recorded.rebound_files);
     if kept.is_empty()
@@ -853,7 +989,9 @@ where
         .map_err(|error| storage(&error))?;
     let old_path = llm_models_root(&device, app_folder);
     check_models_data_overlap(app_folder, &new_path)?;
-    if move_existing { check_models_data_overlap(app_folder, &old_path)?; }
+    if move_existing {
+        check_models_data_overlap(app_folder, &old_path)?;
+    }
     std::fs::create_dir_all(&new_path).map_err(copy_error)?;
     let chosen = (!paths_equal(&new_path, &default_root(app_folder)))
         .then(|| new_path.to_string_lossy().into_owned());
@@ -881,16 +1019,30 @@ where
                 .load_device_settings()
                 .map_err(|error| storage(&error))?;
             let roots = crate::speech::speech_roots::retained_model_roots(&device, app_folder);
-            crate::speech::speech_roots::rebind_memory_model_manifests(&roots, &old_path, &new_path,
-                |path, before, after| record_manifest_rebinding(&new_path, move_id, path, before, after))
-                .map_err(FolderMoveError::Storage)?;
+            crate::speech::speech_roots::rebind_memory_model_manifests(
+                &roots,
+                &old_path,
+                &new_path,
+                |path, before, after| {
+                    record_manifest_rebinding(&new_path, move_id, path, before, after)
+                },
+            )
+            .map_err(FolderMoveError::Storage)?;
             repository
                 .relocate_model_paths_and_save_device(
                     &|path| lettuce_models::rewrite_path_prefix(path, &old, &new),
                     {
-                        let mut roots = crate::speech::speech_roots::retained_model_roots(&device, app_folder);
-                        for root in [&mut roots.whisper, &mut roots.kokoro, &mut roots.embedding, &mut roots.thymos] {
-                            if let Some(path) = root.as_deref().and_then(|path| lettuce_models::rewrite_path_prefix(path, &old, &new)) {
+                        let mut roots =
+                            crate::speech::speech_roots::retained_model_roots(&device, app_folder);
+                        for root in [
+                            &mut roots.whisper,
+                            &mut roots.kokoro,
+                            &mut roots.embedding,
+                            &mut roots.thymos,
+                        ] {
+                            if let Some(path) = root.as_deref().and_then(|path| {
+                                lettuce_models::rewrite_path_prefix(path, &old, &new)
+                            }) {
                                 *root = Some(path);
                             }
                         }
@@ -913,6 +1065,105 @@ where
 /// else the file's stem) and returns where it now is; a file already inside
 /// `root` stays where it is.
 pub fn move_model_into_library(
+    root: &Path,
+    source_path: &str,
+    model_name: Option<&str>,
+) -> Result<String, String> {
+    let paths = lettuce_local_llm::model_files::gguf_model_paths(Path::new(source_path));
+    if paths.len() == 1 {
+        return move_single_model_into_library(root, source_path, model_name);
+    }
+    let first = paths
+        .first()
+        .ok_or_else(|| "Source file does not exist".to_owned())?;
+    if paths.iter().any(|path| !path.is_file()) {
+        return Err("Source file does not exist: the split model is incomplete".to_owned());
+    }
+    created(root)?;
+    if first.starts_with(root) {
+        return Ok(first.to_string_lossy().into_owned());
+    }
+    let folder = model_name
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            lettuce_model_hub::GgufShardName::parse(first.file_name()?.to_str()?)
+                .map(|shard| shard.stem)
+        })
+        .ok_or_else(|| "The model name cannot be used".to_owned())?
+        .replace('/', "--");
+    if !matches!(
+        Path::new(&folder)
+            .components()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [std::path::Component::Normal(_)]
+    ) {
+        return Err("The model name cannot be used as a folder name".to_owned());
+    }
+    let destination = root.join(&folder);
+    std::fs::create_dir_all(&destination)
+        .map_err(|error| format!("Failed to create destination directory: {error}"))?;
+    let _guard = LIBRARY_MOVES
+        .lock()
+        .map_err(|_| "Another model move failed while holding the library".to_owned())?;
+    let targets = stage_split_model(&paths, &destination, copy_verified)?;
+    for source in paths.iter().rev() {
+        std::fs::remove_file(source)
+            .map_err(|error| format!("Model copied but failed to remove original: {error}"))?;
+    }
+    Ok(targets
+        .first()
+        .ok_or_else(|| "Source file does not exist".to_owned())?
+        .to_string_lossy()
+        .into_owned())
+}
+
+fn stage_split_model(
+    paths: &[PathBuf],
+    destination: &Path,
+    copy: impl Fn(&Path, &Path) -> Result<(), String>,
+) -> Result<Vec<PathBuf>, String> {
+    let targets: Vec<_> = paths
+        .iter()
+        .map(|path| destination.join(path.file_name().unwrap_or_default()))
+        .collect();
+    for (source, target) in paths.iter().zip(&targets) {
+        if target.exists() && !same_contents(source, target)? {
+            return Err("A different file already exists; the originals were kept".to_owned());
+        }
+    }
+    let mut staged = Vec::new();
+    let published = (|| {
+        for (source, target) in paths.iter().zip(&targets) {
+            if target.exists() {
+                continue;
+            }
+            let temporary = destination.join(format!(".{}.partial", uuid::Uuid::new_v4()));
+            staged.push(temporary.clone());
+            copy(source, &temporary)?;
+            publish_no_clobber(&temporary, target).map_err(|error| {
+                format!("Failed to publish split model part: {error}; the originals were kept")
+            })?;
+        }
+        for (source, target) in paths.iter().zip(&targets) {
+            if !same_contents(source, target)? {
+                return Err("The copied split model does not match the originals".to_owned());
+            }
+        }
+        Ok::<(), String>(())
+    })();
+    for temporary in staged {
+        let _ = std::fs::remove_file(temporary);
+    }
+    published?;
+    if let Ok(directory) = std::fs::File::open(destination) {
+        let _ = directory.sync_all();
+    }
+    Ok(targets)
+}
+
+fn move_single_model_into_library(
     root: &Path,
     source_path: &str,
     model_name: Option<&str>,
@@ -1093,34 +1344,71 @@ mod tests {
     fn refusing_an_app_data_move_preserves_the_live_file_backed_database() {
         let app = scratch("live-database-overlap");
         let path = app.join("lettuce.sqlite3");
-        let backend = crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("real database");
+        let backend =
+            crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("real database");
         let database = backend.database();
         let before = std::fs::read(&path).expect("database bytes");
         let root = llm_models_root(&DeviceSettings::default(), &app);
         std::fs::create_dir_all(&root).expect("models");
         std::fs::write(root.join("model.gguf"), b"model").expect("model");
-        for destination in [&app, app.parent().expect("parent"), &app.join("private-models")] {
-            assert_eq!(set_llm_models_dir(database, &app, destination.to_str().expect("path"), true,
-                TimestampMillis::new(2), "forbidden-move", &|| false), Err(FolderMoveError::AppDataOverlap));
+        for destination in [
+            &app,
+            app.parent().expect("parent"),
+            &app.join("private-models"),
+        ] {
+            assert_eq!(
+                set_llm_models_dir(
+                    database,
+                    &app,
+                    destination.to_str().expect("path"),
+                    true,
+                    TimestampMillis::new(2),
+                    "forbidden-move",
+                    &|| false
+                ),
+                Err(FolderMoveError::AppDataOverlap)
+            );
             assert_eq!(std::fs::read(&path).expect("live database remains"), before);
-            database.load_device_settings().expect("live connection is usable");
-            assert_eq!(std::fs::read(root.join("model.gguf")).expect("model remains"), b"model");
+            database
+                .load_device_settings()
+                .expect("live connection is usable");
+            assert_eq!(
+                std::fs::read(root.join("model.gguf")).expect("model remains"),
+                b"model"
+            );
         }
         let mut device = database.load_device_settings().expect("settings");
         device.llm_models_dir = Some(app.to_string_lossy().into_owned());
-        database.update_device_settings(&|current| current.clone_from(&device)).expect("legacy hazardous source");
+        database
+            .update_device_settings(&|current| current.clone_from(&device))
+            .expect("legacy hazardous source");
         let destination = app.with_file_name("safe-external-models");
-        assert_eq!(set_llm_models_dir(database, &app, destination.to_str().expect("path"), true,
-            TimestampMillis::new(3), "forbidden-source", &|| false), Err(FolderMoveError::AppDataOverlap));
-        assert!(!destination.exists(), "worker refuses before creating or copying entries");
+        assert_eq!(
+            set_llm_models_dir(
+                database,
+                &app,
+                destination.to_str().expect("path"),
+                true,
+                TimestampMillis::new(3),
+                "forbidden-source",
+                &|| false
+            ),
+            Err(FolderMoveError::AppDataOverlap)
+        );
+        assert!(
+            !destination.exists(),
+            "worker refuses before creating or copying entries"
+        );
         assert_eq!(std::fs::read(&path).expect("database stays"), before);
         std::fs::remove_dir_all(app).expect("cleanup");
     }
 
     #[test]
     fn custom_root_overlap_rebinds_speech_and_embedding_manifests_and_device_roots() {
-        use lettuce_model_hub::{EmbeddingInstallStore, EmbeddingModelFamily, InstalledEmbeddingManifest,
-            InstalledModelArtifact, InstalledWhisperManifest, WhisperModelRepository};
+        use lettuce_model_hub::{
+            EmbeddingInstallStore, EmbeddingModelFamily, InstalledEmbeddingManifest,
+            InstalledModelArtifact, InstalledWhisperManifest, WhisperModelRepository,
+        };
         let scratch = scratch("retained-overlap");
         let app = scratch.join("app");
         let target = scratch.join("destination");
@@ -1131,20 +1419,33 @@ mod tests {
         let whisper_file = whisper.join("tiny.en").join("ggml-tiny.en.bin");
         std::fs::create_dir_all(whisper_file.parent().expect("parent")).expect("folder");
         std::fs::write(&whisper_file, b"retained whisper").expect("whisper");
-        let admitted = InstalledWhisperManifest::inspect_legacy(&whisper, &whisper_file, TimestampMillis::new(2)).expect("manifest");
-        database.admit_whisper_model(admitted.clone()).expect("admit");
+        let admitted = InstalledWhisperManifest::inspect_legacy(
+            &whisper,
+            &whisper_file,
+            TimestampMillis::new(2),
+        )
+        .expect("manifest");
+        database
+            .admit_whisper_model(admitted.clone())
+            .expect("admit");
         let embedding_root = source.join("models/embedding");
         let files = embedding_root.join(EmbeddingModelFamily::LettuceEmbV4.install_dir());
         std::fs::create_dir_all(&files).expect("embedding folder");
         std::fs::write(files.join("model.onnx"), b"model").expect("model");
         std::fs::write(files.join("tokenizer.json"), b"tokenizer").expect("tokenizer");
         let manifest = InstalledEmbeddingManifest {
-            family: EmbeddingModelFamily::LettuceEmbV4, source_revision: "legacy-import".into(),
+            family: EmbeddingModelFamily::LettuceEmbV4,
+            source_revision: "legacy-import".into(),
             model: InstalledModelArtifact::inspect(files.join("model.onnx")).expect("model"),
-            tokenizer: InstalledModelArtifact::inspect(files.join("tokenizer.json")).expect("tokenizer"),
-            calibration: None, max_sequence_length: 512, native_dimensions: 768,
+            tokenizer: InstalledModelArtifact::inspect(files.join("tokenizer.json"))
+                .expect("tokenizer"),
+            calibration: None,
+            max_sequence_length: 512,
+            native_dimensions: 768,
         };
-        EmbeddingInstallStore::new(&embedding_root).record(&manifest).expect("record");
+        EmbeddingInstallStore::new(&embedding_root)
+            .record(&manifest)
+            .expect("record");
         let mut device = database.load_device_settings().expect("device");
         device.llm_models_dir = Some(source.to_string_lossy().into_owned());
         device.retained_model_roots = lettuce_settings::RetainedModelRoots {
@@ -1153,23 +1454,50 @@ mod tests {
             kokoro: Some(source.join("kokoro").to_string_lossy().into_owned()),
             thymos: Some(source.join("models/thymos").to_string_lossy().into_owned()),
         };
-        database.update_device_settings(&|current| current.clone_from(&device)).expect("custom root");
-        set_llm_models_dir(database, &app, target.to_str().expect("target"), true,
-            TimestampMillis::new(3), "retained-overlap", &|| false).expect("move");
+        database
+            .update_device_settings(&|current| current.clone_from(&device))
+            .expect("custom root");
+        set_llm_models_dir(
+            database,
+            &app,
+            target.to_str().expect("target"),
+            true,
+            TimestampMillis::new(3),
+            "retained-overlap",
+            &|| false,
+        )
+        .expect("move");
         let device = database.load_device_settings().expect("new device");
         let roots = crate::speech::speech_roots::retained_model_roots(&device, &app);
-        assert_eq!(roots.whisper.as_deref(), target.join("models/whisper").to_str());
-        assert_eq!(roots.embedding.as_deref(), target.join("models/embedding").to_str());
+        assert_eq!(
+            roots.whisper.as_deref(),
+            target.join("models/whisper").to_str()
+        );
+        assert_eq!(
+            roots.embedding.as_deref(),
+            target.join("models/embedding").to_str()
+        );
         assert_eq!(roots.kokoro.as_deref(), target.join("kokoro").to_str());
-        assert_eq!(roots.thymos.as_deref(), target.join("models/thymos").to_str());
-        let rebound = database.get_whisper_model(&admitted.model_id).expect("whisper").expect("model");
+        assert_eq!(
+            roots.thymos.as_deref(),
+            target.join("models/thymos").to_str()
+        );
+        let rebound = database
+            .get_whisper_model(&admitted.model_id)
+            .expect("whisper")
+            .expect("model");
         rebound.verify_contents().expect("verified moved whisper");
         assert_eq!(rebound.model.blake3, admitted.model.blake3);
         let moved = EmbeddingInstallStore::new(target.join("models/embedding"))
-            .manifest(EmbeddingModelFamily::LettuceEmbV4).expect("embedding manifest").expect("model");
+            .manifest(EmbeddingModelFamily::LettuceEmbV4)
+            .expect("embedding manifest")
+            .expect("model");
         moved.verify().expect("verified embedding");
         assert_eq!(moved.model.blake3, manifest.model.blake3);
-        assert!(!source.join("models").exists(), "verified originals should be removed after rebinding");
+        assert!(
+            !source.join("models").exists(),
+            "verified originals should be removed after rebinding"
+        );
         std::fs::remove_dir_all(scratch).expect("cleanup");
     }
 
@@ -1204,7 +1532,10 @@ mod tests {
         let info = llm_models_dir_info(&DeviceSettings::default(), &app).expect("info");
         assert!(!info.is_custom);
         assert_eq!(info.model_count, 2);
-        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
+        let target = app.with_file_name(format!(
+            "{}-elsewhere",
+            app.file_name().expect("name").to_string_lossy()
+        ));
         let change = set_llm_models_dir(
             database,
             &app,
@@ -1306,7 +1637,10 @@ mod tests {
     fn a_cancelled_move_removes_its_copies_and_keeps_everything_else() {
         let (app, root, backend) = library_with_model("cancel");
         let database = backend.database();
-        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
+        let target = app.with_file_name(format!(
+            "{}-elsewhere",
+            app.file_name().expect("name").to_string_lossy()
+        ));
         let checks = std::sync::atomic::AtomicU32::new(0);
         let cancel_on_third = || checks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 2;
         assert_eq!(
@@ -1374,7 +1708,10 @@ mod tests {
     fn an_interrupted_move_is_undone_or_finished_at_the_next_start() {
         let (app, root, backend) = library_with_model("crash");
         let database = backend.database();
-        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
+        let target = app.with_file_name(format!(
+            "{}-elsewhere",
+            app.file_name().expect("name").to_string_lossy()
+        ));
         let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
         std::fs::create_dir_all(target.join("org--m")).expect("partial copy");
         std::fs::write(target.join("org--m").join("m.gguf"), [7_u8; 4]).expect("partial");
@@ -1404,7 +1741,9 @@ mod tests {
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
         let mut device = database.load_device_settings().expect("device");
         device.llm_models_dir = Some(target.to_string_lossy().into_owned());
-        database.update_device_settings(&|current| current.clone_from(&device)).expect("committed");
+        database
+            .update_device_settings(&|current| current.clone_from(&device))
+            .expect("committed");
         assert_eq!(
             recover_models_folder_move(database, &app, &target, "move-1"),
             Ok(Some(MoveResolution {
@@ -1426,7 +1765,10 @@ mod tests {
     fn recovery_preserves_changed_contents_on_both_sides() {
         for committed in [false, true] {
             let (app, root, backend) = library_with_model("changed-recovery");
-            let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
+            let target = app.with_file_name(format!(
+                "{}-elsewhere",
+                app.file_name().expect("name").to_string_lossy()
+            ));
             let manifest = manifest_of(&root, &["notes.txt"]);
             std::fs::create_dir_all(&target).expect("target");
             std::fs::write(target.join("notes.txt"), b"x").expect("copy");
@@ -1434,13 +1776,18 @@ mod tests {
             if committed {
                 let mut device = backend.database().load_device_settings().expect("device");
                 device.llm_models_dir = Some(target.to_string_lossy().into_owned());
-                backend.database().update_device_settings(&|current| current.clone_from(&device)).expect("commit");
+                backend
+                    .database()
+                    .update_device_settings(&|current| current.clone_from(&device))
+                    .expect("commit");
                 std::fs::write(root.join("notes.txt"), b"y").expect("changed source");
             } else {
                 std::fs::write(target.join("notes.txt"), b"y").expect("changed destination");
             }
-            let resolution = recover_models_folder_move(backend.database(), &app, &target, "move-1")
-                .expect("recover").expect("resolution");
+            let resolution =
+                recover_models_folder_move(backend.database(), &app, &target, "move-1")
+                    .expect("recover")
+                    .expect("resolution");
             assert_eq!(resolution.kept, ["notes.txt"]);
             assert!(root.join("notes.txt").exists());
             assert!(target.join("notes.txt").exists());
@@ -1452,7 +1799,10 @@ mod tests {
     fn undoing_a_move_keeps_an_entry_whose_original_is_gone() {
         let (app, root, backend) = library_with_model("hand-moved");
         let database = backend.database();
-        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
+        let target = app.with_file_name(format!(
+            "{}-elsewhere",
+            app.file_name().expect("name").to_string_lossy()
+        ));
         let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
         std::fs::create_dir_all(&target).expect("target");
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
@@ -1653,31 +2003,64 @@ mod tests {
                 let relative = PathBuf::from("model/manifest.json");
                 std::fs::create_dir_all(from.join("model")).expect("source");
                 std::fs::create_dir_all(to.join("model")).expect("target");
-                let before = serde_json::to_vec(&serde_json::json!({"path":from.join("model/weights")})).expect("before");
-                let after = serde_json::to_vec(&serde_json::json!({"path":to.join("model/weights")})).expect("after");
+                let before =
+                    serde_json::to_vec(&serde_json::json!({"path":from.join("model/weights")}))
+                        .expect("before");
+                let after =
+                    serde_json::to_vec(&serde_json::json!({"path":to.join("model/weights")}))
+                        .expect("after");
                 std::fs::write(from.join(&relative), &before).expect("original manifest");
                 std::fs::write(to.join(&relative), &after).expect("rebound manifest");
                 std::fs::write(from.join("model/weights"), b"weights").expect("original weights");
                 std::fs::write(to.join("model/weights"), b"weights").expect("copied weights");
-                let manifest = MoveManifest { move_id: "rebind".into(), from: from.to_string_lossy().into_owned(),
-                    entries: vec![ManifestEntry { name: "model".into(), measure: measure(&from.join("model")).expect("measure") }],
-                    rebound_files: vec![ReboundManifest { relative_path: relative.clone(),
-                        before_hash: blake3::hash(&before).to_hex().to_string(), after_hash: blake3::hash(&after).to_hex().to_string() }],
+                let manifest = MoveManifest {
+                    move_id: "rebind".into(),
+                    from: from.to_string_lossy().into_owned(),
+                    entries: vec![ManifestEntry {
+                        name: "model".into(),
+                        measure: measure(&from.join("model")).expect("measure"),
+                    }],
+                    rebound_files: vec![ReboundManifest {
+                        relative_path: relative.clone(),
+                        before_hash: blake3::hash(&before).to_hex().to_string(),
+                        after_hash: blake3::hash(&after).to_hex().to_string(),
+                    }],
                 };
-                std::fs::write(to.join(MODELS_MOVE_MANIFEST), serde_json::to_vec(&manifest).expect("json")).expect("journal");
-                if tampered { std::fs::write(to.join("model/weights"), b"changed").expect("external change"); }
-                let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+                std::fs::write(
+                    to.join(MODELS_MOVE_MANIFEST),
+                    serde_json::to_vec(&manifest).expect("json"),
+                )
+                .expect("journal");
+                if tampered {
+                    std::fs::write(to.join("model/weights"), b"changed").expect("external change");
+                }
+                let backend =
+                    crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
                 let database = backend.database();
                 let mut device = database.load_device_settings().expect("device");
-                device.llm_models_dir = Some(if committed { &to } else { &from }.to_string_lossy().into_owned());
-                database.update_device_settings(&|current| current.clone_from(&device)).expect("chosen folder");
-                let result = recover_models_folder_move(database, &app, &to, "rebind").expect("recover").expect("journal");
+                device.llm_models_dir = Some(
+                    if committed { &to } else { &from }
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                database
+                    .update_device_settings(&|current| current.clone_from(&device))
+                    .expect("chosen folder");
+                let result = recover_models_folder_move(database, &app, &to, "rebind")
+                    .expect("recover")
+                    .expect("journal");
                 assert_eq!(result.committed, committed);
                 assert_eq!(result.kept.is_empty(), !tampered);
                 if tampered {
-                    assert!(from.join("model").exists()); assert!(to.join("model").exists());
-                } else if committed { assert!(!from.join("model").exists()); assert!(to.join("model").exists()); }
-                else { assert!(from.join("model").exists()); assert!(!to.join("model").exists()); }
+                    assert!(from.join("model").exists());
+                    assert!(to.join("model").exists());
+                } else if committed {
+                    assert!(!from.join("model").exists());
+                    assert!(to.join("model").exists());
+                } else {
+                    assert!(from.join("model").exists());
+                    assert!(!to.join("model").exists());
+                }
                 std::fs::remove_dir_all(app).expect("cleanup");
             }
         }
@@ -1688,8 +2071,139 @@ mod tests {
         let before = br#"{"model":{"path":"/source/weights","blake3":"abc","byte_size":7},"revision":"fixed"}"#;
         let valid = br#"{"model":{"path":"/target/weights","blake3":"abc","byte_size":7},"revision":"fixed"}"#;
         let changed = br#"{"model":{"path":"/target/weights","blake3":"def","byte_size":7},"revision":"fixed"}"#;
-        assert!(paths_only_rebinding(before, valid, Path::new("/source"), Path::new("/target")));
-        assert!(!paths_only_rebinding(before, changed, Path::new("/source"), Path::new("/target")));
+        assert!(paths_only_rebinding(
+            before,
+            valid,
+            Path::new("/source"),
+            Path::new("/target")
+        ));
+        assert!(!paths_only_rebinding(
+            before,
+            changed,
+            Path::new("/source"),
+            Path::new("/target")
+        ));
+    }
+    #[test]
+    fn split_library_adoption_listing_and_deletion_keep_one_complete_model() {
+        let folder = scratch("split-library");
+        let source = folder.join("source");
+        let root = folder.join("library");
+        std::fs::create_dir_all(&source).expect("source");
+        let first = "preview-llama-Q8_0-00001-of-00002.gguf";
+        let second = "preview-llama-Q8_0-00002-of-00002.gguf";
+        let a = include_bytes!(
+            "../../../lettuce-model-hub/tests/fixtures/preview-llama-Q8_0-00001-of-00002.gguf"
+        );
+        let b = include_bytes!(
+            "../../../lettuce-model-hub/tests/fixtures/preview-llama-Q8_0-00002-of-00002.gguf"
+        );
+        std::fs::write(source.join(first), a).expect("first");
+        std::fs::write(source.join(second), b).expect("second");
+        let adopted = move_model_into_library(
+            &root,
+            &source.join(second).to_string_lossy(),
+            Some("org/model"),
+        )
+        .expect("adopt all from either part");
+        assert!(adopted.ends_with(first));
+        assert!(!source.join(first).exists());
+        assert!(!source.join(second).exists());
+        let listed = downloaded_ggufs(&root, &[]).expect("list");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].filename, "preview-llama-Q8_0.gguf");
+        assert_eq!(listed[0].size, (a.len() + b.len()) as u64);
+        assert_eq!(listed[0].path, adopted);
+        assert!(same_file_path(
+            Some(&adopted.replace("00001-of", "00002-of")),
+            &adopted
+        ));
+        let already_managed = move_model_into_library(&root, &adopted, Some("different/folder"))
+            .expect("already managed");
+        assert_eq!(already_managed, adopted);
+        delete_downloaded_model(&root, &[], &adopted).expect("delete family");
+        assert!(downloaded_ggufs(&root, &[]).expect("empty").is_empty());
+        let _ = std::fs::remove_dir_all(folder);
     }
 
+    #[test]
+    fn split_adoption_preserves_originals_on_conflict_and_reuses_verified_parts_on_retry() {
+        let folder = scratch("split-adopt-retry");
+        let source = folder.join("source");
+        let root = folder.join("library");
+        let destination = root.join("model");
+        std::fs::create_dir_all(&source).expect("source");
+        std::fs::create_dir_all(&destination).expect("destination");
+        let first = "model-00001-of-00002.gguf";
+        let second = "model-00002-of-00002.gguf";
+        std::fs::write(source.join(first), b"first model part").expect("first");
+        std::fs::write(source.join(second), b"second model part").expect("second");
+        std::fs::write(destination.join(first), b"first model part").expect("published valid copy");
+        std::fs::write(destination.join(second), b"different model").expect("conflict");
+        let path = source.join(first).to_string_lossy().into_owned();
+        assert!(move_model_into_library(&root, &path, Some("model")).is_err());
+        assert_eq!(
+            std::fs::read(source.join(first)).expect("kept first"),
+            b"first model part"
+        );
+        assert_eq!(
+            std::fs::read(source.join(second)).expect("kept second"),
+            b"second model part"
+        );
+        std::fs::remove_file(destination.join(second)).expect("remove conflicting file");
+        let adopted = move_model_into_library(&root, &path, Some("model")).expect("retry");
+        assert_eq!(Path::new(&adopted), destination.join(first));
+        assert_eq!(
+            std::fs::read(destination.join(second)).expect("complete copy"),
+            b"second model part"
+        );
+        assert!(!source.join(first).exists());
+        assert!(!source.join(second).exists());
+        let _ = std::fs::remove_dir_all(folder);
+    }
+    #[test]
+    fn interrupted_split_copy_keeps_sources_complete_and_retry_reuses_published_parts() {
+        let folder = scratch("split-copy-interrupted");
+        let source = folder.join("source");
+        let root = folder.join("library");
+        let destination = root.join("model");
+        std::fs::create_dir_all(&source).expect("source");
+        std::fs::create_dir_all(&destination).expect("destination");
+        let paths: Vec<_> = (1..=2)
+            .map(|part| source.join(format!("model-{part:05}-of-00002.gguf")))
+            .collect();
+        for (index, path) in paths.iter().enumerate() {
+            std::fs::write(path, format!("verified part {index}")).expect("part");
+        }
+        let copies = std::cell::Cell::new(0);
+        let result = stage_split_model(&paths, &destination, |from, to| {
+            copies.set(copies.get() + 1);
+            if copies.get() == 2 {
+                return Err("injected disk error".to_owned());
+            }
+            copy_verified(from, to)
+        });
+        assert!(result.is_err());
+        assert!(paths.iter().all(|path| path.is_file()));
+        assert!(
+            destination
+                .join(paths[0].file_name().expect("filename"))
+                .is_file()
+        );
+        assert!(
+            !destination
+                .join(paths[1].file_name().expect("filename"))
+                .exists()
+        );
+        let adopted = move_model_into_library(&root, &paths[0].to_string_lossy(), Some("model"))
+            .expect("retry interrupted copy");
+        assert!(Path::new(&adopted).is_file());
+        assert!(paths.iter().all(|path| !path.exists()));
+        assert!(
+            destination
+                .join(paths[1].file_name().expect("filename"))
+                .is_file()
+        );
+        let _ = std::fs::remove_dir_all(folder);
+    }
 }
