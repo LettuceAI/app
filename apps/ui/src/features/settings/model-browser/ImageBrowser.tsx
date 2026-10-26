@@ -380,7 +380,7 @@ export function ImageBrowser({
             <Text variant="section">{t("hf.imageTitle")}</Text>
             <Text variant="secondary">{t("hf.imageBody")}</Text>
           </div>
-          <div className="grid gap-3 @2xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
             {profiles.data?.profiles.map((item) => (
               <ListGroup key={item.id}>
                 <ListRowButton

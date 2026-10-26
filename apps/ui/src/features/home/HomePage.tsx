@@ -112,7 +112,7 @@ export function HomePage() {
       ) : layout === "hero" ? (
         <div className="space-y-3">
           <Skeleton shape="block" height={phone ? 256 : 288} className="rounded-3xl" />
-          <div className="grid gap-3 @4xl:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <CharacterCardSkeleton key={index} />)}</div>
+          <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <CharacterCardSkeleton key={index} />)}</div>
         </div>
       ) : layout === "recent" ? (
         recent

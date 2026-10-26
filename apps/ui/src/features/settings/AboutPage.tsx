@@ -197,7 +197,7 @@ export function AboutPage() {
                 />
               </ListGroup>
 
-              <div className="grid gap-7 @[48rem]:grid-cols-[minmax(0,1fr)_17rem] @[48rem]:items-start">
+              <div className="grid grid-cols-1 gap-7 @[48rem]:grid-cols-[minmax(0,1fr)_17rem] @[48rem]:items-start">
                 <ListGroup label={t("about.community")}>
                   <ListRowButton
                     icon={<Globe size={icon.lg} />}

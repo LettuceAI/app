@@ -22,7 +22,7 @@ export function ExtrasStep({ api, form, update }: StepProps) {
       references={form.references}
       onReferencesChange={(change) => update((current) => withReferences(current, change(current.references)))}
     />
-    <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+    <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
       <ListGroup>
         <ListRowButton
           icon={<BookOpen size={icon.lg} />}

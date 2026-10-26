@@ -51,7 +51,7 @@ export function CivitaiLoraPage({ id, downloads, onBack }: { id: number; downloa
 function LoraPageSkeleton() {
   const { t } = useTranslation("settings");
   return (
-    <div role="status" aria-busy="true" aria-label={t("image.local.lora.loadingModel")} className="grid gap-7 @4xl:grid-cols-[minmax(0,1fr)_26rem] @4xl:items-start">
+    <div role="status" aria-busy="true" aria-label={t("image.local.lora.loadingModel")} className="grid grid-cols-1 gap-7 @4xl:grid-cols-[minmax(0,1fr)_26rem] @4xl:items-start">
       <Skeleton shape="block" className="aspect-3/4 w-full max-w-md justify-self-center rounded-xl" />
       <div className="space-y-5">
         <Skeleton className="h-8 w-40" />
@@ -101,7 +101,7 @@ function LoraDetail({ model, downloads }: { model: CivitaiModelDetail; downloads
   ] : [];
   const viewerIndex = (image: CivitaiImage) => setViewer(shown.indexOf(image));
   return (
-    <div className="grid gap-7 @4xl:grid-cols-[minmax(0,1fr)_26rem] @4xl:items-start">
+    <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-[minmax(0,1fr)_26rem] @4xl:items-start">
       <section aria-label={t("image.local.lora.gallery")} className="min-w-0 space-y-3 @4xl:col-start-1 @4xl:row-start-1">
         {images.length === 0 ? <EmptyState size="sm" title={t("image.local.lora.noImages")} />
           : shown.length === 0 ? <EmptyState size="sm" title={t("image.local.lora.previewsHidden")} description={t("image.local.lora.previewsHiddenBody")} action={<Button variant="secondary" onClick={() => reveal(held.map((image) => image.url))}>{t("image.local.lora.showImages")}</Button>} />

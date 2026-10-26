@@ -30,7 +30,7 @@ export function DesignReferences({ api, note, onNoteChange, references, onRefere
     } finally { setPicking(false); }
   };
 
-  return <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+  return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     <Field label={t("designReferences.note")} hint={t("designReferences.noteHint")}>
       <Textarea value={note} rows={4} autoGrow maxRows={10} placeholder={t("designReferences.notePlaceholder")} onChange={(event) => onNoteChange(event.target.value)} {...(autoFocus ? { "data-autofocus": true } : {})} />
     </Field>

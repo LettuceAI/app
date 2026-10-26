@@ -14,7 +14,7 @@ export function ChatTab({ api, form, update }: StepProps) {
   const { setDefaults } = draftSetters(update);
   const { defaults } = form.draft;
   const modelName = useModelName(api, defaults.model_profile_id);
-  return <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+  return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     <div className="min-w-0 space-y-6">
       <ListGroup label={t("details.model")}>
         <ListRowButton title={t("details.model")} description={modelName} onClick={() => setSheet("model")} />

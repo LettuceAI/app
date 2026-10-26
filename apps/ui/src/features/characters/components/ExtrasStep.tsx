@@ -14,7 +14,7 @@ export function ExtrasStep({ api, form, update }: StepProps) {
   return (
     <div className="space-y-6">
       <p className="text-base text-fg-2">{t("extras.body")}</p>
-      <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
         <div className="space-y-5">
           <NicknameField form={form} update={update} focus />
           <CreatorField form={form} update={update} />

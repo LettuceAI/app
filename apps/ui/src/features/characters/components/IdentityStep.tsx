@@ -16,7 +16,7 @@ export function IdentityStep({ api, form, update, onImport, importing, onModeLoa
   const busy = picking || importing;
   const image = (slot: "banner" | "background", title: string, hint: string) => <ImageField title={title} hint={hint} image={images[slot]} busy={busy} onChoose={() => void choose(slot)} onRemove={() => update((current) => withImage(current, slot, null))} />;
 
-  return <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+  return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
         <AvatarPicker name={draft.profile.name.trim()} image={images.avatar_original} busy={busy} onChoose={() => void choose("avatar_original")} onRemove={() => update((current) => withImage(current, "avatar_original", null))} />

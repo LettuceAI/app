@@ -267,7 +267,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
       );
     body = (
       <div className="@container px-4 pb-10 pt-4 @xl:px-8">
-        <div className="grid gap-6 @4xl:grid-cols-[minmax(0,1fr)_21rem]">
+        <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[minmax(0,1fr)_21rem]">
           <aside className="order-1 space-y-4 @4xl:sticky @4xl:top-[calc(var(--page-bar-height)+1rem)] @4xl:order-2 @4xl:self-start">
             {dynamic && <StatusCard api={api} conversationId={conversationId} status={data.status} />}
             <SummaryCard summary={data.summary} onOpen={openSummary} />

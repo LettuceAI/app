@@ -1046,7 +1046,7 @@ function DownloadPlan({
   );
   const optionCards =
     supportsFit && recommendations.isPending && !filename ? (
-      <div className="grid gap-3 @xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
         <OptionsSkeleton />
         <OptionsSkeleton memory />
       </div>
@@ -1294,7 +1294,7 @@ function MetadataSkeleton({ header = false }: { header?: boolean }) {
                   />
                 ))}
               </ListGroup>
-              <div className="grid gap-3 @xl:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
                 <OptionsSkeleton />
                 <OptionsSkeleton memory />
               </div>

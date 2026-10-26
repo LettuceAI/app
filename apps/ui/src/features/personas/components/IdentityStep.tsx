@@ -28,7 +28,7 @@ export function IdentityStep({ api, form, update, onImport, importing }: StepPro
   };
   const setDraft = (patch: Partial<typeof draft>) => update((current) => ({ ...current, draft: { ...current.draft, ...patch } }));
 
-  return <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+  return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     <div className="space-y-6">
     <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
       <div className="flex shrink-0 flex-col items-center gap-2">

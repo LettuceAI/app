@@ -96,7 +96,7 @@ export function ImageSettingsPage() {
         ) : (
           <div className="@container">
             {images.length === 0 && <EmptyState title={t("image.empty.title")} description={t("image.empty.body")} action={<Button variant="secondary" onClick={addModel}>{t("image.addModel")}</Button>} />}
-            <div className="grid gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
+            <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
               <div className="min-w-0 space-y-7">
                 <ListGroup label={t("image.avatar.group")}>
                   <ListRow icon={<UserRound size={icon.lg} />} title={t("image.avatar.title")} description={t("image.avatar.body")} trailing={<Switch checked={value.avatar_enabled} onChange={(enabled) => { void change({ avatar_enabled: enabled }); }} disabled={busy} aria-label={t("image.avatar.title")} />} />

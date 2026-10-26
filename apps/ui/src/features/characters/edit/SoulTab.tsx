@@ -68,7 +68,7 @@ export function SoulTab({ api, form, update, characterId }: StepProps & { charac
         </AccordionItem>
       </Accordion>
     </section>
-    <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+    <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
       <div className="min-w-0 space-y-6">
         <Field label={t("soul.styleNotes")} hint={t("soul.styleNotesHint")}>
           <Textarea rows={4} autoGrow maxRows={12} value={config.prompting.style_notes} placeholder={t("soul.styleNotesPlaceholder")} onChange={(event) => { const style_notes = event.target.value; change((current) => ({ ...current, prompting: { ...current.prompting, style_notes } })); }} />

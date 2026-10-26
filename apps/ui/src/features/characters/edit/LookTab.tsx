@@ -14,7 +14,7 @@ export function LookTab({ api, form, update }: StepProps) {
   const { setProfile } = draftSetters(update);
   const { images } = form;
   const image = (slot: "banner" | "background", title: string, hint: string) => <ImageField title={title} hint={hint} image={images[slot]} busy={picking} onChoose={() => void choose(slot)} onRemove={() => update((current) => withImage(current, slot, null))} />;
-  return <div className="grid gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+  return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     <div className="min-w-0 space-y-6">
       <CardPreview api={api} form={form} />
       <ListGroup>

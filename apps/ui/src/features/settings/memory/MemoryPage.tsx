@@ -214,7 +214,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
   return (
     <>
       <div className="@container">
-        <div className="grid gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
+        <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
           <div className="min-w-0 space-y-7">
             <ListGroup label={t("memory.manual.group")}>
               <ListRow

@@ -17,7 +17,7 @@ export function DetailsStep({ api, form, update }: StepProps) {
   const modelName = useModelName(api, defaults.model_profile_id);
 
   return <>
-    <div className="grid gap-6 @4xl:grid-cols-[3fr_2fr] @4xl:gap-x-10">
+    <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[3fr_2fr] @4xl:gap-x-10">
       <div className="min-w-0 space-y-6">
         <DefinitionField form={form} update={update} focus />
         <DescriptionField form={form} update={update} />
