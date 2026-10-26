@@ -376,21 +376,20 @@ impl ResumableInstall {
     pub fn commit_new(self) -> Result<PathBuf, PlatformError> {
         self.file.sync_all().map_err(PlatformError::from)?;
         drop(self.file);
-        let source = path_for(&self.partial);
-        let target = path_for(&self.target);
-        self.root
-            .hard_link(&source, &self.root, &target)
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    PlatformError::Conflict
-                } else {
-                    PlatformError::from(error)
-                }
-            })?;
-        self.root
-            .remove_file(&source)
-            .map_err(PlatformError::from)?;
-        Ok(self.root_path.join(target))
+        let (source_parent, source_name) = parent_of(&self.root, &self.partial)?;
+        let (target_parent, target_name) = parent_of(&self.root, &self.target)?;
+        crate::atomic::publish_new(
+            &source_parent,
+            source_name,
+            &target_parent,
+            Path::new(target_name),
+        )?;
+        match source_parent.remove_file(source_name) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(PlatformError::from(error)),
+        }
+        Ok(self.root_path.join(path_for(&self.target)))
     }
 }
 
@@ -430,6 +429,20 @@ fn create_parent(root: &cap_std::fs::Dir, key: &ObjectKey) -> Result<(), Platfor
 
 fn path_for(key: &ObjectKey) -> PathBuf {
     key.segments.iter().collect()
+}
+
+fn parent_of<'a>(
+    root: &cap_std::fs::Dir,
+    key: &'a ObjectKey,
+) -> Result<(cap_std::fs::Dir, &'a str), PlatformError> {
+    let (name, parent) = key.segments.split_last().ok_or(PlatformError::InvalidKey)?;
+    let directory = if parent.is_empty() {
+        root.try_clone().map_err(PlatformError::from)?
+    } else {
+        crate::authority::open_dir_nofollow_from(root, &parent.iter().collect::<PathBuf>())
+            .map_err(crate::authority::map_symlink_error)?
+    };
+    Ok((directory, name.as_str()))
 }
 
 #[cfg(test)]
