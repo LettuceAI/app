@@ -217,6 +217,20 @@ describe("opened files", () => {
     expect((sheet().getByLabelText(/Password/) as HTMLInputElement).value).toBe("wrong");
   });
 
+  it("names the step a legacy restore stopped at and why", async () => {
+    await open([file("old.lettuce")], {
+      importPreview: () => failure("malformed"),
+      backupInspect: () => ok({ version: 1, created_at: 1, app_version: "2.2.5" }),
+      legacyBackupRestore: () => ok({ job_id: "j1" }),
+    }, { jobWatch: () => ok(job({ state: "failed", progress: { current: 0, total: null, unit: null, label_code: "stage", bytes_per_second: null }, failure: { code: "resource_unavailable", reason: "backup_file_unavailable", retryable: false } as never })) });
+    await screen.findByText("Restore backup");
+    fireEvent.change(sheet().getByLabelText(/Password/), { target: { value: "secret" } });
+    fireEvent.click(sheet().getByRole("button", { name: "Restore" }));
+    fireEvent.click(within((await screen.findAllByRole("dialog")).at(-1)!).getByRole("button", { name: "Restore" }));
+    expect(await sheet().findByText("The restore stopped at step 2 of 4: Preparing files")).toBeTruthy();
+    expect(sheet().getByText("The backup file could not be read.")).toBeTruthy();
+  });
+
   it("toasts an unrecognized file and opens the next queued item", async () => {
     const previewCall = vi.fn((request: { source: { uri: string } }) => (request.source.uri.endsWith("junk.txt") ? failure("unsupported") : ok(preview("Aria"))));
     await open([file("junk.txt"), file("aria.uec")], {
