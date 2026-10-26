@@ -4,6 +4,16 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn companion_state_get(
+    context: State<'_, ApiContextSlot>,
+    request: dto::CompanionStateGetRequest,
+) -> Result<Option<dto::CompanionStateView>, ApiError> {
+    let context = context.snapshot()?;
+    api::companion_state_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn companion_soul_get(
     context: State<'_, ApiContextSlot>,
     request: dto::CompanionSoulGetRequest,

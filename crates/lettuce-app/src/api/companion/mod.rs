@@ -4,8 +4,8 @@ mod tests;
 use lettuce_characters::{CharacterDetails, CharacterRepository, InteractionMode};
 use lettuce_companions::{
     CompanionScheduledNote, CompanionScheduledNoteError, CompanionScheduledNoteRepository,
-    CompanionSoulConfig, ScheduledNoteRecurrence, SoulFact, SoulOwner, SoulRepository,
-    SoulRepositoryError,
+    CompanionSoulConfig, CompanionStateRepository, CompanionStateSnapshot,
+    ScheduledNoteRecurrence, SoulFact, SoulOwner, SoulRepository, SoulRepositoryError,
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{ConversationKind, ConversationLifecycle, ConversationReader};
@@ -14,6 +14,7 @@ use lettuce_types::{CharacterId, ConversationId, ModelProfileId, RequestId, Time
 use uuid::Uuid;
 
 use super::ApiContext;
+use crate::companion::companion_clock::companion_state_owner;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::jobs::local::stable_uuid;
 use super::memory::control::controlled_atomic;
@@ -406,6 +407,67 @@ fn draft_document(draft: &dto::CompanionSoulDraft) -> Result<serde_json::Value, 
             "the Soul draft could not be encoded",
         )
     })
+}
+
+fn state_view(snapshot: &CompanionStateSnapshot) -> dto::CompanionStateView {
+    let state = &snapshot.state;
+    let relationship = &state.relationship_state;
+    let emotions = &state.emotional_state;
+    dto::CompanionStateView {
+        conversation_id: snapshot.owner.conversation_id.to_string(),
+        character_id: snapshot.owner.character_id.to_string(),
+        persona_id: snapshot.owner.persona_id.map(|id| id.to_string()),
+        relationship: dto::CompanionRelationshipView {
+            closeness: relationship.closeness,
+            trust: relationship.trust,
+            affection: relationship.affection,
+            tension: relationship.tension,
+            stability: relationship.stability,
+            interaction_count: relationship.interaction_count,
+            last_interaction_at: relationship.last_interaction_at.get(),
+        },
+        felt: emotion_view(&emotions.felt),
+        expressed: emotion_view(&emotions.expressed),
+        blocked: emotion_view(&emotions.blocked),
+        momentum: emotion_view(&emotions.momentum),
+        active_drivers: emotions.active_drivers.clone(),
+        active_signals: state.active_signals.clone(),
+        confidence: emotions.confidence,
+        emotions_updated_at: emotions.updated_at.get(),
+        updated_at: state.updated_at.get(),
+    }
+}
+
+/// The current companion state of a direct chat, read for the persona the
+/// chat uses now; `None` when the chat has no companion state.
+pub async fn companion_state_get(
+    context: &ApiContext,
+    request: dto::CompanionStateGetRequest,
+) -> Result<Option<dto::CompanionStateView>, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let aggregate = ConversationReader::get(database, conversation_id)
+                .map_err(IntoApiError::into_api_error)?;
+            if aggregate.conversation.lifecycle == ConversationLifecycle::Tombstoned {
+                return Err(api_error(
+                    ApiErrorCode::NotFound,
+                    "the conversation was not found",
+                ));
+            }
+            let Some(owner) = companion_state_owner(&aggregate.conversation) else {
+                return Ok(None);
+            };
+            let snapshot = CompanionStateRepository::get(database, owner).map_err(|error| {
+                api_error(
+                    ApiErrorCode::Internal,
+                    format!("the companion state could not be read: {error:?}"),
+                )
+            })?;
+            Ok(snapshot.as_ref().map(state_view))
+        })
+        .await
 }
 
 /// The companion's authored Soul configuration together with the growth of

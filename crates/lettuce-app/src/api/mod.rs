@@ -43,6 +43,7 @@ pub use companion::{
     companion_notes_active_preview, companion_notes_delete, companion_notes_list,
     companion_notes_upsert, companion_soul_get, companion_soul_growth_clear,
     companion_soul_growth_lock, companion_soul_growth_remove, companion_soul_writer_run,
+    companion_state_get,
 };
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
 pub use conversations::branches::{

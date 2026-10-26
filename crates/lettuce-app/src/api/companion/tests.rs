@@ -266,6 +266,71 @@ async fn notes_before_1970_round_trip_with_the_exact_instant() {
 }
 
 #[tokio::test]
+async fn companion_state_reads_the_chat_state_and_nothing_for_plain_chats() {
+    let harness = harness(Reply::Text("reply"));
+    let character = companion(&harness, "Stateful", false);
+    let chat = launch_companion(&harness, character, "state-chat").await;
+    let get = |conversation: String| {
+        let context = harness.context.clone();
+        async move {
+            companion_state_get(
+                &context,
+                dto::CompanionStateGetRequest {
+                    conversation_id: conversation,
+                },
+            )
+            .await
+        }
+    };
+
+    let state = get(chat.clone())
+        .await
+        .expect("companion state")
+        .expect("a companion chat has state from launch");
+    let defaults = lettuce_companions::RelationshipDefaults::default();
+    assert_eq!(state.conversation_id, chat);
+    assert_eq!(state.character_id, character.to_string());
+    assert_eq!(state.relationship.closeness, defaults.closeness);
+    assert_eq!(state.relationship.trust, defaults.trust);
+    assert_eq!(state.relationship.affection, defaults.affection);
+    assert_eq!(state.relationship.tension, defaults.tension);
+    assert_eq!(state.relationship.interaction_count, 0);
+    assert!(state.active_signals.is_empty());
+
+    let plain = crate::api::tests::create_character(
+        harness.context.backend().database(),
+        "Plain",
+        lettuce_characters::CharacterDefaults::default(),
+    );
+    let plain_chat = conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: plain.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: "state-plain".into(),
+        },
+    )
+    .await
+    .expect("launch plain chat")
+    .conversation_id;
+    assert_eq!(get(plain_chat).await.expect("plain chat"), None);
+
+    assert_eq!(
+        get(lettuce_types::ConversationId::new().to_string())
+            .await
+            .expect_err("unknown chat")
+            .code,
+        ApiErrorCode::NotFound
+    );
+    assert_eq!(
+        get("not-an-id".into()).await.expect_err("bad id").code,
+        ApiErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test]
 async fn soul_commands_act_on_the_conversation_soul_or_the_shared_character_soul() {
     for shared in [false, true] {
         let harness = harness(Reply::Text("reply"));

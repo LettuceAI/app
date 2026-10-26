@@ -203,6 +203,51 @@ pub struct CompanionSoulGetRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
+pub struct CompanionStateGetRequest {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct CompanionRelationshipView {
+    pub closeness: f64,
+    pub trust: f64,
+    pub affection: f64,
+    pub tension: f64,
+    pub stability: f64,
+    pub interaction_count: u32,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub last_interaction_at: i64,
+}
+
+/// A companion chat's current state: the relationship with the persona the
+/// chat uses now, the felt, expressed, blocked and momentum emotions, and the
+/// signals in effect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct CompanionStateView {
+    pub conversation_id: String,
+    pub character_id: String,
+    pub persona_id: Option<String>,
+    pub relationship: CompanionRelationshipView,
+    pub felt: CompanionEmotionVector,
+    pub expressed: CompanionEmotionVector,
+    pub blocked: CompanionEmotionVector,
+    pub momentum: CompanionEmotionVector,
+    pub active_drivers: Vec<String>,
+    pub active_signals: Vec<String>,
+    pub confidence: f64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub emotions_updated_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
 pub struct CompanionSoulGrowthClearRequest {
     pub character_id: String,
     pub conversation_id: Option<String>,

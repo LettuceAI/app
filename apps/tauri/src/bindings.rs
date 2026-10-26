@@ -301,6 +301,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::memory::memory_retry,
             commands::memory::memory_skip,
             commands::memory::memory_cycles,
+            commands::companion::companion_state_get,
             commands::memory::memory_cycle_revert,
             commands::memory::memory_error_dismiss,
             commands::companion::companion_soul_get,

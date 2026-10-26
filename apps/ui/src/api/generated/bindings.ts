@@ -286,6 +286,7 @@ export const commands = {
 	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_retry", { request })),
 	memorySkip: (request: MemorySkipRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_skip", { request })),
 	memoryCycles: (request: MemoryCyclesRequest) => typedError<MemoryCyclePage, ApiError_Serialize>(__TAURI_INVOKE("memory_cycles", { request })),
+	companionStateGet: (request: CompanionStateGetRequest) => typedError<CompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("companion_state_get", { request })),
 	memoryCycleRevert: (request: MemoryCycleRevertRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_cycle_revert", { request })),
 	memoryErrorDismiss: (request: MemoryErrorDismissRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_error_dismiss", { request })),
 	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_get", { request })),
@@ -1441,6 +1442,16 @@ export type CompanionRelationshipDefaults = {
 	trust: number | null,
 	affection: number | null,
 	tension: number | null,
+export type CompanionRelationshipView = {
+	closeness: number | null,
+	trust: number | null,
+	affection: number | null,
+	tension: number | null,
+	stability: number | null,
+	interaction_count: number,
+	last_interaction_at: number,
+};
+
 };
 
 /**  The authored configuration of a companion character. */
@@ -1531,6 +1542,31 @@ export type CompanionSoulWriterRunRequest = {
 	user_notes: string | null,
 	model_profile_id: string | null,
 	client_operation_id: string,
+export type CompanionStateGetRequest = {
+	conversation_id: string,
+};
+
+/**
+ *  A companion chat's current state: the relationship with the persona the
+ *  chat uses now, the felt, expressed, blocked and momentum emotions, and the
+ *  signals in effect.
+ */
+export type CompanionStateView = {
+	conversation_id: string,
+	character_id: string,
+	persona_id: string | null,
+	relationship: CompanionRelationshipView,
+	felt: CompanionEmotionVector,
+	expressed: CompanionEmotionVector,
+	blocked: CompanionEmotionVector,
+	momentum: CompanionEmotionVector,
+	active_drivers: string[],
+	active_signals: string[],
+	confidence: number | null,
+	emotions_updated_at: number,
+	updated_at: number,
+};
+
 };
 
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
