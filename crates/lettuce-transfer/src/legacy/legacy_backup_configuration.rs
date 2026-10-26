@@ -1562,8 +1562,26 @@ fn map_provider_models(
 ) -> Result<LegacyProviderModelPlan, LegacyBackupConfigurationError> {
     let mut skipped = Vec::new();
     let mut providers = Vec::with_capacity(provider_rows.len());
+    let ignored_provider_ids = provider_rows
+        .iter()
+        .filter(|row| crate::legacy_provider_is_ignored(&row.provider_id))
+        .map(|row| row.id.clone())
+        .collect::<BTreeSet<_>>();
     let mut source_provider_ids = BTreeMap::new();
     for (index, row) in provider_rows.into_iter().enumerate() {
+        if crate::legacy_provider_is_ignored(&row.provider_id) {
+            skipped.push(crate::legacy_value_skip(
+                "provider_credentials.provider_id",
+                &row.id,
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ));
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Unsupported,
+                LegacyBackupDocumentKind::ProviderCredentials,
+                format!("[{index}].provider_id"),
+            ));
+            continue;
+        }
         report_extra(
             LegacyBackupDocumentKind::ProviderCredentials,
             &format!("[{index}]."),
@@ -1734,6 +1752,24 @@ fn map_provider_models(
     }
     let mut models = Vec::with_capacity(model_rows.len());
     for (index, row) in model_rows.into_iter().enumerate() {
+        if crate::legacy_provider_is_ignored(&row.provider_id)
+            || row
+                .provider_credential_id
+                .as_ref()
+                .is_some_and(|id| ignored_provider_ids.contains(id))
+        {
+            skipped.push(crate::legacy_value_skip(
+                "models.provider_id",
+                &row.id,
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ));
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Unsupported,
+                LegacyBackupDocumentKind::Models,
+                format!("[{index}].provider_id"),
+            ));
+            continue;
+        }
         report_extra(
             LegacyBackupDocumentKind::Models,
             &format!("[{index}]."),
@@ -2334,6 +2370,14 @@ fn map_provider_secrets(
         .unwrap_or_default();
     let mut legacy = BTreeMap::new();
     for (index, row) in rows.into_iter().enumerate() {
+        if row.service == "lettuceai:apiKey"
+            && row
+                .account
+                .split_once(':')
+                .is_some_and(|(kind, _)| crate::legacy_provider_is_ignored(kind))
+        {
+            continue;
+        }
         report_extra(
             LegacyBackupDocumentKind::Secrets,
             &format!("[{index}]."),
@@ -2375,6 +2419,9 @@ fn map_provider_secrets(
     }
     let mut result = Vec::new();
     for (index, row) in provider_document.into_iter().enumerate() {
+        if crate::legacy_provider_is_ignored(&row.provider_id) {
+            continue;
+        }
         let canonical_id = ProviderAccountId::from_str(&row.id).unwrap_or_else(|_| {
             ProviderAccountId::from_uuid(Uuid::new_v5(
                 &LEGACY_ID_NAMESPACE,
@@ -3924,6 +3971,72 @@ mod tests {
             documents,
             media: Vec::<LegacyBackupMedia>::new(),
         }
+    }
+
+    #[test]
+    fn retired_engine_accounts_models_and_secrets_are_ignored() {
+        let engine = ProviderAccountId::new();
+        let kept = ProviderAccountId::new();
+        let engine_model = ModelProfileId::new();
+        let linked_model = ModelProfileId::new();
+        let kept_model = ModelProfileId::new();
+        let plan = plan_legacy_backup_configuration(inventory(vec![
+            document(LegacyBackupDocumentKind::Settings, json!({
+                "default_provider_credential_id": engine,
+                "default_model_id": engine_model,
+                "created_at": 10, "updated_at": 20
+            })),
+            document(LegacyBackupDocumentKind::ProviderCredentials, json!([
+                {"id": engine, "provider_id": "LETTUCE-ENGINE", "label": "Retired", "api_key": "ignored-inline", "config": "not-json"},
+                {"id": kept, "provider_id": "openai", "label": "Kept", "api_key": "kept-secret"}
+            ])),
+            document(LegacyBackupDocumentKind::Models, json!([
+                {"id": engine_model, "name": "old", "display_name": "Old", "provider_id": "lettuce-engine", "provider_credential_id": engine, "provider_label": "Retired", "created_at": 10},
+                {"id": linked_model, "name": "linked", "display_name": "Linked", "provider_id": "openai", "provider_credential_id": engine, "provider_label": "Kept", "created_at": 10},
+                {"id": kept_model, "name": "kept", "display_name": "Kept", "provider_id": "openai", "provider_credential_id": kept, "provider_label": "Kept", "created_at": 10}
+            ])),
+            document(LegacyBackupDocumentKind::Secrets, json!([
+                {"service": "lettuceai:apiKey", "account": format!("lettuce-engine:{engine}"), "value": "ignored-fallback"}
+            ])),
+        ])).expect("retired engine does not block restore");
+        assert_eq!(plan.provider_models.provider_accounts.len(), 1);
+        assert_eq!(plan.provider_models.provider_accounts[0].id, kept);
+        assert_eq!(plan.provider_models.model_profiles.len(), 1);
+        assert_eq!(plan.provider_models.model_profiles[0].id, kept_model);
+        assert_eq!(
+            plan.provider_models.model_profiles[0].provider_account_id,
+            kept
+        );
+        assert_eq!(plan.secrets.len(), 1);
+        assert!(plan.secrets[0].value.with(|value| value == "kept-secret"));
+        assert!(plan.settings.default_provider_account_id.is_none());
+        assert!(plan.settings.default_model_profile_id.is_none());
+        for (field, id) in [
+            ("provider_credentials.provider_id", engine.to_string()),
+            ("models.provider_id", engine_model.to_string()),
+            ("models.provider_id", linked_model.to_string()),
+        ] {
+            assert!(
+                plan.provider_models
+                    .skipped
+                    .contains(&crate::legacy_value_skip(
+                        field,
+                        &id,
+                        crate::LegacyImportSkipReason::UnknownLegacyValue
+                    ))
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_provider_kinds_still_reject_the_backup() {
+        let error = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::ProviderCredentials,
+            json!([{"id": ProviderAccountId::new(), "provider_id": "not-a-provider", "label": "Unknown"}]),
+        )])).expect_err("only the retired engine is ignored");
+        assert!(matches!(error, LegacyBackupConfigurationError::Malformed {
+            document: LegacyBackupDocumentKind::ProviderCredentials, field
+        } if field == "[0].provider_id"));
     }
 
     #[test]

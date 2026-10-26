@@ -927,12 +927,20 @@ fn map_messages(
                 reason: crate::LegacyImportSkipReason::MissingModelProfile,
             });
         }
-        if row
-            .parent_message_id
-            .as_ref()
-            .is_some_and(|id| !local_ids.contains(id))
+        let mut parent_message_source_id = row.parent_message_id.clone();
+        if parent_message_source_id
+            .take_if(|id| !local_ids.contains(id))
+            .is_some()
         {
-            return Err(orphan(format!("{path}.parent_message_id")));
+            skipped.push(crate::legacy_value_skip(
+                "group_messages.parent_message_id",
+                &row.id,
+                crate::LegacyImportSkipReason::MissingMessage,
+            ));
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                &format!("{path}.parent_message_id"),
+            ));
         }
         validate_text(&row.content, &format!("{path}.content"))?;
         for (field, raw) in [
@@ -999,7 +1007,7 @@ fn map_messages(
             model_source_id,
             gemini_content_json: row.gemini_content,
             usage_json: row.usage_json,
-            parent_message_source_id: row.parent_message_id,
+            parent_message_source_id,
             variants,
         });
     }
@@ -1612,6 +1620,50 @@ mod tests {
         let usage = plan_legacy_backup_usage(asr).expect("usage plan");
         let pricing = plan_legacy_backup_pricing(usage).expect("pricing plan");
         plan_legacy_backup_direct_sessions(pricing).expect("direct session plan")
+    }
+
+    #[test]
+    fn dangling_group_message_parents_keep_every_message_and_valid_link() {
+        let first = id(701);
+        let second = id(702);
+        let third = id(703);
+        let missing = id(704);
+        let rows = serde_json::from_value(json!([
+            message(&first, None, None, None),
+            message(&second, None, Some(&missing), None),
+            message(&third, None, Some(&first), None),
+        ]))
+        .expect("rows");
+        let mut notices = Vec::new();
+        let (messages, skipped) = map_messages(
+            rows,
+            "[0]",
+            &[],
+            &BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &mut notices,
+        )
+        .expect("missing parent is stale metadata");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[1].source_id, second);
+        assert_eq!(messages[1].content, "A preserved message");
+        assert!(messages[1].parent_message_source_id.is_none());
+        assert_eq!(
+            messages[2].parent_message_source_id.as_deref(),
+            Some(first.as_str())
+        );
+        assert_eq!(
+            skipped,
+            vec![crate::legacy_value_skip(
+                "group_messages.parent_message_id",
+                &second,
+                crate::LegacyImportSkipReason::MissingMessage
+            )]
+        );
+        assert!(notices.iter().any(|notice| notice.kind
+            == LegacyBackupConversionNoticeKind::Lossy
+            && notice.field == "[0].messages[1].parent_message_id"));
     }
 
     fn message(

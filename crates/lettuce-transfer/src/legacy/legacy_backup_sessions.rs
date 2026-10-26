@@ -472,12 +472,20 @@ fn map_messages(
         if !matches!(row.role.as_str(), "user" | "assistant" | "system" | "scene") {
             return Err(malformed(format!("{path}.role")));
         }
-        if row
-            .parent_message_id
-            .as_ref()
-            .is_some_and(|id| !local_ids.contains(id))
+        let mut parent_message_source_id = row.parent_message_id;
+        if parent_message_source_id
+            .take_if(|id| !local_ids.contains(id))
+            .is_some()
         {
-            return Err(orphan(format!("{path}.parent_message_id")));
+            skipped.push(crate::legacy_value_skip(
+                "messages.parent_message_id",
+                &row.id,
+                crate::LegacyImportSkipReason::MissingMessage,
+            ));
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                &format!("{path}.parent_message_id"),
+            ));
         }
         let mut model_source_id = row.model_id;
         if model_source_id
@@ -549,7 +557,7 @@ fn map_messages(
             used_lorebook_entries_json: row.used_lorebook_entries,
             attachments_json: row.attachments,
             reasoning: row.reasoning,
-            parent_message_source_id: row.parent_message_id,
+            parent_message_source_id,
             variants,
         });
     }
@@ -1469,6 +1477,51 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(plan.skipped, expected);
+    }
+
+    #[test]
+    fn dangling_message_parents_keep_every_message_and_valid_link() {
+        let first = id(701);
+        let second = id(702);
+        let third = id(703);
+        let missing = id(704);
+        let rows = serde_json::from_value(json!([
+            message(&first, None, None),
+            message(&second, Some(&missing), None),
+            message(&third, Some(&first), None),
+        ]))
+        .expect("rows");
+        let mut skipped = Vec::new();
+        let mut notices = Vec::new();
+        let messages = map_messages(
+            rows,
+            "[0]",
+            &BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &mut skipped,
+            &mut notices,
+        )
+        .expect("missing parent is stale metadata");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[1].source_id, second);
+        assert_eq!(messages[1].content, "Hello");
+        assert!(messages[1].parent_message_source_id.is_none());
+        assert_eq!(
+            messages[2].parent_message_source_id.as_deref(),
+            Some(first.as_str())
+        );
+        assert_eq!(
+            skipped,
+            vec![crate::legacy_value_skip(
+                "messages.parent_message_id",
+                &second,
+                crate::LegacyImportSkipReason::MissingMessage
+            )]
+        );
+        assert!(notices.iter().any(|notice| notice.kind
+            == LegacyBackupConversionNoticeKind::Lossy
+            && notice.field == "[0].messages[1].parent_message_id"));
     }
 
     #[test]

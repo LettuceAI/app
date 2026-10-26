@@ -847,6 +847,7 @@ fn plan_legacy_provider_models_in(
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
     let mut skipped = Vec::new();
     let mut provider_accounts = Vec::new();
+    let mut ignored_provider_ids = BTreeSet::new();
     for row in rows {
         let (
             source_id,
@@ -858,6 +859,15 @@ fn plan_legacy_provider_models_in(
             headers_json,
             config_json,
         ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        if lettuce_transfer::legacy_provider_is_ignored(&provider_kind) {
+            skipped.push(legacy_value_skip(
+                "provider_credentials.provider_id",
+                &source_id,
+                lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue,
+            ));
+            ignored_provider_ids.insert(source_id);
+            continue;
+        }
         let id = ProviderAccountId::from_str(&source_id).map_err(|_| provider_malformed("id"))?;
         require_provider_non_blank(&provider_kind, "provider_id")?;
         require_provider_non_blank(&label, "label")?;
@@ -1058,6 +1068,18 @@ fn plan_legacy_provider_models_in(
             deprecated_system_prompt,
         ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
         let source_id = id;
+        if lettuce_transfer::legacy_provider_is_ignored(&provider_kind)
+            || explicit_provider_id
+                .as_ref()
+                .is_some_and(|id| ignored_provider_ids.contains(id))
+        {
+            skipped.push(legacy_value_skip(
+                "models.provider_id",
+                &source_id,
+                lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue,
+            ));
+            continue;
+        }
         let id = ModelProfileId::from_str(&source_id).map_err(|_| model_malformed("id"))?;
         require_model_non_blank(&external_model_id, "name")?;
         require_model_non_blank(&provider_kind, "provider_id")?;
@@ -2428,6 +2450,47 @@ mod tests {
                 table: "characters"
             })
         );
+    }
+
+    #[test]
+    fn retired_engine_rows_do_not_block_database_preflight() {
+        let path = provider_model_database();
+        let engine = ProviderAccountId::new();
+        let kept = ProviderAccountId::new();
+        let engine_model = ModelProfileId::new();
+        let linked_model = ModelProfileId::new();
+        let kept_model = ModelProfileId::new();
+        let connection = Connection::open(&path).expect("open source");
+        connection
+            .execute(
+                "INSERT INTO settings VALUES (1,?1,?2,92,100,120)",
+                rusqlite::params![engine.to_string(), engine_model.to_string()],
+            )
+            .expect("settings");
+        connection.execute(
+            "INSERT INTO provider_credentials (id,provider_id,label,api_key,config) VALUES (?1,'LETTUCE-ENGINE','Retired','ignored','not-json'),(?2,'openai','Kept','kept',NULL)",
+            rusqlite::params![engine.to_string(), kept.to_string()]).expect("providers");
+        for (id, kind, account) in [
+            (engine_model, "lettuce-engine", engine),
+            (linked_model, "openai", engine),
+            (kept_model, "openai", kept),
+        ] {
+            connection.execute(
+                "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at) VALUES (?1,'model',?2,?3,'Kept','Model',100)",
+                rusqlite::params![id.to_string(), kind, account.to_string()]).expect("model");
+        }
+        drop(connection);
+        let before = std::fs::read(&path).expect("source bytes");
+        let plan = plan_legacy_provider_models(&path).expect("retired engine ignored");
+        assert_eq!(plan.provider_accounts.len(), 1);
+        assert_eq!(plan.provider_accounts[0].id, kept);
+        assert_eq!(plan.model_profiles.len(), 1);
+        assert_eq!(plan.model_profiles[0].id, kept_model);
+        assert_eq!(plan.model_profiles[0].provider_account_id, kept);
+        assert!(plan.default_provider_account_id.is_none());
+        assert!(plan.default_model_profile_id.is_none());
+        assert_eq!(std::fs::read(&path).expect("unchanged source"), before);
+        std::fs::remove_file(path).expect("remove fixture");
     }
 
     #[test]

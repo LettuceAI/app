@@ -6,15 +6,15 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod backup;
-mod restore;
-mod legacy;
 mod files;
+mod legacy;
+mod restore;
 pub mod uec3;
 
 pub use backup::*;
-pub use restore::*;
-pub use legacy::*;
 pub use files::*;
+pub use legacy::*;
+pub use restore::*;
 
 use std::fmt;
 
@@ -292,7 +292,9 @@ pub enum LegacyProviderAccountOrigin {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LegacyPendingProviderSecret {
     ApiKey,
-    Header { name: HeaderName },
+    Header {
+        name: HeaderName,
+    },
     /// An Ollama account's Sprout probe key (`sproutApiKey` in the source
     /// credential config).
     SproutApiKey,
@@ -362,7 +364,6 @@ pub struct LegacyProviderModelPlan {
 }
 
 /// A legacy record the import leaves out, sealed with the run as evidence.
-/// Only records the legacy app itself already ignored are skipped.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LegacyImportSkip {
     pub kind: LegacyImportSkipKind,
@@ -421,6 +422,10 @@ pub enum LegacyImportSkipReason {
     MissingSession,
     MissingMessage,
     NoForkPoint,
+}
+
+pub fn legacy_provider_is_ignored(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("lettuce-engine")
 }
 
 pub fn legacy_value_skip(
@@ -705,17 +710,43 @@ pub struct LegacyLorebookPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LegacyMediaUse {
-    PersonaAvatar { persona_id: PersonaId },
-    PersonaDesignReference { persona_id: PersonaId, ordinal: u32 },
-    LorebookAvatar { lorebook_id: LorebookId },
-    CharacterAvatar { character_id: CharacterId },
-    CharacterBanner { character_id: CharacterId },
-    CharacterBackground { character_id: CharacterId },
-    CharacterDesignReference { character_id: CharacterId, ordinal: u32 },
-    CharacterSceneBackground { character_id: CharacterId, scene_id: SceneId },
-    GroupBackground { group_id: GroupId },
-    GroupSceneBackground { group_id: GroupId, scene_id: SceneId },
-    AsrVoiceExample { source_id: i64 },
+    PersonaAvatar {
+        persona_id: PersonaId,
+    },
+    PersonaDesignReference {
+        persona_id: PersonaId,
+        ordinal: u32,
+    },
+    LorebookAvatar {
+        lorebook_id: LorebookId,
+    },
+    CharacterAvatar {
+        character_id: CharacterId,
+    },
+    CharacterBanner {
+        character_id: CharacterId,
+    },
+    CharacterBackground {
+        character_id: CharacterId,
+    },
+    CharacterDesignReference {
+        character_id: CharacterId,
+        ordinal: u32,
+    },
+    CharacterSceneBackground {
+        character_id: CharacterId,
+        scene_id: SceneId,
+    },
+    GroupBackground {
+        group_id: GroupId,
+    },
+    GroupSceneBackground {
+        group_id: GroupId,
+        scene_id: SceneId,
+    },
+    AsrVoiceExample {
+        source_id: i64,
+    },
     /// A chat message or group variant attachment; `audio` is what its bytes
     /// hold, `label` its legacy filename (the prompt of a generated image).
     MessageAttachment {
@@ -724,10 +755,16 @@ pub enum LegacyMediaUse {
         label: Option<String>,
     },
     /// Image `ordinal` of a legacy playground history entry.
-    PlaygroundImage { generation_id: String, ordinal: u32 },
+    PlaygroundImage {
+        generation_id: String,
+        ordinal: u32,
+    },
     /// The background a direct (`group` false) or group session set for
     /// itself.
-    ConversationBackground { session_id: String, group: bool },
+    ConversationBackground {
+        session_id: String,
+        group: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
