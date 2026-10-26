@@ -1,6 +1,7 @@
 import type { AppEvent, LibraryInteractionMode, PromptKind } from "./generated/bindings";
 
 export const queryKeys = {
+  logs: { all: ["logs"] as const },
   app: {
     all: ["app"] as const,
     status: () => [...queryKeys.app.all, "status"] as const,

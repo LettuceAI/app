@@ -227,6 +227,14 @@
         "no-restricted-globals": "off",
         "no-restricted-properties": "off"
       }
+    },
+    {
+      "files": [
+        "**/src/features/settings/logs/LogsPage.tsx"
+      ],
+      "rules": {
+        "react/incompatible-library": "off"
+      }
     }
   ]
 }

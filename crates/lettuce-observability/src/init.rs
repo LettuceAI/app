@@ -22,6 +22,7 @@ pub enum InitError {
 }
 
 type Observer = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+type ChangeObserver = std::sync::Arc<dyn Fn() + Send + Sync>;
 
 const MIRROR_CAPACITY: usize = 1024;
 
@@ -29,6 +30,7 @@ const MIRROR_CAPACITY: usize = 1024;
 struct OutputWriter {
     writer: std::sync::Arc<std::sync::Mutex<DailyLogWriter>>,
     observer: std::sync::Arc<std::sync::Mutex<Option<Observer>>>,
+    changed: std::sync::Arc<std::sync::Mutex<Option<ChangeObserver>>>,
 }
 
 impl io::Write for OutputWriter {
@@ -41,6 +43,14 @@ impl io::Write for OutputWriter {
         {
             eprintln!("log file write failed: {error}");
             return Err(error);
+        }
+        let changed = self
+            .changed
+            .lock()
+            .map_err(|_| io::Error::other("log observer unavailable"))?
+            .clone();
+        if let Some(changed) = changed {
+            changed();
         }
         let observer = self
             .observer
@@ -68,6 +78,7 @@ pub(crate) fn local_output_writer(
     let output = OutputWriter {
         writer: std::sync::Arc::new(std::sync::Mutex::new(DailyLogWriter::new(config.directory))),
         observer: Default::default(),
+        changed: Default::default(),
     };
     let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
         .buffered_lines_limit(config.queue_capacity)
@@ -98,6 +109,27 @@ impl std::fmt::Debug for LogSink {
 }
 
 impl LogSink {
+    pub fn set_change_observer(&self, observer: impl Fn() + Send + 'static) {
+        let (changed, queued) = std::sync::mpsc::sync_channel::<()>(1);
+        let spawned = std::thread::Builder::new()
+            .name("lettuce-log-changes".into())
+            .spawn(move || {
+                while queued.recv().is_ok() {
+                    observer();
+                }
+            });
+        let forward: Option<ChangeObserver> = match spawned {
+            Ok(_) => Some(std::sync::Arc::new(move || {
+                let _ = changed.try_send(());
+            })),
+            Err(error) => {
+                eprintln!("log change observer could not start: {error}");
+                None
+            }
+        };
+        *self.writer.changed.lock().expect("log change observer") = forward;
+    }
+
     pub fn append(&self, entry: &LogEntry) -> io::Result<()> {
         self.writer.clone().write_all(entry.line().as_bytes())
     }

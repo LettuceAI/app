@@ -60,6 +60,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::logs::log_delete,
             commands::logs::logs_clear,
             commands::logs::log_export,
+            commands::logs::log_query,
+            commands::logs::log_export_selection,
             commands::logs::log_append,
             commands::conversations::conversations_list,
             commands::conversations::conversations_latest_by_character,

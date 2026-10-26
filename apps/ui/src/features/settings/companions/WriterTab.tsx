@@ -6,7 +6,7 @@ import { Alert, icon, ListGroup, ListRowButton, Skeleton, Text } from "@lettucea
 import type { SettingsCompanionSoulWriterSettings } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { modelsQuery } from "@/features/conversations";
-import { promptsQuery } from "@/features/characters";
+import { PromptPickerSheet, promptsQuery } from "@/entities/prompt";
 import { FailureState } from "@/shared/ui/FailureState";
 import { StructuredFallbackSelector } from "@/shared/ui/StructuredFallbackSelector";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
@@ -18,6 +18,7 @@ const fields = {
   fallback: "fallback_model_profile_id",
   prompt: "prompt_id",
 } as const;
+const promptKind = "companion_soul_writer";
 export function WriterTab({
   value,
   defaultModelId,
@@ -41,8 +42,10 @@ export function WriterTab({
     queryKey: queryKeys.providers.accounts(),
     queryFn: () => api.call("providerAccountsList"),
   });
-  const prompts = useQuery(promptsQuery(api, "companion_soul_writer"));
-  const shown = useClosingValue(picker).shown;
+  const prompts = useQuery(promptsQuery(api, promptKind));
+  const shownModel = useClosingValue(
+    picker === "primary" || picker === "fallback" ? picker : null,
+  ).shown;
   const byAccount = new Map((accounts.data ?? []).map((account) => [account.id, account]));
   const choices: WriterModel[] = (models.data?.models ?? []).flatMap((model) => {
     const account = byAccount.get(model.provider_account_id);
@@ -163,23 +166,29 @@ export function WriterTab({
         <Alert tone="info" title={t("whereTitle")} description={t("whereBody")} />
       </div>
       <CompanionPicker
-        open={picker !== null}
-        picker={shown}
+        open={picker === "primary" || picker === "fallback"}
+        picker={shownModel}
         models={choices}
-        prompts={prompts.data ?? []}
-        loading={shown === "prompt" ? prompts.isPending : loading}
-        failure={shown === "prompt" ? prompts.error : (modelFailure?.error ?? null)}
+        loading={loading}
+        failure={modelFailure?.error ?? null}
         retry={() => {
-          if (shown === "prompt") void prompts.refetch();
-          else {
-            void models.refetch();
-            void accounts.refetch();
-          }
+          void models.refetch();
+          void accounts.refetch();
         }}
-        value={shown ? value[fields[shown]] : null}
+        value={shownModel ? value[fields[shownModel]] : null}
         defaultName={defaultName}
         onClose={onClose}
         onChoose={choose}
+        onAddModel={() => void navigate({ to: "/settings/models/new", replace: true })}
+      />
+      <PromptPickerSheet
+        open={picker === "prompt"}
+        title={t("writerPrompt")}
+        kind={promptKind}
+        prompts={prompts}
+        value={value.prompt_id}
+        onChoose={choose}
+        onClose={onClose}
         onManage={() =>
           void navigate({
             to: "/settings/$section",
@@ -188,7 +197,7 @@ export function WriterTab({
             replace: true,
           })
         }
-        onAddModel={() => void navigate({ to: "/settings/models/new", replace: true })}
+        manageDescription={t("managePromptsBody")}
       />
     </>
   );

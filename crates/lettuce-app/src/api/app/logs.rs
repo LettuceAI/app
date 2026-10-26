@@ -1,3 +1,7 @@
+mod query;
+
+pub use query::{log_export_selection, log_query};
+
 use std::io::Write;
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
@@ -136,14 +140,20 @@ pub async fn log_delete(
                 .logs()?
                 .directory
                 .delete(&request.name)
-                .map_err(log_error)
+                .map_err(log_error)?;
+            context.emit(dto::ApiEvent::LogsChanged);
+            Ok(())
         })
         .await
 }
 
 pub async fn logs_clear(context: &ApiContext) -> Result<(), ApiError> {
     context
-        .blocking(|context| context.logs()?.directory.clear().map_err(log_error))
+        .blocking(|context| {
+            context.logs()?.directory.clear().map_err(log_error)?;
+            context.emit(dto::ApiEvent::LogsChanged);
+            Ok(())
+        })
         .await
 }
 
@@ -232,3 +242,6 @@ pub async fn log_append(
         })
         .await
 }
+
+#[cfg(test)]
+mod query_tests;

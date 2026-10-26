@@ -35,7 +35,7 @@ import {
 import type { PromptKind, SettingsLorebookGeneratorSelection } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { ModelMark } from "@/entities/provider";
-import { promptsQuery } from "@/features/characters";
+import { PromptPickerSheet, promptsQuery } from "@/entities/prompt";
 import { generatorDefaultsQuery } from "@/entities/lorebook";
 import { FailureState } from "@/shared/ui/FailureState";
 import { StructuredFallbackSelector } from "@/shared/ui/StructuredFallbackSelector";
@@ -219,11 +219,6 @@ export function LorebooksPage() {
     ({ model, account }) =>
       !q ||
       `${model.display_name} ${account.label}`.toLocaleLowerCase().includes(q.toLocaleLowerCase()),
-  );
-  const custom = (promptQuery?.data ?? []).filter(
-    (prompt) =>
-      prompt.origin.type !== "built_in" &&
-      (!q || prompt.name.toLocaleLowerCase().includes(q.toLocaleLowerCase())),
   );
   return (
     <CrispStringsProvider
@@ -444,27 +439,22 @@ export function LorebooksPage() {
           </>
         )}
         {shown && (
-          <Sheet
-            open={picker !== undefined}
-            onClose={close}
-            title={promptKey ? t(`settings.promptNames.${promptKey}`) : t("model")}
-          >
+          <Sheet open={picker === "model"} onClose={close} title={t("model")}>
             <div className="space-y-4">
               <SearchField
                 value={q}
                 onChange={setQuery}
-                placeholder={t(modelPicker ? "settings.searchModels" : "settings.searchPrompts")}
-                aria-label={t(modelPicker ? "settings.searchModels" : "settings.searchPrompts")}
+                placeholder={t("settings.searchModels")}
+                aria-label={t("settings.searchModels")}
               />
-              {(modelPicker && (models.isPending || accounts.isPending)) ||
-              promptQuery?.isPending ? (
+              {models.isPending || accounts.isPending ? (
                 <Skeleton className="h-32 w-full" />
               ) : (
                 <>
                   <ListGroup>
                     <ListRowButton
                       icon={<FileText size={icon.lg} />}
-                      title={t(modelPicker ? "settings.useDefault" : "settings.builtin")}
+                      title={t("settings.useDefault")}
                       chevron={false}
                       trailing={
                         selected === null ? (
@@ -473,70 +463,61 @@ export function LorebooksPage() {
                       }
                       onClick={() => void choose(null)}
                     />
-                    {modelPicker
-                      ? filtered.map(({ model, account }) => (
-                          <ListRowButton
-                            key={model.id}
-                            icon={
-                              <ModelMark
-                                name={model.display_name}
-                                modelId={model.external_model_id}
-                                providerKind={account.provider_kind}
-                              />
-                            }
-                            title={model.display_name}
-                            description={
-                              account.enabled ? account.label : t("settings.providerDisabled")
-                            }
-                            disabled={!account.enabled}
-                            chevron={false}
-                            trailing={
-                              model.id === selected ? (
-                                <Check size={icon.md} className="text-accent" />
-                              ) : undefined
-                            }
-                            onClick={() => void choose(model.id)}
+                    {filtered.map(({ model, account }) => (
+                      <ListRowButton
+                        key={model.id}
+                        icon={
+                          <ModelMark
+                            name={model.display_name}
+                            modelId={model.external_model_id}
+                            providerKind={account.provider_kind}
                           />
-                        ))
-                      : custom.map((prompt) => (
-                          <ListRowButton
-                            key={prompt.id}
-                            title={prompt.name}
-                            chevron={false}
-                            trailing={
-                              prompt.id === selected ? (
-                                <Check size={icon.md} className="text-accent" />
-                              ) : undefined
-                            }
-                            onClick={() => void choose(prompt.id)}
-                          />
-                        ))}
+                        }
+                        title={model.display_name}
+                        description={
+                          account.enabled ? account.label : t("settings.providerDisabled")
+                        }
+                        disabled={!account.enabled}
+                        chevron={false}
+                        trailing={
+                          model.id === selected ? (
+                            <Check size={icon.md} className="text-accent" />
+                          ) : undefined
+                        }
+                        onClick={() => void choose(model.id)}
+                      />
+                    ))}
                   </ListGroup>
-                  {(modelPicker ? filtered.length : custom.length) === 0 && q && (
-                    <EmptyState title={t("noMatches")} />
-                  )}
+                  {filtered.length === 0 && q && <EmptyState title={t("noMatches")} />}
                   <Button
                     variant="ghost"
-                    onClick={() =>
-                      void navigate({
-                        to: modelPicker ? "/settings/models/new" : "/settings/$section",
-                        ...(modelPicker ? {} : { params: { section: "prompts" } }),
-                        replace: true,
-                      })
-                    }
+                    onClick={() => void navigate({ to: "/settings/models/new", replace: true })}
                   >
-                    {t(modelPicker ? "settings.addModel" : "settings.managePrompts")}
+                    {t("settings.addModel")}
                   </Button>
                 </>
               )}
-              {promptQuery?.isError && (
-                <FailureState
-                  error={promptQuery.error}
-                  onRetry={() => void promptQuery.refetch()}
-                />
-              )}
             </div>
           </Sheet>
+        )}
+        {promptKey && promptQuery && (
+          <PromptPickerSheet
+            open={picker !== undefined && picker !== "model"}
+            kind={purposes[promptKey]}
+            title={t(`settings.promptNames.${promptKey}`)}
+            prompts={promptQuery}
+            value={selected ?? null}
+            onChoose={(id) => void choose(id)}
+            onClose={close}
+            onManage={() =>
+              void navigate({
+                to: "/settings/$section",
+                params: { section: "prompts" },
+                search: {},
+                replace: true,
+              })
+            }
+          />
         )}
       </Page>
     </CrispStringsProvider>

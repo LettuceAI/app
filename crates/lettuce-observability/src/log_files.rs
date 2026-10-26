@@ -236,14 +236,15 @@ pub enum LogFileError {
     Delete(#[source] io::Error),
 }
 
-enum LineMatcher {
+#[derive(Debug)]
+pub enum LineMatcher {
     Plain(String),
     PlainIgnoringCase(String),
     Pattern(regex::Regex),
 }
 
 impl LineMatcher {
-    fn build(query: &str, options: LogSearchOptions) -> Result<Self, LogFileError> {
+    pub fn build(query: &str, options: LogSearchOptions) -> Result<Self, LogFileError> {
         if options.regex || options.whole_word {
             let pattern = if options.whole_word && !options.regex {
                 format!(r"\b{}\b", regex::escape(query))
@@ -262,7 +263,7 @@ impl LineMatcher {
         }
     }
 
-    fn is_match(&self, line: &str) -> bool {
+    pub fn is_match(&self, line: &str) -> bool {
         match self {
             Self::Plain(query) => line.contains(query.as_str()),
             Self::PlainIgnoringCase(query) => line.to_lowercase().contains(query.as_str()),

@@ -45,6 +45,8 @@ export const commands = {
 	logDelete: (request: LogNameRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_delete", { request })),
 	logsClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("logs_clear")),
 	logExport: (request: LogExportRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_export", { request })),
+	logQuery: (request: LogQueryRequest) => typedError<LogQueryView, ApiError_Serialize>(__TAURI_INVOKE("log_query", { request })),
+	logExportSelection: (request: LogExportSelectionRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_export_selection", { request })),
 	logAppend: (request: LogAppendRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("log_append", { request })),
 	conversationsList: (request: ConversationsListRequest) => typedError<ConversationPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversations_list", { request })),
 	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
@@ -504,7 +506,7 @@ export type ApiEvent = ApiEvent_Serialize | ApiEvent_Deserialize;
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent_Deserialize = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus_Deserialize } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError_Deserialize } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent_Deserialize = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus_Deserialize } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError_Deserialize } | { type: "developer_log_line"; line: string } | { type: "logs_changed" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView_Deserialize } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -535,7 +537,7 @@ export type ApiEvent_Deserialize = { type: "database_reloaded" } | { type: "sync
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent_Serialize = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus_Serialize } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError_Serialize } | { type: "developer_log_line"; line: string } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
+export type ApiEvent_Serialize = { type: "database_reloaded" } | { type: "sync_conflicts_changed" } | { type: "sync_status_changed"; status: SyncStatus_Serialize } | { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "content_filter_hit" } | { type: "app_usage_changed" } | { type: "app_usage_write_failed"; error: ApiError_Serialize } | { type: "developer_log_line"; line: string } | { type: "logs_changed" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } |
 /**  Device record writes use "device"; device UI state uses "ui_state". */
 { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView_Serialize } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
@@ -4982,14 +4984,38 @@ export type LogAppendRequest = {
 	message: string,
 };
 
+export type LogComponentCount = {
+	component: string,
+	count: number,
+};
+
 export type LogExportRequest = {
 	name: string,
 	target: FileTarget,
 };
 
+export type LogExportSelectionRequest = {
+	name: string,
+	target: FileTarget,
+	selection: LogSelection,
+};
+
 export type LogFailureReason = "host_unavailable" | "storage" | "invalid_encoding" | "source_is_target";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export type LogLevelCounts = {
+	debug: number,
+	info: number,
+	warn: number,
+	error: number,
+};
+
+export type LogLineView = {
+	index: number,
+	position: number,
+	raw: string,
+};
 
 export type LogNameRequest = {
 	name: string,
@@ -4998,6 +5024,28 @@ export type LogNameRequest = {
 export type LogPageView = {
 	total: number,
 	lines: string[],
+};
+
+export type LogPosition = {
+	index: number,
+	position: number,
+};
+
+export type LogQueryRequest = {
+	name: string,
+	filter: LogViewFilter,
+	offset: number,
+	limit: number,
+};
+
+export type LogQueryView = {
+	total: number,
+	filtered_total: number,
+	lines: LogLineView[],
+	components: LogComponentCount[],
+	counts: LogLevelCounts,
+	matches: LogPosition[],
+	problems: LogPosition[],
 };
 
 export type LogReadPageRequest = {
@@ -5022,6 +5070,21 @@ export type LogSearchRequest = {
 export type LogSearchView = {
 	matches: number[],
 	total: number,
+};
+
+export type LogSelection = { type: "indices"; indices: number[] } | { type: "filter"; filter: LogViewFilter };
+
+export type LogViewFilter = {
+	levels: LogLevel[],
+	hidden_components: string[],
+	from: string | null,
+	to: string | null,
+	query: string,
+	case_sensitive: boolean,
+	whole_word: boolean,
+	regex: boolean,
+	only_matches: boolean,
+	isolation: number[] | null,
 };
 
 export type LogsList = {

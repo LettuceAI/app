@@ -96,19 +96,34 @@ pub enum ProviderVerificationReason {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
     DictationActive,
-    Sync { reason: crate::SyncFailure },
-    Backup { reason: crate::BackupFailureReason },
-    LegacyDatabase { reason: crate::LegacyDatabaseFailure },
+    Sync {
+        reason: crate::SyncFailure,
+    },
+    Backup {
+        reason: crate::BackupFailureReason,
+    },
+    LegacyDatabase {
+        reason: crate::LegacyDatabaseFailure,
+    },
     /// The database this process opened was kept by a cutover (restore or
     /// reset) and accepts no writes; the app must restart on the active one.
     DatabaseWriteFenced,
-    AppDataReset { stage: crate::AppDataResetStage, kept_file: Option<String> },
-    Logs { reason: crate::LogFailureReason },
+    AppDataReset {
+        stage: crate::AppDataResetStage,
+        kept_file: Option<String>,
+    },
+    Logs {
+        reason: crate::LogFailureReason,
+    },
     AppUsageStorage,
     MetricsUnavailable,
     UsageStorage,
-    DatabaseFiles { file: Option<String> },
-    StorageSummary { section: String },
+    DatabaseFiles {
+        file: Option<String>,
+    },
+    StorageSummary {
+        section: String,
+    },
     MediaInUse {
         asset_id: String,
         references: Vec<crate::MediaReferenceView>,
@@ -117,13 +132,17 @@ pub enum ApiErrorDetails {
         asset_id: Option<String>,
         reason: crate::MediaFailureReason,
     },
-    Settings { reason: crate::SettingsFailureReason },
+    Settings {
+        reason: crate::SettingsFailureReason,
+    },
     ProviderQuota {
         reason: crate::ProviderQuotaFailure,
         status: Option<u16>,
         provider_message: Option<String>,
     },
-    CertificateAlreadyImported { certificate_id: String },
+    CertificateAlreadyImported {
+        certificate_id: String,
+    },
     ProviderModelsInUse {
         models: Vec<String>,
     },
@@ -263,7 +282,9 @@ pub struct ApiError {
 pub enum ApiEvent {
     DatabaseReloaded,
     SyncConflictsChanged,
-    SyncStatusChanged { status: crate::SyncStatus },
+    SyncStatusChanged {
+        status: crate::SyncStatus,
+    },
     CharacterChanged {
         character_id: String,
     },
@@ -276,8 +297,13 @@ pub enum ApiEvent {
     ModelsChanged,
     ContentFilterHit,
     AppUsageChanged,
-    AppUsageWriteFailed { error: ApiError },
-    DeveloperLogLine { line: String },
+    AppUsageWriteFailed {
+        error: ApiError,
+    },
+    DeveloperLogLine {
+        line: String,
+    },
+    LogsChanged,
     ProviderQuota {
         account_id: String,
         level: crate::ProviderQuotaLevel,
@@ -312,7 +338,9 @@ pub enum ApiEvent {
         conversation_id: String,
     },
     RequiredModelsChanged,
-    OnnxModelsUnloaded { models: Vec<crate::SettingsOnnxModel> },
+    OnnxModelsUnloaded {
+        models: Vec<crate::SettingsOnnxModel>,
+    },
     /// The companion effect of a reply settled (`message_companion_effect`
     /// reads it).
     MessageEffectSettled {

@@ -29,7 +29,7 @@ afterEach(() => {
 });
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 
-async function mount(tab = "lorebook", gate?: Promise<void>) {
+async function mount(tab = "lorebook", gate?: Promise<void>, promptCount = 0) {
   let current = {
     revision: 1,
     global: {
@@ -81,7 +81,23 @@ async function mount(tab = "lorebook", gate?: Promise<void>) {
       settingsUpdate: write,
       modelsList: () => ok({ models: [], default_model_id: null, revision: 1 }),
       providerAccountsList: () => ok([]),
-      promptsList: () => ok({ items: [], next_cursor: null }),
+      promptsList: ({ kind }) =>
+        ok({
+          items: kind
+            ? Array.from({ length: promptCount }, (_, index) => ({
+                id: `${kind}-${index}`,
+                name: `Prompt ${index}`,
+                kind,
+                archived: false,
+                app_default: false,
+                origin: { type: "user" as const },
+                revision: 1,
+                created_at: 1,
+                updated_at: 1,
+              }))
+            : [],
+          next_cursor: null,
+        }),
       jobsList: () => ok({ items: [], next_cursor: null }),
       lorebookGeneratorDefaults: () =>
         ok({ target_count: 12, min_target_count: 1, max_target_count: 100, output_tokens: 4096 }),
@@ -101,7 +117,7 @@ it.each([
   ["Model", "Search models"],
   ["Plan", "Search prompts"],
 ])("keeps the %s picker mounted with its content while closing", async (title, search) => {
-  const { history, runtime } = await mount();
+  const { history, runtime } = await mount("lorebook", undefined, title === "Plan" ? 9 : 0);
   fireEvent.click(
     (await screen.findByText(title, { exact: true, selector: "span" })).closest("button")!,
   );

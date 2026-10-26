@@ -181,6 +181,17 @@ const settingsSectionRoute = createRoute({
     speechTab?: "model" | "vocabulary" | "corrections" | "examples";
     speechPanel?: "models" | "microphone" | "word" | "correction" | "example";
     speechItem?: string;
+    logFile?: string;
+    logPanel?:
+      | "line"
+      | "filters"
+      | "parts"
+      | "time"
+      | "more"
+      | "report"
+      | "delete-day"
+      | "delete-all";
+    logLine?: number;
     loreTab?: "scanning" | "lorebook" | "entry";
     lorePicker?: string;
     usageTab?: "overview" | "requests" | "time" | "nanogpt";
@@ -198,6 +209,27 @@ const settingsSectionRoute = createRoute({
     custPanel?: "preview" | "theme";
     custTheme?: string;
   } => ({
+    ...(typeof search.logFile === "string" ? { logFile: search.logFile } : {}),
+    ...(["line", "filters", "parts", "time", "more", "report", "delete-day", "delete-all"].includes(
+      String(search.logPanel),
+    )
+      ? {
+          logPanel: search.logPanel as
+            | "line"
+            | "filters"
+            | "parts"
+            | "time"
+            | "more"
+            | "report"
+            | "delete-day"
+            | "delete-all",
+        }
+      : {}),
+    ...(typeof search.logLine === "number" &&
+    Number.isSafeInteger(search.logLine) &&
+    search.logLine >= 0
+      ? { logLine: search.logLine }
+      : {}),
     ...(["scanning", "lorebook", "entry"].includes(String(search.loreTab))
       ? { loreTab: search.loreTab as "scanning" | "lorebook" | "entry" }
       : {}),
@@ -389,6 +421,7 @@ declare module "@tanstack/history" {
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;
     usagePushed?: boolean;
+    logPanelPushed?: boolean;
     lorebookPanelPushed?: boolean;
     lorebookFlowPushed?: boolean;
     companionPickerPushed?: boolean;

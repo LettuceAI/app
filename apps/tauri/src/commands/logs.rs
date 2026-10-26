@@ -84,3 +84,23 @@ pub async fn log_append(
     let context = context.snapshot()?;
     api::log_append(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn log_query(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LogQueryRequest,
+) -> Result<dto::LogQueryView, ApiError> {
+    let context = context.snapshot()?;
+    api::log_query(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn log_export_selection(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LogExportSelectionRequest,
+) -> Result<(), ApiError> {
+    let context = context.snapshot()?;
+    api::log_export_selection(&context, request).await
+}

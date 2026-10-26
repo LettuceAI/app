@@ -140,5 +140,16 @@
       }
     },
     "hint": "Tool calls are tried first. This format is only used when the model doesn't support them."
+  },
+  "promptPicker": {
+    "builtIn": "Built-in",
+    "builtInBody": "The app's own prompt",
+    "builtInMissing": "Built-in prompt is unavailable",
+    "search": "Search prompts",
+    "clearSearch": "Clear search",
+    "noMatches": "No matching prompts",
+    "manage": "System prompts",
+    "manageBody": "Create or edit a prompt",
+    "close": "Close"
   }
 }

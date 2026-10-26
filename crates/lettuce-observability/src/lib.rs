@@ -22,7 +22,7 @@ pub use correlation::{
 pub use init::{InitError, LocalOutput, LogSink, install, local_output};
 pub use line_layer::LineLayer;
 pub use log_files::{
-    DailyLogWriter, LogDirectory, LogEntry, LogFileError, LogPage, LogSearchOptions,
+    DailyLogWriter, LineMatcher, LogDirectory, LogEntry, LogFileError, LogPage, LogSearchOptions,
     LogSearchResult, daily_file_name, sanitize_message,
 };
 pub use panic::install_panic_reports;

@@ -142,7 +142,9 @@ impl ApiContext {
         }
         Ok(Arc::new(super::models::ollama::remote_providers(self)?))
     }
-    pub(super) fn sync_state(&self) -> &super::sync::SyncState { &self.inner.sync }
+    pub(super) fn sync_state(&self) -> &super::sync::SyncState {
+        &self.inner.sync
+    }
 
     pub(super) fn maintenance(&self) -> &super::app::maintenance::MaintenanceGate {
         &self.inner.maintenance
@@ -153,7 +155,9 @@ impl ApiContext {
             .database()
             .is_file_write_fenced()
             .map(|fenced| !fenced)
-            .map_err(|_| super::app::storage::file_error(crate::AppDatabaseLocationError::Storage, None))
+            .map_err(|_| {
+                super::app::storage::file_error(crate::AppDatabaseLocationError::Storage, None)
+            })
     }
 
     #[must_use]
@@ -176,21 +180,43 @@ impl ApiContext {
         let onnx_events = parts.events.clone();
         let onnx_models = crate::onnx_models::OnnxModelManager::new(move |models| {
             onnx_events.emit(lettuce_contracts::ApiEvent::OnnxModelsUnloaded {
-                models: models.into_iter().map(|model| match model {
-                    lettuce_settings::OnnxModelKind::Eidos => lettuce_contracts::SettingsOnnxModel::Eidos,
-                    lettuce_settings::OnnxModelKind::Thymos => lettuce_contracts::SettingsOnnxModel::Thymos,
-                    lettuce_settings::OnnxModelKind::Kokoro => lettuce_contracts::SettingsOnnxModel::Kokoro,
-                }).collect(),
+                models: models
+                    .into_iter()
+                    .map(|model| match model {
+                        lettuce_settings::OnnxModelKind::Eidos => {
+                            lettuce_contracts::SettingsOnnxModel::Eidos
+                        }
+                        lettuce_settings::OnnxModelKind::Thymos => {
+                            lettuce_contracts::SettingsOnnxModel::Thymos
+                        }
+                        lettuce_settings::OnnxModelKind::Kokoro => {
+                            lettuce_contracts::SettingsOnnxModel::Kokoro
+                        }
+                    })
+                    .collect(),
             });
         });
         let pressure = onnx_models.clone();
-        parts.backend.database().on_job_change(move || pressure.notify());
+        parts
+            .backend
+            .database()
+            .on_job_change(move || pressure.notify());
         let library_events = parts.events.clone();
         parts.backend.database().on_library_change(move |kind, id| {
             let event = match kind {
-                lettuce_database::LibraryKind::Character => lettuce_contracts::ApiEvent::CharacterChanged { character_id: id.to_owned() },
-                lettuce_database::LibraryKind::Persona => lettuce_contracts::ApiEvent::PersonaChanged { persona_id: id.to_owned() },
-                lettuce_database::LibraryKind::Group => lettuce_contracts::ApiEvent::GroupChanged { group_id: id.to_owned() },
+                lettuce_database::LibraryKind::Character => {
+                    lettuce_contracts::ApiEvent::CharacterChanged {
+                        character_id: id.to_owned(),
+                    }
+                }
+                lettuce_database::LibraryKind::Persona => {
+                    lettuce_contracts::ApiEvent::PersonaChanged {
+                        persona_id: id.to_owned(),
+                    }
+                }
+                lettuce_database::LibraryKind::Group => lettuce_contracts::ApiEvent::GroupChanged {
+                    group_id: id.to_owned(),
+                },
             };
             library_events.emit(event);
         });
@@ -491,7 +517,10 @@ impl ApiContext {
             files: Arc::clone(&parts.files),
             app_folder: parts.app_folder.clone(),
             resource_dir: parts.resource_dir.clone(),
-            database_files: parts.database_files.as_ref().map(|files| ApiDatabaseFiles { location: files.location.clone(), active: files.active.clone() }),
+            database_files: parts.database_files.as_ref().map(|files| ApiDatabaseFiles {
+                location: files.location.clone(),
+                active: files.active.clone(),
+            }),
             asset_url_base: parts.asset_url_base.clone(),
         })
     }
@@ -720,6 +749,12 @@ impl ApiContext {
     }
 
     pub fn attach_logs(&self, directory: PathBuf, sink: lettuce_observability::LogSink) {
+        let changes = self.downgrade();
+        sink.set_change_observer(move || {
+            if let Some(context) = changes.upgrade() {
+                context.emit(lettuce_contracts::ApiEvent::LogsChanged);
+            }
+        });
         let gate = self.downgrade();
         let weak = self.downgrade();
         sink.set_observer(
