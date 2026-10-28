@@ -202,7 +202,7 @@ pub use app::logs::{
 };
 
 pub use app::metrics::{
-    llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list,
+    llm_metrics_clear, llm_metrics_for_message, llm_metrics_get, llm_metrics_list, message_usage,
 };
 
 mod usage;

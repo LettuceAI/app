@@ -34,6 +34,16 @@ pub async fn llm_metrics_for_message(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn message_usage(
+    context: State<'_, ApiContextSlot>,
+    request: dto::LlmMetricForMessageRequest,
+) -> Result<Option<dto::MessageUsageView>, ApiError> {
+    let context = context.snapshot()?;
+    api::message_usage(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn llm_metrics_clear(
     context: State<'_, ApiContextSlot>,
     request: dto::LlmMetricsClearRequest,

@@ -5,7 +5,7 @@ import { icon, ListGroup, ListRowButton, Skeleton } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { TimelineMessage } from "@/api/generated/bindings";
 import { statsOf } from "../data/messages";
-import { metricsQuery } from "../data/queries";
+import { metricsQuery, usageQuery } from "../data/queries";
 import { MessagePromptDetails } from "./MessagePromptDetails";
 
 export interface MessageMenuProps {
@@ -28,8 +28,9 @@ export interface MessageMenuProps {
 export function MessageStats({ api, conversationId, message }: { api: ApiClient; conversationId: string; message: TimelineMessage }) {
   const { t, i18n } = useTranslation("conversations");
   const metric = useQuery({ ...metricsQuery(api, conversationId, message.id), enabled: message.role === "assistant" });
+  const usage = useQuery({ ...usageQuery(api, conversationId, message.id), enabled: message.role === "assistant" });
   if (message.role !== "assistant") return null;
-  if (metric.isPending) {
+  if (metric.isPending || usage.isPending) {
     return (
       <div className="space-y-2.5 px-1" aria-hidden="true">
         <Skeleton height={20} width="55%" />
@@ -37,7 +38,7 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
       </div>
     );
   }
-  const stats = statsOf(metric.data?.summary);
+  const stats = statsOf(metric.data?.summary, usage.data);
   if (!stats) return null;
   const number = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 });
   const items = [

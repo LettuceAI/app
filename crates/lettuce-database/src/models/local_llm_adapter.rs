@@ -21,6 +21,22 @@ pub struct LlmGenerationMetric {
     pub samples: Option<Vec<Value>>,
 }
 
+/// The provider's token counts and model for a message's shown reply.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MessageUsage {
+    pub model_name: Option<String>,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+}
+
+const SHOWN_CANDIDATE: &str = "candidate.id = COALESCE(
+     message.active_candidate_id,
+     (SELECT latest.id FROM conversation_message_candidates latest
+      WHERE latest.conversation_id = message.conversation_id AND latest.message_id = message.id
+      ORDER BY latest.ordinal DESC LIMIT 1)
+ )";
+
 fn metric_json<T: serde::de::DeserializeOwned>(text: &str, column: usize) -> rusqlite::Result<T> {
     serde_json::from_str(text).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -204,16 +220,56 @@ impl Database {
         Ok(self
             .connection()?
             .query_row(
-                "SELECT metric.id, metric.created_at, metric.model_path, metric.summary_json,
-                        metric.samples_json
-                 FROM llm_generation_metrics metric
-                 JOIN conversation_message_candidates candidate
-                   ON candidate.attempt_id = metric.id
-                 WHERE candidate.conversation_id = ?1 AND candidate.message_id = ?2
-                 ORDER BY metric.created_at DESC, metric.id DESC
-                 LIMIT 1",
+                &format!(
+                    "SELECT metric.id, metric.created_at, metric.model_path, metric.summary_json,
+                            metric.samples_json
+                     FROM conversation_messages message
+                     JOIN conversation_message_candidates candidate
+                       ON candidate.conversation_id = message.conversation_id AND {SHOWN_CANDIDATE}
+                     JOIN llm_generation_metrics metric ON metric.id = candidate.attempt_id
+                     WHERE message.conversation_id = ?1 AND message.id = ?2"
+                ),
                 params![conversation_id, message_id],
                 metric_with_samples,
+            )
+            .optional()?)
+    }
+
+    /// The usage the provider reported for the reply a message shows, from
+    /// any provider; the local metrics above add timing for on-device runs.
+    pub fn message_usage(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+    ) -> Result<Option<MessageUsage>, DatabaseError> {
+        Ok(self
+            .connection()?
+            .query_row(
+                &format!(
+                    "SELECT event.model_name, event.input_tokens, event.output_tokens, event.total_tokens
+                     FROM conversation_messages message
+                     JOIN conversation_message_candidates candidate
+                       ON candidate.conversation_id = message.conversation_id AND {SHOWN_CANDIDATE}
+                     JOIN usage_events event
+                       ON event.conversation_id = candidate.conversation_id
+                      AND event.turn_id = candidate.turn_id
+                      AND event.attempt_id = candidate.attempt_id
+                     WHERE message.conversation_id = ?1 AND message.id = ?2"
+                ),
+                params![conversation_id, message_id],
+                |row| {
+                    let count = |column: usize| -> rusqlite::Result<Option<u64>> {
+                        Ok(row
+                            .get::<_, Option<i64>>(column)?
+                            .and_then(|value| u64::try_from(value).ok()))
+                    };
+                    Ok(MessageUsage {
+                        model_name: row.get(0)?,
+                        input_tokens: count(1)?,
+                        output_tokens: count(2)?,
+                        total_tokens: count(3)?,
+                    })
+                },
             )
             .optional()?)
     }

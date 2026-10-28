@@ -757,6 +757,19 @@ describe("conversation data", () => {
     expect(statsOf({})).toBeNull();
   });
 
+  it("takes tokens and the model from the provider's usage when there is no local summary", () => {
+    const usage = { model_name: "google/gemini-3.7-flash", input_tokens: 1200, output_tokens: 340, total_tokens: 1540 };
+    expect(statsOf(null, usage)).toEqual({
+      model: "gemini-3.7-flash",
+      promptTokens: 1200,
+      completionTokens: 340,
+      tokensPerSecond: null,
+      firstTokenSeconds: null,
+    });
+    expect(statsOf({ completionTokens: 12, ttftMs: 500 }, usage)).toMatchObject({ promptTokens: 1200, completionTokens: 12, firstTokenSeconds: 0.5 });
+    expect(statsOf(null, null)).toBeNull();
+  });
+
   it("keeps deltas out of the page state", () => {
     const store = new GenerationStore();
     const meta = vi.fn();

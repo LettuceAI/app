@@ -20,6 +20,7 @@ export const commands = {
 	llmMetricsList: (request: LlmMetricsListRequest) => typedError<LlmMetricsPage, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_list", { request })),
 	llmMetricsGet: (request: LlmMetricGetRequest) => typedError<LlmMetricView | null, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_get", { request })),
 	llmMetricsForMessage: (request: LlmMetricForMessageRequest) => typedError<LlmMetricView | null, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_for_message", { request })),
+	messageUsage: (request: LlmMetricForMessageRequest) => typedError<MessageUsageView | null, ApiError_Serialize>(__TAURI_INVOKE("message_usage", { request })),
 	llmMetricsClear: (request: LlmMetricsClearRequest) => typedError<LlmMetricsCleared, ApiError_Serialize>(__TAURI_INVOKE("llm_metrics_clear", { request })),
 	appUsageDays: () => typedError<AppUsageDaysView, ApiError_Serialize>(__TAURI_INVOKE("app_usage_days")),
 	usageClearBefore: (request: UsageClearBeforeRequest) => typedError<UsageCleared, ApiError_Serialize>(__TAURI_INVOKE("usage_clear_before", { request })),
@@ -6419,6 +6420,14 @@ export type MessageSpeakRequest_Serialize = {
 	message_id: string,
 	voice_override: MessageVoiceOverride | null,
 	swap_places: boolean,
+};
+
+/**  What the provider reported for the reply a message shows. */
+export type MessageUsageView = {
+	model_name: string | null,
+	input_tokens: number | null,
+	output_tokens: number | null,
+	total_tokens: number | null,
 };
 
 export type MessageVoiceOverride = { type: "user_voice"; voice_id: string } | { type: "provider"; provider_id: string; voice_id: string; model_id: string | null; prompt: string | null };

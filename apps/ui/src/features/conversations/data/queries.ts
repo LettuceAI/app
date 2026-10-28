@@ -49,6 +49,13 @@ export function metricsQuery(api: ApiClient, conversationId: string, messageId: 
   });
 }
 
+export function usageQuery(api: ApiClient, conversationId: string, messageId: string) {
+  return queryOptions({
+    queryKey: [...queryKeys.conversations.detail(conversationId), "usage", messageId] as const,
+    queryFn: () => api.call("messageUsage", { conversation_id: conversationId, message_id: messageId }),
+  });
+}
+
 export function promptSnapshotQuery(api: ApiClient, conversationId: string, messageId: string) {
   return queryOptions({
     queryKey: [...queryKeys.conversations.detail(conversationId), "prompt-snapshot", messageId] as const,

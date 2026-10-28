@@ -2,6 +2,7 @@ import type {
   ConversationView,
   MediaPartKind,
   MessageRole,
+  MessageUsageView,
   ParticipantView,
   TimelineMessage,
 } from "@/api/generated/bindings";
@@ -122,15 +123,17 @@ function modelLabel(value: unknown): string | null {
   return file.replace(/\.gguf$/i, "");
 }
 
-/** Reads the runtime's summary keys (`modelName`, `promptTokens`, `completionTokens`, `ttftMs`, `decodeTokensPerSecond`); anything missing stays null. */
-export function statsOf(summary: unknown): MessageStats | null {
-  if (typeof summary !== "object" || summary === null || Array.isArray(summary)) return null;
-  const record = summary as Record<string, unknown>;
+/** Reads the local runtime's summary keys (`modelName`, `promptTokens`, `completionTokens`, `ttftMs`, `decodeTokensPerSecond`) and fills tokens and model from the provider's usage where the summary has none; anything missing stays null. */
+export function statsOf(summary: unknown, usage?: MessageUsageView | null): MessageStats | null {
+  const record =
+    typeof summary === "object" && summary !== null && !Array.isArray(summary)
+      ? (summary as Record<string, unknown>)
+      : {};
   const firstTokenMs = numberAt(record, "ttftMs");
   const stats: MessageStats = {
-    model: modelLabel(record.modelName),
-    promptTokens: numberAt(record, "promptTokens"),
-    completionTokens: numberAt(record, "completionTokens"),
+    model: modelLabel(record.modelName) ?? modelLabel(usage?.model_name),
+    promptTokens: numberAt(record, "promptTokens") ?? usage?.input_tokens ?? null,
+    completionTokens: numberAt(record, "completionTokens") ?? usage?.output_tokens ?? null,
     tokensPerSecond: numberAt(record, "decodeTokensPerSecond"),
     firstTokenSeconds: firstTokenMs === null ? null : firstTokenMs / 1000,
   };

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouteContext } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { object, useChatLook } from "@/entities/preferences";
-import { metricsQuery } from "../data/queries";
+import { metricsQuery, usageQuery } from "../data/queries";
 import { statsOf } from "../data/messages";
 
 export function ReplyDetails({ messageId }: { messageId: string }) {
@@ -14,7 +14,11 @@ export function ReplyDetails({ messageId }: { messageId: string }) {
     ...metricsQuery(api, conversationId ?? "", messageId),
     enabled: Boolean(conversationId) && look.details.length > 0,
   });
-  const stats = statsOf(metric.data?.summary);
+  const usage = useQuery({
+    ...usageQuery(api, conversationId ?? "", messageId),
+    enabled: Boolean(conversationId) && look.details.length > 0,
+  });
+  const stats = statsOf(metric.data?.summary, usage.data);
   if (!stats) return null;
   const format = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 });
   const summary = object(metric.data?.summary);
@@ -22,7 +26,7 @@ export function ReplyDetails({ messageId }: { messageId: string }) {
   const total =
     stats.promptTokens !== null && stats.completionTokens !== null
       ? stats.promptTokens + stats.completionTokens
-      : null;
+      : (usage.data?.total_tokens ?? null);
   const values = {
     model: stats.model,
     input:

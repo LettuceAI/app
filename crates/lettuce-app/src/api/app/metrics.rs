@@ -96,6 +96,32 @@ pub async fn llm_metrics_for_message(
         .await
 }
 
+pub async fn message_usage(
+    context: &ApiContext,
+    request: dto::LlmMetricForMessageRequest,
+) -> Result<Option<dto::MessageUsageView>, ApiError> {
+    context
+        .blocking(move |context| {
+            let conversation: lettuce_types::ConversationId =
+                parse_id(&request.conversation_id, "conversation_id")?;
+            let message: lettuce_types::MessageId = parse_id(&request.message_id, "message_id")?;
+            context
+                .backend()
+                .database()
+                .message_usage(&conversation.to_string(), &message.to_string())
+                .map(|usage| {
+                    usage.map(|usage| dto::MessageUsageView {
+                        model_name: usage.model_name,
+                        input_tokens: usage.input_tokens,
+                        output_tokens: usage.output_tokens,
+                        total_tokens: usage.total_tokens,
+                    })
+                })
+                .map_err(storage)
+        })
+        .await
+}
+
 pub async fn llm_metrics_clear(
     context: &ApiContext,
     request: dto::LlmMetricsClearRequest,

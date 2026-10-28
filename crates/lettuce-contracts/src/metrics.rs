@@ -23,6 +23,20 @@ pub struct LlmMetricForMessageRequest {
     pub message_id: String,
 }
 
+/// What the provider reported for the reply a message shows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageUsageView {
+    pub model_name: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub input_tokens: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub output_tokens: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub total_tokens: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]

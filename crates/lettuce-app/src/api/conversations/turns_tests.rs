@@ -1227,3 +1227,110 @@ async fn retrying_a_turn_of_an_archived_chat_restores_it() {
         ConversationLifecycle::Active
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_usage_follows_the_reply_variant_the_message_shows() {
+    let harness = harness(Reply::Text("Hello."));
+    let replies = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let counted = replies.clone();
+    *harness.provider.response_hook.lock().expect("response hook") =
+        Some(Arc::new(move |_, response| {
+            let second = counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1;
+            let (input_tokens, output_tokens) = if second { (200, 40) } else { (120, 30) };
+            response.usage = Some(lettuce_conversations::InferenceUsage {
+                input_tokens,
+                output_tokens,
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: Some(input_tokens + output_tokens),
+                cached_input_tokens: None,
+                cache_write_tokens: None,
+                reasoning_tokens: None,
+                web_search_requests: None,
+                provider_reported_cost: None,
+            });
+        }));
+    let (chat, reply) = replied_chat(&harness, "message-usage").await;
+    let usage_of = |chat: String, reply: String| {
+        let context = harness.context.clone();
+        async move {
+            message_usage(
+                &context,
+                dto::LlmMetricForMessageRequest {
+                    conversation_id: chat,
+                    message_id: reply,
+                },
+            )
+            .await
+            .expect("usage")
+            .expect("reported usage")
+        }
+    };
+    let first = usage_of(chat.clone(), reply.clone()).await;
+    assert_eq!(
+        (first.input_tokens, first.output_tokens, first.total_tokens),
+        (Some(120), Some(30), Some(150))
+    );
+
+    conversation_regenerate(
+        &harness.context,
+        regenerate_request(&harness, &chat, &reply, "message-usage-regenerate"),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("regenerate");
+    run_generation(&harness).await;
+    let second = usage_of(chat.clone(), reply.clone()).await;
+    assert_eq!((second.input_tokens, second.output_tokens), (Some(200), Some(40)));
+
+    let first_candidate = message_candidates(
+        &harness.context,
+        dto::MessageHistoryRequest {
+            message_id: reply.clone(),
+            cursor: None,
+        },
+    )
+    .await
+    .expect("candidates")
+    .items
+    .into_iter()
+    .min_by_key(|candidate| candidate.index)
+    .expect("first candidate")
+    .id;
+    message_candidate_select(
+        &harness.context,
+        dto::MessageCandidateSelectRequest {
+            conversation_id: chat.clone(),
+            message_id: reply.clone(),
+            expected_revision: conversation(&harness, &chat).revision.get(),
+            candidate_id: first_candidate,
+            client_operation_id: "message-usage-choose-first".into(),
+        },
+    )
+    .await
+    .expect("choose the first reply");
+    let shown = usage_of(chat.clone(), reply.clone()).await;
+    assert_eq!((shown.input_tokens, shown.output_tokens), (Some(120), Some(30)));
+
+    let user = open(&harness, &chat)
+        .await
+        .messages
+        .items
+        .iter()
+        .find(|message| message.role == dto::MessageRole::User)
+        .expect("user message")
+        .id
+        .clone();
+    assert!(
+        message_usage(
+            &harness.context,
+            dto::LlmMetricForMessageRequest {
+                conversation_id: chat,
+                message_id: user,
+            },
+        )
+        .await
+        .expect("user usage")
+        .is_none()
+    );
+}

@@ -35,6 +35,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::metrics::llm_metrics_list,
             commands::metrics::llm_metrics_get,
             commands::metrics::llm_metrics_for_message,
+            commands::metrics::message_usage,
             commands::metrics::llm_metrics_clear,
             commands::app::app_usage_days,
             commands::usage::usage_clear_before,
