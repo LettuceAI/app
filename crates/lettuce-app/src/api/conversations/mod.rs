@@ -27,6 +27,8 @@ pub(super) mod settings;
 #[cfg(test)]
 mod settings_model_tests;
 #[cfg(test)]
+mod settings_time_tests;
+#[cfg(test)]
 mod settings_tests;
 pub(super) mod turns;
 #[cfg(test)]

@@ -1568,6 +1568,17 @@ export type CompanionStateView = {
 	updated_at: number,
 };
 
+export type CompanionTimeChange = { type: "set"; mode: CompanionTimeMode; anchor_at: number | null } | { type: "reset" };
+
+export type CompanionTimeMode = "live" | "frozen" | "ticking";
+
+export type CompanionTimeView = {
+	mode: CompanionTimeMode,
+	anchor_at: number | null,
+	set_at: number | null,
+	effective_at: number,
+};
+
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
 
 export type ConfiguredPromptProblem = "missing" | "archived" | "wrong_kind";
@@ -1890,6 +1901,7 @@ export type ConversationSettingsPatch = ConversationSettingsPatch_Serialize | Co
 
 /**  The fields a settings update changes; an absent field is kept. */
 export type ConversationSettingsPatch_Deserialize = {
+	companion_time?: CompanionTimeChange | null,
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
 	roleplay_prompt: ChoiceChange | null,
@@ -1913,6 +1925,7 @@ export type ConversationSettingsPatch_Deserialize = {
 
 /**  The fields a settings update changes; an absent field is kept. */
 export type ConversationSettingsPatch_Serialize = {
+	companion_time?: CompanionTimeChange,
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
 	roleplay_prompt: ChoiceChange | null,
@@ -1999,6 +2012,7 @@ export type ConversationSettingsView_Deserialize = {
 	 *  when it follows the model and app settings.
 	 */
 	model_settings: SettingsModelSettingsLayer | null,
+	companion_time: CompanionTimeView | null,
 };
 
 /**
@@ -2037,6 +2051,7 @@ export type ConversationSettingsView_Serialize = {
 	 *  when it follows the model and app settings.
 	 */
 	model_settings: SettingsModelSettingsLayer | null,
+	companion_time: CompanionTimeView | null,
 };
 
 /**  What a conversation was started from. */

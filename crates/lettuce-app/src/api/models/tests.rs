@@ -648,9 +648,39 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
     let companion = create_character(
         harness.context.backend().database(),
         "Mira",
-        companion_defaults(),
+        CharacterDefaults {
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig {
+                time_awareness: true,
+                ..Default::default()
+            }),
+            ..companion_defaults()
+        },
     );
     let chat = launch(&harness, companion, "regen-models-launch").await;
+    let settings = crate::api::conversation_settings_get(
+        &harness.context,
+        dto::ConversationSettingsGetRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("clock settings");
+    let frozen = crate::api::conversation_settings_update(
+        &harness.context,
+        dto::ConversationSettingsUpdateRequest {
+            conversation_id: chat.clone(),
+            expected_settings_revision: settings.settings_revision,
+            patch: dto::ConversationSettingsPatch {
+                companion_time: Some(dto::CompanionTimeChange::Set {
+                    mode: dto::CompanionTimeMode::Frozen,
+                    anchor_at: Some(-2_519_820_000_000),
+                }),
+                ..Default::default()
+            },
+        },
+    )
+    .await
+    .expect("freeze in 1890");
     send(&harness, &chat, "regen-models-send")
         .await
         .expect("a companion send with both models");
@@ -671,19 +701,51 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
     .id
     .clone();
 
+    let changed_clock = crate::api::conversation_settings_update(
+        &harness.context,
+        dto::ConversationSettingsUpdateRequest {
+            conversation_id: chat.clone(),
+            expected_settings_revision: frozen.settings_revision,
+            patch: dto::ConversationSettingsPatch {
+                companion_time: Some(dto::CompanionTimeChange::Set {
+                    mode: dto::CompanionTimeMode::Frozen,
+                    anchor_at: Some(-2_208_902_400_000),
+                }),
+                ..Default::default()
+            },
+        },
+    )
+    .await
+    .expect("move the clock to 1900 between turns");
     without(&models, RequiredModel::Emotion);
     harness.context.models_changed();
     regenerate(&harness, &chat, &reply, "regen-models-1")
         .await
         .expect("no classification, so no emotion model");
     settle_generation(&harness).await;
+    {
+        let requests = harness.provider.requests.lock().expect("requests");
+        for (request, year) in requests.iter().zip(["1890-", "1900-"]) {
+            assert!(
+                request.context.messages.iter().any(|message| {
+                    message.parts.iter().any(|part| matches!(
+                        part,
+                        lettuce_conversations::ProviderContextPart::Text { text }
+                            if text.contains(&format!("ISO timestamp: {year}"))
+                    ))
+                }),
+                "the next generation must read the updated conversation clock"
+            );
+        }
+        assert_eq!(requests.len(), 2);
+    }
 
     enable_dynamic_memory(&harness);
     crate::api::conversation_settings_update(
         &harness.context,
         dto::ConversationSettingsUpdateRequest {
             conversation_id: chat.clone(),
-            expected_settings_revision: None,
+            expected_settings_revision: changed_clock.settings_revision,
             patch: dto::ConversationSettingsPatch {
                 memory: Some(dto::MemoryModeChange::Set {
                     mode: dto::MemoryMode::Dynamic,

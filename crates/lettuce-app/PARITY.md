@@ -1,5 +1,13 @@
 # lettuce-app: legacy parity notes
 
+## Companion session time settings
+
+Preserved: live, frozen and ticking overrides follow `old-code/src/ui/pages/chats/utils/companionTimeOverride.ts:6-18`; an awareness-disabled session retains its override but uses real time. Reset removes only the override, as `old-code/src/ui/pages/chats/ChatSettings.tsx:598-609` did. Other settings edits keep the clock, and changing the override keeps `time_awareness_enabled`, following the preference spreads at `ChatSettings.tsx:575-580,604-609`. The API and generation share `CompanionClockContext::effective_now` and the stored `CompanionClockSettings`; changing an override affects the next turn.
+
+Source clarification: `old-code/src/ui/pages/chats/ChatSettings.tsx:1020,1060-1064` gates the whole section on companion character mode, not time awareness. `old-code/src/ui/pages/chats/components/CompanionTimeOverrideCard.tsx:28-43` permits editing whenever a session is available. The API likewise accepts and retains an inactive override; it never enables time awareness implicitly.
+
+Deliberately redesigned: the settings API uses the existing revision-derived `settings.<revision>` operation key and typed Conflict/InvalidField failures instead of the legacy frontend's save-and-log flow (`old-code/src/ui/pages/chats/ChatSettings.tsx:619-623`). Ticking takes `set_at` from the server instead of the editor's `Date.now()` (`old-code/src/ui/pages/chats/utils/companionTimeOverride.ts:62-65`), so retry cannot restart its clock. Frozen/live carry no redundant `set_at`. Signed story anchors and non-negative elapsed ticking reuse the domain's existing behavior; legacy subtracted wall time directly (`companionTimeOverride.ts:12`) and could run backward after clock rollback. No new schema, settings preference, event or UI card is introduced.
+
 Customization retains revision-fenced ui_preferences updates and captures the previous chatAppearance baseline before its first edit. Conversation settings now resolve appearance per field: new character presentations inherit by default, explicit override sets win, and legacy snapshots retain differences from that baseline. Number comparisons treat integer and floating-point representations equally. The existing full snapshots cannot recover old explicit choices equal to the old global value. No data rewrite is performed.
 
 settings_theme_read accepts validated version-1 theme documents and legacy color-preset version 1 from the existing file adapter. settings_theme_export uses the existing protected atomic entity publication path, including Android publication without a target. These commands exchange configuration DTOs and file handles, without media payloads. Frontend group-bar/widget rendering remains explicitly deferred.

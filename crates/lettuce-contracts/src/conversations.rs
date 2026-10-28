@@ -1095,6 +1095,41 @@ pub struct ConversationSettingsView {
     /// The sampler and runtime settings a one-to-one chat overrides; empty
     /// when it follows the model and app settings.
     pub model_settings: Option<crate::SettingsModelSettingsLayer>,
+    pub companion_time: Option<CompanionTimeView>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum CompanionTimeMode {
+    Live,
+    Frozen,
+    Ticking,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct CompanionTimeView {
+    pub mode: CompanionTimeMode,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub anchor_at: Option<i64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub set_at: Option<i64>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub effective_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CompanionTimeChange {
+    Set {
+        mode: CompanionTimeMode,
+        #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+        anchor_at: Option<i64>,
+    },
+    Reset {},
 }
 
 /// Name a source, turn the setting off, or reset it to what the chat
@@ -1171,6 +1206,8 @@ pub enum SpeakerSelectionChange {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationSettingsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub companion_time: Option<CompanionTimeChange>,
     pub persona: Option<ChoiceChange>,
     pub prompt: Option<ChoiceChange>,
     pub roleplay_prompt: Option<ChoiceChange>,
@@ -1374,4 +1411,51 @@ pub struct ConversationGroupCopyRequest {
     pub message_id: String,
     pub character_ids: Vec<String>,
     pub client_operation_id: String,
+}
+
+#[cfg(test)]
+mod companion_time_tests {
+    use super::*;
+
+    #[test]
+    fn companion_time_changes_use_closed_shapes_and_server_owned_set_at() {
+        let set = serde_json::json!({"type": "set", "mode": "ticking", "anchor_at": -2_519_820_000_000_i64});
+        let change: CompanionTimeChange = serde_json::from_value(set.clone()).expect("set");
+        assert_eq!(
+            change,
+            CompanionTimeChange::Set {
+                mode: CompanionTimeMode::Ticking,
+                anchor_at: Some(-2_519_820_000_000),
+            }
+        );
+        assert_eq!(serde_json::to_value(change).expect("encode"), set);
+        let reset: CompanionTimeChange =
+            serde_json::from_value(serde_json::json!({"type": "reset"})).expect("reset");
+        assert_eq!(reset, CompanionTimeChange::Reset {});
+        for invalid in [
+            serde_json::json!({"type": "set", "mode": "ticking", "anchor_at": 100, "set_at": 200}),
+            serde_json::json!({"type": "set", "mode": "off", "anchor_at": null}),
+            serde_json::json!({"type": "reset", "anchor_at": 100}),
+        ] {
+            assert!(
+                serde_json::from_value::<CompanionTimeChange>(invalid.clone()).is_err(),
+                "accepted invalid time change: {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn absent_companion_time_preserves_existing_settings_patch_digests() {
+        let patch: ConversationSettingsPatch =
+            serde_json::from_value(serde_json::json!({"author_note": "Keep this"}))
+                .expect("old patch");
+        assert_eq!(patch.companion_time, None);
+        assert!(
+            !serde_json::to_value(patch)
+                .expect("encode")
+                .as_object()
+                .expect("object")
+                .contains_key("companion_time")
+        );
+    }
 }

@@ -7,14 +7,14 @@ use lettuce_context::{
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    ArchiveConversation, Conversation, ConversationBackground, ConversationKind,
-    ConversationLifecycle, ConversationReader, ConversationRepository, GroupChatModeSnapshot,
-    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ParticipantRole, ParticipantSource,
-    RenameConversation, RestoreConversation, SettingProvenance, SnapshotSelection,
+    ArchiveConversation, CompanionTimeOverride, Conversation, ConversationBackground,
+    ConversationKind, ConversationLifecycle, ConversationReader, ConversationRepository,
+    GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ParticipantRole,
+    ParticipantSource, RenameConversation, RestoreConversation, SettingProvenance, SnapshotSelection,
 };
 use lettuce_types::{
     AssetId, CharacterId, ConversationId, ConversationParticipantId, LorebookId, ModelProfileId,
-    PersonaId, PromptDocumentId, Revision, SceneId,
+    PersonaId, PromptDocumentId, Revision, SceneId, TimestampMillis,
 };
 
 use crate::api::ApiContext;
@@ -89,6 +89,7 @@ pub(crate) fn settings_view(
         },
     };
     let background = background(context, &conversation, profile);
+    let companion_time = companion_time_view(context, &conversation)?;
     let model_settings = match &conversation.kind {
         ConversationKind::Direct(_) => Some(
             super::super::app::settings::convert(
@@ -207,6 +208,7 @@ pub(crate) fn settings_view(
                 speaker_selection: None,
                 members: None,
                 model_settings,
+                companion_time,
             }
         }
         ConversationKind::Group(details) => {
@@ -335,10 +337,47 @@ pub(crate) fn settings_view(
                 }),
                 members: Some(members(context, &conversation, live)?),
                 model_settings,
+                companion_time,
             }
         }
     };
     Ok(view)
+}
+
+fn companion_time_view(
+    context: &ApiContext,
+    conversation: &Conversation,
+) -> Result<Option<dto::CompanionTimeView>, ApiError> {
+    let clock = crate::companion::companion_clock::companion_clock_context(
+        context.backend().database(),
+        conversation,
+    )
+    .map_err(source_error)?;
+    if !clock.companion {
+        return Ok(None);
+    }
+    let stored = conversation
+        .current_settings
+        .as_ref()
+        .and_then(|settings| settings.companion_clock)
+        .unwrap_or_default();
+    let (mode, anchor_at, set_at) = match stored.time_override {
+        CompanionTimeOverride::Live => (dto::CompanionTimeMode::Live, None, None),
+        CompanionTimeOverride::Frozen { anchor_at } => {
+            (dto::CompanionTimeMode::Frozen, Some(anchor_at.get()), None)
+        }
+        CompanionTimeOverride::Ticking { anchor_at, set_at } => (
+            dto::CompanionTimeMode::Ticking,
+            Some(anchor_at.get()),
+            Some(set_at.get()),
+        ),
+    };
+    Ok(Some(dto::CompanionTimeView {
+        mode,
+        anchor_at,
+        set_at,
+        effective_at: clock.effective_now(context.now()).get(),
+    }))
 }
 
 pub(crate) fn resolved_appearance(global: &lettuce_settings::GlobalSettings, presentation: Option<&lettuce_characters::CharacterPresentationV1>) -> Result<serde_json::Value, ApiError> {
@@ -738,8 +777,36 @@ fn id_change<T: std::str::FromStr>(
 
 fn settings_change(
     patch: dto::ConversationSettingsPatch,
+    now: TimestampMillis,
 ) -> Result<conversation::ConversationSettingsChange, ApiError> {
     Ok(conversation::ConversationSettingsChange {
+        companion_time: patch
+            .companion_time
+            .map(|change| match change {
+                dto::CompanionTimeChange::Reset {}
+                | dto::CompanionTimeChange::Set {
+                    mode: dto::CompanionTimeMode::Live,
+                    anchor_at: None,
+                } => Ok(CompanionTimeOverride::Live),
+                dto::CompanionTimeChange::Set {
+                    mode: dto::CompanionTimeMode::Frozen,
+                    anchor_at: Some(anchor_at),
+                } => Ok(CompanionTimeOverride::Frozen {
+                    anchor_at: TimestampMillis::new(anchor_at),
+                }),
+                dto::CompanionTimeChange::Set {
+                    mode: dto::CompanionTimeMode::Ticking,
+                    anchor_at: Some(anchor_at),
+                } => Ok(CompanionTimeOverride::Ticking {
+                    anchor_at: TimestampMillis::new(anchor_at),
+                    set_at: now,
+                }),
+                _ => Err(invalid_field(
+                    "companion_time.anchor_at",
+                    "frozen and ticking require an anchor; live requires no anchor",
+                )),
+            })
+            .transpose()?,
         persona: choice_change::<PersonaId>(patch.persona, "persona_id")?,
         prompt: choice_change::<PromptDocumentId>(patch.prompt, "prompt_id")?,
         roleplay_prompt: choice_change::<PromptDocumentId>(
@@ -853,9 +920,10 @@ pub async fn conversation_settings_update(
         .transpose()?;
     let digest = serde_json::to_vec(&request.patch)
         .map_err(|_| api_error(ApiErrorCode::Internal, "the patch could not be encoded"))?;
-    let change = settings_change(request.patch)?;
     context
         .blocking(move |context| {
+            let now = context.now();
+            let change = settings_change(request.patch, now)?;
             let operation = conversation::edit_operation(
                 format!("settings.{}", expected.map_or(0, Revision::get)),
                 &[
@@ -871,7 +939,7 @@ pub async fn conversation_settings_update(
                 expected,
                 operation,
                 &change,
-                context.now(),
+                now,
             )
             .map_err(|error| match error {
                 ConversationEditError::Conversation(

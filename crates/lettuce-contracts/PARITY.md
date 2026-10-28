@@ -1,5 +1,7 @@
 # lettuce-contracts: status notes
 
+Companion time settings expose the legacy live/frozen/ticking choices (`old-code/src/ui/pages/chats/components/CompanionTimeOverrideCard.tsx:10-14`) and stored story anchors through closed typed DTOs. Live is named `live` instead of legacy `off`; ticking records server time instead of client `Date.now()` (`old-code/src/ui/pages/chats/utils/companionTimeOverride.ts:62-65`). A nullable view marks non-companion chats; invalid changes carry InvalidInput/InvalidField and stale or reused operation revisions carry Conflict. Reset changes only the override, preserving the other session preferences (`old-code/src/ui/pages/chats/ChatSettings.tsx:604-609`).
+
 Names/time placement accepts below alongside inside and above in both native character presentation and UI preferences. The Bottom control uses the existing Crisp below layout; older saved choices retain their meaning.
 
 Customization adds typed UI preference changes for the active theme preset, radius, density and beetroot effect; chat appearance gains composerFontSize and explicit custom bubble colors. Theme file commands carry a versioned configuration document and FileSource/FileTarget. Character presentation has a backward-compatible optional set of overridden appearance fields, and conversation settings expose the natively resolved appearance. Old missing override sets remain distinguishable from a new empty set.

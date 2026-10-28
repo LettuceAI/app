@@ -257,6 +257,8 @@ Cancelling by durable job id records the job cancellation first and then signals
 
 ## Companions (`companion/`)
 
+Conversation settings expose `companion_time` only for companion chats. Set selects live, frozen or ticking story time; ticking records server time as `set_at`, and reset selects live without changing the session's time-awareness flag. The view retains stored anchors while awareness is disabled and calculates `effective_at` through the same `CompanionClockContext::effective_now` used by generation. Changes use the settings revision and its existing implicit operation key, persist in `conversation_settings.companion_clock_json`, and become visible to the next turn without a worker or timer.
+
 ### Companion sends
 
 `CompanionTurnCoordinator` handles direct user sends to a companion. It detects the companion from its normalized runtime state, resolves the stored character and persona owner, reads the current authored companion config, classifies the ordered user text through the emotion classifier, applies the pure signal and turn math from `lettuce-companions`, and submits the prepared companion send, which the database commits atomically with the turn. Blank, missing or unavailable classification uses the neutral update, except that an unavailable classification from an engine that requires its model (the API's) refuses the send with `EmotionUnavailable`; cancellation stops before anything is written; an exact send replay skips classification and never reapplies state. Roleplay and group sends use the ordinary path.
