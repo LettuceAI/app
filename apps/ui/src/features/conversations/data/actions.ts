@@ -120,6 +120,19 @@ export async function selectCandidate(services: ConversationServices, message: T
   return true;
 }
 
+export async function selectScene(services: ConversationServices, message: TimelineMessage, sceneId: string): Promise<void> {
+  const { api, queryClient, conversationId } = services;
+  const changed = await api.call("messageSceneSelect", {
+    conversation_id: conversationId,
+    message_id: message.id,
+    expected_revision: currentRevision(queryClient, conversationId),
+    scene_id: sceneId,
+    client_operation_id: crypto.randomUUID(),
+  });
+  patchMessage(queryClient, conversationId, changed.message, changed.revision);
+  await queryClient.invalidateQueries({ queryKey: settingsKey(conversationId) });
+}
+
 export function settingsPatch(change: Partial<ConversationSettingsPatch_Deserialize>): ConversationSettingsPatch_Deserialize {
   return {
     persona: null, prompt: null, roleplay_prompt: null, lorebooks: null, model: null, background: null, scene: null, author_note: null,

@@ -1,7 +1,7 @@
 import { AssetAudio } from "@/shared/ui/AssetAudio";
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
-import { Badge, cn, Highlight, InlineMarkdown, Message, relativeTime } from "@lettuceai/crisp";
+import { Badge, cn, Highlight, InlineMarkdown, Message, relativeTime, type MessageVariants } from "@lettuceai/crisp";
 import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings";
 import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 import {
@@ -75,6 +75,7 @@ export interface MessageRowProps {
   latest: boolean;
   onMenu: (message: TimelineMessage) => void;
   onVariant: (message: TimelineMessage, delta: -1 | 1) => void;
+  scene?: MessageVariants;
 }
 
 function Row({
@@ -88,6 +89,7 @@ function Row({
   latest,
   onMenu,
   onVariant,
+  scene,
 }: MessageRowProps) {
   const look = useChatLook();
   const appearance = useMessageAppearance();
@@ -118,6 +120,7 @@ function Row({
         {...(message.reasoning
           ? { reasoning: { text: <MessageBody text={message.reasoning} query="" /> } }
           : {})}
+        {...(scene ? { variants: scene } : {})}
         {...(latest && index !== null && message.candidate_count > 1
           ? {
               variants: {

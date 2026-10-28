@@ -48,6 +48,7 @@ import {
   pinMessage,
   rewindTo,
   selectCandidate,
+  selectScene,
   updateSettings,
   type ConversationServices,
 } from "./data/actions";
@@ -59,6 +60,7 @@ import {
   type MediaItem,
 } from "./data/messages";
 import { candidatesQuery, memoryQuery, personasQuery, settingsQuery } from "./data/queries";
+import { characterQuery } from "./data/settings-queries";
 import { useGeneration } from "./data/use-generation";
 import { useChatModels } from "./data/use-models";
 import { useSearch } from "./data/use-search";
@@ -363,6 +365,31 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     [services, run],
   );
 
+  const sceneCharacter = useQuery(characterQuery(api, view?.source.type === "direct" ? view.source.character_id : null));
+  const sceneMessage = timeline.windowed ? undefined : messages.find((message) => message.role === "scene");
+  const scenes = useMemo(
+    () => [...(sceneCharacter.data?.draft.scenes ?? [])].sort((a, b) => a.ordinal - b.ordinal),
+    [sceneCharacter.data],
+  );
+  const sceneIndex = scenes.findIndex((scene) => scene.id === settings.data?.scene.id);
+  const sceneSwitch = useMemo(
+    () => (sceneMessage && scenes.length > 1 && sceneIndex >= 0 ? { messageId: sceneMessage.id, index: sceneIndex, total: scenes.length } : null),
+    [sceneMessage, scenes.length, sceneIndex],
+  );
+  const onScene = useCallback(
+    (message: TimelineMessage, delta: -1 | 1) => {
+      const target = scenes[sceneIndex + delta];
+      if (!target || sceneIndex < 0 || busyRef.current) return;
+      busyRef.current = true;
+      void run(async () => {
+        await selectScene(services, message, target.id);
+      }).finally(() => {
+        busyRef.current = false;
+      });
+    },
+    [scenes, sceneIndex, services, run],
+  );
+
   const send = async (text: string, attachments: ComposerAttachment[]) => {
     timeline.jumpToLatest();
     setPendingMedia(
@@ -499,6 +526,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           menuFor={menuId}
           onMenu={onMenu}
           onVariant={onVariant}
+          scene={sceneSwitch}
+          onScene={onScene}
           onRetry={() => void generation.retry()}
         />
         <div

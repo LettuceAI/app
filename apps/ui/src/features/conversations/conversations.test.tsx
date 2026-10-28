@@ -21,7 +21,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
-import { selectCandidate } from "./data/actions";
+import { selectCandidate, selectScene } from "./data/actions";
 import { GenerationStore } from "./data/generation-store";
 import { groupOf, statsOf } from "./data/messages";
 
@@ -768,5 +768,44 @@ describe("conversation data", () => {
     store.appendDelta("c", null);
     expect(meta.mock.calls.length).toBe(calls);
     expect(store.getText().text).toBe("abc");
+  });
+});
+
+describe("scene switching", () => {
+  const scene = (id: string, ordinal: number) => ({ id, ordinal, content: { version: 1, parts: [] }, direction: null, selected_variant_id: null, assets: [] });
+  const character = (count: number) => ({ id: "ch1", draft: { scenes: [scene("s3", 2), scene("s1", 0), scene("s2", 1)].slice(0, count) } }) as never;
+  const opening = () => [message("sc", "scene", "The harbour at dusk."), message("a1", "assistant", "Sit down.")];
+
+  it("shows the scene position on the scene message when the character has several scenes", async () => {
+    await open({
+      messages: opening,
+      calls: {
+        characterGet: () => ({ status: "ok", data: character(3) }),
+        conversationSettingsGet: () => ({ status: "ok", data: { ...settings, scene: { id: "s2", source: "conversation" } } }),
+      },
+    });
+    expect(await screen.findByText("2/3")).toBeTruthy();
+  });
+
+  it("offers no scene swipe when the chat's scene is not one of the character's scenes", async () => {
+    await open({
+      messages: opening,
+      calls: {
+        characterGet: () => ({ status: "ok", data: character(3) }),
+        conversationSettingsGet: () => ({ status: "ok", data: { ...settings, scene: { id: "gone", source: "conversation" } } }),
+      },
+    });
+    await screen.findByText("The harbour at dusk.");
+    expect(screen.queryByText(/^\d+\/3$/)).toBeNull();
+  });
+
+  it("selects a scene through the scene message and refreshes the chat settings", async () => {
+    const select = vi.fn(() => ({ status: "ok" as const, data: { message: message("sc", "scene", "Morning."), revision: 5 } }));
+    const queryClient = new QueryClient();
+    const refresh = vi.spyOn(queryClient, "invalidateQueries");
+    const api = createApiClient(createMockTransport({ calls: { messageSceneSelect: select } }));
+    await selectScene({ api, queryClient, conversationId: "c1", isStuck: () => true }, message("sc", "scene", "Dusk."), "s3");
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ conversation_id: "c1", message_id: "sc", scene_id: "s3" }));
+    expect(refresh).toHaveBeenCalled();
   });
 });

@@ -56,6 +56,8 @@ export interface TimelineProps {
   menuFor: string | null;
   onMenu: (message: TimelineMessage) => void;
   onVariant: (message: TimelineMessage, delta: -1 | 1) => void;
+  scene: { messageId: string; index: number; total: number } | null;
+  onScene: (message: TimelineMessage, delta: -1 | 1) => void;
   onRetry: () => void;
 }
 
@@ -76,6 +78,8 @@ export function Timeline({
   menuFor,
   onMenu,
   onVariant,
+  scene,
+  onScene,
   onRetry,
   columnStyle,
 }: TimelineProps) {
@@ -329,6 +333,9 @@ export function Timeline({
                     latest={latestAssistantId === message.id}
                     onMenu={onMenu}
                     onVariant={changeVariant}
+                    {...(scene?.messageId === message.id
+                      ? { scene: { index: scene.index, total: scene.total, onPrev: () => onScene(message, -1), onNext: () => onScene(message, 1) } }
+                      : {})}
                   />
                 )}
               </Fragment>
