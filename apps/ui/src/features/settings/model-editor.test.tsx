@@ -70,7 +70,8 @@ describe("model editor page", () => {
     await click(/^Generation/);
     fireEvent.click(await screen.findByRole("button", { name: "Settings for" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^Dynamic memory/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Reset" }).find((button) => !button.hasAttribute("disabled"))!);
+    const picker = screen.getByRole("button", { name: "Settings for" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Reset" }).find((button) => picker.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING)!);
     expect((await screen.findByRole("slider", { name: "Temperature" }) as HTMLInputElement).value).toBe("0.7");
     expect(screen.queryByRole("button", { name: "Reset Temperature" })).toBeNull();
     await click("Discard");
