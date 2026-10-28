@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Trash2, Type } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Field, icon, Input, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
+import { icon, ListGroup, ListRow, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
 
 export function LorebookSettingsSheet({
@@ -22,6 +22,7 @@ export function LorebookSettingsSheet({
   const { t } = useTranslation("lorebook-editor");
   const { t: common } = useTranslation();
   const [draftName, setDraftName] = useState(name);
+  const input = useRef<HTMLInputElement>(null);
   const commitName = () => {
     const next = draftName.trim();
     setDraftName(next || name);
@@ -33,21 +34,32 @@ export function LorebookSettingsSheet({
   return (
     <Sheet open={open} onClose={onClose} dismissible={!deleting} title={t("settingsTitle")}>
       <div className="space-y-5 pb-1">
-        <Field label={t("nameField")}>
-          <Input
-            value={draftName}
-            disabled={deleting}
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={commitName}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              else if (event.key === "Escape" && draftName !== name) {
-                event.stopPropagation();
-                setDraftName(name);
-              }
-            }}
+        <ListGroup>
+          <ListRow
+            icon={<Type size={icon.lg} />}
+            className="cursor-text"
+            onClick={() => input.current?.focus()}
+            title={
+              <input
+                ref={input}
+                aria-label={t("nameField")}
+                className="w-full bg-transparent text-base font-medium text-fg outline-none disabled:opacity-60"
+                value={draftName}
+                disabled={deleting}
+                onChange={(event) => setDraftName(event.target.value)}
+                onBlur={commitName}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  else if (event.key === "Escape" && draftName !== name) {
+                    event.stopPropagation();
+                    setDraftName(name);
+                  }
+                }}
+              />
+            }
+            description={t("nameField")}
           />
-        </Field>
+        </ListGroup>
         <ListGroup>
           <ListRowButton
             icon={<Trash2 size={icon.lg} />}
