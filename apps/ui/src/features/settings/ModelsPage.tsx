@@ -214,7 +214,7 @@ export function ModelsPage() {
         footer={
           phone &&
           !models.isPending && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-end px-6">
+            <div className="pointer-events-none absolute inset-x-0 bottom-[calc(1.5rem+var(--safe-bottom,0px))] flex justify-end px-6">
               <Button
                 className="pointer-events-auto shadow-raised"
                 variant="primary"
@@ -227,7 +227,7 @@ export function ModelsPage() {
           )
         }
         padding="none"
-        contentClassName={`pt-1 space-y-6 ${phone ? "px-4 pb-24" : "px-8 pb-10"}`}
+        contentClassName={`pt-1 space-y-6 ${phone ? "px-4 pb-[calc(6rem+var(--safe-bottom,0px))]" : "px-8 pb-10"}`}
         actions={
           <div className="flex items-center gap-1">
             {tools.map((tool) =>
