@@ -11,7 +11,7 @@ import { appStatusQuery } from "@/api/app-status-query";
 import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage, EditCharacterPage } from "@/features/characters";
-import { CreatePersonaPage } from "@/features/personas";
+import { CreatePersonaPage, EditPersonaPage } from "@/features/personas";
 import {
   ChatBranchesPage,
   ChatHistoryPage,
@@ -184,6 +184,11 @@ const newPersonaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/personas/new",
   component: CreatePersonaPage,
+});
+const editPersonaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/personas/$personaId/edit",
+  component: EditPersonaPage,
 });
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -432,6 +437,7 @@ const routeTree = rootRoute.addChildren([
   editCharacterRoute,
   characterHistoryRoute,
   newPersonaRoute,
+  editPersonaRoute,
   settingsRoute,
   settingsSectionRoute,
   modelBrowserRoute,

@@ -54,6 +54,46 @@ export async function createCharacter(services: CharacterServices, form: Charact
   return { id: created.id, unattached };
 }
 
+type LorebookStep = (lorebookId: string, expectedRevision: number, operationId: string, targetOrdinal: number) => Promise<LibraryLorebookMutationResult>;
+
+/** The owner-specific calls that change which lorebooks an owner has bound. */
+export interface LorebookBindingCalls {
+  unbind: (lorebookId: string, expectedRevision: number, operationId: string) => Promise<LibraryLorebookMutationResult>;
+  bind: LorebookStep;
+  reorder: LorebookStep;
+}
+
+export interface LorebookSync {
+  revision: number;
+  order: string[];
+}
+
+/**
+ * Takes `current` to `target`: unbinds the removed lorebooks, binds the added ones at their position, then reorders.
+ * Each step chains the owner revision the previous one returned and derives its operation id from `operationId`.
+ */
+export async function syncLorebooks(calls: LorebookBindingCalls, current: string[], target: string[], revision: number, operationId: string): Promise<LorebookSync> {
+  let order = current;
+  let step = 0;
+  const apply = async (call: (clientOperationId: string) => Promise<LibraryLorebookMutationResult>) => {
+    const result = await call(`${operationId}:lorebook:${step++}`);
+    revision = result.owner_revision;
+    order = lorebookIds(result.bindings);
+  };
+  for (const id of current.filter((entry) => !target.includes(entry))) {
+    await apply((clientOperationId) => calls.unbind(id, revision, clientOperationId));
+  }
+  for (const [index, id] of target.entries()) {
+    if (order.includes(id)) continue;
+    await apply((clientOperationId) => calls.bind(id, revision, clientOperationId, Math.min(index, order.length)));
+  }
+  for (const [index, id] of target.entries()) {
+    if (order[index] === id) continue;
+    await apply((clientOperationId) => calls.reorder(id, revision, clientOperationId, index));
+  }
+  return { revision, order };
+}
+
 export interface EditBaseline {
   form: CharacterForm;
   revision: number;
@@ -75,25 +115,20 @@ export async function saveCharacterEdits(api: ApiClient, characterId: string, ba
     revision = view.revision;
   }
   let order = baseline.form.lorebookIds;
-  const target = draft.lorebookIds;
-  let step = 0;
-  const apply = async (call: (clientOperationId: string) => Promise<LibraryLorebookMutationResult>) => {
-    const result = await call(`${operationId}:lorebook:${step++}`);
-    revision = result.owner_revision;
-    order = lorebookIds(result.bindings);
-  };
   try {
-    for (const id of baseline.form.lorebookIds.filter((entry) => !target.includes(entry))) {
-      await apply((client_operation_id) => api.call("characterLorebooksUnbind", { character_id: characterId, lorebook_id: id, expected_revision: revision, client_operation_id }));
-    }
-    for (const [index, id] of target.entries()) {
-      if (order.includes(id)) continue;
-      await apply((client_operation_id) => api.call("characterLorebooksBind", { character_id: characterId, lorebook_id: id, expected_revision: revision, client_operation_id, target_ordinal: Math.min(index, order.length) }));
-    }
-    for (const [index, id] of target.entries()) {
-      if (order[index] === id) continue;
-      await apply((client_operation_id) => api.call("characterLorebooksReorder", { character_id: characterId, lorebook_id: id, expected_revision: revision, client_operation_id, target_ordinal: index }));
-    }
+    const synced = await syncLorebooks(
+      {
+        unbind: (id, expectedRevision, clientOperationId) => api.call("characterLorebooksUnbind", { character_id: characterId, lorebook_id: id, expected_revision: expectedRevision, client_operation_id: clientOperationId }),
+        bind: (id, expectedRevision, clientOperationId, targetOrdinal) => api.call("characterLorebooksBind", { character_id: characterId, lorebook_id: id, expected_revision: expectedRevision, client_operation_id: clientOperationId, target_ordinal: targetOrdinal }),
+        reorder: (id, expectedRevision, clientOperationId, targetOrdinal) => api.call("characterLorebooksReorder", { character_id: characterId, lorebook_id: id, expected_revision: expectedRevision, client_operation_id: clientOperationId, target_ordinal: targetOrdinal }),
+      },
+      baseline.form.lorebookIds,
+      draft.lorebookIds,
+      revision,
+      operationId,
+    );
+    revision = synced.revision;
+    order = synced.order;
   } catch {
     const [current, bindings] = await Promise.all([api.call("characterGet", { character_id: characterId }), api.call("characterLorebooksList", { character_id: characterId })]);
     return { view: current, revision: current.revision, lorebooks: lorebookIds(bindings), lorebooksFailed: true };

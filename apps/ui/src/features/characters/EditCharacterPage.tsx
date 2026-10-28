@@ -3,12 +3,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useCanGoBack, useNavigate, useParams, useRouteContext, useRouter } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Button, confirm, LoadingState, motion as m, Page, Tab, TabList, Tabs, toast, useCompactLayout } from "@lettuceai/crisp";
+import { confirm, LoadingState, motion as m, Page, Tab, TabList, Tabs, toast, useCompactLayout } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
 import type { CharacterView_Serialize } from "@/api/generated/bindings";
 import { startDirectChat } from "@/features/conversations";
 import { exportEntry, refreshLibrary } from "@/features/library";
+import { EditSaveBar } from "@/shared/ui/EditSaveBar";
 import { FailureState } from "@/shared/ui/FailureState";
 import { archiveCharacter, duplicateCharacter, restoreCharacter, saveCharacterEdits, type EditBaseline } from "./data/actions";
 import { editTabs, formFromView, isDirty, lorebookIds, type EditTab } from "./data/edit";
@@ -117,7 +118,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
     setSaving(true);
     try {
       const saved = await saveCharacterEdits(api, characterId, stored, draft, attempt.current.id);
-      const next: Stored = saved.view ? storedFrom(saved.view, saved.lorebooks) : { ...stored, revision: saved.revision, form: { ...stored.form, lorebookIds: saved.lorebooks } };
+      const next: Stored = saved.view ? { ...storedFrom(saved.view, saved.lorebooks), revision: saved.revision } : { ...stored, revision: saved.revision, form: { ...stored.form, lorebookIds: saved.lorebooks } };
       apply(next);
       setDraft(saved.lorebooksFailed ? { ...next.form, lorebookIds: draft.lorebookIds } : next.form);
       setSelectedSceneId((current) => (next.form.draft.scenes.some((scene) => scene.id === current) ? current : (next.form.draft.scenes[0]?.id ?? null)));
@@ -218,17 +219,18 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   );
 
   const saveBar = (
-    <AnimatePresence initial={false}>
-      {dirty && !mobileSceneEditor && (
-        <motion.div key="save" initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 24, opacity: 0 }} transition={m.quick} className={`border-t border-line px-4 py-3 backdrop-blur ${phone ? "pb-[calc(0.75rem+var(--safe-bottom,0px))]" : "px-8"}`}>
-          <div className="flex items-center gap-2">
-            <span className={phone ? "sr-only" : "mr-auto text-sm text-fg-3"} role="status">{t("edit.unsaved")}</span>
-            <Button variant="ghost" className={phone ? "flex-1" : undefined} disabled={saving || changingMode} onClick={discard}>{t("edit.discard")}</Button>
-            <Button variant="primary" className={phone ? "flex-1" : undefined} loading={saving} disabled={!canSave} onClick={() => void save()}>{t("edit.save")}</Button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <EditSaveBar
+      visible={dirty && !mobileSceneEditor}
+      phone={phone}
+      saving={saving}
+      canSave={canSave}
+      discardDisabled={saving || changingMode}
+      status={t("edit.unsaved")}
+      discardLabel={t("edit.discard")}
+      saveLabel={t("edit.save")}
+      onDiscard={discard}
+      onSave={() => void save()}
+    />
   );
 
   return (

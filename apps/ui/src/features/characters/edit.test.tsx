@@ -187,6 +187,26 @@ describe("character edit page", () => {
     expect(backend.order()).toEqual(["b", "c", "a"]);
   });
 
+  it("chains the revision a lorebook step returned into the next save", async () => {
+    const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ok(saved(request, 6)));
+    const bind = vi.fn<NonNullable<MockCallHandlers["characterLorebooksBind"]>>(() => ok({ bindings: [binding("a", 0)], owner_revision: 9 }));
+    await renderEdit(roleplay(), { characterSave: save, characterLorebooksBind: bind });
+    fireEvent.change(nameInput(), { target: { value: "Cass" } });
+    fireEvent.click(tab("Chat"));
+    fireEvent.click(await screen.findByRole("button", { name: /Lorebooks/ }));
+    fireEvent.click(await within(await screen.findByRole("dialog")).findByRole("checkbox", { name: "Book a" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Done" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveButton()).toBeNull());
+    expect(bind.mock.calls[0]![0].expected_revision).toBe(6);
+    fireEvent.click(tab("Profile"));
+    await screen.findByPlaceholderText("Character name");
+    fireEvent.change(nameInput(), { target: { value: "Cassie" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1]![0].expected_revision).toBe(9);
+  });
+
   it("unbinds a lorebook that was taken off and binds a new one after it", async () => {
     const backend = lorebookBackend(["a", "b"]);
     await renderEdit(roleplay(), { ...backend.calls, characterLorebooksList: backend.list });

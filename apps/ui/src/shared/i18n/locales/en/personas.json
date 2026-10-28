@@ -14,6 +14,31 @@
     "keepEditing": "Keep editing",
     "continueTo": "Continue to {{step}}"
   },
+  "edit": {
+    "title": "Edit persona",
+    "back": "Back",
+    "backToLibrary": "Back to library",
+    "more": "More actions",
+    "export": "Export",
+    "delete": "Delete persona",
+    "exported": "Persona exported",
+    "exportWarnings_one": "Exported with {{count}} warning",
+    "exportWarnings_other": "Exported with {{count}} warnings",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteBody": "The persona is removed from chats that use it.",
+    "deleteConfirm": "Delete",
+    "deleteCancel": "Cancel",
+    "deleted": "{{name}} deleted",
+    "unsaved": "Unsaved changes",
+    "discard": "Discard",
+    "save": "Save",
+    "saved": "Changes saved",
+    "lorebooksFailed": "Saved, but the lorebooks could not be updated. Try saving again.",
+    "leaveTitle": "Discard your changes?",
+    "leaveBody": "Changes that are not saved are lost.",
+    "leaveDiscard": "Discard",
+    "leaveKeep": "Keep editing"
+  },
   "steps": {
     "identity": "Identity",
     "extras": "Extras"
