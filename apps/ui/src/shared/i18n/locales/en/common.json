@@ -153,5 +153,12 @@
     "manage": "System prompts",
     "manageBody": "Create or edit a prompt",
     "close": "Close"
+  },
+  "lorebookPicker": {
+    "title": "Lorebooks",
+    "done": "Done",
+    "empty": "No lorebooks yet",
+    "emptyBody": "Lorebooks you create or import show up here.",
+    "edit": "Edit {{name}}"
   }
 }

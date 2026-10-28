@@ -356,7 +356,6 @@
       "title": "Lorebooks",
       "count_one": "{{count}} lorebook",
       "count_other": "{{count}} lorebooks",
-      "none": "There are no lorebooks yet.",
       "useDefault": "Use the default lorebooks",
       "useDefaultHint": "Follow the character's lorebooks",
       "useCharacter": "Use the character's lorebooks"

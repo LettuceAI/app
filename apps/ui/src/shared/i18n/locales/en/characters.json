@@ -146,9 +146,7 @@
     "lorebooks": "Lorebooks",
     "lorebooksNone": "None",
     "lorebooksCount_one": "{{count}} lorebook",
-    "lorebooksCount_other": "{{count}} lorebooks",
-    "lorebooksEmpty": "No lorebooks yet",
-    "lorebooksEmptyBody": "Lorebooks you create or import show up here."
+    "lorebooksCount_other": "{{count}} lorebooks"
   },
   "pickers": {
     "model": "Model",
@@ -158,9 +156,7 @@
     "noModels": "No models yet. Add one in Settings.",
     "promptDefaultBody": "The app's default for this kind of chat",
     "promptBuiltin": "Built in",
-    "promptCustom": "Yours",
-    "lorebooks": "Lorebooks",
-    "done": "Done"
+    "promptCustom": "Yours"
   },
   "edit": {
     "title": "Character",

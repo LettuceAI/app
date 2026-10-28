@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useNavigate, useParams } from "@tanstack/react-router";
+import { useBlocker, useCanGoBack, useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import { BookOpen, Download, MoreHorizontal, Plus, Radar, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -58,6 +58,8 @@ export function LorebookEditorPage() {
   const api = useApi();
   const client = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
   const { phone } = usePageLayout();
   const { lorebookId } = useParams({ from: "/library/lorebooks/$lorebookId" });
   const mainRef = useRef<HTMLElement>(null);
@@ -87,6 +89,10 @@ export function LorebookEditorPage() {
 
   const toLibrary = () =>
     void navigate({ to: "/library", replace: true, state: { libraryKind: "lorebook" } });
+  const leave = () => {
+    if (canGoBack) router.history.back();
+    else toLibrary();
+  };
   const filtering = needle.length > 0;
   const visible =
     entries && filtering ? entries.filter((entry) => matchesEntry(entry, needle)) : entries;
@@ -332,7 +338,7 @@ export function LorebookEditorPage() {
         mainRef={mainRef}
         title={name ?? t("title")}
         meta={phone || !loaded ? undefined : t("live", { live, total })}
-        onBack={toLibrary}
+        onBack={leave}
         backLabel={t("back")}
         {...(loaded
           ? {

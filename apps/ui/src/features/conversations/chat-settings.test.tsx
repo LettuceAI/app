@@ -242,23 +242,34 @@ describe("chat settings panel", () => {
     expect(dialogs).toHaveLength(2);
     expect(dialogs[1]?.className).not.toContain("right-0");
     expect(within(dialogs[0]!).getByText("Model")).toBeTruthy();
-    fireEvent.click(await screen.findByRole("switch", { name: "Harbour lore" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Harbour lore" }));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0]?.[0]).toMatchObject({ patch: { lorebooks: { type: "set", ids: ["lb1"] } } });
+  });
+
+  it("opens a lorebook in its editor from the picker and comes back to the chat", async () => {
+    const runtime = await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
+    fireEvent.click(await screen.findByRole("button", { name: /^Lorebooks/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Harbour lore" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library/lorebooks/lb1"));
+    await act(async () => {
+      runtime.router.history.back();
+    });
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/chat/c1"));
   });
 
   it("clears the lorebook bottom menu when browser back closes settings", async () => {
     const runtime = await open({ calls: panelCalls });
     fireEvent.click(await screen.findByRole("button", { name: "Chat options" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Lorebooks/ }));
-    await screen.findByRole("switch", { name: "Harbour lore" });
+    await screen.findByRole("checkbox", { name: "Harbour lore" });
     await act(async () => {
       runtime.router.history.back();
     });
-    await waitFor(() => expect(screen.queryByRole("switch", { name: "Harbour lore" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: "Harbour lore" })).toBeNull());
     fireEvent.click(await screen.findByRole("button", { name: "Chat options" }));
     expect(await screen.findByRole("button", { name: /^Lorebooks/ })).toBeTruthy();
-    expect(screen.queryByRole("switch", { name: "Harbour lore" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Harbour lore" })).toBeNull();
   });
 
   it("keeps memory management available without a chat memory mode override", async () => {

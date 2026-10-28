@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BookOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton } from "@lettuceai/crisp";
-import { LorebookChoiceSheet } from "@/features/characters";
+import { LorebookChoiceSheet } from "@/entities/lorebook";
 import type { StepProps } from "./step-props";
 
 export function PersonaLorebooks({ api, form, update }: StepProps) {

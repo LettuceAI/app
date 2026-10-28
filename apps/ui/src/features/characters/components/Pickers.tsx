@@ -1,11 +1,8 @@
 import { useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { AudioLines, BookOpen, Check, Cpu, VolumeX } from "lucide-react";
+import { AudioLines, Check, Cpu, VolumeX } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  Button,
-  Checkbox,
-  EmptyState,
   icon,
   ListGroup,
   ListRow,
@@ -21,7 +18,7 @@ import { modelsQuery, useChatModels } from "@/features/conversations";
 import { ModelMark } from "@/entities/provider";
 import { FailureState } from "@/shared/ui/FailureState";
 import { voiceLabel } from "../data/voice";
-import { audioProvidersQuery, audioVoicesQuery, lorebooksQuery } from "../data/queries";
+import { audioProvidersQuery, audioVoicesQuery } from "../data/queries";
 
 const mark = <Check size={icon.md} />;
 
@@ -92,69 +89,6 @@ export function ModelChoiceSheet({ api, open, value, onChange, onClose }: Choice
             <p className="py-2 text-center text-sm text-fg-3">{t("pickers.noModels")}</p>
           )}
         </div>
-      )}
-    </Sheet>
-  );
-}
-
-/** Any number of lorebooks, attached in the order they were picked. */
-export function LorebookChoiceSheet({
-  api,
-  open,
-  value,
-  onChange,
-  onClose,
-}: {
-  api: ApiClient;
-  open: boolean;
-  value: string[];
-  onChange: (ids: string[]) => void;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation("characters");
-  const books = useQuery(lorebooksQuery(api));
-  const toggle = (id: string, on: boolean) =>
-    onChange(on ? [...value, id] : value.filter((entry) => entry !== id));
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      size="sm"
-      title={t("pickers.lorebooks")}
-      footer={
-        <Button variant="primary" className="w-full" onClick={onClose}>
-          {t("pickers.done")}
-        </Button>
-      }
-    >
-      {books.isPending ? (
-        <LoadingState />
-      ) : books.isError ? (
-        <FailureState error={books.error} onRetry={() => void books.refetch()} />
-      ) : books.data.length === 0 ? (
-        <EmptyState
-          size="sm"
-          icon={<BookOpen size={icon.xl} />}
-          title={t("extras.lorebooksEmpty")}
-          description={t("extras.lorebooksEmptyBody")}
-        />
-      ) : (
-        <ListGroup className="mb-1">
-          {books.data.map((book) => (
-            <ListRow
-              key={book.id}
-              icon={<BookOpen size={icon.lg} />}
-              title={book.name}
-              trailing={
-                <Checkbox
-                  checked={value.includes(book.id)}
-                  onChange={(on) => toggle(book.id, on)}
-                  aria-label={book.name}
-                />
-              }
-            />
-          ))}
-        </ListGroup>
       )}
     </Sheet>
   );

@@ -1,3 +1,5 @@
+export { LorebookChoiceSheet } from "./LorebookChoiceSheet";
+export { lorebooksQuery } from "./queries";
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
 import { queryKeys } from "@/api/query-keys";

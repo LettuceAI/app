@@ -2,11 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { confirm, icon, ListGroup, ListRow, ListRowButton, LoadingState, SearchField, Switch } from "@lettuceai/crisp";
+import { confirm, icon, ListGroup, ListRowButton, LoadingState, SearchField } from "@lettuceai/crisp";
 import { ModelMark } from "@/entities/provider";
 import { FailureState } from "@/shared/ui/FailureState";
 import { modelsQuery } from "../../data/queries";
-import { lorebooksQuery } from "../../data/settings-queries";
 import { useChatModels, type ChatModel } from "../../data/use-models";
 import type { PanelCtx } from "./context";
 
@@ -60,40 +59,6 @@ export function ModelView({ ctx, onDone }: { ctx: PanelCtx; onDone: () => void }
         ))}
       </ListGroup>
       {chat.models.length === 0 && <p className="py-4 text-center text-sm text-fg-muted">{t("settings.model.none")}</p>}
-    </div>
-  );
-}
-
-export function LorebooksView({ ctx }: { ctx: PanelCtx }) {
-  const { t } = useTranslation("conversations");
-  const books = useQuery(lorebooksQuery(ctx.api, ctx.conversationId));
-  const chosen = ctx.settings?.lorebooks.ids ?? [];
-  const toggle = (id: string) => {
-    const next = chosen.includes(id) ? chosen.filter((entry) => entry !== id) : [...chosen, id];
-    void ctx.save({ lorebooks: { type: "set", ids: next } });
-  };
-  if (books.isPending) return <LoadingState />;
-  if (books.isError) return <FailureState error={books.error} onRetry={() => void books.refetch()} />;
-  return (
-    <div className="space-y-4 pb-1">
-      {ctx.settings?.lorebooks.source === "conversation" && (
-        <ListGroup>
-          <ListRowButton title={t("settings.lorebooks.useDefault")} description={t("settings.lorebooks.useDefaultHint")} chevron={false} disabled={ctx.busy} onClick={() => void ctx.save({ lorebooks: { type: "reset" } })} />
-        </ListGroup>
-      )}
-      {books.data.length === 0 ? (
-        <p className="py-4 text-center text-sm text-fg-muted">{t("settings.lorebooks.none")}</p>
-      ) : (
-        <ListGroup>
-          {books.data.map((book) => (
-            <ListRow
-              key={book.id}
-              title={book.name}
-              trailing={<Switch checked={chosen.includes(book.id)} disabled={ctx.busy} onChange={() => toggle(book.id)} aria-label={book.name} />}
-            />
-          ))}
-        </ListGroup>
-      )}
     </div>
   );
 }

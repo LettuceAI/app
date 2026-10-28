@@ -11,7 +11,8 @@ import { queryKeys } from "@/api/query-keys";
 import { startDirectChat } from "../../data/actions";
 import { duplicateChat, exportChat, importChatLog, removeChat, renameChat, setArchived } from "../../data/chat-actions";
 import { memoryQuery, modelsQuery, personasQuery } from "../../data/queries";
-import { characterChatsQuery, characterQuery, effectivePersonaId, lorebooksQuery, messageCountQuery } from "../../data/settings-queries";
+import { lorebooksQuery } from "@/entities/lorebook";
+import { characterChatsQuery, characterQuery, effectivePersonaId, messageCountQuery } from "../../data/settings-queries";
 import { useChatModels } from "../../data/use-models";
 import { formatTime } from "../../data/messages";
 import type { PanelCtx } from "./context";
@@ -34,7 +35,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
   const count = useQuery(messageCountQuery(api, conversationId));
   const chats = useQuery(characterChatsQuery(api, ctx.characterId));
   const personas = useQuery({ ...personasQuery(api, conversationId), enabled: settings !== undefined });
-  const lorebooks = useQuery({ ...lorebooksQuery(api, conversationId), enabled: settings !== undefined });
+  const lorebooks = useQuery({ ...lorebooksQuery(api), enabled: settings !== undefined });
   const chat = useChatModels(api);
   const modelsStatus = useQuery(modelsQuery(api));
   const memoryOn = settings !== undefined && settings.memory.mode !== "disabled";

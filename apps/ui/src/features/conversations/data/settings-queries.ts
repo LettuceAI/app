@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { CompanionNoteView, ConversationSummary, LorebookSummary, SettingChoice } from "@/api/generated/bindings";
+import type { CompanionNoteView, ConversationSummary, SettingChoice } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 
 async function allPages<T>(fetchPage: (cursor: string | null) => Promise<{ items: T[]; next_cursor: string | null }>): Promise<T[]> {
@@ -26,14 +26,6 @@ export function messageCountQuery(api: ApiClient, conversationId: string) {
   return queryOptions({
     queryKey: [...queryKeys.conversations.detail(conversationId), "count"] as const,
     queryFn: async () => (await api.call("conversationMessageCount", { conversation_id: conversationId })).count,
-  });
-}
-
-export function lorebooksQuery(api: ApiClient, conversationId: string) {
-  return queryOptions({
-    queryKey: [...queryKeys.conversations.detail(conversationId), "lorebooks"] as const,
-    queryFn: (): Promise<LorebookSummary[]> =>
-      allPages((cursor) => api.call("lorebooksList", { query: null, lifecycle: "active", cursor, limit: null })),
   });
 }
 

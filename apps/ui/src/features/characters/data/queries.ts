@@ -1,20 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { LibraryInteractionMode, LorebookSummary } from "@/api/generated/bindings";
+import type { LibraryInteractionMode } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
-
-async function allPages<T>(
-  fetchPage: (cursor: string | null) => Promise<{ items: T[]; next_cursor: string | null }>,
-): Promise<T[]> {
-  const items: T[] = [];
-  let cursor: string | null = null;
-  do {
-    const page = await fetchPage(cursor);
-    items.push(...page.items);
-    cursor = page.next_cursor;
-  } while (cursor !== null);
-  return items;
-}
 
 /** The draft a new character starts from, with the library's defaults filled in. */
 export function draftDefaultQuery(api: ApiClient, mode: LibraryInteractionMode = "roleplay") {
@@ -33,16 +20,6 @@ export function dynamicMemoryEnabledQuery(api: ApiClient) {
 }
 
 export { promptsQuery } from "@/entities/prompt";
-
-export function lorebooksQuery(api: ApiClient) {
-  return queryOptions({
-    queryKey: queryKeys.lorebooks.list(),
-    queryFn: (): Promise<LorebookSummary[]> =>
-      allPages((cursor) =>
-        api.call("lorebooksList", { query: null, lifecycle: "active", cursor, limit: null }),
-      ),
-  });
-}
 
 export function audioProvidersQuery(api: ApiClient) {
   return queryOptions({

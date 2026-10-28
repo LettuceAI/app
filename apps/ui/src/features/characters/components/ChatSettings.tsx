@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge, icon, ListGroup, ListRowButton } from "@lettuceai/crisp";
+import { LorebookChoiceSheet } from "@/entities/lorebook";
 import { dynamicMemoryEnabledQuery } from "../data/queries";
 import { draftSetters } from "./draft-setters";
-import { LorebookChoiceSheet } from "./Pickers";
 import { PromptSetting } from "./PromptSetting";
 import type { StepProps } from "./step-props";
 
