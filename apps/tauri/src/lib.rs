@@ -14,6 +14,7 @@ mod files;
 mod host;
 mod microphone;
 mod reset;
+mod startup;
 
 use std::sync::{Arc, Mutex};
 
@@ -46,6 +47,7 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let app = app.plugin(tauri_plugin_android_fs::init());
     let app = app
+        .manage(startup::BackendStartup::default())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_haptics::init())
         .plugin(host::plugin())
@@ -56,7 +58,20 @@ pub fn run() {
         )
         .setup(move |app| {
             builder.mount_events(app);
-            start(app)
+            let result = start(app);
+            app.state::<startup::BackendStartup>().finish(
+                result.as_ref().map(|_| ()).map_err(|error| lettuce_contracts::ApiError {
+                    code: lettuce_contracts::ApiErrorCode::Internal,
+                    message: error.to_string(),
+                    details: None,
+                }),
+            );
+            #[cfg(target_os = "android")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move { host::finish_startup(&handle).await });
+            }
+            result
         })
         .build(tauri::generate_context!());
     match app {

@@ -77,6 +77,12 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   @Command
+  fun finishStartup(invoke: Invoke) {
+    (activity as MainActivity).finishStartup()
+    invoke.resolve()
+  }
+
+  @Command
   fun setBackgroundWork(invoke: Invoke) {
     val args = invoke.parseArgs(BackgroundWorkArgs::class.java)
     activity.runOnUiThread {

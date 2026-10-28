@@ -187,7 +187,7 @@ pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
 }
 
 #[cfg(target_os = "android")]
-pub(crate) use android::follow_active_work;
+pub(crate) use android::{finish_startup, follow_active_work};
 
 #[cfg(target_os = "android")]
 mod android {
@@ -250,6 +250,18 @@ mod android {
             return;
         };
         tauri::async_runtime::spawn(Arc::clone(&aggregate).follow(signal));
+    }
+
+    pub(crate) async fn finish_startup<R: Runtime>(app: &AppHandle<R>) {
+        let Some(host) = app.try_state::<AndroidHost<R>>() else {
+            tracing::warn!("the Android host plugin is not registered at startup");
+            return;
+        };
+        if let Err(error) = host.0.run_mobile_plugin_async::<()>(
+            "finishStartup", serde_json::json!({}),
+        ).await {
+            tracing::warn!(%error, "the Android startup splash could not be dismissed");
+        }
     }
 
     async fn set_background_work<R: Runtime>(app: AppHandle<R>, active: bool) -> bool {

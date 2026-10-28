@@ -217,7 +217,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::files::files_pick_open,
             commands::files::files_pick_directory,
             commands::files::files_pick_save,
-            commands::app::app_status,
+            commands::app::app_status::<tauri::DynRuntime>,
             commands::app::legacy_state,
             commands::app::app_ui_state_update,
             commands::app::purge_notices_list,

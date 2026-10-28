@@ -3,12 +3,17 @@ use lettuce_contracts::{
     ApiError, AppStatus, AppUiStateUpdateRequest, AppUiStateView, PurgeNoticeDismissRequest,
     PurgeNoticeList,
 };
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn app_status(context: State<'_, ApiContextSlot>) -> Result<AppStatus, ApiError> {
-    let context = context.snapshot()?;
+pub(crate) async fn app_status<R: Runtime>(
+    app: AppHandle<R>,
+    startup: State<'_, crate::startup::BackendStartup>,
+) -> Result<AppStatus, ApiError> {
+    startup.ready().await?;
+    let slot = app.try_state::<ApiContextSlot>().ok_or_else(crate::reload_failure)?;
+    let context = slot.snapshot()?;
     api::app_status(&context).await
 }
 
