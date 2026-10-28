@@ -195,6 +195,13 @@ describe("chat settings panel", () => {
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
+  it("opens from the character name in the header", async () => {
+    const runtime = await open({ calls: panelCalls });
+    fireEvent.click(await screen.findByRole("button", { name: /Cassian/ }));
+    await waitFor(() => expect(runtime.router.state.location.search).toEqual({ panel: "settings" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
   it("is a side panel on desktop and a full-page drawer on a phone", async () => {
     await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
     const side = await screen.findByRole("dialog");

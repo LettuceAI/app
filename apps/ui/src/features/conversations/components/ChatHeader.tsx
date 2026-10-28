@@ -17,8 +17,6 @@ export interface ChatHeaderProps {
   columnStyle?: CSSProperties | undefined;
   name: string;
   avatar: string | null;
-  model: { label: string; local: boolean } | null;
-  modelKnown: boolean;
   phone: boolean;
   memory: { count: number; busy: boolean } | null;
   search: Search;
@@ -30,8 +28,6 @@ export interface ChatHeaderProps {
 export function ChatHeader({
   name,
   avatar,
-  model,
-  modelKnown,
   phone,
   memory,
   search,
@@ -107,28 +103,13 @@ export function ChatHeader({
   }
 
   const identity = cn(
-    "flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1.5 py-1 text-left",
-    phone && "transition-colors hover:bg-fill",
+    "flex min-w-0 items-center gap-2.5 rounded-xl px-1.5 py-1 text-left transition-colors hover:bg-fill",
+    phone ? "flex-1" : "max-w-full",
   );
   const who = (
     <>
       <Avatar src={avatar} name={name} size="sm" />
-      <span className="min-w-0">
-        <span className="block truncate text-base font-semibold text-fg">{name}</span>
-        <span className="flex items-center gap-1.5 text-2xs text-fg-3">
-          {model && (
-            <span
-              className={cn(
-                "h-1.5 w-1.5 shrink-0 rounded-full",
-                model.local ? "bg-accent" : "bg-info",
-              )}
-            />
-          )}
-          {modelKnown && (
-            <span className="truncate">{model ? model.label : t("header.noModel")}</span>
-          )}
-        </span>
-      </span>
+      <span className="min-w-0 truncate text-base font-semibold text-fg">{name}</span>
     </>
   );
 
@@ -142,7 +123,11 @@ export function ChatHeader({
           {who}
         </button>
       ) : (
-        <div className={identity}>{who}</div>
+        <div className="flex min-w-0 flex-1">
+          <button type="button" onClick={onOptions} className={identity}>
+            {who}
+          </button>
+        </div>
       )}
       {memory && (
         <IconButton

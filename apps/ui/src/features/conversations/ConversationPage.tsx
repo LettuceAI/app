@@ -62,7 +62,6 @@ import {
 import { candidatesQuery, memoryQuery, personasQuery, settingsQuery } from "./data/queries";
 import { characterQuery } from "./data/settings-queries";
 import { useGeneration } from "./data/use-generation";
-import { useChatModels } from "./data/use-models";
 import { useSearch } from "./data/use-search";
 import { useTimeline } from "./data/use-timeline";
 import { useInlineAuthorNote } from "./data/use-inline-author-note";
@@ -166,7 +165,6 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const mode = settings.data?.memory.mode;
   const memoryOn = mode !== undefined && mode !== "disabled";
   const memory = useQuery({ ...memoryQuery(api, conversationId), enabled: memoryOn });
-  const chat = useChatModels(api);
   const search = useSearch(api, conversationId);
 
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -258,7 +256,6 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const pendingTurn = Boolean(view?.pending_turn_id) && !meta.active;
   const sending = meta.active || pendingTurn;
   const background = settings.data?.background.asset?.url ?? null;
-  const currentModel = chat.find(settings.data?.model.id ?? null);
 
   const lastJump = useRef<string | null>(null);
   const hit = search.current?.message_id ?? landing;
@@ -595,15 +592,6 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               columnStyle={look.chatHeaderMoves ? columnStyle : undefined}
               name={name}
               avatar={avatar}
-              modelKnown={settings.data !== undefined}
-              model={
-                currentModel
-                  ? {
-                      label: `${currentModel.name} · ${currentModel.local ? t("header.onDevice") : currentModel.provider}`,
-                      local: currentModel.local,
-                    }
-                  : null
-              }
               phone={phone}
               memory={memoryOn ? { count: memory.data?.items.length ?? 0, busy: memoryBusy } : null}
               search={search}
