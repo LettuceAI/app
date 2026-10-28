@@ -19,6 +19,7 @@ import { PinnedTab } from "./PinnedTab";
 import { StatusCard } from "./StatusCard";
 import { SummaryCard, SummarySheet } from "./SummaryParts";
 import { useMemoryWrite } from "./use-memory-write";
+import { saveMemoryDraft } from "./save-memory";
 
 type Tab = "memories" | "activity" | "pinned";
 type SheetTarget = { kind: "edit"; item: MemoryItemView } | { kind: "add" };
@@ -70,63 +71,8 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   const saveMemory = async (item: MemoryItemView | null, draft: MemoryDraft) => {
     setSaving(true);
     try {
-      const observed = draft.observedAt?.getTime() ?? null;
-      let ok = true;
-      if (item === null) {
-        const payload = { text: draft.text, category: draft.category, observed_at: observed };
-        ok = await write(`add:${session}:${JSON.stringify(payload)}`, (current, operationId) =>
-          api.call("memoryAdd", { conversation_id: conversationId, ...payload, expected_revision: current.revision, client_operation_id: operationId }),
-        );
-        if (ok) toast.success(t("memory.sheet.added"));
-      } else {
-        const textChanged = draft.text !== item.text;
-        const categoryChanged = draft.category !== item.category;
-        const dateChanged = observed !== item.observed_at;
-        if (textChanged || categoryChanged || dateChanged) {
-          const key = `update:${session}:${item.id}:${JSON.stringify([textChanged ? draft.text : null, categoryChanged ? draft.category : "keep", dateChanged ? observed : "keep"])}`;
-          ok = await write(key, async (current, operationId) => {
-            const stored = current.items.find((entry) => entry.id === item.id);
-            const updateText = textChanged && draft.text !== stored?.text;
-            const updateCategory = categoryChanged && draft.category !== stored?.category;
-            const updateDate = dateChanged && observed !== stored?.observed_at;
-            if (stored && !updateText && !updateCategory && !updateDate) return;
-            return api.call("memoryUpdate", {
-              conversation_id: conversationId,
-              memory_id: item.id,
-              text: updateText ? draft.text : null,
-              category: updateCategory ? { type: "set", value: draft.category } : { type: "keep" },
-              observed_at: updateDate ? { type: "set", value: observed } : { type: "keep" },
-              expected_revision: current.revision,
-              client_operation_id: operationId,
-            });
-          });
-        }
-        const setPinned = () => write(`pin:${session}:${item.id}:${draft.pinned}`, async (current, operationId) => {
-          if (current.items.some((entry) => entry.id === item.id && entry.pinned === draft.pinned)) return;
-          return api.call("memoryPin", {
-            conversation_id: conversationId,
-            memory_id: item.id,
-            pinned: draft.pinned,
-            expected_revision: current.revision,
-            client_operation_id: operationId,
-          });
-        });
-        if (ok && !draft.pinned && item.pinned) ok = await setPinned();
-        if (ok && draft.temperature !== item.temperature) {
-          ok = await write(`temperature:${session}:${item.id}:${draft.temperature}`, async (current, operationId) => {
-            if (current.items.some((entry) => entry.id === item.id && entry.temperature === draft.temperature)) return;
-            return api.call("memorySetTemperature", {
-              conversation_id: conversationId,
-              memory_id: item.id,
-              temperature: draft.temperature,
-              expected_revision: current.revision,
-              client_operation_id: operationId,
-            });
-          });
-        }
-        if (ok && draft.pinned && !item.pinned) ok = await setPinned();
-        if (ok) toast.success(t("memory.sheet.saved"));
-      }
+      const ok = await saveMemoryDraft(api, conversationId, write, item, draft, session);
+      if (ok) toast.success(t(item === null ? "memory.sheet.added" : "memory.sheet.saved"));
       if (ok) setTarget(null);
     } finally {
       setSaving(false);
@@ -334,7 +280,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   );
 }
 
-function MemoriesTab({ items, dynamic, onOpen, onAdd }: { items: readonly MemoryItemView[]; dynamic: boolean; onOpen: (item: MemoryItemView) => void; onAdd: () => void }) {
+export function MemoriesTab({ items, dynamic, onOpen, onAdd, companion = false }: { items: readonly MemoryItemView[]; dynamic: boolean; onOpen: (item: MemoryItemView) => void; onAdd: () => void; companion?: boolean }) {
   const { t } = useTranslation("conversations");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<MemoryItemView["category"]>(null);
@@ -351,7 +297,7 @@ function MemoriesTab({ items, dynamic, onOpen, onAdd }: { items: readonly Memory
     ...(imported > 0 ? [t("memory.list.imported", { count: imported })] : []),
   ].join(", ");
   const total = t("memory.list.total", { count: items.length });
-  const label = needle || category !== null ? t("memory.list.found", { count: shown.length }) : origins ? t("memory.list.summary", { total, origins }) : total;
+  const label = companion ? t(needle || category !== null ? "companion.memories.found" : "companion.memories.total", { count: shown.length }) : needle || category !== null ? t("memory.list.found", { count: shown.length }) : origins ? t("memory.list.summary", { total, origins }) : total;
 
   return (
     <div className="space-y-4">
@@ -364,7 +310,7 @@ function MemoriesTab({ items, dynamic, onOpen, onAdd }: { items: readonly Memory
         </Button>
       </div>
       {categories.length > 0 && (
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] @xl:-mx-8 @xl:px-8 @4xl:mx-0 @4xl:px-0">
+        <div className={`-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] @xl:-mx-8 @xl:px-8 @4xl:mx-0 @4xl:px-0 ${companion ? "@4xl:flex-wrap" : ""}`}>
           <Chip className="shrink-0 whitespace-nowrap" selected={category === null} onClick={() => setPicked(null)}>
             {t("memory.all")}
           </Chip>
@@ -379,8 +325,8 @@ function MemoriesTab({ items, dynamic, onOpen, onAdd }: { items: readonly Memory
         items.length === 0 ? (
           <EmptyState
             icon={<Brain size={icon.xl} />}
-            title={t("memory.empty.title")}
-            description={dynamic ? t("memory.empty.dynamic") : t("memory.empty.manual")}
+            title={t(companion ? "companion.memories.emptyTitle" : "memory.empty.title")}
+            description={companion ? t("companion.memories.emptyBody") : dynamic ? t("memory.empty.dynamic") : t("memory.empty.manual")}
             action={
               <Button leading={<Plus size={icon.sm} />} onClick={onAdd}>
                 {t("memory.empty.action")}
@@ -390,14 +336,14 @@ function MemoriesTab({ items, dynamic, onOpen, onAdd }: { items: readonly Memory
         ) : (
           <EmptyState
             icon={<Search size={icon.xl} />}
-            title={needle ? t("memory.empty.noMatch", { query: query.trim() }) : t("memory.empty.noCategory")}
-            {...(needle ? { description: t("memory.empty.noMatchBody") } : {})}
+            title={needle ? t(companion ? "companion.memories.noMatch" : "memory.empty.noMatch", { query: query.trim() }) : t("memory.empty.noCategory")}
+            {...(needle ? { description: t(companion ? "companion.memories.noMatchBody" : "memory.empty.noMatchBody") } : {})}
           />
         )
       ) : (
         <ListGroup label={label}>
           {shown.map((item) => (
-            <MemoryRow key={item.id} item={item} onOpen={() => onOpen(item)} />
+            <MemoryRow key={item.id} companion={companion} item={item} onOpen={() => onOpen(item)} />
           ))}
         </ListGroup>
       )}

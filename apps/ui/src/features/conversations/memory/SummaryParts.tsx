@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button, cn, Field, icon, Sheet, Textarea } from "@lettuceai/crisp";
 import type { MemorySummaryView } from "@/api/generated/bindings";
 
-export function SummaryCard({ summary, onOpen }: { summary: MemorySummaryView | null; onOpen: () => void }) {
+export function SummaryCard({ summary, onOpen, companion = false }: { summary: MemorySummaryView | null; onOpen: () => void; companion?: boolean }) {
   const { t } = useTranslation("conversations");
   const text = summary?.text ?? "";
   const tokens = summary?.token_count ?? null;
@@ -17,7 +17,7 @@ export function SummaryCard({ summary, onOpen }: { summary: MemorySummaryView | 
         </span>
         {tokens !== null && <span className="text-sm text-fg-3">{t("memory.tokens", { count: tokens })}</span>}
       </div>
-      <p className={cn("mt-2 line-clamp-2 text-sm leading-relaxed @4xl:line-clamp-5", text ? "text-fg-2" : "text-fg-3")}>{text || t("memory.summary.empty")}</p>
+      <p className={cn("mt-2 text-sm leading-relaxed", companion ? "line-clamp-4" : "line-clamp-2 @4xl:line-clamp-5", text ? "text-fg-2" : "text-fg-3")}>{text || t("memory.summary.empty")}</p>
     </button>
   );
 }

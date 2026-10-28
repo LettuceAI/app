@@ -16,6 +16,7 @@ import {
   ChatBranchesPage,
   ChatHistoryPage,
   ChatMemoryPage,
+  ChatCompanionPage,
   ConversationPage,
 } from "@/features/conversations";
 import {
@@ -180,6 +181,7 @@ const editCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/characters/$characterId/edit",
   component: EditCharacterPage,
+  validateSearch: (search: Record<string, unknown>): { tab?: "soul" } => search.tab === "soul" ? { tab: "soul" } : {},
 });
 const characterHistoryRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -392,6 +394,13 @@ const chatMemoryRoute = createRoute({
   path: "/chat/$conversationId/memory",
   component: ChatMemoryPage,
 });
+const chatCompanionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat/$conversationId/companion",
+  validateSearch: (search: Record<string, unknown>): { tab?: "relationship" | "memories" | "soul" | "activity" } =>
+    search.tab === "relationship" || search.tab === "memories" || search.tab === "soul" || search.tab === "activity" ? { tab: search.tab } : { tab: "relationship" },
+  component: ChatCompanionPage,
+});
 const chatBranchesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat/$conversationId/branches",
@@ -453,6 +462,7 @@ const routeTree = rootRoute.addChildren([
   chatRoute,
   chatSettingsRoute,
   chatMemoryRoute,
+  chatCompanionRoute,
   chatBranchesRoute,
 ]);
 

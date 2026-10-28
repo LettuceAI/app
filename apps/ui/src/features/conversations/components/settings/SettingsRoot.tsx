@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Archive, ArchiveRestore, BookOpen, CalendarClock, Check, Copy, Cpu, Download, History, Image as ImageIcon, MessageSquarePlus, Pencil,
+  Archive, ArchiveRestore, BookOpen, CalendarClock, Check, Clock, Copy, Cpu, Download, History, Image as ImageIcon, MessageSquarePlus, Pencil,
   NotebookPen, Sparkles, SlidersHorizontal, Trash2, Upload, User, GitBranch,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -248,6 +248,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
       {companion && (
         <ListGroup label={t("settings.sections.companion")}>
           <ListRowButton icon={<CalendarClock size={icon.lg} />} title={t("settings.notes.title")} description={t("settings.notes.rowHint")} onClick={() => ctx.open("notes")} />
+          {settings.companion_time && <ListRowButton icon={<Clock size={icon.lg} />} title={t("settings.companionTime.title")} description={settings.companion_time.mode === "live" ? t("settings.companionTime.live") : t(settings.companion_time.mode === "frozen" ? "settings.companionTime.stoppedAt" : "settings.companionTime.runningFrom", { when: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(settings.companion_time.mode === "frozen" ? settings.companion_time.anchor_at ?? settings.companion_time.effective_at : settings.companion_time.effective_at) })} onClick={() => ctx.openSheet("companion_time")} />}
         </ListGroup>
       )}
 

@@ -8,8 +8,11 @@ import type { TimelineMessage } from "@/api/generated/bindings";
 import { statsOf } from "../data/messages";
 import { metricsQuery, usageQuery } from "../data/queries";
 import { MessagePromptDetails } from "./MessagePromptDetails";
+import { CompanionEffectRow } from "../companion/EffectSheet";
 
 export interface MessageMenuProps {
+  companion?: boolean;
+  onCompanionEffect?: () => void;
   api: ApiClient;
   conversationId: string;
   message: TimelineMessage;
@@ -84,12 +87,13 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onPin, onRewind, onBranch, onDelete }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onPin, onRewind, onBranch, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
     <div className="space-y-3 pb-1">
       <MessageStats api={api} conversationId={conversationId} message={message} />
+      {companion && message.role === "assistant" && onCompanionEffect && <CompanionEffectRow key={message.id} api={api} conversationId={conversationId} message={message} onOpen={onCompanionEffect} />}
       <ListGroup>
         {!scene && <ListRowButton icon={<Copy size={icon.lg} />} title={t("menu.copy")} chevron={false} onClick={onCopy} />}
         {canEdit && <ListRowButton icon={<Pencil size={icon.lg} />} title={t("menu.edit")} onClick={onEdit} />}

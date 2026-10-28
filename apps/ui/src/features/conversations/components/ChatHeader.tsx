@@ -18,7 +18,7 @@ export interface ChatHeaderProps {
   name: string;
   avatar: string | null;
   phone: boolean;
-  memory: { count: number; busy: boolean } | null;
+  memory: { count: number; busy: boolean; label?: string } | null;
   search: Search;
   onBack: () => void;
   onOptions: () => void;
@@ -132,7 +132,7 @@ export function ChatHeader({
       {memory && (
         <IconButton
           label={
-            memory.busy ? t("header.memoriesBusy") : t("header.memories", { count: memory.count })
+            memory.label ?? (memory.busy ? t("header.memoriesBusy") : t("header.memories", { count: memory.count }))
           }
           onClick={onMemory}
           className="relative"

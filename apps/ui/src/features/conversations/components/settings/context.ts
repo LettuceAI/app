@@ -6,7 +6,7 @@ import type { ConversationServices } from "../../data/actions";
 export type PanelView =
   | "root" | "history" | "notes" | "starters" | "advanced";
 
-export type PanelSheet = "persona" | "model" | "background" | "note" | "lorebooks" | "history_actions";
+export type PanelSheet = "persona" | "model" | "background" | "note" | "lorebooks" | "history_actions" | "companion_time";
 
 export interface PanelCtx {
   api: ApiClient;

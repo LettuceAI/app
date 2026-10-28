@@ -6,6 +6,7 @@ import type { MemoryCycleView } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 
 export interface ActivityTabProps {
+  companion?: boolean;
   cycles: readonly MemoryCycleView[];
   hasMore: boolean;
   loadingMore: boolean;
@@ -16,7 +17,7 @@ export interface ActivityTabProps {
   onRevert: (cycle: MemoryCycleView) => Promise<boolean>;
 }
 
-export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRetry, onLoadMore, onRevert }: ActivityTabProps) {
+export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRetry, onLoadMore, onRevert, companion = false }: ActivityTabProps) {
   const { t, i18n } = useTranslation("conversations");
   const [reverting, setReverting] = useState<string | null>(null);
   const when = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" });
@@ -30,9 +31,9 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
 
   const askRevert = async (cycle: MemoryCycleView) => {
     const sure = await confirm({
-      title: t("memory.activity.undoTitle", { window: windowText(cycle) }),
-      message: t("memory.activity.undoBody"),
-      confirmLabel: t("memory.activity.undoConfirm"),
+      title: t(companion ? "companion.activity.undoTitle" : "memory.activity.undoTitle", { window: windowText(cycle) }),
+      message: t(companion ? "companion.activity.undoBody" : "memory.activity.undoBody"),
+      confirmLabel: t(companion ? "companion.activity.undoConfirm" : "memory.activity.undoConfirm"),
       cancelLabel: t("memory.activity.keep"),
       destructive: true,
     });
@@ -44,7 +45,7 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
 
   const blockedText = (cycle: MemoryCycleView) => {
     const later = cycles.find((entry) => entry.run_id === cycle.blocked_by);
-    return later ? t("memory.activity.blockedBy", { window: windowText(later) }) : t("memory.activity.blocked");
+    return later ? t(companion ? "companion.activity.blockedBy" : "memory.activity.blockedBy", { window: windowText(later) }) : t(companion ? "companion.activity.blocked" : "memory.activity.blocked");
   };
 
   return (
@@ -90,7 +91,7 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
                 )}
                 {!cycle.reverted && cycle.revertable && (
                   <Button size="sm" variant="secondary" loading={reverting === cycle.run_id} disabled={reverting !== null} leading={<Undo2 size={icon.sm} />} onClick={() => void askRevert(cycle)}>
-                    {t("memory.activity.undo")}
+                    {t(companion ? "companion.activity.undo" : "memory.activity.undo")}
                   </Button>
                 )}
                 {!cycle.reverted && !cycle.revertable && cycle.blocked_by !== null && <Text variant="hint">{blockedText(cycle)}</Text>}

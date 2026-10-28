@@ -40,6 +40,7 @@ import { BeetrootRain } from "./components/BeetrootRain";
 import { ChatSettingsPanel } from "./components/settings/ChatSettingsPanel";
 import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
+import { EffectSheet } from "./companion/EffectSheet";
 import { Timeline } from "./components/Timeline";
 import {
   branchToNewChat,
@@ -168,6 +169,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const search = useSearch(api, conversationId);
 
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [effectMessage, setEffectMessage] = useState<TimelineMessage | null>(null);
+  const { shown: shownEffect } = useClosingValue(effectMessage);
   const [editing, setEditing] = useState<TimelineMessage | null>(null);
   const [busy, setBusy] = useState(false);
   const [modelRequired, setModelRequired] = useState(false);
@@ -363,6 +366,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   );
 
   const sceneCharacter = useQuery(characterQuery(api, view?.source.type === "direct" ? view.source.character_id : null));
+  const companion = view?.kind === "direct" && (settings.data?.companion_time != null || sceneCharacter.data?.draft.defaults?.interaction_mode === "companion");
+  const openMemories = () => void navigate({ to: companion ? "/chat/$conversationId/companion" : "/chat/$conversationId/memory", params: { conversationId } });
   const sceneMessage = timeline.windowed ? undefined : messages.find((message) => message.role === "scene");
   const scenes = useMemo(
     () => [...(sceneCharacter.data?.draft.scenes ?? [])].sort((a, b) => a.ordinal - b.ordinal),
@@ -593,13 +598,11 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               name={name}
               avatar={avatar}
               phone={phone}
-              memory={memoryOn ? { count: memory.data?.items.length ?? 0, busy: memoryBusy } : null}
+              memory={memoryOn || companion ? { count: memory.data?.items.length ?? 0, busy: memoryBusy, ...(companion ? { label: t("companion.title") } : {}) } : null}
               search={search}
               onBack={goBack}
               onOptions={openSettings}
-              onMemory={() =>
-                void navigate({ to: "/chat/$conversationId/memory", params: { conversationId } })
-              }
+              onMemory={openMemories}
             />
             {body}
             <BeetrootRain store={store} />
@@ -630,6 +633,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               api={api}
               conversationId={conversationId}
               message={shownMenu}
+              companion={companion}
+              onCompanionEffect={() => { setMenuId(null); setEffectMessage(shownMenu); }}
               after={menuAfter}
               busy={meta.active || pendingTurn}
               canEdit={
@@ -662,6 +667,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           )}
         </Sheet>
 
+        {shownEffect && <EffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />}
+
         {view && (
           <ChatSettingsPanel
             open={panelOpen}
@@ -683,9 +690,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               })
             }
             onHome={goHome}
-            onMemories={() =>
-              void navigate({ to: "/chat/$conversationId/memory", params: { conversationId } })
-            }
+            onMemories={openMemories}
             onBranches={() =>
               void navigate({ to: "/chat/$conversationId/branches", params: { conversationId } })
             }

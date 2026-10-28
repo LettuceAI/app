@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useCanGoBack, useNavigate, useParams, useRouteContext, useRouter } from "@tanstack/react-router";
+import { useBlocker, useCanGoBack, useNavigate, useParams, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { confirm, LoadingState, motion as m, Page, Tab, TabList, Tabs, toast, useCompactLayout } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
@@ -42,7 +42,8 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
   const [stored, setStored] = useState<Stored>(() => storedFrom(view, lorebooks));
   const [draft, setDraft] = useState<CharacterForm>(stored.form);
-  const [tab, setTab] = useState<EditTab>("profile");
+  const search = useSearch({ from: "/characters/$characterId/edit" });
+  const [tab, setTab] = useState<EditTab>(search.tab ?? "profile");
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(() => stored.form.draft.scenes[0]?.id ?? null);
   const [sceneEditorOpen, setSceneEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);

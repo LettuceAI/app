@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { Bot, Download, Flame, Pin, Snowflake, Trash2, User } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, cn, confirm, DatePicker, Field, icon, ListGroup, ListRow, Segmented, Select, Sheet, Switch, Textarea } from "@lettuceai/crisp";
+import { Button, cn, confirm, DatePicker, Field, icon, ListGroup, ListRow, relativeTime, Segmented, Select, Sheet, Switch, Textarea } from "@lettuceai/crisp";
 import type { MemoryCategory, MemoryItemView, MemoryOrigin, MemoryTemperature } from "@/api/generated/bindings";
 import { dateOf, sameInstant } from "../data/memory";
 import { useWindowLabel } from "./window-label";
 
 const originIcon: Record<MemoryOrigin, typeof Bot> = { model: Bot, user: User, import: Download };
 
-export function MemoryRow({ item, onOpen }: { item: MemoryItemView; onOpen: () => void }) {
-  const { t } = useTranslation("conversations");
+export function MemoryRow({ item, onOpen, companion = false }: { item: MemoryItemView; onOpen: () => void; companion?: boolean }) {
+  const { t, i18n } = useTranslation("conversations");
   const windowLabel = useWindowLabel();
   const Origin = originIcon[item.origin];
   const cycle = windowLabel(item.cycle_label);
@@ -29,7 +29,8 @@ export function MemoryRow({ item, onOpen }: { item: MemoryItemView; onOpen: () =
           {item.temperature === "cold" ? <Snowflake size={icon.sm} /> : <Flame size={icon.sm} />}
           {t(`memory.temperature.${item.temperature}`)}
         </span>
-        {item.token_count !== null && <span>{t("memory.tokens", { count: item.token_count })}</span>}
+        {!companion && item.token_count !== null && <span>{t("memory.tokens", { count: item.token_count })}</span>}
+        {companion && item.observed_at !== null && <span>{relativeTime(item.observed_at, undefined, i18n.language)}</span>}
         {cycle && <span>{cycle}</span>}
       </div>
     </button>
@@ -52,14 +53,15 @@ export interface MemorySheetProps {
   onClose: () => void;
   onSave: (draft: MemoryDraft) => void;
   onDelete: () => void;
+  companionName?: string;
 }
 
-export function MemorySheet({ open, item, categories, busy, onClose, onSave, onDelete }: MemorySheetProps) {
+export function MemorySheet({ open, item, categories, busy, onClose, onSave, onDelete, companionName }: MemorySheetProps) {
   const { t, i18n } = useTranslation("conversations");
   const windowLabel = useWindowLabel();
   const adding = item === null;
   const [text, setText] = useState(item?.text ?? "");
-  const [category, setCategory] = useState<MemoryCategory | "">(item?.category ?? "");
+  const [category, setCategory] = useState<MemoryCategory | "">(item?.category ?? (companionName && categories.includes("profile") ? "profile" : ""));
   const [observedAt, setObservedAt] = useState<Date | null>(dateOf(item?.observed_at ?? null));
   const [temperature, setTemperature] = useState<MemoryTemperature>(item?.temperature ?? "hot");
   const [pinned, setPinned] = useState(item?.pinned ?? false);
@@ -125,17 +127,17 @@ export function MemorySheet({ open, item, categories, busy, onClose, onSave, onD
       }
     >
       <div className="space-y-5 pb-2">
-        <Field label={t("memory.sheet.text")}>
+        <Field label={t(companionName ? "companion.memories.field" : "memory.sheet.text")}>
           <Textarea
             value={text}
             disabled={busy}
             rows={4}
-            placeholder={t("memory.sheet.textPlaceholder")}
+            placeholder={companionName ? t("companion.memories.placeholder", { name: companionName }) : t("memory.sheet.textPlaceholder")}
             data-autofocus={adding || undefined}
             onChange={(event) => setText(event.target.value)}
           />
         </Field>
-        <Field label={t("memory.sheet.category")}>
+        <Field label={t(companionName ? "companion.memories.kind" : "memory.sheet.category")}>
           <Select
             value={category}
             disabled={busy}
@@ -147,7 +149,7 @@ export function MemorySheet({ open, item, categories, busy, onClose, onSave, onD
             ]}
           />
         </Field>
-        <Field label={t("memory.sheet.when")} hint={t("memory.sheet.whenHint")}>
+        {!companionName && <Field label={t("memory.sheet.when")} hint={t("memory.sheet.whenHint")}>
           <div className="flex items-center gap-2">
             <DatePicker className="min-w-0 flex-1" withTime disabled={busy} value={observedAt} placeholder={t("memory.sheet.whenPlaceholder")} locale={i18n.language} onChange={setObservedAt} />
             {observedAt && (
@@ -156,12 +158,12 @@ export function MemorySheet({ open, item, categories, busy, onClose, onSave, onD
               </Button>
             )}
           </div>
-        </Field>
+        </Field>}
         {!adding && (
           <ListGroup>
             <ListRow
               title={t("memory.sheet.temperature")}
-              description={temperature === "cold" ? t("memory.sheet.coldBody") : t("memory.sheet.hotBody")}
+              description={companionName || temperature === "cold" ? t("memory.sheet.coldBody") : t("memory.sheet.hotBody")}
               trailing={
                 <fieldset disabled={busy}>
                   <Segmented

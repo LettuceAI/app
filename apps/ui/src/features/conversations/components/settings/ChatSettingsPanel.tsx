@@ -16,6 +16,7 @@ import { LorebooksSheet } from "./LorebooksSheet";
 import { PanelViews } from "./PanelViews";
 import type { PanelCtx, PanelSheet, PanelView } from "./context";
 import { SettingsRoot } from "./SettingsRoot";
+import { CompanionTimeSheet } from "./CompanionTimeSheet";
 
 export interface ChatSettingsPanelProps {
   open: boolean;
@@ -167,6 +168,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
       />
       <ModelSheet ctx={ctx} open={props.open && sheet === "model"} onClose={() => setSheet(null)} />
       <LorebooksSheet ctx={ctx} open={props.open && sheet === "lorebooks"} onClose={() => setSheet(null)} />
+      {props.open && sheet === "companion_time" && settings.data?.companion_time && <CompanionTimeSheet ctx={ctx} value={settings.data.companion_time} />}
     </>
   );
 }

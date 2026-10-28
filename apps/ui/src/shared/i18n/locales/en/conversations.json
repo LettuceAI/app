@@ -484,6 +484,27 @@
       "inherited": "Following the model and app settings",
       "count_one": "{{count}} value changed for this chat",
       "count_other": "{{count}} values changed for this chat"
+    },
+    "companionTime": {
+      "title": "Companion time",
+      "live": "Real time",
+      "frozen": "Stopped",
+      "ticking": "Running",
+      "stoppedAt": "Stopped at {{when}}",
+      "runningFrom": "Running from {{when}}",
+      "mode": "Clock",
+      "anchor": "Date and time",
+      "apply": "Apply",
+      "reset": "Reset",
+      "cancel": "Cancel",
+      "chooseAnchor": "Choose a date and time",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "chooseMonth": "Choose month and year",
+      "previousYear": "Previous year",
+      "nextYear": "Next year",
+      "year": "Year",
+      "time": "Time"
     }
   },
   "memory": {
@@ -712,5 +733,211 @@
     "renameSave": "Save name",
     "original": "Original",
     "untitledChat": "Untitled chat"
+  },
+  "companion": {
+    "title": "Companion",
+    "back": "Chat",
+    "tabs": {
+      "relationship": "Relationship",
+      "bond": "Bond",
+      "memories": "Memories",
+      "soul": "Soul",
+      "activity": "Activity"
+    },
+    "bond": "Bond",
+    "lastTalked": "Last talked {{when}}",
+    "updated": "Updated {{when}}",
+    "messages": "Messages",
+    "togetherSince": "Together since {{date}}",
+    "engine": "Emotional engine",
+    "nothingTitle": "Nothing to show yet",
+    "nothingBody": "{{name}}'s bond and feelings start moving after a few messages. They begin from the defaults in their companion settings.",
+    "missingTitle": "Feelings aren't being tracked",
+    "missingBody": "Install the emotion model so each reply can move how they feel.",
+    "install": "Install",
+    "nothingNow": "Nothing right now",
+    "drivers": "Active drivers",
+    "timeline": "Recent timeline",
+    "events_one": "{{count}} event",
+    "events_other": "{{count}} events",
+    "currentState": "Current state",
+    "defaultMark": "Character default",
+    "aboveDefault_one": "{{count}} point above the character default",
+    "aboveDefault_other": "{{count}} points above the character default",
+    "belowDefault_one": "{{count}} point below the character default",
+    "belowDefault_other": "{{count}} points below the character default",
+    "axes": {
+      "closeness": {
+        "label": "Closeness",
+        "low": "Withdrawn",
+        "mid": "Acquainted",
+        "high": "Intimate"
+      },
+      "trust": {
+        "label": "Trust",
+        "low": "Distrustful",
+        "mid": "Neutral",
+        "high": "Trusting"
+      },
+      "affection": {
+        "label": "Affection",
+        "low": "Hostile",
+        "mid": "Neutral",
+        "high": "Affectionate"
+      },
+      "tension": {
+        "label": "Tension",
+        "low": "Easy",
+        "mid": "",
+        "high": "Charged"
+      },
+      "stability": {
+        "label": "Stability",
+        "low": "Volatile",
+        "mid": "",
+        "high": "Stable"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Feels",
+        "hint": "What they feel inside"
+      },
+      "expressed": {
+        "title": "Shows",
+        "hint": "What comes through in their replies"
+      },
+      "blocked": {
+        "title": "Holds back",
+        "hint": "What their personality keeps in"
+      },
+      "momentum": {
+        "title": "Building up",
+        "hint": "Where the last few turns are heading"
+      }
+    },
+    "emotions": {
+      "warmth": "Warmth",
+      "trust": "Trust",
+      "calm": "Calm",
+      "vulnerability": "Vulnerability",
+      "longing": "Longing",
+      "hurt": "Hurt",
+      "tension": "Tension",
+      "irritation": "Irritation",
+      "affection_intensity": "Affection",
+      "reassurance_need": "Needs reassurance"
+    },
+    "memories": {
+      "total_one": "{{count}} memory",
+      "total_other": "{{count}} memories",
+      "found_one": "{{count}} found",
+      "found_other": "{{count}} found",
+      "kind": "Kind",
+      "field": "Memory",
+      "placeholder": "What should {{name}} remember?",
+      "emptyTitle": "No memories here",
+      "emptyBody": "Memories appear as you talk. You can also add your own.",
+      "noMatch": "Nothing matches \"{{query}}\"",
+      "noMatchBody": "Try a word from the memory itself."
+    },
+    "soul": {
+      "title": "Soul",
+      "edit": "Edit",
+      "core": "Identity core. Growth never changes it",
+      "notWritten": "Not written yet",
+      "growth": "Soul growth",
+      "clear": "Clear growth",
+      "intro": "How their changeable traits have grown from your memories. Essence, traits and backstory never change here.",
+      "empty": "No growth yet. As memories form, the traits that change with you appear here.",
+      "zero": "0 changes",
+      "added": "Added",
+      "adjusted": "Adjusted",
+      "confidence": "Confidence",
+      "locked": "Locked",
+      "lock": "Lock",
+      "unlock": "Unlock",
+      "lockHint": "Lock this fact",
+      "unlockHint": "Unlock this fact",
+      "historicalHint": "Historical facts are always kept",
+      "remove": "Remove this growth",
+      "sources_one": "from {{count}} memory",
+      "sources_other": "from {{count}} memories",
+      "retired_one": "{{count}} earlier version retired.",
+      "retired_other": "{{count}} earlier versions retired.",
+      "categories": {
+        "essence": "Essence",
+        "traits": "Traits",
+        "backstory": "Backstory",
+        "appearance": "Appearance",
+        "goals": "Goals",
+        "likes": "Likes",
+        "voice": "Voice",
+        "relational_style": "Relational style",
+        "vulnerabilities": "Vulnerabilities",
+        "fears": "Fears",
+        "habits": "Habits",
+        "boundaries": "Boundaries"
+      },
+      "policy": {
+        "current": {
+          "label": "Current",
+          "hint": "Replaces what was there before"
+        },
+        "adaptive": {
+          "label": "Adaptive",
+          "hint": "Can keep shifting as you talk"
+        },
+        "historical": {
+          "label": "Historical",
+          "hint": "Something that happened. Always kept"
+        }
+      },
+      "removeTitle": "Remove this?",
+      "removeBody": "It comes out of what they have learned. Their written soul stays the same.",
+      "clearTitle": "Clear everything they have learned?",
+      "clearBody": "All growth goes, including the replaced history. Their written soul stays the same.",
+      "keep": "Keep",
+      "removeConfirm": "Remove",
+      "clearConfirm": "Clear all",
+      "removed": "Removed",
+      "cleared": "Growth cleared",
+      "sourcesTitle": "Where this came from",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "The source memories are no longer available.",
+      "sourcesMissing_one": "{{count}} source memory is no longer available.",
+      "sourcesMissing_other": "{{count}} source memories are no longer available."
+    },
+    "effect": {
+      "title": "What this reply changed",
+      "feels": "What they feel",
+      "pickedUp": "Picked up",
+      "letGo": "Let go of",
+      "remembered": "Remembered",
+      "processing": "Looking at what changed",
+      "failed": "The reply changes could not be analysed.",
+      "invalidated": "These changes no longer apply to this reply.",
+      "memoryCount_one": "{{count}} memory",
+      "memoryCount_other": "{{count}} memories",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "No changes to show",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "Undo this update",
+      "undoTitle": "Undo {{window}}?",
+      "undoBody": "Memories it added are removed and the ones it changed come back. Your own edits are kept.",
+      "undoConfirm": "Undo update",
+      "blockedBy": "Can't be undone: {{window}} builds on it.",
+      "blocked": "Can't be undone: a later update builds on it."
+    },
+    "unavailable": "This chat has no companion",
+    "unavailableBody": "Open a companion chat to see its bond, memories and soul.",
+    "crisp": {
+      "close": "Close",
+      "clearSearch": "Clear search"
+    },
+    "lastReply": "Last reply",
+    "replyHint": "Every message in the chat opens this from its menu"
   }
 }

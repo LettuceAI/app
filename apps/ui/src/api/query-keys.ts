@@ -62,7 +62,13 @@ export const queryKeys = {
     list: () => [...queryKeys.models.all, "list"] as const,
   },
   audioProviders: { all: ["audio-providers"] as const },
-  companions: { all: ["companions"] as const, emotion: () => ["companions", "emotion"] as const },
+  companions: {
+    all: ["companions"] as const,
+    emotion: () => ["companions", "emotion"] as const,
+    state: (conversationId: string) => ["companions", "state", conversationId] as const,
+    soul: (conversationId: string, characterId?: string) => ["companions", "soul", conversationId, ...(characterId ? [characterId] : [])] as const,
+    effect: (conversationId: string, messageId: string) => ["companions", "effect", conversationId, messageId] as const,
+  },
   companionNotes: {
     all: ["companion-notes"] as const,
     list: (characterId: string) => ["companion-notes", "list", characterId] as const,
@@ -127,7 +133,8 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.home.characters(),
     queryKeys.lorebooks.previews(),
   ],
-  memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id)],
+  memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id), queryKeys.companions.soul(event.conversation_id)],
+  message_effect_settled: (event) => [queryKeys.companions.effect(event.conversation_id, event.message_id), queryKeys.companions.state(event.conversation_id)],
   required_models_changed: () => [queryKeys.conversations.all],
   onnx_models_unloaded: () => [
     queryKeys.conversations.all,
