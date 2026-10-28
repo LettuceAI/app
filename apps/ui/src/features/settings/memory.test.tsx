@@ -116,23 +116,15 @@ async function commit(title: string, value: string) {
 const lastPatch = (store: ReturnType<typeof backend>) => store.requests.at(-1)!.patch;
 
 describe("memory settings page", () => {
-  it("saves three independent model preferences using device revisions even when dynamic memory is off", async () => {
-    const { store } = await mount(viewOf({ dynamic_memory: { ...memory, enabled: false } }));
-    const switches = ["Keep Eidos loaded", "Keep Thymos loaded", "Keep Kokoro loaded"] as const;
-    for (const name of switches) expect(screen.getByRole("switch", { name })).toBeTruthy();
-    fireEvent.click(screen.getByRole("switch", { name: switches[0] }));
+  it("keeps Eidos in memory from its model card using the device revision", async () => {
+    const { store } = await mount(viewOf({ dynamic_memory: { ...memory, enabled: true } }));
+    expect(screen.queryByRole("switch", { name: "Keep Thymos loaded" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Keep Kokoro loaded" })).toBeNull();
+    fireEvent.click(await screen.findByRole("switch", { name: "Keep Eidos in memory" }));
     await waitFor(() => expect(store.requests).toHaveLength(1));
     expect(store.requests[0]).toMatchObject({ expected_revision: 1, patch: { section: "device_onnx", model: "eidos", keep_model_loaded: true } });
-    await waitFor(() => expect(screen.getByRole("switch", { name: switches[0] }).getAttribute("aria-checked")).toBe("true"));
-    fireEvent.click(screen.getByRole("switch", { name: switches[2] }));
-    await waitFor(() => expect(store.requests).toHaveLength(2));
-    expect(store.requests[1]).toMatchObject({ expected_revision: 2, patch: { section: "device_onnx", model: "kokoro", keep_model_loaded: true } });
-    await waitFor(() => expect(screen.getByRole("switch", { name: switches[2] }).getAttribute("aria-checked")).toBe("true"));
-    fireEvent.click(screen.getByRole("switch", { name: switches[1] }));
-    await waitFor(() => expect(store.requests).toHaveLength(3));
-    expect(store.requests[2]).toMatchObject({ expected_revision: 3, patch: { section: "device_onnx", model: "thymos", keep_model_loaded: false } });
-    expect(store.current().device).toMatchObject({ embedding_keep_model_loaded: true, thymos_keep_model_loaded: false, kokoro_keep_model_loaded: true });
-    expect(store.current().revision).toBe(7);
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Keep Eidos in memory" }).getAttribute("aria-checked")).toBe("true"));
+    expect(store.current().device).toMatchObject({ embedding_keep_model_loaded: true, thymos_keep_model_loaded: true, kokoro_keep_model_loaded: false });
   });
 
   it("is listed with its subtitle and the direct helper sections", async () => {

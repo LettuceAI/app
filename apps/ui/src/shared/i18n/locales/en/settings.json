@@ -1293,13 +1293,6 @@
     "usageGroups": "Groups"
   },
   "memory": {
-    "onnx": {
-      "group": "Models in memory",
-      "eidos": "Keep Eidos loaded",
-      "thymos": "Keep Thymos loaded",
-      "kokoro": "Keep Kokoro loaded",
-      "body": "Reuse the model between tasks. Idle models may be released when memory is low."
-    },
     "title": "Memory",
     "subtitle": "How characters remember",
     "manual": {
@@ -1409,8 +1402,9 @@
       "missingBody": "Dynamic memory needs this model",
       "remove": "Remove",
       "download": "Download",
-      "keepLoaded": "Keep model loaded",
-      "keepLoadedBody": "Stays in memory between replies. Faster, uses more RAM.",
+      "keepLoaded": "Keep in memory",
+      "keepLoadedBody": "Skips loading it before each reply. Uses more memory while the app is open.",
+      "keepLoadedLabel": "Keep Eidos in memory",
       "removeTitle": "Remove the memory model?",
       "removeBody": "Dynamic memory needs this model, so removing it turns dynamic memory off. Characters use manual memory until you download it again.",
       "removeConfirm": "Remove",

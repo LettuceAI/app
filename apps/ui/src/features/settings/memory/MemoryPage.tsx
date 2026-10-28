@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, Cpu, FileText, History, Layers, Sparkles, User, Users } from "lucide-react";
+import { Brain, Cpu, FileText, History, Layers, MemoryStick, Sparkles, User, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Badge,
@@ -232,35 +232,6 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
               />
             </ListGroup>
 
-            <ListGroup label={t("memory.onnx.group")}>
-              {(
-                [
-                  ["eidos", view.device.embedding_keep_model_loaded],
-                  ["thymos", view.device.thymos_keep_model_loaded],
-                  ["kokoro", view.device.kokoro_keep_model_loaded],
-                ] as const
-              ).map(([model, loaded]) => (
-                <ListRow
-                  key={model}
-                  title={t(`memory.onnx.${model}`)}
-                  description={t("memory.onnx.body")}
-                  trailing={
-                    <Switch
-                      checked={loaded}
-                      onChange={(keep) =>
-                        void write(() => ({
-                          section: "device_onnx",
-                          model,
-                          keep_model_loaded: keep,
-                        }))
-                      }
-                      aria-label={t(`memory.onnx.${model}`)}
-                    />
-                  }
-                />
-              ))}
-            </ListGroup>
-
             <ListGroup label={t("memory.dynamic.group")}>
               <ListRow
                 icon={<Brain size={icon.lg} />}
@@ -399,6 +370,22 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
                     )
                   }
                 />
+                {installed && (
+                  <ListRow
+                    icon={<MemoryStick size={icon.lg} />}
+                    title={t("memory.embedding.keepLoaded")}
+                    description={t("memory.embedding.keepLoadedBody")}
+                    trailing={
+                      <Switch
+                        checked={view.device.embedding_keep_model_loaded}
+                        onChange={(keep) =>
+                          void write(() => ({ section: "device_onnx", model: "eidos", keep_model_loaded: keep }))
+                        }
+                        aria-label={t("memory.embedding.keepLoadedLabel")}
+                      />
+                    }
+                  />
+                )}
                 {installed && (
                   <ListRow
                     title={t("memory.embedding.capacity")}
