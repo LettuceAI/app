@@ -11,7 +11,7 @@ impl ClauseOutput {
     pub(crate) fn push(&mut self, clause: &str) -> Result<(), EspeakNgError> {
         if self.text.len() + clause.len() + 1 > MAX_ESPEAK_OUTPUT_BYTES {
             return Err(EspeakNgError::InvalidOutput {
-                reason: "clause output exceeds the byte limit",
+                reason: "clause output exceeds the byte limit".to_owned(),
             });
         }
         self.text.push_str(clause);
@@ -82,14 +82,18 @@ mod android {
                 .as_ref()
                 .is_some_and(|engine| engine.data_directory != self.data_directory)
             {
-                return Err(EspeakNgError::InvalidConfiguration);
+                return Err(EspeakNgError::InvalidConfiguration {
+                    reason: "eSpeak NG is already initialized with a different data directory".to_owned(),
+                });
             }
             if engine.is_none() {
                 *engine = Some(Engine::load(&self.data_directory)?);
             }
             engine
                 .as_mut()
-                .ok_or(EspeakNgError::Unavailable)?
+                .ok_or_else(|| EspeakNgError::Unavailable {
+                    reason: "eSpeak NG engine was not initialized".to_owned(),
+                })?
                 .phonemize(input, language)
         }
     }
@@ -103,23 +107,30 @@ mod android {
 
     impl Engine {
         fn load(data_directory: &Path) -> Result<Self, EspeakNgError> {
-            if !data_directory.is_dir() {
-                return Err(EspeakNgError::Unavailable);
+            let metadata = data_directory.metadata().map_err(|error| EspeakNgError::Unavailable {
+                reason: error.to_string(),
+            })?;
+            if !metadata.is_dir() {
+                return Err(EspeakNgError::Unavailable {
+                    reason: "eSpeak NG data path is not a directory".to_owned(),
+                });
             }
             let data_root = data_directory
                 .parent()
-                .ok_or(EspeakNgError::InvalidConfiguration)?;
+                .ok_or_else(|| EspeakNgError::InvalidConfiguration {
+                    reason: "eSpeak NG data directory has no parent".to_owned(),
+                })?;
             let data_root = CString::new(data_root.as_os_str().as_bytes())
-                .map_err(|_| EspeakNgError::InvalidConfiguration)?;
+                .map_err(|error| EspeakNgError::InvalidConfiguration { reason: error.to_string() })?;
             let library =
-                unsafe { Library::new(LIBRARY_NAME) }.map_err(|_| EspeakNgError::Unavailable)?;
+                unsafe { Library::new(LIBRARY_NAME) }.map_err(|error| EspeakNgError::Unavailable { reason: error.to_string() })?;
             let initialize = *unsafe { library.get::<Initialize>(b"espeak_Initialize\0") }
-                .map_err(|_| EspeakNgError::Unavailable)?;
+                .map_err(|error| EspeakNgError::Unavailable { reason: error.to_string() })?;
             let set_voice = *unsafe { library.get::<SetVoiceByName>(b"espeak_SetVoiceByName\0") }
-                .map_err(|_| EspeakNgError::Unavailable)?;
+                .map_err(|error| EspeakNgError::Unavailable { reason: error.to_string() })?;
             let text_to_phonemes =
                 *unsafe { library.get::<TextToPhonemes>(b"espeak_TextToPhonemes\0") }
-                    .map_err(|_| EspeakNgError::Unavailable)?;
+                    .map_err(|error| EspeakNgError::Unavailable { reason: error.to_string() })?;
             let status = unsafe {
                 initialize(
                     AUDIO_OUTPUT_SYNCHRONOUS,
@@ -129,7 +140,9 @@ mod android {
                 )
             };
             if status < 0 {
-                return Err(EspeakNgError::Unavailable);
+                return Err(EspeakNgError::Unavailable {
+                    reason: format!("espeak_Initialize returned {status}"),
+                });
             }
             Ok(Self {
                 _library: library,
@@ -141,11 +154,14 @@ mod android {
 
         fn phonemize(&mut self, input: &str, language: &str) -> Result<String, EspeakNgError> {
             let language =
-                CString::new(language).map_err(|_| EspeakNgError::InvalidConfiguration)?;
-            if unsafe { (self.set_voice)(language.as_ptr()) } != EE_OK {
-                return Err(EspeakNgError::Execution);
+                CString::new(language).map_err(|error| EspeakNgError::InvalidConfiguration { reason: error.to_string() })?;
+            let status = unsafe { (self.set_voice)(language.as_ptr()) };
+            if status != EE_OK {
+                return Err(EspeakNgError::Execution {
+                    reason: format!("espeak_SetVoiceByName returned {status}"),
+                });
             }
-            let text = CString::new(input).map_err(|_| EspeakNgError::InvalidConfiguration)?;
+            let text = CString::new(input).map_err(|error| EspeakNgError::InvalidConfiguration { reason: error.to_string() })?;
             let mut cursor = text.as_ptr().cast::<c_void>();
             let mut output = ClauseOutput::default();
             while !cursor.is_null() {
@@ -157,7 +173,7 @@ mod android {
                 }
                 let clause = unsafe { CStr::from_ptr(clause) }
                     .to_str()
-                    .map_err(|_| EspeakNgError::InvalidOutput)?;
+                    .map_err(|error| EspeakNgError::InvalidOutput { reason: error.to_string() })?;
                 output.push(clause)?;
             }
             Ok(output.finish())

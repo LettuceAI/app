@@ -298,8 +298,11 @@ fn map_phonemization_error(error: KokoroPhonemizationCoordinatorError) -> TtsRun
         },
         KokoroPhonemizationCoordinatorError::MissingAssets => TtsRuntimeError::ModelMissing,
         KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(
-            EspeakNgError::Unavailable { .. },
-        )) => TtsRuntimeError::EspeakMissing,
+            error @ EspeakNgError::Unavailable { .. },
+        )) => {
+            tracing::warn!(%error, "eSpeak NG is unavailable");
+            TtsRuntimeError::EspeakMissing
+        }
         KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::Platform(error)) => {
             tracing::warn!(%error, "Kokoro model storage is unavailable");
             TtsRuntimeError::Unavailable {
@@ -310,12 +313,11 @@ fn map_phonemization_error(error: KokoroPhonemizationCoordinatorError) -> TtsRun
             KokoroInstallError::Mismatch { reason }
             | KokoroInstallError::Unreadable { reason }
             | KokoroInstallError::InvalidArtifact { reason },
-        )
-        | KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(
-            EspeakNgError::InvalidConfiguration { reason }
-            | EspeakNgError::Execution { reason }
-            | EspeakNgError::InvalidOutput { reason },
-        )) => TtsRuntimeError::Failed { reason },
+        ) => TtsRuntimeError::Failed { reason },
+        KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(error)) => {
+            tracing::warn!(%error, "eSpeak NG phonemization failed");
+            TtsRuntimeError::Failed { reason: "eSpeak NG phonemization failed" }
+        }
     }
 }
 

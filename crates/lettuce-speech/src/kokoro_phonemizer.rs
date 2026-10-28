@@ -31,7 +31,7 @@ pub struct KokoroPhonemizationSegment {
     pub token_ids: Vec<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KokoroPhonemizationError {
     #[error("Kokoro phonemization input is invalid: {reason}")]
     InvalidInput { reason: &'static str },
