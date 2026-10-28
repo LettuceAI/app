@@ -42,7 +42,7 @@ function settingsFor(mode: MemoryMode): ConversationSettingsView {
     persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null,
     lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
     scene: { id: null, source: "app_default" }, memory: { mode, source: "app_default" }, chat_mode: null,
-    disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never,
+    disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, companion_time: null,
   };
 }
 

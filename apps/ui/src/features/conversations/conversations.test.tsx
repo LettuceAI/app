@@ -100,6 +100,7 @@ const settings: ConversationSettingsView = {
   speaker_selection: null,
   members: null,
   model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never,
+  companion_time: null,
 };
 
 interface Setup {
