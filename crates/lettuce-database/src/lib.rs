@@ -33,6 +33,7 @@ pub use sync::legacy_conflict_adapter::{LegacyConflictCurrent, LegacyConflictFie
 mod backup;
 mod legacy;
 mod api_operation_adapter;
+mod tool_arguments;
 pub use api_operation_adapter::{ApiOperationError, ApiOperationTransaction};
 pub use conversation::conversation_copy_adapter::ConversationCopyLaunch;
 mod purge;

@@ -826,7 +826,8 @@ fn insert_round_in(
                     evidence.call.name,
                     i64::from(evidence.definition_version),
                     evidence.call.provider_call_id,
-                    encode_versioned(&evidence.call.arguments, JSON_VERSION).map_err(storage)?,
+                    crate::tool_arguments::encode_tool_arguments(&evidence.call, JSON_VERSION)
+                        .map_err(storage)?,
                     evidence.call.raw_arguments,
                     call_replay_id,
                     call_replay_retention,
@@ -2026,7 +2027,7 @@ pub(crate) mod tests {
         CompanionTurnEffectRepository, CompanionTurnEffectSeed, CompanionTurnEffectStatus,
     };
     use lettuce_conversations::{
-        InferenceUsage, MessagePart, MessageRenderSource, MessageRole, OutputPolicy,
+        InferenceUsage, MessagePart, MessageRenderSource, MessageRole, OutputPolicy, ProposedToolCall,
         ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
         ResolvedInferenceProfile, SafetyContext, ToolPolicy,
     };
@@ -4941,6 +4942,55 @@ pub(crate) mod tests {
                 .expect("sibling settlement retained")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn memory_rounds_preserve_raw_arguments_with_provider_key_order_and_escapes() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let attempt = checkpointed_run(&database, conversation_id, space_id, &messages, "Summary", 10);
+        for (ordinal, raw) in [
+            r#"{"text":"tea","category":"preference"}"#,
+            r#" { "text":"tea", "category":"preference", "extra":{"z":1,"a":[{"z":2,"a":3}]} } "#,
+            r#"{"text":"\u00e7ay","category":"preference"}"#,
+            r#"{"text":"tea","category":"preference","confidence":1e+00}"#,
+        ].into_iter().enumerate() {
+            let call = ProposedToolCall {
+                provider_call_id: Some(format!("provider-call-{ordinal}")),
+                name: "create_memory".into(),
+                arguments: serde_json::from_str(raw).expect("provider arguments"),
+                raw_arguments: Some(raw.into()), provider_replay: None,
+            };
+            // The old encoder can change key order or escape spelling without
+            // changing the parsed value. SQLite compares those spellings.
+            let old_encoded = crate::encode_versioned(&call.arguments, 1).expect("old envelope");
+            let equal: bool = database.connection().expect("connection").query_row(
+                "SELECT json(?1) = json(json_extract(?2, '$.value'))",
+                params![raw, old_encoded], |row| row.get(0),
+            ).expect("old CHECK comparison");
+            assert!(!equal, "fixture must reproduce the original CHECK failure");
+            let round = NewDynamicMemoryInferenceRound {
+                ordinal: u8::try_from(ordinal).expect("ordinal"),
+                kind: DynamicMemoryRoundKind::Manager,
+                request_context: ProviderNeutralContext {
+                    messages: vec![], attributions: Default::default(), budget: Default::default(),
+                },
+                parts: vec![], provider_replay: None, usage: None,
+                finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                provider_request_id: Some("openrouter-request".into()),
+                calls: vec![NewDynamicMemoryToolCall { id: ToolExecutionId::new(), definition_version: 1, call }],
+                admitted_at: TimestampMillis::new(12 + i64::try_from(ordinal).expect("timestamp")),
+            };
+            let admit = || database.admit_dynamic_memory_inference_round(
+                attempt.run_id, attempt.id, round.ordinal,
+                u16::try_from(ordinal).expect("call ordinal"), round.clone(),
+            );
+            let admitted = admit().expect("provider arguments persist after summary");
+            assert_eq!(admit().expect("exact admission replay"), admitted);
+            let stored = database.list_dynamic_memory_tool_calls(attempt.run_id, attempt.id).expect("stored calls");
+            assert_eq!(stored[ordinal].call, round.calls[0].call);
+            assert_eq!(stored[ordinal].call.raw_arguments.as_deref(), Some(raw));
+        }
     }
 
     #[test]

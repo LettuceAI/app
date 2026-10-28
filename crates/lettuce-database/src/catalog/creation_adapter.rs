@@ -914,7 +914,7 @@ fn insert_round_rows_in(
                     evidence.call.name,
                     i64::from(evidence.definition_version),
                     evidence.call.provider_call_id,
-                    encode_versioned(&evidence.call.arguments, CREATION_JSON_VERSION)
+                    crate::tool_arguments::encode_tool_arguments(&evidence.call, CREATION_JSON_VERSION)
                         .map_err(|error| { tracing::warn!(%error, "insert round rows in failed"); CreationRepositoryError::Invalid { reason: "insert round rows in: a value could not be read or converted" } })?,
                     evidence.call.raw_arguments,
                     replay_id,
@@ -6379,7 +6379,9 @@ mod tests {
                 serde_json::json!({"definition": "Maps difficult paths."}),
             ),
         ];
-        parent_calls[0].call.raw_arguments = Some("{\"name\":\"Cartographer\"}".to_owned());
+        // Preserve a provider spelling that SQLite json() does not normalize
+        // to serde_json's reserialization of the same parsed value.
+        parent_calls[0].call.raw_arguments = Some(r#"{ "name": "\u0043artographer" }"#.to_owned());
         let parent_round = new_round(
             0,
             parent_calls.clone(),
@@ -6393,6 +6395,7 @@ mod tests {
         assert_eq!(admitted.calls.len(), 2);
         assert_eq!(admitted.parts.len(), 1);
         assert_eq!(admitted.calls[0].call.provider_replay, Some(replay.clone()));
+        assert_eq!(admitted.calls[0].call.raw_arguments, parent_calls[0].call.raw_arguments);
         assert_eq!(
             database
                 .admit_creation_inference_round(owner, parent_id, 0, 0, parent_round.clone())
