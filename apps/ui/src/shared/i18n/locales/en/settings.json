@@ -2108,5 +2108,37 @@
       "restart": "Restarting"
     },
     "failed": "The reset did not finish. Your data was not changed."
+  },
+  "security": {
+    "loading": "Loading security settings",
+    "pure": {
+      "group": "Content filtering",
+      "title": "Pure mode",
+      "levels": {
+        "off": { "label": "Off", "description": "All content allowed" },
+        "low": { "label": "Low", "description": "Blocks explicit sexual content and slurs" },
+        "standard": { "label": "Standard", "description": "Blocks NSFW and graphic violence" },
+        "strict": { "label": "Strict", "description": "Maximum filtering and no suggestive tone" }
+      }
+    },
+    "privacy": {
+      "group": "Privacy",
+      "avatars": "Download avatars from imported cards",
+      "avatarsBody": "Fetches avatar images from HTTPS links when you import a character card. Turn off to keep imports offline."
+    },
+    "certificates": {
+      "group": "Trusted certificates",
+      "imported": "Imported {{when}}",
+      "invalid": {
+        "invalid_pem": "Not a valid certificate"
+      },
+      "import": "Import certificate",
+      "footer": "Added to the app trust store. TLS verification stays on.",
+      "remove": "Remove",
+      "removeTitle": "Remove this certificate?",
+      "removeBody": "Connections that rely on {{name}} stop being trusted.",
+      "alreadyImported": "That certificate is already imported.",
+      "notPem": "The selected file is not a PEM certificate."
+    }
   }
 }

@@ -14,6 +14,7 @@ import { ReplyHelperPage } from "./reply-helper/ReplyHelperPage";
 import { PromptsPage } from "./prompts/PromptsPage";
 import { BackupPage } from "./backup/BackupPage";
 import { ResetPage } from "./reset/ResetPage";
+import { SecurityPage } from "./security/SecurityPage";
 import { CustomizationPage } from "./customization/CustomizationPage";
 
 /** The page of one settings section; the route only lets through sections that have one. */
@@ -34,5 +35,6 @@ export function SettingsSectionPage() {
   if (section === "prompts") return <PromptsPage />;
   if (section === "backup") return <BackupPage />;
   if (section === "reset") return <ResetPage />;
+  if (section === "security") return <SecurityPage />;
   return section === "about" ? <AboutPage /> : null;
 }
