@@ -102,6 +102,31 @@ fn last_event(stream: &RecordingStream) -> GenerationEvent {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn sending_after_deleting_an_earlier_reply_keeps_the_parent_chain() {
+    let harness = harness(Reply::Text("Hello."));
+    let (chat, reply) = replied_chat(&harness, "deleted-parent").await;
+    send(&harness, &chat, "before-delete", "Second user message", Arc::new(RecordingStream::default()))
+        .await.expect("send before deletion");
+    run_generation(&harness).await;
+    message_delete(&harness.context, dto::MessageDeleteRequest {
+        conversation_id: chat.clone(), message_id: reply,
+        expected_revision: conversation(&harness, &chat).revision.get(),
+        client_operation_id: "delete-parent-reply".into(),
+    }).await.expect("delete while preserving later messages");
+    let stream = Arc::new(RecordingStream::default());
+    send(&harness, &chat, "after-delete", "After deletion", stream.clone()).await.expect("send after deletion");
+    run_generation(&harness).await;
+    assert!(matches!(last_event(&stream), GenerationEvent::Completed { .. }), "reply should complete: {:?}", stream.events());
+    let requests = harness.provider.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 3);
+    let replies = requests.last().expect("last request").context.messages.iter()
+        .flat_map(|message| &message.parts)
+        .filter(|part| matches!(part, lettuce_conversations::ProviderContextPart::Text { text } if text == "Hello."))
+        .count();
+    assert_eq!(replies, 1, "the deleted reply is not sent to the provider");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn send_rejects_a_revision_from_before_a_branch_switch_without_writing() {
     let harness = harness(Reply::Text("Hello."));
     let (chat, reply) = replied_chat(&harness, "stale-send-branch").await;

@@ -1108,12 +1108,7 @@ where
                 reference_time: reference_now,
                 usage_snapshot,
                 memory,
-                timeline: context_timeline(
-                    timeline.items,
-                    window,
-                    usize::from(global_settings.lorebook_scan_depth),
-                    source_message_id,
-                ),
+                timeline: timeline.items,
             })
             .await
             .map_err(ConversationGenerationInputError::Context)?;
@@ -1921,12 +1916,7 @@ where
                 reference_time: reference_now,
                 usage_snapshot,
                 memory: memory_contribution,
-                timeline: context_timeline(
-                    timeline.items,
-                    context_window,
-                    usize::from(global_settings.lorebook_scan_depth),
-                    source_message_id,
-                ),
+                timeline: timeline.items,
             })
             .await
             .map_err(ConversationGenerationInputError::Context)?;
@@ -2466,50 +2456,6 @@ fn conversation_message_count(
                 && !timeline_item_text(item).is_empty()
         })
         .count()
-}
-
-/// Keeps at least `keyword_messages` recent messages even when the history
-/// window is narrower, so the lorebook and prompt keyword scans still see them.
-fn context_timeline(
-    items: Vec<lettuce_conversations::TimelineItem>,
-    window: lettuce_conversations::ContextWindowPolicy,
-    keyword_messages: usize,
-    source_message_id: lettuce_types::MessageId,
-) -> Vec<lettuce_conversations::TimelineItem> {
-    let mut remaining = window
-        .recent_non_pinned_limit
-        .saturating_add(1)
-        .max(keyword_messages);
-    let mut latest_user_kept = false;
-    let mut kept = items
-        .into_iter()
-        .rev()
-        .filter(|item| {
-            if item.message.id == source_message_id {
-                latest_user_kept |= item.message.role == MessageRole::User;
-                return true;
-            }
-            if matches!(
-                item.message.visibility,
-                lettuce_conversations::MessageVisibility::Hidden
-                    | lettuce_conversations::MessageVisibility::Tombstoned
-            ) {
-                return false;
-            }
-            if item.message.pinned || item.message.role == MessageRole::Scene {
-                return true;
-            }
-            let latest_user = !latest_user_kept && item.message.role == MessageRole::User;
-            latest_user_kept |= item.message.role == MessageRole::User;
-            if remaining == 0 {
-                return latest_user;
-            }
-            remaining -= 1;
-            true
-        })
-        .collect::<Vec<_>>();
-    kept.reverse();
-    kept
 }
 
 fn retain_source_ancestry(
@@ -3307,7 +3253,7 @@ fn usage_memory_snapshot(
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        ContextWindowPolicy, Message, MessagePart, MessageRenderSource, MessageRevision,
+        Message, MessagePart, MessageRenderSource, MessageRevision,
         MessageRole, MessageVisibility, TimelineItem,
     };
     use lettuce_types::{
@@ -3315,7 +3261,7 @@ mod tests {
         Revision, TimestampMillis,
     };
 
-    use super::{context_timeline, conversation_message_count, history_window, memory_query};
+    use super::{conversation_message_count, history_window, memory_query};
 
     fn retrieval_memory(
         index: i64,
@@ -4017,7 +3963,7 @@ mod tests {
     }
 
     #[test]
-    fn narrow_windows_keep_the_lorebook_scan_and_count_the_whole_branch() {
+    fn message_counts_include_the_whole_branch_except_tombstones_and_regenerated_sources() {
         let mut items = vec![text_item(
             0,
             MessageRole::User,
@@ -4047,91 +3993,5 @@ mod tests {
             ),
             20
         );
-        items.pop();
-        let items_for_deep_scan = items.clone();
-        let kept = context_timeline(
-            items,
-            ContextWindowPolicy {
-                recent_non_pinned_limit: 1,
-            },
-            10,
-            source,
-        );
-        let indices = kept
-            .iter()
-            .map(|item| item.message.created_at.get())
-            .collect::<Vec<_>>();
-        let mut expected = vec![0];
-        expected.extend(10..=20);
-        assert_eq!(indices, expected);
-
-        let kept = context_timeline(
-            items_for_deep_scan,
-            ContextWindowPolicy {
-                recent_non_pinned_limit: 1,
-            },
-            20,
-            source,
-        );
-        assert_eq!(
-            kept.iter()
-                .map(|item| item.message.created_at.get())
-                .collect::<Vec<_>>(),
-            (0..=20).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn a_thousand_message_window_sends_the_last_thousand_messages_like_legacy() {
-        let items = (0..1_200_i64)
-            .map(|index| text_item(index, MessageRole::User, "Line."))
-            .collect::<Vec<_>>();
-        let source = items[1_199].message.id;
-        let kept = context_timeline(
-            items,
-            ContextWindowPolicy {
-                recent_non_pinned_limit: 1_000,
-            },
-            10,
-            source,
-        );
-        assert!(kept.len() >= 1_000);
-        assert_eq!(
-            kept.last().map(|item| item.message.created_at.get()),
-            Some(1_199)
-        );
-        assert!(
-            kept.iter()
-                .any(|item| item.message.created_at.get() == 1_199 - 999)
-        );
-    }
-
-    #[test]
-    fn long_timelines_keep_pinned_scene_source_and_the_recent_window() {
-        let items = (0..600_i64)
-            .map(|index| match index {
-                5 => item(index, MessageRole::Scene, MessageVisibility::Visible, false),
-                598 => item(
-                    index,
-                    MessageRole::Assistant,
-                    MessageVisibility::Hidden,
-                    false,
-                ),
-                _ if index % 100 == 0 => {
-                    item(index, MessageRole::User, MessageVisibility::Visible, true)
-                }
-                _ => item(index, MessageRole::User, MessageVisibility::Visible, false),
-            })
-            .collect::<Vec<_>>();
-        let source = items[599].message.id;
-        let kept = context_timeline(items, ContextWindowPolicy::default(), 10, source);
-        let indices = kept
-            .iter()
-            .map(|item| item.message.created_at.get())
-            .collect::<Vec<_>>();
-        let mut expected = vec![0, 5, 100, 200, 300, 400, 500];
-        expected.extend(533..=597);
-        expected.push(599);
-        assert_eq!(indices, expected);
     }
 }

@@ -4045,6 +4045,93 @@ mod tests {
         );
     }
 
+    fn history_chain(count: usize, limit: usize) -> (ContextRequest, Vec<lettuce_conversations::ConversationBranch>) {
+        use lettuce_conversations::{ConversationBranch, ContextWindowPolicy, Message, MessageRevision, MessageVisibility};
+        use lettuce_types::{ConversationBranchId, MessageRevisionId, Revision, TimestampMillis};
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let ids = (0..count).map(|_| MessageId::new()).collect::<Vec<_>>();
+        let timeline = ids.iter().enumerate().map(|(index, &id)| {
+            let revision_id = MessageRevisionId::new();
+            let at = TimestampMillis::new(index as i64);
+            TimelineItem {
+                message: Message {
+                    id, conversation_id, branch_id,
+                    parent_message_id: index.checked_sub(1).map(|parent| ids[parent]),
+                    author_participant_id: None, role: MessageRole::User,
+                    logical_time: at, effective_time: at, visibility: MessageVisibility::Visible,
+                    pinned: false, scene_edited: false,
+                    active_render_source: MessageRenderSource::Revision(revision_id),
+                    revision: Revision::INITIAL, created_at: at, updated_at: at,
+                },
+                active_revision: Some(MessageRevision {
+                    id: revision_id, message_id: id, sequence: Revision::INITIAL,
+                    parts: vec![MessagePart::Text { text: format!("Line {index}") }], authored_at: at,
+                    source_turn_id: None, provider_replay: None, supersedes_candidate_id: None,
+                }),
+                active_candidate: None, initial_origin: None,
+            }
+        }).collect();
+        let head = *ids.last().expect("nonempty chain");
+        (ContextRequest {
+            conversation_id, branch_id, branch_path: vec![branch_id], source_message_id: head,
+            operation: GenerationOperation::Send, swap_roles: false, guidance: None,
+            window: ContextWindowPolicy { recent_non_pinned_limit: limit }, selected_speaker: None,
+            capabilities: lettuce_models::ModelCapabilities::default(),
+            safety: lettuce_conversations::SafetyContext::Standard,
+            prompt_runtime: Default::default(), prompt_values: Default::default(),
+            reference_time: TimestampMillis::UNIX_EPOCH, usage_snapshot: None, memory: None, timeline,
+        }, vec![ConversationBranch {
+            label: None, label_updated_at: None, id: branch_id, conversation_id,
+            parent_branch_id: None, fork_message_id: None, head_message_id: Some(head),
+            status: BranchStatus::Active, revision: Revision::INITIAL,
+            created_at: TimestampMillis::UNIX_EPOCH, updated_at: TimestampMillis::UNIX_EPOCH,
+        }])
+    }
+
+    #[test]
+    fn a_thousand_message_window_is_selected_after_validating_the_complete_chain() {
+        let (request, branches) = history_chain(1_200, 1_000);
+        validate_message_ancestry(&branches, &request).expect("complete ancestry");
+        let selection = select_timeline(&branches, &request).expect("bounded history");
+        assert_eq!(selection.window.len(), 1_000);
+        assert_eq!(selection.window.first().expect("first").message.id, request.timeline[200].message.id);
+        assert_eq!(selection.window.last().expect("last").message.id, request.source_message_id);
+        assert_eq!(selection.omitted_messages, 200);
+    }
+
+    #[test]
+    fn long_history_windows_preserve_pins_and_scenes_without_sending_hidden_ancestors() {
+        let (mut request, branches) = history_chain(600, 64);
+        request.timeline[5].message.role = MessageRole::Scene;
+        request.timeline[598].message.visibility = lettuce_conversations::MessageVisibility::Hidden;
+        for index in (0..600).step_by(100) { request.timeline[index].message.pinned = true; }
+        validate_message_ancestry(&branches, &request).expect("hidden records still connect the chain");
+        let selection = select_timeline(&branches, &request).expect("bounded history");
+        let positions = selection.window.iter().map(|item| item.message.created_at.get()).collect::<Vec<_>>();
+        let mut expected = vec![0, 100, 200, 300, 400, 500];
+        expected.extend(535..=597);
+        expected.push(599);
+        assert_eq!(positions, expected);
+        assert_eq!(selection.scenes.iter().map(|item| item.message.id).collect::<Vec<_>>(), vec![request.timeline[5].message.id]);
+        assert_eq!(selection.omitted_messages, 528);
+    }
+
+    #[test]
+    fn lorebook_scans_can_exceed_the_prompt_window_and_keep_the_latest_user() {
+        let (mut request, branches) = history_chain(21, 1);
+        for item in &mut request.timeline[1..] { item.message.role = MessageRole::Assistant; }
+        request.operation = GenerationOperation::Continue;
+        validate_message_ancestry(&branches, &request).expect("complete ancestry");
+        let selection = select_timeline(&branches, &request).expect("one-message window");
+        assert_eq!(selection.window.len(), 1);
+        for depth in [10, 20] {
+            let (scan, latest_user) = lore_scan_text(&selection.visible, &selection.history, None, depth);
+            assert_eq!(scan, ((21 - depth)..21).map(|index| format!("Line {index}")).collect::<Vec<_>>());
+            assert_eq!(latest_user.as_deref(), Some("Line 0"));
+        }
+    }
+
     #[test]
     fn ancestry_rejects_a_parent_branch_message_after_the_fork() {
         let conversation_id = ConversationId::new();

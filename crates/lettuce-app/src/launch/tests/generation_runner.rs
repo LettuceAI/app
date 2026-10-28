@@ -328,6 +328,70 @@ fn admit_and_claim(
     claim(database, scenario, scenario.attempt_id, now + 1)
 }
 
+async fn conversation_outgrows_its_context_window(dynamic_memory: bool) {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = dynamic_memory;
+    let limit = if dynamic_memory {
+        settings.dynamic_memory.summary_message_interval
+    } else {
+        settings.manual_mode_context_window
+    } as usize;
+    GlobalSettingsStore::save(database, settings, stored.default_model_profile_id, stored.revision)
+        .expect("enable memory without changing the default window");
+    let mut scenario = scenario_with_resolvable_profile(database, dynamic_memory, "long-history", true);
+    let rounds = limit / 2 + 4;
+    let inference = scripted((0..rounds).map(|index| {
+        text_outcome(&format!("long-history-{index}"), &format!("History reply {index}"), 5, 2)
+    }).collect());
+    let engine = ScenarioEmbeddingEngine;
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
+    for index in 0..rounds {
+        let now = 2_000 + index as i64 * 10;
+        let work = admit_and_claim(database, &scenario, now);
+        runner.run(&work, ConversationGenerationRuntimeInput::default(), TimestampMillis::new(now + 2))
+            .await.unwrap_or_else(|error| panic!("ordinary send {index} failed with history limit {limit}: {error:?}"));
+        if index + 1 < rounds {
+            let conversation = ConversationReader::get(database, scenario.conversation_id)
+                .expect("conversation").conversation;
+            let next = database.begin_send(
+                &direct_send_command(&conversation, &format!("long-history-send-{index}"), &format!("History user {}", index + 1)),
+                TimestampMillis::new(now + 3),
+            ).expect("next ordinary send").value;
+            scenario.turn_id = next.turn.id;
+            scenario.attempt_id = next.attempt.id;
+        }
+    }
+    let preview_id = seed_prompt(database, "Long history preview", PromptPurpose::DirectChat);
+    let document = PromptRepository::get(database, preview_id).expect("preview prompt").expect("prompt exists");
+    runner.prompt_preview_context(scenario.conversation_id, &document, None, TimestampMillis::new(3_000))
+        .await.expect("prompt preview also validates the complete history");
+    let requests = inference.requests.lock().expect("requests");
+    assert_eq!(requests.len(), rounds, "every send reaches the provider");
+    let final_request = requests.last().expect("last request");
+    let history = final_request.context.messages.iter().flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } if text.starts_with("History ") || text == "Remember tea." => Some(text.as_str()),
+            _ => None,
+        }).collect::<Vec<_>>();
+    assert_eq!(history.len(), limit, "the provider still receives only the configured history window");
+    assert_eq!(history.last().copied(), Some(format!("History user {}", rounds - 1).as_str()));
+    assert!(!history.contains(&"Remember tea."), "old history stays out of the provider context");
+    assert_eq!(final_request.context.budget.omitted_messages as usize, rounds * 2 - 1 - limit);
+}
+
+#[tokio::test]
+async fn ordinary_sends_survive_the_default_dynamic_memory_history_window() {
+    conversation_outgrows_its_context_window(true).await;
+}
+
+#[tokio::test]
+async fn ordinary_sends_survive_the_default_manual_history_window() {
+    conversation_outgrows_its_context_window(false).await;
+}
+
 fn execution_request(
     scenario: &Scenario,
     cancellation: CancellationToken,
