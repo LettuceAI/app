@@ -703,16 +703,16 @@ function LogViewer({
         >
           {phone ? (
             <>
-              <span className="flex items-center gap-2 text-fg-3">
-                <span className="tabular-nums">{l.time.slice(0, 8)}</span>
-                <span className={cn("font-semibold uppercase", LEVEL_TEXT[l.level ?? "debug"])}>
+              <span className="flex w-full min-w-0 items-center gap-2 text-fg-3">
+                <span className="shrink-0 tabular-nums">{l.time.slice(0, 8)}</span>
+                <span className={cn("shrink-0 font-semibold uppercase", LEVEL_TEXT[l.level ?? "debug"])}>
                   {l.level}
                 </span>
-                <span className="truncate text-accent">{highlight(l.component)}</span>
+                <span className="min-w-0 truncate text-accent">{highlight(l.component)}</span>
               </span>
               <span
                 className={cn(
-                  "break-words",
+                  "w-full min-w-0 wrap-anywhere",
                   l.level === "error" ? "text-fg" : "text-fg-2",
                   !wrap && "truncate",
                 )}
@@ -740,7 +740,7 @@ function LogViewer({
               <span
                 className={cn(
                   "min-w-0 flex-1",
-                  wrap ? "break-words" : "truncate",
+                  wrap ? "wrap-anywhere" : "truncate",
                   l.level === "error" ? "text-fg" : "text-fg-2",
                 )}
               >
@@ -753,7 +753,7 @@ function LogViewer({
         {open && (
           <div className="border-b border-l-2 border-line border-l-accent bg-fill/60 py-2 pl-16 pr-6">
             {!wrap && (
-              <p className={cn("mb-1 break-words font-mono text-fg", SIZE_CLASS[size])}>
+              <p className={cn("mb-1 wrap-anywhere font-mono text-fg", SIZE_CLASS[size])}>
                 {l.message}
               </p>
             )}
@@ -1469,7 +1469,7 @@ function LogViewer({
         {actions.error !== null && <FailureState error={actions.error} onRetry={actions.retry} />}
         {shownLine && (
           <div className="space-y-4 pb-2">
-            <div className="select-text rounded-xl border border-line bg-fill p-3 font-mono text-xs leading-5 text-fg break-words">
+            <div className="select-text rounded-xl border border-line bg-fill p-3 font-mono text-xs leading-5 text-fg wrap-anywhere">
               {shownLine.message}
             </div>
             <Text variant="hint" className="break-all font-mono">

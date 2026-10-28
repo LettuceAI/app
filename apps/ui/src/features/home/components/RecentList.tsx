@@ -26,12 +26,12 @@ function RecentRow({ chat, character, onOpen, onMenu, held }: { chat: Conversati
         <AvatarGroup people={chat.avatars.map((avatar, index) => ({ name: `${chat.title} ${index + 1}`, src: avatar.url }))} size="sm" max={3} />
       )}
       <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2">
-          <span className="shrink-0 text-base font-semibold text-fg">{name}</span>
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate text-base font-semibold text-fg">{name}</span>
           {character && <span className="min-w-0 flex-1 truncate text-sm text-fg-3">{chat.title}</span>}
           <span className="ml-auto shrink-0 text-2xs tabular-nums text-fg-3">{relativeTime(chat.updated_at, undefined, i18n.language)}</span>
         </span>
-        {chat.last_message_preview && <span className="mt-0.5 line-clamp-2 text-sm leading-snug text-fg-3"><InlineMarkdown>{chat.last_message_preview}</InlineMarkdown></span>}
+        {chat.last_message_preview && <span className="mt-0.5 line-clamp-2 wrap-anywhere text-sm leading-snug text-fg-3"><InlineMarkdown>{chat.last_message_preview}</InlineMarkdown></span>}
       </span>
     </button>
   );
