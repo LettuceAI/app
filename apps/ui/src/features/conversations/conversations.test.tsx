@@ -162,6 +162,7 @@ async function open(setup: Setup = {}) {
           },
         }),
         llmMetricsForMessage: () => ({ status: "ok", data: null }),
+        messageUsage: () => ({ status: "ok", data: null }),
         charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsLatestByCharacter: () => ({
           status: "ok",
@@ -565,6 +566,23 @@ describe("conversation screen", () => {
     await waitFor(() => expect(screen.getByText("It isn't available right now.")).toBeTruthy());
     expect(screen.getByText("The model took too long to answer.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("shows a remote reply's model and token counts in the message menu", async () => {
+    await open({
+      messages: () => [message("a1", "assistant", "Old reply.")],
+      calls: {
+        messageUsage: () => ({
+          status: "ok",
+          data: { model_name: "Google: Gemini 3.8 Flash", input_tokens: 17223, output_tokens: 1258, total_tokens: 18481 },
+        }),
+      },
+    });
+    fireEvent.contextMenu(await screen.findByText("Old reply."));
+    expect(await screen.findByText("Google: Gemini 3.8 Flash")).toBeTruthy();
+    expect(screen.getByTitle("Prompt tokens").textContent).toBe("↓17,223");
+    expect(screen.getByTitle("Reply tokens").textContent).toBe("↑1,258");
+    expect(screen.getByText("18,481")).toBeTruthy();
   });
 
   it("offers regenerate only on the latest assistant message", async () => {

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Copy, GitBranch, History, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Skeleton } from "@lettuceai/crisp";
+import { object } from "@/entities/preferences";
 import type { ApiClient } from "@/api/client";
 import type { TimelineMessage } from "@/api/generated/bindings";
 import { statsOf } from "../data/messages";
@@ -32,35 +33,52 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   if (message.role !== "assistant") return null;
   if (metric.isPending || usage.isPending) {
     return (
-      <div className="space-y-2.5 px-1" aria-hidden="true">
-        <Skeleton height={20} width="55%" />
-        <Skeleton height={34} width="100%" />
+      <div className="space-y-1.5 px-1" aria-hidden="true">
+        <Skeleton height={14} width="80%" />
       </div>
     );
   }
   const stats = statsOf(metric.data?.summary, usage.data);
   if (!stats) return null;
   const number = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 });
-  const items = [
-    ...(stats.completionTokens !== null ? [{ label: t("menu.stats.reply"), value: t("menu.stats.replyTokens", { count: stats.completionTokens }) }] : []),
-    ...(stats.tokensPerSecond !== null ? [{ label: t("menu.stats.speed"), value: t("menu.stats.speedValue", { value: number.format(stats.tokensPerSecond) }) }] : []),
+  const total =
+    stats.promptTokens !== null && stats.completionTokens !== null
+      ? stats.promptTokens + stats.completionTokens
+      : (usage.data?.total_tokens ?? null);
+  const mtp = object(object(metric.data?.summary).mtpStats);
+  const timing = [
     ...(stats.firstTokenSeconds !== null
-      ? [{ label: t("menu.stats.firstToken"), value: t("menu.stats.firstTokenValue", { value: new Intl.NumberFormat(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(stats.firstTokenSeconds) }) }]
+      ? [{ key: "ttft", title: t("menu.stats.firstToken"), value: t("menu.stats.firstTokenValue", { value: number.format(stats.firstTokenSeconds * 1000) }) }]
       : []),
-    ...(stats.promptTokens !== null ? [{ label: t("menu.stats.prompt"), value: t("menu.stats.promptTokens", { count: stats.promptTokens }) }] : []),
+    ...(stats.tokensPerSecond !== null ? [{ key: "speed", title: t("menu.stats.speed"), value: t("menu.stats.speedValue", { value: number.format(stats.tokensPerSecond) }) }] : []),
+    ...(typeof mtp.tokensPerRound === "number"
+      ? [{
+          key: "mtp",
+          title: t("menu.stats.mtp"),
+          value: t("menu.stats.mtpValue", { value: mtp.tokensPerRound.toFixed(2) }) + (typeof mtp.draftAcceptance === "number" ? ` · ${Math.round(mtp.draftAcceptance * 100)}%` : ""),
+        }]
+      : []),
   ];
   return (
-    <div className="space-y-2.5 px-1">
-      {stats.model && <p className="truncate text-sm text-fg-2">{stats.model}</p>}
-      {items.length > 0 && (
-        <dl className="flex flex-wrap gap-x-6 gap-y-2">
-          {items.map((item) => (
-            <div key={item.label}>
-              <dt className="text-2xs text-fg-3">{item.label}</dt>
-              <dd className="text-sm tabular-nums text-fg">{item.value}</dd>
-            </div>
-          ))}
-        </dl>
+    <div className="space-y-1.5 px-1 text-xs text-fg-3">
+      <div className="flex items-center gap-x-3">
+        {(stats.promptTokens !== null || stats.completionTokens !== null) && (
+          <span className="flex shrink-0 items-center gap-2 border-r border-line pr-3 tabular-nums">
+            {stats.promptTokens !== null && <span title={t("menu.stats.prompt")}>{t("menu.stats.promptValue", { value: number.format(stats.promptTokens) })}</span>}
+            {stats.completionTokens !== null && <span title={t("menu.stats.reply")}>{t("menu.stats.replyValue", { value: number.format(stats.completionTokens) })}</span>}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-fg-2">{stats.model}</span>
+        {total !== null && (
+          <span className="shrink-0 tabular-nums">
+            {number.format(total)} <span className="text-2xs uppercase opacity-60">{t("menu.stats.total")}</span>
+          </span>
+        )}
+      </div>
+      {timing.length > 0 && (
+        <div className="flex items-center gap-3 text-2xs tabular-nums">
+          {timing.map((item) => <span key={item.key} title={item.title}>{item.value}</span>)}
+        </div>
       )}
     </div>
   );

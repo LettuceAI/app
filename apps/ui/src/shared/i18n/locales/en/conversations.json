@@ -71,15 +71,17 @@
       "partsLabel": "Share of the prompt by source"
     },
     "stats": {
-      "model": "Model",
-      "reply": "Reply",
-      "replyTokens": "{{count}} tokens",
-      "speed": "Speed",
-      "speedValue": "{{value}} tokens/s",
-      "firstToken": "First token",
-      "firstTokenValue": "{{value}} s",
-      "prompt": "Prompt",
-      "promptTokens": "{{count}} tokens"
+      "prompt": "Prompt tokens",
+      "reply": "Reply tokens",
+      "total": "total",
+      "firstToken": "Time to first token",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "Reply speed",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Multi-token prediction: tokens per round and draft acceptance",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
     }
   },
   "edit": {
