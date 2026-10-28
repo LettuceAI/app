@@ -425,7 +425,7 @@ export function LibraryPage() {
           onClose={close}
         />
       )}
-      {retained?.type === "create" && retained.kind !== "character" && (
+      {retained?.type === "create" && retained.kind === "lorebook" && (
         <EntryEditor
           key={retained.key}
           api={api}

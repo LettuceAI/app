@@ -4,6 +4,7 @@ import logs from "./locales/en/logs.json";
 import help from "./locales/en/help.json";
 import updates from "./locales/en/updates.json";
 import characters from "./locales/en/characters.json";
+import lorebookEditor from "./locales/en/lorebook-editor.json";
 import lorebookPreview from "./locales/en/lorebook-preview.json";
 import lorebookCreate from "./locales/en/lorebook-create.json";
 import usage from "./locales/en/usage.json";
@@ -28,6 +29,7 @@ export const resources = {
     updates,
     logs,
     "lorebook-create": lorebookCreate,
+    "lorebook-editor": lorebookEditor,
     "lorebook-preview": lorebookPreview,
     usage,
     companions,

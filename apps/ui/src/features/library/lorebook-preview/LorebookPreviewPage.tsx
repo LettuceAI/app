@@ -33,7 +33,8 @@ import { queryKeys } from "@/api/query-keys";
 import { usePageLayout } from "@/shared/hooks/usePageLayout";
 import { FailureState } from "@/shared/ui/FailureState";
 import { literalSpans, type Inspection, type WordSpan } from "./highlights";
-import { SavedLorebookEntryEditor } from "./SavedLorebookEntryEditor";
+import { lorebookBookQuery } from "../lorebook-editor/data";
+import { LorebookEntrySheet } from "../lorebook-editor/LorebookEntrySheet";
 
 function pieces(
   text: string,
@@ -174,10 +175,7 @@ export function LorebookPreviewPage() {
     const timeout = setTimeout(() => setDebouncedText(text), 200);
     return () => clearTimeout(timeout);
   }, [text]);
-  const book = useQuery({
-    queryKey: [...queryKeys.lorebooks.all, "detail", lorebookId, "preview"],
-    queryFn: () => api.call("lorebookGet", { lorebook_id: lorebookId }),
-  });
+  const book = useQuery(lorebookBookQuery(api, lorebookId));
   const chats = useInfiniteQuery({
     queryKey: [...queryKeys.conversations.lists(), "lorebook-preview"],
     initialPageParam: null as string | null,
@@ -821,7 +819,7 @@ export function LorebookPreviewPage() {
         )}
       </Sheet>
       {editing && book.data && (
-        <SavedLorebookEntryEditor
+        <LorebookEntrySheet
           key={`${editing.id}:${editorSession}`}
           book={book.data}
           entry={editing}

@@ -5,6 +5,7 @@ import { createApiClient } from "@/api/client";
 import type {
   CharacterSummary,
   CharacterView_Serialize,
+  LorebookSummary_Serialize,
   MediaLibraryItem,
   PersonaPage,
   PersonaView_Serialize,
@@ -322,7 +323,67 @@ describe("library operations", () => {
     await waitFor(() => expect(runtime.router.state.location.search.media).toBeUndefined());
   });
 
-  it("browser back closes the menu and reopening resets its nested editor", async () => {
+  it("opens the lorebook editor page from the entry menu", async () => {
+    const lorebook: LorebookSummary_Serialize = {
+      id: "l1",
+      name: "Atlas",
+      status: "active",
+      detection: "recent_messages",
+      icon: null,
+      revision: 3,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const { runtime } = await setup({
+      lorebooksList: () => ok({ items: [lorebook], next_cursor: null }),
+      lorebookGet: () => ok({ lorebook, entries: [] }),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Atlas/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit lorebook/ }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library/lorebooks/l1"));
+    expect(await screen.findByText("No entries yet")).toBeTruthy();
+  });
+
+  it("asks for the lorebook export format and sends it from the entry menu", async () => {
+    const lorebook: LorebookSummary_Serialize = {
+      id: "l1",
+      name: "Atlas",
+      status: "active",
+      detection: "recent_messages",
+      icon: null,
+      revision: 3,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const exported = vi.fn<NonNullable<MockCallHandlers["lorebookExport"]>>(() =>
+      ok({ warnings: [] } as never),
+    );
+    const pick = vi.fn<NonNullable<MockCallHandlers["filesPickSave"]>>(() =>
+      ok({ target: { uri: "/tmp/Atlas" } } as never),
+    );
+    await setup({
+      lorebooksList: () => ok({ items: [lorebook], next_cursor: null }),
+      lorebookGet: () => ok({ lorebook, entries: [] }),
+      filesPickSave: pick,
+      lorebookExport: exported,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Atlas/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Export/ }));
+    expect(exported).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: /^UEC/ }));
+    await waitFor(() => expect(exported).toHaveBeenCalledTimes(1));
+    expect(exported.mock.calls[0]![0]).toMatchObject({ id: "l1", format: "uec" });
+    expect(pick.mock.calls[0]![0]).toMatchObject({ suggested_name: "Atlas.uec", kind: "any" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /Atlas/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Export/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /World Info JSON/ }));
+    await waitFor(() => expect(exported).toHaveBeenCalledTimes(2));
+    expect(exported.mock.calls[1]![0]).toMatchObject({ id: "l1", format: "world_info" });
+    expect(pick.mock.calls[1]![0]).toMatchObject({ suggested_name: "Atlas.json", kind: "json" });
+  });
+
+  it("opens the persona editor page from the entry menu", async () => {
     const view: PersonaView_Serialize = {
       id: "p1",
       archived: false,
@@ -332,17 +393,14 @@ describe("library operations", () => {
       created_at: 1,
       updated_at: 1,
     };
-    const { runtime } = await setup({ personaGet: () => ok(view) });
+    const { runtime } = await setup({
+      personaGet: () => ok(view),
+      personaLorebooksList: () => ok([]),
+    });
     fireEvent.click(await screen.findByRole("button", { name: /Hunter/ }));
-    const edit = await screen.findByRole("button", { name: "Edit persona" });
-    await waitFor(() => expect((edit as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(edit);
-    expect(await screen.findByRole("textbox", { name: "Name" })).toBeTruthy();
-    await act(async () => runtime.router.history.back());
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: /Hunter/ }));
-    expect(await screen.findByRole("button", { name: "Edit persona" })).toBeTruthy();
-    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit persona" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/personas/p1/edit"));
+    expect(((await screen.findByRole("textbox", { name: "Name" })) as HTMLInputElement).value).toBe("Hunter");
   });
 });
 

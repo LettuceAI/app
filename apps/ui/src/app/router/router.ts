@@ -22,6 +22,7 @@ import {
   LibraryPage,
   NewLorebookPage,
   LorebookProjectPage,
+  LorebookEditorPage,
   LorebookPreviewPage,
   validateLibrarySearch,
 } from "@/features/library";
@@ -133,6 +134,11 @@ const newLorebookRoute = createRoute({
       : {}),
     ...(typeof search.source === "string" ? { source: search.source } : {}),
   }),
+});
+const lorebookEditorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/library/lorebooks/$lorebookId",
+  component: LorebookEditorPage,
 });
 const lorebookPreviewRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -432,6 +438,7 @@ const routeTree = rootRoute.addChildren([
   libraryRoute,
   newLorebookRoute,
   lorebookProjectRoute,
+  lorebookEditorRoute,
   lorebookPreviewRoute,
   newCharacterRoute,
   editCharacterRoute,

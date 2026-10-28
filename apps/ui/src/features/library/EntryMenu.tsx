@@ -5,12 +5,12 @@ import { BookOpen, Download, MessageSquarePlus, Pencil, Radar, Trash2, UserCheck
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
-import type { PersonaDefaultView } from "@/api/generated/bindings";
+import type { LorebookExportFormat, PersonaDefaultView } from "@/api/generated/bindings";
 import { useChatNavigation } from "@/features/conversations";
 import { FailureState } from "@/shared/ui/FailureState";
 import { deleteEntry, exportEntry, refreshLibrary } from "./data/actions";
 import { entryQuery, type Entry } from "./data/queries";
-import { EntryEditor } from "./EntryEditor";
+import { LorebookExportSheet } from "./lorebook-editor/LorebookExportSheet";
 
 export function EntryMenu({
   api,
@@ -29,14 +29,15 @@ export function EntryMenu({
   const { t: common } = useTranslation();
   const queryClient = useQueryClient();
   const detail = useQuery({ ...entryQuery(api, entry), enabled: open });
-  const [mode, setMode] = useState<"menu" | "edit" | "delete">("menu");
+  const [mode, setMode] = useState<"menu" | "delete">("menu");
+  const [choosing, setChoosing] = useState(false);
   const [operationId] = useState(() => crypto.randomUUID());
   const chats = useChatNavigation();
   const navigate = useNavigate();
   const mutation = useMutation({
-    mutationFn: async (action: "delete" | "export" | "default") => {
-      if (action === "export") {
-        const result = await exportEntry(api, entry);
+    mutationFn: async (action: "delete" | "export" | "default" | LorebookExportFormat) => {
+      if (action === "export" || action === "uec" || action === "world_info") {
+        const result = await exportEntry(api, entry, action === "export" ? undefined : action);
         if (!result) return false;
         if (result.warnings.length)
           toast.warning(t("toast.warnings", { count: result.warnings.length }));
@@ -54,6 +55,7 @@ export function EntryMenu({
       } else return false;
       return true;
     },
+    onSettled: () => setChoosing(false),
     onSuccess: (done) => {
       if (done) {
         onClose();
@@ -63,15 +65,6 @@ export function EntryMenu({
   });
   const busy = mutation.isPending;
   const ready = Boolean(detail.data) && !detail.isError;
-  if (
-    mode === "edit" &&
-    detail.data &&
-    detail.data.kind !== "character" &&
-    entry.kind !== "character"
-  )
-    return (
-      <EntryEditor api={api} kind={entry.kind} loaded={detail.data} open={open} onClose={onClose} />
-    );
   return (
     <Sheet
       open={open}
@@ -143,7 +136,7 @@ export function EntryMenu({
                   ? t("entries", { count: detail.data.view.entries.length })
                   : undefined
               }
-              disabled={busy || (entry.kind !== "character" && !ready)}
+              disabled={busy}
               onClick={() => {
                 if (entry.kind === "character") {
                   void navigate({
@@ -151,7 +144,19 @@ export function EntryMenu({
                     params: { characterId: entry.id },
                     replace: true,
                   });
-                } else setMode("edit");
+                } else if (entry.kind === "persona") {
+                  void navigate({
+                    to: "/personas/$personaId/edit",
+                    params: { personaId: entry.id },
+                    replace: true,
+                  });
+                } else {
+                  void navigate({
+                    to: "/library/lorebooks/$lorebookId",
+                    params: { lorebookId: entry.id },
+                    replace: true,
+                  });
+                }
               }}
             />
             {entry.kind === "lorebook" && (
@@ -184,7 +189,9 @@ export function EntryMenu({
               description={t(`menu.export_${entry.kind}`)}
               chevron={false}
               disabled={busy}
-              onClick={() => mutation.mutate("export")}
+              onClick={() =>
+                entry.kind === "lorebook" ? setChoosing(true) : mutation.mutate("export")
+              }
             />
           </ListGroup>
           <ListGroup>
@@ -202,6 +209,12 @@ export function EntryMenu({
           )}
         </div>
       )}
+      <LorebookExportSheet
+        open={choosing}
+        busy={busy}
+        onClose={() => setChoosing(false)}
+        onChoose={(format) => mutation.mutate(format)}
+      />
       {mutation.isError && (
         <p role="alert" className="mt-3 text-sm text-danger">
           {common(`errors.code.${isApiFailure(mutation.error) ? mutation.error.code : "internal"}`)}

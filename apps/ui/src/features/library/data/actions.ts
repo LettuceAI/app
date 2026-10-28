@@ -5,55 +5,16 @@ import type {
   EntityExportResult,
   FileSource,
   ImportCommitResult,
+  LorebookExportFormat,
   MediaLibraryItem,
 } from "@/api/generated/bindings";
-import { newPersonaDraft } from "./defaults";
-import type { Entry, EntryKind, EntryView } from "./queries";
+import type { Entry, EntryView } from "./queries";
 
-export async function saveEntry(
-  api: ApiClient,
-  loaded: Exclude<EntryView, { kind: "character" }>,
-  name: string,
-  description: string,
-  operationId: string,
-) {
-  if (loaded.kind === "persona") {
-    const { view } = loaded;
-    return api.call("personaSave", {
-      persona_id: view.id,
-      expected_revision: view.revision,
-      client_operation_id: operationId,
-      draft: { ...view.draft, title: name, description },
-    });
-  }
-  const { lorebook } = loaded.view;
-  return api.call("lorebookUpdateMetadata", {
-    lorebook_id: lorebook.id,
-    expected_revision: lorebook.revision,
-    client_operation_id: operationId,
-    metadata: {
-      name,
-      detection: lorebook.detection,
-      icon_asset_id: lorebook.icon?.asset_id ?? null,
-    },
-  });
-}
 export async function createEntry(
   api: ApiClient,
-  kind: Exclude<EntryKind, "character">,
   name: string,
-  description: string,
   operationId: string,
 ): Promise<string> {
-  if (kind === "persona")
-    return (
-      await api.call("personaSave", {
-        persona_id: null,
-        expected_revision: null,
-        client_operation_id: operationId,
-        draft: newPersonaDraft(name, description),
-      })
-    ).id;
   return (
     await api.call("lorebookCreate", {
       client_operation_id: operationId,
@@ -84,17 +45,23 @@ export async function deleteEntry(api: ApiClient, loaded: EntryView, operationId
 export async function exportEntry(
   api: ApiClient,
   entry: Entry,
+  lorebookFormat: LorebookExportFormat = "uec",
 ): Promise<EntityExportResult | null> {
+  const uec = entry.kind === "persona" || (entry.kind === "lorebook" && lorebookFormat === "uec");
   const picked = await api.call("filesPickSave", {
-    suggested_name: `${entry.name.replace(/[^\p{L}\p{N}_-]+/gu, "_")}.${entry.kind === "persona" ? "uec" : "json"}`,
-    kind: entry.kind === "character" ? "character_card" : entry.kind === "persona" ? "any" : "json",
+    suggested_name: `${entry.name.replace(/[^\p{L}\p{N}_-]+/gu, "_")}.${uec ? "uec" : "json"}`,
+    kind: entry.kind === "character" ? "character_card" : uec ? "any" : "json",
   });
   if (!picked.target) return null;
   if (entry.kind === "character")
     return api.call("characterExport", { id: entry.id, format: "v3", target: picked.target });
   if (entry.kind === "persona")
     return api.call("personaExport", { id: entry.id, target: picked.target });
-  return api.call("lorebookExport", { id: entry.id, format: "world_info", target: picked.target });
+  return api.call("lorebookExport", {
+    id: entry.id,
+    format: lorebookFormat,
+    target: picked.target,
+  });
 }
 export async function importEntry(api: ApiClient): Promise<ImportCommitResult | null> {
   const picked = await api.call("filesPickOpen", {

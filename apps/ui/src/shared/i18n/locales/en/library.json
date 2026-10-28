@@ -31,7 +31,7 @@
     "export": "Export",
     "export_character": "As a character card",
     "export_persona": "As a UEC file",
-    "export_lorebook": "As a JSON file",
+    "export_lorebook": "As a UEC or JSON file",
     "delete_character": "Delete character",
     "delete_persona": "Delete persona",
     "delete_lorebook": "Delete lorebook",
@@ -53,7 +53,6 @@
     "import": "Import a file",
     "importHint": "Character card, persona or lorebook",
     "new_character": "New character",
-    "new_persona": "New persona",
     "new_lorebook": "New lorebook",
     "button_character": "Create character",
     "button_persona": "Create persona",
@@ -61,13 +60,9 @@
   },
   "edit": {
     "name": "Name",
-    "description": "Description",
     "hint_character": "Shown on the card and in the chat header.",
-    "hint_persona": "Characters see this when you use the persona.",
     "placeholder_character": "e.g. Cassian",
-    "placeholder_persona": "e.g. Hunter",
     "placeholder_lorebook": "e.g. The northern gate",
-    "save": "Save",
     "create": "Create",
     "cancel": "Cancel"
   },
@@ -113,7 +108,6 @@
     "import": "Import"
   },
   "toast": {
-    "saved": "Changes saved",
     "created": "Added {{name}}",
     "deleted": "Deleted {{name}}",
     "default": "{{name}} is your default persona",
