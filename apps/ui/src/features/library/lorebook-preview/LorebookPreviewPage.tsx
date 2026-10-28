@@ -352,16 +352,16 @@ export function LorebookPreviewPage() {
                 )}
                 <Button
                   variant="ghost"
-                  className="h-auto w-full min-w-0 justify-start rounded-none px-4 py-3 text-left"
+                  className="h-auto w-full min-w-0 justify-start rounded-none px-4 py-3 text-left [&>span]:w-full [&>span]:min-w-0"
                   aria-expanded={open}
                   onClick={() => setSelected(open ? null : entry.id)}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-fg">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate text-sm font-medium text-fg">
                         {entry.title || t("untitled")}
                       </span>
-                      <Badge tone={match ? (match.always_active ? "info" : "accent") : "neutral"}>
+                      <Badge className="shrink-0" tone={match ? (match.always_active ? "info" : "accent") : "neutral"}>
                         {t(status)}
                       </Badge>
                     </span>
