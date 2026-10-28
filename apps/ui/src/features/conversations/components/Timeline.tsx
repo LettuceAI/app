@@ -104,6 +104,9 @@ export function Timeline({
   const lastTop = useRef(0);
   const dragging = useRef(false);
   const touchY = useRef<number | null>(null);
+  const touching = useRef(false);
+  const fingerDown = useRef(false);
+  const scrolledSinceTouch = useRef(false);
   const focused = useRef<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const {
@@ -225,24 +228,31 @@ export function Timeline({
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
-    if (
-      stick.current &&
-      !dragging.current &&
-      el.scrollHeight - el.scrollTop - el.clientHeight > 2
-    ) {
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const movedUp = el.scrollTop < lastTop.current - 1;
+    const user = dragging.current || touching.current;
+    if (touching.current) scrolledSinceTouch.current = true;
+    if (stick.current && !user && distance > 2) {
       el.scrollTop = el.scrollHeight;
       lastTop.current = el.scrollTop;
       setAtBottom(true);
       return;
     }
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const movedUp = el.scrollTop < lastTop.current - 1;
     lastTop.current = el.scrollTop;
-    const near = distance < nearBottom;
-    if (dragging.current && movedUp && distance > 2) setStick(false);
-    else if (near && !stick.current && !movedUp && !windowed) setStick(true);
-    setAtBottom(near);
+    if (stick.current && user && movedUp && distance > 2) setStick(false);
+    else if (!stick.current && distance <= 2 && !movedUp && !windowed) setStick(true);
+    setAtBottom(distance < nearBottom);
   };
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !("onscrollend" in el)) return;
+    const settle = () => {
+      if (!fingerDown.current) touching.current = false;
+    };
+    el.addEventListener("scrollend", settle);
+    return () => el.removeEventListener("scrollend", settle);
+  }, []);
 
   const leave = () => {
     const el = scroller.current;
@@ -274,7 +284,22 @@ export function Timeline({
         ref={scroller}
         onScroll={onScroll}
         onWheel={(event) => event.deltaY < 0 && leave()}
-        onTouchStart={(event) => (touchY.current = event.touches[0]?.clientY ?? null)}
+        onTouchStart={(event) => {
+          touchY.current = event.touches[0]?.clientY ?? null;
+          touching.current = true;
+          fingerDown.current = true;
+          scrolledSinceTouch.current = false;
+        }}
+        onTouchEnd={(event) => {
+          if (event.touches.length > 0) return;
+          fingerDown.current = false;
+          const el = scroller.current;
+          if (!el || !("onscrollend" in el) || !scrolledSinceTouch.current) touching.current = false;
+        }}
+        onTouchCancel={() => {
+          fingerDown.current = false;
+          touching.current = false;
+        }}
         onTouchMove={(event) => {
           const y = event.touches[0]?.clientY;
           if (y !== undefined && touchY.current !== null && y > touchY.current + 4) leave();
