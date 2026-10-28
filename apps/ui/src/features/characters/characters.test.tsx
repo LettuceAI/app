@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createBrowserHistory, createMemoryHistory, type RouterHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CharacterSaveRequest_Deserialize, CharacterView_Serialize, PromptSummary, PromptKind } from "@/api/generated/bindings";
-import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
+import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
@@ -18,7 +18,7 @@ function saved(request: CharacterSaveRequest_Deserialize): CharacterView_Seriali
   return { id: "c-new", archived: false, draft: request.draft, assets: [], revision: 1, created_at: 1, updated_at: 1 };
 }
 
-async function renderCreate(calls: MockCallHandlers = {}, language: "en" | "cimode" = "en", browser = false) {
+async function renderCreate(calls: MockCallHandlers = {}, language: "en" | "cimode" = "en", browser = false, streams: MockStreamHandlers = {}) {
   let history: RouterHistory;
   if (browser) {
     window.history.replaceState(null, "", "/");
@@ -31,6 +31,7 @@ async function renderCreate(calls: MockCallHandlers = {}, language: "en" | "cimo
       calls: {
         appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }),
         characterDraftDefault: (mode) => ({ status: "ok", data: mode === "companion" ? companionDraft as CharacterDraft : start }),
+        companionEmotionStatus: () => ({ status: "ok", data: { type: "installed", source_revision: "r1" } }),
         charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
         conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
@@ -44,6 +45,7 @@ async function renderCreate(calls: MockCallHandlers = {}, language: "en" | "cimo
         }),
         ...calls,
       },
+      streams,
     }),
     history,
     i18n: await createTestI18n(language),
@@ -490,6 +492,42 @@ describe("character creation", () => {
     await waitFor(() => expect(screen.getByRole("radio", { name: "Roleplay" }).closest("fieldset")?.hasAttribute("disabled")).toBe(false));
     expect(screen.getByRole("radio", { name: "Roleplay" }).getAttribute("aria-checked")).toBe("true");
     expect((name as HTMLInputElement).value).toBe("Aria");
+  });
+
+  it("offers the emotion model when companion mode is chosen without it and downloads inside the sheet", async () => {
+    const install = vi.fn(() => ({ status: "ok" as const, data: { job_id: "j1" } }));
+    let watched = false;
+    await renderCreate(
+      { companionEmotionStatus: () => ({ status: "ok", data: { type: "not_installed" } }), companionEmotionInstall: install },
+      "en",
+      false,
+      {
+        jobWatch: (_args, emit) => {
+          watched = true;
+          emit({ type: "progress", job: { id: "j1", kind: "artifact_install", subject: { kind: "artifact_install", id: "thymos", display_name: "Lettuce Thymos" }, subject_detail: null, state: "running", progress: { current: 1, total: 10, unit: "bytes", label_code: "download", bytes_per_second: null }, created_at: 0, updated_at: 0, failure: null, result: null } } as never);
+          return new Promise(() => {});
+        },
+      },
+    );
+    fireEvent.change(await screen.findByPlaceholderText("Character name"), { target: { value: "Aria" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Companion" }));
+    const sheet = await screen.findByRole("dialog", { name: "Download the emotion model" });
+    expect(screen.getByRole("radio", { name: "Companion" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(watched).toBe(true));
+    expect(await within(sheet).findByText("Keep the app open until it finishes.")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Download the emotion model" })).toBeTruthy();
+  });
+
+  it("closes the emotion model offer and keeps companion mode", async () => {
+    await renderCreate({ companionEmotionStatus: () => ({ status: "ok", data: { type: "not_installed" } }) });
+    fireEvent.change(await screen.findByPlaceholderText("Character name"), { target: { value: "Aria" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Companion" }));
+    const sheet = await screen.findByRole("dialog", { name: "Download the emotion model" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Download the emotion model" })).toBeNull());
+    expect(screen.getByRole("radio", { name: "Companion" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("waits for companion defaults before allowing forward navigation", async () => {

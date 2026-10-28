@@ -19,7 +19,7 @@ import {
 } from "@lettuceai/crisp";
 import type { JobView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
-import { DownloadCard, DownloadJob, useDownloads } from "@/entities/download";
+import { DownloadCard, DownloadJob, installEmotionModel, refreshEmotionModel, useDownloads } from "@/entities/download";
 import { terminalJobStates } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "../data";
@@ -100,11 +100,7 @@ export function EmotionsTab({
   const installed = status.data?.type === "installed";
   const damaged = status.data?.type === "damaged";
   const refresh = async () => {
-    await Promise.all(
-      [queryKeys.companions.all, queryKeys.downloads.list(), queryKeys.conversations.all].map(
-        (queryKey) => client.invalidateQueries({ queryKey }),
-      ),
-    );
+    await refreshEmotionModel(client);
   };
   const install = async () => {
     if (working.current || busy || !downloads.ready) return;
@@ -112,9 +108,8 @@ export function EmotionsTab({
     setOperation("install");
     setFailure(null);
     try {
-      const accepted = await api.call("companionEmotionInstall");
+      const accepted = await installEmotionModel(api, client);
       setAccepted(accepted.job_id);
-      void client.invalidateQueries({ queryKey: queryKeys.downloads.list() });
     } catch (error) {
       setFailure({ error, action: "install" });
     } finally {

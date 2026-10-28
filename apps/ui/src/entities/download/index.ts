@@ -5,3 +5,6 @@ export { DownloadsProvider } from "./DownloadsProvider";
 export { DownloadCard } from "./DownloadCard";
 export { DownloadJob } from "./DownloadJob";
 export { useDownloadJob } from "./use-download-job";
+export { emotionStatusQuery, installEmotionModel, refreshEmotionModel, useEmotionInstall } from "./emotion-install";
+export { EmotionDownloadSheet } from "./EmotionDownloadSheet";
+export { ModelDownloadSheet, type ModelDownloadCopy, type ModelDownloadSheetProps } from "./ModelDownloadSheet";

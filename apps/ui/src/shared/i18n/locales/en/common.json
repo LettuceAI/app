@@ -129,6 +129,15 @@
       "timed_out": "The download took too long. Try again to continue."
     }
   },
+  "emotionDownload": {
+    "title": "Download the emotion model",
+    "titleDone": "Feelings are ready",
+    "body": "Companion mode reads the feeling behind each message with a small model on this device. It downloads once, then runs offline.",
+    "bodyDone": "Each reply can now move how your companions feel and how close you are.",
+    "download": "Download",
+    "close": "Not now",
+    "finish": "Done"
+  },
   "structuredFallback": {
     "title": "When the model can't use tools",
     "formats": {
