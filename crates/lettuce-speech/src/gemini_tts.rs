@@ -125,13 +125,17 @@ fn gemini_wav(bytes: Vec<u8>, mime_type: Option<&str>) -> Result<Vec<u8>, TtsRun
                 sample_rate = value
                     .trim()
                     .parse()
-                    .map_err(|_| TtsRuntimeError::Rejected)?;
+                    .map_err(|_| TtsRuntimeError::Rejected {
+                        reason: "wav sample rate parameter is not a number",
+                    })?;
             }
             "channels" => {
                 channels = value
                     .trim()
                     .parse()
-                    .map_err(|_| TtsRuntimeError::Rejected)?;
+                    .map_err(|_| TtsRuntimeError::Rejected {
+                        reason: "wav channel count parameter is not a number",
+                    })?;
             }
             _ => {}
         }
@@ -139,13 +143,21 @@ fn gemini_wav(bytes: Vec<u8>, mime_type: Option<&str>) -> Result<Vec<u8>, TtsRun
     let block_align = channels
         .checked_mul(PCM_BITS_PER_SAMPLE / 8)
         .filter(|value| *value > 0)
-        .ok_or(TtsRuntimeError::Rejected)?;
+        .ok_or(TtsRuntimeError::Rejected {
+            reason: "wav block alignment is zero or overflows",
+        })?;
     let byte_rate = sample_rate
         .checked_mul(u32::from(block_align))
         .filter(|value| *value > 0)
-        .ok_or(TtsRuntimeError::Rejected)?;
-    let data_len = u32::try_from(bytes.len()).map_err(|_| TtsRuntimeError::Rejected)?;
-    let riff_len = data_len.checked_add(36).ok_or(TtsRuntimeError::Rejected)?;
+        .ok_or(TtsRuntimeError::Rejected {
+            reason: "wav byte rate is zero or overflows",
+        })?;
+    let data_len = u32::try_from(bytes.len()).map_err(|_| TtsRuntimeError::Rejected {
+        reason: "pcm data length exceeds the wav size range",
+    })?;
+    let riff_len = data_len.checked_add(36).ok_or(TtsRuntimeError::Rejected {
+        reason: "wav riff length overflows",
+    })?;
     let mut wav = Vec::with_capacity(bytes.len() + 44);
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&riff_len.to_le_bytes());
@@ -170,28 +182,45 @@ impl AudioProviderVerifier for GeminiTtsRuntime {
         provider: &AudioProvider,
         credential: Option<&SecretValue>,
     ) -> Result<bool, AudioProviderVerificationError> {
-        provider
-            .validate()
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            AudioProviderVerificationError::InvalidInput {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         let AudioProviderConfig::Gemini {
             project_id,
             location,
         } = &provider.config
         else {
-            return Err(AudioProviderVerificationError::InvalidInput);
+            return Err(AudioProviderVerificationError::InvalidInput {
+                reason: "provider config is not the gemini kind",
+            });
         };
-        let project_id = project_id
-            .as_deref()
-            .ok_or(AudioProviderVerificationError::InvalidInput)?;
+        let project_id =
+            project_id
+                .as_deref()
+                .ok_or(AudioProviderVerificationError::InvalidInput {
+                    reason: "gemini provider has no project id",
+                })?;
         if !valid_host_label(location) || !valid_path_segment(project_id) {
-            return Err(AudioProviderVerificationError::InvalidInput);
+            return Err(AudioProviderVerificationError::InvalidInput {
+                reason: "gemini location or project id is not valid",
+            });
         }
-        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput)?;
+        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput {
+            reason: "api key is missing",
+        })?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
-        let project_header = SecretValue::new(project_id.to_owned())
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+            .map_err(|_| AudioProviderVerificationError::InvalidInput {
+                reason: "api key is not a valid header value",
+            })?;
+        let project_header = SecretValue::new(project_id.to_owned()).map_err(|_| {
+            AudioProviderVerificationError::InvalidInput {
+                reason: "api key is not a valid header value",
+            }
+        })?;
         let endpoint = self
             .endpoint_override
             .clone()
@@ -206,8 +235,11 @@ impl AudioProviderVerifier for GeminiTtsRuntime {
                 &[],
                 JsonAuth::Bearer(auth),
                 vec![JsonSecretHeader {
-                    name: HeaderName::new("x-goog-user-project")
-                        .map_err(|_| AudioProviderVerificationError::InvalidInput)?,
+                    name: HeaderName::new("x-goog-user-project").map_err(|_| {
+                        AudioProviderVerificationError::InvalidInput {
+                            reason: "auth header name is invalid",
+                        }
+                    })?,
                     value: project_header,
                 }],
                 RequestPolicy::PROBE,
@@ -226,27 +258,44 @@ impl TtsRuntime for GeminiTtsRuntime {
         credential: Option<&SecretValue>,
         cancellation: &CancellationToken,
     ) -> Result<RuntimeSynthesis, TtsRuntimeError> {
-        request.validate().map_err(|_| TtsRuntimeError::Rejected)?;
+        request.validate().map_err(|error| {
+            tracing::warn!(%error, "request failed validation");
+            TtsRuntimeError::Rejected {
+                reason: "request failed validation",
+            }
+        })?;
         let AudioProviderConfig::Gemini {
             project_id,
             location,
         } = &request.provider.config
         else {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected {
+                reason: "request provider config is not the gemini kind",
+            });
         };
-        let project_id = project_id.as_deref().ok_or(TtsRuntimeError::Rejected)?;
+        let project_id = project_id.as_deref().ok_or(TtsRuntimeError::Rejected {
+            reason: "gemini provider has no project id",
+        })?;
         if !valid_host_label(location)
             || !valid_path_segment(project_id)
             || !valid_path_segment(&request.model_id)
         {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected {
+                reason: "gemini location, project id or model id is not valid",
+            });
         }
-        let credential = credential.ok_or(TtsRuntimeError::Rejected)?;
+        let credential = credential.ok_or(TtsRuntimeError::Rejected {
+            reason: "api key is missing",
+        })?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
-            .map_err(|_| TtsRuntimeError::Rejected)?;
+            .map_err(|_| TtsRuntimeError::Rejected {
+                reason: "api key is not a valid header value",
+            })?;
         let project_header =
-            SecretValue::new(project_id.to_owned()).map_err(|_| TtsRuntimeError::Rejected)?;
+            SecretValue::new(project_id.to_owned()).map_err(|_| TtsRuntimeError::Rejected {
+                reason: "project id cannot be held as a secret value",
+            })?;
         let full_text = match request.prompt.as_deref() {
             Some(prompt) if !prompt.is_empty() => format!("{prompt}: {}", request.text),
             _ => request.text.clone(),
@@ -267,7 +316,12 @@ impl TtsRuntime for GeminiTtsRuntime {
                 },
             },
         })
-        .map_err(|_| TtsRuntimeError::Rejected)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "request body could not be serialized");
+            TtsRuntimeError::Rejected {
+                reason: "request body could not be serialized",
+            }
+        })?;
         if cancellation.is_cancelled() {
             return Err(TtsRuntimeError::Cancelled);
         }
@@ -288,7 +342,7 @@ impl TtsRuntime for GeminiTtsRuntime {
                 JsonAuth::Bearer(auth),
                 vec![JsonSecretHeader {
                     name: HeaderName::new("x-goog-user-project")
-                        .map_err(|_| TtsRuntimeError::Rejected)?,
+                        .map_err(|_| TtsRuntimeError::Rejected { reason: "auth header name is invalid" })?,
                     value: project_header,
                 }],
                 RequestPolicy::GENERATION,
@@ -300,20 +354,31 @@ impl TtsRuntime for GeminiTtsRuntime {
                 408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
                     status: response.status,
                 },
-                _ => TtsRuntimeError::Rejected,
+                _ => TtsRuntimeError::Rejected {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
-        let response: GeminiResponse =
-            serde_json::from_slice(&response.body).map_err(|_| TtsRuntimeError::Rejected)?;
+        let response: GeminiResponse = serde_json::from_slice(&response.body).map_err(|error| {
+            tracing::warn!(%error, "provider response is not valid json");
+            TtsRuntimeError::Rejected {
+                reason: "provider response is not valid json",
+            }
+        })?;
         let inline = response
             .candidates
             .iter()
             .flat_map(|candidate| &candidate.content.parts)
             .find_map(|part| part.inline_data.as_ref())
-            .ok_or(TtsRuntimeError::Rejected)?;
-        let bytes = STANDARD
-            .decode(&inline.data)
-            .map_err(|_| TtsRuntimeError::Rejected)?;
+            .ok_or(TtsRuntimeError::Rejected {
+                reason: "gemini response has no inline audio data",
+            })?;
+        let bytes = STANDARD.decode(&inline.data).map_err(|error| {
+            tracing::warn!(%error, "audio payload is not valid base64");
+            TtsRuntimeError::Rejected {
+                reason: "audio payload is not valid base64",
+            }
+        })?;
         Ok(RuntimeSynthesis {
             bytes: gemini_wav(bytes, inline.mime_type.as_deref())?,
             declared_mime_type: "audio/wav".into(),
@@ -345,23 +410,27 @@ fn valid_path_segment(value: &str) -> bool {
 
 fn map_network(error: JsonClientError) -> TtsRuntimeError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
-        JsonClientError::Transport => TtsRuntimeError::NetworkUnavailable,
-        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable,
+        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } => TtsRuntimeError::NetworkUnavailable { reason },
+        JsonClientError::ClientConfiguration { reason } => TtsRuntimeError::Unavailable { reason },
     }
 }
 
 fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            AudioProviderVerificationError::Unavailable
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            AudioProviderVerificationError::Unavailable { reason }
         }
     }
 }
@@ -559,7 +628,7 @@ mod tests {
                     &CancellationToken::new(),
                 )
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
         let (endpoint, _) = server("400 Bad Request", b"{}".to_vec()).await;
         let runtime = GeminiTtsRuntime::with_endpoint(
@@ -574,7 +643,7 @@ mod tests {
                     &CancellationToken::new(),
                 )
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
         let cancellation = CancellationToken::new();
         cancellation.cancel();

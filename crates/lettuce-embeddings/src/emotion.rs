@@ -57,18 +57,33 @@ impl OnnxEmotionClassifier {
         artifacts: VerifiedCompanionEmotionArtifacts,
         runtime: &OnnxRuntimeLink,
     ) -> Result<Self, EmotionClassifierError> {
-        initialize_onnx_runtime(runtime).map_err(|_| EmotionClassifierError::RuntimeUnavailable)?;
+        initialize_onnx_runtime(runtime).map_err(|error| {
+            EmotionClassifierError::RuntimeUnavailable {
+                reason: error.to_string(),
+            }
+        })?;
         let builder = Session::builder()
-            .map_err(|_| EmotionClassifierError::RuntimeUnavailable)?
+            .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
+                reason: error.to_string(),
+            })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|_| EmotionClassifierError::RuntimeUnavailable)?;
+            .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
+                reason: error.to_string(),
+            })?;
         let session = configure_execution_provider(builder, &artifacts.model_path)
-            .map_err(|_| EmotionClassifierError::RuntimeUnavailable)?
+            .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
+                reason: error.to_string(),
+            })?
             .commit_from_file(&artifacts.model_path)
-            .map_err(|_| EmotionClassifierError::ModelLoad)?;
+            .map_err(|error| EmotionClassifierError::ModelLoad {
+                reason: error.to_string(),
+            })?;
         let has_input = |name: &str| session.inputs.iter().any(|input| input.name == name);
-        let label_count = i64::try_from(artifacts.labels.labels().len())
-            .map_err(|_| EmotionClassifierError::InvalidOutput)?;
+        let label_count = i64::try_from(artifacts.labels.labels().len()).map_err(|error| {
+            EmotionClassifierError::InvalidOutput {
+                reason: error.to_string(),
+            }
+        })?;
         let output_width = session
             .outputs
             .iter()
@@ -82,25 +97,37 @@ impl OnnxEmotionClassifier {
                 _ => None,
             });
         let Some(output_width) = output_width else {
-            return Err(EmotionClassifierError::InvalidOutput);
+            return Err(EmotionClassifierError::InvalidOutput {
+                reason: "model output is not a two dimensional float tensor".to_owned(),
+            });
         };
-        if !has_input("input_ids")
-            || !has_input("attention_mask")
-            || session.inputs.len() != 2
-            || (output_width >= 0 && output_width != label_count)
-        {
-            return Err(EmotionClassifierError::InvalidOutput);
+        if !has_input("input_ids") || !has_input("attention_mask") || session.inputs.len() != 2 {
+            return Err(EmotionClassifierError::InvalidOutput {
+                reason: "model inputs are not exactly input_ids and attention_mask".to_owned(),
+            });
         }
-        let mut tokenizer = Tokenizer::from_file(&artifacts.tokenizer_path)
-            .map_err(|_| EmotionClassifierError::TokenizerLoad)?;
+        if output_width >= 0 && output_width != label_count {
+            return Err(EmotionClassifierError::InvalidOutput {
+                reason: "model output width differs from the label count".to_owned(),
+            });
+        }
+        let mut tokenizer = Tokenizer::from_file(&artifacts.tokenizer_path).map_err(|error| {
+            EmotionClassifierError::TokenizerLoad {
+                reason: error.to_string(),
+            }
+        })?;
         tokenizer
             .with_truncation(None)
-            .map_err(|_| EmotionClassifierError::TokenizerLoad)?;
+            .map_err(|error| EmotionClassifierError::TokenizerLoad {
+                reason: error.to_string(),
+            })?;
         tokenizer.with_padding(None);
         let token = |name: &str| {
             tokenizer
                 .token_to_id(name)
-                .ok_or(EmotionClassifierError::TokenizerLoad)
+                .ok_or_else(|| EmotionClassifierError::TokenizerLoad {
+                    reason: format!("tokenizer has no {name} token"),
+                })
         };
         let special = SpecialTokens {
             bos: token(BOS_TOKEN)?,
@@ -157,10 +184,11 @@ impl OnnxEmotionClassifier {
         if cancellation.is_cancelled() {
             return Err(EmotionClassifierError::Cancelled);
         }
-        let encoding = self
-            .tokenizer
-            .encode(trimmed, false)
-            .map_err(|_| EmotionClassifierError::Tokenization)?;
+        let encoding = self.tokenizer.encode(trimmed, false).map_err(|error| {
+            EmotionClassifierError::Tokenization {
+                reason: error.to_string(),
+            }
+        })?;
         let mut ids = encoding.get_ids().to_vec();
         if ids.is_empty() {
             ids.push(self.special.unk);
@@ -184,12 +212,22 @@ impl OnnxEmotionClassifier {
             return Err(EmotionClassifierError::Cancelled);
         }
         let count = run.rows;
-        let input_ids = Value::from_array(([count, run.width], run.input_ids.clone()))
-            .map_err(|_| EmotionClassifierError::InvalidInputTensor)?;
+        let input_ids =
+            Value::from_array(([count, run.width], run.input_ids.clone())).map_err(|error| {
+                EmotionClassifierError::InvalidInputTensor {
+                    reason: error.to_string(),
+                }
+            })?;
         let attention_mask = Value::from_array(([count, run.width], run.attention_mask.clone()))
-            .map_err(|_| EmotionClassifierError::InvalidInputTensor)?;
+            .map_err(|error| EmotionClassifierError::InvalidInputTensor {
+                reason: error.to_string(),
+            })?;
         let run_options =
-            Arc::new(RunOptions::new().map_err(|_| EmotionClassifierError::Inference)?);
+            Arc::new(
+                RunOptions::new().map_err(|error| EmotionClassifierError::Inference {
+                    reason: error.to_string(),
+                })?,
+            );
         let finished = Arc::new(AtomicBool::new(false));
         let canceller = spawn_canceller(
             Arc::clone(&run_options),
@@ -207,28 +245,42 @@ impl OnnxEmotionClassifier {
         if canceller.join().is_err() {
             return Err(EmotionClassifierError::CancellationMonitor);
         }
-        let outputs = result.map_err(|_| {
+        let outputs = result.map_err(|error| {
             if cancellation.is_cancelled() {
                 EmotionClassifierError::Cancelled
             } else {
-                EmotionClassifierError::Inference
+                EmotionClassifierError::Inference {
+                    reason: error.to_string(),
+                }
             }
         })?;
         if cancellation.is_cancelled() {
             return Err(EmotionClassifierError::Cancelled);
         }
-        let output = outputs
-            .get(PROBABILITIES_OUTPUT)
-            .ok_or(EmotionClassifierError::InvalidOutput)?;
-        let (shape, values) = output
-            .try_extract_tensor::<f32>()
-            .map_err(|_| EmotionClassifierError::InvalidOutput)?;
+        let output = outputs.get(PROBABILITIES_OUTPUT).ok_or_else(|| {
+            EmotionClassifierError::InvalidOutput {
+                reason: "model has no probabilities output".to_owned(),
+            }
+        })?;
+        let (shape, values) = output.try_extract_tensor::<f32>().map_err(|error| {
+            EmotionClassifierError::InvalidOutput {
+                reason: error.to_string(),
+            }
+        })?;
         let expected = [
-            i64::try_from(count).map_err(|_| EmotionClassifierError::InvalidOutput)?,
-            i64::try_from(self.labels.len()).map_err(|_| EmotionClassifierError::InvalidOutput)?,
+            i64::try_from(count).map_err(|error| EmotionClassifierError::InvalidOutput {
+                reason: error.to_string(),
+            })?,
+            i64::try_from(self.labels.len()).map_err(|error| {
+                EmotionClassifierError::InvalidOutput {
+                    reason: error.to_string(),
+                }
+            })?,
         ];
         if shape.len() != 2 || shape[0] != expected[0] || shape[1] != expected[1] {
-            return Err(EmotionClassifierError::InvalidOutput);
+            return Err(EmotionClassifierError::InvalidOutput {
+                reason: "output shape differs from the batch and label counts".to_owned(),
+            });
         }
         Ok(values.to_vec())
     }
@@ -312,12 +364,18 @@ fn max_pool(
     probabilities: &[f32],
     rows: usize,
 ) -> Result<(), EmotionClassifierError> {
-    if probabilities.len() != rows * pooled.len()
-        || probabilities
-            .iter()
-            .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+    if probabilities.len() != rows * pooled.len() {
+        return Err(EmotionClassifierError::InvalidOutput {
+            reason: "probability count differs from rows times labels".to_owned(),
+        });
+    }
+    if probabilities
+        .iter()
+        .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
     {
-        return Err(EmotionClassifierError::InvalidOutput);
+        return Err(EmotionClassifierError::InvalidOutput {
+            reason: "a probability is not finite or outside zero through one".to_owned(),
+        });
     }
     for row in probabilities.chunks_exact(pooled.len()) {
         for (best, value) in pooled.iter_mut().zip(row) {
@@ -334,14 +392,28 @@ fn classification_from_probabilities(
     thresholds: &[f32],
     probabilities: &[f32],
 ) -> Result<EmotionClassification, EmotionClassifierError> {
-    if probabilities.is_empty()
-        || probabilities.len() != labels.len()
-        || thresholds.len() != labels.len()
-        || probabilities
-            .iter()
-            .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+    if probabilities.is_empty() {
+        return Err(EmotionClassifierError::InvalidOutput {
+            reason: "model returned no probabilities".to_owned(),
+        });
+    }
+    if probabilities.len() != labels.len() {
+        return Err(EmotionClassifierError::InvalidOutput {
+            reason: "probability count differs from the label count".to_owned(),
+        });
+    }
+    if thresholds.len() != labels.len() {
+        return Err(EmotionClassifierError::InvalidOutput {
+            reason: "threshold count differs from the label count".to_owned(),
+        });
+    }
+    if probabilities
+        .iter()
+        .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
     {
-        return Err(EmotionClassifierError::InvalidOutput);
+        return Err(EmotionClassifierError::InvalidOutput {
+            reason: "a probability is not finite or outside zero through one".to_owned(),
+        });
     }
     let mut scored = labels
         .iter()
@@ -372,22 +444,22 @@ fn classification_from_probabilities(
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EmotionClassifierError {
-    #[error("ONNX Runtime is unavailable")]
-    RuntimeUnavailable,
-    #[error("emotion model could not be loaded")]
-    ModelLoad,
-    #[error("emotion tokenizer could not be loaded")]
-    TokenizerLoad,
+    #[error("ONNX Runtime is unavailable: {reason}")]
+    RuntimeUnavailable { reason: String },
+    #[error("emotion model could not be loaded: {reason}")]
+    ModelLoad { reason: String },
+    #[error("emotion tokenizer could not be loaded: {reason}")]
+    TokenizerLoad { reason: String },
     #[error("emotion classifier input is too large")]
     InputTooLarge,
-    #[error("emotion tokenization failed")]
-    Tokenization,
-    #[error("emotion input tensor is invalid")]
-    InvalidInputTensor,
-    #[error("emotion inference failed")]
-    Inference,
-    #[error("emotion output is invalid")]
-    InvalidOutput,
+    #[error("emotion tokenization failed: {reason}")]
+    Tokenization { reason: String },
+    #[error("emotion input tensor is invalid: {reason}")]
+    InvalidInputTensor { reason: String },
+    #[error("emotion inference failed: {reason}")]
+    Inference { reason: String },
+    #[error("emotion output is invalid: {reason}")]
+    InvalidOutput { reason: String },
     #[error("emotion inference was cancelled")]
     Cancelled,
     #[error("emotion cancellation monitor failed")]
@@ -518,18 +590,18 @@ mod tests {
         max_pool(&mut pooled, &[0.1, 0.9, 0.2, 0.7, 0.3, 0.2], 2).expect("first run");
         max_pool(&mut pooled, &[0.05, 0.1, 0.6], 1).expect("second run");
         assert_eq!(pooled, [0.7, 0.9, 0.6]);
-        assert_eq!(
+        assert!(matches!(
             max_pool(&mut pooled, &[0.1, 0.2], 1),
-            Err(EmotionClassifierError::InvalidOutput)
-        );
-        assert_eq!(
+            Err(EmotionClassifierError::InvalidOutput { .. })
+        ));
+        assert!(matches!(
             max_pool(&mut pooled, &[0.1, f32::NAN, 0.2], 1),
-            Err(EmotionClassifierError::InvalidOutput)
-        );
-        assert_eq!(
+            Err(EmotionClassifierError::InvalidOutput { .. })
+        ));
+        assert!(matches!(
             max_pool(&mut pooled, &[0.1, 1.5, 0.2], 1),
-            Err(EmotionClassifierError::InvalidOutput)
-        );
+            Err(EmotionClassifierError::InvalidOutput { .. })
+        ));
     }
 
     #[test]
@@ -565,15 +637,15 @@ mod tests {
     fn invalid_probabilities_fail_closed() {
         let labels = vec!["love".into()];
         for probabilities in [&[][..], &[f32::NAN], &[-0.1], &[1.1], &[0.5, 0.5]] {
-            assert_eq!(
+            assert!(matches!(
                 classification_from_probabilities(&labels, &[0.4], probabilities),
-                Err(EmotionClassifierError::InvalidOutput)
-            );
+                Err(EmotionClassifierError::InvalidOutput { .. })
+            ));
         }
-        assert_eq!(
+        assert!(matches!(
             classification_from_probabilities(&labels, &[], &[0.5]),
-            Err(EmotionClassifierError::InvalidOutput)
-        );
+            Err(EmotionClassifierError::InvalidOutput { .. })
+        ));
     }
 
     #[test]

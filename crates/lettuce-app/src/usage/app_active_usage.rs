@@ -98,7 +98,9 @@ impl AppActiveUsageTracker {
         }
         for (day, active_ms) in pending {
             let total = days.entry(day).or_default();
-            *total = total.checked_add(active_ms).ok_or(AppUsageError::Storage)?;
+            *total = total.checked_add(active_ms).ok_or(AppUsageError::Storage {
+                reason: "active time total overflowed",
+            })?;
         }
         Ok(days
             .into_iter()
@@ -229,7 +231,9 @@ mod tests {
             _now: TimestampMillis,
         ) -> Result<(), AppUsageError> {
             if self.failing.load(Ordering::SeqCst) {
-                return Err(AppUsageError::Storage);
+                return Err(AppUsageError::Storage {
+                    reason: "simulated failure",
+                });
             }
             self.written
                 .lock()
@@ -357,10 +361,10 @@ mod tests {
         let midnight = local_midnight();
         let tracker = AppActiveUsageTracker::new(TimestampMillis::new(midnight - 10_000));
         tracker.on_focus_changed(false, TimestampMillis::new(midnight + 5_000));
-        assert_eq!(
+        assert!(matches!(
             tracker.flush(&store, TimestampMillis::new(midnight + 6_000)),
-            Err(AppUsageError::Storage)
-        );
+            Err(AppUsageError::Storage { .. })
+        ));
         store.failing.store(false, Ordering::SeqCst);
         assert_eq!(
             tracker

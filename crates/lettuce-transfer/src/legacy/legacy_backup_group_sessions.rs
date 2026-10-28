@@ -128,8 +128,8 @@ pub struct LegacyBackupGroupMessageUsage {
 pub enum LegacyBackupGroupSessionError {
     #[error("legacy backup group session document is malformed")]
     Malformed { field: String },
-    #[error("legacy backup group session document exceeds its record limit")]
-    LimitExceeded,
+    #[error("legacy backup group session document exceeds its record limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("legacy backup group session graph contains an orphaned link")]
     Orphan { field: String },
 }
@@ -859,8 +859,11 @@ fn map_participation(
             }
             Ok(LegacyBackupGroupParticipation {
                 source_id: row.id,
-                ordinal: u64::try_from(index)
-                    .map_err(|_| LegacyBackupGroupSessionError::LimitExceeded)?,
+                ordinal: u64::try_from(index).map_err(|_| {
+                    LegacyBackupGroupSessionError::LimitExceeded {
+                        reason: "participation ordinal exceeds the u64 range",
+                    }
+                })?,
                 character_source_id: row.character_id,
                 speak_count: count(row.speak_count, &format!("{path}.speak_count"))?,
                 last_spoke_turn: optional_count(
@@ -989,8 +992,11 @@ fn map_messages(
         }
         messages.push(LegacyBackupGroupMessage {
             source_id: row.id,
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupGroupSessionError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupGroupSessionError::LimitExceeded {
+                    reason: "message ordinal exceeds the u64 range",
+                }
+            })?,
             role: row.role,
             content: row.content,
             speaker_character_source_id: row.speaker_character_id,
@@ -1094,8 +1100,11 @@ fn map_variants(
             };
             Ok(LegacyBackupGroupMessageVariant {
                 source_id: row.id,
-                ordinal: u64::try_from(index)
-                    .map_err(|_| LegacyBackupGroupSessionError::LimitExceeded)?,
+                ordinal: u64::try_from(index).map_err(|_| {
+                    LegacyBackupGroupSessionError::LimitExceeded {
+                        reason: "variant ordinal exceeds the u64 range",
+                    }
+                })?,
                 content: row.content,
                 speaker_character_source_id: row.speaker_character_id,
                 created_at: timestamp(row.created_at, &format!("{path}.created_at"))?,
@@ -1213,7 +1222,9 @@ fn validate_starting_scene(
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<bool, LegacyBackupGroupSessionError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupGroupSessionError::LimitExceeded);
+        return Err(LegacyBackupGroupSessionError::LimitExceeded {
+            reason: "starting scene json exceeds the size limit",
+        });
     }
     let row: StartingSceneRow = serde_json::from_str(raw).map_err(|_| malformed(field))?;
     validate_identifier(&row.id, &format!("{field}.id"))?;
@@ -1293,7 +1304,9 @@ fn validate_json(
     field: &str,
 ) -> Result<(), LegacyBackupGroupSessionError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupGroupSessionError::LimitExceeded);
+        return Err(LegacyBackupGroupSessionError::LimitExceeded {
+            reason: "json document exceeds the size limit",
+        });
     }
     let value: Value = serde_json::from_str(raw).map_err(|_| malformed(field))?;
     if shape.is_some_and(|shape| {
@@ -1418,7 +1431,9 @@ fn validate_mtp_stats(raw: &str, field: &str) -> Result<(), LegacyBackupGroupSes
 
 fn string_array(raw: &str, field: &str) -> Result<Vec<String>, LegacyBackupGroupSessionError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupGroupSessionError::LimitExceeded);
+        return Err(LegacyBackupGroupSessionError::LimitExceeded {
+            reason: "string array json exceeds the size limit",
+        });
     }
     let values: Vec<String> = serde_json::from_str(raw).map_err(|_| malformed(field))?;
     let mut seen = BTreeSet::new();
@@ -1436,7 +1451,9 @@ fn string_map(
     field: &str,
 ) -> Result<BTreeMap<String, String>, LegacyBackupGroupSessionError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupGroupSessionError::LimitExceeded);
+        return Err(LegacyBackupGroupSessionError::LimitExceeded {
+            reason: "string map json exceeds the size limit",
+        });
     }
     let values: BTreeMap<String, String> =
         serde_json::from_str(raw).map_err(|_| malformed(field))?;

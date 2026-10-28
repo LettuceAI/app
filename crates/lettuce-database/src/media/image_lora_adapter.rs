@@ -10,8 +10,11 @@ use crate::Database;
 const COLUMNS: &str = "path, filename, bytes_on_disk, modified_at, sha256, keywords, \
                        keyword_source, architecture, architecture_source";
 
-fn storage(_: impl std::fmt::Debug) -> LoraLibraryRepositoryError {
-    LoraLibraryRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> LoraLibraryRepositoryError {
+    tracing::warn!(?error, "image lora adapter storage step failed");
+    LoraLibraryRepositoryError::Storage {
+        reason: "image lora adapter: a storage step failed",
+    }
 }
 
 const fn keyword_source_name(source: LoraKeywordSource) -> &'static str {
@@ -47,22 +50,34 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<LoraRecord, LoraLibraryRep
             modified_at: row.get::<_, i64>(3).map_err(storage)?.max(0).unsigned_abs(),
             sha256: row.get(4).map_err(storage)?,
             keywords: lettuce_image_generation::sd_runtime::lora_library::normalize_lora_keywords(
-                serde_json::from_str::<Vec<String>>(&keywords)
-                    .map_err(|_| LoraLibraryRepositoryError::InvalidData)?,
+                serde_json::from_str::<Vec<String>>(&keywords).map_err(|error| {
+                    tracing::warn!(%error, "from row failed");
+                    LoraLibraryRepositoryError::InvalidData {
+                        reason: "from row: a value could not be read or converted",
+                    }
+                })?,
             ),
             keyword_source: match keyword_source.as_str() {
                 "none" => LoraKeywordSource::None,
                 "metadata" => LoraKeywordSource::Metadata,
                 "civitai" => LoraKeywordSource::Civitai,
                 "manual" => LoraKeywordSource::Manual,
-                _ => return Err(LoraLibraryRepositoryError::InvalidData),
+                _ => {
+                    return Err(LoraLibraryRepositoryError::InvalidData {
+                        reason: "from row: a stored value is not recognised",
+                    });
+                }
             },
             architecture: row.get(7).map_err(storage)?,
             architecture_source: match architecture_source.as_str() {
                 "none" => LoraArchitectureSource::None,
                 "metadata" => LoraArchitectureSource::Metadata,
                 "civitai" => LoraArchitectureSource::Civitai,
-                _ => return Err(LoraLibraryRepositoryError::InvalidData),
+                _ => {
+                    return Err(LoraLibraryRepositoryError::InvalidData {
+                        reason: "from row: a stored value is not recognised",
+                    });
+                }
             },
         })
     })())
@@ -167,7 +182,9 @@ impl LoraLibraryRepository for Database {
                 ],
             )
             .map_err(storage)?;
-        load(&connection, path)?.ok_or(LoraLibraryRepositoryError::Storage)
+        load(&connection, path)?.ok_or(LoraLibraryRepositoryError::Storage {
+            reason: "record lora file: a required value is missing",
+        })
     }
 
     fn save_lora(

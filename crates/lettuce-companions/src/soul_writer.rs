@@ -149,12 +149,12 @@ pub enum CompanionSoulWriterRunRepositoryError {
     NotFound,
     #[error("companion Soul-writer run conflicts with durable state")]
     Conflict,
-    #[error("companion Soul-writer run is invalid")]
-    Invalid,
-    #[error("companion Soul-writer run storage failed")]
-    Failure,
-    #[error("companion Soul-writer run storage is corrupt")]
-    Corrupt,
+    #[error("companion Soul-writer run is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("companion Soul-writer run storage failed: {reason}")]
+    Failure { reason: String },
+    #[error("companion Soul-writer run storage is corrupt: {reason}")]
+    Corrupt { reason: String },
 }
 
 pub trait CompanionSoulWriterRunRepository: Send + Sync {
@@ -185,20 +185,50 @@ pub trait CompanionSoulWriterRunRepository: Send + Sync {
 
 impl CompanionSoulWriterRun {
     pub fn validate(&self) -> Result<(), CompanionSoulWriterRunRepositoryError> {
-        if self.prompt_revision.get() == 0
-            || self.prompt_name.trim().is_empty()
-            || self.prompt_values.character_name.trim().is_empty()
-            || !self.starting_draft.is_object()
-            || normalize_soul_writer_draft(Some(&self.starting_draft)) != self.starting_draft
-            || self.created_at.get() < 0
-            || self.rounds.len() > 8
-            || self
-                .rounds
-                .iter()
-                .take(self.rounds.len().saturating_sub(1))
-                .any(|round| round.completed)
+        if self.prompt_revision.get() == 0 {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "prompt revision is zero",
+            });
+        }
+        if self.prompt_name.trim().is_empty() {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "prompt name is blank",
+            });
+        }
+        if self.prompt_values.character_name.trim().is_empty() {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "character name is blank",
+            });
+        }
+        if !self.starting_draft.is_object() {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "starting draft is not a JSON object",
+            });
+        }
+        if normalize_soul_writer_draft(Some(&self.starting_draft)) != self.starting_draft {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "starting draft is not normalized",
+            });
+        }
+        if self.created_at.get() < 0 {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "creation time is negative",
+            });
+        }
+        if self.rounds.len() > 8 {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "run has more than eight rounds",
+            });
+        }
+        if self
+            .rounds
+            .iter()
+            .take(self.rounds.len().saturating_sub(1))
+            .any(|round| round.completed)
         {
-            return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "a round before the last one is already completed",
+            });
         }
         let mut draft = self.starting_draft.clone();
         let mut fallback_started = false;
@@ -206,18 +236,29 @@ impl CompanionSoulWriterRun {
             round.validate(index as u32)?;
             if round.profile_target == SoulWriterProfileTarget::Fallback {
                 if self.fallback_profile.is_none() {
-                    return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+                    return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                        reason: "fallback round has no fallback profile",
+                    });
                 }
                 if !fallback_started {
                     draft = self.starting_draft.clone();
                 }
                 fallback_started = true;
             } else if fallback_started {
-                return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+                return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                    reason: "primary round follows a fallback round",
+                });
             }
             let reduction = reduce_soul_writer_calls(Some(&draft), &round.calls, round.reduced_at);
-            if reduction.draft != round.resulting_draft || reduction.completed != round.completed {
-                return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+            if reduction.draft != round.resulting_draft {
+                return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                    reason: "round draft differs from its reduced calls",
+                });
+            }
+            if reduction.completed != round.completed {
+                return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                    reason: "round completion differs from its reduced calls",
+                });
             }
             draft = reduction.draft;
         }
@@ -253,12 +294,25 @@ pub fn is_soul_writer_operation(name: &str) -> bool {
 
 impl CompanionSoulWriterRoundCheckpoint {
     fn validate(&self, expected_ordinal: u32) -> Result<(), CompanionSoulWriterRunRepositoryError> {
-        if self.ordinal != expected_ordinal
-            || self.calls.iter().any(|call| call.validate().is_err())
-            || !self.resulting_draft.is_object()
-            || self.reduced_at.get() < 0
-        {
-            return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+        if self.ordinal != expected_ordinal {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "round ordinal is not sequential",
+            });
+        }
+        if self.calls.iter().any(|call| call.validate().is_err()) {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "a round tool call failed validation",
+            });
+        }
+        if !self.resulting_draft.is_object() {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "round resulting draft is not a JSON object",
+            });
+        }
+        if self.reduced_at.get() < 0 {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+                reason: "round reduction time is negative",
+            });
         }
         Ok(())
     }

@@ -160,7 +160,9 @@ pub(crate) fn record_settlement_in(
 }
 
 fn storage(_: rusqlite::Error) -> PlaygroundHistoryError {
-    PlaygroundHistoryError::Storage
+    PlaygroundHistoryError::Storage {
+        reason: "storage: stored data failed a consistency check",
+    }
 }
 
 fn images_in(
@@ -191,9 +193,12 @@ fn images_in(
 
 impl PlaygroundHistoryRepository for Database {
     fn playground_entry_exists(&self, id: &str) -> Result<bool, PlaygroundHistoryError> {
-        let connection = self
-            .connection()
-            .map_err(|_| PlaygroundHistoryError::Storage)?;
+        let connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "playground entry exists failed");
+            PlaygroundHistoryError::Storage {
+                reason: "playground entry exists: a storage step failed",
+            }
+        })?;
         connection
             .query_row(
                 "SELECT 1 FROM playground_history WHERE id = ?1",
@@ -209,9 +214,12 @@ impl PlaygroundHistoryRepository for Database {
         &self,
         upscale: PlaygroundUpscale,
     ) -> Result<String, PlaygroundHistoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| PlaygroundHistoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "record playground upscale failed");
+            PlaygroundHistoryError::Storage {
+                reason: "record playground upscale: a storage step failed",
+            }
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
@@ -292,9 +300,12 @@ impl PlaygroundHistoryRepository for Database {
         limit: u32,
         before: Option<TimestampMillis>,
     ) -> Result<Vec<PlaygroundHistoryEntry>, PlaygroundHistoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| PlaygroundHistoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "list playground history failed");
+            PlaygroundHistoryError::Storage {
+                reason: "list playground history: a storage step failed",
+            }
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
@@ -365,9 +376,12 @@ impl PlaygroundHistoryRepository for Database {
         delete_images: bool,
         now: TimestampMillis,
     ) -> Result<Vec<AssetId>, PlaygroundHistoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| PlaygroundHistoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "delete playground history failed");
+            PlaygroundHistoryError::Storage {
+                reason: "delete playground history: a storage step failed",
+            }
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;

@@ -10,7 +10,9 @@ pub(crate) struct ClauseOutput {
 impl ClauseOutput {
     pub(crate) fn push(&mut self, clause: &str) -> Result<(), EspeakNgError> {
         if self.text.len() + clause.len() + 1 > MAX_ESPEAK_OUTPUT_BYTES {
-            return Err(EspeakNgError::InvalidOutput);
+            return Err(EspeakNgError::InvalidOutput {
+                reason: "clause output exceeds the byte limit",
+            });
         }
         self.text.push_str(clause);
         self.text.push('\n');
@@ -181,6 +183,9 @@ mod tests {
         let mut output = ClauseOutput::default();
         let clause = "a".repeat(MAX_ESPEAK_OUTPUT_BYTES - 1);
         output.push(&clause).expect("clause at the limit");
-        assert_eq!(output.push(""), Err(EspeakNgError::InvalidOutput));
+        assert!(matches!(
+            output.push(""),
+            Err(EspeakNgError::InvalidOutput { .. })
+        ));
     }
 }

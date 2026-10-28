@@ -348,10 +348,10 @@ impl ChatJsonl {
 pub enum ChatImportRepositoryError {
     #[error("the imported chat conflicts with stored data")]
     Conflict,
-    #[error("the imported chat is invalid")]
-    InvalidInput,
-    #[error("chat import storage failed")]
-    Storage,
+    #[error("the imported chat is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
+    #[error("chat import storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[cfg(test)]

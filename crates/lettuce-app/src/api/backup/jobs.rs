@@ -169,9 +169,9 @@ fn restore_failure_label(failure: crate::BackupRestoreError) -> &'static str {
     use crate::BackupRestoreError as Failure;
     use lettuce_transfer::{BackupEnvelopeError as Envelope, ProviderBackupGraphError as Graph, ProviderBackupRestorePlanError as Plan};
     match failure {
-        Failure::Plan(Plan::Envelope(Envelope::Authentication)) => "backup-authentication",
-        Failure::Plan(Plan::Io | Plan::Envelope(Envelope::Io)) => "backup-file-unavailable",
-        Failure::Plan(Plan::Envelope(Envelope::LimitExceeded) | Plan::InvalidGraph(Graph::LimitExceeded)) | Failure::Graph(Graph::LimitExceeded) => "backup-limit-exceeded",
+        Failure::Plan(Plan::Envelope(Envelope::Authentication { .. })) => "backup-authentication",
+        Failure::Plan(Plan::Io { .. } | Plan::Envelope(Envelope::Io { .. })) => "backup-file-unavailable",
+        Failure::Plan(Plan::Envelope(Envelope::LimitExceeded { .. }) | Plan::InvalidGraph(Graph::LimitExceeded { .. })) | Failure::Graph(Graph::LimitExceeded { .. }) => "backup-limit-exceeded",
         Failure::Plan(_) | Failure::Graph(_) => "backup-invalid-envelope",
         Failure::Location(crate::AppDatabaseLocationError::Busy) => "backup-file-busy",
         Failure::TargetDirectory | Failure::Location(_) | Failure::Workspace(_) | Failure::Database(_) | Failure::Restore(_) | Failure::Media(_) | Failure::ReadBack(_) => "backup-file-unavailable",
@@ -189,8 +189,8 @@ fn legacy_restore_failure_label(failure: crate::LegacyRestoreError) -> &'static 
     use lettuce_transfer::{LegacyBackupCompatibilityError as Compatibility, LegacyBackupInventoryError as Inventory, LegacyDatabasePreflightError as DatabaseFailure};
     match failure {
         Failure::Inventory(Inventory::Authentication) => "backup-authentication",
-        Failure::Inventory(Inventory::Io) => "backup-file-unavailable",
-        Failure::Inventory(Inventory::LimitExceeded) | Failure::Compatibility(Compatibility::LimitExceeded) | Failure::Plan(Plan::Compatibility(Compatibility::LimitExceeded)) | Failure::Plan(Plan::Database(DatabaseFailure::LimitExceeded { .. } | DatabaseFailure::MediaReferenceLimitExceeded { .. })) => "backup-limit-exceeded",
+        Failure::Inventory(Inventory::Io { .. }) => "backup-file-unavailable",
+        Failure::Inventory(Inventory::LimitExceeded { .. }) | Failure::Compatibility(Compatibility::LimitExceeded { .. }) | Failure::Plan(Plan::Compatibility(Compatibility::LimitExceeded { .. })) | Failure::Plan(Plan::Database(DatabaseFailure::LimitExceeded { .. } | DatabaseFailure::MediaReferenceLimitExceeded { .. })) => "backup-limit-exceeded",
         Failure::Inventory(_) => "backup-invalid-envelope",
         Failure::Plan(Plan::Database(DatabaseFailure::Unavailable)) => "backup-file-unavailable",
         Failure::Compatibility(_) | Failure::Plan(Plan::Compatibility(_)) => "backup-invalid-envelope",
@@ -422,26 +422,26 @@ mod fix_tests {
 
     #[test]
     fn fix11a_current_source_io_keeps_its_reason() {
-        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::Io)), "backup-file-unavailable");
-        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::Envelope(lettuce_transfer::BackupEnvelopeError::Io))), "backup-file-unavailable");
+        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::Io { reason: "simulated failure".to_owned() })), "backup-file-unavailable");
+        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::Envelope(lettuce_transfer::BackupEnvelopeError::Io { reason: "simulated failure".to_owned() }))), "backup-file-unavailable");
     }
 
     #[test]
     fn fix11a_format_limits_keep_their_reason() {
-        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::Envelope(lettuce_transfer::BackupEnvelopeError::LimitExceeded))), "backup-limit-exceeded");
-        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Inventory(lettuce_transfer::LegacyBackupInventoryError::LimitExceeded)), "backup-limit-exceeded");
-        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::InvalidGraph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded))), "backup-limit-exceeded");
-        assert_eq!(restore_failure_label(crate::BackupRestoreError::Graph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded)), "backup-limit-exceeded");
-        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::LimitExceeded)), "backup-limit-exceeded");
-        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::LimitExceeded))), "backup-limit-exceeded");
+        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::Envelope(lettuce_transfer::BackupEnvelopeError::LimitExceeded { reason: "simulated failure" }))), "backup-limit-exceeded");
+        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Inventory(lettuce_transfer::LegacyBackupInventoryError::LimitExceeded { reason: "simulated failure" })), "backup-limit-exceeded");
+        assert_eq!(restore_failure_label(crate::BackupRestoreError::Plan(lettuce_transfer::ProviderBackupRestorePlanError::InvalidGraph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded { reason: "simulated failure" }))), "backup-limit-exceeded");
+        assert_eq!(restore_failure_label(crate::BackupRestoreError::Graph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded { reason: "simulated failure" })), "backup-limit-exceeded");
+        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::LimitExceeded { reason: "simulated failure" })), "backup-limit-exceeded");
+        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::LimitExceeded { reason: "simulated failure" }))), "backup-limit-exceeded");
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Database(lettuce_transfer::LegacyDatabasePreflightError::LimitExceeded { table: "messages", limit: u32::MAX }))), "backup-limit-exceeded");
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Database(lettuce_transfer::LegacyDatabasePreflightError::MediaReferenceLimitExceeded { limit: u32::MAX }))), "backup-limit-exceeded");
     }
 
     #[test]
     fn fix11a_legacy_compatibility_format_errors_keep_their_reason() {
-        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::InvalidMeta)), "backup-invalid-envelope");
-        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::InvalidMeta))), "backup-invalid-envelope");
+        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::InvalidMeta { reason: "simulated failure".to_owned() })), "backup-invalid-envelope");
+        assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::InvalidMeta { reason: "simulated failure".to_owned() }))), "backup-invalid-envelope");
     }
 
     struct Fixture {

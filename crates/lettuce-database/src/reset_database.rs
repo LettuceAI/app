@@ -18,34 +18,58 @@ pub enum ResetDatabaseError {
     SourceNotFenced,
     #[error("reset target already exists")]
     Exists,
-    #[error("reset seed is invalid")]
-    InvalidData,
-    #[error("reset database storage is unavailable")]
-    Storage,
+    #[error("reset seed is invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("reset database storage is unavailable: {reason}")]
+    Storage { reason: &'static str },
 }
 
 impl Database {
     pub fn read_reset_seed(path: &Path) -> Result<ResetDatabaseSeed, ResetDatabaseError> {
         if !crate::write_fence::FileWriteAccess::new(path)
             .fenced()
-            .map_err(|_| ResetDatabaseError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "read reset seed failed");
+                ResetDatabaseError::Storage {
+                    reason: "read reset seed: a storage step failed",
+                }
+            })?
         {
             return Err(ResetDatabaseError::SourceNotFenced);
         }
         let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|_| ResetDatabaseError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read reset seed failed");
+                ResetDatabaseError::Storage {
+                    reason: "read reset seed: a storage step failed",
+                }
+            })?;
         let mut accounts = Vec::new();
-        for id in crate::sync_ids(&connection, "provider_accounts")
-            .map_err(|_| ResetDatabaseError::Storage)?
-        {
+        for id in crate::sync_ids(&connection, "provider_accounts").map_err(|error| {
+            tracing::warn!(%error, "read reset seed failed");
+            ResetDatabaseError::Storage {
+                reason: "read reset seed: a storage step failed",
+            }
+        })? {
             accounts.push(
                 crate::sync_load_provider_account(&connection, &id)
-                    .map_err(|_| ResetDatabaseError::InvalidData)?
-                    .ok_or(ResetDatabaseError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read reset seed failed");
+                        ResetDatabaseError::InvalidData {
+                            reason: "read reset seed: a value could not be read or converted",
+                        }
+                    })?
+                    .ok_or(ResetDatabaseError::InvalidData {
+                        reason: "read reset seed: a required value is missing",
+                    })?,
             );
         }
-        let old = crate::read_device_settings(&connection)
-            .map_err(|_| ResetDatabaseError::InvalidData)?;
+        let old = crate::read_device_settings(&connection).map_err(|error| {
+            tracing::warn!(%error, "read reset seed failed");
+            ResetDatabaseError::InvalidData {
+                reason: "read reset seed: a value could not be read or converted",
+            }
+        })?;
         Ok(ResetDatabaseSeed {
             accounts,
             device: DeviceSettings {
@@ -68,40 +92,75 @@ impl Database {
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                     ResetDatabaseError::Exists
                 } else {
-                    ResetDatabaseError::Storage
+                    ResetDatabaseError::Storage {
+                        reason: "create reset database: stored data failed a consistency check",
+                    }
                 }
             })?;
-        file.sync_all().map_err(|_| ResetDatabaseError::Storage)?;
+        file.sync_all().map_err(|error| {
+            tracing::warn!(%error, "create reset database failed");
+            ResetDatabaseError::Storage {
+                reason: "create reset database: a storage step failed",
+            }
+        })?;
         drop(file);
-        let database = Self::open(path).map_err(|_| ResetDatabaseError::Storage)?;
+        let database = Self::open(path).map_err(|error| {
+            tracing::warn!(%error, "create reset database failed");
+            ResetDatabaseError::Storage {
+                reason: "create reset database: a storage step failed",
+            }
+        })?;
         {
-            let mut connection = database
-                .connection()
-                .map_err(|_| ResetDatabaseError::Storage)?;
+            let mut connection = database.connection().map_err(|error| {
+                tracing::warn!(%error, "create reset database failed");
+                ResetDatabaseError::Storage {
+                    reason: "create reset database: a storage step failed",
+                }
+            })?;
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(|_| ResetDatabaseError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "create reset database failed");
+                    ResetDatabaseError::Storage {
+                        reason: "create reset database: a storage step failed",
+                    }
+                })?;
             let permitted = DeviceSettings {
                 llm_models_dir: seed.device.llm_models_dir.clone(),
                 retained_model_roots: seed.device.retained_model_roots.clone(),
                 ..DeviceSettings::default()
             };
             if permitted != seed.device {
-                return Err(ResetDatabaseError::InvalidData);
+                return Err(ResetDatabaseError::InvalidData {
+                    reason: "create reset database: a value failed validation",
+                });
             }
             for account in &seed.accounts {
                 crate::insert_provider_account_row(&transaction, account).map_err(|error| {
                     match error {
-                        ModelRepositoryError::InvalidData => ResetDatabaseError::InvalidData,
-                        _ => ResetDatabaseError::Storage,
+                        ModelRepositoryError::InvalidData { .. } => {
+                            ResetDatabaseError::InvalidData {
+                                reason: "create reset database: a stored value is not recognised",
+                            }
+                        }
+                        _ => ResetDatabaseError::Storage {
+                            reason: "create reset database: a stored value is not recognised",
+                        },
                     }
                 })?;
             }
-            crate::replace_device_settings_in(&transaction, &seed.device)
-                .map_err(|_| ResetDatabaseError::InvalidData)?;
-            transaction
-                .commit()
-                .map_err(|_| ResetDatabaseError::Storage)?;
+            crate::replace_device_settings_in(&transaction, &seed.device).map_err(|error| {
+                tracing::warn!(%error, "create reset database failed");
+                ResetDatabaseError::InvalidData {
+                    reason: "create reset database: a value could not be read or converted",
+                }
+            })?;
+            transaction.commit().map_err(|error| {
+                tracing::warn!(%error, "create reset database failed");
+                ResetDatabaseError::Storage {
+                    reason: "create reset database: a storage step failed",
+                }
+            })?;
         }
         Ok(database)
     }

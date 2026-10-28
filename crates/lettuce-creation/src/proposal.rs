@@ -138,7 +138,9 @@ impl CreationProposal {
     ) -> Result<Self, CreationProposalError> {
         self.validate()?;
         if operations.is_empty() || operations.len() > MAX_CREATION_OPERATIONS {
-            return Err(CreationProposalError::InvalidOperationCount);
+            return Err(CreationProposalError::InvalidOperationCount {
+                reason: "operation list is empty or exceeds the limit",
+            });
         }
         let mut draft = self.draft.clone();
         let mut stage = self.stage;
@@ -146,8 +148,11 @@ impl CreationProposal {
         for (index, operation) in operations.into_iter().enumerate() {
             let error = apply_one(&mut draft, &mut stage, &operation).err();
             outcomes.push(CreationOperationOutcome {
-                ordinal: u32::try_from(index)
-                    .map_err(|_| CreationProposalError::InvalidOperationCount)?,
+                ordinal: u32::try_from(index).map_err(|_| {
+                    CreationProposalError::InvalidOperationCount {
+                        reason: "operation ordinal exceeds the u32 range",
+                    }
+                })?,
                 operation,
                 error,
             });
@@ -174,24 +179,38 @@ impl CreationProposal {
         self.draft.validate()?;
         if self.ordinal == 0 {
             if self.turn_id.is_some() || self.parent_id.is_some() || !self.outcomes.is_empty() {
-                return Err(CreationProposalError::InvalidLineage);
+                return Err(CreationProposalError::InvalidLineage {
+                    reason: "first proposal carries a turn, parent or outcomes",
+                });
             }
         } else if self.turn_id.is_none() || self.parent_id.is_none() || self.outcomes.is_empty() {
-            return Err(CreationProposalError::InvalidLineage);
+            return Err(CreationProposalError::InvalidLineage {
+                reason: "follow-up proposal lacks a turn, parent or outcomes",
+            });
         }
         for (index, outcome) in self.outcomes.iter().enumerate() {
             if outcome.ordinal
-                != u32::try_from(index).map_err(|_| CreationProposalError::InvalidOperationCount)?
+                != u32::try_from(index).map_err(|_| {
+                    CreationProposalError::InvalidOperationCount {
+                        reason: "outcome ordinal exceeds the u32 range",
+                    }
+                })?
             {
-                return Err(CreationProposalError::InvalidLineage);
+                return Err(CreationProposalError::InvalidLineage {
+                    reason: "outcome ordinals are not sequential",
+                });
             }
         }
         if serde_json::to_vec(self)
-            .map_err(|_| CreationProposalError::DraftTooLarge)?
+            .map_err(|_| CreationProposalError::DraftTooLarge {
+                reason: "proposal could not be serialized to measure its size",
+            })?
             .len()
             > MAX_CREATION_PROPOSAL_BYTES
         {
-            return Err(CreationProposalError::DraftTooLarge);
+            return Err(CreationProposalError::DraftTooLarge {
+                reason: "proposal exceeds the byte limit",
+            });
         }
         Ok(())
     }
@@ -382,18 +401,18 @@ fn validate_optional_text(value: &Option<String>) -> Result<(), CreationOperatio
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CreationProposalError {
-    #[error("creation target is invalid")]
-    InvalidTarget,
-    #[error("creation draft is too large")]
-    DraftTooLarge,
-    #[error("creation text is blank")]
-    BlankText,
+    #[error("creation target is invalid: {reason}")]
+    InvalidTarget { reason: &'static str },
+    #[error("creation draft is too large: {reason}")]
+    DraftTooLarge { reason: &'static str },
+    #[error("creation text is blank: {reason}")]
+    BlankText { reason: &'static str },
     #[error("creation draft contains duplicate identity")]
     DuplicateDraftIdentity,
-    #[error("creation proposal lineage is invalid")]
-    InvalidLineage,
-    #[error("creation operation count is invalid")]
-    InvalidOperationCount,
+    #[error("creation proposal lineage is invalid: {reason}")]
+    InvalidLineage { reason: &'static str },
+    #[error("creation operation count is invalid: {reason}")]
+    InvalidOperationCount { reason: &'static str },
     #[error("creation revision overflow")]
     RevisionOverflow,
 }

@@ -81,10 +81,10 @@ pub enum ImageRequestValidationError {
     TooManyInputImages,
     #[error("image request field {0} is invalid")]
     Field(&'static str),
-    #[error("image request settings are invalid")]
-    Settings,
-    #[error("image generation record is invalid")]
-    Record,
+    #[error("image request settings are invalid: {reason}")]
+    Settings { reason: &'static str },
+    #[error("image generation record is invalid: {reason}")]
+    Record { reason: &'static str },
 }
 
 impl ImageGenerationRequest {
@@ -115,9 +115,12 @@ impl ImageGenerationRequest {
         if self.settings.cpp != lettuce_models::StableDiffusionCppBinding::default() {
             return Err(ImageRequestValidationError::Field("settings.cpp"));
         }
-        self.settings
-            .validate()
-            .map_err(|_| ImageRequestValidationError::Settings)?;
+        self.settings.validate().map_err(|error| {
+            tracing::warn!(%error, "settings failed validation");
+            ImageRequestValidationError::Settings {
+                reason: "settings failed validation",
+            }
+        })?;
         if self.loras.iter().any(|lora| {
             lora.path.trim().is_empty()
                 || !lora.multiplier.is_finite()
@@ -193,7 +196,9 @@ impl ImageGenerationRecord {
             ImageGenerationState::Pending => return Ok(()),
             ImageGenerationState::Succeeded { result } => {
                 if result.request_id != self.request.id || result.images.is_empty() {
-                    return Err(ImageRequestValidationError::Record);
+                    return Err(ImageRequestValidationError::Record {
+                        reason: "succeeded record has no images or its result belongs to another request",
+                    });
                 }
                 result.completed_at
             }
@@ -202,14 +207,18 @@ impl ImageGenerationRecord {
                 completed_at,
             } => {
                 if message.trim().is_empty() {
-                    return Err(ImageRequestValidationError::Record);
+                    return Err(ImageRequestValidationError::Record {
+                        reason: "failed record has a blank message",
+                    });
                 }
                 *completed_at
             }
             ImageGenerationState::Cancelled { completed_at } => *completed_at,
         };
         if completed_at < self.request.created_at {
-            return Err(ImageRequestValidationError::Record);
+            return Err(ImageRequestValidationError::Record {
+                reason: "record completed before the request was created",
+            });
         }
         Ok(())
     }
@@ -221,10 +230,10 @@ pub enum ImageGenerationRepositoryError {
     NotFound,
     #[error("image generation conflicts with the stored record")]
     Conflict,
-    #[error("stored image generation data are invalid")]
-    InvalidData,
-    #[error("image generation storage failed")]
-    Storage,
+    #[error("stored image generation data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("image generation storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait ImageGenerationRepository: Send + Sync {
@@ -348,13 +357,19 @@ mod tests {
             },
             ..record.clone()
         };
-        assert_eq!(empty.validate(), Err(ImageRequestValidationError::Record));
+        assert!(matches!(
+            empty.validate(),
+            Err(ImageRequestValidationError::Record { .. })
+        ));
         let early = ImageGenerationRecord {
             state: ImageGenerationState::Cancelled {
                 completed_at: TimestampMillis::new(1),
             },
             ..record
         };
-        assert_eq!(early.validate(), Err(ImageRequestValidationError::Record));
+        assert!(matches!(
+            early.validate(),
+            Err(ImageRequestValidationError::Record { .. })
+        ));
     }
 }

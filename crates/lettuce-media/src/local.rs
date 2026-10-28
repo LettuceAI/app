@@ -160,12 +160,18 @@ impl SyncMediaAsset {
     pub fn validate(&self) -> Result<(), MediaStoreError> {
         self.asset
             .validate_for_blob_kind(self.blob.kind)
-            .map_err(|_| MediaStoreError::InvalidMetadata)?;
+            .map_err(|_| MediaStoreError::InvalidMetadata {
+                reason: "asset is incompatible with the blob kind",
+            })?;
         self.blob
             .validate()
-            .map_err(|_| MediaStoreError::InvalidMetadata)?;
+            .map_err(|_| MediaStoreError::InvalidMetadata {
+                reason: "blob failed validation",
+            })?;
         if self.asset.blob_id != self.blob.id || self.blob.state != BlobState::Ready {
-            return Err(MediaStoreError::InvalidMetadata);
+            return Err(MediaStoreError::InvalidMetadata {
+                reason: "asset does not reference the ready blob",
+            });
         }
         Ok(())
     }
@@ -195,16 +201,16 @@ impl std::fmt::Debug for OpenedMediaAsset {
 pub enum MediaStoreError {
     #[error("some unused media objects could not be removed")]
     ObjectRemovalFailed,
-    #[error("media input could not be read")]
-    InputRead,
+    #[error("media input could not be read: {reason}")]
+    InputRead { reason: &'static str },
     #[error("media input is empty")]
     EmptyInput,
     #[error("media input exceeds the bounded object limit")]
     InputTooLarge,
     #[error("media input format is not allowlisted")]
     UnsupportedFormat,
-    #[error("media input has an invalid or truncated header")]
-    InvalidHeader,
+    #[error("media input has an invalid or truncated header: {reason}")]
+    InvalidHeader { reason: &'static str },
     #[error("media input kind does not match the requested asset kind")]
     KindMismatch,
     #[error("media input MIME type does not match its detected format")]
@@ -213,8 +219,8 @@ pub enum MediaStoreError {
     PixelLimitExceeded,
     #[error("media input dimensions are invalid")]
     InvalidDimensions,
-    #[error("media input metadata is invalid")]
-    InvalidMetadata,
+    #[error("media input metadata is invalid: {reason}")]
+    InvalidMetadata { reason: &'static str },
     #[error("media timestamp could not be obtained")]
     Clock,
     #[error("media object could not be committed")]
@@ -223,8 +229,8 @@ pub enum MediaStoreError {
     CommitSyncFailed,
     #[error("content-addressed object conflicts with an existing object")]
     ObjectConflict,
-    #[error("media catalog operation failed after the object was committed")]
-    CatalogFailure,
+    #[error("media catalog operation failed after the object was committed: {reason}")]
+    CatalogFailure { reason: &'static str },
     #[error("media asset was not found")]
     AssetNotFound,
     #[error("media blob was not found")]
@@ -237,8 +243,8 @@ pub enum MediaStoreError {
     ObjectMissing,
     #[error("media object metadata do not match its catalog record")]
     ObjectMetadataMismatch,
-    #[error("media repository returned invalid data")]
-    RepositoryData,
+    #[error("media repository returned invalid data: {reason}")]
+    RepositoryData { reason: &'static str },
 }
 
 /// Local media blob service. The only filesystem authority it receives is the
@@ -282,12 +288,16 @@ where
         let asset = self
             .assets
             .get(asset_id)
-            .map_err(|_| MediaStoreError::RepositoryData)?
+            .map_err(|_| MediaStoreError::RepositoryData {
+                reason: "asset lookup in the catalog failed",
+            })?
             .ok_or(MediaStoreError::AssetNotFound)?;
         let blob = self
             .blobs
             .get(asset.blob_id)
-            .map_err(|_| MediaStoreError::RepositoryData)?
+            .map_err(|_| MediaStoreError::RepositoryData {
+                reason: "blob lookup in the catalog failed",
+            })?
             .ok_or(MediaStoreError::BlobNotFound)?;
         if blob.state != BlobState::Ready || asset.kind.blob_kind() != blob.kind {
             return Err(MediaStoreError::NotReady);
@@ -374,10 +384,12 @@ where
         let mut staged = value.blob.clone();
         staged.state = BlobState::Staged;
         staged.updated_at = now;
-        let registered = self
-            .blobs
-            .register(staged)
-            .map_err(|_| MediaStoreError::CatalogFailure)?;
+        let registered =
+            self.blobs
+                .register(staged)
+                .map_err(|_| MediaStoreError::CatalogFailure {
+                    reason: "registering the staged blob failed",
+                })?;
         if registered.content_hash != value.blob.content_hash
             || registered.kind != value.blob.kind
             || registered.mime_type != value.blob.mime_type
@@ -387,18 +399,24 @@ where
             || registered.duration_ms != value.blob.duration_ms
             || registered.validation_version != value.blob.validation_version
         {
-            return Err(MediaStoreError::CatalogFailure);
+            return Err(MediaStoreError::CatalogFailure {
+                reason: "registered blob differs from the synced blob metadata",
+            });
         }
         let blob = match registered.state {
             BlobState::Ready => registered,
             BlobState::Missing => self
                 .blobs
                 .restore_missing_to_ready(registered.id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)?,
+                .map_err(|_| MediaStoreError::CatalogFailure {
+                    reason: "restoring the missing blob to ready failed",
+                })?,
             _ => self
                 .blobs
                 .finalize_staged_to_ready(registered.id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)?,
+                .map_err(|_| MediaStoreError::CatalogFailure {
+                    reason: "finalizing the staged blob to ready failed",
+                })?,
         };
         let mut asset = value.asset.clone();
         asset.blob_id = blob.id;
@@ -408,14 +426,24 @@ where
                 let existing = self
                     .assets
                     .get(asset.id)
-                    .map_err(|_| MediaStoreError::CatalogFailure)?
-                    .ok_or(MediaStoreError::CatalogFailure)?;
+                    .map_err(|_| MediaStoreError::CatalogFailure {
+                        reason: "asset lookup after registration failed",
+                    })?
+                    .ok_or(MediaStoreError::CatalogFailure {
+                        reason: "asset is missing after registration",
+                    })?;
                 if existing != asset {
-                    return Err(MediaStoreError::CatalogFailure);
+                    return Err(MediaStoreError::CatalogFailure {
+                        reason: "existing asset differs from the synced asset",
+                    });
                 }
                 existing
             }
-            Err(_) => return Err(MediaStoreError::CatalogFailure),
+            Err(_) => {
+                return Err(MediaStoreError::CatalogFailure {
+                    reason: "creating the synced asset failed",
+                });
+            }
         };
         Ok(IngestedMedia { asset, blob })
     }
@@ -432,7 +460,9 @@ where
         let blob = self
             .blobs
             .find_by_hash(hash)
-            .map_err(|_| MediaStoreError::RepositoryData)?
+            .map_err(|_| MediaStoreError::RepositoryData {
+                reason: "blob lookup by hash failed",
+            })?
             .ok_or(MediaStoreError::BlobNotFound)?;
         if blob.state != BlobState::Ready || offset > blob.byte_size {
             return Err(MediaStoreError::NotReady);
@@ -443,11 +473,15 @@ where
             .map_err(MediaStoreError::File)?
             .ok_or(MediaStoreError::ObjectMissing)?;
         file.seek(SeekFrom::Start(offset))
-            .map_err(|_| MediaStoreError::InputRead)?;
+            .map_err(|_| MediaStoreError::InputRead {
+                reason: "seeking in the media object failed",
+            })?;
         let remaining = usize::try_from(blob.byte_size - offset).unwrap_or(usize::MAX);
         let mut bytes = vec![0; max_bytes.min(remaining)];
         file.read_exact(&mut bytes)
-            .map_err(|_| MediaStoreError::InputRead)?;
+            .map_err(|_| MediaStoreError::InputRead {
+                reason: "reading the media object chunk failed",
+            })?;
         Ok(bytes)
     }
 
@@ -518,8 +552,22 @@ where
     ) -> Result<IngestedMedia, MediaStoreError> {
         self.ingest_with_commit(input, request, |mut upload| {
             upload.asset.id = asset_id;
-            if let Some(existing_asset) = self.assets.get(asset_id).map_err(|_| MediaStoreError::CatalogFailure)? {
-                let existing_blob = self.blobs.get(existing_asset.blob_id).map_err(|_| MediaStoreError::CatalogFailure)?.ok_or(MediaStoreError::CatalogFailure)?;
+            if let Some(existing_asset) =
+                self.assets
+                    .get(asset_id)
+                    .map_err(|_| MediaStoreError::CatalogFailure {
+                        reason: "asset lookup before ingest failed",
+                    })?
+            {
+                let existing_blob = self
+                    .blobs
+                    .get(existing_asset.blob_id)
+                    .map_err(|_| MediaStoreError::CatalogFailure {
+                        reason: "blob lookup for the existing asset failed",
+                    })?
+                    .ok_or(MediaStoreError::CatalogFailure {
+                        reason: "existing asset has no blob record",
+                    })?;
                 if existing_asset.kind != upload.asset.kind
                     || existing_asset.origin != upload.asset.origin
                     || existing_asset.retention != upload.asset.retention
@@ -533,42 +581,84 @@ where
                     || existing_blob.height != upload.blob.height
                     || existing_blob.state != BlobState::Ready
                 {
-                    return Err(MediaStoreError::CatalogFailure);
+                    return Err(MediaStoreError::CatalogFailure {
+                        reason: "existing blob differs from the uploaded content or is not ready",
+                    });
                 }
-                return Ok(IngestedMedia { asset: existing_asset, blob: existing_blob });
+                return Ok(IngestedMedia {
+                    asset: existing_asset,
+                    blob: existing_blob,
+                });
             }
             upload.blob.state = BlobState::Staged;
-            let registered = self.blobs.register(upload.blob.clone()).map_err(|_| MediaStoreError::CatalogFailure)?;
+            let registered = self.blobs.register(upload.blob.clone()).map_err(|_| {
+                MediaStoreError::CatalogFailure {
+                    reason: "registering the uploaded blob failed",
+                }
+            })?;
             if registered.kind != upload.blob.kind
                 || registered.mime_type != upload.blob.mime_type
                 || registered.byte_size != upload.blob.byte_size
                 || registered.width != upload.blob.width
                 || registered.height != upload.blob.height
             {
-                return Err(MediaStoreError::CatalogFailure);
+                return Err(MediaStoreError::CatalogFailure {
+                    reason: "registered blob differs from the uploaded blob metadata",
+                });
             }
             let now = upload.asset.created_at;
             let blob = match registered.state {
                 BlobState::Ready => registered,
-                BlobState::Staged => self.blobs.finalize_staged_to_ready(registered.id, now).map_err(|_| MediaStoreError::CatalogFailure)?,
-                BlobState::Missing => self.blobs.restore_missing_to_ready(registered.id, now).map_err(|_| MediaStoreError::CatalogFailure)?,
-                BlobState::Quarantined => return Err(MediaStoreError::CatalogFailure),
+                BlobState::Staged => self
+                    .blobs
+                    .finalize_staged_to_ready(registered.id, now)
+                    .map_err(|_| MediaStoreError::CatalogFailure {
+                        reason: "finalizing the staged blob to ready failed",
+                    })?,
+                BlobState::Missing => self
+                    .blobs
+                    .restore_missing_to_ready(registered.id, now)
+                    .map_err(|_| MediaStoreError::CatalogFailure {
+                        reason: "restoring the missing blob to ready failed",
+                    })?,
+                BlobState::Quarantined => {
+                    return Err(MediaStoreError::CatalogFailure {
+                        reason: "registered blob is quarantined",
+                    });
+                }
             };
             upload.asset.blob_id = blob.id;
             let asset = match self.assets.create(upload.asset.clone()) {
                 Ok(asset) => asset,
                 Err(MediaAssetRepositoryError::AlreadyExists) => {
-                    let existing = self.assets.get(asset_id).map_err(|_| MediaStoreError::CatalogFailure)?.ok_or(MediaStoreError::CatalogFailure)?;
-                    if existing.id != upload.asset.id || existing.blob_id != upload.asset.blob_id
-                        || existing.kind != upload.asset.kind || existing.origin != upload.asset.origin
-                        || existing.retention != upload.asset.retention || existing.provenance != upload.asset.provenance
+                    let existing = self
+                        .assets
+                        .get(asset_id)
+                        .map_err(|_| MediaStoreError::CatalogFailure {
+                            reason: "asset lookup after an identity collision failed",
+                        })?
+                        .ok_or(MediaStoreError::CatalogFailure {
+                            reason: "colliding asset has no record",
+                        })?;
+                    if existing.id != upload.asset.id
+                        || existing.blob_id != upload.asset.blob_id
+                        || existing.kind != upload.asset.kind
+                        || existing.origin != upload.asset.origin
+                        || existing.retention != upload.asset.retention
+                        || existing.provenance != upload.asset.provenance
                         || existing.revision != Revision::INITIAL
                     {
-                        return Err(MediaStoreError::CatalogFailure);
+                        return Err(MediaStoreError::CatalogFailure {
+                            reason: "colliding asset differs from the uploaded asset",
+                        });
                     }
                     existing
                 }
-                Err(_) => return Err(MediaStoreError::CatalogFailure),
+                Err(_) => {
+                    return Err(MediaStoreError::CatalogFailure {
+                        reason: "creating the asset failed",
+                    });
+                }
             };
             Ok(IngestedMedia { asset, blob })
         })?
@@ -600,7 +690,9 @@ where
             updated_at: now,
         };
         blob.validate()
-            .map_err(|_| MediaStoreError::InvalidMetadata)?;
+            .map_err(|_| MediaStoreError::InvalidMetadata {
+                reason: "blob failed validation",
+            })?;
         let asset = MediaAsset::new(
             AssetId::new(),
             blob.id,
@@ -612,7 +704,9 @@ where
             now,
             now,
         )
-        .map_err(|_| MediaStoreError::InvalidMetadata)?;
+        .map_err(|_| MediaStoreError::InvalidMetadata {
+            reason: "asset failed validation",
+        })?;
         self.commit_object(&key, blob.byte_size, &blob.content_hash, &bytes)?;
         Ok(commit(IngestedMedia { asset, blob }))
     }
@@ -630,7 +724,9 @@ where
         let blob = self
             .blobs
             .get(blob_id)
-            .map_err(|_| MediaStoreError::RepositoryData)?
+            .map_err(|_| MediaStoreError::RepositoryData {
+                reason: "blob lookup for release failed",
+            })?
             .ok_or(MediaStoreError::BlobNotFound)?;
         if blob.state != BlobState::Ready || !release(&blob)? {
             return Ok(None);
@@ -760,7 +856,9 @@ where
             .get(asset_id)
             .map_err(|error| match error {
                 MediaAssetRepositoryError::NotFound => MediaStoreError::AssetNotFound,
-                _ => MediaStoreError::RepositoryData,
+                _ => MediaStoreError::RepositoryData {
+                    reason: "asset lookup failed",
+                },
             })?
             .ok_or(MediaStoreError::AssetNotFound)?;
         let blob = self
@@ -768,12 +866,16 @@ where
             .get(asset.blob_id)
             .map_err(|error| match error {
                 MediaBlobRepositoryError::NotFound => MediaStoreError::BlobNotFound,
-                _ => MediaStoreError::RepositoryData,
+                _ => MediaStoreError::RepositoryData {
+                    reason: "blob lookup failed",
+                },
             })?
             .ok_or(MediaStoreError::BlobNotFound)?;
         asset
             .validate()
-            .map_err(|_| MediaStoreError::RepositoryData)?;
+            .map_err(|_| MediaStoreError::RepositoryData {
+                reason: "stored asset failed validation",
+            })?;
         if asset.kind.blob_kind() != blob.kind {
             return Err(MediaStoreError::AssetBlobKindMismatch);
         }
@@ -823,7 +925,9 @@ where
             if error.kind() == io::ErrorKind::InvalidInput {
                 MediaStoreError::InputTooLarge
             } else {
-                MediaStoreError::InputRead
+                MediaStoreError::InputRead {
+                    reason: "writing the staged object failed",
+                }
             }
         })?;
         match staged.commit() {
@@ -871,7 +975,9 @@ fn read_bounded<R: Read>(mut input: R) -> Result<Vec<u8>, MediaStoreError> {
     loop {
         let read = input
             .read(&mut buffer)
-            .map_err(|_| MediaStoreError::InputRead)?;
+            .map_err(|_| MediaStoreError::InputRead {
+                reason: "reading the media input failed",
+            })?;
         if read == 0 {
             break;
         }
@@ -894,7 +1000,9 @@ fn read_ingest<R: Read>(
     request
         .provenance
         .validate()
-        .map_err(|_| MediaStoreError::InvalidMetadata)?;
+        .map_err(|_| MediaStoreError::InvalidMetadata {
+            reason: "provenance failed validation",
+        })?;
     let bytes = read_bounded(input)?;
     let sniffed = if request.asset_kind == AssetKind::SourceDocument {
         sniff_document(&bytes)?
@@ -929,7 +1037,9 @@ fn sniff_document(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
                 b"1.0" | b"1.1" | b"1.2" | b"1.3" | b"1.4" | b"1.5" | b"1.6" | b"1.7" | b"2.0"
             )
         {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "pdf version is missing or unsupported",
+            });
         }
         "application/pdf"
     } else {
@@ -984,10 +1094,14 @@ fn sniff(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
 
 fn sniff_png(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 24 || be_u32(&bytes[8..12])? != 13 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "png header is truncated or has no 13 byte ihdr chunk",
+        });
     }
     if &bytes[12..16] != b"IHDR" {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "png first chunk is not ihdr",
+        });
     }
     dimensions(
         be_u32(&bytes[16..20])?,
@@ -998,7 +1112,9 @@ fn sniff_png(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
 
 fn sniff_gif(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 10 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "gif header is truncated",
+        });
     }
     dimensions(
         u32::from(le_u16(&bytes[6..8])?),
@@ -1009,11 +1125,15 @@ fn sniff_gif(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
 
 fn sniff_webp(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 20 || riff_size(bytes)? < 4 || riff_size(bytes)? > bytes.len() - 8 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "webp riff header is truncated or its size is out of range",
+        });
     }
     if &bytes[12..16] == b"VP8X" {
         if bytes.len() < 30 || le_u32(&bytes[16..20])? < 10 {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "webp vp8x chunk is truncated or too small",
+            });
         }
         return dimensions(
             1 + (u32::from(bytes[24]) | (u32::from(bytes[25]) << 8) | (u32::from(bytes[26]) << 16)),
@@ -1023,7 +1143,9 @@ fn sniff_webp(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     }
     if &bytes[12..16] == b"VP8 " {
         if bytes.len() < 30 || bytes[23..26] != [0x9d, 0x01, 0x2a] {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "webp vp8 chunk is truncated or has no start code",
+            });
         }
         return dimensions(
             u32::from(le_u16(&bytes[26..28])? & 0x3fff),
@@ -1033,7 +1155,9 @@ fn sniff_webp(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     }
     if &bytes[12..16] == b"VP8L" {
         if bytes.len() < 25 || bytes[20] != 0x2f {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "webp vp8l chunk is truncated or has no signature",
+            });
         }
         let bits = le_u32(&bytes[21..25])?;
         return dimensions(
@@ -1042,7 +1166,9 @@ fn sniff_webp(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
             "image/webp",
         );
     }
-    Err(MediaStoreError::InvalidHeader)
+    Err(MediaStoreError::InvalidHeader {
+        reason: "webp chunk is not vp8, vp8l or vp8x",
+    })
 }
 
 fn sniff_jpeg(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
@@ -1052,30 +1178,42 @@ fn sniff_jpeg(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
             cursor += 1;
         }
         if cursor >= bytes.len() {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "jpeg ends before a marker",
+            });
         }
         let marker = bytes[cursor];
         cursor += 1;
         if marker == 0xda || marker == 0xd9 {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "jpeg reaches the scan or end marker before a frame header",
+            });
         }
         if marker == 0x00 || marker == 0xff {
             continue;
         }
         if cursor + 2 > bytes.len() {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "jpeg segment length is truncated",
+            });
         }
         let segment_length = usize::from(u16::from_be_bytes(
             bytes[cursor..cursor + 2]
                 .try_into()
-                .map_err(|_| MediaStoreError::InvalidHeader)?,
+                .map_err(|_| MediaStoreError::InvalidHeader {
+                    reason: "jpeg segment length cannot be read",
+                })?,
         ));
         if segment_length < 2 || cursor + segment_length > bytes.len() {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "jpeg segment length is invalid or extends past the data",
+            });
         }
         if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
             if segment_length < 7 {
-                return Err(MediaStoreError::InvalidHeader);
+                return Err(MediaStoreError::InvalidHeader {
+                    reason: "jpeg frame segment is too short",
+                });
             }
             return dimensions(
                 u32::from(be_u16(&bytes[cursor + 5..cursor + 7])?),
@@ -1085,26 +1223,37 @@ fn sniff_jpeg(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
         }
         cursor += segment_length;
     }
-    Err(MediaStoreError::InvalidHeader)
+    Err(MediaStoreError::InvalidHeader {
+        reason: "jpeg has no frame header",
+    })
 }
 
 fn sniff_wav(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 12 || riff_size(bytes)? < 4 || riff_size(bytes)? > bytes.len() - 8 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "wav riff header is truncated or its size is out of range",
+        });
     }
     let mut cursor = 12usize;
     let mut saw_format = false;
     while cursor + 8 <= bytes.len() {
-        let size = usize::try_from(le_u32(&bytes[cursor + 4..cursor + 8])?)
-            .map_err(|_| MediaStoreError::InvalidHeader)?;
+        let size = usize::try_from(le_u32(&bytes[cursor + 4..cursor + 8])?).map_err(|_| {
+            MediaStoreError::InvalidHeader {
+                reason: "wav chunk size exceeds the platform size",
+            }
+        })?;
         let end = cursor
             .checked_add(8)
             .and_then(|value| value.checked_add(size));
         let Some(end) = end else {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "wav chunk size overflows",
+            });
         };
         if end > bytes.len() {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "wav chunk extends past the data",
+            });
         }
         if &bytes[cursor..cursor + 4] == b"fmt " {
             if size < 16
@@ -1112,7 +1261,9 @@ fn sniff_wav(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
                 || le_u16(&bytes[cursor + 10..cursor + 12])? == 0
                 || le_u32(&bytes[cursor + 12..cursor + 16])? == 0
             {
-                return Err(MediaStoreError::InvalidHeader);
+                return Err(MediaStoreError::InvalidHeader {
+                    reason: "wav fmt chunk is too short or has zero fields",
+                });
             }
             saw_format = true;
         }
@@ -1126,17 +1277,23 @@ fn sniff_wav(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
             height: None,
         })
     } else {
-        Err(MediaStoreError::InvalidHeader)
+        Err(MediaStoreError::InvalidHeader {
+            reason: "wav has no fmt chunk",
+        })
     }
 }
 
 fn sniff_ogg(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 27 || bytes[4] != 0 || bytes[26] == 0 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "ogg page header is truncated or malformed",
+        });
     }
     let end = 27usize + usize::from(bytes[26]);
     if end > bytes.len() {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "ogg segment table extends past the data",
+        });
     }
     let payload = bytes[27..end]
         .iter()
@@ -1146,7 +1303,9 @@ fn sniff_ogg(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
         .checked_add(payload)
         .is_none_or(|value| value > bytes.len())
     {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "ogg page payload extends past the data",
+        });
     }
     Ok(SniffedMedia {
         kind: MediaKind::Audio,
@@ -1158,7 +1317,9 @@ fn sniff_ogg(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
 
 fn sniff_flac(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 8 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "flac header is truncated",
+        });
     }
     let header = bytes[4];
     let size = (usize::from(bytes[5]) << 16) | (usize::from(bytes[6]) << 8) | usize::from(bytes[7]);
@@ -1166,7 +1327,9 @@ fn sniff_flac(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
         || size < 34
         || 8usize.checked_add(size).is_none_or(|end| end > bytes.len())
     {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "flac streaminfo block is invalid or extends past the data",
+        });
     }
     Ok(SniffedMedia {
         kind: MediaKind::Audio,
@@ -1178,11 +1341,18 @@ fn sniff_flac(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
 
 fn sniff_m4a(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.len() < 12 {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "m4a header is truncated",
+        });
     }
-    let size = usize::try_from(be_u32(&bytes[..4])?).map_err(|_| MediaStoreError::InvalidHeader)?;
+    let size =
+        usize::try_from(be_u32(&bytes[..4])?).map_err(|_| MediaStoreError::InvalidHeader {
+            reason: "m4a box size exceeds the platform size",
+        })?;
     if size < 8 || size > bytes.len() || bytes[8..12] != *b"M4A " {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "m4a ftyp box is invalid or is not the M4A brand",
+        });
     }
     Ok(SniffedMedia {
         kind: MediaKind::Audio,
@@ -1195,7 +1365,9 @@ fn sniff_m4a(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
 fn sniff_mp3(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     let start = if bytes.starts_with(b"ID3") {
         if bytes.len() < 10 || bytes[3] == 0xff || bytes[3] & 0xe0 != 0 {
-            return Err(MediaStoreError::InvalidHeader);
+            return Err(MediaStoreError::InvalidHeader {
+                reason: "id3 header is truncated or malformed",
+            });
         }
         let size = (usize::from(bytes[6] & 0x7f) << 21)
             | (usize::from(bytes[7] & 0x7f) << 14)
@@ -1204,12 +1376,16 @@ fn sniff_mp3(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
         10usize
             .checked_add(size)
             .filter(|end| *end <= bytes.len())
-            .ok_or(MediaStoreError::InvalidHeader)?
+            .ok_or(MediaStoreError::InvalidHeader {
+                reason: "id3 tag size overflows or extends past the data",
+            })?
     } else {
         0
     };
     if !looks_like_mp3_frame(&bytes[start..]) {
-        return Err(MediaStoreError::InvalidHeader);
+        return Err(MediaStoreError::InvalidHeader {
+            reason: "data does not start with an mp3 frame",
+        });
     }
     Ok(SniffedMedia {
         kind: MediaKind::Audio,
@@ -1253,8 +1429,12 @@ fn dimensions(
 }
 
 fn riff_size(bytes: &[u8]) -> Result<usize, MediaStoreError> {
-    let value = bytes.get(4..8).ok_or(MediaStoreError::InvalidHeader)?;
-    let size = usize::try_from(le_u32(value)?).map_err(|_| MediaStoreError::InvalidHeader)?;
+    let value = bytes.get(4..8).ok_or(MediaStoreError::InvalidHeader {
+        reason: "riff header has no size field",
+    })?;
+    let size = usize::try_from(le_u32(value)?).map_err(|_| MediaStoreError::InvalidHeader {
+        reason: "riff size exceeds the platform size",
+    })?;
     Ok(size)
 }
 
@@ -1262,28 +1442,36 @@ fn be_u16(bytes: &[u8]) -> Result<u16, MediaStoreError> {
     bytes
         .try_into()
         .map(u16::from_be_bytes)
-        .map_err(|_| MediaStoreError::InvalidHeader)
+        .map_err(|_| MediaStoreError::InvalidHeader {
+            reason: "u16 field is truncated",
+        })
 }
 
 fn le_u16(bytes: &[u8]) -> Result<u16, MediaStoreError> {
     bytes
         .try_into()
         .map(u16::from_le_bytes)
-        .map_err(|_| MediaStoreError::InvalidHeader)
+        .map_err(|_| MediaStoreError::InvalidHeader {
+            reason: "u16 field is truncated",
+        })
 }
 
 fn be_u32(bytes: &[u8]) -> Result<u32, MediaStoreError> {
     bytes
         .try_into()
         .map(u32::from_be_bytes)
-        .map_err(|_| MediaStoreError::InvalidHeader)
+        .map_err(|_| MediaStoreError::InvalidHeader {
+            reason: "u32 field is truncated",
+        })
 }
 
 fn le_u32(bytes: &[u8]) -> Result<u32, MediaStoreError> {
     bytes
         .try_into()
         .map(u32::from_le_bytes)
-        .map_err(|_| MediaStoreError::InvalidHeader)
+        .map_err(|_| MediaStoreError::InvalidHeader {
+            reason: "u32 field is truncated",
+        })
 }
 
 /// Streams backup media from `source` to its content-addressed object key
@@ -1322,7 +1510,9 @@ pub fn install_backup_media_object(
             loop {
                 let read = source
                     .read(&mut buffer)
-                    .map_err(|_| MediaStoreError::InputRead)?;
+                    .map_err(|_| MediaStoreError::InputRead {
+                        reason: "reading the backup media source failed",
+                    })?;
                 if read == 0 {
                     break;
                 }
@@ -1371,7 +1561,9 @@ fn hash_reader(reader: &mut impl Read) -> Result<ContentHash, MediaStoreError> {
     loop {
         let read = reader
             .read(&mut buffer)
-            .map_err(|_| MediaStoreError::InputRead)?;
+            .map_err(|_| MediaStoreError::InputRead {
+                reason: "reading the media object for hashing failed",
+            })?;
         if read == 0 {
             break;
         }
@@ -1437,12 +1629,16 @@ mod tests {
     impl MediaBlobRepository for BlobMemory {
         fn register(&self, blob: MediaBlob) -> Result<MediaBlob, MediaBlobRepositoryError> {
             if blob.state != BlobState::Staged {
-                return Err(MediaBlobRepositoryError::InvalidState);
+                return Err(MediaBlobRepositoryError::InvalidState {
+                    reason: "blob is not staged",
+                });
             }
             let mut values = self
                 .values
                 .lock()
-                .map_err(|_| MediaBlobRepositoryError::Storage)?;
+                .map_err(|_| MediaBlobRepositoryError::Storage {
+                    reason: "blob store lock is poisoned",
+                })?;
             if let Some(existing) = values
                 .values()
                 .find(|existing| existing.content_hash == blob.content_hash)
@@ -1461,7 +1657,9 @@ mod tests {
             let mut values = self
                 .values
                 .lock()
-                .map_err(|_| MediaBlobRepositoryError::Storage)?;
+                .map_err(|_| MediaBlobRepositoryError::Storage {
+                    reason: "blob store lock is poisoned",
+                })?;
             let blob = values
                 .get_mut(&id)
                 .ok_or(MediaBlobRepositoryError::NotFound)?;
@@ -1469,7 +1667,9 @@ mod tests {
                 return Ok(blob.clone());
             }
             if blob.state != BlobState::Staged {
-                return Err(MediaBlobRepositoryError::InvalidState);
+                return Err(MediaBlobRepositoryError::InvalidState {
+                    reason: "blob is not staged",
+                });
             }
             blob.state = BlobState::Ready;
             blob.updated_at = updated_at;
@@ -1484,7 +1684,9 @@ mod tests {
             let mut values = self
                 .values
                 .lock()
-                .map_err(|_| MediaBlobRepositoryError::Storage)?;
+                .map_err(|_| MediaBlobRepositoryError::Storage {
+                    reason: "blob store lock is poisoned",
+                })?;
             let blob = values
                 .get_mut(&id)
                 .ok_or(MediaBlobRepositoryError::NotFound)?;
@@ -1494,7 +1696,11 @@ mod tests {
                     blob.state = BlobState::Ready;
                     blob.updated_at = updated_at;
                 }
-                _ => return Err(MediaBlobRepositoryError::InvalidState),
+                _ => {
+                    return Err(MediaBlobRepositoryError::InvalidState {
+                        reason: "blob is neither missing nor ready",
+                    });
+                }
             }
             Ok(blob.clone())
         }
@@ -1503,7 +1709,9 @@ mod tests {
             Ok(self
                 .values
                 .lock()
-                .map_err(|_| MediaBlobRepositoryError::Storage)?
+                .map_err(|_| MediaBlobRepositoryError::Storage {
+                    reason: "blob store lock is poisoned",
+                })?
                 .get(&id)
                 .cloned())
         }
@@ -1515,7 +1723,9 @@ mod tests {
             Ok(self
                 .values
                 .lock()
-                .map_err(|_| MediaBlobRepositoryError::Storage)?
+                .map_err(|_| MediaBlobRepositoryError::Storage {
+                    reason: "blob store lock is poisoned",
+                })?
                 .values()
                 .find(|blob| &blob.content_hash == hash)
                 .cloned())
@@ -1529,10 +1739,12 @@ mod tests {
 
     impl MediaAssetRepository for AssetMemory {
         fn create(&self, asset: MediaAsset) -> Result<MediaAsset, MediaAssetRepositoryError> {
-            let mut values = self
-                .values
-                .lock()
-                .map_err(|_| MediaAssetRepositoryError::Storage)?;
+            let mut values =
+                self.values
+                    .lock()
+                    .map_err(|_| MediaAssetRepositoryError::Storage {
+                        reason: "asset store lock is poisoned",
+                    })?;
             if values.contains_key(&asset.id) {
                 return Err(MediaAssetRepositoryError::AlreadyExists);
             }
@@ -1544,7 +1756,9 @@ mod tests {
             Ok(self
                 .values
                 .lock()
-                .map_err(|_| MediaAssetRepositoryError::Storage)?
+                .map_err(|_| MediaAssetRepositoryError::Storage {
+                    reason: "asset store lock is poisoned",
+                })?
                 .get(&id)
                 .cloned())
         }
@@ -1556,14 +1770,18 @@ mod tests {
             _retention: RetentionClass,
             _updated_at: TimestampMillis,
         ) -> Result<MediaAsset, MediaAssetRepositoryError> {
-            Err(MediaAssetRepositoryError::Storage)
+            Err(MediaAssetRepositoryError::Storage {
+                reason: "in-memory asset store does not support retention updates",
+            })
         }
 
         fn list_library(
             &self,
             _request: PageRequest,
         ) -> Result<Page<MediaAsset>, MediaAssetRepositoryError> {
-            Err(MediaAssetRepositoryError::Storage)
+            Err(MediaAssetRepositoryError::Storage {
+                reason: "in-memory asset store does not support library listing",
+            })
         }
     }
 
@@ -2040,10 +2258,10 @@ mod tests {
 
         let mut changed = input;
         changed.push(1);
-        assert_eq!(
+        assert!(matches!(
             store.ingest_with_id(asset_id, changed.as_slice(), request),
-            Err(MediaStoreError::CatalogFailure)
-        );
+            Err(MediaStoreError::CatalogFailure { .. })
+        ));
         drop(store);
         fs::remove_dir_all(root).expect("cleanup");
     }
@@ -2120,7 +2338,7 @@ mod tests {
         assert!(!mime_matches("audio/mpeg", "image/png"));
         assert!(matches!(
             sniff(&image[..8]),
-            Err(MediaStoreError::InvalidHeader)
+            Err(MediaStoreError::InvalidHeader { .. })
         ));
     }
 

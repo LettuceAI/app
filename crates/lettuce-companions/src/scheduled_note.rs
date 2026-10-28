@@ -42,12 +42,12 @@ pub enum CompanionScheduledNoteError {
     NotCompanion,
     #[error("companion scheduled note conflicts with durable state")]
     Conflict,
-    #[error("companion scheduled note is invalid")]
-    Invalid,
-    #[error("companion scheduled note storage failed")]
-    Failure,
-    #[error("companion scheduled note storage is corrupt")]
-    Corrupt,
+    #[error("companion scheduled note is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("companion scheduled note storage failed: {reason}")]
+    Failure { reason: String },
+    #[error("companion scheduled note storage is corrupt: {reason}")]
+    Corrupt { reason: String },
 }
 
 pub trait CompanionScheduledNoteRepository: Send + Sync {
@@ -73,14 +73,28 @@ impl CompanionScheduledNote {
     }
 
     pub fn validate(&self) -> Result<(), CompanionScheduledNoteError> {
-        if self.content.is_empty()
-            || self.created_at.get() < 0
-            || self.updated_at.get() < 0
-            || self
-                .expires_at
-                .is_some_and(|expires| expires <= self.available_at)
+        if self.content.is_empty() {
+            return Err(CompanionScheduledNoteError::Invalid {
+                reason: "note content is empty",
+            });
+        }
+        if self.created_at.get() < 0 {
+            return Err(CompanionScheduledNoteError::Invalid {
+                reason: "creation time is negative",
+            });
+        }
+        if self.updated_at.get() < 0 {
+            return Err(CompanionScheduledNoteError::Invalid {
+                reason: "update time is negative",
+            });
+        }
+        if self
+            .expires_at
+            .is_some_and(|expires| expires <= self.available_at)
         {
-            return Err(CompanionScheduledNoteError::Invalid);
+            return Err(CompanionScheduledNoteError::Invalid {
+                reason: "expiry is not after the available time",
+            });
         }
         Ok(())
     }
@@ -160,7 +174,9 @@ fn timestamp_ms_to_local(
     match Local.timestamp_millis_opt(timestamp.get()) {
         LocalResult::Single(value) => Ok(value),
         LocalResult::Ambiguous(earliest, _) => Ok(earliest),
-        LocalResult::None => Err(CompanionScheduledNoteError::Invalid),
+        LocalResult::None => Err(CompanionScheduledNoteError::Invalid {
+            reason: "timestamp does not exist in the local time zone",
+        }),
     }
 }
 
@@ -178,17 +194,23 @@ fn resolve_local_datetime(
     millis: u32,
 ) -> Result<DateTime<Local>, CompanionScheduledNoteError> {
     let date =
-        NaiveDate::from_ymd_opt(year, month, day).ok_or(CompanionScheduledNoteError::Invalid)?;
-    let naive = date
-        .and_hms_milli_opt(hour, minute, second, millis)
-        .ok_or(CompanionScheduledNoteError::Invalid)?;
+        NaiveDate::from_ymd_opt(year, month, day).ok_or(CompanionScheduledNoteError::Invalid {
+            reason: "calendar date does not exist",
+        })?;
+    let naive = date.and_hms_milli_opt(hour, minute, second, millis).ok_or(
+        CompanionScheduledNoteError::Invalid {
+            reason: "time of day does not exist",
+        },
+    )?;
     match Local.from_local_datetime(&naive) {
         LocalResult::Single(value) => Ok(value),
         LocalResult::Ambiguous(earliest, _) => Ok(earliest),
         LocalResult::None => match Local.from_local_datetime(&(naive + Duration::hours(1))) {
             LocalResult::Single(value) => Ok(value),
             LocalResult::Ambiguous(earliest, _) => Ok(earliest),
-            LocalResult::None => Err(CompanionScheduledNoteError::Invalid),
+            LocalResult::None => Err(CompanionScheduledNoteError::Invalid {
+                reason: "local time does not exist after the daylight saving shift",
+            }),
         },
     }
 }
@@ -231,7 +253,9 @@ fn shift_month(
     let total = year
         .checked_mul(12)
         .and_then(|months| months.checked_add(month as i32 - 1 + delta))
-        .ok_or(CompanionScheduledNoteError::Invalid)?;
+        .ok_or(CompanionScheduledNoteError::Invalid {
+            reason: "month shift overflows",
+        })?;
     Ok((total.div_euclid(12), total.rem_euclid(12) as u32 + 1))
 }
 
@@ -485,10 +509,10 @@ mod tests {
         for expires in [scheduled.available_at, local(1890, 3, 1, 10)] {
             let mut backwards = scheduled.clone();
             backwards.expires_at = Some(expires);
-            assert_eq!(
+            assert!(matches!(
                 backwards.validate(),
-                Err(CompanionScheduledNoteError::Invalid)
-            );
+                Err(CompanionScheduledNoteError::Invalid { .. })
+            ));
         }
     }
 

@@ -261,7 +261,12 @@ where
         for speaker in chat.speakers() {
             let character = match participants.get(&speaker).copied() {
                 Some(id) => CharacterRepository::get(self.sources, id)
-                    .map_err(|_| ChatFileError::Repository(ChatImportRepositoryError::Storage))?
+                    .map_err(|error| {
+                        tracing::warn!(%error, "character lookup for the chat import failed");
+                        ChatFileError::Repository(ChatImportRepositoryError::Storage {
+                            reason: "character lookup for the chat import failed",
+                        })
+                    })?
                     .filter(|details| {
                         details.character.status == lettuce_characters::LifecycleStatus::Active
                     })
@@ -773,8 +778,8 @@ mod tests {
         let key = id.to_string();
         database.commit_api_operation::<(), lettuce_database::ApiOperationError>("import_chat_apply", &key, &key, now, |scope| {
             scope.import_chat(prepared.group, prepared.record, prepared.companion, now)
-                .map_err(|_| lettuce_database::ApiOperationError::Storage)
-        }).map_err(|_| ChatImportRepositoryError::Storage)?;
+                .map_err(|_| lettuce_database::ApiOperationError::Storage { reason: "simulated failure" })
+        }).map_err(|_| ChatImportRepositoryError::Storage { reason: "simulated failure" })?;
         Ok(id)
     }
 

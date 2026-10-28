@@ -30,22 +30,22 @@ pub struct StagedLorebookPlannerExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookPlannerExecutionError {
-    #[error("staged lorebook planner execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("staged lorebook planner prompt is invalid")]
-    InvalidPrompt,
+    #[error("staged lorebook planner execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("staged lorebook planner prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("staged lorebook planner inference was cancelled")]
     Cancelled,
-    #[error("staged lorebook planner inference returned an invalid response")]
-    InvalidResponse,
-    #[error("staged lorebook planner request is too large")]
-    ContextTooLarge,
+    #[error("staged lorebook planner inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
+    #[error("staged lorebook planner request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("staged lorebook planner prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("staged lorebook planner provider failed: {0}")]
     Inference(PortError),
-    #[error("staged lorebook planner replay cleanup failed")]
-    ReplayCleanup,
+    #[error("staged lorebook planner replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("staged lorebook planner persistence failed: {0}")]
     Repository(StagedLorebookRepositoryError),
     #[error("the app stopped during the staged lorebook planner")]
@@ -97,7 +97,9 @@ where
             .load_staged_lorebook(request_id)
             .map_err(StagedLorebookPlannerExecutionError::Repository)?;
         if run.job_id != handle.id() {
-            return Err(StagedLorebookPlannerExecutionError::InvalidOwnership);
+            return Err(StagedLorebookPlannerExecutionError::InvalidOwnership {
+                reason: "run belongs to another job",
+            });
         }
         if run.project.stage == StagedLorebookStage::Cancelled {
             return Err(StagedLorebookPlannerExecutionError::Cancelled);
@@ -108,7 +110,9 @@ where
         let prompt = run.planner_prompt_snapshot.as_ref().unwrap_or(prompt);
         validate_ownership(&run, prompt, handle)?;
         if run.project.stage != StagedLorebookStage::Planning {
-            return Err(StagedLorebookPlannerExecutionError::InvalidOwnership);
+            return Err(StagedLorebookPlannerExecutionError::InvalidOwnership {
+                reason: "staged lorebook project is not in the planning stage",
+            });
         }
         if handle.cancellation_token().is_cancelled() {
             return Err(StagedLorebookPlannerExecutionError::Cancelled);
@@ -120,7 +124,9 @@ where
                 self.repository,
                 crate::BuiltInPromptId::LorebookRuntime,
             )
-            .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?,
+            .map_err(|error| StagedLorebookPlannerExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            })?,
             handle,
             stream_sink,
         )?;
@@ -143,8 +149,11 @@ where
         if handle.cancellation_token().is_cancelled()
             || matches!(outcome.finish_reason, FinishReason::Cancelled)
         {
-            cleanup_outcome_replays(self.repository, &outcome)
-                .map_err(|_| StagedLorebookPlannerExecutionError::ReplayCleanup)?;
+            cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                StagedLorebookPlannerExecutionError::ReplayCleanup {
+                    reason: error.to_string(),
+                }
+            })?;
             return Err(StagedLorebookPlannerExecutionError::Cancelled);
         }
         let valid = outcome.validate().is_ok()
@@ -183,8 +192,11 @@ where
             provider_request_id: outcome.provider_request_id.clone(),
             completed_at: now,
         };
-        cleanup_outcome_replays(self.repository, &outcome)
-            .map_err(|_| StagedLorebookPlannerExecutionError::ReplayCleanup)?;
+        cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+            StagedLorebookPlannerExecutionError::ReplayCleanup {
+                reason: error.to_string(),
+            }
+        })?;
         if self
             .repository
             .load_staged_lorebook(request_id)
@@ -206,10 +218,11 @@ where
         settle_checkpoint(
             self.repository,
             stored.clone(),
-            stored
-                .planner_attempt
-                .clone()
-                .ok_or(StagedLorebookPlannerExecutionError::InvalidResponse)?,
+            stored.planner_attempt.clone().ok_or(
+                StagedLorebookPlannerExecutionError::InvalidResponse {
+                    reason: "stored run has no attempt".to_owned(),
+                },
+            )?,
             false,
         )
     }
@@ -222,7 +235,9 @@ fn settle_checkpoint<R: StagedLorebookRepository + ?Sized>(
     replayed: bool,
 ) -> Result<StagedLorebookPlannerExecutionResult, StagedLorebookPlannerExecutionError> {
     let StagedLorebookPlannerDecision::Outline(outline) = attempt.decision else {
-        return Err(StagedLorebookPlannerExecutionError::InvalidResponse);
+        return Err(StagedLorebookPlannerExecutionError::InvalidResponse {
+            reason: "stored attempt decision holds no outline".to_owned(),
+        });
     };
     let run = repository
         .submit_staged_lorebook_outline(
@@ -246,7 +261,9 @@ fn validate_ownership(
         || prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::LorebookGeneratorPlanner
     {
-        return Err(StagedLorebookPlannerExecutionError::InvalidOwnership);
+        return Err(StagedLorebookPlannerExecutionError::InvalidOwnership {
+            reason: "run belongs to another job, or the prompt differs from the run snapshot or is not an active prompt of the right purpose",
+        });
     }
     Ok(())
 }
@@ -280,7 +297,9 @@ fn build_request(
     };
     request
         .validate()
-        .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?;
+        .map_err(|error| StagedLorebookPlannerExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     Ok(request)
 }
 
@@ -299,8 +318,11 @@ fn render_context(
     );
     values.purpose_values.insert(
         PromptVariable::SourceExcerpts,
-        format_excerpts(&run.project.excerpts, text)
-            .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?,
+        format_excerpts(&run.project.excerpts, text).map_err(|error| {
+            StagedLorebookPlannerExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            }
+        })?,
     );
     let rendered = render_prompt(
         prompt,
@@ -343,7 +365,9 @@ fn render_context(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?;
+        .map_err(|error| StagedLorebookPlannerExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     if prompt.condense {
         condense_prompt_messages(&mut messages);
     }
@@ -353,7 +377,9 @@ fn render_context(
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)
+                .map_err(|error| StagedLorebookPlannerExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
@@ -365,7 +391,9 @@ fn render_context(
                     lettuce_creation::STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION_KEY,
                     [],
                 )
-                .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?,
+                .map_err(|error| StagedLorebookPlannerExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })?,
         }],
     });
     let input_bytes = text_bytes(&messages)?;
@@ -447,5 +475,7 @@ fn text_bytes(
         })
         .try_fold(0usize, usize::checked_add)
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(StagedLorebookPlannerExecutionError::ContextTooLarge)
+        .ok_or(StagedLorebookPlannerExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })
 }

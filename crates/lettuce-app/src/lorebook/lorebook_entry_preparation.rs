@@ -45,10 +45,10 @@ pub struct LorebookEntryPreparationRequest<'a> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LorebookEntryPreparationError {
-    #[error("lorebook entry generation source input is invalid")]
-    InvalidInput,
-    #[error("lorebook entry generation source data is unavailable")]
-    SourceUnavailable,
+    #[error("lorebook entry generation source input is invalid: {reason}")]
+    InvalidInput { reason: String },
+    #[error("lorebook entry generation source data is unavailable: {reason}")]
+    SourceUnavailable { reason: String },
     #[error("lorebook entry generation memory source failed: {0}")]
     Memory(#[from] MemoryRepositoryError),
     #[error("lorebook entry generation admission failed: {0}")]
@@ -100,10 +100,15 @@ where
             self.sources,
             crate::BuiltInPromptId::LorebookRuntime,
         )
-        .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?;
+        .map_err(|error| LorebookEntryPreparationError::SourceUnavailable {
+            reason: error.to_string(),
+        })?;
         let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
-            text.render_with(key, variables)
-                .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
+            text.render_with(key, variables).map_err(|error| {
+                LorebookEntryPreparationError::SourceUnavailable {
+                    reason: error.to_string(),
+                }
+            })
         };
         let none = fragment("lorebook_none", Vec::new())?;
         let memory_text = request
@@ -113,31 +118,53 @@ where
                     self.sources,
                     crate::BuiltInPromptId::MemoryRuntime,
                 )
-                .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
+                .map_err(|error| {
+                    LorebookEntryPreparationError::SourceUnavailable {
+                        reason: error.to_string(),
+                    }
+                })
             })
             .transpose()?;
-        let aggregate = ConversationReader::get(self.sources, request.conversation_id)
-            .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?;
+        let aggregate =
+            ConversationReader::get(self.sources, request.conversation_id).map_err(|error| {
+                LorebookEntryPreparationError::SourceUnavailable {
+                    reason: error.to_string(),
+                }
+            })?;
         let conversation = &aggregate.conversation;
         let ConversationKind::Direct(details) = &conversation.kind else {
-            return Err(LorebookEntryPreparationError::InvalidInput);
+            return Err(LorebookEntryPreparationError::InvalidInput {
+                reason: "the conversation is not a direct conversation".to_owned(),
+            });
         };
         let character_id = details.character.source_id;
         let character = CharacterRepository::get(self.sources, character_id)
-            .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?
-            .ok_or(LorebookEntryPreparationError::SourceUnavailable)?;
+            .map_err(|error| LorebookEntryPreparationError::SourceUnavailable {
+                reason: error.to_string(),
+            })?
+            .ok_or(LorebookEntryPreparationError::SourceUnavailable {
+                reason: "the character of the conversation is missing".to_owned(),
+            })?;
         let persona_id = match &details.persona {
             SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
                 PersonaRepository::get(self.sources, persona.source_id)
-                    .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?
-                    .ok_or(LorebookEntryPreparationError::SourceUnavailable)?;
+                    .map_err(|error| LorebookEntryPreparationError::SourceUnavailable {
+                        reason: error.to_string(),
+                    })?
+                    .ok_or(LorebookEntryPreparationError::SourceUnavailable {
+                        reason: "the persona of the conversation is missing".to_owned(),
+                    })?;
                 Some(persona.source_id)
             }
             SnapshotSelection::Disabled => None,
         };
         let lorebook = LorebookRepository::get(self.sources, request.lorebook_id)
-            .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?
-            .ok_or(LorebookEntryPreparationError::SourceUnavailable)?;
+            .map_err(|error| LorebookEntryPreparationError::SourceUnavailable {
+                reason: error.to_string(),
+            })?
+            .ok_or(LorebookEntryPreparationError::SourceUnavailable {
+                reason: "the lorebook is missing".to_owned(),
+            })?;
 
         let messages_enabled = matches!(
             request.source,
@@ -204,7 +231,12 @@ where
                     (selected, summary)
                 }
                 None if selected_memory_ids.is_empty() => (none.clone(), none.clone()),
-                None => return Err(LorebookEntryPreparationError::InvalidInput),
+                None => {
+                    return Err(LorebookEntryPreparationError::InvalidInput {
+                        reason: "memories are selected but the conversation has no memory space"
+                            .to_owned(),
+                    });
+                }
             }
         } else {
             (none.clone(), none.clone())
@@ -304,7 +336,9 @@ fn validate_profile(
             .get(Modality::Text)
             != CapabilityStatus::Supported
     {
-        return Err(LorebookEntryPreparationError::InvalidInput);
+        return Err(LorebookEntryPreparationError::InvalidInput {
+            reason: "the model lacks text input or text output".to_owned(),
+        });
     }
     Ok(())
 }
@@ -314,7 +348,9 @@ fn reject_duplicates<T: Eq + std::hash::Hash>(
 ) -> Result<(), LorebookEntryPreparationError> {
     let mut seen = HashSet::with_capacity(values.len());
     if values.iter().any(|value| !seen.insert(value)) {
-        return Err(LorebookEntryPreparationError::InvalidInput);
+        return Err(LorebookEntryPreparationError::InvalidInput {
+            reason: "the selected ids contain a duplicate".to_owned(),
+        });
     }
     Ok(())
 }
@@ -336,7 +372,9 @@ fn load_timeline<R: ConversationReader + ?Sized>(
                     limit: PageLimit::new(200),
                 },
             )
-            .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?;
+            .map_err(|error| LorebookEntryPreparationError::SourceUnavailable {
+                reason: error.to_string(),
+            })?;
         items.extend(page.items);
         let Some(next) = page.next_cursor else {
             break;
@@ -362,7 +400,9 @@ fn format_selected_messages(
         .filter(|item| selected.contains(&item.message.id))
         .collect();
     if messages.len() != selected_ids.len() {
-        return Err(LorebookEntryPreparationError::InvalidInput);
+        return Err(LorebookEntryPreparationError::InvalidInput {
+            reason: "selected messages are not all on the timeline".to_owned(),
+        });
     }
     Ok(messages
         .iter()
@@ -446,7 +486,9 @@ fn format_selected_memories(
         .filter(|memory| selected.contains(&memory.id))
         .collect();
     if matches.len() != selected_ids.len() {
-        return Err(LorebookEntryPreparationError::InvalidInput);
+        return Err(LorebookEntryPreparationError::InvalidInput {
+            reason: "selected memories are not all in the memory space".to_owned(),
+        });
     }
     let lines = matches
         .iter()
@@ -460,10 +502,19 @@ fn format_selected_memories(
                     .as_ref()
                     .map(|observation| {
                         crate::memory::memory_prompt::render_observation(
-                            memory_text.ok_or(LorebookEntryPreparationError::SourceUnavailable)?,
+                            memory_text.ok_or(
+                                LorebookEntryPreparationError::SourceUnavailable {
+                                    reason: "the memory runtime prompt text was not loaded"
+                                        .to_owned(),
+                                },
+                            )?,
                             observation,
                         )
-                        .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
+                        .map_err(|error| {
+                            LorebookEntryPreparationError::SourceUnavailable {
+                                reason: error.to_string(),
+                            }
+                        })
                     })
                     .transpose()?;
                 (line.text, observed.unwrap_or_default())
@@ -555,7 +606,9 @@ fn validate_source_inputs(
         }
     };
     if invalid {
-        return Err(LorebookEntryPreparationError::InvalidInput);
+        return Err(LorebookEntryPreparationError::InvalidInput {
+            reason: "the rendered inputs are empty for the entry source".to_owned(),
+        });
     }
     Ok(())
 }

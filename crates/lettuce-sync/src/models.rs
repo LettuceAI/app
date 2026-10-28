@@ -15,7 +15,9 @@ pub const MODEL_PROFILE_SYNC_VERSION: u32 = 1;
 pub fn canonical_provider_account_payload(
     account: &ProviderAccount,
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(account).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(account).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("provider account could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(
         PROVIDER_ACCOUNT_SYNC_SCHEMA,
         PROVIDER_ACCOUNT_SYNC_VERSION,
@@ -30,7 +32,9 @@ pub fn provider_account_sync_entity(id: ProviderAccountId) -> Result<SyncEntity,
 pub fn canonical_model_profile_payload(
     profile: &ModelProfile,
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(profile).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(profile).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("model profile could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(MODEL_PROFILE_SYNC_SCHEMA, MODEL_PROFILE_SYNC_VERSION, bytes)
 }
 
@@ -46,7 +50,9 @@ pub const CHARACTER_SYNC_VERSION: u32 = 4;
 pub fn canonical_character_payload(
     details: &lettuce_characters::CharacterDetails,
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(details).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("character details could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(CHARACTER_SYNC_SCHEMA, CHARACTER_SYNC_VERSION, bytes)
 }
 
@@ -62,7 +68,9 @@ pub const LOREBOOK_BINDINGS_SYNC_VERSION: u32 = 1;
 pub fn canonical_lorebook_payload(
     details: &lettuce_context::LorebookDetails,
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(details).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("lorebook details could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(LOREBOOK_SYNC_SCHEMA, LOREBOOK_SYNC_VERSION, bytes)
 }
 
@@ -71,7 +79,9 @@ pub fn canonical_lorebook_payload(
 pub fn canonical_lorebook_bindings_payload(
     bindings: &[lettuce_context::LorebookBinding],
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(bindings).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(bindings).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("lorebook bindings could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(
         LOREBOOK_BINDINGS_SYNC_SCHEMA,
         LOREBOOK_BINDINGS_SYNC_VERSION,
@@ -87,7 +97,9 @@ pub const PROMPT_SYNC_VERSION: u32 = 2;
 pub fn canonical_prompt_payload(
     document: &lettuce_context::PromptDocument,
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(document).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(document).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("prompt document could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(PROMPT_SYNC_SCHEMA, PROMPT_SYNC_VERSION, bytes)
 }
 
@@ -100,7 +112,9 @@ pub const GROUP_LOREBOOK_BINDINGS_SYNC_KIND: &str = "group_lorebook_bindings";
 pub fn canonical_group_payload(
     details: &lettuce_characters::GroupDetails,
 ) -> Result<CanonicalPayload, SyncChangeError> {
-    let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    let bytes = serde_json::to_vec(details).map_err(|error| SyncChangeError::PayloadEncoding {
+        reason: format!("group details could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(GROUP_SYNC_SCHEMA, GROUP_SYNC_VERSION, bytes)
 }
 

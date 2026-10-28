@@ -74,12 +74,12 @@ pub enum CompanionGrowthRunRepositoryError {
     NotFound,
     #[error("companion growth run conflicts with durable state")]
     Conflict,
-    #[error("companion growth run is invalid")]
-    Invalid,
-    #[error("companion growth run storage failed")]
-    Failure,
-    #[error("companion growth run storage is corrupt")]
-    Corrupt,
+    #[error("companion growth run is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("companion growth run storage failed: {reason}")]
+    Failure { reason: String },
+    #[error("companion growth run storage is corrupt: {reason}")]
+    Corrupt { reason: String },
 }
 
 pub trait CompanionGrowthRunRepository: Send + Sync {
@@ -103,17 +103,34 @@ pub trait CompanionGrowthRunRepository: Send + Sync {
 impl CompanionGrowthRun {
     pub fn validate(&self) -> Result<(), CompanionGrowthRunRepositoryError> {
         let mut memory_ids = HashSet::new();
-        if self.companion_name.trim().is_empty()
-            || self.fresh_memories.is_empty()
-            || self.fresh_memories.len() > MAX_GROWTH_MEMORIES
-            || self.fresh_memories.iter().any(|memory| {
-                memory.id.trim().is_empty()
-                    || memory.text.trim().is_empty()
-                    || !memory_ids.insert(memory.id.as_str())
-            })
-            || crate::validate_state(&self.soul).is_err()
-        {
-            return Err(CompanionGrowthRunRepositoryError::Invalid);
+        if self.companion_name.trim().is_empty() {
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "companion name is blank",
+            });
+        }
+        if self.fresh_memories.is_empty() {
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "run has no fresh memories",
+            });
+        }
+        if self.fresh_memories.len() > MAX_GROWTH_MEMORIES {
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "run has more fresh memories than the growth limit",
+            });
+        }
+        if self.fresh_memories.iter().any(|memory| {
+            memory.id.trim().is_empty()
+                || memory.text.trim().is_empty()
+                || !memory_ids.insert(memory.id.as_str())
+        }) {
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "a fresh memory has a blank id or text or repeats an id",
+            });
+        }
+        if crate::validate_state(&self.soul).is_err() {
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "soul state failed validation",
+            });
         }
         if let Some(checkpoint) = &self.proposal_checkpoint {
             checkpoint.validate()?;
@@ -130,7 +147,9 @@ impl CompanionGrowthProposalCheckpoint {
             .iter()
             .any(|proposal| proposal.id.trim().is_empty() || !ids.insert(&proposal.id))
         {
-            return Err(CompanionGrowthRunRepositoryError::Invalid);
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "a proposal has a blank id or repeats an id",
+            });
         }
         Ok(())
     }

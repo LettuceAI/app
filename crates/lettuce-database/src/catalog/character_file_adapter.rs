@@ -19,25 +19,45 @@ impl CharacterFileRepository for Database {
     fn character_file_references(
         &self,
     ) -> Result<CharacterFileReferences, CharacterFileRepositoryError> {
-        let connection = self
-            .connection()
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
-        load_references(&connection).map_err(|_| CharacterFileRepositoryError::Storage)
+        let connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "character file references failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "character file references: a storage step failed",
+            }
+        })?;
+        load_references(&connection).map_err(|error| {
+            tracing::warn!(%error, "character file references failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "character file references: a storage step failed",
+            }
+        })
     }
 
     fn import_character_file(
         &self,
         import: &CharacterFileImport,
     ) -> Result<CharacterDetails, CharacterFileRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "import character file failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "import character file: a storage step failed",
+            }
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "import character file failed");
+                CharacterFileRepositoryError::Storage {
+                    reason: "import character file: a storage step failed",
+                }
+            })?;
         let details = import_character_file_in(&tx, import)?;
-        tx.commit()
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+        tx.commit().map_err(|error| {
+            tracing::warn!(%error, "import character file failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "import character file: a storage step failed",
+            }
+        })?;
         Ok(details)
     }
 
@@ -45,16 +65,32 @@ impl CharacterFileRepository for Database {
         &self,
         id: CharacterId,
     ) -> Result<Option<CharacterExportRecord>, CharacterFileRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "character export record failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "character export record: a storage step failed",
+            }
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
-        let record =
-            load_export_record(&tx, id).map_err(|_| CharacterFileRepositoryError::Storage)?;
-        tx.commit()
-            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "character export record failed");
+                CharacterFileRepositoryError::Storage {
+                    reason: "character export record: a storage step failed",
+                }
+            })?;
+        let record = load_export_record(&tx, id).map_err(|error| {
+            tracing::warn!(%error, "character export record failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "character export record: a storage step failed",
+            }
+        })?;
+        tx.commit().map_err(|error| {
+            tracing::warn!(%error, "character export record failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "character export record: a storage step failed",
+            }
+        })?;
         Ok(record)
     }
 }
@@ -63,7 +99,12 @@ impl crate::ApiOperationTransaction<'_, '_> {
     pub fn character_file_references(
         &self,
     ) -> Result<CharacterFileReferences, CharacterFileRepositoryError> {
-        load_references(self.transaction).map_err(|_| CharacterFileRepositoryError::Storage)
+        load_references(self.transaction).map_err(|error| {
+            tracing::warn!(%error, "character file references failed");
+            CharacterFileRepositoryError::Storage {
+                reason: "character file references: a storage step failed",
+            }
+        })
     }
 
     pub fn import_character_file(
@@ -78,28 +119,44 @@ fn import_character_file_in(
     tx: &rusqlite::Transaction<'_>,
     import: &CharacterFileImport,
 ) -> Result<CharacterDetails, CharacterFileRepositoryError> {
-    lettuce_context::validate_bindings(&import.lorebook_bindings)
-        .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+    lettuce_context::validate_bindings(&import.lorebook_bindings).map_err(|error| {
+        tracing::warn!(%error, "import character file in failed");
+        CharacterFileRepositoryError::InvalidInput {
+            reason: "import character file in: a value could not be read or converted",
+        }
+    })?;
     for lorebook in &import.lorebooks {
         crate::lorebook::lorebook_adapter::insert_lorebook_details(tx, lorebook).map_err(
             |error| match error {
-                LorebookRepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput,
-                LorebookRepositoryError::Failure(_) => CharacterFileRepositoryError::Storage,
+                LorebookRepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput {
+                    reason: "import character file in: a stored value is not recognised",
+                },
+                LorebookRepositoryError::Failure(_) => CharacterFileRepositoryError::Storage {
+                    reason: "import character file in: a stored value is not recognised",
+                },
                 _ => CharacterFileRepositoryError::Conflict,
             },
         )?;
     }
     crate::catalog::character_adapter::insert_character_plan(tx, &import.character).map_err(
         |error| match error {
-            RepositoryError::Storage => CharacterFileRepositoryError::Storage,
-            RepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput,
+            RepositoryError::Storage { .. } => CharacterFileRepositoryError::Storage {
+                reason: "import character file in: a stored value is not recognised",
+            },
+            RepositoryError::Invalid(_) => CharacterFileRepositoryError::InvalidInput {
+                reason: "import character file in: a stored value is not recognised",
+            },
             _ => CharacterFileRepositoryError::Conflict,
         },
     )?;
     let character_id = import.character.character.id.to_string();
     for binding in &import.lorebook_bindings {
-        let revision = i64::try_from(binding.revision.get())
-            .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+        let revision = i64::try_from(binding.revision.get()).map_err(|error| {
+            tracing::warn!(%error, "import character file in failed");
+            CharacterFileRepositoryError::InvalidInput {
+                reason: "import character file in: a value could not be read or converted",
+            }
+        })?;
         tx.execute(
                 "INSERT INTO character_lorebook_bindings (character_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![
@@ -116,17 +173,22 @@ fn import_character_file_in(
                 Some(rusqlite::ErrorCode::ConstraintViolation) => {
                     CharacterFileRepositoryError::Conflict
                 }
-                _ => CharacterFileRepositoryError::Storage,
+                _ => CharacterFileRepositoryError::Storage { reason: "import character file in: a stored value is not recognised" },
             })?;
     }
     for note in &import.scheduled_notes {
         crate::memory::scheduled_note_adapter::insert_note_in(tx, note).map_err(
             |error| match error {
-                CompanionScheduledNoteError::Failure | CompanionScheduledNoteError::Corrupt => {
-                    CharacterFileRepositoryError::Storage
+                CompanionScheduledNoteError::Failure { .. }
+                | CompanionScheduledNoteError::Corrupt { .. } => {
+                    CharacterFileRepositoryError::Storage {
+                        reason: "import character file in: stored data failed a consistency check",
+                    }
                 }
                 CompanionScheduledNoteError::Conflict => CharacterFileRepositoryError::Conflict,
-                _ => CharacterFileRepositoryError::InvalidInput,
+                _ => CharacterFileRepositoryError::InvalidInput {
+                    reason: "import character file in: a stored value is not recognised",
+                },
             },
         )?;
     }
@@ -135,8 +197,15 @@ fn import_character_file_in(
     }
     let details =
         crate::catalog::character_adapter::load_details(tx, import.character.character.id)
-            .map_err(|_| CharacterFileRepositoryError::Storage)?
-            .ok_or(CharacterFileRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "import character file in failed");
+                CharacterFileRepositoryError::Storage {
+                    reason: "import character file in: a storage step failed",
+                }
+            })?
+            .ok_or(CharacterFileRepositoryError::Storage {
+                reason: "import character file in: a required value is missing",
+            })?;
     Ok(details)
 }
 
@@ -145,10 +214,19 @@ fn insert_companion_memory(
     character_id: CharacterId,
     memory: &CharacterFileCompanionMemory,
 ) -> Result<(), CharacterFileRepositoryError> {
-    let storage = |_| CharacterFileRepositoryError::Storage;
+    let storage = |error| {
+        tracing::warn!(%error, "insert companion memory failed");
+        CharacterFileRepositoryError::Storage {
+            reason: "insert companion memory: a storage step failed",
+        }
+    };
     if let Some(pool) = &memory.pool {
-        pool.validate()
-            .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+        pool.validate().map_err(|error| {
+            tracing::warn!(%error, "insert companion memory failed");
+            CharacterFileRepositoryError::InvalidInput {
+                reason: "insert companion memory: a value could not be read or converted",
+            }
+        })?;
         tx.execute(
             "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
             [pool.id.to_string()],
@@ -159,8 +237,12 @@ fn insert_companion_memory(
             params![character_id.to_string(), pool.id.to_string()],
         )
         .map_err(storage)?;
-        crate::memory::memory_adapter::insert_items(tx, pool.id, &pool.items)
-            .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+        crate::memory::memory_adapter::insert_items(tx, pool.id, &pool.items).map_err(|error| {
+            tracing::warn!(%error, "insert companion memory failed");
+            CharacterFileRepositoryError::InvalidInput {
+                reason: "insert companion memory: a value could not be read or converted",
+            }
+        })?;
     }
     if let Some(facts) = &memory.soul_facts {
         crate::companion::soul_adapter::replace_facts_in(
@@ -169,7 +251,12 @@ fn insert_companion_memory(
             facts,
             memory.updated_at,
         )
-        .map_err(|_| CharacterFileRepositoryError::InvalidInput)?;
+        .map_err(|error| {
+            tracing::warn!(?error, "insert companion memory failed");
+            CharacterFileRepositoryError::InvalidInput {
+                reason: "insert companion memory: a value could not be read or converted",
+            }
+        })?;
     }
     for relationship in &memory.relationships {
         let state = &relationship.state;
@@ -194,9 +281,9 @@ fn insert_companion_memory(
         )
         .map_err(|error| match error.sqlite_error_code() {
             Some(rusqlite::ErrorCode::ConstraintViolation) => {
-                CharacterFileRepositoryError::InvalidInput
+                CharacterFileRepositoryError::InvalidInput { reason: "insert companion memory: a value failed validation" }
             }
-            _ => CharacterFileRepositoryError::Storage,
+            _ => CharacterFileRepositoryError::Storage { reason: "insert companion memory: a stored value is not recognised" },
         })?;
     }
     Ok(())

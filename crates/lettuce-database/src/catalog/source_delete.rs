@@ -32,20 +32,33 @@ pub enum SourceDeleteError {
     Conflict,
     #[error("the prompt is protected")]
     Protected,
-    #[error("the delete could not be stored")]
-    Storage,
+    #[error("the delete could not be stored: {reason}")]
+    Storage { reason: &'static str },
 }
 
-fn storage(_: impl std::fmt::Debug) -> SourceDeleteError {
-    SourceDeleteError::Storage
+fn storage(error: impl std::fmt::Debug) -> SourceDeleteError {
+    tracing::warn!(?error, "source delete storage step failed");
+    SourceDeleteError::Storage {
+        reason: "source delete: a storage step failed",
+    }
 }
 
 fn parse_all<T: std::str::FromStr + Ord>(
     values: Vec<String>,
-) -> Result<BTreeSet<T>, SourceDeleteError> {
+) -> Result<BTreeSet<T>, SourceDeleteError>
+where
+    T::Err: std::fmt::Debug,
+{
     values
         .into_iter()
-        .map(|value| value.parse().map_err(|_| SourceDeleteError::Storage))
+        .map(|value| {
+            value.parse().map_err(|error| {
+                tracing::warn!(?error, "parse all failed");
+                SourceDeleteError::Storage {
+                    reason: "parse all: a storage step failed",
+                }
+            })
+        })
         .collect()
 }
 
@@ -205,7 +218,9 @@ fn clear_settings_prompt_in(
         return Ok(false);
     };
     if format_version != GLOBAL_SETTINGS_FORMAT_VERSION {
-        return Err(SourceDeleteError::Storage);
+        return Err(SourceDeleteError::Storage {
+            reason: "clear settings prompt in: stored data failed a consistency check",
+        });
     }
     let mut settings: GlobalSettings = serde_json::from_str(&payload).map_err(storage)?;
     let features = settings.clear_prompts(|selected| selected == id);
@@ -608,10 +623,10 @@ mod tests {
                 "CREATE TRIGGER fail_lorebook_delete BEFORE DELETE ON lorebooks BEGIN SELECT RAISE(ABORT, 'injected'); END;",
             )
             .expect("fault");
-        assert_eq!(
+        assert!(matches!(
             database.delete_lorebook(fixture.deleted.book.id, fixture.deleted.book.revision, NOW),
-            Err(SourceDeleteError::Storage)
-        );
+            Err(SourceDeleteError::Storage { .. })
+        ));
         assert_eq!(
             (
                 revision(&database, "characters", &fixture.character.to_string()),

@@ -56,6 +56,21 @@ where
     })
 }
 
+fn log_unsuccessful_settlement(job_id: lettuce_types::JobId, settled: &CompanionMemorySettledWork) {
+    match settled {
+        CompanionMemorySettledWork::Failed { error, .. } => {
+            tracing::warn!(%job_id, %error, "post-turn memory pass failed");
+        }
+        CompanionMemorySettledWork::Cancelled { error, .. } => {
+            tracing::warn!(%job_id, %error, "post-turn memory pass was cancelled");
+        }
+        CompanionMemorySettledWork::RetryScheduled { error, .. } => {
+            tracing::warn!(%job_id, %error, "post-turn memory pass will be retried");
+        }
+        CompanionMemorySettledWork::Succeeded { .. } => {}
+    }
+}
+
 /// What keeps a forced memory cycle from starting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MemoryGate {
@@ -86,16 +101,16 @@ pub struct CompanionMemoryRuntimeInputs {
 /// Why a claimed cycle could not resolve its required runtime inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionMemoryRuntimeInputError {
-    #[error("summarisation model not configured")]
-    MissingModel,
-    #[error("summarisation model is invalid")]
-    InvalidModel,
-    #[error("dynamic memory prompt is missing")]
-    MissingPrompt,
-    #[error("dynamic memory settings are invalid")]
-    InvalidSettings,
-    #[error("runtime input storage failed")]
-    Storage,
+    #[error("summarisation model not configured: {reason}")]
+    MissingModel { reason: &'static str },
+    #[error("summarisation model is invalid: {reason}")]
+    InvalidModel { reason: &'static str },
+    #[error("dynamic memory prompt is missing: {reason}")]
+    MissingPrompt { reason: &'static str },
+    #[error("dynamic memory settings are invalid: {reason}")]
+    InvalidSettings { reason: &'static str },
+    #[error("runtime input storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, thiserror::Error)]
@@ -713,17 +728,23 @@ where
             .or(stored.dynamic_memory_model_profile_id)
             .or(stored.default_model_profile_id)
             .ok_or(CompanionMemoryHostError::RuntimeInputs(
-                CompanionMemoryRuntimeInputError::MissingModel,
+                CompanionMemoryRuntimeInputError::MissingModel {
+                    reason: "no dynamic memory, selected or default model is configured",
+                },
             ))?;
         let model = ModelProfileRepository::get(self.repository, model_id)
-            .map_err(|_| storage())?
+            .map_err(|error| storage("model profile lookup failed", error))?
             .ok_or(CompanionMemoryHostError::RuntimeInputs(
-                CompanionMemoryRuntimeInputError::MissingModel,
+                CompanionMemoryRuntimeInputError::MissingModel {
+                    reason: "the selected model profile does not exist",
+                },
             ))?;
         let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
-            .map_err(|_| storage())?
+            .map_err(|error| storage("provider account lookup failed", error))?
             .ok_or(CompanionMemoryHostError::RuntimeInputs(
-                CompanionMemoryRuntimeInputError::MissingModel,
+                CompanionMemoryRuntimeInputError::MissingModel {
+                    reason: "the provider account of the model does not exist",
+                },
             ))?;
         let chat_profile = lettuce_models::resolve_chat_profile(
             &ExpectedModelIdentity {
@@ -748,13 +769,18 @@ where
                 &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
                     self.repository,
                 )
-                .map_err(|_| storage())?
+                .map_err(|error| storage("global model settings could not be read", error))?
                 .0,
             ),
             &ChatRequirements::default(),
         )
-        .map_err(|_| {
-            CompanionMemoryHostError::RuntimeInputs(CompanionMemoryRuntimeInputError::InvalidModel)
+        .map_err(|error| {
+            tracing::warn!(%error, "memory model profile could not be resolved");
+            CompanionMemoryHostError::RuntimeInputs(
+                CompanionMemoryRuntimeInputError::InvalidModel {
+                    reason: "the model profile could not be resolved for memory",
+                },
+            )
         })?;
         let manager_prompt = if account.protocol == ProviderProtocol::LlamaCpp {
             BuiltInPromptId::DynamicMemoryLocal
@@ -779,14 +805,18 @@ where
         let score = |basis_points| {
             lettuce_memory::Score::from_basis_points(basis_points).ok_or(
                 CompanionMemoryHostError::RuntimeInputs(
-                    CompanionMemoryRuntimeInputError::InvalidSettings,
+                    CompanionMemoryRuntimeInputError::InvalidSettings {
+                        reason: "a dynamic memory basis-point setting is out of range",
+                    },
                 ),
             )
         };
         let policy = MemoryPolicy {
             max_entries: usize::try_from(dynamic.max_entries.max(1)).map_err(|_| {
                 CompanionMemoryHostError::RuntimeInputs(
-                    CompanionMemoryRuntimeInputError::InvalidSettings,
+                    CompanionMemoryRuntimeInputError::InvalidSettings {
+                        reason: "dynamic memory max entries does not fit in usize",
+                    },
                 )
             })?,
             hot_token_budget: dynamic.hot_memory_token_budget,
@@ -795,9 +825,12 @@ where
             max_hard_delete_ratio_per_cycle: score(dynamic.max_hard_delete_ratio_basis_points)?,
             decay_rate: score(dynamic.decay_rate_basis_points)?,
         };
-        policy.validate().map_err(|_| {
+        policy.validate().map_err(|error| {
+            tracing::warn!(%error, "dynamic memory policy failed validation");
             CompanionMemoryHostError::RuntimeInputs(
-                CompanionMemoryRuntimeInputError::InvalidSettings,
+                CompanionMemoryRuntimeInputError::InvalidSettings {
+                    reason: "the dynamic memory policy failed validation",
+                },
             )
         })?;
         let companion = self.is_companion(&aggregate.conversation)?;
@@ -834,11 +867,12 @@ where
         cancellation_reason: CancellationReason,
         now: TimestampMillis,
     ) -> Result<CompanionMemorySettledWork, CompanionMemoryHostError> {
+        let job_id = work.handle.id();
         let sink = match self.output {
             Some(output) => match output.open(work.handle.id(), work.handle.cancellation_token()) {
                 Ok(sink) => Some(sink),
                 Err(error) => {
-                    return Ok(CompanionMemoryDispatchCoordinator::new(
+                    let settled = CompanionMemoryDispatchCoordinator::new(
                         self.repository,
                         self.repository,
                     )
@@ -847,17 +881,21 @@ where
                         Err(CompanionMemoryJobRunError::Output(error)),
                         cancellation_reason,
                         now,
-                    )?);
+                    )?;
+                    log_unsuccessful_settlement(job_id, &settled);
+                    return Ok(settled);
                 }
             },
             None => None,
         };
-        let job_id = work.handle.id();
         let result = self
             .run_claimed_with_stream(work, cancellation_reason, sink, now)
             .await;
         if let Some(output) = self.output {
             output.finished(job_id);
+        }
+        if let Ok(settled) = &result {
+            log_unsuccessful_settlement(job_id, settled);
         }
         result
     }
@@ -877,7 +915,9 @@ where
                     CompanionMemoryHostError::RuntimeInputs(error) => error,
                     other => {
                         tracing::warn!(error = %other, "post-turn memory inputs could not be read");
-                        CompanionMemoryRuntimeInputError::Storage
+                        CompanionMemoryRuntimeInputError::Storage {
+                            reason: "post-turn memory inputs could not be read",
+                        }
                     }
                 };
                 let error = match self.finish_output(stream_sink).await {
@@ -1242,7 +1282,7 @@ where
             return Ok(None);
         };
         Ok(PromptRepository::get(self.repository, id)
-            .map_err(|_| storage())?
+            .map_err(|error| storage("prompt override lookup failed", error))?
             .filter(|document| {
                 document.status == LifecycleStatus::Active && document.purpose == purpose
             }))
@@ -1253,9 +1293,11 @@ where
         id: BuiltInPromptId,
     ) -> Result<PromptDocument, CompanionMemoryHostError> {
         crate::generation::built_in_prompts::active_built_in_prompt(self.repository, id)
-            .map_err(|_| storage())?
+            .map_err(|error| storage("built-in prompt lookup failed", error))?
             .ok_or(CompanionMemoryHostError::RuntimeInputs(
-                CompanionMemoryRuntimeInputError::MissingPrompt,
+                CompanionMemoryRuntimeInputError::MissingPrompt {
+                    reason: "the built-in memory prompt is not stored",
+                },
             ))
     }
 }
@@ -1327,8 +1369,9 @@ const fn run_mode(mode: MemoryRunMode) -> DynamicMemoryRunMode {
     }
 }
 
-const fn storage() -> CompanionMemoryHostError {
-    CompanionMemoryHostError::RuntimeInputs(CompanionMemoryRuntimeInputError::Storage)
+fn storage(reason: &'static str, error: impl std::fmt::Display) -> CompanionMemoryHostError {
+    tracing::warn!(%error, reason, "memory runtime input storage failed");
+    CompanionMemoryHostError::RuntimeInputs(CompanionMemoryRuntimeInputError::Storage { reason })
 }
 
 /// The validated memory text's tokens are counted with the embedding

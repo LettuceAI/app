@@ -31,6 +31,7 @@ pub struct CompanionMemoryTerminalResult {
 pub enum CompanionMemoryTerminalFailure {
     ProviderUnavailable,
     ProviderRejected,
+    InvalidResponse,
     EmptyResponse,
     RoundLimit,
     Tool,
@@ -47,11 +48,12 @@ impl CompanionMemoryTerminalFailure {
             CompanionMemoryInferenceError::UnknownTokenCount => Self::EmbeddingUnavailable,
             CompanionMemoryInferenceError::Cancelled
             | CompanionMemoryInferenceError::Inference(PortError::Cancelled) => Self::Cancelled,
-            CompanionMemoryInferenceError::NoToolCalls
+            CompanionMemoryInferenceError::NoToolCalls { .. }
             | CompanionMemoryInferenceError::Inference(PortError::Empty) => Self::EmptyResponse,
             CompanionMemoryInferenceError::Inference(PortError::Unavailable) => {
                 Self::ProviderUnavailable
             }
+            CompanionMemoryInferenceError::Inference(PortError::InvalidResponse) => Self::InvalidResponse,
             CompanionMemoryInferenceError::Inference(PortError::Rejected) => Self::ProviderRejected,
             CompanionMemoryInferenceError::Inference(PortError::Provider(failure)) => {
                 match failure.kind {
@@ -60,18 +62,18 @@ impl CompanionMemoryTerminalFailure {
                     | ProviderFailureKind::RequestRejected => Self::ProviderRejected,
                 }
             }
-            CompanionMemoryInferenceError::MultipleCandidates
-            | CompanionMemoryInferenceError::MixedToolAndContent
-            | CompanionMemoryInferenceError::InvalidSignedReplay => Self::ProviderRejected,
-            CompanionMemoryInferenceError::InvalidOwnership
-            | CompanionMemoryInferenceError::InvalidPrompt
-            | CompanionMemoryInferenceError::InvalidSource
-            | CompanionMemoryInferenceError::ContextTooLarge
+            CompanionMemoryInferenceError::MultipleCandidates { .. }
+            | CompanionMemoryInferenceError::InvalidResponse { .. }
+            | CompanionMemoryInferenceError::InvalidSignedReplay { .. } => Self::InvalidResponse,
+            CompanionMemoryInferenceError::InvalidOwnership { .. }
+            | CompanionMemoryInferenceError::InvalidPrompt { .. }
+            | CompanionMemoryInferenceError::InvalidSource { .. }
+            | CompanionMemoryInferenceError::ContextTooLarge { .. }
             | CompanionMemoryInferenceError::Conversation(_)
             | CompanionMemoryInferenceError::Memory(_)
             | CompanionMemoryInferenceError::Run(_)
             | CompanionMemoryInferenceError::Prompt(_)
-            | CompanionMemoryInferenceError::ReplayCleanup => Self::Recovery,
+            | CompanionMemoryInferenceError::ReplayCleanup { .. } => Self::Recovery,
         }
     }
 
@@ -90,6 +92,9 @@ impl CompanionMemoryTerminalFailure {
             CompanionMemoryLoopError::Continuation(
                 CompanionMemoryContinuationError::Inference(PortError::Empty),
             ) => Self::EmptyResponse,
+            CompanionMemoryLoopError::Continuation(
+                CompanionMemoryContinuationError::Inference(PortError::InvalidResponse),
+            ) => Self::InvalidResponse,
             CompanionMemoryLoopError::Continuation(
                 CompanionMemoryContinuationError::Inference(PortError::Rejected),
             ) => Self::ProviderRejected,
@@ -110,13 +115,13 @@ impl CompanionMemoryTerminalFailure {
                 ),
             ) => Self::EmbeddingUnavailable,
             CompanionMemoryLoopError::Execution(
-                CompanionMemoryRoundExecutionError::InvalidPreparation
+                CompanionMemoryRoundExecutionError::InvalidPreparation { .. }
                 | CompanionMemoryRoundExecutionError::Preparation(_)
                 | CompanionMemoryRoundExecutionError::Tool(_),
             ) => Self::Tool,
             CompanionMemoryLoopError::Continuation(
-                CompanionMemoryContinuationError::InvalidOutcome(_),
-            ) => Self::ProviderRejected,
+                CompanionMemoryContinuationError::InvalidOutcome(error),
+            ) => Self::from_inference_error(error),
             CompanionMemoryLoopError::MissingRound
             | CompanionMemoryLoopError::Run(_)
             | CompanionMemoryLoopError::Execution(_)
@@ -129,6 +134,7 @@ impl CompanionMemoryTerminalFailure {
         match self {
             Self::ProviderUnavailable => "Dynamic memory provider was unavailable",
             Self::ProviderRejected => "Dynamic memory provider rejected the request",
+            Self::InvalidResponse => "Dynamic memory could not process the model response",
             Self::EmptyResponse => "Dynamic memory provider returned an empty response",
             Self::RoundLimit => "Dynamic memory reached its round limit",
             Self::Tool => "Dynamic memory tool execution failed",
@@ -161,7 +167,9 @@ impl CompanionMemoryTerminalFailure {
                 DynamicMemoryAttemptStatus::Failed,
                 Some(DynamicMemoryAttemptFailureCode::RoundLimit),
             ),
-            Self::Tool | Self::EmbeddingUnavailable | Self::Recovery => (
+            // The job error retains the precise response failure. Keep the
+            // existing durable attempt category for database compatibility.
+            Self::InvalidResponse | Self::Tool | Self::EmbeddingUnavailable | Self::Recovery => (
                 DynamicMemoryAttemptStatus::Failed,
                 Some(DynamicMemoryAttemptFailureCode::Internal),
             ),
@@ -203,12 +211,15 @@ impl<
             attempt.status,
             DynamicMemoryAttemptStatus::Processing | DynamicMemoryAttemptStatus::Succeeded
         ) {
-            return Err(CompanionMemoryTerminalError::InvalidOwnership);
+            return Err(CompanionMemoryTerminalError::InvalidOwnership {
+                reason: "attempt is neither processing nor succeeded",
+            });
         }
-        let after = self
-            .repository
-            .get(run.space_id)?
-            .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
+        let after = self.repository.get(run.space_id)?.ok_or(
+            CompanionMemoryTerminalError::InvalidOwnership {
+                reason: "memory space of the run does not exist",
+            },
+        )?;
         let fresh_memories = fresh_growth_memories(&run.starting_memory, &after);
         let effects = if batch.settle_effects() {
             CompanionPostTurnEffectCoordinator::new(self.repository)
@@ -230,9 +241,11 @@ impl<
             attempt
         };
         if first_settlement && batch.update_dynamic_memory_model_on_success {
-            let selected = batch
-                .selected_model_profile_id
-                .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
+            let selected = batch.selected_model_profile_id.ok_or(
+                CompanionMemoryTerminalError::InvalidOwnership {
+                    reason: "batch updates the model on success but names no selected model",
+                },
+            )?;
             match self.repository.load() {
                 Ok(settings) => {
                     if let Err(error) = self
@@ -277,7 +290,9 @@ impl<
         if attempt.status != DynamicMemoryAttemptStatus::Processing
             && (attempt.status != status || attempt.failure != failure_code)
         {
-            return Err(CompanionMemoryTerminalError::InvalidOwnership);
+            return Err(CompanionMemoryTerminalError::InvalidOwnership {
+                reason: "attempt already ended with a different terminal status or failure",
+            });
         }
         let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
             self.repository.transition_dynamic_memory_attempt(
@@ -334,9 +349,12 @@ impl<
     > {
         let run = self.repository.load_dynamic_memory_run(run_id)?;
         let attempt = self.repository.load_dynamic_memory_attempt(attempt_id)?;
-        let expected_sources = batch
-            .source_messages()
-            .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
+        let expected_sources =
+            batch
+                .source_messages()
+                .ok_or(CompanionMemoryTerminalError::InvalidOwnership {
+                    reason: "batch has no source messages",
+                })?;
         if attempt.run_id != run.id
             || attempt.job_id != handle.id()
             || run.conversation_id != batch.conversation_id
@@ -350,7 +368,9 @@ impl<
                 .map(|source| (source.message_id, source.role))
                 .ne(expected_sources)
         {
-            return Err(CompanionMemoryTerminalError::InvalidOwnership);
+            return Err(CompanionMemoryTerminalError::InvalidOwnership {
+                reason: "run or attempt does not match the batch source messages",
+            });
         }
         Ok((run, attempt))
     }
@@ -376,8 +396,8 @@ fn fresh_growth_memories(
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryTerminalError {
-    #[error("background memory terminal ownership is invalid")]
-    InvalidOwnership,
+    #[error("background memory terminal ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
     #[error("background memory run persistence failed: {0}")]
     Run(#[from] DynamicMemoryRunRepositoryError),
     #[error("background memory persistence failed: {0}")]
@@ -418,6 +438,29 @@ mod tests {
             created_at: TimestampMillis::new(1),
             last_accessed_at: TimestampMillis::new(1),
         }
+    }
+
+    #[test]
+    fn response_validation_failures_are_distinct_from_request_rejections() {
+        for error in [
+            CompanionMemoryInferenceError::Inference(PortError::InvalidResponse),
+            CompanionMemoryInferenceError::InvalidResponse { reason: "malformed operations".into() },
+            CompanionMemoryInferenceError::MultipleCandidates { reason: "two candidates".into() },
+            CompanionMemoryInferenceError::InvalidSignedReplay { reason: "replay mismatch" },
+        ] {
+            assert_eq!(CompanionMemoryTerminalFailure::from_inference_error(&error),
+                CompanionMemoryTerminalFailure::InvalidResponse);
+            assert_eq!(CompanionMemoryTerminalFailure::from_loop_error(
+                &CompanionMemoryLoopError::Continuation(
+                    CompanionMemoryContinuationError::InvalidOutcome(error))),
+                CompanionMemoryTerminalFailure::InvalidResponse);
+        }
+        assert_eq!(CompanionMemoryTerminalFailure::from_inference_error(
+            &CompanionMemoryInferenceError::Inference(PortError::Rejected)),
+            CompanionMemoryTerminalFailure::ProviderRejected);
+        assert_eq!(CompanionMemoryTerminalFailure::from_inference_error(
+            &CompanionMemoryInferenceError::NoToolCalls { reason: "no content".into() }),
+            CompanionMemoryTerminalFailure::EmptyResponse);
     }
 
     #[test]

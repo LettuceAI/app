@@ -148,7 +148,9 @@ pub struct MemorySummaryChange {
 impl MemorySummaryChange {
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
         if self.expected_revision.get() == 0 {
-            return Err(MemoryValidationError::InvalidRevision);
+            return Err(MemoryValidationError::InvalidRevision {
+                reason: "expected revision is zero",
+            });
         }
         self.summary.validate()
     }
@@ -230,7 +232,9 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
         &self,
         _conversation_id: ConversationId,
     ) -> Result<Vec<DynamicMemoryRun>, DynamicMemoryRunRepositoryError> {
-        Err(DynamicMemoryRunRepositoryError::Invalid)
+        Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "listing dynamic-memory runs is not supported by this repository",
+        })
     }
 
     fn admit_dynamic_memory_run_attempt(
@@ -295,7 +299,9 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
         _round_ordinal: u8,
     ) -> Result<Option<DynamicMemoryBackgroundRoundSettlement>, DynamicMemoryRunRepositoryError>
     {
-        Err(DynamicMemoryRunRepositoryError::Invalid)
+        Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "loading a round settlement is not supported by this repository",
+        })
     }
 
     /// Atomically applies one background tool round and records its typed
@@ -305,14 +311,18 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
         _commit: DynamicMemoryBackgroundRoundCommit,
         _at: TimestampMillis,
     ) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
-        Err(DynamicMemoryRunRepositoryError::Invalid)
+        Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "committing a background round is not supported by this repository",
+        })
     }
 
     fn load_dynamic_memory_summary_checkpoint(
         &self,
         _run_id: lettuce_types::DynamicMemoryRunId,
     ) -> Result<Option<DynamicMemorySummaryCheckpoint>, DynamicMemoryRunRepositoryError> {
-        Err(DynamicMemoryRunRepositoryError::Invalid)
+        Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "loading a summary checkpoint is not supported by this repository",
+        })
     }
 
     fn commit_dynamic_memory_summary(
@@ -320,7 +330,9 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
         _commit: DynamicMemorySummaryCommit,
         _at: TimestampMillis,
     ) -> Result<DynamicMemorySummaryCheckpoint, DynamicMemoryRunRepositoryError> {
-        Err(DynamicMemoryRunRepositoryError::Invalid)
+        Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "committing a summary is not supported by this repository",
+        })
     }
 }
 
@@ -352,10 +364,10 @@ pub enum DynamicMemorySuffixRewindError {
     NotFound,
     #[error("dynamic-memory suffix rewind conflicts with durable state")]
     Conflict,
-    #[error("dynamic-memory suffix rewind request is invalid")]
-    Invalid,
-    #[error("dynamic-memory suffix rewind storage failed")]
-    Storage,
+    #[error("dynamic-memory suffix rewind request is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("dynamic-memory suffix rewind storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
@@ -372,7 +384,9 @@ pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
         &self,
         _operation_id: OperationId,
     ) -> Result<Option<DynamicMemorySuffixRewindReceipt>, DynamicMemorySuffixRewindError> {
-        Err(DynamicMemorySuffixRewindError::Invalid)
+        Err(DynamicMemorySuffixRewindError::Invalid {
+            reason: "reading a suffix rewind receipt is not supported by this repository",
+        })
     }
 
     fn rewind_dynamic_memory_suffix(
@@ -524,10 +538,10 @@ pub enum DynamicMemoryRunRepositoryError {
     NotFound,
     #[error("dynamic-memory run operation conflicts with durable state")]
     Conflict,
-    #[error("dynamic-memory run record is invalid")]
-    Invalid,
-    #[error("dynamic-memory run storage failed")]
-    Storage,
+    #[error("dynamic-memory run record is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("dynamic-memory run storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

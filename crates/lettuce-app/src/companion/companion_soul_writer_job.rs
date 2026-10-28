@@ -37,8 +37,8 @@ pub struct CompanionSoulWriterAdmission {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionSoulWriterAdmissionError {
-    #[error("companion Soul-writer admission input is invalid")]
-    InvalidInput,
+    #[error("companion Soul-writer admission input is invalid: {reason}")]
+    InvalidInput { reason: String },
     #[error("companion Soul-writer run persistence failed: {0}")]
     Run(CompanionSoulWriterRunRepositoryError),
     #[error("companion Soul-writer job persistence failed: {0}")]
@@ -76,7 +76,7 @@ impl<
                     .jobs
                     .get(run.job_id)
                     .map_err(CompanionSoulWriterAdmissionError::Job)?
-                    .ok_or(CompanionSoulWriterAdmissionError::InvalidInput)?;
+                    .ok_or(CompanionSoulWriterAdmissionError::InvalidInput { reason: "job of the run is missing from the store".to_owned() })?;
                 return Ok(CompanionSoulWriterAdmission {
                     run,
                     job,
@@ -110,16 +110,16 @@ impl<
             || request.character_name.trim().is_empty()
             || request.now.get() < 0
         {
-            return Err(CompanionSoulWriterAdmissionError::InvalidInput);
+            return Err(CompanionSoulWriterAdmissionError::InvalidInput { reason: "request prompt is inactive, has the wrong purpose or revision zero, or the character name is blank or the time is negative".to_owned() });
         }
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.repository,
             crate::BuiltInPromptId::CompanionRuntime,
         )
-        .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
+        .map_err(|error| CompanionSoulWriterAdmissionError::InvalidInput { reason: error.to_string() })?;
         let fragment = |key: &str| {
             text.render_with(key, [])
-                .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)
+                .map_err(|error| CompanionSoulWriterAdmissionError::InvalidInput { reason: error.to_string() })
         };
         let prompt_values = soul_writer_prompt_values(
             request.character_name,
@@ -136,7 +136,7 @@ impl<
         );
         let idempotency_key =
             IdempotencyKey::new(format!("companion-soul-writer-{}", request.request_id))
-                .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
+                .map_err(|error| CompanionSoulWriterAdmissionError::InvalidInput { reason: error.to_string() })?;
         let subject = JobSubject::new(
             SubjectKind::ModelProfile,
             request
@@ -145,7 +145,7 @@ impl<
                 .model_profile_id
                 .to_string(),
         )
-        .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
+        .map_err(|error| CompanionSoulWriterAdmissionError::InvalidInput { reason: error.to_string() })?;
         let spec = JobSpec::new(
                     JobKind::CompanionSoulWriter,
                     subject,

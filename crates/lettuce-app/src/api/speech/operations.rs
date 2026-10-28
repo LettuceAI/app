@@ -13,7 +13,7 @@ impl From<ApiOperationError> for OperationFailure {
         Self(api_error(
             match error {
                 ApiOperationError::Conflict => ApiErrorCode::Conflict,
-                ApiOperationError::InvalidData | ApiOperationError::Storage => {
+                ApiOperationError::InvalidData { .. } | ApiOperationError::Storage { .. } => {
                     ApiErrorCode::Internal
                 }
             },

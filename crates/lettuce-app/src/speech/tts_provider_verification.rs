@@ -43,12 +43,16 @@ where
         };
         provider
             .validate()
-            .map_err(|_| TtsProviderVerificationError::InvalidInput)?;
+            .map_err(|_| TtsProviderVerificationError::InvalidInput {
+                reason: "the provider failed validation",
+            })?;
         if matches!(provider.config, AudioProviderConfig::Kokoro { .. }) {
             return if credential.is_none() {
                 Ok(true)
             } else {
-                Err(TtsProviderVerificationError::InvalidInput)
+                Err(TtsProviderVerificationError::InvalidInput {
+                    reason: "a Kokoro provider takes no credential",
+                })
             };
         }
         verifier
@@ -80,7 +84,9 @@ where
                 | AudioProviderConfig::FishSpeech { .. }
                 | AudioProviderConfig::OpenAiCompatible { .. }
         ) {
-            return Err(TtsProviderVerificationError::InvalidInput);
+            return Err(TtsProviderVerificationError::InvalidInput {
+                reason: "the provider kind has no verification",
+            });
         }
         let credential = match provider.api_key_ref {
             Some(reference) => Some(
@@ -105,8 +111,8 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsProviderVerificationError {
-    #[error("audio provider verification input is invalid")]
-    InvalidInput,
+    #[error("audio provider verification input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
     #[error("TTS configuration persistence failed: {0}")]
     Configuration(TtsConfigurationRepositoryError),
     #[error("TTS secret access failed: {0}")]

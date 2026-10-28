@@ -7,8 +7,8 @@ use lettuce_memory::{
 use lettuce_types::MessageId;
 use rusqlite::{OptionalExtension, params};
 
-fn storage(_: impl std::fmt::Debug) -> MemoryRepositoryError {
-    MemoryRepositoryError::Failure("sqlite manual memory edit failed".into())
+fn storage(error: impl std::fmt::Debug) -> MemoryRepositoryError {
+    MemoryRepositoryError::Failure(format!("sqlite manual memory edit failed: {error:?}"))
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {

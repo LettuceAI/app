@@ -3099,11 +3099,14 @@ mod tests {
                             TimestampMillis::new(2),
                         )
                         .map(|result| result.owner_revision.get())
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "binding receipt failure rolls back the owner and relationship failed"); crate::ApiOperationError::Storage { reason: "injected failure" } })
                 },
             )
         };
-        assert_eq!(apply("digest"), Err(crate::ApiOperationError::Storage));
+        assert!(matches!(
+            apply("digest"),
+            Err(crate::ApiOperationError::Storage { .. })
+        ));
         assert!(
             database
                 .list_persona_bindings(persona)

@@ -31,18 +31,18 @@ pub struct IncomingBatchResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum IncomingChangeError {
-    #[error("incoming sync batch is empty or exceeds its count or payload limit")]
-    InvalidBatch,
+    #[error("incoming sync batch is empty or exceeds its count or payload limit: {reason}")]
+    InvalidBatch { reason: &'static str },
     #[error("incoming sync batch hash does not match its canonical changes")]
     InvalidBatchHash,
     #[error("incoming sync batch identity was reused with different content")]
     Conflict,
     #[error("incoming sync batch was not found")]
     NotFound,
-    #[error("incoming sync batch storage is corrupt")]
-    Corrupt,
-    #[error("incoming sync storage failed")]
-    Storage,
+    #[error("incoming sync batch storage is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
+    #[error("incoming sync storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[must_use]

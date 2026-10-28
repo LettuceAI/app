@@ -54,7 +54,9 @@ fn hash(bytes: &[u8]) -> ContentHash {
 }
 
 fn db_error(_: rusqlite::Error) -> ArtifactError {
-    ArtifactError::Storage
+    ArtifactError::Storage {
+        reason: "db error: stored data failed a consistency check".to_owned(),
+    }
 }
 
 fn source_parts(source: SnapshotSource) -> (&'static str, String) {
@@ -77,7 +79,9 @@ pub(crate) fn source_from_parts(kind: &str, id: &str) -> Result<SnapshotSource, 
         ($ty:ty, $variant:path) => {
             <$ty>::from_str(id)
                 .map($variant)
-                .map_err(|_| ArtifactError::Storage)
+                .map_err(|error| ArtifactError::Storage {
+                    reason: format!("stored source id is invalid: {error:?}"),
+                })
         };
     }
     match kind {
@@ -97,7 +101,9 @@ pub(crate) fn source_from_parts(kind: &str, id: &str) -> Result<SnapshotSource, 
             lettuce_types::ProviderAccountId,
             SnapshotSource::ProviderAccount
         ),
-        _ => Err(ArtifactError::Storage),
+        _ => Err(ArtifactError::Storage {
+            reason: "source from parts: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -120,7 +126,9 @@ fn codec_from_name(value: &str) -> Result<ArtifactCodec, ArtifactError> {
         "json" => Ok(ArtifactCodec::Json),
         "cbor" => Ok(ArtifactCodec::Cbor),
         "binary" => Ok(ArtifactCodec::Binary),
-        _ => Err(ArtifactError::Storage),
+        _ => Err(ArtifactError::Storage {
+            reason: "codec from name: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -128,7 +136,9 @@ fn retention_from_name(value: &str) -> Result<ArtifactRetention, ArtifactError> 
     match value {
         "conversation" => Ok(ArtifactRetention::Conversation),
         "ephemeral" => Ok(ArtifactRetention::Ephemeral),
-        _ => Err(ArtifactError::Storage),
+        _ => Err(ArtifactError::Storage {
+            reason: "retention from name: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -185,13 +195,25 @@ pub(crate) fn sync_load_snapshot(
     Ok(Some(SyncSnapshotArtifact {
         reference: ProtectedSnapshotRef {
             source: source_from_parts(&kind, &source_id)?,
-            source_revision: Revision::new(
-                u64::try_from(revision).map_err(|_| ArtifactError::Storage)?,
-            ),
-            artifact_id: SnapshotArtifactId::from_str(id).map_err(|_| ArtifactError::Storage)?,
-            digest: ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?,
-            schema_version: u32::try_from(schema).map_err(|_| ArtifactError::Storage)?,
-            byte_size: u64::try_from(size).map_err(|_| ArtifactError::Storage)?,
+            source_revision: Revision::new(u64::try_from(revision).map_err(|error| {
+                ArtifactError::Storage {
+                    reason: error.to_string(),
+                }
+            })?),
+            artifact_id: SnapshotArtifactId::from_str(id).map_err(|error| {
+                ArtifactError::Storage {
+                    reason: error.to_string(),
+                }
+            })?,
+            digest: ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?,
+            schema_version: u32::try_from(schema).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?,
+            byte_size: u64::try_from(size).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?,
         },
         codec: codec_from_name(&codec)?,
         bytes: base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -233,7 +255,9 @@ pub(crate) fn sync_stage_snapshot(
     use base64::Engine as _;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&artifact.bytes)
-        .map_err(|_| ArtifactError::Storage)?;
+        .map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
     let reference = &artifact.reference;
     stage_snapshot_in_transaction(
         transaction,
@@ -314,11 +338,16 @@ pub(crate) fn insert_trusted_artifact_in(
 }
 
 fn sql_u64(value: u64) -> Result<i64, ArtifactError> {
-    i64::try_from(value).map_err(|_| ArtifactError::Storage)
+    i64::try_from(value).map_err(|error| ArtifactError::Storage {
+        reason: error.to_string(),
+    })
 }
 
 fn verify_payload(bytes: &[u8], digest: &ContentHash, size: u64) -> Result<(), ArtifactError> {
-    if u64::try_from(bytes.len()).map_err(|_| ArtifactError::Storage)? != size {
+    if u64::try_from(bytes.len()).map_err(|error| ArtifactError::Storage {
+        reason: error.to_string(),
+    })? != size
+    {
         return Err(ArtifactError::SizeMismatch);
     }
     if &hash(bytes) != digest {
@@ -367,9 +396,15 @@ pub(crate) fn stage_snapshot_in_transaction(
     {
         let stored_bytes = Zeroizing::new(stored_bytes);
         if revision < 1 || schema < 1 || size < 1 {
-            return Err(ArtifactError::Storage);
+            return Err(ArtifactError::Storage {
+                reason: "stage snapshot in transaction: stored data failed a consistency check"
+                    .to_owned(),
+            });
         }
-        let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+        let stored_digest =
+            ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?;
         if kind != source_kind
             || id != source_id
             || revision != source_revision
@@ -430,21 +465,32 @@ pub(crate) fn verify_snapshot_in_transaction(
     };
     let bytes = Zeroizing::new(bytes);
     if source_revision < 1 || schema < 1 || size < 1 {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "verify snapshot in transaction: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     codec_from_name(&codec)?;
     if retention_from_name(&retention)? != ArtifactRetention::Conversation {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "verify snapshot in transaction: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     let stored_source = source_from_parts(&kind, &source_id)?;
-    let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+    let stored_digest = ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+        reason: error.to_string(),
+    })?;
     if stored_source != reference.source
         || source_revision != sql_u64(reference.source_revision.get())?
         || digest != reference.digest.as_str()
         || schema != i64::from(reference.schema_version)
         || size != sql_u64(reference.byte_size)?
     {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "verify snapshot in transaction: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     verify_payload(&bytes, &stored_digest, reference.byte_size)
 }
@@ -471,9 +517,14 @@ pub(crate) fn verify_replay_in_transaction(
     };
     let bytes = Zeroizing::new(bytes);
     if schema < 1 || size < 1 {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "verify replay in transaction: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
-    let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+    let stored_digest = ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+        reason: error.to_string(),
+    })?;
     let expected_codec = match reference.codec {
         ReplayCodec::Json => ArtifactCodec::Json,
         ReplayCodec::Cbor => ArtifactCodec::Cbor,
@@ -489,7 +540,10 @@ pub(crate) fn verify_replay_in_transaction(
         || schema != i64::from(reference.schema_version)
         || size != sql_u64(reference.byte_size)?
     {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "verify replay in transaction: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     verify_payload(&bytes, &stored_digest, reference.byte_size)
 }
@@ -513,7 +567,11 @@ fn materialize_snapshot<T: SnapshotDocumentBody>(
         return Err(materialization_reference_error());
     }
 
-    let mut connection = database.connection().map_err(|_| ArtifactError::Storage)?;
+    let mut connection = database
+        .connection()
+        .map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .map_err(db_error)?;
@@ -553,24 +611,36 @@ fn materialize_snapshot<T: SnapshotDocumentBody>(
     };
 
     if source_revision < 1 || schema != i64::from(SNAPSHOT_DOCUMENT_FORMAT_V1) || size < 1 {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "materialize snapshot: stored data failed a consistency check".to_owned(),
+        });
     }
     if codec_from_name(&codec)? != ArtifactCodec::Json
         || retention_from_name(&retention)? != ArtifactRetention::Conversation
     {
-        return Err(ArtifactError::Storage);
+        return Err(ArtifactError::Storage {
+            reason: "materialize snapshot: stored data failed a consistency check".to_owned(),
+        });
     }
     let stored_source = source_from_parts(&source_kind, &source_id)?;
-    let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+    let stored_digest = ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+        reason: error.to_string(),
+    })?;
     let stored_reference = ProtectedSnapshotRef {
         source: stored_source,
-        source_revision: Revision::new(
-            u64::try_from(source_revision).map_err(|_| ArtifactError::Storage)?,
-        ),
+        source_revision: Revision::new(u64::try_from(source_revision).map_err(|error| {
+            ArtifactError::Storage {
+                reason: error.to_string(),
+            }
+        })?),
         artifact_id: reference.artifact_id,
         digest: stored_digest.clone(),
-        schema_version: u32::try_from(schema).map_err(|_| ArtifactError::Storage)?,
-        byte_size: u64::try_from(size).map_err(|_| ArtifactError::Storage)?,
+        schema_version: u32::try_from(schema).map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?,
+        byte_size: u64::try_from(size).map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?,
     };
     if stored_reference != *reference {
         return Err(ArtifactError::ImmutableConflict);
@@ -692,7 +762,9 @@ impl ConversationArtifactStore for Database {
         let source_revision = sql_u64(draft.source_revision.get())?;
         let byte_size = sql_u64(reference.byte_size)?;
         let bytes = Zeroizing::new(draft.bytes.into_store_bytes());
-        let mut connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let mut connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -702,9 +774,13 @@ impl ConversationArtifactStore for Database {
         {
             let stored_bytes = Zeroizing::new(stored_bytes);
             if revision < 1 || schema < 1 || size < 1 {
-                return Err(ArtifactError::Storage);
+                return Err(ArtifactError::Storage {
+                    reason: "put snapshot: stored data failed a consistency check".to_owned(),
+                });
             }
-            ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+            ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?;
             if codec_from_name(&codec)? != artifact_codec
                 || retention_from_name(&retention)? != ArtifactRetention::Conversation
                 || kind != source_kind
@@ -720,7 +796,7 @@ impl ConversationArtifactStore for Database {
             transaction.commit().map_err(db_error)?;
             return Ok(reference);
         }
-        transaction.execute("INSERT INTO conversation_snapshot_artifacts (artifact_id, source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'conversation', ?9, ?10)", params![reference.artifact_id.to_string(), source_kind, source_id, source_revision, reference.digest.as_str(), i64::from(reference.schema_version), byte_size, codec_name(artifact_codec), bytes.as_slice(), lettuce_types::TimestampMillis::now().map_err(|_| ArtifactError::Storage)?.get()]).map_err(db_error)?;
+        transaction.execute("INSERT INTO conversation_snapshot_artifacts (artifact_id, source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'conversation', ?9, ?10)", params![reference.artifact_id.to_string(), source_kind, source_id, source_revision, reference.digest.as_str(), i64::from(reference.schema_version), byte_size, codec_name(artifact_codec), bytes.as_slice(), lettuce_types::TimestampMillis::now().map_err(|error| ArtifactError::Storage { reason: error.to_string() })?.get()]).map_err(db_error)?;
         transaction.commit().map_err(db_error)?;
         Ok(reference)
     }
@@ -730,14 +806,18 @@ impl ConversationArtifactStore for Database {
         conversation_id: ConversationId,
         draft: SnapshotArtifactDraft,
     ) -> Result<ProtectedSnapshotRef, ArtifactError> {
-        let mut connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let mut connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let reference = stage_snapshot_in_transaction(
             &transaction,
             draft,
-            lettuce_types::TimestampMillis::now().map_err(|_| ArtifactError::Storage)?,
+            lettuce_types::TimestampMillis::now().map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?,
         )?;
         transaction
             .execute(
@@ -753,7 +833,9 @@ impl ConversationArtifactStore for Database {
         reference
             .validate()
             .map_err(ArtifactError::InvalidReference)?;
-        let connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let row: Option<SnapshotStoredRow> = connection.query_row("SELECT source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes FROM conversation_snapshot_artifacts WHERE artifact_id = ?1", [reference.artifact_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))).optional().map_err(db_error)?;
         let Some((kind, source_id, source_revision, digest, schema, size, codec, retention, bytes)) =
             row
@@ -762,10 +844,14 @@ impl ConversationArtifactStore for Database {
         };
         let bytes = Zeroizing::new(bytes);
         if source_revision < 1 || schema < 1 || size < 1 {
-            return Err(ArtifactError::Storage);
+            return Err(ArtifactError::Storage {
+                reason: "verify snapshot: stored data failed a consistency check".to_owned(),
+            });
         }
         codec_from_name(&codec)?;
-        ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+        ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         if retention_from_name(&retention)? != ArtifactRetention::Conversation
             || source_from_parts(&kind, &source_id)? != reference.source
             || source_revision != sql_u64(reference.source_revision.get())?
@@ -782,7 +868,9 @@ impl ConversationArtifactStore for Database {
         &self,
         artifact_id: SnapshotArtifactId,
     ) -> Result<(), ArtifactError> {
-        let mut connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let mut connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -798,7 +886,9 @@ impl ConversationArtifactStore for Database {
         let artifact_retention = draft.retention;
         let byte_size = sql_u64(reference.byte_size)?;
         let bytes = Zeroizing::new(draft.bytes.into_store_bytes());
-        let mut connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let mut connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -806,9 +896,13 @@ impl ConversationArtifactStore for Database {
         if let Some((digest, schema, size, codec, retention, stored_bytes)) = existing {
             let stored_bytes = Zeroizing::new(stored_bytes);
             if schema < 1 || size < 1 {
-                return Err(ArtifactError::Storage);
+                return Err(ArtifactError::Storage {
+                    reason: "put replay: stored data failed a consistency check".to_owned(),
+                });
             }
-            ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+            ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?;
             if codec_from_name(&codec)? != artifact_codec
                 || retention_from_name(&retention)? != artifact_retention
                 || digest != reference.digest.as_str()
@@ -821,7 +915,7 @@ impl ConversationArtifactStore for Database {
             transaction.commit().map_err(db_error)?;
             return Ok(reference);
         }
-        transaction.execute("INSERT INTO conversation_replay_artifacts (artifact_id, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", params![reference.artifact_id.to_string(), reference.digest.as_str(), i64::from(reference.schema_version), byte_size, codec_name(artifact_codec), retention_name(artifact_retention), bytes.as_slice(), lettuce_types::TimestampMillis::now().map_err(|_| ArtifactError::Storage)?.get()]).map_err(db_error)?;
+        transaction.execute("INSERT INTO conversation_replay_artifacts (artifact_id, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", params![reference.artifact_id.to_string(), reference.digest.as_str(), i64::from(reference.schema_version), byte_size, codec_name(artifact_codec), retention_name(artifact_retention), bytes.as_slice(), lettuce_types::TimestampMillis::now().map_err(|error| ArtifactError::Storage { reason: error.to_string() })?.get()]).map_err(db_error)?;
         transaction.commit().map_err(db_error)?;
         Ok(reference)
     }
@@ -830,16 +924,22 @@ impl ConversationArtifactStore for Database {
         reference
             .validate()
             .map_err(ArtifactError::InvalidReference)?;
-        let connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let row: Option<(String, i64, i64, String, String, Vec<u8>)> = connection.query_row("SELECT digest, schema_version, byte_size, codec, retention, bytes FROM conversation_replay_artifacts WHERE artifact_id = ?1", [reference.artifact_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))).optional().map_err(db_error)?;
         let Some((digest, schema, size, codec, retention, bytes)) = row else {
             return Err(ArtifactError::NotFound);
         };
         let bytes = Zeroizing::new(bytes);
         if schema < 1 || size < 1 {
-            return Err(ArtifactError::Storage);
+            return Err(ArtifactError::Storage {
+                reason: "verify replay: stored data failed a consistency check".to_owned(),
+            });
         }
-        ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+        ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         if codec_from_name(&codec)?
             != match reference.codec {
                 ReplayCodec::Json => ArtifactCodec::Json,
@@ -861,7 +961,9 @@ impl ConversationArtifactStore for Database {
     }
 
     fn cleanup_orphan_replay(&self, artifact_id: ReplayArtifactId) -> Result<(), ArtifactError> {
-        let mut connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let mut connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -900,7 +1002,9 @@ impl ProviderReplayArtifactPort for Database {
                 },
             ));
         }
-        let connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let connection = self.connection().map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })?;
         let row: Option<(String, i64, i64, String, String, Vec<u8>)> = connection
             .query_row(
                 "SELECT digest, schema_version, byte_size, codec, retention, bytes FROM conversation_replay_artifacts WHERE artifact_id = ?1",
@@ -913,9 +1017,15 @@ impl ProviderReplayArtifactPort for Database {
             return Err(ArtifactError::NotFound);
         };
         if schema < 1 || size < 1 {
-            return Err(ArtifactError::Storage);
+            return Err(ArtifactError::Storage {
+                reason: "materialize provider replay: stored data failed a consistency check"
+                    .to_owned(),
+            });
         }
-        let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+        let stored_digest =
+            ContentHash::parse(&digest).map_err(|error| ArtifactError::Storage {
+                reason: error.to_string(),
+            })?;
         let expected_codec = match reference.codec {
             ReplayCodec::Json => ArtifactCodec::Json,
             ReplayCodec::Cbor => ArtifactCodec::Cbor,
@@ -934,7 +1044,10 @@ impl ProviderReplayArtifactPort for Database {
             return Err(ArtifactError::ImmutableConflict);
         }
         let bytes = ProtectedArtifactBytes::new(bytes)?;
-        if u64::try_from(bytes.len()).map_err(|_| ArtifactError::Storage)? != reference.byte_size {
+        if u64::try_from(bytes.len()).map_err(|error| ArtifactError::Storage {
+            reason: error.to_string(),
+        })? != reference.byte_size
+        {
             return Err(ArtifactError::SizeMismatch);
         }
         if bytes.digest() != stored_digest {
@@ -973,46 +1086,78 @@ fn export_snapshot(
     artifact_id: SnapshotArtifactId,
     sink: &mut dyn TrustedArtifactSink,
 ) -> Result<(), lettuce_conversations::ArtifactTransferError> {
-    let connection = database
-        .connection()
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
-    let row: Option<SnapshotStoredRow> = connection.query_row("SELECT source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes FROM conversation_snapshot_artifacts WHERE artifact_id = ?1", [artifact_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))).optional().map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+    let connection = database.connection().map_err(|error| {
+        tracing::warn!(%error, "export snapshot failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export snapshot: a storage step failed",
+        }
+    })?;
+    let row: Option<SnapshotStoredRow> = connection.query_row("SELECT source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes FROM conversation_snapshot_artifacts WHERE artifact_id = ?1", [artifact_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))).optional().map_err(|error| { tracing::warn!(%error, "export snapshot failed"); lettuce_conversations::ArtifactTransferError::Storage { reason: "export snapshot: a storage step failed" } })?;
     let Some((kind, source_id, source_revision, digest, schema, size, codec, retention, bytes)) =
         row
     else {
         return Err(lettuce_conversations::ArtifactTransferError::NotFound);
     };
     if source_revision < 1 || schema < 1 || size < 1 || retention != "conversation" {
-        return Err(lettuce_conversations::ArtifactTransferError::Storage);
+        return Err(lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export snapshot: stored data failed a consistency check",
+        });
     }
-    let _codec = codec_from_name(&codec)
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
-    let digest = ContentHash::parse(digest)
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
-    let byte_size =
-        u64::try_from(size).map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+    let _codec = codec_from_name(&codec).map_err(|error| {
+        tracing::warn!(%error, "export snapshot failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export snapshot: a storage step failed",
+        }
+    })?;
+    let digest = ContentHash::parse(digest).map_err(|error| {
+        tracing::warn!(%error, "export snapshot failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export snapshot: a storage step failed",
+        }
+    })?;
+    let byte_size = u64::try_from(size).map_err(|error| {
+        tracing::warn!(%error, "export snapshot failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export snapshot: a storage step failed",
+        }
+    })?;
     let bytes = Zeroizing::new(bytes);
-    verify_payload(&bytes, &digest, byte_size)
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+    verify_payload(&bytes, &digest, byte_size).map_err(|error| {
+        tracing::warn!(%error, "export snapshot failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export snapshot: a storage step failed",
+        }
+    })?;
     let descriptor = TrustedArtifactDescriptor::Snapshot(ProtectedSnapshotRef {
-        source: source_from_parts(&kind, &source_id)
-            .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?,
-        source_revision: Revision::new(
-            source_revision
-                .try_into()
-                .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?,
-        ),
+        source: source_from_parts(&kind, &source_id).map_err(|error| {
+            tracing::warn!(%error, "export snapshot failed");
+            lettuce_conversations::ArtifactTransferError::Storage {
+                reason: "export snapshot: a storage step failed",
+            }
+        })?,
+        source_revision: Revision::new(source_revision.try_into().map_err(|error| {
+            tracing::warn!(%error, "export snapshot failed");
+            lettuce_conversations::ArtifactTransferError::Storage {
+                reason: "export snapshot: a storage step failed",
+            }
+        })?),
         artifact_id,
         digest,
-        schema_version: schema
-            .try_into()
-            .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?,
+        schema_version: schema.try_into().map_err(|error| {
+            tracing::warn!(%error, "export snapshot failed");
+            lettuce_conversations::ArtifactTransferError::Storage {
+                reason: "export snapshot: a storage step failed",
+            }
+        })?,
         byte_size,
     });
     if let TrustedArtifactDescriptor::Snapshot(reference) = &descriptor {
-        reference
-            .validate()
-            .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+        reference.validate().map_err(|error| {
+            tracing::warn!(%error, "export snapshot failed");
+            lettuce_conversations::ArtifactTransferError::Storage {
+                reason: "export snapshot: a storage step failed",
+            }
+        })?;
     }
     sink.begin(&descriptor)?;
     for chunk in bytes.chunks(CHUNK_SIZE) {
@@ -1026,46 +1171,77 @@ fn export_replay(
     artifact_id: ReplayArtifactId,
     sink: &mut dyn TrustedArtifactSink,
 ) -> Result<(), lettuce_conversations::ArtifactTransferError> {
-    let connection = database
-        .connection()
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
-    let row: Option<(String, i64, i64, String, String, Vec<u8>)> = connection.query_row("SELECT digest, schema_version, byte_size, codec, retention, bytes FROM conversation_replay_artifacts WHERE artifact_id = ?1", [artifact_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))).optional().map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+    let connection = database.connection().map_err(|error| {
+        tracing::warn!(%error, "export replay failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export replay: a storage step failed",
+        }
+    })?;
+    let row: Option<(String, i64, i64, String, String, Vec<u8>)> = connection.query_row("SELECT digest, schema_version, byte_size, codec, retention, bytes FROM conversation_replay_artifacts WHERE artifact_id = ?1", [artifact_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))).optional().map_err(|error| { tracing::warn!(%error, "export replay failed"); lettuce_conversations::ArtifactTransferError::Storage { reason: "export replay: a storage step failed" } })?;
     let Some((digest, schema, size, codec, retention, bytes)) = row else {
         return Err(lettuce_conversations::ArtifactTransferError::NotFound);
     };
     if schema < 1 || size < 1 {
-        return Err(lettuce_conversations::ArtifactTransferError::Storage);
+        return Err(lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export replay: stored data failed a consistency check",
+        });
     }
-    let digest = ContentHash::parse(digest)
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
-    let byte_size =
-        u64::try_from(size).map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+    let digest = ContentHash::parse(digest).map_err(|error| {
+        tracing::warn!(%error, "export replay failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export replay: a storage step failed",
+        }
+    })?;
+    let byte_size = u64::try_from(size).map_err(|error| {
+        tracing::warn!(%error, "export replay failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export replay: a storage step failed",
+        }
+    })?;
     let bytes = Zeroizing::new(bytes);
-    verify_payload(&bytes, &digest, byte_size)
-        .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+    verify_payload(&bytes, &digest, byte_size).map_err(|error| {
+        tracing::warn!(%error, "export replay failed");
+        lettuce_conversations::ArtifactTransferError::Storage {
+            reason: "export replay: a storage step failed",
+        }
+    })?;
     let descriptor = TrustedArtifactDescriptor::Replay(ReplayArtifactRef {
         artifact_id,
         digest,
-        schema_version: schema
-            .try_into()
-            .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?,
+        schema_version: schema.try_into().map_err(|error| {
+            tracing::warn!(%error, "export replay failed");
+            lettuce_conversations::ArtifactTransferError::Storage {
+                reason: "export replay: a storage step failed",
+            }
+        })?,
         byte_size,
         codec: match codec.as_str() {
             "json" => ReplayCodec::Json,
             "cbor" => ReplayCodec::Cbor,
             "binary" => ReplayCodec::Binary,
-            _ => return Err(lettuce_conversations::ArtifactTransferError::Storage),
+            _ => {
+                return Err(lettuce_conversations::ArtifactTransferError::Storage {
+                    reason: "export replay: a stored value is not recognised",
+                });
+            }
         },
         retention: match retention.as_str() {
             "conversation" => ReplayRetention::Conversation,
             "ephemeral" => ReplayRetention::Ephemeral,
-            _ => return Err(lettuce_conversations::ArtifactTransferError::Storage),
+            _ => {
+                return Err(lettuce_conversations::ArtifactTransferError::Storage {
+                    reason: "export replay: a stored value is not recognised",
+                });
+            }
         },
     });
     if let TrustedArtifactDescriptor::Replay(reference) = &descriptor {
-        reference
-            .validate()
-            .map_err(|_| lettuce_conversations::ArtifactTransferError::Storage)?;
+        reference.validate().map_err(|error| {
+            tracing::warn!(%error, "export replay failed");
+            lettuce_conversations::ArtifactTransferError::Storage {
+                reason: "export replay: a storage step failed",
+            }
+        })?;
     }
     sink.begin(&descriptor)?;
     for chunk in bytes.chunks(CHUNK_SIZE) {
@@ -1509,7 +1685,9 @@ mod tests {
             Ok(())
         }
         fn chunk(&mut self, _: &[u8]) -> Result<(), lettuce_conversations::ArtifactTransferError> {
-            Err(lettuce_conversations::ArtifactTransferError::SinkRejected)
+            Err(lettuce_conversations::ArtifactTransferError::SinkRejected {
+                reason: "chunk: the sink refused the chunk",
+            })
         }
         fn finish(&mut self) -> Result<(), lettuce_conversations::ArtifactTransferError> {
             Ok(())
@@ -1712,10 +1890,10 @@ mod tests {
             Some(TrustedArtifactDescriptor::Replay(reference))
         );
         let mut rejecting = RejectingSink;
-        assert_eq!(
+        assert!(matches!(
             database.export_replay(id, &mut rejecting),
-            Err(lettuce_conversations::ArtifactTransferError::SinkRejected)
-        );
+            Err(lettuce_conversations::ArtifactTransferError::SinkRejected { .. })
+        ));
     }
 
     #[test]

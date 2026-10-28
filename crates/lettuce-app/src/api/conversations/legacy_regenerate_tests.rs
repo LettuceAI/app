@@ -439,7 +439,7 @@ async fn imported_candidates_and_the_unknown_speaker_survive_a_backup_round_trip
         let sealed = lettuce_transfer::seal_backup("origin-test", lettuce_types::TimestampMillis::new(10),
             "password", old_sections).expect("sealed old backup");
         assert!(matches!(lettuce_transfer::decode_provider_backup_restore_plan(std::io::Cursor::new(sealed), "password"),
-            Err(lettuce_transfer::ProviderBackupRestorePlanError::InvalidInventory)));
+            Err(lettuce_transfer::ProviderBackupRestorePlanError::InvalidInventory { .. })));
     }
 }
 

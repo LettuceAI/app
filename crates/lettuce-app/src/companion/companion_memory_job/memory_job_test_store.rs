@@ -34,7 +34,9 @@ impl MemoryAdmissionStore for MemoryJobs {
         spec: JobSpec,
         batch: CompanionPostTurnMemoryBatch,
     ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
-        let mut batches = self.batches.lock().map_err(|_| StoreError::Storage)?;
+        let mut batches = self.batches.lock().map_err(|_| StoreError::Storage {
+            reason: "simulated failure".to_owned(),
+        })?;
         let admitted = self.jobs.create_or_get(spec)?;
         let batch = batches.entry(admitted.job.id).or_insert(batch).clone();
         Ok(CompanionPostTurnMemoryAdmission {

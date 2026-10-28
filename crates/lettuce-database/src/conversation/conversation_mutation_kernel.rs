@@ -383,11 +383,17 @@ pub(crate) fn next_outbox_sequence(
         )
         .map_err(slice::db)?;
     let next = u64::try_from(highest)
-        .map_err(|_| ConversationRepositoryError::Storage)?
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?
         .checked_add(1)
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "next outbox sequence: a required value is missing".to_owned(),
+        })?;
     if next == 1 && kind != OperationKind::Create {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "next outbox sequence: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(next)
 }
@@ -404,7 +410,9 @@ pub(crate) fn insert_outbox(
     conversation_query::validate_outbox_event_timestamp(record)?;
     conversation_query::validate_outbox_event(transaction, record)?;
     let sequence =
-        i64::try_from(record.sequence).map_err(|_| ConversationRepositoryError::Storage)?;
+        i64::try_from(record.sequence).map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     let revision = slice::sql_revision(record.conversation_revision)?;
     transaction
         .execute(
@@ -460,14 +468,20 @@ pub(crate) fn read_operation_any(
     };
     let stored_key = stored_key
         .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error}"),
+        })?;
     let digest = digest
         .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error}"),
+        })?;
     let result: OperationResultRef = slice::decode(&result_json)?;
     let (expected_kind, expected_id) = result_projection(&result);
     if result_kind != expected_kind || result_id != expected_id {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "read operation any: stored data failed a consistency check".to_owned(),
+        });
     }
     conversation_query::validate_operation_result_ownership(transaction, conversation_id, &result)?;
     Ok(Some(OperationRecord {
@@ -571,9 +585,12 @@ where
     B: FnOnce(&Transaction<'_>, &MutationCtx) -> Result<Staged<T>, ConversationRepositoryError>,
     R: FnOnce(&Transaction<'_>, &OperationRecord) -> Result<T, ConversationRepositoryError>,
 {
-    let mut connection = database
-        .connection()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+    let mut connection =
+        database
+            .connection()
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(slice::db)?;
@@ -608,10 +625,15 @@ where
     let base = next_outbox_sequence(&transaction, conversation_id, kind)?;
     let mut outbox = Vec::with_capacity(staged.events.len());
     for (offset, staged_event) in staged.events.into_iter().enumerate() {
-        let offset = u64::try_from(offset).map_err(|_| ConversationRepositoryError::Storage)?;
-        let sequence = base
-            .checked_add(offset)
-            .ok_or(ConversationRepositoryError::Storage)?;
+        let offset =
+            u64::try_from(offset).map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
+        let sequence =
+            base.checked_add(offset)
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "run mutation: a required value is missing".to_owned(),
+                })?;
         let record = ConversationOutboxRecord {
             format_version: 1,
             id: OutboxEventId::new(),
@@ -1020,10 +1042,10 @@ mod tests {
                 [conversation_id.to_string()],
             )
             .expect_err("duplicate conversation");
-        assert_eq!(
+        assert!(matches!(
             map_constraint(duplicate),
-            ConversationRepositoryError::Storage
-        );
+            ConversationRepositoryError::Storage { .. }
+        ));
 
         transaction
             .execute_batch(
@@ -1039,10 +1061,10 @@ mod tests {
                 ],
             )
             .expect_err("unlisted trigger");
-        assert_eq!(
+        assert!(matches!(
             map_constraint(unlisted),
-            ConversationRepositoryError::Storage
-        );
+            ConversationRepositoryError::Storage { .. }
+        ));
     }
 
     #[test]
@@ -1057,10 +1079,10 @@ mod tests {
             next_outbox_sequence(&transaction, empty, OperationKind::Create),
             Ok(1)
         );
-        assert_eq!(
+        assert!(matches!(
             next_outbox_sequence(&transaction, empty, OperationKind::Settings),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -1107,7 +1129,11 @@ mod tests {
                     ],
                 })
             },
-            |_, _| Err(ConversationRepositoryError::Storage),
+            |_, _| {
+                Err(ConversationRepositoryError::Storage {
+                    reason: "injected failure".to_owned(),
+                })
+            },
         )
         .expect("mutation");
 
@@ -1150,7 +1176,9 @@ mod tests {
             TimestampMillis::new(90),
             |_, _| {
                 ran.set(ran.get() + 1);
-                Err(ConversationRepositoryError::Storage)
+                Err(ConversationRepositoryError::Storage {
+                    reason: "injected failure".to_owned(),
+                })
             },
             |_, operation| {
                 assert_eq!(
@@ -1175,7 +1203,9 @@ mod tests {
                 TimestampMillis::new(91),
                 |_, _| -> Result<Staged<Revision>, ConversationRepositoryError> {
                     ran.set(ran.get() + 1);
-                    Err(ConversationRepositoryError::Storage)
+                    Err(ConversationRepositoryError::Storage {
+                        reason: "injected failure".to_owned(),
+                    })
                 },
                 |_, _| Ok(Revision::new(2)),
             ),

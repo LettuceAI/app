@@ -172,7 +172,7 @@ fn image_error(error: SceneImageFollowUpError) -> ApiError {
         SceneImageFollowUpError::Image(error) => {
             api_error(ApiErrorCode::Internal, error.to_string())
         }
-        SceneImageFollowUpError::Storage => storage(),
+        SceneImageFollowUpError::Storage { .. } => storage(),
     }
 }
 

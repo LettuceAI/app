@@ -91,12 +91,12 @@ pub enum ScenePromptError {
     NoEntries,
     #[error("Scene prompt writer model is invalid: {0}")]
     InvalidModel(lettuce_models::ChatProfileResolutionError),
-    #[error("Scene prompt writer prompt is unavailable")]
-    MissingPrompt,
-    #[error("Scene prompt writer prompt could not be rendered")]
-    InvalidPrompt,
-    #[error("scene prompt storage failed")]
-    Storage,
+    #[error("Scene prompt writer prompt is unavailable: {reason}")]
+    MissingPrompt { reason: String },
+    #[error("Scene prompt writer prompt could not be rendered: {reason}")]
+    InvalidPrompt { reason: String },
+    #[error("scene prompt storage failed: {reason}")]
+    Storage { reason: String },
     #[error("scene prompt job storage failed: {0}")]
     Jobs(#[from] StoreError),
     #[error("scene prompt request was already settled")]
@@ -105,18 +105,18 @@ pub enum ScenePromptError {
     NotClaimed,
     #[error("scene prompt inference failed: {0}")]
     Inference(PortError),
-    #[error("scene prompt usage evidence could not be recorded")]
-    Evidence,
+    #[error("scene prompt usage evidence could not be recorded: {reason}")]
+    Evidence { reason: String },
     #[error("Failed to extract text from response")]
     NoText,
     #[error("Scene prompt generation returned an empty result")]
     Empty,
     #[error("scene prompt request was cancelled")]
     Cancelled,
-    #[error("scene prompt replay cleanup failed")]
-    ReplayCleanup,
-    #[error("scene prompt result could not be stored")]
-    ResultStorage,
+    #[error("scene prompt replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
+    #[error("scene prompt result could not be stored: {reason}")]
+    ResultStorage { reason: String },
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for ScenePromptError {
@@ -137,8 +137,8 @@ impl crate::jobs::one_shot_job::OneShotFailure for ScenePromptError {
     fn job_error(&self) -> JobError {
         let (code, retryable, message) = match self {
             Self::Inference(PortError::Unavailable)
-            | Self::Evidence
-            | Self::ReplayCleanup
+            | Self::Evidence { .. }
+            | Self::ReplayCleanup { .. }
             | Self::NotClaimed
             | Self::AlreadySettled => (
                 JobErrorCode::ResourceUnavailable,
@@ -164,12 +164,14 @@ impl crate::jobs::one_shot_job::OneShotFailure for ScenePromptError {
                 false,
                 "scene-prompt-inference-failed",
             ),
-            Self::ResultStorage => (
+            Self::ResultStorage { .. } => (
                 JobErrorCode::StorageFailure,
                 true,
                 crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
             ),
-            Self::Jobs(_) | Self::Storage | Self::Model(ImageFeatureModelError::Storage) => (
+            Self::Jobs(_)
+            | Self::Storage { .. }
+            | Self::Model(ImageFeatureModelError::Storage { .. }) => (
                 JobErrorCode::StorageFailure,
                 true,
                 "scene-prompt-storage-failed",
@@ -198,8 +200,8 @@ impl crate::jobs::one_shot_job::OneShotFailure for ScenePromptError {
             | Self::NoContext
             | Self::NoEntries
             | Self::InvalidModel(_)
-            | Self::MissingPrompt
-            | Self::InvalidPrompt
+            | Self::MissingPrompt { .. }
+            | Self::InvalidPrompt { .. }
             | Self::Cancelled => (
                 JobErrorCode::InvalidInput,
                 false,
@@ -312,11 +314,19 @@ where
         conversation_id: ConversationId,
         message_id: MessageId,
     ) -> Result<String, ScenePromptError> {
-        let aggregate = ConversationReader::get(self.repository, conversation_id)
-            .map_err(|_| ScenePromptError::Storage)?;
+        let aggregate =
+            ConversationReader::get(self.repository, conversation_id).map_err(|error| {
+                ScenePromptError::Storage {
+                    reason: error.to_string(),
+                }
+            })?;
         let window = self.session_window(&aggregate.conversation)?;
-        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
-            .map_err(|_| ScenePromptError::MissingPrompt)?;
+        let text =
+            RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime).map_err(|error| {
+                ScenePromptError::MissingPrompt {
+                    reason: error.to_string(),
+                }
+            })?;
         recent_messages(&text, &window, message_id)
     }
 
@@ -348,7 +358,9 @@ where
         allowed: &ResourceAvailability,
     ) -> Result<ScenePromptReply, ScenePromptError> {
         let settings = GlobalSettingsStore::load(self.repository)
-            .map_err(|_| ScenePromptError::Storage)?
+            .map_err(|error| ScenePromptError::Storage {
+                reason: error.to_string(),
+            })?
             .settings;
         if !settings.image_generation.scene_enabled {
             return Err(ImageFeatureModelError::SceneDisabled.into());
@@ -377,7 +389,9 @@ where
                 if let Some(recorder) = self.recorder
                     && !recorder.record(handle.id(), &text)
                 {
-                    return Err(ScenePromptError::ResultStorage);
+                    return Err(ScenePromptError::ResultStorage {
+                        reason: "the result recorder rejected the text".to_owned(),
+                    });
                 }
                 Ok(text)
             },
@@ -413,11 +427,16 @@ where
             Err(JobInferenceError::Provider(error)) => {
                 return Err(ScenePromptError::Inference(error));
             }
-            Err(JobInferenceError::Evidence) => return Err(ScenePromptError::Evidence),
+            Err(JobInferenceError::Evidence { reason }) => {
+                return Err(ScenePromptError::Evidence { reason });
+            }
         };
         let text = generated_text(&outcome);
-        cleanup_outcome_replays(self.repository, &outcome)
-            .map_err(|_| ScenePromptError::ReplayCleanup)?;
+        cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+            ScenePromptError::ReplayCleanup {
+                reason: error.to_string(),
+            }
+        })?;
         let cleaned = clean_scene_prompt(&text.ok_or(ScenePromptError::NoText)?);
         if cleaned.is_empty() {
             return Err(ScenePromptError::Empty);
@@ -435,7 +454,9 @@ where
             ConversationReader::get(self.repository, request.conversation_id).map_err(|error| {
                 match error {
                     ConversationRepositoryError::NotFound => ScenePromptError::ConversationNotFound,
-                    _ => ScenePromptError::Storage,
+                    error => ScenePromptError::Storage {
+                        reason: error.to_string(),
+                    },
                 }
             })?;
         let conversation = &aggregate.conversation;
@@ -444,19 +465,27 @@ where
         };
         let window = self.session_window(conversation)?;
         let character = CharacterRepository::get(self.repository, details.character.source_id)
-            .map_err(|_| ScenePromptError::Storage)?
+            .map_err(|error| ScenePromptError::Storage {
+                reason: error.to_string(),
+            })?
             .ok_or(ScenePromptError::CharacterNotFound)?;
         let persona = effective_persona(conversation)
             .map(|persona| PersonaRepository::get(self.repository, persona.source_id))
             .transpose()
-            .map_err(|_| ScenePromptError::Storage)?
+            .map_err(|error| ScenePromptError::Storage {
+                reason: error.to_string(),
+            })?
             .flatten();
         let image_model =
             crate::image_feature_model(self.repository, settings, ImageFeature::Scene)?;
         let local = image_model.is_local_diffusion();
         let writer = crate::scene_writer_model(self.repository, settings, !local)?;
-        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
-            .map_err(|_| ScenePromptError::MissingPrompt)?;
+        let text =
+            RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime).map_err(|error| {
+                ScenePromptError::MissingPrompt {
+                    reason: error.to_string(),
+                }
+            })?;
         let recent = match &request.recent_context {
             Some(recent) => recent.clone(),
             None => recent_messages(&text, &window, request.message_id)?,
@@ -515,7 +544,9 @@ where
             },
         )?;
         let effective = lettuce_conversations::resolve_effective_settings(conversation, None)
-            .map_err(|_| ScenePromptError::Storage)?;
+            .map_err(|error| ScenePromptError::Storage {
+                reason: error.to_string(),
+            })?;
         let scene_id = effective
             .scene
             .as_ref()
@@ -570,8 +601,12 @@ where
             self.repository,
             BuiltInPromptId::ScenePromptWriter,
         )
-        .map_err(|_| ScenePromptError::MissingPrompt)?
-        .ok_or(ScenePromptError::MissingPrompt)?;
+        .map_err(|error| ScenePromptError::MissingPrompt {
+            reason: error.to_string(),
+        })?
+        .ok_or(ScenePromptError::MissingPrompt {
+            reason: "the scene prompt writer prompt is not stored".to_owned(),
+        })?;
         let entries = render_entries(&document, PromptRenderContext { conditions, values })?;
         if entries.is_empty() {
             return Err(ScenePromptError::NoEntries);
@@ -590,7 +625,9 @@ where
             .collect();
         let global =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
-                .map_err(|_| ScenePromptError::Storage)?
+                .map_err(|error| ScenePromptError::Storage {
+                    reason: error.to_string(),
+                })?
                 .0;
         let (model, account) = (&writer.profile, &writer.account);
         let chat_profile = lettuce_models::resolve_chat_profile(
@@ -643,7 +680,9 @@ where
         };
         inference_request
             .validate()
-            .map_err(|_| ScenePromptError::InvalidPrompt)?;
+            .map_err(|error| ScenePromptError::InvalidPrompt {
+                reason: error.to_string(),
+            })?;
         Ok(inference_request)
     }
 
@@ -667,7 +706,9 @@ where
                         limit: PageLimit::new(200),
                     },
                 )
-                .map_err(|_| ScenePromptError::Storage)?;
+                .map_err(|error| ScenePromptError::Storage {
+                    reason: error.to_string(),
+                })?;
             for item in page.items {
                 if seen < SESSION_WINDOW || item.message.pinned {
                     window.push(item);
@@ -775,7 +816,9 @@ fn render_values(
             [(Variable::SubjectName, profile.name.clone())],
         ),
     }
-    .map_err(|_| ScenePromptError::MissingPrompt)?;
+    .map_err(|error| ScenePromptError::MissingPrompt {
+        reason: error.to_string(),
+    })?;
     let mut purpose_values = BTreeMap::from([
         (Variable::RecentMessages, recent),
         (Variable::SceneRequest, scene_request),
@@ -802,7 +845,9 @@ fn render_values(
         purpose_values.insert(
             Variable::ChatBackgroundReferenceText,
             text.render_with("scene_writer_background_notes", [])
-                .map_err(|_| ScenePromptError::MissingPrompt)?,
+                .map_err(|error| ScenePromptError::MissingPrompt {
+                    reason: error.to_string(),
+                })?,
         );
     }
     Ok(PromptRenderValues {
@@ -873,9 +918,11 @@ fn recent_messages(
         if content.is_empty() {
             continue;
         }
-        let label = text
-            .render_with(label, [])
-            .map_err(|_| ScenePromptError::MissingPrompt)?;
+        let label =
+            text.render_with(label, [])
+                .map_err(|error| ScenePromptError::MissingPrompt {
+                    reason: error.to_string(),
+                })?;
         lines.push(
             text.render_with(
                 "scene_writer_message_line",
@@ -884,7 +931,9 @@ fn recent_messages(
                     (Variable::MessageText, content.to_owned()),
                 ],
             )
-            .map_err(|_| ScenePromptError::MissingPrompt)?,
+            .map_err(|error| ScenePromptError::MissingPrompt {
+                reason: error.to_string(),
+            })?,
         );
     }
     let context = lines.join("\n\n");
@@ -949,8 +998,11 @@ fn render_entries(
     document: &PromptDocument,
     context: PromptRenderContext,
 ) -> Result<Vec<FeatureEntry>, ScenePromptError> {
-    render_feature_entries(document, &context, &SCENE_TOKENS)
-        .map_err(|_| ScenePromptError::InvalidPrompt)
+    render_feature_entries(document, &context, &SCENE_TOKENS).map_err(|error| {
+        ScenePromptError::InvalidPrompt {
+            reason: error.to_string(),
+        }
+    })
 }
 
 /// The images an entry carries: its payload slot's, else those its image

@@ -13,14 +13,14 @@ pub enum MediaAssetRepositoryError {
     AlreadyExists,
     #[error("the media asset update has a stale revision")]
     StaleRevision,
-    #[error("media asset data are invalid")]
-    InvalidData,
+    #[error("media asset data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
     #[error("the referenced media blob was not found")]
     BlobMissing,
     #[error("the referenced media blob is not ready")]
     BlobNotReady,
-    #[error("media asset storage failed")]
-    Storage,
+    #[error("media asset storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// Persistence port for logical media records.

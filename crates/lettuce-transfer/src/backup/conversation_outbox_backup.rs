@@ -32,7 +32,9 @@ impl ConversationOutboxBackup {
         usage: &crate::ConversationUsageBackup,
     ) -> Result<(), ConversationOutboxBackupError> {
         if self.version != CONVERSATION_OUTBOX_BACKUP_VERSION {
-            return Err(ConversationOutboxBackupError::InvalidData);
+            return Err(ConversationOutboxBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.conversations
             .sort_by_key(|value| value.conversation_id);
@@ -47,7 +49,9 @@ impl ConversationOutboxBackup {
             .map(|value| (value.conversation_id, value))
             .collect::<BTreeMap<_, _>>();
         if self.conversations.len() != history.len() {
-            return Err(ConversationOutboxBackupError::InvalidData);
+            return Err(ConversationOutboxBackupError::InvalidData {
+                reason: "journal count does not match the conversation history count",
+            });
         }
         let usage = usage
             .events
@@ -65,14 +69,20 @@ impl ConversationOutboxBackup {
         let mut conversation_ids = BTreeSet::new();
         let mut operation_ids = BTreeSet::new();
         for journal in &mut self.conversations {
-            let history = history
-                .get(&journal.conversation_id)
-                .ok_or(ConversationOutboxBackupError::InvalidData)?;
-            let runtime = runtime
-                .get(&journal.conversation_id)
-                .ok_or(ConversationOutboxBackupError::InvalidData)?;
+            let history = history.get(&journal.conversation_id).ok_or(
+                ConversationOutboxBackupError::InvalidData {
+                    reason: "journal conversation is not in the history backup",
+                },
+            )?;
+            let runtime = runtime.get(&journal.conversation_id).ok_or(
+                ConversationOutboxBackupError::InvalidData {
+                    reason: "journal conversation is not in the runtime backup",
+                },
+            )?;
             if !conversation_ids.insert(journal.conversation_id) {
-                return Err(ConversationOutboxBackupError::InvalidData);
+                return Err(ConversationOutboxBackupError::InvalidData {
+                    reason: "journal conversation is duplicated",
+                });
             }
             journal
                 .operations
@@ -93,16 +103,23 @@ impl ConversationOutboxBackup {
                     || !references.has_operation_result(&operation.result)
                     || operations.insert(operation.id, operation.kind).is_some()
                 {
-                    return Err(ConversationOutboxBackupError::InvalidData);
+                    return Err(ConversationOutboxBackupError::InvalidData {
+                        reason: "operation belongs to another conversation, is duplicated or references an unknown result",
+                    });
                 }
             }
             let mut event_ids = BTreeSet::new();
             for (index, event) in journal.events.iter().enumerate() {
-                let expected_sequence = u64::try_from(index + 1)
-                    .map_err(|_| ConversationOutboxBackupError::LimitExceeded)?;
-                let operation_kind = operations
-                    .get(&event.operation_record_id)
-                    .ok_or(ConversationOutboxBackupError::InvalidData)?;
+                let expected_sequence = u64::try_from(index + 1).map_err(|_| {
+                    ConversationOutboxBackupError::LimitExceeded {
+                        reason: "event sequence exceeds the u64 range",
+                    }
+                })?;
+                let operation_kind = operations.get(&event.operation_record_id).ok_or(
+                    ConversationOutboxBackupError::InvalidData {
+                        reason: "event references an unknown operation record",
+                    },
+                )?;
                 if event.conversation_id != journal.conversation_id
                     || event.sequence != expected_sequence
                     || event.conversation_revision > history.aggregate.conversation.revision
@@ -115,14 +132,18 @@ impl ConversationOutboxBackup {
                     ) != (*operation_kind == OperationKind::Create)
                     || !references.has_event_refs(&event.event, &usage)
                 {
-                    return Err(ConversationOutboxBackupError::InvalidData);
+                    return Err(ConversationOutboxBackupError::InvalidData {
+                        reason: "event kind does not match its operation or references unknown records",
+                    });
                 }
             }
             if !matches!(
                 journal.events.first().map(|event| &event.event),
                 Some(ConversationOutboxEvent::ConversationCreated { .. })
             ) {
-                return Err(ConversationOutboxBackupError::InvalidData);
+                return Err(ConversationOutboxBackupError::InvalidData {
+                    reason: "journal does not start with a conversation created event",
+                });
             }
         }
         Ok(())
@@ -431,8 +452,8 @@ fn operation_kind_rank(kind: OperationKind) -> u8 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ConversationOutboxBackupError {
-    #[error("conversation outbox backup exceeds its limit")]
-    LimitExceeded,
-    #[error("conversation outbox backup is invalid")]
-    InvalidData,
+    #[error("conversation outbox backup exceeds its limit: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("conversation outbox backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

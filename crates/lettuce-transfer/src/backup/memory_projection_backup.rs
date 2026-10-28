@@ -37,7 +37,9 @@ impl MemoryProjectionBackup {
         memory: &crate::MemoryBackup,
     ) -> Result<(), MemoryProjectionBackupError> {
         if self.version != MEMORY_PROJECTION_BACKUP_VERSION {
-            return Err(MemoryProjectionBackupError::InvalidData);
+            return Err(MemoryProjectionBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.projections.sort_by(|left, right| {
             (
@@ -76,7 +78,9 @@ impl MemoryProjectionBackup {
                 || !matches!(projection.dimensions, 64 | 128 | 256 | 512 | 768)
                 || !valid_state(projection)
             {
-                return Err(MemoryProjectionBackupError::InvalidData);
+                return Err(MemoryProjectionBackupError::InvalidData {
+                    reason: "projection has an unknown space, duplicate identity, blank or oversized source, unsupported dimensions or an invalid state",
+                });
             }
         }
         Ok(())
@@ -108,6 +112,6 @@ fn valid_state(projection: &BackupMemoryProjection) -> bool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MemoryProjectionBackupError {
-    #[error("memory projection backup contains invalid data")]
-    InvalidData,
+    #[error("memory projection backup contains invalid data: {reason}")]
+    InvalidData { reason: &'static str },
 }

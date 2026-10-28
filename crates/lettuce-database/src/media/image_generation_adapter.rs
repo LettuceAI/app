@@ -12,12 +12,18 @@ use crate::{Database, decode_versioned, encode_versioned};
 const REQUEST_FORMAT_VERSION: u32 = 1;
 const STATE_FORMAT_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> ImageGenerationRepositoryError {
-    ImageGenerationRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> ImageGenerationRepositoryError {
+    tracing::warn!(?error, "image generation adapter storage step failed");
+    ImageGenerationRepositoryError::Storage {
+        reason: "image generation adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> ImageGenerationRepositoryError {
-    ImageGenerationRepositoryError::InvalidData
+fn corrupt(error: impl std::fmt::Debug) -> ImageGenerationRepositoryError {
+    tracing::warn!(?error, "image generation adapter storage step failed");
+    ImageGenerationRepositoryError::InvalidData {
+        reason: "image generation adapter: a storage step failed",
+    }
 }
 
 const fn source_label(source: ImageGenerationSource) -> &'static str {
@@ -91,7 +97,9 @@ fn load_in(
         || state != row.5
         || completed_at != row.7
     {
-        return Err(ImageGenerationRepositoryError::InvalidData);
+        return Err(ImageGenerationRepositoryError::InvalidData {
+            reason: "load in: a value failed validation",
+        });
     }
     Ok(Some(record))
 }
@@ -186,8 +194,11 @@ pub(crate) fn list_in(
     job_ids
         .iter()
         .map(|job_id| {
-            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?
-                .ok_or(ImageGenerationRepositoryError::Storage)
+            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?.ok_or(
+                ImageGenerationRepositoryError::Storage {
+                    reason: "list in: a required value is missing",
+                },
+            )
         })
         .collect()
 }
@@ -206,7 +217,9 @@ pub(crate) fn insert_restored_in(
         return Err(ImageGenerationRepositoryError::Conflict);
     }
     if load_in(transaction, record.job_id)?.as_ref() != Some(record) {
-        return Err(ImageGenerationRepositoryError::InvalidData);
+        return Err(ImageGenerationRepositoryError::InvalidData {
+            reason: "insert restored in: a value failed validation",
+        });
     }
     Ok(())
 }
@@ -227,7 +240,9 @@ impl ImageGenerationRepository for Database {
     ) -> Result<ImageGenerationRecord, ImageGenerationRepositoryError> {
         record.validate().map_err(corrupt)?;
         if record.state != ImageGenerationState::Pending {
-            return Err(ImageGenerationRepositoryError::InvalidData);
+            return Err(ImageGenerationRepositoryError::InvalidData {
+                reason: "admit: a value failed validation",
+            });
         }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -238,8 +253,11 @@ impl ImageGenerationRepository for Database {
             crate::media::playground_history_adapter::record_admission_in(&transaction, &record)
                 .map_err(storage)?;
         }
-        let stored =
-            load_in(&transaction, record.job_id)?.ok_or(ImageGenerationRepositoryError::Storage)?;
+        let stored = load_in(&transaction, record.job_id)?.ok_or(
+            ImageGenerationRepositoryError::Storage {
+                reason: "admit: a required value is missing",
+            },
+        )?;
         if inserted == 0 && !same_request(&stored.request, &record.request) {
             return Err(ImageGenerationRepositoryError::Conflict);
         }
@@ -275,7 +293,9 @@ impl ImageGenerationRepository for Database {
         };
         settled.validate().map_err(corrupt)?;
         if settled.state == ImageGenerationState::Pending {
-            return Err(ImageGenerationRepositoryError::InvalidData);
+            return Err(ImageGenerationRepositoryError::InvalidData {
+                reason: "settle: a value failed validation",
+            });
         }
         if current.state != ImageGenerationState::Pending {
             if current == settled {
@@ -296,7 +316,9 @@ impl ImageGenerationRepository for Database {
             .map_err(storage)?;
         }
         let stored =
-            load_in(&transaction, job_id)?.ok_or(ImageGenerationRepositoryError::Storage)?;
+            load_in(&transaction, job_id)?.ok_or(ImageGenerationRepositoryError::Storage {
+                reason: "settle: a required value is missing",
+            })?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -436,10 +458,10 @@ mod tests {
             request: request.clone(),
             state: ImageGenerationState::Pending,
         };
-        assert_eq!(
+        assert!(matches!(
             database.admit(unbound),
-            Err(ImageGenerationRepositoryError::Storage)
-        );
+            Err(ImageGenerationRepositoryError::Storage { .. })
+        ));
         let job_id = admitted_job(&database, &request);
         let record = ImageGenerationRecord {
             job_id,
@@ -450,10 +472,10 @@ mod tests {
         assert_eq!(database.admit(record.clone()), Ok(record.clone()));
         let other_job = admitted_job(&database, &super::tests::request());
         let foreign = generated_asset(&database, other_job, 'a');
-        assert_eq!(
+        assert!(matches!(
             database.settle(job_id, succeeded(&request, vec![foreign])),
-            Err(ImageGenerationRepositoryError::Storage)
-        );
+            Err(ImageGenerationRepositoryError::Storage { .. })
+        ));
         let pending_delete = database.connection().expect("lock").execute(
             "DELETE FROM image_generations WHERE job_id = ?1",
             [job_id.to_string()],

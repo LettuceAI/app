@@ -70,8 +70,8 @@ pub enum MediaLibraryError {
     Conflict,
     #[error("media library cursor is invalid")]
     InvalidCursor,
-    #[error("media reference data are invalid")]
-    InvalidData,
-    #[error("media library storage failed")]
-    Storage,
+    #[error("media reference data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("media library storage failed: {reason}")]
+    Storage { reason: &'static str },
 }

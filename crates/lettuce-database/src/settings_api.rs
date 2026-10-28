@@ -13,11 +13,17 @@ type Snapshot = (
 
 fn snapshot(connection: &Connection) -> Result<Snapshot, GlobalSettingsStoreError> {
     let app = crate::sync_load_app_settings(connection).map_err(|error| match error {
-        rusqlite::Error::InvalidQuery => GlobalSettingsStoreError::InvalidData,
-        _ => GlobalSettingsStoreError::Storage,
+        rusqlite::Error::InvalidQuery => GlobalSettingsStoreError::InvalidData {
+            reason: "snapshot: a stored value is not recognised".to_owned(),
+        },
+        _ => GlobalSettingsStoreError::Storage {
+            reason: "snapshot: a stored value is not recognised".to_owned(),
+        },
     })?;
     if !app.settings.within_bounds() {
-        return Err(GlobalSettingsStoreError::InvalidData);
+        return Err(GlobalSettingsStoreError::InvalidData {
+            reason: "snapshot: a value failed validation".to_owned(),
+        });
     }
     Ok((
         StoredGlobalSettings {
@@ -39,10 +45,10 @@ fn snapshot(connection: &Connection) -> Result<Snapshot, GlobalSettingsStoreErro
                 |row| row.get::<_, i64>(0),
             )
             .optional()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?
             .map(crate::to_revision)
             .transpose()
-            .map_err(|_| GlobalSettingsStoreError::InvalidData)?
+            .map_err(|error| GlobalSettingsStoreError::InvalidData { reason: error.to_string() })?
             .unwrap_or(lettuce_types::Revision::INITIAL),
     ))
 }
@@ -62,10 +68,10 @@ impl Database {
     ) -> Result<(u64, bool, lettuce_settings::PureMode), GlobalSettingsStoreError> {
         let mut connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let result = filter_state_ordered(
             || self.changes.settings_generation(),
             || {
@@ -78,7 +84,7 @@ impl Database {
         )?;
         transaction
             .commit()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         Ok(result)
     }
 
@@ -89,10 +95,10 @@ impl Database {
     ) -> Result<Snapshot, GlobalSettingsStoreError> {
         let mut connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let (_, _, mut device, revision) = snapshot(&transaction)?;
         if revision != expected {
             return Err(GlobalSettingsStoreError::StaleRevision);
@@ -101,11 +107,11 @@ impl Database {
         device.validate()?;
         self.changes.settings_section("device");
         crate::replace_device_settings_in(&transaction, &device)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let result = snapshot(&transaction)?;
         transaction
             .commit()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         Ok(result)
     }
 
@@ -115,9 +121,11 @@ impl Database {
         keep: bool,
         expected: lettuce_types::Revision,
     ) -> Result<Snapshot, GlobalSettingsStoreError> {
-        let mut connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let (_, _, mut device, revision) = snapshot(&transaction)?;
         if revision != expected {
             return Err(GlobalSettingsStoreError::StaleRevision);
@@ -126,23 +134,25 @@ impl Database {
         device.validate()?;
         self.changes.settings_section("device");
         crate::replace_device_settings_in(&transaction, &device)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let result = snapshot(&transaction)?;
-        transaction.commit().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        transaction.commit().map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(result)
     }
 
     pub fn settings_snapshot(&self) -> Result<Snapshot, GlobalSettingsStoreError> {
         let mut connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let result = snapshot(&transaction)?;
         transaction
             .commit()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         Ok(result)
     }
 
@@ -154,14 +164,16 @@ impl Database {
         at: TimestampMillis,
     ) -> Result<Snapshot, GlobalSettingsStoreError> {
         if !stored.settings.within_bounds() || sampler.validate().is_err() {
-            return Err(GlobalSettingsStoreError::InvalidData);
+            return Err(GlobalSettingsStoreError::InvalidData {
+                reason: "save settings snapshot: a value failed validation".to_owned(),
+            });
         }
         let mut connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         if snapshot(&transaction)?.0.revision != stored.revision {
             return Err(GlobalSettingsStoreError::StaleRevision);
         }
@@ -186,7 +198,7 @@ impl Database {
                     [id.to_string()],
                     |row| row.get(0),
                 )
-                .map_err(|_| GlobalSettingsStoreError::Storage)?;
+                .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
             if !exists {
                 return Err(GlobalSettingsStoreError::ModelProfileMissing);
             }
@@ -205,28 +217,38 @@ impl Database {
                     [id.to_string()],
                     |row| row.get(0),
                 )
-                .map_err(|_| GlobalSettingsStoreError::Storage)?;
+                .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
             if !exists {
-                return Err(GlobalSettingsStoreError::InvalidData);
+                return Err(GlobalSettingsStoreError::InvalidData {
+                    reason: "save settings snapshot: a value failed validation".to_owned(),
+                });
             }
         }
         let next = stored
             .revision
             .next()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let payload = serde_json::to_string(&stored.settings)
-            .map_err(|_| GlobalSettingsStoreError::InvalidData)?;
+            .map_err(|error| GlobalSettingsStoreError::InvalidData { reason: error.to_string() })?;
         let layer = crate::encode_global_model_settings(&sampler)
-            .map_err(|_| GlobalSettingsStoreError::InvalidData)?;
+            .map_err(|error| GlobalSettingsStoreError::InvalidData { reason: error.to_string() })?;
         self.changes.settings_section(section);
-        transaction.execute("UPDATE app_settings SET payload_json=?1,model_settings_json=?2,default_model_profile_id=?3,default_prompt_document_id=?4,dynamic_memory_model_profile_id=?5,group_speaker_model_profile_id=?6,revision=?7,updated_at=?8 WHERE id=1 AND revision=?9", params![payload,layer,stored.default_model_profile_id.map(|id| id.to_string()),stored.default_prompt_document_id.map(|id| id.to_string()),stored.dynamic_memory_model_profile_id.map(|id| id.to_string()),stored.group_speaker_model_profile_id.map(|id| id.to_string()),crate::to_i64(next.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,at.get(),crate::to_i64(stored.revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?]).map_err(|error| match error {
-            rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::ConstraintViolation => GlobalSettingsStoreError::InvalidData,
-            _ => GlobalSettingsStoreError::Storage,
+        transaction.execute("UPDATE app_settings SET payload_json=?1,model_settings_json=?2,default_model_profile_id=?3,default_prompt_document_id=?4,dynamic_memory_model_profile_id=?5,group_speaker_model_profile_id=?6,revision=?7,updated_at=?8 WHERE id=1 AND revision=?9", params![payload,layer,stored.default_model_profile_id.map(|id| id.to_string()),stored.default_prompt_document_id.map(|id| id.to_string()),stored.dynamic_memory_model_profile_id.map(|id| id.to_string()),stored.group_speaker_model_profile_id.map(|id| id.to_string()),crate::to_i64(next.get()).map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?,at.get(),crate::to_i64(stored.revision.get()).map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?]).map_err(|error| match error {
+            rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::ConstraintViolation => GlobalSettingsStoreError::InvalidData {
+                reason: "save settings snapshot: a stored value is not recognised".to_owned(),
+            },
+            _ => GlobalSettingsStoreError::Storage {
+                reason: "save settings snapshot: a stored value is not recognised".to_owned(),
+            },
         })?;
         let result = snapshot(&transaction)?;
         transaction
             .commit()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         Ok(result)
     }
 }

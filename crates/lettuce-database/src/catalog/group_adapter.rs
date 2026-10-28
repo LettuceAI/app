@@ -51,7 +51,9 @@ fn db_error(error: rusqlite::Error) -> RepositoryError {
                 field: "group.storage",
             })
         }
-        _ => RepositoryError::Storage,
+        _ => RepositoryError::Storage {
+            reason: "db error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
@@ -95,7 +97,9 @@ fn revision(value: i64) -> Result<Revision, rusqlite::Error> {
 }
 
 fn sql_revision(value: Revision) -> Result<i64, RepositoryError> {
-    i64::try_from(value.get()).map_err(|_| RepositoryError::Storage)
+    i64::try_from(value.get()).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })
 }
 
 fn status_name(value: LifecycleStatus) -> &'static str {
@@ -430,7 +434,7 @@ fn ensure_group(
 }
 
 fn next_revision(value: Revision) -> Result<Revision, RepositoryError> {
-    value.next().map_err(|_| RepositoryError::Storage)
+    value.next().map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn bump_group(
@@ -472,7 +476,9 @@ fn ensure_active_character(tx: &Transaction<'_>, id: CharacterId) -> Result<(), 
     match status.as_deref() {
         Some("active") => Ok(()),
         Some("archived") => Err(RepositoryError::Archived),
-        Some(_) => Err(RepositoryError::Storage),
+        Some(_) => Err(RepositoryError::Storage {
+            reason: "ensure active character: stored data failed a consistency check".to_owned(),
+        }),
         None => Err(RepositoryError::NotFound),
     }
 }
@@ -489,7 +495,9 @@ fn ensure_active_persona(tx: &Transaction<'_>, id: PersonaId) -> Result<(), Repo
     match status.as_deref() {
         Some("active") => Ok(()),
         Some("archived") => Err(RepositoryError::Archived),
-        Some(_) => Err(RepositoryError::Storage),
+        Some(_) => Err(RepositoryError::Storage {
+            reason: "ensure active persona: stored data failed a consistency check".to_owned(),
+        }),
         None => Err(RepositoryError::NotFound),
     }
 }
@@ -575,16 +583,22 @@ fn insert_scene(
     let owner = group_id.to_string();
     let scene = starting.scene.id.to_string();
     let assets = &starting.scene.assets;
-    let ids = serde_json::to_string(&assets.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    let ids = serde_json::to_string(&assets.iter().map(|link| link.asset_id.to_string()).collect::<Vec<_>>()).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     tx.execute("DELETE FROM group_scene_assets WHERE group_id=?1 AND scene_id=?2 AND asset_id NOT IN (SELECT value FROM json_each(?3))", params![owner, scene, ids]).map_err(db_error)?;
     let mut statement = tx.prepare("SELECT id,asset_id,slot,ordinal FROM group_scene_assets WHERE group_id=?1 AND scene_id=?2").map_err(db_error)?;
     let existing = statement.query_map(params![owner, scene], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, u32>(3)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
     drop(statement);
     let offset = existing.iter().map(|row| i64::from(row.3)).chain(assets.iter().map(|link| i64::from(link.ordinal))).max().unwrap_or(0) + 1;
     for (index, row) in existing.iter().enumerate() {
-        let link = assets.iter().find(|link| link.asset_id.to_string() == row.1).ok_or(RepositoryError::Storage)?;
+        let link = assets.iter().find(|link| link.asset_id.to_string() == row.1).ok_or_else(|| RepositoryError::Storage {
+            reason: "insert scene: a required value is missing".to_owned(),
+        })?;
         if row.2 != scene_slot_name(link.slot) || row.3 != link.ordinal {
-            tx.execute("UPDATE group_scene_assets SET slot='inline',ordinal=?4 WHERE group_id=?1 AND scene_id=?2 AND asset_id=?3", params![owner, scene, row.1, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+            tx.execute("UPDATE group_scene_assets SET slot='inline',ordinal=?4 WHERE group_id=?1 AND scene_id=?2 AND asset_id=?3", params![owner, scene, row.1, offset + i64::try_from(index).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?]).map_err(db_error)?;
         }
     }
     for asset in assets {
@@ -690,7 +704,9 @@ fn write_presentation(
     presentation: &ChatAppearanceV1,
 ) -> Result<(), RepositoryError> {
     presentation.validate()?;
-    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     tx.execute("DELETE FROM group_presentation_asset_refs WHERE group_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![group_id.to_string(), ids]).map_err(db_error)?;
     for asset_id in presentation.referenced_asset_ids() {
         ensure_image_asset(tx, asset_id)?;
@@ -747,7 +763,9 @@ pub(crate) fn insert_group_rows(
     }
     let details = load_details(tx, plan.group.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)?;
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "insert group rows: a required value is missing".to_owned(),
+        })?;
     details.validate()?;
     Ok(details)
 }
@@ -938,7 +956,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
 
 impl GroupRepository for Database {
     fn create(&self, plan: CreateGroupPlan) -> Result<GroupDetails, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -948,7 +968,9 @@ impl GroupRepository for Database {
     }
 
     fn get(&self, id: GroupId) -> Result<Option<GroupDetails>, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -982,7 +1004,9 @@ impl GroupRepository for Database {
               WHERE conversation.kind='group' AND json_extract(conversation.kind_json, '$.value.details.group.source_id')=groups.id), groups.updated_at) AS activity_at FROM groups
         ) SELECT id,activity_at,{column} FROM library WHERE (?1 OR status='active') AND normalized_name LIKE ?2 ESCAPE '\\'
           AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column}=?3 AND id>?4)) ORDER BY {column} {direction},id ASC LIMIT ?5");
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -995,7 +1019,9 @@ impl GroupRepository for Database {
                     pattern,
                     cursor.as_ref().map(|value| &value.0),
                     cursor.as_ref().map(|value| &value.1),
-                    i64::try_from(limit + 1).map_err(|_| RepositoryError::Storage)?
+                    i64::try_from(limit + 1).map_err(|error| RepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?
                 ],
                 |row| {
                     let key = match request.sort {
@@ -1013,10 +1039,14 @@ impl GroupRepository for Database {
         let mut items = Vec::with_capacity(limit.min(keys.len()));
         let mut last = None;
         for (id, activity, key) in keys.into_iter().take(limit) {
-            let group_id = id.parse().map_err(|_| RepositoryError::Storage)?;
+            let group_id = id.parse().map_err(|error| RepositoryError::Storage {
+                reason: format!("{error}"),
+            })?;
             let details = load_details(&tx, group_id)
                 .map_err(db_error)?
-                .ok_or(RepositoryError::Storage)?;
+                .ok_or_else(|| RepositoryError::Storage {
+                    reason: "search: a required value is missing".to_owned(),
+                })?;
             items.push(GroupLibraryItem {
                 details,
                 last_activity_at: TimestampMillis::new(activity),
@@ -1042,7 +1072,9 @@ impl GroupRepository for Database {
         name: String,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1064,7 +1096,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "rename: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1077,7 +1111,9 @@ impl GroupRepository for Database {
         persona: Selection<PersonaId>,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1105,7 +1141,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "set persona: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1184,7 +1222,9 @@ impl GroupRepository for Database {
         roleplay_prompt_id: Option<PromptDocumentId>,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1199,7 +1239,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "set prompt defaults: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1212,7 +1254,9 @@ impl GroupRepository for Database {
         presentation: ChatAppearanceV1,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1226,7 +1270,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "set presentation: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1239,7 +1285,9 @@ impl GroupRepository for Database {
         asset_id: Option<AssetId>,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1260,7 +1308,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "set background: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1273,7 +1323,9 @@ impl GroupRepository for Database {
         mut starting_scene: Option<GroupStartingScene>,
         now: TimestampMillis,
     ) -> Result<GroupDetails, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1311,7 +1363,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "set starting scene: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -1323,7 +1377,9 @@ impl GroupRepository for Database {
         members: Vec<GroupMember>,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1338,7 +1394,9 @@ impl GroupRepository for Database {
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "replace members: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1358,7 +1416,9 @@ impl GroupRepository for Database {
                 .position(|m| m.character_id == character_id)
                 .ok_or(RepositoryError::NotFound)?;
             let member = members.remove(index);
-            let target = usize::try_from(target_ordinal).map_err(|_| RepositoryError::Storage)?;
+            let target = usize::try_from(target_ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
             if target > members.len() {
                 return Err(RepositoryError::Invalid(ValidationError::InvalidValue {
                     field: "group.member.ordinal",
@@ -1366,7 +1426,9 @@ impl GroupRepository for Database {
             }
             members.insert(target, member);
             for (ordinal, member) in members.iter_mut().enumerate() {
-                member.ordinal = u32::try_from(ordinal).map_err(|_| RepositoryError::Storage)?;
+                member.ordinal = u32::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
             }
             Ok(())
         })
@@ -1436,7 +1498,9 @@ impl Database {
         value: T,
         mutate: F,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1454,7 +1518,9 @@ impl Database {
         bump_group(&tx, id, expected, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "scalar mode: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1469,7 +1535,9 @@ impl Database {
     where
         F: FnOnce(&mut Vec<GroupMember>) -> Result<(), RepositoryError>,
     {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1490,7 +1558,9 @@ impl Database {
         bump_group(&tx, id, expected, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "mutate members: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1503,7 +1573,9 @@ impl Database {
         now: TimestampMillis,
         allow_archived: bool,
     ) -> Result<GroupProfile, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1542,7 +1614,9 @@ impl Database {
         bump_group(&tx, id, expected, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "group set status: a required value is missing".to_owned(),
+            })?
             .group;
         tx.commit().map_err(db_error)?;
         Ok(result)
@@ -1551,7 +1625,9 @@ impl Database {
 
 impl lettuce_characters::GroupDependencyReader for Database {
     fn dependencies(&self, id: GroupId) -> Result<DependencyReport, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -3128,7 +3204,9 @@ mod tests {
             if revision == 2 {
                 plan.starting_scene.as_mut().expect("scene").scene.direction = Some("Edited text".into());
             }
-            database.commit_api_operation::<GroupDetails, crate::ApiOperationError>("group_save", &revision.to_string(), "digest", TimestampMillis::new(10), |scope| scope.save_group(plan.clone(), Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+            database.commit_api_operation::<GroupDetails, crate::ApiOperationError>("group_save", &revision.to_string(), "digest", TimestampMillis::new(10), |scope| scope.save_group(plan.clone(), Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "group save keeps unchanged scene assets out of gc failed"); crate::ApiOperationError::Storage {
+                reason: "injected failure",
+            } })).expect("save");
             let queued: i64 = database.connection().expect("lock").query_row("SELECT count(*) FROM media_gc_candidates", [], |row| row.get(0)).expect("queue");
             assert_eq!(queued, 0);
         }
@@ -3161,16 +3239,15 @@ mod tests {
                             RepositoryError::StaleRevision { .. } => {
                                 crate::ApiOperationError::Conflict
                             }
-                            _ => crate::ApiOperationError::Storage,
+                            _ => crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            },
                         })
                 },
             )
         };
         database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_group_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
-        assert_eq!(
-            apply("save", "digest"),
-            Err(crate::ApiOperationError::Storage)
-        );
+        assert!(matches!(apply("save", "digest"), Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             GroupRepository::get(&database, before.group.id).expect("get"),
             Some(before.clone())
@@ -3240,7 +3317,9 @@ mod tests {
                 |scope| {
                     scope
                         .save_group(plan, None, TimestampMillis::new(3))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "group save captures the default persona only at creation failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("create");
@@ -3267,7 +3346,9 @@ mod tests {
                 |scope| {
                     scope
                         .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(5))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "group save captures the default persona only at creation failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("edit");
@@ -3316,7 +3397,9 @@ mod tests {
                     |scope| {
                         scope
                             .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
-                            .map_err(|_| crate::ApiOperationError::Storage)
+                            .map_err(|error| { tracing::warn!(%error, "group save process exit mid members preserves the original failed"); crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            } })
                     },
                 )
                 .expect("save");
@@ -3366,7 +3449,9 @@ mod tests {
                 |scope| {
                     scope
                         .save_group(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "group save process exit mid members preserves the original failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("retry");
@@ -3402,7 +3487,9 @@ mod tests {
                                     RepositoryError::StaleRevision { .. } => {
                                         crate::ApiOperationError::Conflict
                                     }
-                                    _ => crate::ApiOperationError::Storage,
+                                    _ => crate::ApiOperationError::Storage {
+                                        reason: "injected failure",
+                                    },
                                 })
                         },
                     )
@@ -3499,7 +3586,9 @@ mod tests {
                 |scope| {
                     scope
                         .save_group(plan, Some(reduced.group.revision), TimestampMillis::new(4))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "group save keeps reduced membership and rejects invalid reference edits failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("rename retains membership");

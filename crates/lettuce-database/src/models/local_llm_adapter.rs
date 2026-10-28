@@ -242,7 +242,12 @@ fn clear_metrics_in(connection: &rusqlite::Connection) -> rusqlite::Result<u64> 
 
 impl crate::ApiOperationTransaction<'_, '_> {
     pub fn clear_llm_metrics(&self) -> Result<u64, crate::ApiOperationError> {
-        clear_metrics_in(self.transaction).map_err(|_| crate::ApiOperationError::Storage)
+        clear_metrics_in(self.transaction).map_err(|error| {
+            tracing::warn!(%error, "clear llm metrics failed");
+            crate::ApiOperationError::Storage {
+                reason: "clear llm metrics: a storage step failed",
+            }
+        })
     }
 }
 
@@ -469,10 +474,10 @@ mod slice12_tests {
             .record_llm_generation_metrics("first", None, &json!({}), &[], 1)
             .expect("record");
         database.connection().expect("connection").execute_batch("CREATE TEMP TRIGGER metrics_receipt_failure BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'injected failure'); END;").expect("fault");
-        assert_eq!(
+        assert!(matches!(
             clear(&database, "key", "all"),
-            Err(crate::ApiOperationError::Storage)
-        );
+            Err(crate::ApiOperationError::Storage { .. })
+        ));
         assert!(
             database
                 .llm_generation_metric("first")

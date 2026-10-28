@@ -21,7 +21,12 @@ impl ApiOperationTransaction<'_, '_> {
         match (self.model_profile(profile.id)?, expected) {
             (None, None) => {}
             (Some(stored), Some(expected)) if stored.revision == expected => {
-                profile.revision = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
+                profile.revision =
+                    expected
+                        .next()
+                        .map_err(|error| ModelRepositoryError::Storage {
+                            reason: error.to_string(),
+                        })?;
                 profile.created_at = stored.created_at;
             }
             _ => return Err(ModelRepositoryError::StaleRevision),
@@ -42,7 +47,9 @@ impl ApiOperationTransaction<'_, '_> {
                 &profile.config,
                 crate::MODEL_PROFILE_CONFIG_FORMAT_VERSION,
             )
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData {
+                reason: error.to_string(),
+            })?;
             self.transaction.execute("UPDATE model_profiles SET provider_account_id=?2,external_model_id=?3,display_name=?4,kind=?5,config_json=?6,revision=?7,updated_at=?8 WHERE id=?1", params![profile.id.to_string(), profile.provider_account_id.to_string(), profile.external_model_id, profile.display_name, crate::model_kind_name(profile.kind), config, crate::to_i64(profile.revision.get()).map_err(crate::model_error)?, profile.updated_at.get()]).map_err(crate::model_error)?;
         }
         if select_default {
@@ -80,7 +87,11 @@ impl ApiOperationTransaction<'_, '_> {
         {
             return Err(ModelRepositoryError::NotFound);
         }
-        let next = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
+        let next = expected
+            .next()
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         self.changes.settings_section("models");
         let changed = self.transaction.execute("UPDATE app_settings SET default_model_profile_id=?1,revision=?2,updated_at=?3 WHERE id=1 AND revision=?4", params![id.map(|id| id.to_string()), crate::to_i64(next.get()).map_err(crate::model_error)?, at.get(), crate::to_i64(expected.get()).map_err(crate::model_error)?]).map_err(crate::model_error)?;
         if changed != 1 {
@@ -96,7 +107,9 @@ impl Database {
     pub fn model_catalog_snapshot(&self) -> Result<ModelCatalogSnapshot, ModelRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let transaction = connection.transaction().map_err(crate::model_error)?;
         let models = transaction
             .prepare(&format!(
@@ -128,7 +141,9 @@ impl Database {
 
     pub fn model_change_position(&self) -> Result<u64, ModelRepositoryError> {
         self.connection()
-            .map_err(|_| ModelRepositoryError::Storage)?
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?
             .query_row(
                 "SELECT coalesce(max(position),0) FROM model_changes",
                 [],
@@ -144,11 +159,15 @@ impl Database {
         level: u8,
     ) -> Result<bool, ModelRepositoryError> {
         if ![75, 90, 100].contains(&level) || window.trim().is_empty() {
-            return Err(ModelRepositoryError::InvalidData);
+            return Err(ModelRepositoryError::InvalidData {
+                reason: "record provider quota warning: a value failed validation".to_owned(),
+            });
         }
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(crate::model_error)?;

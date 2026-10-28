@@ -33,7 +33,9 @@ impl ConversationUsageBackup {
         if !matches!(self.version, 1 | 2 | 3 | CONVERSATION_USAGE_BACKUP_VERSION)
             || (self.version == 1 && !self.tombstones.is_empty())
         {
-            return Err(ConversationUsageBackupError::InvalidData);
+            return Err(ConversationUsageBackupError::InvalidData {
+                reason: "backup version is unsupported or a version 1 backup carries tombstones",
+            });
         }
         self.events
             .sort_by_key(|entry| (entry.event.record.recorded_at, entry.event.id));
@@ -96,7 +98,9 @@ impl ConversationUsageBackup {
             .collect::<BTreeMap<_, _>>();
         for proof in &self.tombstones {
             if !tombstone_keys.insert(proof.key()) {
-                return Err(ConversationUsageBackupError::InvalidData);
+                return Err(ConversationUsageBackupError::InvalidData {
+                    reason: "tombstone key is duplicated",
+                });
             }
             match proof {
                 lettuce_usage::UsageTombstone::Conversation {
@@ -119,7 +123,9 @@ impl ConversationUsageBackup {
                             .any(|conversation| conversation.conversation_id == *conversation_id)
                             && !runtime_owners.contains_key(&(*turn_id, *attempt_id)))
                     {
-                        return Err(ConversationUsageBackupError::InvalidData);
+                        return Err(ConversationUsageBackupError::InvalidData {
+                            reason: "tombstone owner does not match the runtime owners",
+                        });
                     }
                 }
                 lettuce_usage::UsageTombstone::Dispatch {
@@ -135,12 +141,16 @@ impl ConversationUsageBackup {
                             .iter()
                             .any(|((_, id), (_, _, job))| id == attempt_id && job != &Some(*job_id))
                     {
-                        return Err(ConversationUsageBackupError::InvalidData);
+                        return Err(ConversationUsageBackupError::InvalidData {
+                            reason: "tombstone job inference is still present or its attempt belongs to another job",
+                        });
                     }
                 }
                 lettuce_usage::UsageTombstone::Legacy { run_id, source_id } => {
                     if run_id.is_empty() || source_id.trim().is_empty() {
-                        return Err(ConversationUsageBackupError::InvalidData);
+                        return Err(ConversationUsageBackupError::InvalidData {
+                            reason: "legacy tombstone has a blank run id or source id",
+                        });
                     }
                 }
             }
@@ -152,7 +162,12 @@ impl ConversationUsageBackup {
             if self.version < CONVERSATION_USAGE_BACKUP_VERSION && entry.conversation_id.is_none() {
                 entry.conversation_id = owner.map(|owner| owner.0);
             }
-            let conversation_id = entry.conversation_id.ok_or(ConversationUsageBackupError::InvalidData)?;
+            let conversation_id =
+                entry
+                    .conversation_id
+                    .ok_or(ConversationUsageBackupError::InvalidData {
+                        reason: "usage entry has no conversation id",
+                    })?;
             let linked = match owner {
                 Some((id, usage, _)) => *id == conversation_id && *usage == Some(entry.event.id),
                 None => self.version == CONVERSATION_USAGE_BACKUP_VERSION && !conversation_ids.contains(&conversation_id),
@@ -172,7 +187,9 @@ impl ConversationUsageBackup {
                         .cloned()
                         .unwrap_or_default()
             {
-                return Err(ConversationUsageBackupError::InvalidData);
+                return Err(ConversationUsageBackupError::InvalidData {
+                    reason: "usage entry is duplicated, invalid or has inconsistent overlapping job inferences",
+                });
             }
         }
         if attempts
@@ -180,7 +197,9 @@ impl ConversationUsageBackup {
             .flatten()
             .any(|usage_id| !ids.contains(usage_id))
         {
-            return Err(ConversationUsageBackupError::InvalidData);
+            return Err(ConversationUsageBackupError::InvalidData {
+                reason: "attempt references an unknown usage entry",
+            });
         }
         Ok(())
     }
@@ -190,6 +209,6 @@ impl ConversationUsageBackup {
 pub enum ConversationUsageBackupError {
     #[error("conversation usage backup exceeds its limit")]
     LimitExceeded,
-    #[error("conversation usage backup is invalid")]
-    InvalidData,
+    #[error("conversation usage backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

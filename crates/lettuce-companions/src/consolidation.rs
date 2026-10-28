@@ -77,12 +77,12 @@ pub enum CompanionConsolidationRunRepositoryError {
     NotFound,
     #[error("companion consolidation run conflicts with durable state")]
     Conflict,
-    #[error("companion consolidation run is invalid")]
-    Invalid,
-    #[error("companion consolidation run storage failed")]
-    Failure,
-    #[error("companion consolidation run storage is corrupt")]
-    Corrupt,
+    #[error("companion consolidation run is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("companion consolidation run storage failed: {reason}")]
+    Failure { reason: String },
+    #[error("companion consolidation run storage is corrupt: {reason}")]
+    Corrupt { reason: String },
 }
 
 pub trait CompanionConsolidationRunRepository: Send + Sync {
@@ -110,12 +110,25 @@ pub trait CompanionConsolidationRunRepository: Send + Sync {
 
 impl CompanionConsolidationRun {
     pub fn validate(&self) -> Result<(), CompanionConsolidationRunRepositoryError> {
-        if self.job_id == self.growth_job_id
-            || self.companion_name.trim().is_empty()
-            || crate::validate_state(&self.soul).is_err()
-            || !consolidation_ready(&self.soul, self.created_at)
-        {
-            return Err(CompanionConsolidationRunRepositoryError::Invalid);
+        if self.job_id == self.growth_job_id {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "consolidation job is the growth job",
+            });
+        }
+        if self.companion_name.trim().is_empty() {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "companion name is blank",
+            });
+        }
+        if crate::validate_state(&self.soul).is_err() {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "soul state failed validation",
+            });
+        }
+        if !consolidation_ready(&self.soul, self.created_at) {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "soul is not ready for consolidation",
+            });
         }
         if let Some(checkpoint) = &self.proposal_checkpoint {
             checkpoint.validate()?;
@@ -129,13 +142,20 @@ impl CompanionConsolidationProposalCheckpoint {
         let mut proposal_ids = std::collections::HashSet::new();
         if self.proposal.core_adjustments.iter().any(|proposal| {
             proposal.id.trim().is_empty() || !proposal_ids.insert(proposal.id.as_str())
-        }) || self
+        }) {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "a core adjustment has a blank id or repeats an id",
+            });
+        }
+        if self
             .proposal
             .retire_ids
             .iter()
             .any(|id| id.trim().is_empty())
         {
-            return Err(CompanionConsolidationRunRepositoryError::Invalid);
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "a retire id is blank",
+            });
         }
         Ok(())
     }

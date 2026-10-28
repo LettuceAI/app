@@ -261,7 +261,12 @@ where
 
         let scan_depth = usize::from(
             lettuce_settings::GlobalSettingsStore::load(self.sources)
-                .map_err(|_| ContextAssemblyError::LorebookActivation)?
+                .map_err(|error| {
+                    tracing::warn!(%error, "global settings could not be loaded for the lorebook scan depth");
+                    ContextAssemblyError::LorebookActivation {
+                        reason: "global settings could not be loaded",
+                    }
+                })?
                 .settings
                 .lorebook_scan_depth,
         );
@@ -316,7 +321,9 @@ where
                     self.sources,
                     crate::BuiltInPromptId::MemoryRuntime,
                 )
-                .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)
+                .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable {
+                    reason: "memory runtime prompt text is unavailable",
+                })
             })
             .transpose()?;
         let memory_lines = |lines: &[MemoryPromptLine], observed: bool| {
@@ -481,7 +488,9 @@ where
             let rendered =
                 render_prompt_snapshot(rendered_document, &render_context).map_err(|error| {
                     tracing::warn!(?error, "prompt snapshot rendering failed");
-                    ContextAssemblyError::PromptRender
+                    ContextAssemblyError::PromptRender {
+                        reason: "prompt snapshot rendering failed",
+                    }
                 })?;
             (Some(document), rendered, prompt_lore_sources)
         } else {
@@ -928,7 +937,12 @@ where
         {
             let activation =
                 resolve_lorebook_activation(&tier, scan_text, latest_user_message, scan_depth)
-                    .map_err(|_| ContextAssemblyError::LorebookActivation)?;
+                    .map_err(|error| {
+                        tracing::warn!(%error, "lorebook activation failed");
+                        ContextAssemblyError::LorebookActivation {
+                            reason: "lorebook activation could not be resolved",
+                        }
+                    })?;
             lore.skipped.extend(activation.skipped);
             for source in activation.sources {
                 if !lore.sources.iter().any(|(id, _)| *id == source.lorebook_id) {
@@ -937,7 +951,9 @@ where
                         .find(|candidate| candidate.lorebook_id == source.lorebook_id)
                         .and_then(|candidate| candidate.details.as_ref())
                         .map(|details| details.book.detection_policy)
-                        .ok_or(ContextAssemblyError::LorebookActivation)?;
+                        .ok_or(ContextAssemblyError::LorebookActivation {
+                            reason: "activated lorebook source is missing from its tier",
+                        })?;
                     lore.sources.push((source.lorebook_id, policy));
                 }
             }
@@ -983,7 +999,9 @@ where
             .branches
             .iter()
             .find(|branch| branch.id == conversation.active_branch_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "active branch is missing from the conversation",
+            })?;
         let mut items = Vec::new();
         let mut cursor = None;
         loop {
@@ -1011,10 +1029,14 @@ where
         let mut current = branch.head_message_id;
         while let Some(message_id) = current {
             let Some(item) = by_id.get(&message_id) else {
-                return Err(ContextAssemblyError::InvalidTimeline);
+                return Err(ContextAssemblyError::InvalidTimeline {
+                    reason: "branch chain references a missing message",
+                });
             };
             if chain.len() > by_id.len() {
-                return Err(ContextAssemblyError::InvalidTimeline);
+                return Err(ContextAssemblyError::InvalidTimeline {
+                    reason: "branch chain is longer than the timeline",
+                });
             }
             chain.push(*item);
             current = item.message.parent_message_id;
@@ -1036,7 +1058,12 @@ where
             .copied()
             .collect::<Vec<_>>();
         let scan_depth = lettuce_settings::GlobalSettingsStore::load(self.sources)
-            .map_err(|_| ContextAssemblyError::LorebookActivation)?
+            .map_err(|error| {
+                tracing::warn!(%error, "global settings could not be loaded for the lorebook scan depth");
+                ContextAssemblyError::LorebookActivation {
+                    reason: "global settings could not be loaded",
+                }
+            })?
             .settings
             .lorebook_scan_depth;
         let direct = live_group.is_none();
@@ -1356,7 +1383,9 @@ fn companion_runtime_text<S: PromptRepository + ?Sized>(
         sources,
         crate::BuiltInPromptId::CompanionRuntime,
     )
-    .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)
+    .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable {
+        reason: "companion runtime prompt text is unavailable",
+    })
 }
 
 fn runtime_text_error(
@@ -1364,10 +1393,14 @@ fn runtime_text_error(
 ) -> ContextAssemblyError {
     match error {
         crate::generation::runtime_text::RuntimeTextError::Unavailable => {
-            ContextAssemblyError::RuntimeTextUnavailable
+            ContextAssemblyError::RuntimeTextUnavailable {
+                reason: "runtime prompt text is unavailable",
+            }
         }
         crate::generation::runtime_text::RuntimeTextError::Render => {
-            ContextAssemblyError::PromptRender
+            ContextAssemblyError::PromptRender {
+                reason: "runtime prompt text failed to render",
+            }
         }
     }
 }
@@ -1378,7 +1411,9 @@ fn ensure_source_in_timeline(request: &ContextRequest) -> Result<(), ContextAsse
         .iter()
         .any(|item| item.message.id == request.source_message_id)
         .then_some(())
-        .ok_or(ContextAssemblyError::InvalidTimeline)
+        .ok_or(ContextAssemblyError::InvalidTimeline {
+            reason: "source message is not in the timeline",
+        })
 }
 
 struct RuntimeSection {
@@ -1410,10 +1445,14 @@ impl RuntimeSections {
             sources,
             crate::BuiltInPromptId::ChatRuntime,
         )
-        .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)?;
+        .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable {
+            reason: "chat runtime prompt text is unavailable",
+        })?;
         let rendered = render_prompt(text.document(), context).map_err(|error| {
             tracing::warn!(?error, "chat runtime prompt rendering failed");
-            ContextAssemblyError::PromptRender
+            ContextAssemblyError::PromptRender {
+                reason: "chat runtime prompt rendering failed",
+            }
         })?;
         Ok(Self {
             direct,
@@ -1434,7 +1473,9 @@ impl RuntimeSections {
         values.purpose_values.extend(variables);
         self.text
             .render(key, &values)
-            .map_err(|_| ContextAssemblyError::PromptRender)
+            .map_err(|_| ContextAssemblyError::PromptRender {
+                reason: "runtime prompt text failed to render",
+            })
     }
 
     fn section(&self, key: &str) -> Option<RuntimeSection> {
@@ -1484,9 +1525,13 @@ fn map_output_validation(error: lettuce_conversations::ValidationError) -> Conte
         lettuce_conversations::ValidationError::TooMany { .. }
         | lettuce_conversations::ValidationError::TooLarge { .. }
         | lettuce_conversations::ValidationError::OutOfBounds { .. } => {
-            ContextAssemblyError::SizeLimit
+            ContextAssemblyError::SizeLimit {
+                reason: "generated output exceeds a size limit",
+            }
         }
-        _ => ContextAssemblyError::InvalidTimeline,
+        _ => ContextAssemblyError::InvalidTimeline {
+            reason: "generated output failed validation",
+        },
     }
 }
 
@@ -1501,9 +1546,13 @@ fn validate_aggregate_and_path(
         .branches
         .iter()
         .find(|branch| branch.id == request.branch_id)
-        .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        .ok_or(ContextAssemblyError::InvalidTimeline {
+            reason: "request branch is not in the conversation",
+        })?;
     if selected.status != BranchStatus::Active {
-        return Err(ContextAssemblyError::InvalidTimeline);
+        return Err(ContextAssemblyError::InvalidTimeline {
+            reason: "request branch is not active",
+        });
     }
     let mut actual = Vec::new();
     let mut current = Some(selected.id);
@@ -1512,16 +1561,22 @@ fn validate_aggregate_and_path(
             .branches
             .iter()
             .find(|branch| branch.id == branch_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "branch path references a missing branch",
+            })?;
         actual.push(branch.id);
         current = branch.parent_branch_id;
         if actual.len() > aggregate.branches.len() {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "branch path is longer than the branch list",
+            });
         }
     }
     actual.reverse();
     if actual != request.branch_path {
-        return Err(ContextAssemblyError::InvalidTimeline);
+        return Err(ContextAssemblyError::InvalidTimeline {
+            reason: "request branch path does not match the active branch path",
+        });
     }
     Ok(())
 }
@@ -1530,38 +1585,51 @@ fn validate_timeline_items(request: &ContextRequest) -> Result<(), ContextAssemb
     let mut ids = HashSet::new();
     for item in &request.timeline {
         if !ids.insert(item.message.id) {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "timeline contains a duplicate message id",
+            });
         }
         match item.message.active_render_source {
             MessageRenderSource::Revision(id) => {
-                let revision = item
-                    .active_revision
-                    .as_ref()
-                    .ok_or(ContextAssemblyError::InvalidTimeline)?;
+                let revision =
+                    item.active_revision
+                        .as_ref()
+                        .ok_or(ContextAssemblyError::InvalidTimeline {
+                            reason: "revision-rendered message has no active revision",
+                        })?;
                 if revision.id != id
                     || revision.message_id != item.message.id
                     || item.active_candidate.is_some()
                 {
-                    return Err(ContextAssemblyError::InvalidTimeline);
+                    return Err(ContextAssemblyError::InvalidTimeline {
+                        reason: "active revision does not match the rendered message",
+                    });
                 }
                 revision
                     .validate()
-                    .map_err(|_| ContextAssemblyError::InvalidTimeline)?;
+                    .map_err(|_| ContextAssemblyError::InvalidTimeline {
+                        reason: "active revision failed validation",
+                    })?;
             }
             MessageRenderSource::Candidate(id) => {
-                let candidate = item
-                    .active_candidate
-                    .as_ref()
-                    .ok_or(ContextAssemblyError::InvalidTimeline)?;
+                let candidate = item.active_candidate.as_ref().ok_or(
+                    ContextAssemblyError::InvalidTimeline {
+                        reason: "candidate-rendered message has no active candidate",
+                    },
+                )?;
                 if candidate.id != id
                     || candidate.message_id != item.message.id
                     || item.active_revision.is_some()
                 {
-                    return Err(ContextAssemblyError::InvalidTimeline);
+                    return Err(ContextAssemblyError::InvalidTimeline {
+                        reason: "active candidate does not match the rendered message",
+                    });
                 }
                 candidate
                     .validate()
-                    .map_err(|_| ContextAssemblyError::InvalidTimeline)?;
+                    .map_err(|_| ContextAssemblyError::InvalidTimeline {
+                        reason: "active candidate failed validation",
+                    })?;
             }
         }
     }
@@ -1579,14 +1647,18 @@ fn validate_message_ancestry(
     let branch = branches
         .iter()
         .find(|branch| branch.id == request.branch_id)
-        .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        .ok_or(ContextAssemblyError::InvalidTimeline {
+            reason: "request branch is missing from the conversation branches",
+        })?;
     let target_id = match request.operation {
         GenerationOperation::Continue => branch.head_message_id.or(Some(request.source_message_id)),
         GenerationOperation::Send | GenerationOperation::Regenerate => {
             Some(request.source_message_id)
         }
     }
-    .ok_or(ContextAssemblyError::InvalidTimeline)?;
+    .ok_or(ContextAssemblyError::InvalidTimeline {
+        reason: "target message could not be determined",
+    })?;
     let by_id = request
         .timeline
         .iter()
@@ -1602,42 +1674,62 @@ fn validate_message_ancestry(
     let mut current = Some(target_id);
     while let Some(message_id) = current {
         if !ancestry.insert(message_id) {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "message ancestry contains a cycle",
+            });
         }
         let item = by_id
             .get(&message_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
-        let current_index = *path_indexes
-            .get(&item.message.branch_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "ancestor message is missing from the timeline",
+            })?;
+        let current_index = *path_indexes.get(&item.message.branch_id).ok_or(
+            ContextAssemblyError::InvalidTimeline {
+                reason: "message branch is not on the branch path",
+            },
+        )?;
         current = item.message.parent_message_id;
         let Some(parent_id) = current else {
             if current_index != 0 {
-                return Err(ContextAssemblyError::InvalidTimeline);
+                return Err(ContextAssemblyError::InvalidTimeline {
+                    reason: "root message is not on the first branch of the path",
+                });
             }
             break;
         };
         let parent = by_id
             .get(&parent_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
-        let parent_index = *path_indexes
-            .get(&parent.message.branch_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "parent message is missing from the timeline",
+            })?;
+        let parent_index = *path_indexes.get(&parent.message.branch_id).ok_or(
+            ContextAssemblyError::InvalidTimeline {
+                reason: "parent message branch is not on the branch path",
+            },
+        )?;
         if parent_index > current_index {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "parent message branch comes after its child branch on the path",
+            });
         }
         if parent_index == current_index {
             continue;
         }
         if parent_index + 1 != current_index {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "parent message skips a branch on the path",
+            });
         }
         let child_branch = branches
             .iter()
             .find(|branch| branch.id == item.message.branch_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "child branch is missing from the conversation",
+            })?;
         if child_branch.fork_message_id != Some(parent_id) {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "child branch does not fork from the parent message",
+            });
         }
     }
     if request
@@ -1645,7 +1737,9 @@ fn validate_message_ancestry(
         .iter()
         .any(|item| !ancestry.contains(&item.message.id))
     {
-        return Err(ContextAssemblyError::InvalidTimeline);
+        return Err(ContextAssemblyError::InvalidTimeline {
+            reason: "timeline contains a message outside the target ancestry",
+        });
     }
     Ok(())
 }
@@ -1666,7 +1760,9 @@ fn select_timeline<'a>(
     let branch = branches
         .iter()
         .find(|branch| branch.id == request.branch_id)
-        .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        .ok_or(ContextAssemblyError::InvalidTimeline {
+            reason: "request branch is missing from the conversation",
+        })?;
     let head_id = match request.operation {
         GenerationOperation::Continue => branch.head_message_id.or(Some(request.source_message_id)),
         GenerationOperation::Send | GenerationOperation::Regenerate => {
@@ -1677,19 +1773,25 @@ fn select_timeline<'a>(
         .timeline
         .iter()
         .position(|item| Some(item.message.id) == head_id)
-        .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        .ok_or(ContextAssemblyError::InvalidTimeline {
+            reason: "timeline head message is missing",
+        })?;
     let head_visibility = request.timeline[head_index].message.visibility;
     let hidden_continue_head = matches!(request.operation, GenerationOperation::Continue)
         && head_visibility == lettuce_conversations::MessageVisibility::Hidden;
     if head_visibility != lettuce_conversations::MessageVisibility::Visible && !hidden_continue_head
     {
-        return Err(ContextAssemblyError::InvalidTimeline);
+        return Err(ContextAssemblyError::InvalidTimeline {
+            reason: "timeline head message is not visible",
+        });
     }
     if matches!(request.operation, GenerationOperation::Continue)
         && branch.head_message_id.is_some()
         && branch.head_message_id != Some(request.source_message_id)
     {
-        return Err(ContextAssemblyError::InvalidTimeline);
+        return Err(ContextAssemblyError::InvalidTimeline {
+            reason: "continue source is not the branch head",
+        });
     }
     let mut ordered = conversation_order(request, request.timeline[head_index].message.id)?;
     let positions = ordered
@@ -1757,7 +1859,9 @@ fn select_timeline<'a>(
             .timeline
             .iter()
             .find(|item| item.message.id == required_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "required message is missing from the timeline",
+            })?;
         if omitted_messages > 0
             && !required.message.pinned
             && required.message.role != MessageRole::Scene
@@ -1792,11 +1896,15 @@ fn conversation_order(
     let mut current = Some(head_id);
     while let Some(message_id) = current {
         if chain.len() >= by_id.len() {
-            return Err(ContextAssemblyError::InvalidTimeline);
+            return Err(ContextAssemblyError::InvalidTimeline {
+                reason: "message chain is longer than the timeline",
+            });
         }
         let item = *by_id
             .get(&message_id)
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+            .ok_or(ContextAssemblyError::InvalidTimeline {
+                reason: "message chain references a missing message",
+            })?;
         chain.push(item);
         current = item.message.parent_message_id;
     }
@@ -2094,7 +2202,9 @@ impl SnapshotBundle {
             });
         if let Some((override_content, override_direction)) = scene_override {
             if override_content.trim().is_empty() {
-                return Err(ContextAssemblyError::InvalidTimeline);
+                return Err(ContextAssemblyError::InvalidTimeline {
+                    reason: "scene override content is empty",
+                });
             }
             content = override_content;
             if let Some(override_direction) = override_direction {
@@ -2211,7 +2321,7 @@ fn map_snapshot_error(
 ) -> ContextAssemblyError {
     match error {
         lettuce_conversations::ArtifactError::NotFound
-        | lettuce_conversations::ArtifactError::Storage => {
+        | lettuce_conversations::ArtifactError::Storage { .. } => {
             ContextAssemblyError::SnapshotUnavailable { kind }
         }
         _ => ContextAssemblyError::SnapshotInvalid { kind },
@@ -2983,7 +3093,9 @@ fn rendered_message(
     entry: &RenderedPromptMessage,
 ) -> Result<ProviderNeutralMessage, ContextAssemblyError> {
     if entry.payload.is_some() {
-        return Err(ContextAssemblyError::UnsupportedPart);
+        return Err(ContextAssemblyError::UnsupportedPart {
+            reason: "rendered prompt message carries a payload",
+        });
     }
     Ok(ProviderNeutralMessage {
         role: match entry.role {
@@ -3145,7 +3257,11 @@ fn provider_context_parts(
                 if matches!(annotation.payload, AnnotationPayload::SceneEdited { .. }) => {}
             MessagePart::ToolCall { .. }
             | MessagePart::ToolResult { .. }
-            | MessagePart::Annotation { .. } => return Err(ContextAssemblyError::UnsupportedPart),
+            | MessagePart::Annotation { .. } => {
+                return Err(ContextAssemblyError::UnsupportedPart {
+                    reason: "message carries a tool call, tool result or annotation",
+                });
+            }
         }
     }
     Ok(context_parts)
@@ -3459,7 +3575,9 @@ fn placed_sections(
     }
     let remainder = input_bytes
         .checked_sub(total)
-        .ok_or(ContextAssemblyError::PromptRender)?;
+        .ok_or(ContextAssemblyError::PromptRender {
+            reason: "context section byte total exceeds the input bytes",
+        })?;
     if remainder > 0 {
         sections.push(ContextSection {
             kind: ContextSectionKind::PromptEntry,
@@ -3480,21 +3598,27 @@ fn budget_report(
         .map(part_input_bytes)
         .sum::<usize>();
     if input_bytes > 16 * 1024 * 1024 || input_bytes > u32::MAX as usize {
-        return Err(ContextAssemblyError::SizeLimit);
+        return Err(ContextAssemblyError::SizeLimit {
+            reason: "context input exceeds 16 MiB",
+        });
     }
     Ok(ContextBudgetReport {
-        selected_messages: messages
-            .len()
-            .try_into()
-            .map_err(|_| ContextAssemblyError::SizeLimit)?,
+        selected_messages: messages.len().try_into().map_err(|_| {
+            ContextAssemblyError::SizeLimit {
+                reason: "selected message count does not fit in u32",
+            }
+        })?,
         omitted_messages: omitted
             .try_into()
-            .map_err(|_| ContextAssemblyError::SizeLimit)?,
+            .map_err(|_| ContextAssemblyError::SizeLimit {
+                reason: "omitted message count does not fit in u32",
+            })?,
         input_bytes: input_bytes as u32,
-        estimated_input_tokens: (input_bytes as u64)
-            .div_ceil(4)
-            .try_into()
-            .map_err(|_| ContextAssemblyError::SizeLimit)?,
+        estimated_input_tokens: (input_bytes as u64).div_ceil(4).try_into().map_err(|_| {
+            ContextAssemblyError::SizeLimit {
+                reason: "estimated input tokens do not fit in u32",
+            }
+        })?,
         truncated: omitted > 0,
     })
 }
@@ -3681,10 +3805,10 @@ mod tests {
             }],
             ..RenderedPrompt::default()
         };
-        assert_eq!(
+        assert!(matches!(
             prompt_messages(&rendered),
-            Err(ContextAssemblyError::UnsupportedPart)
-        );
+            Err(ContextAssemblyError::UnsupportedPart { .. })
+        ));
     }
 
     #[test]
@@ -4004,10 +4128,10 @@ mod tests {
                 updated_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
             },
         ];
-        assert_eq!(
+        assert!(matches!(
             validate_message_ancestry(&branches, &request),
-            Err(ContextAssemblyError::InvalidTimeline)
-        );
+            Err(ContextAssemblyError::InvalidTimeline { .. })
+        ));
     }
 
     #[test]

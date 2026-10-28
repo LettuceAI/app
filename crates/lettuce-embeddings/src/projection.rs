@@ -18,10 +18,15 @@ pub struct MemoryEmbeddingProjection {
 impl MemoryEmbeddingProjection {
     pub fn validate(&self) -> Result<(), EmbeddingProjectionError> {
         validate_identity(&self.source_text, &self.vector.source_revision)?;
-        if self.vector.values.len() != self.dimensions.get()
-            || self.vector.values.iter().any(|value| !value.is_finite())
-        {
-            return Err(EmbeddingProjectionError::InvalidVector);
+        if self.vector.values.len() != self.dimensions.get() {
+            return Err(EmbeddingProjectionError::InvalidVector {
+                reason: "vector length differs from the projection dimensions",
+            });
+        }
+        if self.vector.values.iter().any(|value| !value.is_finite()) {
+            return Err(EmbeddingProjectionError::InvalidVector {
+                reason: "vector contains a value that is not finite",
+            });
         }
         Ok(())
     }
@@ -47,11 +52,25 @@ fn validate_identity(
     source_text: &str,
     source_revision: &str,
 ) -> Result<(), EmbeddingProjectionError> {
-    if source_text.trim().is_empty() || source_text.len() > MAX_SOURCE_TEXT_BYTES {
-        return Err(EmbeddingProjectionError::InvalidSourceText);
+    if source_text.trim().is_empty() {
+        return Err(EmbeddingProjectionError::InvalidSourceText {
+            reason: "source text is blank",
+        });
     }
-    if source_revision.trim().is_empty() || source_revision.len() > MAX_SOURCE_REVISION_BYTES {
-        return Err(EmbeddingProjectionError::InvalidSourceRevision);
+    if source_text.len() > MAX_SOURCE_TEXT_BYTES {
+        return Err(EmbeddingProjectionError::InvalidSourceText {
+            reason: "source text exceeds the size limit",
+        });
+    }
+    if source_revision.trim().is_empty() {
+        return Err(EmbeddingProjectionError::InvalidSourceRevision {
+            reason: "source revision is blank",
+        });
+    }
+    if source_revision.len() > MAX_SOURCE_REVISION_BYTES {
+        return Err(EmbeddingProjectionError::InvalidSourceRevision {
+            reason: "source revision exceeds the size limit",
+        });
     }
     Ok(())
 }
@@ -103,12 +122,12 @@ pub enum ProjectionWrite {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EmbeddingProjectionError {
-    #[error("embedding projection source text is invalid")]
-    InvalidSourceText,
-    #[error("embedding projection source revision is invalid")]
-    InvalidSourceRevision,
-    #[error("embedding projection vector is invalid")]
-    InvalidVector,
+    #[error("embedding projection source text is invalid: {reason}")]
+    InvalidSourceText { reason: &'static str },
+    #[error("embedding projection source revision is invalid: {reason}")]
+    InvalidSourceRevision { reason: &'static str },
+    #[error("embedding projection vector is invalid: {reason}")]
+    InvalidVector { reason: &'static str },
     #[error("embedding projection repository failed: {0}")]
     Repository(String),
 }
@@ -133,9 +152,9 @@ mod tests {
             dimensions: EmbeddingDimensions::D128,
             updated_at: TimestampMillis::new(1),
         };
-        assert_eq!(
+        assert!(matches!(
             projection.validate(),
-            Err(EmbeddingProjectionError::InvalidVector)
-        );
+            Err(EmbeddingProjectionError::InvalidVector { .. })
+        ));
     }
 }

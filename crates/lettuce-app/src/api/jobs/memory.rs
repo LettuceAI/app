@@ -197,7 +197,10 @@ impl ClaimedJob for ClaimedSoul {
                     .companion_soul_writer_dispatcher()
                     .settle(
                         self.0,
-                        Err(crate::CompanionSoulWriterExecutionError::InvalidPrompt),
+                        Err(crate::CompanionSoulWriterExecutionError::InvalidPrompt {
+                            reason: "the Soul-writer prompt is missing or could not be loaded"
+                                .to_owned(),
+                        }),
                         CancellationReason::User,
                         context.now(),
                     )

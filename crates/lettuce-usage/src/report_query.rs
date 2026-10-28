@@ -115,7 +115,9 @@ pub fn usage_report_page(
                     timestamp: row.timestamp,
                     id: row.id.clone(),
                 })
-                .map_err(|_| UsageReportError::InvalidData)
+                .map_err(|_| UsageReportError::InvalidData {
+                    reason: "page cursor could not be serialized",
+                })
             })
             .transpose()?
     } else {
@@ -175,7 +177,9 @@ impl UsageReportTotals {
     fn add(&mut self, row: &UsageReportRow) -> Result<(), UsageReportError> {
         row.validate()?;
         let increment = |count: &mut u64| -> Result<(), UsageReportError> {
-            *count = count.checked_add(1).ok_or(UsageReportError::Overflow)?;
+            *count = count.checked_add(1).ok_or(UsageReportError::Overflow {
+                reason: "request counter overflowed",
+            })?;
             Ok(())
         };
         increment(&mut self.requests)?;
@@ -188,12 +192,11 @@ impl UsageReportTotals {
         })?;
         let sum = |total: &mut Option<u64>, value: Option<u64>| -> Result<(), UsageReportError> {
             if let Some(value) = value {
-                *total = Some(
-                    total
-                        .unwrap_or(0)
-                        .checked_add(value)
-                        .ok_or(UsageReportError::Overflow)?,
-                );
+                *total = Some(total.unwrap_or(0).checked_add(value).ok_or(
+                    UsageReportError::Overflow {
+                        reason: "token total overflowed",
+                    },
+                )?);
             }
             Ok(())
         };
@@ -207,11 +210,11 @@ impl UsageReportTotals {
         }
         let tokens = match (row.total_tokens, row.prompt_tokens, row.completion_tokens) {
             (Some(total), _, _) => Some(total),
-            (None, Some(input), Some(output)) => Some(
-                input
-                    .checked_add(output)
-                    .ok_or(UsageReportError::Overflow)?,
-            ),
+            (None, Some(input), Some(output)) => Some(input.checked_add(output).ok_or(
+                UsageReportError::Overflow {
+                    reason: "token sum overflowed",
+                },
+            )?),
             _ => None,
         };
         sum(&mut self.total_tokens, tokens)?;
@@ -221,7 +224,9 @@ impl UsageReportTotals {
         if let Some(cost) = row.total_cost {
             let total = self.total_cost.unwrap_or(0.0) + cost;
             if !total.is_finite() {
-                return Err(UsageReportError::Overflow);
+                return Err(UsageReportError::Overflow {
+                    reason: "total cost is not finite",
+                });
             }
             self.total_cost = Some(total);
         } else {
@@ -246,7 +251,9 @@ pub fn usage_report_stats(
         let (key, label) = match group_by {
             UsageReportGroup::Day => {
                 let day = jiff::Timestamp::from_millisecond(row.timestamp)
-                    .map_err(|_| UsageReportError::InvalidData)?
+                    .map_err(|_| UsageReportError::InvalidData {
+                        reason: "row timestamp is out of range",
+                    })?
                     .to_zoned(zone.clone())
                     .date()
                     .to_string();

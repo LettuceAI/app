@@ -75,8 +75,8 @@ pub struct LegacyBackupCompanionEpisode {
 pub enum LegacyBackupCompanionSharedMemoryError {
     #[error("legacy backup companion shared-memory document is malformed")]
     Malformed { field: String },
-    #[error("legacy backup companion shared-memory document exceeds its record limit")]
-    LimitExceeded,
+    #[error("legacy backup companion shared-memory document exceeds its record limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("legacy backup companion shared-memory graph contains an orphaned link")]
     Orphan { field: String },
 }
@@ -299,8 +299,11 @@ fn map_states(
             LegacyBackupCompanionMaterialization::RetainedEvidence
         };
         states.push(LegacyBackupCompanionSharedMemory {
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupCompanionSharedMemoryError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupCompanionSharedMemoryError::LimitExceeded {
+                    reason: "shared memory ordinal exceeds the u64 range",
+                }
+            })?,
             character_id,
             memories_json: row.memories,
             memory_embeddings_json: row.memory_embeddings,
@@ -417,8 +420,11 @@ fn map_episodes(
             return Err(malformed(format!("{path}.timestamps")));
         }
         episodes.push(LegacyBackupCompanionEpisode {
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupCompanionSharedMemoryError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupCompanionSharedMemoryError::LimitExceeded {
+                    reason: "episode ordinal exceeds the u64 range",
+                }
+            })?,
             conversation_source_id: row.session_id,
             persona_id,
             episode_index,
@@ -549,7 +555,9 @@ fn validate_string_array(
     field: &str,
 ) -> Result<(), LegacyBackupCompanionSharedMemoryError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupCompanionSharedMemoryError::LimitExceeded);
+        return Err(LegacyBackupCompanionSharedMemoryError::LimitExceeded {
+            reason: "string array json exceeds the size limit",
+        });
     }
     let values: Vec<String> = serde_json::from_str(raw).map_err(|_| malformed(field))?;
     if values
@@ -581,7 +589,9 @@ fn validate_json(
     array: bool,
 ) -> Result<Value, LegacyBackupCompanionSharedMemoryError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupCompanionSharedMemoryError::LimitExceeded);
+        return Err(LegacyBackupCompanionSharedMemoryError::LimitExceeded {
+            reason: "json document exceeds the size limit",
+        });
     }
     let value: Value = serde_json::from_str(raw).map_err(|_| malformed(field))?;
     if (array && !value.is_array()) || (!array && !value.is_object()) {

@@ -223,16 +223,18 @@ async fn optimize(
     cancellation: Arc<AtomicBool>,
 ) -> Result<(), lettuce_database::StorageMaintenanceError> {
     let lifecycle = if let Some(files) = context.database_files() {
-        let lifecycle = files
-            .location
-            .file_lifecycle()
-            .await
-            .map_err(|_| lettuce_database::StorageMaintenanceError::Storage)?;
-        if files
-            .location
-            .active_path()
-            .map_err(|_| lettuce_database::StorageMaintenanceError::Storage)?
-            != files.active
+        let lifecycle = files.location.file_lifecycle().await.map_err(|error| {
+            tracing::warn!(%error, "database file lifecycle could not be read");
+            lettuce_database::StorageMaintenanceError::Storage {
+                reason: "database file lifecycle could not be read",
+            }
+        })?;
+        if files.location.active_path().map_err(|error| {
+            tracing::warn!(%error, "active database path could not be resolved");
+            lettuce_database::StorageMaintenanceError::Storage {
+                reason: "active database path could not be resolved",
+            }
+        })? != files.active
         {
             return Err(lettuce_database::StorageMaintenanceError::ReadOnly);
         }
@@ -247,7 +249,12 @@ async fn optimize(
         context.backend().database().optimize_storage(cancellation)
     })
     .await
-    .map_err(|_| lettuce_database::StorageMaintenanceError::Storage)?
+    .map_err(|error| {
+        tracing::warn!(%error, "storage optimize task did not finish");
+        lettuce_database::StorageMaintenanceError::Storage {
+            reason: "storage optimize task did not finish",
+        }
+    })?
 }
 
 impl ClaimedMaintenance {

@@ -105,7 +105,9 @@ impl RemoteKokoroModel {
                         || validate_artifact(actual).is_err()
                 })
         {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "pinned artifacts do not match the expected layout or are invalid",
+            });
         }
         Ok(())
     }
@@ -272,27 +274,48 @@ impl KokoroInstallStore {
             return Ok(pinned_kokoro_model_for(variant, self.platform));
         };
         if file.len() > 64 * 1024 {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "recorded model file exceeds the size limit",
+            });
         }
         let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
-            .map_err(|_| KokoroInstallError::Unreadable)?;
-        let model: RemoteKokoroModel =
-            serde_json::from_slice(&bytes).map_err(|_| KokoroInstallError::InvalidManifest)?;
+        file.read_to_end(&mut bytes).map_err(|error| {
+            tracing::warn!(%error, "reading the recorded model failed");
+            KokoroInstallError::Unreadable {
+                reason: "reading the recorded model failed",
+            }
+        })?;
+        let model: RemoteKokoroModel = serde_json::from_slice(&bytes).map_err(|error| {
+            tracing::warn!(%error, "recorded model is not valid json");
+            KokoroInstallError::InvalidManifest {
+                reason: "recorded model is not valid json",
+            }
+        })?;
         self.validate_model(&model)?;
         if model.variant != variant {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "recorded model variant does not match the requested variant",
+            });
         }
         Ok(model)
     }
 
     pub fn record_model(&self, model: &RemoteKokoroModel) -> Result<(), KokoroInstallError> {
         if self.installed(model)?.is_none() {
-            return Err(KokoroInstallError::InvalidArtifact);
+            return Err(KokoroInstallError::InvalidArtifact {
+                reason: "model is not installed",
+            });
         }
-        let bytes = serde_json::to_vec(model).map_err(|_| KokoroInstallError::InvalidManifest)?;
+        let bytes = serde_json::to_vec(model).map_err(|error| {
+            tracing::warn!(%error, "model record could not be serialized");
+            KokoroInstallError::InvalidManifest {
+                reason: "model record could not be serialized",
+            }
+        })?;
         if bytes.len() > 64 * 1024 {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "model record exceeds the size limit",
+            });
         }
         let name = format!("installed-{}.json", model.variant.id());
         let partial = ObjectKey::from_segments(["downloads".to_owned(), format!("{name}.part")])
@@ -310,15 +333,21 @@ impl KokoroInstallStore {
             .prepare(partial, staged, 64 * 1024)
             .map_err(KokoroInstallError::Platform)?
         else {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "model record install could not be resumed",
+            });
         };
         install
             .append(&bytes)
             .map_err(KokoroInstallError::Platform)?;
         install.sync().map_err(KokoroInstallError::Platform)?;
         let path = install.commit().map_err(KokoroInstallError::Platform)?;
-        std::fs::rename(&path, path.with_file_name(name))
-            .map_err(|_| KokoroInstallError::Unreadable)?;
+        std::fs::rename(&path, path.with_file_name(name)).map_err(|error| {
+            tracing::warn!(%error, "renaming the model record failed");
+            KokoroInstallError::Unreadable {
+                reason: "renaming the model record failed",
+            }
+        })?;
         Ok(())
     }
 
@@ -331,7 +360,9 @@ impl KokoroInstallStore {
             || !source_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
             || source_revision != source_revision.to_ascii_lowercase()
         {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "source revision is not a 40 character lowercase hex commit",
+            });
         }
         validate_artifact(&remote)?;
         let partial = ObjectKey::from_segments([
@@ -420,7 +451,9 @@ impl KokoroInstallStore {
                 return Ok(None);
             };
             if file.len() != remote.byte_size {
-                return Err(KokoroInstallError::Mismatch);
+                return Err(KokoroInstallError::Mismatch {
+                    reason: "file size does not match the pinned size",
+                });
             }
             files.push(KokoroModelFile {
                 role: remote.role,
@@ -452,7 +485,9 @@ impl KokoroInstallStore {
             .inner
             .inspect(&target)
             .map_err(KokoroInstallError::Platform)?
-            .ok_or(KokoroInstallError::InvalidArtifact)?;
+            .ok_or(KokoroInstallError::InvalidArtifact {
+                reason: "espeak data target is missing after install",
+            })?;
         verify(&mut file, remote)?;
         let archive = file.native_path().to_path_buf();
         drop(file);
@@ -473,22 +508,38 @@ impl KokoroInstallStore {
             return Ok(None);
         };
         if file.len() > MAX_KOKORO_LEXICON_BYTES {
-            return Err(KokoroInstallError::InvalidArtifact);
+            return Err(KokoroInstallError::InvalidArtifact {
+                reason: "lexicon exceeds the size limit",
+            });
         }
         let capacity =
-            usize::try_from(file.len()).map_err(|_| KokoroInstallError::InvalidArtifact)?;
+            usize::try_from(file.len()).map_err(|_| KokoroInstallError::InvalidArtifact {
+                reason: "lexicon length exceeds the platform size",
+            })?;
         let mut bytes = Vec::with_capacity(capacity);
-        file.read_to_end(&mut bytes)
-            .map_err(|_| KokoroInstallError::Unreadable)?;
+        file.read_to_end(&mut bytes).map_err(|error| {
+            tracing::warn!(%error, "reading the lexicon failed");
+            KokoroInstallError::Unreadable {
+                reason: "reading the lexicon failed",
+            }
+        })?;
         if bytes.len() != capacity {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "lexicon length changed while reading",
+            });
         }
         file.rewind().map_err(KokoroInstallError::Platform)?;
         let mut verification = Vec::with_capacity(capacity);
-        file.read_to_end(&mut verification)
-            .map_err(|_| KokoroInstallError::Unreadable)?;
+        file.read_to_end(&mut verification).map_err(|error| {
+            tracing::warn!(%error, "re-reading the lexicon for verification failed");
+            KokoroInstallError::Unreadable {
+                reason: "re-reading the lexicon for verification failed",
+            }
+        })?;
         if verification != bytes {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "lexicon changed while reading",
+            });
         }
         Ok(Some(MaterializedKokoroLexicon {
             bytes: bytes.into_boxed_slice(),
@@ -504,7 +555,9 @@ impl KokoroInstallStore {
             .artifacts
             .iter()
             .find(|artifact| artifact.role == KokoroArtifactRole::Model)
-            .ok_or(KokoroInstallError::InvalidManifest)?;
+            .ok_or(KokoroInstallError::InvalidManifest {
+                reason: "model has no model artifact",
+            })?;
         let mut removed = self.remove_verified(remote)?;
         if let Some(bundle) = espeak_artifact(model) {
             removed |= crate::remove_espeak_data(&self.root).map_err(map_bundle_error)?;
@@ -555,7 +608,9 @@ impl KokoroDownloadSession {
 
     pub fn finish(mut self) -> Result<InstalledModelArtifact, KokoroInstallError> {
         if self.inner.offset() != self.remote.byte_size {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "downloaded bytes do not match the pinned size",
+            });
         }
         self.inner.sync().map_err(KokoroInstallError::Platform)?;
         self.inner.rewind().map_err(KokoroInstallError::Platform)?;
@@ -576,9 +631,14 @@ fn espeak_artifact(model: &RemoteKokoroModel) -> Option<&RemoteKokoroArtifact> {
 }
 
 fn map_bundle_error(error: EspeakBundleError) -> KokoroInstallError {
+    tracing::warn!(%error, "installing the espeak data bundle failed");
     match error {
-        EspeakBundleError::InvalidArchive => KokoroInstallError::InvalidArtifact,
-        EspeakBundleError::Io => KokoroInstallError::Platform(lettuce_platform::PlatformError::Io),
+        EspeakBundleError::InvalidArchive { .. } => KokoroInstallError::InvalidArtifact {
+            reason: "espeak data bundle archive is invalid",
+        },
+        EspeakBundleError::Io { .. } => {
+            KokoroInstallError::Platform(lettuce_platform::PlatformError::Io)
+        }
     }
 }
 
@@ -589,7 +649,9 @@ fn validate_artifact(remote: &RemoteKokoroArtifact) -> Result<(), KokoroInstallE
         || !remote.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         || remote.sha256 != remote.sha256.to_ascii_lowercase()
     {
-        return Err(KokoroInstallError::InvalidManifest);
+        return Err(KokoroInstallError::InvalidManifest {
+            reason: "artifact size or sha256 is invalid",
+        });
     }
     Ok(())
 }
@@ -619,49 +681,67 @@ fn verify(file: &mut impl Read, remote: &RemoteKokoroArtifact) -> Result<(), Kok
     let mut total = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| KokoroInstallError::Unreadable)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the artifact for verification failed");
+            KokoroInstallError::Unreadable {
+                reason: "reading the artifact for verification failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         total = total
-            .checked_add(u64::try_from(read).map_err(|_| KokoroInstallError::Mismatch)?)
-            .ok_or(KokoroInstallError::Mismatch)?;
+            .checked_add(
+                u64::try_from(read).map_err(|_| KokoroInstallError::Mismatch {
+                    reason: "artifact read length exceeds the u64 range",
+                })?,
+            )
+            .ok_or(KokoroInstallError::Mismatch {
+                reason: "artifact byte count overflowed",
+            })?;
         if total > remote.byte_size {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "artifact is larger than the pinned size",
+            });
         }
         hasher.update(&buffer[..read]);
     }
     if total != remote.byte_size || format!("{:x}", hasher.finalize()) != remote.sha256 {
-        return Err(KokoroInstallError::Mismatch);
+        return Err(KokoroInstallError::Mismatch {
+            reason: "artifact size or sha256 does not match the pin",
+        });
     }
     Ok(())
 }
 
 fn map_artifact_error(error: ModelArtifactError) -> KokoroInstallError {
+    tracing::warn!(%error, "installed model artifact check failed");
     match error {
-        ModelArtifactError::Missing | ModelArtifactError::Unreadable => {
-            KokoroInstallError::Unreadable
+        ModelArtifactError::Missing { .. } | ModelArtifactError::Unreadable { .. } => {
+            KokoroInstallError::Unreadable {
+                reason: "installed artifact is missing or unreadable",
+            }
         }
-        ModelArtifactError::InvalidManifest | ModelArtifactError::Mismatch => {
-            KokoroInstallError::InvalidArtifact
+        ModelArtifactError::InvalidManifest { .. } | ModelArtifactError::Mismatch { .. } => {
+            KokoroInstallError::InvalidArtifact {
+                reason: "installed artifact manifest or bytes are invalid",
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum KokoroInstallError {
-    #[error("Kokoro install manifest is invalid")]
-    InvalidManifest,
+    #[error("Kokoro install manifest is invalid: {reason}")]
+    InvalidManifest { reason: &'static str },
     #[error("Kokoro install storage failed: {0}")]
     Platform(lettuce_platform::PlatformError),
-    #[error("Kokoro install bytes failed verification")]
-    Mismatch,
-    #[error("Kokoro install artifact is unreadable")]
-    Unreadable,
-    #[error("Kokoro installed artifact is invalid")]
-    InvalidArtifact,
+    #[error("Kokoro install bytes failed verification: {reason}")]
+    Mismatch { reason: &'static str },
+    #[error("Kokoro install artifact is unreadable: {reason}")]
+    Unreadable { reason: &'static str },
+    #[error("Kokoro installed artifact is invalid: {reason}")]
+    InvalidArtifact { reason: &'static str },
 }
 
 #[cfg(test)]
@@ -698,7 +778,7 @@ mod tests {
         std::fs::write(&path, vec![b'x'; 1024 * 1024 + 1]).expect("oversized lexicon");
         assert!(matches!(
             store.materialize_lexicon(),
-            Err(KokoroInstallError::InvalidArtifact)
+            Err(KokoroInstallError::InvalidArtifact { .. })
         ));
         assert_eq!(
             std::fs::metadata(&path).expect("retained metadata").len(),
@@ -785,15 +865,15 @@ mod tests {
         let bytes = b"not the eSpeak NG bundle";
         let mut remote = espeak_bundle_artifact();
         remote.byte_size = bytes.len() as u64;
-        assert_eq!(
+        assert!(matches!(
             verify(&mut &bytes[..], &remote),
-            Err(KokoroInstallError::Mismatch)
-        );
+            Err(KokoroInstallError::Mismatch { .. })
+        ));
         remote.sha256 = format!("{:x}", Sha256::digest(bytes));
         assert_eq!(verify(&mut &bytes[..], &remote), Ok(()));
-        assert_eq!(
+        assert!(matches!(
             verify(&mut &bytes[..bytes.len() - 1], &remote),
-            Err(KokoroInstallError::Mismatch)
-        );
+            Err(KokoroInstallError::Mismatch { .. })
+        ));
     }
 }

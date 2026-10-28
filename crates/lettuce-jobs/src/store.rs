@@ -67,10 +67,10 @@ impl Clock for FakeClock {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
-    #[error("job storage operation failed")]
-    Storage,
-    #[error("stored job data is invalid")]
-    InvalidData,
+    #[error("job storage operation failed: {reason}")]
+    Storage { reason: String },
+    #[error("stored job data is invalid: {reason}")]
+    InvalidData { reason: String },
     #[error("job was not found")]
     NotFound,
     #[error("idempotency key conflicts with a different submission")]
@@ -97,8 +97,8 @@ pub enum StoreError {
     TooLate,
     #[error("job cannot be cancelled by its policy")]
     NotCancellable,
-    #[error("progress is invalid or regressed")]
-    InvalidProgress,
+    #[error("progress is invalid or regressed: {reason}")]
+    InvalidProgress { reason: String },
     #[error("event sequence overflow")]
     SequenceOverflow,
     #[error("attempt number overflow")]
@@ -107,8 +107,8 @@ pub enum StoreError {
     TimeOverflow,
     #[error("invalid page cursor")]
     InvalidCursor,
-    #[error("page or event limit is invalid")]
-    InvalidLimit,
+    #[error("page or event limit is invalid: {reason}")]
+    InvalidLimit { reason: String },
     #[error("required child jobs are not complete")]
     ChildrenIncomplete,
     #[error("job specification is invalid")]
@@ -233,9 +233,15 @@ impl InMemoryJobStore {
                 || stored.snapshot.recovery_policy != stored.spec.recovery_policy
                 || stored.snapshot.cancellation_policy != stored.spec.cancellation_policy
                 || stored.snapshot.resources != stored.spec.resources
-                || stored.events.is_empty()
             {
-                return Err(StoreError::InvalidData);
+                return Err(StoreError::InvalidData {
+                    reason: "stored snapshot differs from its job specification".to_owned(),
+                });
+            }
+            if stored.events.is_empty() {
+                return Err(StoreError::InvalidData {
+                    reason: "stored job has no events".to_owned(),
+                });
             }
             let first_seq = if window {
                 stored.events[0].seq.get()
@@ -246,14 +252,28 @@ impl InMemoryJobStore {
                 let expected = u64::try_from(index)
                     .ok()
                     .and_then(|value| value.checked_add(first_seq))
-                    .ok_or(StoreError::InvalidData)?;
-                if event.job_id != stored.snapshot.id
-                    || event.seq != EventSeq::new(expected)
-                    || event.correlation_id != stored.spec.correlation_id
-                    || event.at < stored.snapshot.created_at
-                    || event.at > stored.snapshot.updated_at
-                {
-                    return Err(StoreError::InvalidData);
+                    .ok_or_else(|| StoreError::InvalidData {
+                        reason: "event sequence number overflows".to_owned(),
+                    })?;
+                if event.job_id != stored.snapshot.id {
+                    return Err(StoreError::InvalidData {
+                        reason: "stored event belongs to another job".to_owned(),
+                    });
+                }
+                if event.seq != EventSeq::new(expected) {
+                    return Err(StoreError::InvalidData {
+                        reason: "stored events are not numbered in sequence".to_owned(),
+                    });
+                }
+                if event.correlation_id != stored.spec.correlation_id {
+                    return Err(StoreError::InvalidData {
+                        reason: "stored event correlation id differs from the job".to_owned(),
+                    });
+                }
+                if event.at < stored.snapshot.created_at || event.at > stored.snapshot.updated_at {
+                    return Err(StoreError::InvalidData {
+                        reason: "stored event time is outside the job lifetime".to_owned(),
+                    });
                 }
             }
             let id = stored.snapshot.id;
@@ -268,12 +288,16 @@ impl InMemoryJobStore {
                 )
                 .is_some()
             {
-                return Err(StoreError::InvalidData);
+                return Err(StoreError::InvalidData {
+                    reason: "stored jobs repeat a job id".to_owned(),
+                });
             }
             if let Some(key) = stored.spec.idempotency_key
                 && idempotency.insert(key, id).is_some()
             {
-                return Err(StoreError::InvalidData);
+                return Err(StoreError::InvalidData {
+                    reason: "stored jobs repeat an idempotency key".to_owned(),
+                });
             }
         }
         if !window
@@ -289,7 +313,9 @@ impl InMemoryJobStore {
                         .any(|child| !jobs.contains_key(&child.child_id))
             })
         {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "a stored job links to a parent or child that is not stored".to_owned(),
+            });
         }
         Ok(Self {
             inner: Arc::new(Mutex::new(StoreInner {
@@ -578,8 +604,15 @@ impl InMemoryJobStore {
         after: Option<EventSeq>,
         limit: u32,
     ) -> Result<Vec<JobEventEnvelope>, StoreError> {
-        if limit == 0 || limit > 1_000 {
-            return Err(StoreError::InvalidLimit);
+        if limit == 0 {
+            return Err(StoreError::InvalidLimit {
+                reason: "limit is zero".to_owned(),
+            });
+        }
+        if limit > 1_000 {
+            return Err(StoreError::InvalidLimit {
+                reason: "limit is above 1000".to_owned(),
+            });
         }
         let inner = self.lock();
         let record = inner.jobs.get(&id).ok_or(StoreError::NotFound)?;
@@ -826,12 +859,18 @@ impl InMemoryJobStore {
                 let progress = progress.preserving_omitted_from(&record.snapshot.progress);
                 progress
                     .validate()
-                    .map_err(|_| StoreError::InvalidProgress)?;
+                    .map_err(|error| StoreError::InvalidProgress {
+                        reason: error.to_string(),
+                    })?;
                 if !progress.has_compatible_totals_with(&record.snapshot.progress) {
-                    return Err(StoreError::InvalidProgress);
+                    return Err(StoreError::InvalidProgress {
+                        reason: "progress totals changed within a stage".to_owned(),
+                    });
                 }
                 if !progress.is_monotonic_from(&record.snapshot.progress) {
-                    return Err(StoreError::InvalidProgress);
+                    return Err(StoreError::InvalidProgress {
+                        reason: "progress regressed within a stage".to_owned(),
+                    });
                 }
                 record.snapshot.progress = progress.clone();
                 Self::append_event(record, JobEvent::Progressed { progress }, at)?;
@@ -1057,8 +1096,15 @@ impl InMemoryJobStore {
         limit: u32,
         orphaned: bool,
     ) -> Result<Vec<ExpiredClaim>, StoreError> {
-        if limit == 0 || limit > 1_000 {
-            return Err(StoreError::InvalidLimit);
+        if limit == 0 {
+            return Err(StoreError::InvalidLimit {
+                reason: "limit is zero".to_owned(),
+            });
+        }
+        if limit > 1_000 {
+            return Err(StoreError::InvalidLimit {
+                reason: "limit is above 1000".to_owned(),
+            });
         }
         let mut inner = self.lock();
         let mut expired = Vec::new();
@@ -1756,14 +1802,14 @@ mod tests {
             fraction: Some(FiniteFraction::new(0.2).expect("fraction")),
             ..ProgressSnapshot::default()
         };
-        assert_eq!(
+        assert!(matches!(
             store.append_and_transition(JobMutation::Progress {
                 claim: claim.claim.clone(),
                 progress: lower,
                 at: Timestamp::new(13)
             }),
-            Err(StoreError::InvalidProgress)
-        );
+            Err(StoreError::InvalidProgress { .. })
+        ));
         let stage = StageSnapshot::new("verify", false).expect("stage");
         store
             .append_and_transition(JobMutation::StageChanged {
@@ -2783,10 +2829,10 @@ mod tests {
                 .len(),
             1
         );
-        assert_eq!(
+        assert!(matches!(
             store.events_since(created.job.id, None, 0),
-            Err(StoreError::InvalidLimit)
-        );
+            Err(StoreError::InvalidLimit { .. })
+        ));
         let page = store
             .list(JobQuery::page(PageRequest {
                 cursor: None,

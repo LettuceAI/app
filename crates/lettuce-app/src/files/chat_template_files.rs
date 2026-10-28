@@ -80,7 +80,11 @@ where
             .and_then(|id| id.parse::<PromptDocumentId>().ok())
         {
             Some(id) => PromptRepository::get(self.repository, id)
-                .map_err(|_| ChatTemplateFileError::Repository(RepositoryError::Storage))?
+                .map_err(|error| {
+                    ChatTemplateFileError::Repository(RepositoryError::Storage {
+                        reason: error.to_string(),
+                    })
+                })?
                 .filter(|document| {
                     document.purpose == purpose && document.status == LibraryStatus::Active
                 })
@@ -93,7 +97,11 @@ where
                 let mut kept = Vec::new();
                 for id in ids.iter().filter_map(|id| id.parse::<LorebookId>().ok()) {
                     let active = LorebookRepository::get(self.repository, id)
-                        .map_err(|_| ChatTemplateFileError::Repository(RepositoryError::Storage))?
+                        .map_err(|error| {
+                            ChatTemplateFileError::Repository(RepositoryError::Storage {
+                                reason: error.to_string(),
+                            })
+                        })?
                         .is_some_and(|lorebook| lorebook.book.status == LibraryStatus::Active);
                     if active && !kept.contains(&id) {
                         kept.push(id);

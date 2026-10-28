@@ -23,8 +23,8 @@ pub struct CompanionGrowthJobAdmission {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionGrowthJobAdmissionError {
-    #[error("companion growth source is invalid")]
-    InvalidSource,
+    #[error("companion growth source is invalid: {reason}")]
+    InvalidSource { reason: String },
     #[error("companion growth conversation read failed: {0}")]
     Conversation(#[from] ConversationRepositoryError),
     #[error("companion growth character read failed: {0}")]
@@ -80,7 +80,11 @@ impl<
             || result.dispatch.attempt.status != DynamicMemoryAttemptStatus::Succeeded
             || result.dispatch.attempt.run_id != result.dispatch.run.id
         {
-            return Err(CompanionGrowthJobAdmissionError::InvalidSource);
+            return Err(CompanionGrowthJobAdmissionError::InvalidSource {
+                reason:
+                    "growth result has empty memories or the attempt did not succeed for its run"
+                        .to_owned(),
+            });
         }
         let conversation =
             ConversationReader::get(self.sources, result.dispatch.run.conversation_id)?;
@@ -88,13 +92,18 @@ impl<
             return Ok(None);
         };
         let character_id = details.character.source_id;
-        let character = CharacterRepository::get(self.sources, character_id)?
-            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
+        let character = CharacterRepository::get(self.sources, character_id)?.ok_or(
+            CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: "the character of the conversation is missing".to_owned(),
+            },
+        )?;
         let clock = crate::companion::companion_clock::companion_clock_context(
             self.sources,
             &conversation.conversation,
         )
-        .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
+        .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
+            reason: format!("{error:?}"),
+        })?;
         if !clock.companion {
             return Ok(None);
         }
@@ -104,13 +113,18 @@ impl<
             .companion_soul
             .unwrap_or_default();
         let idempotency_key =
-            IdempotencyKey::new(format!("companion-growth-{}", result.dispatch.run.id))
-                .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
+            IdempotencyKey::new(format!("companion-growth-{}", result.dispatch.run.id)).map_err(
+                |error| CompanionGrowthJobAdmissionError::InvalidSource {
+                    reason: error.to_string(),
+                },
+            )?;
         let subject = JobSubject::new(
             SubjectKind::Conversation,
             conversation.conversation.id.to_string(),
         )
-        .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
+        .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
+            reason: error.to_string(),
+        })?;
         let admitted = self
             .jobs
             .create_or_get(
@@ -149,13 +163,11 @@ impl<
             conversation.conversation.id,
             config.share_soul_growth_across_chats,
         );
-        let created_at = clock.effective_now(
-            result
-                .dispatch
-                .attempt
-                .finished_at
-                .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?,
-        );
+        let created_at = clock.effective_now(result.dispatch.attempt.finished_at.ok_or(
+            CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: "the memory attempt has no finish time".to_owned(),
+            },
+        )?);
         let soul = self.soul_or_default(owner, &config, created_at)?;
         let run = self
             .sources

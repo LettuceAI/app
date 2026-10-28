@@ -32,12 +32,12 @@ pub struct LinearSimilarityCalibration {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SimilarityCalibrationError {
-    #[error("similarity calibration is not valid JSON of the expected shape")]
-    Malformed,
+    #[error("similarity calibration is not valid JSON of the expected shape: {reason}")]
+    Malformed { reason: &'static str },
     #[error("similarity calibration lacks a valid map for {0} dimensions")]
     MissingDimension(usize),
-    #[error("similarity calibration thresholds are invalid")]
-    InvalidThresholds,
+    #[error("similarity calibration thresholds are invalid: {reason}")]
+    InvalidThresholds { reason: &'static str },
 }
 
 #[derive(Deserialize)]
@@ -75,10 +75,16 @@ impl SimilarityCalibration {
     /// are ignored.
     pub fn from_json(bytes: &[u8]) -> Result<Self, SimilarityCalibrationError> {
         if bytes.len() > MAX_CALIBRATION_BYTES {
-            return Err(SimilarityCalibrationError::Malformed);
+            return Err(SimilarityCalibrationError::Malformed {
+                reason: "calibration file exceeds the size limit",
+            });
         }
-        let file: CalibrationFile =
-            serde_json::from_slice(bytes).map_err(|_| SimilarityCalibrationError::Malformed)?;
+        let file: CalibrationFile = serde_json::from_slice(bytes).map_err(|error| {
+            tracing::warn!(%error, "similarity calibration is not the expected JSON shape");
+            SimilarityCalibrationError::Malformed {
+                reason: "calibration JSON could not be decoded",
+            }
+        })?;
         let mut maps = [(0.0, 0.0); 5];
         for dimensions in DIMENSIONS {
             let map = file
@@ -91,15 +97,23 @@ impl SimilarityCalibration {
                 ))?;
             maps[slot(dimensions)] = map;
         }
-        let default_threshold = finite_f32(file.default_threshold)
-            .ok_or(SimilarityCalibrationError::InvalidThresholds)?;
-        let fallback_threshold = finite_f32(file.fallback_threshold)
-            .ok_or(SimilarityCalibrationError::InvalidThresholds)?;
+        let default_threshold = finite_f32(file.default_threshold).ok_or(
+            SimilarityCalibrationError::InvalidThresholds {
+                reason: "default threshold is not finite",
+            },
+        )?;
+        let fallback_threshold = finite_f32(file.fallback_threshold).ok_or(
+            SimilarityCalibrationError::InvalidThresholds {
+                reason: "fallback threshold is not finite",
+            },
+        )?;
         if !(0.0 < fallback_threshold
             && fallback_threshold <= default_threshold
             && default_threshold <= 1.0)
         {
-            return Err(SimilarityCalibrationError::InvalidThresholds);
+            return Err(SimilarityCalibrationError::InvalidThresholds {
+                reason: "thresholds are not ordered between zero and one",
+            });
         }
         Ok(Self::Linear(LinearSimilarityCalibration {
             maps,
@@ -266,13 +280,13 @@ mod tests {
             "\"fallback_threshold\": 0.35",
             "\"fallback_threshold\": 0.6",
         );
-        assert_eq!(
+        assert!(matches!(
             SimilarityCalibration::from_json(inverted.as_bytes()),
-            Err(SimilarityCalibrationError::InvalidThresholds)
-        );
-        assert_eq!(
+            Err(SimilarityCalibrationError::InvalidThresholds { .. })
+        ));
+        assert!(matches!(
             SimilarityCalibration::from_json(b"[]"),
-            Err(SimilarityCalibrationError::Malformed)
-        );
+            Err(SimilarityCalibrationError::Malformed { .. })
+        ));
     }
 }

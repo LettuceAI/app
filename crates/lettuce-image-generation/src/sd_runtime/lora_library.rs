@@ -64,10 +64,10 @@ pub struct LoraRecord {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum LoraLibraryRepositoryError {
-    #[error("stored LoRA library data are invalid")]
-    InvalidData,
-    #[error("LoRA library storage failed")]
-    Storage,
+    #[error("stored LoRA library data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("LoRA library storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait LoraLibraryRepository: Send + Sync {
@@ -1112,7 +1112,9 @@ mod tests {
             _: u64,
             _: TimestampMillis,
         ) -> Result<LoraRecord, LoraLibraryRepositoryError> {
-            Err(LoraLibraryRepositoryError::Storage)
+            Err(LoraLibraryRepositoryError::Storage {
+                reason: "test repository does not record lora files",
+            })
         }
 
         fn save_lora(

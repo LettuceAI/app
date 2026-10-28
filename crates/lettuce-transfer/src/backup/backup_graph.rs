@@ -143,10 +143,10 @@ pub struct ProviderBackupGraph {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ProviderBackupSourceError {
-    #[error("backup source contains invalid data")]
-    InvalidData,
-    #[error("backup source could not be read")]
-    Storage,
+    #[error("backup source contains invalid data: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("backup source could not be read: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// Creation runs that are not tied to a creation workflow's proposal chain.
@@ -208,10 +208,10 @@ pub trait ProviderBackupSource: Send + Sync {
 pub enum ProviderBackupRestoreWriteError {
     #[error("backup restore target already holds data")]
     TargetNotEmpty,
-    #[error("backup graph cannot be written")]
-    InvalidData,
-    #[error("backup restore target could not be written")]
-    Storage,
+    #[error("backup graph cannot be written: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("backup restore target could not be written: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// Writes a decoded backup graph into an empty database exactly as it was
@@ -349,14 +349,14 @@ impl fmt::Debug for ProviderBackupSecret {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ProviderBackupGraphError {
-    #[error("provider backup graph exceeds its limit")]
-    LimitExceeded,
-    #[error("provider backup graph is invalid")]
-    InvalidGraph,
-    #[error("provider backup secret inventory is incomplete or inconsistent")]
-    InvalidSecrets,
-    #[error("provider backup graph serialization failed")]
-    Serialization,
+    #[error("provider backup graph exceeds its limit: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("provider backup graph is invalid: {reason}")]
+    InvalidGraph { reason: &'static str },
+    #[error("provider backup secret inventory is incomplete or inconsistent: {reason}")]
+    InvalidSecrets { reason: &'static str },
+    #[error("provider backup graph serialization failed: {reason}")]
+    Serialization { reason: &'static str },
 }
 
 /// A validated export: the fixed data and secret sections, then the media
@@ -383,12 +383,16 @@ pub fn provider_backup_sections(
         },
     )?;
     if plan.media.len() != media.len() || plan.artifacts.len() != artifacts.len() {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "plan media or artifact counts do not match the supplied objects",
+        });
     }
     let mut sections = plan.data_sections;
     for ((content_hash, byte_size), object) in plan.media.iter().zip(media) {
         if object.content_hash != *content_hash {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "media object hash does not match the plan",
+            });
         }
         verify_backup_media(content_hash, *byte_size, &object.bytes)?;
         sections.push(BackupSection::new(
@@ -399,7 +403,9 @@ pub fn provider_backup_sections(
     }
     for (descriptor, artifact) in plan.artifacts.iter().zip(artifacts) {
         if artifact.descriptor != *descriptor {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "artifact descriptor does not match the plan",
+            });
         }
         let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes)?;
         sections.push(BackupSection::new(name, schema, artifact.bytes.to_vec()));
@@ -425,7 +431,9 @@ pub fn plan_provider_backup_export(
             || supplied.insert(secret.reference, secret).is_some()
             || expected.get(&secret.reference) != Some(&secret.purpose)
         {
-            return Err(ProviderBackupGraphError::InvalidSecrets);
+            return Err(ProviderBackupGraphError::InvalidSecrets {
+                reason: "secret has generation zero, a duplicate reference or an unexpected purpose",
+            });
         }
     }
     missing.sort();
@@ -435,7 +443,9 @@ pub fn plan_provider_backup_export(
             .any(|reference| supplied.contains_key(reference) || !expected.contains_key(reference))
         || supplied.len() + missing.len() != expected.len()
     {
-        return Err(ProviderBackupGraphError::InvalidSecrets);
+        return Err(ProviderBackupGraphError::InvalidSecrets {
+            reason: "missing secrets are duplicated, also supplied or do not cover the expected references",
+        });
     }
     validate_app_secrets(&app)?;
     app.sort_by_key(|secret| secret.reference);
@@ -446,7 +456,9 @@ pub fn plan_provider_backup_export(
         .filter(|blob| blob.state == BlobState::Ready)
         .map(|blob| {
             if blob.byte_size > MAX_MEDIA_BLOB_BYTES {
-                Err(ProviderBackupGraphError::LimitExceeded)
+                Err(ProviderBackupGraphError::LimitExceeded {
+                    reason: "media blob exceeds the size limit",
+                })
             } else {
                 Ok((blob.content_hash.clone(), blob.byte_size))
             }
@@ -454,29 +466,63 @@ pub fn plan_provider_backup_export(
         .collect::<Result<Vec<_>, _>>()?;
     let artifacts = all_conversation_artifact_descriptors(&graph)?;
     let metadata =
-        serde_json::to_vec(&graph).map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let asr_learning = serde_json::to_vec(&graph.asr_learning)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let conversation_history = serde_json::to_vec(&graph.conversation_history)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let conversation_runtime = serde_json::to_vec(&graph.conversation_runtime)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let jobs = serde_json::to_vec(&graph.job_backup)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let conversation_usage = serde_json::to_vec(&graph.conversation_usage)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let conversation_outbox = serde_json::to_vec(&graph.conversation_outbox)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let companion_state = serde_json::to_vec(&graph.companion_state)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let companion_effects = serde_json::to_vec(&graph.companion_effects)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
+        serde_json::to_vec(&graph).map_err(|_| ProviderBackupGraphError::Serialization {
+            reason: "graph metadata could not be serialized",
+        })?;
+    let asr_learning = serde_json::to_vec(&graph.asr_learning).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "asr learning could not be serialized",
+        }
+    })?;
+    let conversation_history = serde_json::to_vec(&graph.conversation_history).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "conversation history could not be serialized",
+        }
+    })?;
+    let conversation_runtime = serde_json::to_vec(&graph.conversation_runtime).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "conversation runtime could not be serialized",
+        }
+    })?;
+    let jobs = serde_json::to_vec(&graph.job_backup).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "job backup could not be serialized",
+        }
+    })?;
+    let conversation_usage = serde_json::to_vec(&graph.conversation_usage).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "conversation usage could not be serialized",
+        }
+    })?;
+    let conversation_outbox = serde_json::to_vec(&graph.conversation_outbox).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "conversation outbox could not be serialized",
+        }
+    })?;
+    let companion_state = serde_json::to_vec(&graph.companion_state).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "companion state could not be serialized",
+        }
+    })?;
+    let companion_effects = serde_json::to_vec(&graph.companion_effects).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "companion effects could not be serialized",
+        }
+    })?;
     let memory =
-        serde_json::to_vec(&graph.memory).map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let memory_projections = serde_json::to_vec(&graph.memory_projections)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let dynamic_memory = serde_json::to_vec(&graph.dynamic_memory)
-        .map_err(|_| ProviderBackupGraphError::Serialization)?;
+        serde_json::to_vec(&graph.memory).map_err(|_| ProviderBackupGraphError::Serialization {
+            reason: "memory could not be serialized",
+        })?;
+    let memory_projections = serde_json::to_vec(&graph.memory_projections).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "memory projections could not be serialized",
+        }
+    })?;
+    let dynamic_memory = serde_json::to_vec(&graph.dynamic_memory).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "dynamic memory could not be serialized",
+        }
+    })?;
     let ordered_secrets = expected
         .keys()
         .filter_map(|reference| supplied.get(reference).copied())
@@ -487,7 +533,9 @@ pub fn plan_provider_backup_export(
         missing,
         app: app.iter().collect(),
     })
-    .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    .map_err(|_| ProviderBackupGraphError::Serialization {
+        reason: "secret document could not be serialized",
+    })?;
     let mut data_sections = Vec::with_capacity(PROVIDER_BACKUP_FIXED_SECTIONS);
     data_sections.extend([
         BackupSection::new("data/provider-graph.json", "provider-graph.v2", metadata),
@@ -630,13 +678,17 @@ pub(crate) fn all_conversation_artifact_descriptors(
     let descriptors = graph
         .conversation_history
         .artifact_descriptors()
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph {
+            reason: "conversation history artifact descriptors are invalid",
+        })?
         .into_iter()
         .chain(
             graph
                 .conversation_runtime
                 .artifact_descriptors()
-                .map_err(|_| ProviderBackupGraphError::InvalidGraph)?,
+                .map_err(|_| ProviderBackupGraphError::InvalidGraph {
+                    reason: "conversation runtime artifact descriptors are invalid",
+                })?,
         )
         .chain(memory_replays);
     for descriptor in descriptors {
@@ -646,7 +698,9 @@ pub(crate) fn all_conversation_artifact_descriptors(
                     .insert(reference.artifact_id, reference.clone())
                     .is_some_and(|existing| existing != reference)
                 {
-                    return Err(ProviderBackupGraphError::InvalidGraph);
+                    return Err(ProviderBackupGraphError::InvalidGraph {
+                        reason: "artifact id maps to two different references",
+                    });
                 }
             }
             TrustedArtifactDescriptor::Replay(reference) => {
@@ -654,7 +708,9 @@ pub(crate) fn all_conversation_artifact_descriptors(
                     .insert(reference.artifact_id, reference.clone())
                     .is_some_and(|existing| existing != reference)
                 {
-                    return Err(ProviderBackupGraphError::InvalidGraph);
+                    return Err(ProviderBackupGraphError::InvalidGraph {
+                        reason: "artifact id maps to two different references",
+                    });
                 }
             }
         }
@@ -674,7 +730,9 @@ pub fn verify_backup_artifact(
 ) -> Result<(String, String), ProviderBackupGraphError> {
     let (name, schema, digest, byte_size) = backup_artifact_section_identity(descriptor);
     if u64::try_from(bytes.len()).ok() != Some(byte_size) || &content_hash_of(bytes) != digest {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "artifact section size or content hash does not match its descriptor",
+        });
     }
     Ok((name, schema))
 }
@@ -713,7 +771,9 @@ pub fn verify_backup_media(
 ) -> Result<(), ProviderBackupGraphError> {
     if u64::try_from(bytes.len()).ok() != Some(byte_size) || &content_hash_of(bytes) != content_hash
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "media section size or content hash does not match its blob",
+        });
     }
     Ok(())
 }
@@ -727,7 +787,9 @@ pub fn canonicalize_and_validate(
     graph: &mut ProviderBackupGraph,
 ) -> Result<(), ProviderBackupGraphError> {
     if graph.version != PROVIDER_BACKUP_GRAPH_VERSION {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "graph version is not the supported version",
+        });
     }
     validate_device_state(&mut graph.device)?;
     graph.accounts.sort_by_key(|account| account.id.to_string());
@@ -767,7 +829,9 @@ pub fn canonicalize_and_validate(
         .iter()
         .any(|run| !project_ids.insert(run.project.id))
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "staged lorebook project is duplicated or references a non-document asset",
+        });
     }
 
     creation.staged_lorebooks.sort_by_key(|run| run.request_id);
@@ -817,7 +881,9 @@ pub fn canonicalize_and_validate(
                     })
             })
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "creation workflow, proposal, attempt or round is invalid or inconsistent",
+            });
         }
     }
     if creation.staged_lorebook_projects.iter().any(|project| {
@@ -842,30 +908,40 @@ pub fn canonicalize_and_validate(
             .iter()
             .any(|run| run.validate().is_err())
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "staged lorebook project, entry run, keyword run or writer run is invalid",
+        });
     }
     graph
         .legacy_imports
         .canonicalize_and_validate()
         .map_err(|error| match error {
             crate::LegacyImportBackupError::LimitExceeded => {
-                ProviderBackupGraphError::LimitExceeded
+                ProviderBackupGraphError::LimitExceeded {
+                    reason: "legacy import backup exceeds its limit",
+                }
             }
-            crate::LegacyImportBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
+            crate::LegacyImportBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
+            }
         })?;
     graph
         .legacy_imports
         .validate_media_snapshots(&graph.authored.media_assets, &graph.authored.media_blobs)
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph {
+            reason: "legacy import media snapshots are invalid",
+        })?;
     graph
         .playground_history
         .canonicalize_and_validate()
         .map_err(|error| match error {
             crate::PlaygroundHistoryBackupError::LimitExceeded => {
-                ProviderBackupGraphError::LimitExceeded
+                ProviderBackupGraphError::LimitExceeded {
+                    reason: "playground history backup exceeds its limit",
+                }
             }
-            crate::PlaygroundHistoryBackupError::InvalidData => {
-                ProviderBackupGraphError::InvalidGraph
+            crate::PlaygroundHistoryBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
             }
         })?;
     let asset_ids = graph
@@ -877,7 +953,9 @@ pub fn canonicalize_and_validate(
     if graph.playground_history.images.iter().any(|image| {
         crate::backup_sql_text(image, "asset_id").is_some_and(|asset| !asset_ids.contains(asset))
     }) {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "playground history image references an unknown asset",
+        });
     }
     graph.asr_learning.vocabulary.sort_by_key(|term| term.id);
     graph.asr_learning.corrections.sort_by_key(|rule| rule.id);
@@ -899,7 +977,9 @@ pub fn canonicalize_and_validate(
         || graph.settings.model_settings.validate().is_err()
         || !graph.settings.value.within_bounds()
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "settings revision, timestamps or values are invalid",
+        });
     }
 
     let mut account_ids = BTreeMap::new();
@@ -914,7 +994,9 @@ pub fn canonicalize_and_validate(
                 .is_some()
             || owner_ids.insert(account.secret_owner_id, ()).is_some()
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "provider account is invalid or duplicated",
+            });
         }
     }
     let mut profile_ids = BTreeMap::new();
@@ -928,13 +1010,17 @@ pub fn canonicalize_and_validate(
             || profile.config.capabilities.validate().is_err()
             || profile_ids.insert(profile.id, ()).is_some()
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "model profile is invalid, duplicated or references an unknown account",
+            });
         }
     }
     let mut prompt_ids = BTreeMap::new();
     for prompt in &graph.prompts {
         if prompt.validate().is_err() || prompt_ids.insert(prompt.id, ()).is_some() {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "prompt is invalid or duplicated",
+            });
         }
     }
     for selected in [
@@ -946,7 +1032,9 @@ pub fn canonicalize_and_validate(
     .flatten()
     {
         if !profile_ids.contains_key(&selected) {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "selection references an unknown model profile",
+            });
         }
     }
     if graph
@@ -954,7 +1042,9 @@ pub fn canonicalize_and_validate(
         .default_prompt_document_id
         .is_some_and(|id| !prompt_ids.contains_key(&id))
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "default prompt selection references an unknown prompt",
+        });
     }
     let generator = &graph.settings.value.lorebook_generator.selection;
     let memory_prompts = &graph.settings.value.dynamic_memory_prompts;
@@ -983,7 +1073,9 @@ pub fn canonicalize_and_validate(
         .flatten()
         .any(|id| !prompt_ids.contains_key(&id))
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "settings reference an unknown prompt",
+        });
     }
 
     let mut audio_provider_ids = BTreeMap::new();
@@ -993,7 +1085,9 @@ pub fn canonicalize_and_validate(
             || audio_provider_ids.insert(provider.id, ()).is_some()
             || owner_ids.insert(provider.secret_owner_id, ()).is_some()
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "audio provider is invalid or duplicated",
+            });
         }
     }
     let mut voice_ids = BTreeMap::new();
@@ -1003,7 +1097,9 @@ pub fn canonicalize_and_validate(
             || !audio_provider_ids.contains_key(&voice.provider_id)
             || voice_ids.insert(voice.id, ()).is_some()
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "user voice is invalid, duplicated or references an unknown provider",
+            });
         }
     }
     validate_authored(graph, &profile_ids, &prompt_ids, &voice_ids)?;
@@ -1018,11 +1114,11 @@ pub fn canonicalize_and_validate(
         .conversation_history
         .canonicalize_and_validate(&media_asset_ids)
         .map_err(|error| match error {
-            crate::ConversationHistoryBackupError::LimitExceeded => {
-                ProviderBackupGraphError::LimitExceeded
+            crate::ConversationHistoryBackupError::LimitExceeded { reason } => {
+                ProviderBackupGraphError::LimitExceeded { reason }
             }
-            crate::ConversationHistoryBackupError::InvalidData => {
-                ProviderBackupGraphError::InvalidGraph
+            crate::ConversationHistoryBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
             }
         })?;
     graph
@@ -1030,18 +1126,24 @@ pub fn canonicalize_and_validate(
         .canonicalize_and_validate(&graph.conversation_history)
         .map_err(|error| match error {
             crate::ConversationRuntimeBackupError::LimitExceeded => {
-                ProviderBackupGraphError::LimitExceeded
+                ProviderBackupGraphError::LimitExceeded {
+                    reason: "conversation runtime backup exceeds its limit",
+                }
             }
-            crate::ConversationRuntimeBackupError::InvalidData => {
-                ProviderBackupGraphError::InvalidGraph
+            crate::ConversationRuntimeBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
             }
         })?;
     graph
         .job_backup
         .canonicalize_and_validate()
         .map_err(|error| match error {
-            crate::JobBackupError::LimitExceeded => ProviderBackupGraphError::LimitExceeded,
-            crate::JobBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
+            crate::JobBackupError::LimitExceeded => ProviderBackupGraphError::LimitExceeded {
+                reason: "job backup exceeds its limit",
+            },
+            crate::JobBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
+            }
         })?;
     validate_job_links(graph)?;
     graph
@@ -1049,10 +1151,12 @@ pub fn canonicalize_and_validate(
         .canonicalize_and_validate(&graph.conversation_runtime, &graph.job_backup)
         .map_err(|error| match error {
             crate::ConversationUsageBackupError::LimitExceeded => {
-                ProviderBackupGraphError::LimitExceeded
+                ProviderBackupGraphError::LimitExceeded {
+                    reason: "conversation usage backup exceeds its limit",
+                }
             }
-            crate::ConversationUsageBackupError::InvalidData => {
-                ProviderBackupGraphError::InvalidGraph
+            crate::ConversationUsageBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
             }
         })?;
     graph
@@ -1063,17 +1167,19 @@ pub fn canonicalize_and_validate(
             &graph.conversation_usage,
         )
         .map_err(|error| match error {
-            crate::ConversationOutboxBackupError::LimitExceeded => {
-                ProviderBackupGraphError::LimitExceeded
+            crate::ConversationOutboxBackupError::LimitExceeded { reason } => {
+                ProviderBackupGraphError::LimitExceeded { reason }
             }
-            crate::ConversationOutboxBackupError::InvalidData => {
-                ProviderBackupGraphError::InvalidGraph
+            crate::ConversationOutboxBackupError::InvalidData { reason } => {
+                ProviderBackupGraphError::InvalidGraph { reason }
             }
         })?;
     graph
         .companion_state
         .canonicalize_and_validate(&graph.authored, &graph.conversation_history)
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+        .map_err(|crate::CompanionStateBackupError::InvalidData { reason }| {
+            ProviderBackupGraphError::InvalidGraph { reason }
+        })?;
     graph
         .companion_effects
         .canonicalize_and_validate_with_manual_edits(
@@ -1081,7 +1187,11 @@ pub fn canonicalize_and_validate(
             &graph.conversation_runtime,
             &graph.memory.manual_edits,
         )
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+        .map_err(
+            |crate::CompanionEffectBackupError::InvalidData { reason }| {
+                ProviderBackupGraphError::InvalidGraph { reason }
+            },
+        )?;
     graph
         .memory
         .canonicalize_and_validate(
@@ -1089,11 +1199,17 @@ pub fn canonicalize_and_validate(
             &graph.conversation_runtime,
             &graph.companion_effects,
         )
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+        .map_err(|crate::MemoryBackupError::InvalidData { reason }| {
+            ProviderBackupGraphError::InvalidGraph { reason }
+        })?;
     graph
         .memory_projections
         .canonicalize_and_validate(&graph.memory)
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+        .map_err(
+            |crate::MemoryProjectionBackupError::InvalidData { reason }| {
+                ProviderBackupGraphError::InvalidGraph { reason }
+            },
+        )?;
     graph
         .dynamic_memory
         .canonicalize_and_validate(
@@ -1101,7 +1217,9 @@ pub fn canonicalize_and_validate(
             &graph.job_backup,
             &graph.memory,
         )
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)
+        .map_err(|crate::DynamicMemoryBackupError::InvalidData { reason }| {
+            ProviderBackupGraphError::InvalidGraph { reason }
+        })
 }
 
 fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
@@ -1126,7 +1244,9 @@ fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupG
                         lettuce_usage::UsageTombstone::Dispatch { event_id, attempt_id, job_id }
                         if *event_id == dispatch.0 && *attempt_id == attempt.attempt_id && *job_id == dispatch.1));
                     if inference_owners.get(&dispatch.0) != Some(&dispatch.1) && !cleared {
-                        return Err(ProviderBackupGraphError::InvalidGraph);
+                        return Err(ProviderBackupGraphError::InvalidGraph {
+                            reason: "dispatch inference owner does not match the job backup",
+                        });
                     }
                 }
             }
@@ -1139,7 +1259,9 @@ fn validate_asr_learning(graph: &ProviderBackupGraph) -> Result<(), ProviderBack
     graph
         .asr_learning
         .validate()
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph {
+            reason: "asr learning failed validation",
+        })?;
     let assets = graph
         .authored
         .media_assets
@@ -1153,12 +1275,17 @@ fn validate_asr_learning(graph: &ProviderBackupGraph) -> Result<(), ProviderBack
         .map(|blob| (blob.id, blob))
         .collect::<BTreeMap<_, _>>();
     for expected in &graph.asr_learning.audio_assets {
-        let asset = assets
-            .get(&expected.asset_id)
-            .ok_or(ProviderBackupGraphError::InvalidGraph)?;
+        let asset =
+            assets
+                .get(&expected.asset_id)
+                .ok_or(ProviderBackupGraphError::InvalidGraph {
+                    reason: "asr audio asset references an unknown asset",
+                })?;
         let blob = blobs
             .get(&asset.blob_id)
-            .ok_or(ProviderBackupGraphError::InvalidGraph)?;
+            .ok_or(ProviderBackupGraphError::InvalidGraph {
+                reason: "asr audio asset references an unknown blob",
+            })?;
         if asset.kind != expected.kind
             || asset.origin != expected.origin
             || asset.provenance != expected.provenance
@@ -1169,7 +1296,9 @@ fn validate_asr_learning(graph: &ProviderBackupGraph) -> Result<(), ProviderBack
             || blob.mime_type != expected.mime_type
             || blob.duration_ms != expected.duration_ms
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "asr audio asset does not match its asset or blob",
+            });
         }
     }
     Ok(())
@@ -1213,7 +1342,9 @@ fn validate_authored(
     let mut persona_ids = BTreeSet::new();
     for persona in &authored.personas {
         if persona.validate().is_err() || !persona_ids.insert(persona.id) {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "persona is invalid or duplicated",
+            });
         }
     }
     if authored.persona_default.validate().is_err()
@@ -1222,12 +1353,16 @@ fn validate_authored(
             .persona_id
             .is_some_and(|id| !persona_ids.contains(&id))
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "persona default is invalid or references an unknown persona",
+        });
     }
     let mut lorebook_ids = BTreeSet::new();
     for details in &authored.lorebooks {
         if details.validate().is_err() || !lorebook_ids.insert(details.book.id) {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "lorebook is invalid or duplicated",
+            });
         }
     }
     let mut character_ids = BTreeSet::new();
@@ -1253,7 +1388,9 @@ fn validate_authored(
             )
             || matches!(character.defaults.voice, Some(VoicePreference::Provider { provider_id, .. }) if !graph.audio_providers.iter().any(|provider| provider.id == provider_id))
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "character is invalid, duplicated or references unknown profiles, prompts or voices",
+            });
         }
         for starter in &details.starters {
             if starter
@@ -1264,7 +1401,9 @@ fn validate_authored(
                     Selection::Explicit(ids) if ids.iter().any(|id| !lorebook_ids.contains(id))
                 )
             {
-                return Err(ProviderBackupGraphError::InvalidGraph);
+                return Err(ProviderBackupGraphError::InvalidGraph {
+                    reason: "starter references an unknown prompt or lorebook",
+                });
             }
         }
     }
@@ -1288,7 +1427,9 @@ fn validate_authored(
             .flatten()
             .any(|id| !prompt_ids.contains_key(&id))
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "group is invalid, duplicated or references unknown characters, profiles, personas or prompts",
+            });
         }
     }
     validate_owner_bindings(&authored.character_lorebooks, &character_ids, &lorebook_ids)?;
@@ -1302,21 +1443,25 @@ fn validate_authored(
             || blob_kinds.insert(blob.id, blob.kind).is_some()
             || !blob_hashes.insert(blob.content_hash.clone())
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "media blob is invalid or its id or hash is duplicated",
+            });
         }
     }
     let mut asset_ids = BTreeSet::new();
     for asset in &authored.media_assets {
         if asset
-            .validate_for_blob_kind(
-                *blob_kinds
-                    .get(&asset.blob_id)
-                    .ok_or(ProviderBackupGraphError::InvalidGraph)?,
-            )
+            .validate_for_blob_kind(*blob_kinds.get(&asset.blob_id).ok_or(
+                ProviderBackupGraphError::InvalidGraph {
+                    reason: "media asset references an unknown blob",
+                },
+            )?)
             .is_err()
             || !asset_ids.insert(asset.id)
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "media asset is invalid for its blob kind or duplicated",
+            });
         }
     }
     let referenced_assets = authored
@@ -1361,7 +1506,9 @@ fn validate_authored(
         .into_iter()
         .any(|id| !asset_ids.contains(&id))
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "authored content references an unknown media asset",
+        });
     }
     Ok(())
 }
@@ -1381,11 +1528,15 @@ fn validate_owner_bindings<Owner: Ord>(
                 .iter()
                 .any(|binding| !lorebook_ids.contains(&binding.lorebook_id))
         {
-            return Err(ProviderBackupGraphError::InvalidGraph);
+            return Err(ProviderBackupGraphError::InvalidGraph {
+                reason: "lorebook binding owner is unknown, duplicated or references an unknown lorebook",
+            });
         }
     }
     if seen.len() != owner_ids.len() {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "lorebook binding owners are duplicated",
+        });
     }
     Ok(())
 }
@@ -1457,9 +1608,12 @@ pub fn rebind_provider_backup_secrets(
     secrets
         .into_iter()
         .map(|mut secret| {
-            secret.reference = *fresh
-                .get(&secret.reference)
-                .ok_or(ProviderBackupGraphError::InvalidSecrets)?;
+            secret.reference =
+                *fresh
+                    .get(&secret.reference)
+                    .ok_or(ProviderBackupGraphError::InvalidSecrets {
+                        reason: "secret reference has no replacement",
+                    })?;
             Ok(secret)
         })
         .collect()
@@ -1642,7 +1796,9 @@ fn insert_secret(
     purpose: SecretPurpose,
 ) -> Result<(), ProviderBackupGraphError> {
     if expected.insert(reference, purpose).is_some() {
-        Err(ProviderBackupGraphError::InvalidGraph)
+        Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "secret reference is registered twice",
+        })
     } else {
         Ok(())
     }
@@ -1666,7 +1822,9 @@ fn validate_device_state(device: &mut BackupDeviceState) -> Result<(), ProviderB
         retained_model_roots: Default::default(),
     }
     .validate()
-    .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    .map_err(|_| ProviderBackupGraphError::InvalidGraph {
+        reason: "device settings failed validation",
+    })?;
     device
         .app_usage_days
         .sort_by(|left, right| left.day.cmp(&right.day));
@@ -1686,7 +1844,9 @@ fn validate_device_state(device: &mut BackupDeviceState) -> Result<(), ProviderB
             !valid_day(&entry.day) || i64::try_from(entry.active_ms).is_err()
         })
     {
-        return Err(ProviderBackupGraphError::InvalidGraph);
+        return Err(ProviderBackupGraphError::InvalidGraph {
+            reason: "app usage days are duplicated or invalid",
+        });
     }
     Ok(())
 }
@@ -1700,7 +1860,9 @@ pub(crate) fn validate_app_secrets(
             || secret.purpose.app_secret_ref() != Some(secret.reference)
             || !purposes.insert(secret.purpose.clone())
         {
-            return Err(ProviderBackupGraphError::InvalidSecrets);
+            return Err(ProviderBackupGraphError::InvalidSecrets {
+                reason: "app secret has generation zero, a mismatched reference or a duplicate purpose",
+            });
         }
     }
     Ok(())
@@ -1919,10 +2081,10 @@ mod tests {
         let purpose = SecretPurpose::ProviderApiKey {
             owner: source_graph.accounts[0].secret_owner_id,
         };
-        assert_eq!(
+        assert!(matches!(
             provider_backup_sections(source_graph.clone(), Vec::new(), Vec::new(), Vec::new()),
-            Err(ProviderBackupGraphError::InvalidSecrets)
-        );
+            Err(ProviderBackupGraphError::InvalidSecrets { .. })
+        ));
         let secret = ProviderBackupSecret {
             reference,
             purpose,
@@ -1954,20 +2116,20 @@ mod tests {
             generation: 1,
             value: SecretValue::new("orphan-secret").expect("secret"),
         };
-        assert_eq!(
+        assert!(matches!(
             provider_backup_sections(graph(reference), vec![orphan], Vec::new(), Vec::new()),
-            Err(ProviderBackupGraphError::InvalidSecrets)
-        );
+            Err(ProviderBackupGraphError::InvalidSecrets { .. })
+        ));
 
         let mut duplicate_graph = graph(reference);
         let mut duplicate_account = duplicate_graph.accounts[0].clone();
         duplicate_account.id = ProviderAccountId::new();
         duplicate_account.secret_owner_id = SecretOwnerId::new();
         duplicate_graph.accounts.push(duplicate_account);
-        assert_eq!(
+        assert!(matches!(
             provider_backup_secret_requirements(&duplicate_graph),
-            Err(ProviderBackupGraphError::InvalidGraph)
-        );
+            Err(ProviderBackupGraphError::InvalidGraph { .. })
+        ));
     }
 
     #[test]
@@ -2092,7 +2254,7 @@ mod tests {
                 std::io::Cursor::new(missing_envelope.clone()),
                 "backup password"
             ),
-            Err(crate::ProviderBackupRestorePlanError::InvalidInventory)
+            Err(crate::ProviderBackupRestorePlanError::InvalidInventory { .. })
         ));
 
         let mut unknown = make_sections();
@@ -2113,7 +2275,7 @@ mod tests {
                 std::io::Cursor::new(unknown_envelope.clone()),
                 "backup password"
             ),
-            Err(crate::ProviderBackupRestorePlanError::InvalidInventory)
+            Err(crate::ProviderBackupRestorePlanError::InvalidInventory { .. })
         ));
     }
 
@@ -2141,10 +2303,10 @@ mod tests {
         .expect("persona");
         source_graph.authored.personas.push(persona.clone());
         source_graph.authored.persona_default.persona_id = Some(persona.id);
-        assert_eq!(
+        assert!(matches!(
             provider_backup_secret_requirements(&source_graph),
-            Err(ProviderBackupGraphError::InvalidGraph)
-        );
+            Err(ProviderBackupGraphError::InvalidGraph { .. })
+        ));
 
         source_graph
             .authored
@@ -2164,10 +2326,10 @@ mod tests {
         );
 
         source_graph.authored.persona_default.persona_id = Some(PersonaId::new());
-        assert_eq!(
+        assert!(matches!(
             provider_backup_secret_requirements(&source_graph),
-            Err(ProviderBackupGraphError::InvalidGraph)
-        );
+            Err(ProviderBackupGraphError::InvalidGraph { .. })
+        ));
     }
 
     #[test]
@@ -2194,7 +2356,7 @@ mod tests {
         let purpose = SecretPurpose::ProviderApiKey {
             owner: source_graph.accounts[0].secret_owner_id,
         };
-        assert_eq!(
+        assert!(matches!(
             provider_backup_sections(
                 source_graph.clone(),
                 vec![ProviderBackupSecret {
@@ -2209,8 +2371,8 @@ mod tests {
                 }],
                 Vec::new(),
             ),
-            Err(ProviderBackupGraphError::InvalidGraph)
-        );
+            Err(ProviderBackupGraphError::InvalidGraph { .. })
+        ));
         let sections = provider_backup_sections(
             source_graph,
             vec![ProviderBackupSecret {
@@ -2284,19 +2446,19 @@ mod tests {
         assert!(matches!(
             tampered_plan.read_media(&tampered_plan.media[0]),
             Err(crate::ProviderBackupRestorePlanError::Envelope(
-                crate::BackupEnvelopeError::Authentication
+                crate::BackupEnvelopeError::Authentication { .. }
             ))
         ));
         let tampered_root = std::env::temp_dir().join(format!(
             "lettuce-restore-workspace-tampered-{}",
             OperationId::new()
         ));
-        assert_eq!(
+        assert!(matches!(
             crate::BackupRestoreWorkspace::open(&tampered_root)
                 .expect("tampered workspace")
                 .stage(&tampered_plan),
-            Err(crate::BackupRestoreWorkspaceError::Source)
-        );
+            Err(crate::BackupRestoreWorkspaceError::Source { .. })
+        ));
         std::fs::remove_dir_all(tampered_root).expect("remove tampered workspace");
 
         std::fs::write(
@@ -2304,10 +2466,10 @@ mod tests {
             b"conflicting bytes",
         )
         .expect("corrupt staged media");
-        assert_eq!(
+        assert!(matches!(
             workspace.stage(&plan),
-            Err(crate::BackupRestoreWorkspaceError::Conflict)
-        );
+            Err(crate::BackupRestoreWorkspaceError::Conflict { .. })
+        ));
         std::fs::remove_dir_all(root).expect("remove restore workspace");
 
         let conflict_root = std::env::temp_dir().join(format!(
@@ -2323,10 +2485,10 @@ mod tests {
         std::fs::write(&conflict_partial, b"wrong").expect("conflicting partial bytes");
         let conflict_workspace =
             crate::BackupRestoreWorkspace::open(&conflict_root).expect("conflict workspace");
-        assert_eq!(
+        assert!(matches!(
             conflict_workspace.stage(&plan),
-            Err(crate::BackupRestoreWorkspaceError::Conflict)
-        );
+            Err(crate::BackupRestoreWorkspaceError::Conflict { .. })
+        ));
         std::fs::remove_dir_all(conflict_root).expect("remove conflict workspace");
     }
 }

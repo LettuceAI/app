@@ -53,8 +53,8 @@ pub enum RepositoryError {
     HasDependencies,
     #[error("the proposed record is invalid: {0}")]
     Invalid(ValidationError),
-    #[error("storage operation failed")]
-    Storage,
+    #[error("storage operation failed: {reason}")]
+    Storage { reason: String },
 }
 
 impl From<ValidationError> for RepositoryError {

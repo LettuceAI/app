@@ -42,8 +42,8 @@ pub struct LorebookEntryAdmission {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LorebookEntryAdmissionError {
-    #[error("lorebook entry generation admission input is invalid")]
-    InvalidInput,
+    #[error("lorebook entry generation admission input is invalid: {reason}")]
+    InvalidInput { reason: String },
     #[error("lorebook entry generation run persistence failed: {0}")]
     Run(#[from] LorebookEntryRunRepositoryError),
     #[error("lorebook entry generation job persistence failed: {0}")]
@@ -88,7 +88,10 @@ impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: Jo
             || request.prompt.purpose != PromptPurpose::LorebookEntryWriter
             || request.prompt.revision.get() == 0
         {
-            return Err(LorebookEntryAdmissionError::InvalidInput);
+            return Err(LorebookEntryAdmissionError::InvalidInput {
+                reason: "request prompt is inactive, has the wrong purpose or revision zero"
+                    .to_owned(),
+            });
         }
         if self.operation.is_none() {
             match self.repository.load_lorebook_entry_run(request.request_id) {
@@ -99,10 +102,11 @@ impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: Jo
                             LorebookEntryRunRepositoryError::Conflict,
                         ));
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(LorebookEntryAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        LorebookEntryAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(LorebookEntryAdmission {
                         run,
@@ -116,12 +120,16 @@ impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: Jo
         }
         let idempotency_key =
             IdempotencyKey::new(format!("lorebook-entry-generator-{}", request.request_id))
-                .map_err(|_| LorebookEntryAdmissionError::InvalidInput)?;
+                .map_err(|error| LorebookEntryAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                })?;
         let subject = JobSubject::new(
             SubjectKind::Conversation,
             request.conversation_id.to_string(),
         )
-        .map_err(|_| LorebookEntryAdmissionError::InvalidInput)?;
+        .map_err(|error| LorebookEntryAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         let spec = JobSpec::new(
             JobKind::CreationRun,
             subject,
@@ -147,7 +155,9 @@ impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: Jo
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
         )?;
         let lettuce_database::LorebookJobInput::Entry(run) = input else {
-            return Err(LorebookEntryAdmissionError::InvalidInput);
+            return Err(LorebookEntryAdmissionError::InvalidInput {
+                reason: "stored job input is not a entry run".to_owned(),
+            });
         };
         let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
@@ -197,7 +207,9 @@ fn validate_job(
         || job.subject.kind != SubjectKind::Conversation
         || job.subject.id.as_str() != run.conversation_id.to_string()
     {
-        return Err(LorebookEntryAdmissionError::InvalidInput);
+        return Err(LorebookEntryAdmissionError::InvalidInput {
+            reason: "job differs from the run in id, kind, state or subject".to_owned(),
+        });
     }
     Ok(())
 }

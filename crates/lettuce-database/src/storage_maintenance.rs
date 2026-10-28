@@ -13,8 +13,8 @@ pub enum StorageMaintenanceError {
     CheckpointBusy,
     #[error("the database is kept read-only")]
     ReadOnly,
-    #[error("database maintenance failed")]
-    Storage,
+    #[error("database maintenance failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 impl Database {
@@ -34,44 +34,73 @@ impl Database {
             return Err(StorageMaintenanceError::Cancelled);
         }
         if self.foreign_keys_lost.load(Ordering::SeqCst) {
-            return Err(StorageMaintenanceError::Storage);
+            return Err(StorageMaintenanceError::Storage {
+                reason: "optimize storage after checkpoint: stored data failed a consistency check",
+            });
         }
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| StorageMaintenanceError::Storage)?;
+        let connection = self.connection.lock().map_err(|error| {
+            tracing::warn!(%error, "optimize storage after checkpoint failed");
+            StorageMaintenanceError::Storage {
+                reason: "optimize storage after checkpoint: a storage step failed",
+            }
+        })?;
         let _writes = self
             .write_access
             .as_ref()
             .map(|access| access.acquire_exclusive())
             .transpose()
-            .map_err(|_| StorageMaintenanceError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "optimize storage after checkpoint failed");
+                StorageMaintenanceError::Storage {
+                    reason: "optimize storage after checkpoint: a storage step failed",
+                }
+            })?;
         if self
             .write_access
             .as_ref()
             .map(|access| access.fenced())
             .transpose()
-            .map_err(|_| StorageMaintenanceError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "optimize storage after checkpoint failed");
+                StorageMaintenanceError::Storage {
+                    reason: "optimize storage after checkpoint: a storage step failed",
+                }
+            })?
             .unwrap_or(false)
         {
             return Err(StorageMaintenanceError::ReadOnly);
         }
         connection
             .pragma_update(None, "query_only", false)
-            .map_err(|_| StorageMaintenanceError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "optimize storage after checkpoint failed");
+                StorageMaintenanceError::Storage {
+                    reason: "optimize storage after checkpoint: a storage step failed",
+                }
+            })?;
         if cancellation.load(Ordering::Acquire) {
             return Err(StorageMaintenanceError::Cancelled);
         }
         let cancelled = cancellation.clone();
         connection
             .progress_handler(1000, Some(move || cancelled.load(Ordering::Acquire)))
-            .map_err(|_| StorageMaintenanceError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "optimize storage after checkpoint failed");
+                StorageMaintenanceError::Storage {
+                    reason: "optimize storage after checkpoint: a storage step failed",
+                }
+            })?;
         let result = (|| {
             let (busy, _, _): (i64, i64, i64) = connection
                 .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?))
                 })
-                .map_err(|_| StorageMaintenanceError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "optimize storage after checkpoint failed");
+                    StorageMaintenanceError::Storage {
+                        reason: "optimize storage after checkpoint: a storage step failed",
+                    }
+                })?;
             if busy != 0 {
                 return Err(StorageMaintenanceError::CheckpointBusy);
             }
@@ -79,13 +108,21 @@ impl Database {
             if cancellation.load(Ordering::Acquire) {
                 return Err(StorageMaintenanceError::Cancelled);
             }
-            connection
-                .execute_batch("VACUUM")
-                .map_err(|_| StorageMaintenanceError::Storage)
+            connection.execute_batch("VACUUM").map_err(|error| {
+                tracing::warn!(%error, "optimize storage after checkpoint failed");
+                StorageMaintenanceError::Storage {
+                    reason: "optimize storage after checkpoint: a storage step failed",
+                }
+            })
         })();
         connection
             .progress_handler(0, None::<fn() -> bool>)
-            .map_err(|_| StorageMaintenanceError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "optimize storage after checkpoint failed");
+                StorageMaintenanceError::Storage {
+                    reason: "optimize storage after checkpoint: a storage step failed",
+                }
+            })?;
         if cancellation.load(Ordering::Acquire) && result.is_err() {
             Err(StorageMaintenanceError::Cancelled)
         } else {

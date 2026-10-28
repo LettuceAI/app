@@ -49,20 +49,20 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
             if let Some(id) = example.vocabulary_term_id
                 && vocabulary_ids.insert(id)
             {
-                vocabulary.push(
-                    self.library
-                        .get_vocabulary(id)?
-                        .ok_or(AsrLearningError::InvalidData)?,
-                );
+                vocabulary.push(self.library.get_vocabulary(id)?.ok_or(
+                    AsrLearningError::InvalidData {
+                        reason: "vocabulary term of the example is missing",
+                    },
+                )?);
             }
             if let Some(id) = example.correction_id
                 && correction_ids.insert(id)
             {
-                corrections.push(
-                    self.library
-                        .get_correction(id)?
-                        .ok_or(AsrLearningError::InvalidData)?,
-                );
+                corrections.push(self.library.get_correction(id)?.ok_or(
+                    AsrLearningError::InvalidData {
+                        reason: "correction of the example is missing",
+                    },
+                )?);
             }
         }
         let audio_asset_ids = voice_examples
@@ -159,17 +159,29 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
         asset_id: lettuce_types::AssetId,
     ) -> Result<AsrLearningAudioAsset, AsrLearningError> {
         let asset = MediaAssetRepository::get(self.repository, asset_id)
-            .map_err(|_| {
-                AsrLearningError::Repository(lettuce_speech::AsrLearningRepositoryError::Storage)
+            .map_err(|error| {
+                tracing::warn!(%error, "audio asset lookup failed");
+                AsrLearningError::Repository(lettuce_speech::AsrLearningRepositoryError::Storage {
+                    reason: "audio asset lookup failed",
+                })
             })?
-            .ok_or(AsrLearningError::InvalidData)?;
+            .ok_or(AsrLearningError::InvalidData {
+                reason: "audio asset is missing",
+            })?;
         let blob = MediaBlobRepository::get(self.repository, asset.blob_id)
-            .map_err(|_| {
-                AsrLearningError::Repository(lettuce_speech::AsrLearningRepositoryError::Storage)
+            .map_err(|error| {
+                tracing::warn!(%error, "audio blob lookup failed");
+                AsrLearningError::Repository(lettuce_speech::AsrLearningRepositoryError::Storage {
+                    reason: "audio blob lookup failed",
+                })
             })?
-            .ok_or(AsrLearningError::InvalidData)?;
+            .ok_or(AsrLearningError::InvalidData {
+                reason: "audio blob is missing",
+            })?;
         if blob.state != BlobState::Ready || blob.kind != MediaKind::Audio {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "audio blob is not a ready audio file",
+            });
         }
         Ok(AsrLearningAudioAsset {
             asset_id,
@@ -189,7 +201,9 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
     ) -> Result<(), AsrLearningError> {
         let actual = self.export_audio_asset(expected.asset_id)?;
         if actual != *expected {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "audio asset differs from the exported descriptor",
+            });
         }
         Ok(())
     }
@@ -365,10 +379,10 @@ mod tests {
 
         let changed_audio = Database::open_in_memory().expect("open changed-audio database");
         audio_asset(&changed_audio, audio_asset_id, "ab");
-        assert_eq!(
+        assert!(matches!(
             AsrLearningTransferCoordinator::new(&changed_audio).import(document.clone()),
-            Err(AsrLearningError::InvalidData)
-        );
+            Err(AsrLearningError::InvalidData { .. })
+        ));
         assert!(
             changed_audio
                 .list_vocabulary(Some("en"), &["workspace".to_owned()])
@@ -384,19 +398,19 @@ mod tests {
 
         let mut wrong_version = document.clone();
         wrong_version.version += 1;
-        assert_eq!(
+        assert!(matches!(
             AsrLearningTransferCoordinator::new(&destination).import(wrong_version),
-            Err(AsrLearningError::InvalidData)
-        );
+            Err(AsrLearningError::InvalidData { .. })
+        ));
 
         let mut invalid = document;
         invalid.voice_examples[0].vocabulary_term_id = Some(AsrVocabularyTermId::new());
         let empty = Database::open_in_memory().expect("open empty database");
         audio_asset(&empty, audio_asset_id, "ba");
-        assert_eq!(
+        assert!(matches!(
             AsrLearningTransferCoordinator::new(&empty).import(invalid),
-            Err(AsrLearningError::InvalidData)
-        );
+            Err(AsrLearningError::InvalidData { .. })
+        ));
         assert!(
             empty
                 .list_vocabulary(Some("en"), &["workspace".to_owned()])

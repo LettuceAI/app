@@ -59,7 +59,9 @@ where
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
         if !matches!(provider.config, AudioProviderConfig::Elevenlabs) {
-            return Err(TtsVoiceDesignError::InvalidInput);
+            return Err(TtsVoiceDesignError::InvalidInput {
+                reason: "voice design needs an ElevenLabs provider",
+            });
         }
         let request = VoiceDesignRequest {
             id: RequestId::new(),
@@ -87,7 +89,9 @@ where
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
         if !matches!(provider.config, AudioProviderConfig::Elevenlabs) {
-            return Err(TtsVoiceDesignError::InvalidInput);
+            return Err(TtsVoiceDesignError::InvalidInput {
+                reason: "voice design needs an ElevenLabs provider",
+            });
         }
         let request = VoiceCreationRequest {
             provider,
@@ -120,7 +124,9 @@ where
         let reference = request
             .provider
             .api_key_ref
-            .ok_or(TtsVoiceDesignError::InvalidInput)?;
+            .ok_or(TtsVoiceDesignError::InvalidInput {
+                reason: "the provider has no API key reference",
+            })?;
         let credential = self
             .secrets
             .load(
@@ -142,7 +148,9 @@ where
                 .is_some_and(|count| outputs.len() != count as usize)
         {
             return Err(TtsVoiceDesignError::Runtime(
-                VoiceDesignRuntimeError::Rejected,
+                VoiceDesignRuntimeError::Rejected {
+                    reason: "preview count is zero, above three or different from the request",
+                },
             ));
         }
         let mut previews = Vec::with_capacity(outputs.len());
@@ -176,7 +184,9 @@ where
         let reference = request
             .provider
             .api_key_ref
-            .ok_or(TtsVoiceDesignError::InvalidInput)?;
+            .ok_or(TtsVoiceDesignError::InvalidInput {
+                reason: "the provider has no API key reference",
+            })?;
         let credential = self
             .secrets
             .load(
@@ -198,8 +208,8 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsVoiceDesignError {
-    #[error("voice design input is invalid")]
-    InvalidInput,
+    #[error("voice design input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
     #[error("voice design input or result is invalid: {0}")]
     Validation(#[from] VoiceDesignValidationError),
     #[error("TTS configuration persistence failed: {0}")]
@@ -356,7 +366,7 @@ mod tests {
             )
             .await
             .expect("provider");
-        assert_eq!(
+        assert!(matches!(
             coordinator.admit(VoiceDesignPreviewDraft {
                 provider_id: wrong_provider.id,
                 text_sample: "A".repeat(100),
@@ -366,7 +376,7 @@ mod tests {
                 expires_at: TimestampMillis::new(10_000),
                 created_at: TimestampMillis::new(5),
             }),
-            Err(TtsVoiceDesignError::InvalidInput)
-        );
+            Err(TtsVoiceDesignError::InvalidInput { .. })
+        ));
     }
 }

@@ -128,8 +128,8 @@ pub enum LegacyBackupCreationMaterialization {
 pub enum LegacyBackupCreationHelperError {
     #[error("legacy backup creation-helper document is malformed")]
     Malformed { field: String },
-    #[error("legacy backup creation-helper document exceeds its record limit")]
-    LimitExceeded,
+    #[error("legacy backup creation-helper document exceeds its record limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("legacy backup creation-helper graph contains an orphaned link")]
     Orphan { field: String },
     #[error("legacy backup creation-helper row disagrees with its nested state")]
@@ -372,8 +372,11 @@ fn map_sessions(
             LegacyBackupCreationMaterialization::RetainedEvidence
         };
         sessions.push(LegacyBackupCreationHelperSession {
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupCreationHelperError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupCreationHelperError::LimitExceeded {
+                    reason: "session ordinal exceeds the u64 range",
+                }
+            })?,
             source_id: row.id,
             creation_goal,
             status,
@@ -419,8 +422,11 @@ fn map_messages(
         validate_text(&row.content, &format!("{path}.content"))?;
         validate_tool_state(&row.tool_calls, &row.tool_results, &row.blocks, &path)?;
         messages.push(LegacyBackupCreationMessage {
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupCreationHelperError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupCreationHelperError::LimitExceeded {
+                    reason: "message ordinal exceeds the u64 range",
+                }
+            })?,
             source_id: row.id,
             role,
             content: row.content,
@@ -701,7 +707,9 @@ fn validate_inline_image(
     };
     let estimated = encoded.len().saturating_mul(3) / 4;
     if estimated > INLINE_IMAGE_LIMIT {
-        return Err(LegacyBackupCreationHelperError::LimitExceeded);
+        return Err(LegacyBackupCreationHelperError::LimitExceeded {
+            reason: "inline image exceeds the size limit",
+        });
     }
     let bytes = general_purpose::STANDARD
         .decode(encoded)
@@ -785,7 +793,9 @@ fn parse_json<T: for<'de> Deserialize<'de>>(
     field: &str,
 ) -> Result<T, LegacyBackupCreationHelperError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupCreationHelperError::LimitExceeded);
+        return Err(LegacyBackupCreationHelperError::LimitExceeded {
+            reason: "json document exceeds the size limit",
+        });
     }
     serde_json::from_str(raw).map_err(|_| malformed(field))
 }

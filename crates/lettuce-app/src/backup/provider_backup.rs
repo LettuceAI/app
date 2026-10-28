@@ -143,7 +143,7 @@ where
             }
             if before.state == SecretState::Missing {
                 let owner = provider_backup_secret_owner(&graph, reference)
-                    .ok_or(ProviderBackupGraphError::InvalidGraph)?;
+                    .ok_or(ProviderBackupGraphError::InvalidGraph { reason: "secret owner is missing from the provider backup graph" })?;
                 missing_secrets.push(ProviderBackupMissingSecret { owner, purpose });
                 secret_set.missing.push(reference);
                 continue;
@@ -179,7 +179,7 @@ where
             .and_then(|count| count.checked_add(plan.data_sections.len()))
             .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
         {
-            return Err(ProviderBackupGraphError::LimitExceeded.into());
+            return Err(ProviderBackupGraphError::LimitExceeded { reason: "backup has more entries than the limit" }.into());
         }
         let mut writer = BackupWriter::new(out, app_version, created_at, password)?;
         for section in plan.data_sections {
@@ -250,13 +250,13 @@ where
         byte_size: u64,
     ) -> Result<Zeroizing<Vec<u8>>, ProviderBackupError> {
         let capacity = usize::try_from(byte_size)
-            .map_err(|_| ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded))?;
+            .map_err(|_| ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded { reason: "media size does not fit in usize" }))?;
         let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
         while bytes.len() < capacity {
             let chunk = self.media.read_backup_chunk(
                 content_hash,
                 u64::try_from(bytes.len()).map_err(|_| {
-                    ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded)
+                    ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded { reason: "media read offset does not fit in u64" })
                 })?,
                 lettuce_media::MAX_SYNC_MEDIA_CHUNK_BYTES.min(capacity - bytes.len()),
             )?;
@@ -288,7 +288,7 @@ impl BackupArtifactSink {
 
     fn complete(self) -> Result<BackupConversationArtifact, ArtifactTransferError> {
         if !self.finished {
-            return Err(ArtifactTransferError::SinkRejected);
+            return Err(ArtifactTransferError::SinkRejected { reason: "artifact was not fully received" });
         }
         Ok(BackupConversationArtifact {
             descriptor: self.expected,
@@ -301,7 +301,7 @@ impl BackupArtifactSink {
             TrustedArtifactDescriptor::Snapshot(reference) => reference.byte_size,
             TrustedArtifactDescriptor::Replay(reference) => reference.byte_size,
         };
-        usize::try_from(size).map_err(|_| ArtifactTransferError::SinkRejected)
+        usize::try_from(size).map_err(|_| ArtifactTransferError::SinkRejected { reason: "artifact size does not fit in usize" })
     }
 }
 
@@ -311,7 +311,7 @@ impl TrustedArtifactSink for BackupArtifactSink {
         descriptor: &TrustedArtifactDescriptor,
     ) -> Result<(), ArtifactTransferError> {
         if self.began || descriptor != &self.expected {
-            return Err(ArtifactTransferError::SinkRejected);
+            return Err(ArtifactTransferError::SinkRejected { reason: "artifact began twice or differs from the expected descriptor" });
         }
         self.began = true;
         Ok(())
@@ -327,7 +327,7 @@ impl TrustedArtifactSink for BackupArtifactSink {
                 .checked_add(bytes.len())
                 .is_none_or(|size| size > expected_size)
         {
-            return Err(ArtifactTransferError::SinkRejected);
+            return Err(ArtifactTransferError::SinkRejected { reason: "chunk exceeds the expected artifact size" });
         }
         self.bytes.extend_from_slice(bytes);
         Ok(())
@@ -344,7 +344,7 @@ impl TrustedArtifactSink for BackupArtifactSink {
             || ContentHash::parse(blake3::hash(&self.bytes).to_hex().to_string()).as_ref()
                 != Ok(expected_digest)
         {
-            return Err(ArtifactTransferError::SinkRejected);
+            return Err(ArtifactTransferError::SinkRejected { reason: "artifact is incomplete, finished twice or fails its digest check" });
         }
         self.finished = true;
         Ok(())
@@ -475,7 +475,7 @@ mod tests {
             _: SecretValue,
             _: Option<u64>,
         ) -> Result<SecretStatus, SecretStoreError> {
-            Err(SecretStoreError::Backend(SecretBackendError::Unavailable))
+            Err(SecretStoreError::Backend(SecretBackendError::Unavailable { reason: "simulated failure" }))
         }
 
         async fn load(
@@ -485,7 +485,7 @@ mod tests {
         ) -> Result<SecretValue, SecretStoreError> {
             let _ = (reference, purpose);
             SecretValue::new("changing-secret")
-                .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))
+                .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt { reason: "simulated failure" }))
         }
 
         async fn status(
@@ -512,7 +512,7 @@ mod tests {
             _: &SecretPurpose,
             _: Option<u64>,
         ) -> Result<SecretStatus, SecretStoreError> {
-            Err(SecretStoreError::Backend(SecretBackendError::Unavailable))
+            Err(SecretStoreError::Backend(SecretBackendError::Unavailable { reason: "simulated failure" }))
         }
     }
 
@@ -2059,10 +2059,10 @@ mod tests {
         .await
         .expect("export backup")
         .output;
-        assert_eq!(
+        assert!(matches!(
             open_backup(&envelope, "wrong password"),
-            Err(BackupEnvelopeError::Authentication)
-        );
+            Err(BackupEnvelopeError::Authentication { .. })
+        ));
         let mut restore_plan = lettuce_transfer::decode_provider_backup_restore_plan(
             std::io::Cursor::new(envelope.clone()),
             "backup password",
@@ -2511,10 +2511,10 @@ mod tests {
             .expect("direct conversation outbox")
             .events[1]
             .sequence = 1;
-        assert_eq!(
+        assert!(matches!(
             corrupt_outbox.canonicalize_and_validate(&history, &runtime, &usage),
-            Err(lettuce_transfer::ConversationOutboxBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::ConversationOutboxBackupError::InvalidData { .. })
+        ));
         assert_eq!(companion.relationships.len(), 1);
         assert_eq!(companion.sessions.len(), 1);
         assert_eq!(companion.episodes.len(), 1);
@@ -2531,10 +2531,10 @@ mod tests {
                 .expect("current backup graph");
         let mut corrupt_companion = companion.clone();
         corrupt_companion.episodes[0].episode_index = 0;
-        assert_eq!(
+        assert!(matches!(
             corrupt_companion.canonicalize_and_validate(&current_graph.authored, &history),
-            Err(lettuce_transfer::CompanionStateBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::CompanionStateBackupError::InvalidData { .. })
+        ));
         assert_eq!(companion_effects.effects.len(), 1);
         assert_eq!(companion_effects.rewinds.len(), 1);
         assert_eq!(companion_effects.effects[0].id, effect.id);
@@ -2553,10 +2553,10 @@ mod tests {
         assert_eq!(companion_effects.rewinds[0].resulting_memory, rewind.memory);
         let mut corrupt_effects = companion_effects.clone();
         corrupt_effects.rewinds[0].invalidated_effect_ids.clear();
-        assert_eq!(
+        assert!(matches!(
             corrupt_effects.canonicalize_and_validate(&history, &runtime),
-            Err(lettuce_transfer::CompanionEffectBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::CompanionEffectBackupError::InvalidData { .. })
+        ));
         assert_eq!(memory.spaces.len(), 4);
         let child_backup = memory
             .spaces
@@ -2594,10 +2594,10 @@ mod tests {
         assert_eq!(memory.retrieval_accesses, vec![memory_access.clone()]);
         let mut corrupt_memory = memory.clone();
         corrupt_memory.retrieval_accesses[0].access.space_id = lettuce_types::MemorySpaceId::new();
-        assert_eq!(
+        assert!(matches!(
             corrupt_memory.canonicalize_and_validate(&history, &runtime, &companion_effects),
-            Err(lettuce_transfer::MemoryBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::MemoryBackupError::InvalidData { .. })
+        ));
         assert_eq!(memory_projections.projections.len(), 2);
         let ready = memory_projections
             .projections
@@ -2635,10 +2635,10 @@ mod tests {
         );
         let mut corrupt_projections = memory_projections.clone();
         corrupt_projections.projections[0].space_id = lettuce_types::MemorySpaceId::new();
-        assert_eq!(
+        assert!(matches!(
             corrupt_projections.canonicalize_and_validate(&memory),
-            Err(lettuce_transfer::MemoryProjectionBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::MemoryProjectionBackupError::InvalidData { .. })
+        ));
         assert_eq!(dynamic_memory.runs.len(), 2);
         assert_eq!(dynamic_memory.pending_approvals.len(), 2);
         assert!(
@@ -2676,10 +2676,10 @@ mod tests {
         );
         let mut corrupt_dynamic_memory = dynamic_memory.clone();
         corrupt_dynamic_memory.runs[0].run.space_id = lettuce_types::MemorySpaceId::new();
-        assert_eq!(
+        assert!(matches!(
             corrupt_dynamic_memory.canonicalize_and_validate(&history, &jobs, &memory),
-            Err(lettuce_transfer::DynamicMemoryBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::DynamicMemoryBackupError::InvalidData { .. })
+        ));
         let backed_up_job = jobs
             .jobs
             .iter()
@@ -2705,10 +2705,10 @@ mod tests {
             .expect("backed up job")
             .events[0]
             .seq = lettuce_jobs::EventSeq::new(2);
-        assert_eq!(
+        assert!(matches!(
             corrupt_jobs.canonicalize_and_validate(),
-            Err(lettuce_transfer::JobBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::JobBackupError::InvalidData { .. })
+        ));
         let direct_runtime = runtime
             .conversations
             .iter()
@@ -2733,10 +2733,10 @@ mod tests {
             .turns[0]
             .attempts[0]
             .attempt_id = lettuce_types::GenerationAttemptId::new();
-        assert_eq!(
+        assert!(matches!(
             corrupt_runtime.canonicalize_and_validate(&history),
-            Err(lettuce_transfer::ConversationRuntimeBackupError::InvalidData)
-        );
+            Err(lettuce_transfer::ConversationRuntimeBackupError::InvalidData { .. })
+        ));
         let mut corrupt_history = history.clone();
         corrupt_history
             .conversations
@@ -2746,10 +2746,10 @@ mod tests {
             .messages[1]
             .message
             .parent_message_id = Some(MessageId::new());
-        assert_eq!(
+        assert!(matches!(
             corrupt_history.canonicalize_and_validate(&BTreeSet::new()),
-            Err(ConversationHistoryBackupError::InvalidData)
-        );
+            Err(ConversationHistoryBackupError::InvalidData { .. })
+        ));
         assert_eq!(metadata["settings"]["value"]["analytics_enabled"], true);
         assert_eq!(metadata["audio_providers"][0]["label"], "Speech provider");
         assert_eq!(metadata["user_voices"][0]["name"], "Narrator");
@@ -2850,7 +2850,7 @@ mod tests {
             expected: Option<u64>,
         ) -> Result<SecretStatus, SecretStoreError> {
             if record.purpose.app_secret_ref().is_some() {
-                return Err(SecretStoreError::Backend(SecretBackendError::Unavailable));
+                return Err(SecretStoreError::Backend(SecretBackendError::Unavailable { reason: "simulated failure" }));
             }
             self.inner.put(record, value, expected).await
         }
@@ -2869,7 +2869,7 @@ mod tests {
             purpose: &SecretPurpose,
         ) -> Result<SecretStatus, SecretStoreError> {
             if self.fail_status && purpose.app_secret_ref().is_some() {
-                return Err(SecretStoreError::Backend(SecretBackendError::Unavailable));
+                return Err(SecretStoreError::Backend(SecretBackendError::Unavailable { reason: "simulated failure" }));
             }
             self.inner.status(reference, purpose).await
         }
@@ -3048,7 +3048,7 @@ mod tests {
                 vec![crate::BackupAppSecretFailure {
                     purpose: hugging_face.clone(),
                     stage,
-                    error: SecretStoreError::Backend(SecretBackendError::Unavailable),
+                    error: SecretStoreError::Backend(SecretBackendError::Unavailable { reason: "simulated failure" }),
                 }]
             );
         }

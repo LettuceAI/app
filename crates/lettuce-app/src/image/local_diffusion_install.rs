@@ -270,9 +270,9 @@ pub fn upscaler_install_plan(paths: &DiffusionPaths) -> ArtifactInstallPlan {
 #[must_use]
 pub fn upscaler_install_error_text(error: &crate::ArtifactInstallError) -> String {
     match error {
-        crate::ArtifactInstallError::Store(lettuce_model_hub::PinnedArtifactError::Mismatch) => {
-            "Upscaler model download failed its integrity check.".to_owned()
-        }
+        crate::ArtifactInstallError::Store(lettuce_model_hub::PinnedArtifactError::Mismatch {
+            ..
+        }) => "Upscaler model download failed its integrity check.".to_owned(),
         crate::ArtifactInstallError::Source(error) => {
             format!("Failed to download the upscaler model: {error}")
         }

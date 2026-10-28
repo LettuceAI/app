@@ -80,7 +80,9 @@ where
             .job_usage(job_id)?
             .into_iter()
             .find(|event| event.id == event_id)
-            .ok_or(UsageLedgerError::Invalid)?;
+            .ok_or(UsageLedgerError::Invalid {
+                reason: "usage event is not in the job usage records",
+            })?;
         if let Some(cost) = self.repository.get_job_cost(event_id)? {
             return Ok(Some(cost));
         }
@@ -111,26 +113,41 @@ where
             return Err(UsageLedgerError::Conflict.into());
         }
         if !account.enabled {
-            return Err(ProviderRequestError::Unavailable.into());
+            return Err(ProviderRequestError::Unavailable {
+                reason: "provider account is disabled",
+            }
+            .into());
         }
         if account.protocol != ProviderProtocol::OpenAiCompatible {
-            return Err(UsageLedgerError::Invalid.into());
+            return Err(UsageLedgerError::Invalid {
+                reason: "cost capture supports OpenAI-compatible accounts only",
+            }
+            .into());
         }
         let response_id = provider_response_id
             .as_ref()
-            .ok_or(UsageLedgerError::Invalid)?;
+            .ok_or(UsageLedgerError::Invalid {
+                reason: "usage event has no provider response id",
+            })?;
         let generation = self
             .provider
             .generation(&account, response_id)
             .await?
-            .ok_or(ProviderRequestError::Unavailable)?;
+            .ok_or(ProviderRequestError::Unavailable {
+                reason: "provider has no generation for the response id",
+            })?;
         if generation.generation_id != *response_id {
-            return Err(UsageLedgerError::Invalid.into());
+            return Err(UsageLedgerError::Invalid {
+                reason: "provider generation id differs from the response id",
+            }
+            .into());
         }
         let endpoints = self.provider.endpoints(&account, &generation.model).await?;
         let basis =
             UsageCostBasis::from_openrouter_job(&event, generation, &endpoints, captured_at)?
-                .ok_or(ProviderRequestError::Malformed)?;
+                .ok_or(ProviderRequestError::Malformed {
+                    reason: "generation could not be converted into a cost basis",
+                })?;
         match self.repository.record_job_cost(event_id, basis) {
             Ok(cost) => Ok(Some(cost)),
             Err(UsageLedgerError::Conflict) => self
@@ -327,11 +344,11 @@ mod tests {
         match missing {
             "generation" => assert!(matches!(
                 error,
-                UsageCostCaptureError::Provider(ProviderRequestError::Unavailable)
+                UsageCostCaptureError::Provider(ProviderRequestError::Unavailable { .. })
             )),
             "pricing" => assert!(matches!(
                 error,
-                UsageCostCaptureError::Provider(ProviderRequestError::Malformed)
+                UsageCostCaptureError::Provider(ProviderRequestError::Malformed { .. })
             )),
             "account" => assert!(matches!(
                 error,
@@ -432,7 +449,9 @@ mod tests {
         drop(db);
         let db = Database::open(&path).expect("billing scenario");
         *billing.generation.lock().expect("generation lock") =
-            Err(ProviderRequestError::Unavailable);
+            Err(ProviderRequestError::Unavailable {
+                reason: "simulated failure",
+            });
         ProviderAccountRepository::delete(&db, event.provider_account_id)
             .expect("billing scenario");
         let replay = UsageCostCoordinator::new(&db, &billing)
@@ -518,7 +537,7 @@ mod tests {
                 .capture_job(event.job_id, event.id, TimestampMillis::new(2))
                 .await,
             Err(UsageCostCaptureError::Provider(
-                ProviderRequestError::Unavailable
+                ProviderRequestError::Unavailable { .. }
             ))
         ));
         *billing.generation.lock().expect("generation lock") =

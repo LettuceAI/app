@@ -13,17 +13,25 @@ use rusqlite::{OptionalExtension, ToSql, Transaction, TransactionBehavior, param
 
 use crate::Database;
 
-fn storage(_: impl std::fmt::Debug) -> AsrLearningRepositoryError {
-    AsrLearningRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> AsrLearningRepositoryError {
+    tracing::warn!(?error, "speech learning adapter storage step failed");
+    AsrLearningRepositoryError::Storage {
+        reason: "speech learning adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> AsrLearningRepositoryError {
-    AsrLearningRepositoryError::InvalidData
+fn corrupt(error: impl std::fmt::Debug) -> AsrLearningRepositoryError {
+    tracing::warn!(?error, "speech learning adapter storage step failed");
+    AsrLearningRepositoryError::InvalidData {
+        reason: "speech learning adapter: a storage step failed",
+    }
 }
 
 fn query_clause(scopes: &[String]) -> Result<String, AsrLearningRepositoryError> {
     if scopes.is_empty() {
-        return Err(AsrLearningRepositoryError::InvalidData);
+        return Err(AsrLearningRepositoryError::InvalidData {
+            reason: "query clause: a value failed validation",
+        });
     }
     Ok((0..scopes.len())
         .map(|index| format!("?{}", index + 1))
@@ -435,7 +443,9 @@ fn save_correction_in(
     let stored = load_corrections(transaction, Some(correction.id), None, &[])?
         .into_iter()
         .next()
-        .ok_or(AsrLearningRepositoryError::Storage)?;
+        .ok_or(AsrLearningRepositoryError::Storage {
+            reason: "save correction in: a required value is missing",
+        })?;
     transaction
         .execute(
             "DELETE FROM asr_ignored_suggestions
@@ -892,7 +902,9 @@ pub(crate) fn save_vocabulary_in(
     let stored = load_vocabulary(transaction, Some(term.id), None, &[])?
         .into_iter()
         .next()
-        .ok_or(AsrLearningRepositoryError::Storage)?;
+        .ok_or(AsrLearningRepositoryError::Storage {
+            reason: "save vocabulary in: a required value is missing",
+        })?;
     Ok(stored)
 }
 
@@ -998,7 +1010,9 @@ pub(crate) fn save_voice_example_in(
             [example.audio_asset_id.to_string()], |row| row.get::<_, bool>(0),
         ).map_err(storage)?;
     if !audio_ready {
-        return Err(AsrLearningRepositoryError::InvalidData);
+        return Err(AsrLearningRepositoryError::InvalidData {
+            reason: "save voice example in: a value failed validation",
+        });
     }
     example.validate().map_err(corrupt)?;
     let changed = transaction

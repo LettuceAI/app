@@ -98,7 +98,9 @@ pub struct BackupJobInference {
 impl JobBackup {
     pub fn canonicalize_and_validate(&mut self) -> Result<(), JobBackupError> {
         if self.version != JOB_BACKUP_VERSION {
-            return Err(JobBackupError::InvalidData);
+            return Err(JobBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.api_operation_receipts.sort_by(|a, b| {
             (&a.command, &a.client_operation_id).cmp(&(&b.command, &b.client_operation_id))
@@ -111,12 +113,16 @@ impl JobBackup {
                 || receipt.request_digest.trim().is_empty()
                 || !receipt_keys.insert((&receipt.command, &receipt.client_operation_id))
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "command receipt has a blank command, operation id or digest or is duplicated",
+                });
             }
         }
         self.jobs
             .sort_by_key(|job| (job.snapshot.created_at, job.snapshot.id));
-        InMemoryJobStore::restore(self.jobs.clone()).map_err(|_| JobBackupError::InvalidData)?;
+        InMemoryJobStore::restore(self.jobs.clone()).map_err(|_| JobBackupError::InvalidData {
+            reason: "jobs could not be restored into the job store",
+        })?;
         self.inference
             .sort_by_key(|entry| (entry.evidence.admitted_at, entry.evidence.id));
         let mut evidence_ids = BTreeSet::new();
@@ -130,7 +136,9 @@ impl JobBackup {
                     .as_ref()
                     .is_some_and(|basis| basis.calculate_job(&entry.evidence).is_err())
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "inference evidence is invalid or its cost basis cannot be calculated",
+                });
             }
         }
         self.speech_transcriptions
@@ -161,7 +169,9 @@ impl JobBackup {
             )
         {
             if !valid || !job_ids.contains(&job_id) || !bound_jobs.insert(job_id) {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "job bound record is invalid, references an unknown job or binds a job twice",
+                });
             }
         }
         for transcription in &self.speech_transcriptions {
@@ -169,9 +179,13 @@ impl JobBackup {
                 .jobs
                 .iter()
                 .find(|job| job.snapshot.id == transcription.job_id)
-                .ok_or(JobBackupError::InvalidData)?;
+                .ok_or(JobBackupError::InvalidData {
+                    reason: "transcription references an unknown job",
+                })?;
             if job.snapshot.state.is_terminal() != transcription.request.audio_asset_id.is_none() {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "transcription audio asset presence does not match the job state",
+                });
             }
         }
         self.local_model_jobs.sort_by_key(|job| job.job_id);
@@ -189,7 +203,9 @@ impl JobBackup {
                 || !object(job.result.as_ref())
                 || !object(job.failure.as_ref())
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "job fields are blank or not objects",
+                });
             }
         }
         let mut keys = BTreeSet::new();
@@ -199,7 +215,9 @@ impl JobBackup {
                 || operation.request_digest.is_empty()
                 || !keys.insert(operation.operation_key.as_str())
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "operation key or digest is blank or duplicated",
+                });
             }
         }
         self.job_details.sort_by_key(|job| job.job_id);
@@ -213,7 +231,9 @@ impl JobBackup {
                 || !object(job.result.as_ref())
                 || !object(job.failure.as_ref())
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "job fields are blank or not objects",
+                });
             }
         }
         let mut keys = BTreeSet::new();
@@ -223,7 +243,9 @@ impl JobBackup {
                 || operation.request_digest.is_empty()
                 || !keys.insert(operation.operation_key.as_str())
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "operation key or digest is blank or duplicated",
+                });
             }
         }
         let mut refused = BTreeSet::new();
@@ -232,7 +254,9 @@ impl JobBackup {
                 || refusal.repository.trim().is_empty()
                 || !refused.insert(refusal.job_id)
             {
-                return Err(JobBackupError::InvalidData);
+                return Err(JobBackupError::InvalidData {
+                    reason: "refusal references an unknown job, has a blank repository or is duplicated",
+                });
             }
         }
         Ok(())
@@ -250,8 +274,8 @@ impl JobBackup {
 pub enum JobBackupError {
     #[error("job backup exceeds its limit")]
     LimitExceeded,
-    #[error("job backup is invalid")]
-    InvalidData,
+    #[error("job backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }
 
 #[cfg(test)]
@@ -321,17 +345,17 @@ mod tests {
         let mut forged = completed.clone();
         forged.provider_response_id = Some("foreign".into());
         backup.inference[0].evidence.result = response(forged);
-        assert_eq!(
+        assert!(matches!(
             backup.canonicalize_and_validate(),
-            Err(JobBackupError::InvalidData)
-        );
+            Err(JobBackupError::InvalidData { .. })
+        ));
         let mut changed = completed.clone();
         changed.provider_label = Some("Renamed account".into());
         backup.inference[0].evidence.result = response(changed);
-        assert_eq!(
+        assert!(matches!(
             backup.canonicalize_and_validate(),
-            Err(JobBackupError::InvalidData)
-        );
+            Err(JobBackupError::InvalidData { .. })
+        ));
         backup.inference[0].evidence.result = response(completed);
         backup.inference[0]
             .evidence
@@ -339,10 +363,10 @@ mod tests {
             .as_mut()
             .expect("admission")
             .finish_reason = Some("stop".into());
-        assert_eq!(
+        assert!(matches!(
             backup.canonicalize_and_validate(),
-            Err(JobBackupError::InvalidData)
-        );
+            Err(JobBackupError::InvalidData { .. })
+        ));
     }
 
     #[test]
@@ -356,10 +380,9 @@ mod tests {
                 request_digest: "digest".to_owned(),
                 job_id: JobId::new(),
             });
-        assert_eq!(
+        assert!(matches!(
             backup.canonicalize_and_validate(),
-            Err(JobBackupError::InvalidData),
-            "an operation must name a job of the backup"
-        );
+            Err(JobBackupError::InvalidData { .. })
+        ));
     }
 }

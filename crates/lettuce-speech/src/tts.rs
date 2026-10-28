@@ -109,7 +109,9 @@ impl AudioProvider {
             || (self.config.provider_kind() == AudioProviderKind::Kokoro
                 && self.api_key_ref.is_some())
         {
-            return Err(TtsConfigurationError::InvalidData);
+            return Err(TtsConfigurationError::InvalidData {
+                reason: "timestamps are out of order or a kokoro provider carries an api key",
+            });
         }
         Ok(())
     }
@@ -137,10 +139,14 @@ impl UserVoice {
         if let Some(prompt) = &self.prompt
             && (prompt.len() > MAX_PROMPT_BYTES || prompt.contains('\0'))
         {
-            return Err(TtsConfigurationError::InvalidData);
+            return Err(TtsConfigurationError::InvalidData {
+                reason: "prompt is oversized or contains a nul",
+            });
         }
         if self.created_at > self.updated_at {
-            return Err(TtsConfigurationError::InvalidData);
+            return Err(TtsConfigurationError::InvalidData {
+                reason: "configuration timestamps are out of order",
+            });
         }
         Ok(())
     }
@@ -191,26 +197,28 @@ pub enum TtsConfigurationRepositoryError {
     AlreadyExists,
     #[error("TTS provider does not exist")]
     ProviderMissing,
-    #[error("TTS configuration is invalid")]
-    InvalidData,
+    #[error("TTS configuration is invalid: {reason}")]
+    InvalidData { reason: &'static str },
     #[error("TTS provider is referenced by a character voice preference")]
     InUse {
         characters: Vec<AudioProviderCharacterReference>,
     },
-    #[error("TTS configuration storage failed")]
-    Storage,
+    #[error("TTS configuration storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TtsConfigurationError {
-    #[error("TTS configuration is invalid")]
-    InvalidData,
+    #[error("TTS configuration is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }
 
 fn validate_required(value: &str, max_bytes: usize) -> Result<(), TtsConfigurationError> {
     if value.is_empty() || value.len() > max_bytes || value.trim() != value || value.contains('\0')
     {
-        return Err(TtsConfigurationError::InvalidData);
+        return Err(TtsConfigurationError::InvalidData {
+            reason: "text is empty, oversized, has outer whitespace or contains a nul",
+        });
     }
     Ok(())
 }
@@ -245,9 +253,12 @@ pub struct SynthesisRequest {
 
 impl SynthesisRequest {
     pub fn validate(&self) -> Result<(), TtsSynthesisValidationError> {
-        self.provider
-            .validate()
-            .map_err(|_| TtsSynthesisValidationError::InvalidRequest)?;
+        self.provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            TtsSynthesisValidationError::InvalidRequest {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         let credential_valid = match self.provider.config.provider_kind() {
             AudioProviderKind::Kokoro => self.provider.api_key_ref.is_none(),
             AudioProviderKind::FishSpeech => true,
@@ -257,7 +268,9 @@ impl SynthesisRequest {
             | AudioProviderKind::OpenAiTts => self.provider.api_key_ref.is_some(),
         };
         if !credential_valid {
-            return Err(TtsSynthesisValidationError::InvalidRequest);
+            return Err(TtsSynthesisValidationError::InvalidRequest {
+                reason: "provider kind requires an api key reference",
+            });
         }
         validate_synthesis_identifier(&self.model_id, MAX_VALUE_BYTES)?;
         validate_synthesis_identifier(&self.voice_id, MAX_VALUE_BYTES)?;
@@ -269,7 +282,9 @@ impl SynthesisRequest {
             self.output_policy,
             TtsOutputPolicy::Preview { expires_at } if expires_at <= self.created_at
         ) {
-            return Err(TtsSynthesisValidationError::InvalidRequest);
+            return Err(TtsSynthesisValidationError::InvalidRequest {
+                reason: "preview expiry is not after the request creation time",
+            });
         }
         Ok(())
     }
@@ -301,7 +316,9 @@ impl SynthesisResult {
             )
             || self.completed_at < request.created_at
         {
-            return Err(TtsSynthesisValidationError::InvalidResult);
+            return Err(TtsSynthesisValidationError::InvalidResult {
+                reason: "result does not match the request or has an invalid size, mime type or time",
+            });
         }
         Ok(())
     }
@@ -476,26 +493,26 @@ pub trait SpeechCacheRepository: Send + Sync {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TtsSynthesisValidationError {
-    #[error("TTS synthesis request is invalid")]
-    InvalidRequest,
-    #[error("TTS synthesis result is invalid")]
-    InvalidResult,
+    #[error("TTS synthesis request is invalid: {reason}")]
+    InvalidRequest { reason: &'static str },
+    #[error("TTS synthesis result is invalid: {reason}")]
+    InvalidResult { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TtsRuntimeError {
-    #[error("TTS network is unavailable")]
-    NetworkUnavailable,
+    #[error("TTS network is unavailable: {reason}")]
+    NetworkUnavailable { reason: &'static str },
     #[error("TTS provider returned HTTP {status}")]
     ProviderUnavailable { status: u16 },
     #[error("TTS synthesis was cancelled")]
     Cancelled,
-    #[error("TTS runtime is unavailable")]
-    Unavailable,
-    #[error("TTS runtime rejected the request")]
-    Rejected,
-    #[error("TTS runtime failed")]
-    Failed,
+    #[error("TTS runtime is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("TTS runtime rejected the request: {reason}")]
+    Rejected { reason: &'static str },
+    #[error("TTS runtime failed: {reason}")]
+    Failed { reason: &'static str },
     #[error("the local speech model is not installed")]
     ModelMissing,
     #[error("the local speech voice is not installed")]
@@ -520,10 +537,10 @@ pub enum SynthesisRepositoryError {
     NotFound,
     #[error("TTS synthesis conflicts with durable state")]
     Conflict,
-    #[error("TTS synthesis data are invalid")]
-    InvalidData,
-    #[error("TTS synthesis storage failed")]
-    Storage,
+    #[error("TTS synthesis data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("TTS synthesis storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 fn validate_synthesis_identifier(
@@ -532,7 +549,9 @@ fn validate_synthesis_identifier(
 ) -> Result<(), TtsSynthesisValidationError> {
     if value.is_empty() || value.len() > max_bytes || value.trim() != value || value.contains('\0')
     {
-        return Err(TtsSynthesisValidationError::InvalidRequest);
+        return Err(TtsSynthesisValidationError::InvalidRequest {
+            reason: "identifier is empty, oversized, has outer whitespace or contains a nul",
+        });
     }
     Ok(())
 }
@@ -543,7 +562,9 @@ fn validate_synthesis_payload(
     allow_empty: bool,
 ) -> Result<(), TtsSynthesisValidationError> {
     if (!allow_empty && value.is_empty()) || value.len() > max_bytes || value.contains('\0') {
-        return Err(TtsSynthesisValidationError::InvalidRequest);
+        return Err(TtsSynthesisValidationError::InvalidRequest {
+            reason: "payload is empty, oversized or contains a nul",
+        });
     }
     Ok(())
 }
@@ -621,10 +642,10 @@ mod tests {
 
     #[test]
     fn local_provider_rejects_secret_reference() {
-        assert_eq!(
+        assert!(matches!(
             provider(AudioProviderConfig::Kokoro { variant: None }).validate(),
-            Err(TtsConfigurationError::InvalidData)
-        );
+            Err(TtsConfigurationError::InvalidData { .. })
+        ));
     }
 
     #[test]
@@ -649,15 +670,15 @@ mod tests {
         request.output_policy = TtsOutputPolicy::Preview {
             expires_at: request.created_at,
         };
-        assert_eq!(
+        assert!(matches!(
             request.validate(),
-            Err(TtsSynthesisValidationError::InvalidRequest)
-        );
+            Err(TtsSynthesisValidationError::InvalidRequest { .. })
+        ));
         request.output_policy = TtsOutputPolicy::Retained;
         request.provider.api_key_ref = None;
-        assert_eq!(
+        assert!(matches!(
             request.validate(),
-            Err(TtsSynthesisValidationError::InvalidRequest)
-        );
+            Err(TtsSynthesisValidationError::InvalidRequest { .. })
+        ));
     }
 }

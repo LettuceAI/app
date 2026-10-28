@@ -55,8 +55,8 @@ pub enum SceneImageError {
     Generation(String),
     #[error("The message is generating or was changed, so the scene image could not be added")]
     MessageUnavailable,
-    #[error("scene image storage failed")]
-    Storage,
+    #[error("scene image storage failed: {reason}")]
+    Storage { reason: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,16 +326,22 @@ where
     };
     find_message(repository, &aggregate.conversation, request.message_id)?;
     let settings = lettuce_settings::GlobalSettingsStore::load(repository)
-        .map_err(|_| SceneImageError::Storage)?
+        .map_err(|error| SceneImageError::Storage {
+            reason: error.to_string(),
+        })?
         .settings;
     let model = image_feature_model(repository, &settings, ImageFeature::Scene)?;
     let character = CharacterRepository::get(repository, details.character.source_id)
-        .map_err(|_| SceneImageError::Storage)?
+        .map_err(|error| SceneImageError::Storage {
+            reason: error.to_string(),
+        })?
         .ok_or(SceneImageError::CharacterNotFound)?;
     let persona = lettuce_conversations::effective_persona(&aggregate.conversation)
         .map(|persona| PersonaRepository::get(repository, persona.source_id))
         .transpose()
-        .map_err(|_| SceneImageError::Storage)?
+        .map_err(|error| SceneImageError::Storage {
+            reason: error.to_string(),
+        })?
         .flatten();
     let (prompt, input_images, loras) = if model.is_local_diffusion() {
         let (character_lora, persona_lora) = crate::image::scene_loras::subject_loras(
@@ -350,8 +356,12 @@ where
             .collect();
         (scene_prompt.to_owned(), Vec::new(), loras)
     } else {
-        let text = RuntimeText::load(repository, BuiltInPromptId::ChatRuntime)
-            .map_err(|_| SceneImageError::Storage)?;
+        let text =
+            RuntimeText::load(repository, BuiltInPromptId::ChatRuntime).map_err(|error| {
+                SceneImageError::Storage {
+                    reason: error.to_string(),
+                }
+            })?;
         let references =
             StoredSceneReferences::new(&aggregate.conversation, &character, persona.as_ref())
                 .resolve(Some(media));
@@ -588,7 +598,9 @@ pub(crate) fn find_message<R: ConversationReader + ?Sized>(
     loop {
         let timeline = repository
             .timeline_page(conversation.id, conversation.active_branch_id, &page)
-            .map_err(|_| SceneImageError::Storage)?;
+            .map_err(|error| SceneImageError::Storage {
+                reason: error.to_string(),
+            })?;
         if let Some(item) = timeline
             .items
             .into_iter()
@@ -661,8 +673,11 @@ pub(crate) fn attach_scene_image_phase<R: ConversationRepository + ?Sized>(
                 message_id,
                 target,
                 operation: OperationToken {
-                    key: lettuce_jobs::IdempotencyKey::new(format!("scene-image-{key}"))
-                        .map_err(|_| SceneImageError::Storage)?,
+                    key: lettuce_jobs::IdempotencyKey::new(format!("scene-image-{key}")).map_err(
+                        |error| SceneImageError::Storage {
+                            reason: error.to_string(),
+                        },
+                    )?,
                     request_digest: ContentHash::parse(
                         blake3::hash(
                             format!("{}:{}:{asset}", target.kind(), target.id()).as_bytes(),
@@ -670,7 +685,9 @@ pub(crate) fn attach_scene_image_phase<R: ConversationRepository + ?Sized>(
                         .to_hex()
                         .to_string(),
                     )
-                    .map_err(|_| SceneImageError::Storage)?,
+                    .map_err(|error| SceneImageError::Storage {
+                        reason: error.to_string(),
+                    })?,
                 },
                 asset_id: asset,
                 role: MediaAssetRole::Attachment,
@@ -682,7 +699,9 @@ pub(crate) fn attach_scene_image_phase<R: ConversationRepository + ?Sized>(
             | lettuce_conversations::ConversationRepositoryError::NotFound => {
                 SceneImageError::MessageUnavailable
             }
-            _ => SceneImageError::Storage,
+            error => SceneImageError::Storage {
+                reason: error.to_string(),
+            },
         })
 }
 

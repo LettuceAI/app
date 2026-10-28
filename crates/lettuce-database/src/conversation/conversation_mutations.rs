@@ -788,7 +788,9 @@ fn candidate_deltas(
             state: match state.as_str() {
                 "active" => AssetReferenceState::Active,
                 "historical" => AssetReferenceState::Historical,
-                _ => return Err(ConversationRepositoryError::Storage),
+                _ => return Err(ConversationRepositoryError::Storage {
+                    reason: "candidate deltas: a stored value is not recognised".to_owned(),
+                }),
             },
         });
     }
@@ -921,7 +923,9 @@ fn next_candidate_ordinal(
             |row| row.get(0),
         )
         .map_err(slice::db)?;
-    u16::try_from(next).map_err(|_| ConversationRepositoryError::Storage)
+    u16::try_from(next).map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })
 }
 
 fn insert_candidate(
@@ -970,7 +974,9 @@ fn insert_candidate(
                 params![
                     conversation_id.to_string(),
                     identity.candidate_id.to_string(),
-                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    i64::try_from(part_ordinal).map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     asset_id.to_string(),
                     conversation_creator::media_role_name(*role),
                     now.get(),
@@ -1099,7 +1105,9 @@ fn recovery_value(
         .attempts
         .last()
         .cloned()
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "recovery value: a required value is missing".to_owned(),
+        })?;
     Ok(GenerationRecovery { turn, attempt })
 }
 
@@ -1446,7 +1454,7 @@ fn take_participant_overrides(
         next.revision = current
             .revision
             .next()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?;
     }
     next.validate_against_kind(&conversation.kind)
         .map_err(ConversationRepositoryError::Invalid)?;
@@ -1578,7 +1586,9 @@ fn write_edit(
                 params![
                     context.conversation_id.to_string(),
                     revision_id.to_string(),
-                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    i64::try_from(part_ordinal).map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     asset_id.to_string(),
                     conversation_creator::media_role_name(*role),
                     context.now.get(),
@@ -1765,7 +1775,9 @@ fn write_candidate_media(
                 params![
                     context.conversation_id.to_string(),
                     revision_id.to_string(),
-                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    i64::try_from(part_ordinal).map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     asset_id.to_string(),
                     conversation_creator::media_role_name(*role),
                     context.now.get(),
@@ -1930,7 +1942,9 @@ fn conversation_kind(
             |row| row.get(0),
         )
         .map_err(slice::db)?;
-    slice::decode(&kind_json).map_err(|_| ConversationRepositoryError::Storage)
+    slice::decode(&kind_json).map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })
 }
 
 /// Turns a one-to-one conversation's scene setting off when its scene
@@ -2237,7 +2251,9 @@ fn begin_generation(
         .attempts
         .first()
         .cloned()
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "begin generation: a required value is missing".to_owned(),
+        })?;
     Ok(BeginGeneration {
         conversation,
         turn,
@@ -2250,7 +2266,9 @@ fn replayed_turn(
 ) -> Result<GenerationTurnId, ConversationRepositoryError> {
     match operation.result {
         OperationResultRef::Turn(turn_id) => Ok(turn_id),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "replayed turn: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -2480,7 +2498,9 @@ fn insert_user_message(
                 params![
                     command.conversation_id.to_string(),
                     revision_id.to_string(),
-                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    i64::try_from(part_ordinal).map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     asset_id.to_string(),
                     conversation_creator::media_role_name(*role),
                     now.get(),
@@ -2626,7 +2646,7 @@ impl Database {
     ) -> Result<ConversationId, ConversationRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?;
         let mut statement = connection
             .prepare("SELECT conversation_id FROM conversation_turns WHERE id = ?1 LIMIT 2")
             .map_err(slice::db)?;
@@ -2640,7 +2660,9 @@ impl Database {
         drop(statement);
         drop(connection);
         if owners.len() > 1 {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "conversation for turn: stored data failed a consistency check".to_owned(),
+            });
         }
         slice::parse_id(owners.pop().ok_or(ConversationRepositoryError::NotFound)?)
     }
@@ -2996,7 +3018,7 @@ fn tombstone_staged(
         conversation: conversation_value(transaction, context.conversation_id)?,
         message: load_message(transaction, context.conversation_id, command.message_id)?,
         descendant_count: u32::try_from(descendants.len())
-            .map_err(|_| ConversationRepositoryError::Storage)?,
+            .map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?,
         asset_reference_deltas: asset_reference_deltas.clone(),
         forked_branch: forked_branch.clone(),
     };
@@ -3065,7 +3087,9 @@ fn tombstone_replayed(
                 ..
             } => {
                 descendant_count = u32::try_from(affected_message_ids.len())
-                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?;
             }
             ConversationOutboxEvent::BranchForked { branch_id, .. } => {
                 forked_branch = Some(load_branch(
@@ -3147,7 +3171,9 @@ fn branch_around_message(
     }
     let parent_id = state
         .parent_message_id
-        .ok_or(ConversationRepositoryError::Unsupported)?;
+        .ok_or(ConversationRepositoryError::Unsupported {
+            reason: "branch around message: a required value is missing",
+        })?;
     let parent = message_state(transaction, context.conversation_id, parent_id)?;
     let active_branch_id =
         conversation_value(transaction, context.conversation_id)?.active_branch_id;
@@ -3245,7 +3271,9 @@ fn branch_around_message(
                         context.conversation_id.to_string(),
                         revision_id.to_string(),
                         i64::try_from(part_ordinal)
-                            .map_err(|_| ConversationRepositoryError::Storage)?,
+                            .map_err(|error| ConversationRepositoryError::Storage {
+                                reason: error.to_string(),
+                            })?,
                         asset_id.to_string(),
                         conversation_creator::media_role_name(*role),
                         context.now.get(),
@@ -3359,7 +3387,9 @@ fn delete_message_with(
                     conversation: conversation_value(transaction, command.conversation_id)?,
                 }))
             }
-            _ => Err(ConversationRepositoryError::Storage),
+            _ => Err(ConversationRepositoryError::Storage {
+                reason: "delete message with: stored data failed a consistency check".to_owned(),
+            }),
         },
     )
 }
@@ -3748,7 +3778,7 @@ impl ConversationRepository for Database {
     ) -> Result<Option<u64>, ConversationRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?;
         let sequence: Option<Option<i64>> = connection
             .query_row(
                 "SELECT MAX(checkpoint.sequence) FROM generation_attempts AS attempt LEFT JOIN generation_checkpoints AS checkpoint ON checkpoint.conversation_id = attempt.conversation_id AND checkpoint.turn_id = attempt.turn_id AND checkpoint.attempt_id = attempt.id WHERE attempt.turn_id = ?1 AND attempt.id = ?2 GROUP BY attempt.conversation_id, attempt.turn_id, attempt.id",
@@ -3761,7 +3791,7 @@ impl ConversationRepository for Database {
             .ok_or(ConversationRepositoryError::NotFound)?
             .map(u64::try_from)
             .transpose()
-            .map_err(|_| ConversationRepositoryError::Storage)
+            .map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })
     }
 
     fn append_event(
@@ -3827,7 +3857,9 @@ impl ConversationRepository for Database {
                     _ => None,
                 };
                 let sequence = i64::try_from(event.sequence)
-                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?;
                 if sequence < 1 {
                     return Err(invalid("checkpoint.sequence"));
                 }
@@ -4061,7 +4093,9 @@ impl ConversationRepository for Database {
                         .as_ref()
                         .map(|prompt| i64::try_from(prompt.revision.get()))
                         .transpose()
-                        .map_err(|_| ConversationRepositoryError::Storage)?;
+                        .map_err(|error| ConversationRepositoryError::Storage {
+                            reason: error.to_string(),
+                        })?;
                     let prompt_entries = command
                         .attributions
                         .prompt
@@ -4116,9 +4150,13 @@ impl ConversationRepository for Database {
                                     command.turn_id.to_string(),
                                     lorebook.lorebook_id.to_string(),
                                     i64::try_from(lorebook.revision.get())
-                                        .map_err(|_| ConversationRepositoryError::Storage)?,
+                                        .map_err(|error| ConversationRepositoryError::Storage {
+                                            reason: error.to_string(),
+                                        })?,
                                     i64::try_from(ordinal)
-                                        .map_err(|_| ConversationRepositoryError::Storage)?,
+                                        .map_err(|error| ConversationRepositoryError::Storage {
+                                            reason: error.to_string(),
+                                        })?,
                                     slice::encode(&lorebook.activated_entry_ids)?,
                                     lorebook.name,
                                 ],
@@ -4336,7 +4374,9 @@ impl ConversationRepository for Database {
                             parent_message_id, ..
                         } => parent_message_id,
                         GenerationTarget::ExistingCandidate { .. } => {
-                            return Err(ConversationRepositoryError::Storage);
+                            return Err(ConversationRepositoryError::Storage {
+                                reason: "finalize generation: stored data failed a consistency check".to_owned(),
+                            });
                         }
                     };
                     let advanced = transaction
@@ -4474,7 +4514,9 @@ impl ConversationRepository for Database {
             },
             |transaction, operation| {
                 let OperationResultRef::Candidate(candidate_id) = operation.result else {
-                    return Err(ConversationRepositoryError::Storage);
+                    return Err(ConversationRepositoryError::Storage {
+                        reason: "finalize generation: stored data failed a consistency check".to_owned(),
+                    });
                 };
                 let deltas = recorded_deltas(transaction, conversation_id, operation)?;
                 let value = finalization_value(
@@ -4493,7 +4535,9 @@ impl ConversationRepository for Database {
                     .attempts
                     .iter()
                     .find(|attempt| attempt.id == value.candidate.attempt_id)
-                    .ok_or(ConversationRepositoryError::Storage)?;
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "finalize generation: a required value is missing".to_owned(),
+                    })?;
                 if settled.usage_event_id != Some(usage_event_id) {
                     return Err(ConversationRepositoryError::Conflict);
                 }
@@ -4929,7 +4973,9 @@ impl ConversationRepository for Database {
                     .attempts
                     .last()
                     .cloned()
-                    .ok_or(ConversationRepositoryError::Storage)?;
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "recover generation: a required value is missing".to_owned(),
+                    })?;
                 if previous.id != attempt_id
                     || previous.status != GenerationAttemptStatus::Interrupted
                 {
@@ -4938,7 +4984,9 @@ impl ConversationRepository for Database {
                 let ordinal = previous
                     .ordinal
                     .checked_add(1)
-                    .ok_or(ConversationRepositoryError::Storage)?;
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "recover generation: a required value is missing".to_owned(),
+                    })?;
                 insert_attempt(
                     transaction,
                     context.conversation_id,
@@ -5341,7 +5389,9 @@ impl ConversationRepository for Database {
             },
             |transaction, operation| {
                 let OperationResultRef::Branch(branch_id) = operation.result else {
-                    return Err(ConversationRepositoryError::Storage);
+                    return Err(ConversationRepositoryError::Storage {
+                        reason: "fork branch: stored data failed a consistency check".to_owned(),
+                    });
                 };
                 let branch = load_branch(transaction, command.conversation_id, branch_id)?;
                 if branch.parent_branch_id != Some(command.source_branch_id) {
@@ -5506,7 +5556,9 @@ impl ConversationRepository for Database {
                 )
                 .map_err(|error| match error {
                     crate::purge::PurgeError::Busy => ConversationRepositoryError::Busy,
-                    _ => ConversationRepositoryError::Storage,
+                    _ => ConversationRepositoryError::Storage {
+                        reason: "delete branch: a stored value is not recognised".to_owned(),
+                    },
                 })?;
                 let messages = {
                     let mut statement = transaction.prepare("SELECT id FROM conversation_messages WHERE conversation_id = ?1 AND branch_id = ?2 AND visibility <> 'tombstoned' ORDER BY timeline_ordinal").map_err(slice::db)?;
@@ -5528,7 +5580,9 @@ impl ConversationRepository for Database {
                 for id in messages {
                     let message_id = id
                         .parse()
-                        .map_err(|_| ConversationRepositoryError::Storage)?;
+                        .map_err(|error| ConversationRepositoryError::Storage {
+                            reason: format!("{error}"),
+                        })?;
                     if conversation_query::any_on_other_branches(
                         transaction,
                         context.conversation_id,
@@ -5741,7 +5795,9 @@ impl ConversationRepository for Database {
                     transaction,
                     context.conversation_id,
                     Revision::new(
-                        u64::try_from(current).map_err(|_| ConversationRepositoryError::Storage)?,
+                        u64::try_from(current).map_err(|error| ConversationRepositoryError::Storage {
+                            reason: error.to_string(),
+                        })?,
                     ),
                 )?;
                 kernel::require_writable(&conversation)?;
@@ -6237,7 +6293,9 @@ impl ConversationRepository for Database {
                             )?;
                         }
                         let ordinal = i64::try_from(current.participants.len())
-                            .map_err(|_| ConversationRepositoryError::Storage)?;
+                            .map_err(|error| ConversationRepositoryError::Storage {
+                                reason: error.to_string(),
+                            })?;
                         transaction
                             .execute(
                                 "INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, member_snapshot_json, revision, created_at, updated_at) VALUES (?1, ?2, 'character', ?3, 'character', ?4, 1, ?5, ?6, NULL, ?7, ?8, 1, ?9, ?9)",
@@ -6642,7 +6700,7 @@ mod tests {
         database.connection().expect("connection").execute_batch(
             "CREATE TEMP TRIGGER fail_group_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'fault'); END;",
         ).expect("fault");
-        assert_eq!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Storage));
+        assert!(matches!(database.purge_library_operation(crate::LibraryKind::Group, &group.to_string(), Revision::INITIAL, "delete", "digest", TimestampMillis::new(20)), Err(crate::PurgeError::Storage { .. })));
         assert!(ConversationReader::get(database.as_ref(), fixture.conversation_id).is_ok());
         assert!(lettuce_characters::GroupRepository::get(database.as_ref(), group).expect("group").is_some());
         assert!(database.lookup_api_operation("group_delete", "delete").expect("receipt").is_none());
@@ -7391,9 +7449,11 @@ mod tests {
             fixture.database.as_ref(),
             &command,
             TimestampMillis::new(20),
-            |_, _, _| Err(ConversationRepositoryError::Storage),
+            |_, _, _| Err(ConversationRepositoryError::Storage {
+                reason: "injected failure".to_owned(),
+            }),
         );
-        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+        assert!(matches!(result, Err(ConversationRepositoryError::Storage { .. })));
         assert_eq!(conversation_revision(&fixture), Revision::INITIAL);
 
         let connection = fixture.database.connection().expect("connection");
@@ -9913,9 +9973,11 @@ mod tests {
             fixture.database.as_ref(),
             &send_command(&fixture, "send-archived-fails", "cd", text("hello")),
             TimestampMillis::new(20),
-            |_, _, _| Err(ConversationRepositoryError::Storage),
+            |_, _, _| Err(ConversationRepositoryError::Storage {
+                reason: "injected failure".to_owned(),
+            }),
         );
-        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+        assert!(matches!(result, Err(ConversationRepositoryError::Storage { .. })));
         assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Archived);
         assert_eq!(conversation_revision(&fixture), archived_revision);
         let lifecycle_events = |lifecycle: &str| -> i64 {
@@ -11946,8 +12008,7 @@ mod tests {
             )
             .expect("failure trigger");
         let usage_event_id = UsageEventId::new();
-        assert_eq!(
-            fixture.database.finalize_generation(
+        assert!(matches!(fixture.database.finalize_generation(
                 turn_id,
                 attempt_id,
                 conversation_revision(&fixture),
@@ -11956,9 +12017,7 @@ mod tests {
                 finalization_draft(text("generated"), 0),
                 usage_event_id,
                 TimestampMillis::new(30),
-            ),
-            Err(ConversationRepositoryError::Storage)
-        );
+            ), Err(ConversationRepositoryError::Storage { .. })));
         for table in [
             "conversation_message_candidates",
             "conversation_usage_refs",
@@ -14231,7 +14290,9 @@ mod tests {
             target_branch_id: target.branch_id,
             through_message_id: None,
             kind: lettuce_conversations::SelectedConversationCopyKind::Duplicate,
-        }).map_err(|_| crate::ApiOperationError::Storage)).expect("copied source scene");
+        }).map_err(|error| { tracing::warn!(%error, "copied scene provenance survives source purge backup and fresh peer sync failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("copied source scene");
         assert_eq!(copied.len(), 1);
         {
             let connection = source.database.connection().expect("connection");
@@ -14246,7 +14307,9 @@ mod tests {
             target_branch_id: next.branch_id,
             through_message_id: None,
             kind: lettuce_conversations::SelectedConversationCopyKind::Duplicate,
-        }).map_err(|_| crate::ApiOperationError::Storage)).expect("recopied scene");
+        }).map_err(|error| { tracing::warn!(%error, "copied scene provenance survives source purge backup and fresh peer sync failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("recopied scene");
         assert_eq!(recopied.len(), 1);
         let mut graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(source.database.as_ref()).expect("graph");
         graph.conversation_history.canonicalize_and_validate(&std::collections::BTreeSet::new()).expect("valid copied scene");
@@ -14309,7 +14372,9 @@ mod tests {
             )
             .expect("select first");
         let target = direct_fixture_on(source.database.clone());
-        let copied: Vec<MessageId> = source.database.commit_api_operation("orphan-copy","orphan-copy","ab",TimestampMillis::new(170),|scope|scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(assistant),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|_|crate::ApiOperationError::Storage)).expect("copy selected orphan");
+        let copied: Vec<MessageId> = source.database.commit_api_operation("orphan-copy","orphan-copy","ab",TimestampMillis::new(170),|scope|scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(assistant),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|error| { tracing::warn!(%error, "direct character copy drops only orphan alternatives after excluding scene failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("copy selected orphan");
         assert_eq!(copied.len(), 1);
         let timeline = ConversationReader::timeline_page(
             source.database.as_ref(),
@@ -14378,7 +14443,9 @@ mod tests {
             },
         )
         .expect("source timeline");
-        let copied: Vec<MessageId> = source.database.commit_api_operation("copy-variants","copy-variants","ab",TimestampMillis::new(300),|scope| scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(messages[3]),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|_|crate::ApiOperationError::Storage)).expect("copy");
+        let copied: Vec<MessageId> = source.database.commit_api_operation("copy-variants","copy-variants","ab",TimestampMillis::new(300),|scope| scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(messages[3]),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|error| { tracing::warn!(%error, "direct character copy preserves variants and selected render failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("copy");
         let page = ConversationReader::timeline_page(
             source.database.as_ref(),
             target.conversation_id,
@@ -14533,7 +14600,9 @@ mod tests {
                                     lettuce_conversations::SelectedConversationCopyKind::Duplicate,
                             },
                         )
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "selected content copy uses new ids and drops candidates usage and reasoning failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("copy content");
@@ -14625,11 +14694,15 @@ mod tests {
                 |scope| {
                     scope
                         .copy_selected_conversation_content(&command)
-                        .map_err(|_| crate::ApiOperationError::Storage)?;
-                    Err(crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "selected content copy rolls back replays and retains shared media after source purge failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })?;
+                    Err(crate::ApiOperationError::Storage {
+                        reason: "injected failure",
+                    })
                 },
             );
-        assert_eq!(failed, Err(crate::ApiOperationError::Storage));
+        assert!(matches!(failed, Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             scalar::<i64>(
                 source.database.as_ref(),
@@ -14656,7 +14729,9 @@ mod tests {
                 |scope| {
                     scope
                         .copy_selected_conversation_content(&command)
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "selected content copy rolls back replays and retains shared media after source purge failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("copy");
@@ -14772,7 +14847,9 @@ mod tests {
                         scope
                             .duplicate_conversation(&command, TimestampMillis::new(40))
                             .map(|value| value.value.conversation.id)
-                            .map_err(|_| crate::ApiOperationError::Storage)
+                            .map_err(|error| { tracing::warn!(%error, "duplicate construction copies direct and group settings without launch messages failed"); crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            } })
                     },
                 )
                 .expect("duplicate");
@@ -14888,11 +14965,15 @@ mod tests {
                     |scope| {
                         scope
                             .duplicate_conversation(&command, TimestampMillis::new(40))
-                            .map_err(|_| crate::ApiOperationError::Storage)?;
-                        Err(crate::ApiOperationError::Storage)
+                            .map_err(|error| { tracing::warn!(%error, "duplicate construction with messages is atomic replayable and backup valid failed"); crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            } })?;
+                        Err(crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        })
                     },
                 );
-            assert_eq!(failed, Err(crate::ApiOperationError::Storage));
+            assert!(matches!(failed, Err(crate::ApiOperationError::Storage { .. })));
             assert_eq!(
                 scalar::<i64>(
                     source.database.as_ref(),
@@ -14920,7 +15001,9 @@ mod tests {
                         scope
                             .duplicate_conversation(&command, TimestampMillis::new(40))
                             .map(|value| value.value.conversation.id)
-                            .map_err(|_| crate::ApiOperationError::Storage)
+                            .map_err(|error| { tracing::warn!(%error, "duplicate construction with messages is atomic replayable and backup valid failed"); crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            } })
                     },
                 )
                 .expect("duplicate");
@@ -15038,7 +15121,9 @@ mod tests {
                     scope
                         .duplicate_conversation(&command, TimestampMillis::new(40))
                         .map(|value| value.value.conversation.id)
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "duplicate construction keeps added members and current participant overrides failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("duplicate");

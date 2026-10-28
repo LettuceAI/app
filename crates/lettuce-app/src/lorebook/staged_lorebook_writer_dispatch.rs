@@ -49,8 +49,8 @@ pub enum StagedLorebookWriterDispatchError {
     Jobs(#[from] StoreError),
     #[error("staged lorebook writer run operation failed: {0}")]
     Run(#[from] StagedLorebookWriterRunRepositoryError),
-    #[error("staged lorebook writer claimed work is inconsistent")]
-    InvalidWork,
+    #[error("staged lorebook writer claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -85,12 +85,16 @@ impl<
         allowed: &ResourceAvailability,
     ) -> Result<Option<StagedLorebookWriterClaimedWork>, StagedLorebookWriterDispatchError> {
         let run = self.runs.load_staged_lorebook_writer_run(request_id)?;
-        let job = self
-            .jobs
-            .get(run.job_id)?
-            .ok_or(StagedLorebookWriterDispatchError::InvalidWork)?;
+        let job =
+            self.jobs
+                .get(run.job_id)?
+                .ok_or(StagedLorebookWriterDispatchError::InvalidWork {
+                    reason: "job of the run is missing from the store",
+                })?;
         if job.kind != JobKind::CreationRun {
-            return Err(StagedLorebookWriterDispatchError::InvalidWork);
+            return Err(StagedLorebookWriterDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -100,7 +104,9 @@ impl<
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(request_id) {
-            return Err(StagedLorebookWriterDispatchError::InvalidWork);
+            return Err(StagedLorebookWriterDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(run.job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -146,7 +152,9 @@ impl<
                 .iter()
                 .any(|writer| !requests.insert(writer.run.request_id))
         {
-            return vec![Err(StagedLorebookWriterDispatchError::InvalidWork)];
+            return vec![Err(StagedLorebookWriterDispatchError::InvalidWork {
+                reason: "batch is over the draft size or repeats a request",
+            })];
         }
         let executor = crate::StagedLorebookWriterExecutionCoordinator::new(
             self.runs,
@@ -164,7 +172,9 @@ impl<
                     || run.project_id != batch.project.project.id
                     || run.refinement.is_some()
                 {
-                    return Err(StagedLorebookWriterDispatchError::InvalidWork);
+                    return Err(StagedLorebookWriterDispatchError::InvalidWork {
+                        reason: "writer run belongs to another project or is a refinement",
+                    });
                 }
                 let Some(work) =
                     self.claim(writer.run.request_id, worker_id, now, lease_for, allowed)?
@@ -199,7 +209,9 @@ impl<
             || work.job.state != JobState::Running
             || work.claim.input_ref != OutcomeRef::Request(work.run.request_id)
         {
-            return Err(StagedLorebookWriterDispatchError::InvalidWork);
+            return Err(StagedLorebookWriterDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         let cancelled = self
@@ -273,6 +285,7 @@ impl<
                 Ok(StagedLorebookWriterSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "staged lorebook writer job failed");
                 if work.run.refinement.is_none() {
                     match self.projects.fail_staged_lorebook_draft(
                         work.run.project_request_id,
@@ -301,12 +314,12 @@ fn retryable(error: &StagedLorebookWriterExecutionError) -> bool {
         StagedLorebookWriterExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        StagedLorebookWriterExecutionError::ReplayCleanup
+        StagedLorebookWriterExecutionError::ReplayCleanup { .. }
         | StagedLorebookWriterExecutionError::Run(
-            StagedLorebookWriterRunRepositoryError::Failure,
+            StagedLorebookWriterRunRepositoryError::Failure { .. },
         )
         | StagedLorebookWriterExecutionError::Project(
-            lettuce_creation::StagedLorebookRepositoryError::Failure,
+            lettuce_creation::StagedLorebookRepositoryError::Failure { .. },
         ) => true,
         _ => false,
     }
@@ -314,19 +327,19 @@ fn retryable(error: &StagedLorebookWriterExecutionError) -> bool {
 
 fn job_error(error: &StagedLorebookWriterExecutionError) -> JobError {
     let (code, message) = match error {
-        StagedLorebookWriterExecutionError::InvalidOwnership
-        | StagedLorebookWriterExecutionError::InvalidPrompt
-        | StagedLorebookWriterExecutionError::ContextTooLarge => (
+        StagedLorebookWriterExecutionError::InvalidOwnership { .. }
+        | StagedLorebookWriterExecutionError::InvalidPrompt { .. }
+        | StagedLorebookWriterExecutionError::ContextTooLarge { .. } => (
             JobErrorCode::InvalidInput,
             "staged-lorebook-writer-invalid-input",
         ),
         StagedLorebookWriterExecutionError::Inference(_)
-        | StagedLorebookWriterExecutionError::InvalidResponse => (
+        | StagedLorebookWriterExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "staged-lorebook-writer-provider-rejected",
         ),
         StagedLorebookWriterExecutionError::Prompt(_)
-        | StagedLorebookWriterExecutionError::ReplayCleanup
+        | StagedLorebookWriterExecutionError::ReplayCleanup { .. }
         | StagedLorebookWriterExecutionError::Run(_)
         | StagedLorebookWriterExecutionError::Project(_) => (
             JobErrorCode::StorageFailure,
@@ -351,7 +364,9 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(!retryable(
-            &StagedLorebookWriterExecutionError::InvalidResponse
+            &StagedLorebookWriterExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
         ));
     }
 }

@@ -49,7 +49,9 @@ impl InferenceRuntime {
         let mut streams = self
             .streams
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?;
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "stream registry lock is poisoned",
+            })?;
         if streams.contains_key(&sink_id) {
             return Err(InferenceRuntimeError::AlreadyRegistered);
         }
@@ -67,7 +69,9 @@ impl InferenceRuntime {
     pub fn unregister_stream(&self, sink_id: RequestId) -> Result<(), InferenceRuntimeError> {
         self.streams
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "stream registry lock is poisoned",
+            })?
             .remove(&sink_id);
         Ok(())
     }
@@ -77,10 +81,12 @@ impl InferenceRuntime {
         job_id: JobId,
         token: CancellationToken,
     ) -> Result<(), InferenceRuntimeError> {
-        let mut cancellations = self
-            .cancellations
-            .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?;
+        let mut cancellations =
+            self.cancellations
+                .lock()
+                .map_err(|_| InferenceRuntimeError::Unavailable {
+                    reason: "cancellation registry lock is poisoned",
+                })?;
         if cancellations.contains_key(&job_id) {
             return Err(InferenceRuntimeError::AlreadyRegistered);
         }
@@ -91,7 +97,9 @@ impl InferenceRuntime {
     pub fn unregister_cancellation(&self, job_id: JobId) -> Result<(), InferenceRuntimeError> {
         self.cancellations
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "cancellation registry lock is poisoned",
+            })?
             .remove(&job_id);
         Ok(())
     }
@@ -101,7 +109,9 @@ impl InferenceRuntime {
         let tokens = self
             .cancellations
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "cancellation registry lock is poisoned",
+            })?
             .values()
             .cloned()
             .collect::<Vec<_>>();
@@ -115,7 +125,9 @@ impl InferenceRuntime {
         let token = self
             .cancellations
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "cancellation registry lock is poisoned",
+            })?
             .get(&job_id)
             .cloned();
         let Some(token) = token else {
@@ -136,14 +148,21 @@ impl InferenceRuntimePort for InferenceRuntime {
         let stream = self
             .streams
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "stream registry lock is poisoned",
+            })?
             .get(&sink_id)
             .cloned()
             .ok_or(InferenceRuntimeError::NotRegistered)?;
         let mut stream = stream.lock().await;
         event
             .validate_after(stream.previous.as_ref())
-            .map_err(|_| InferenceRuntimeError::InvalidEvent)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "a stream event does not follow the previous event");
+                InferenceRuntimeError::InvalidEvent {
+                    reason: "event does not follow the previous event of the stream",
+                }
+            })?;
         let previous = event.clone();
         stream
             .sender
@@ -166,7 +185,9 @@ impl InferenceRuntimePort for InferenceRuntime {
         let token = self
             .cancellations
             .lock()
-            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .map_err(|_| InferenceRuntimeError::Unavailable {
+                reason: "cancellation registry lock is poisoned",
+            })?
             .get(&job_id)
             .cloned()
             .ok_or(InferenceRuntimeError::NotRegistered)?;
@@ -200,16 +221,16 @@ impl InferenceStreamReceiver {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum InferenceRuntimeError {
-    #[error("runtime registry is unavailable")]
-    Unavailable,
+    #[error("runtime registry is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
     #[error("runtime identity is already registered")]
     AlreadyRegistered,
     #[error("stream sink is not registered")]
     NotRegistered,
     #[error("stream consumer is closed")]
     ConsumerClosed,
-    #[error("stream event is invalid")]
-    InvalidEvent,
+    #[error("stream event is invalid: {reason}")]
+    InvalidEvent { reason: &'static str },
     #[error("stream text was blocked by Pure Mode")]
     ContentBlocked,
 }
@@ -263,10 +284,10 @@ mod tests {
         let expected = event(turn_id, attempt_id, 1);
         runtime.emit(sink_id, expected.clone()).await.expect("emit");
         assert_eq!(receiver.recv().await, Some(expected));
-        assert_eq!(
+        assert!(matches!(
             runtime.emit(sink_id, event(turn_id, attempt_id, 3)).await,
-            Err(InferenceRuntimeError::InvalidEvent)
-        );
+            Err(InferenceRuntimeError::InvalidEvent { .. })
+        ));
         drop(receiver);
         assert_eq!(
             runtime.emit(sink_id, event(turn_id, attempt_id, 2)).await,

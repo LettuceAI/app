@@ -18,8 +18,11 @@ use crate::{
 
 const JSON_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> DynamicMemorySuffixRewindError {
-    DynamicMemorySuffixRewindError::Storage
+fn storage(error: impl std::fmt::Debug) -> DynamicMemorySuffixRewindError {
+    tracing::warn!(?error, "dynamic memory rewind adapter storage step failed");
+    DynamicMemorySuffixRewindError::Storage {
+        reason: "dynamic memory rewind adapter: a storage step failed",
+    }
 }
 
 /// Writes a backed-up suffix rewind and the effects it invalidated.
@@ -76,15 +79,25 @@ fn memory_error(error: MemoryRepositoryError) -> DynamicMemorySuffixRewindError 
         MemoryRepositoryError::NotFound => DynamicMemorySuffixRewindError::NotFound,
         MemoryRepositoryError::AlreadyExists => DynamicMemorySuffixRewindError::Conflict,
         MemoryRepositoryError::Conflict => DynamicMemorySuffixRewindError::Conflict,
-        MemoryRepositoryError::Invalid(_) => DynamicMemorySuffixRewindError::Invalid,
-        MemoryRepositoryError::Failure(_) => DynamicMemorySuffixRewindError::Storage,
+        MemoryRepositoryError::Invalid(_) => DynamicMemorySuffixRewindError::Invalid {
+            reason: "memory error: a stored value is not recognised",
+        },
+        MemoryRepositoryError::Failure(_) => DynamicMemorySuffixRewindError::Storage {
+            reason: "memory error: a stored value is not recognised",
+        },
     }
 }
 
-fn parse_id<T: FromStr>(value: String) -> Result<T, DynamicMemorySuffixRewindError> {
-    value
-        .parse()
-        .map_err(|_| DynamicMemorySuffixRewindError::Storage)
+fn parse_id<T: FromStr>(value: String) -> Result<T, DynamicMemorySuffixRewindError>
+where
+    T::Err: std::fmt::Debug,
+{
+    value.parse().map_err(|error| {
+        tracing::warn!(?error, "parse id failed");
+        DynamicMemorySuffixRewindError::Storage {
+            reason: "parse id: a storage step failed",
+        }
+    })
 }
 
 fn request_digest(
@@ -197,9 +210,16 @@ pub(crate) fn prior_summary(
     let summary = prior_id
         .map(|run_id| {
             dynamic_memory_run_adapter::load_summary_checkpoint_in(transaction, run_id)
-                .map_err(|_| DynamicMemorySuffixRewindError::Storage)?
+                .map_err(|error| {
+                    tracing::warn!(%error, "prior summary failed");
+                    DynamicMemorySuffixRewindError::Storage {
+                        reason: "prior summary: a storage step failed",
+                    }
+                })?
                 .map(|checkpoint| checkpoint.summary)
-                .ok_or(DynamicMemorySuffixRewindError::Storage)
+                .ok_or(DynamicMemorySuffixRewindError::Storage {
+                    reason: "prior summary: a required value is missing",
+                })
         })
         .transpose()?;
     Ok((prior_id, summary))
@@ -354,8 +374,11 @@ impl PendingSuffixRewindRepository for Database {
                 },
             ));
         }
-        let payload = encode_versioned(pending, JSON_VERSION)
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let payload = encode_versioned(pending, JSON_VERSION).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?;
         conversation_mutations::tombstone_with(
             self,
             &pending.tombstone,
@@ -374,7 +397,9 @@ impl PendingSuffixRewindRepository for Database {
                             now.get(),
                         ],
                     )
-                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?;
                 Ok(())
             },
         )
@@ -517,7 +542,9 @@ impl DynamicMemorySuffixRewindRepository for Database {
                 .len()
                 != rewind.invalidated_effect_ids.len()
         {
-            return Err(DynamicMemorySuffixRewindError::Invalid);
+            return Err(DynamicMemorySuffixRewindError::Invalid {
+                reason: "rewind dynamic memory suffix: a value failed validation",
+            });
         }
         let digest = request_digest(&rewind)?;
         let mut connection = self.connection().map_err(storage)?;
@@ -538,7 +565,9 @@ impl DynamicMemorySuffixRewindRepository for Database {
             && rewind.invalidated_effect_ids.is_empty()
             && pending.is_none()
         {
-            return Err(DynamicMemorySuffixRewindError::Invalid);
+            return Err(DynamicMemorySuffixRewindError::Invalid {
+                reason: "rewind dynamic memory suffix: a value failed validation",
+            });
         }
         let branch: String = transaction
             .query_row(
@@ -624,11 +653,11 @@ impl DynamicMemorySuffixRewindRepository for Database {
                         lettuce_memory::DynamicMemoryRunRepositoryError::Conflict => {
                             DynamicMemorySuffixRewindError::Conflict
                         }
-                        lettuce_memory::DynamicMemoryRunRepositoryError::Invalid => {
-                            DynamicMemorySuffixRewindError::Invalid
+                        lettuce_memory::DynamicMemoryRunRepositoryError::Invalid { .. } => {
+                            DynamicMemorySuffixRewindError::Invalid { reason: "rewind dynamic memory suffix: a value failed validation" }
                         }
-                        lettuce_memory::DynamicMemoryRunRepositoryError::Storage => {
-                            DynamicMemorySuffixRewindError::Storage
+                        lettuce_memory::DynamicMemoryRunRepositoryError::Storage { .. } => {
+                            DynamicMemorySuffixRewindError::Storage { reason: "rewind dynamic memory suffix: stored data failed a consistency check" }
                         }
                     })?;
                 if run.conversation_id != rewind.conversation_id || run.space_id != space_id {
@@ -650,7 +679,12 @@ impl DynamicMemorySuffixRewindRepository for Database {
                             rewind.conversation_id,
                             run.branch_id,
                         )
-                        .map_err(|_| DynamicMemorySuffixRewindError::Storage)?
+                        .map_err(|error| {
+                            tracing::warn!(%error, "rewind dynamic memory suffix failed");
+                            DynamicMemorySuffixRewindError::Storage {
+                                reason: "rewind dynamic memory suffix: a storage step failed",
+                            }
+                        })?
                         .filter(|inherited| inherited.window_end <= run.summary_window.start)
                         .map(|mut inherited| {
                             inherited.space_id = space_id;
@@ -734,7 +768,9 @@ impl DynamicMemorySuffixRewindRepository for Database {
                     Some(rusqlite::ErrorCode::ConstraintViolation) => {
                         DynamicMemorySuffixRewindError::Conflict
                     }
-                    _ => DynamicMemorySuffixRewindError::Storage,
+                    _ => DynamicMemorySuffixRewindError::Storage {
+                        reason: "rewind dynamic memory suffix: a stored value is not recognised",
+                    },
                 })?;
         }
         transaction
@@ -743,8 +779,11 @@ impl DynamicMemorySuffixRewindRepository for Database {
                 params![rewind.conversation_id.to_string(),branch_id.to_string()],
             )
             .map_err(storage)?;
-        let receipt = load_receipt(&transaction, rewind.operation_id, Some(&digest))?
-            .ok_or(DynamicMemorySuffixRewindError::Storage)?;
+        let receipt = load_receipt(&transaction, rewind.operation_id, Some(&digest))?.ok_or(
+            DynamicMemorySuffixRewindError::Storage {
+                reason: "rewind dynamic memory suffix: a required value is missing",
+            },
+        )?;
         transaction.commit().map_err(storage)?;
         Ok(receipt)
     }

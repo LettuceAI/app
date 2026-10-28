@@ -37,7 +37,7 @@ pub enum OllamaHubError {
 
 fn request_failed(what: &str, error: lettuce_network::JsonClientError) -> OllamaHubError {
     match error {
-        lettuce_network::JsonClientError::Transport => {
+        lettuce_network::JsonClientError::Transport { .. } => {
             OllamaHubError::Unreachable(format!("{what}: {error}"))
         }
         error => OllamaHubError::Message(format!("{what}: {error}")),
@@ -425,7 +425,12 @@ mod tests {
             OllamaHubError::Server("Ollama returned 500 Internal Server Error: boom".to_owned())
         );
         assert!(matches!(
-            request_failed("x", lettuce_network::JsonClientError::Transport),
+            request_failed(
+                "x",
+                lettuce_network::JsonClientError::Transport {
+                    reason: "the test transport failed"
+                }
+            ),
             OllamaHubError::Unreachable(_)
         ));
     }

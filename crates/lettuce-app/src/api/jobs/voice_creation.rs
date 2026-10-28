@@ -232,9 +232,14 @@ impl ClaimedJob for Work {
                 )
                 .await
             }
-            Err(_) => Err(crate::TtsVoiceDesignError::Runtime(
-                VoiceDesignRuntimeError::Unavailable,
-            )),
+            Err(error) => {
+                tracing::warn!(?error, "voice design runtime could not be resolved");
+                Err(crate::TtsVoiceDesignError::Runtime(
+                    VoiceDesignRuntimeError::Unavailable {
+                        reason: "voice design runtime could not be resolved",
+                    },
+                ))
+            }
         };
         let id = self.claim.job_id;
         context
@@ -276,7 +281,7 @@ impl ClaimedJob for Work {
                             ),
                             crate::TtsVoiceDesignError::Runtime(
                                 VoiceDesignRuntimeError::Cancelled
-                                | VoiceDesignRuntimeError::OutcomeUnknown,
+                                | VoiceDesignRuntimeError::OutcomeUnknown { .. },
                             ) => (
                                 JobErrorCode::WorkerFailed,
                                 UNKNOWN,

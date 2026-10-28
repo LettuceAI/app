@@ -148,7 +148,9 @@ impl ModelInput {
 pub(crate) fn prepare_tokenizer(tokenizer: &mut Tokenizer) -> Result<(), EmbeddingError> {
     tokenizer
         .with_truncation(None)
-        .map_err(|_| EmbeddingError::TokenizerLoad)?;
+        .map_err(|error| EmbeddingError::TokenizerLoad {
+            reason: error.to_string(),
+        })?;
     tokenizer.with_padding(None);
     Ok(())
 }
@@ -160,29 +162,40 @@ pub(crate) fn encode_bounded(
     text: &str,
     max_sequence_length: usize,
 ) -> Result<Encoding, EmbeddingError> {
-    let mut encoding = tokenizer
-        .encode(text, false)
-        .map_err(|_| EmbeddingError::Tokenization)?;
+    let mut encoding =
+        tokenizer
+            .encode(text, false)
+            .map_err(|error| EmbeddingError::Tokenization {
+                reason: error.to_string(),
+            })?;
     let special = tokenizer
         .get_post_processor()
         .map_or(0, |processor| processor.added_tokens(false));
     let budget = max_sequence_length
         .checked_sub(special)
         .filter(|budget| *budget > 0)
-        .ok_or(EmbeddingError::Tokenization)?;
+        .ok_or_else(|| EmbeddingError::Tokenization {
+            reason: "sequence budget is zero after reserving the special tokens".to_owned(),
+        })?;
     if encoding.len() > budget {
         encoding.truncate(budget, 0, TruncationDirection::Right);
     }
     tokenizer
         .post_process(encoding, None, true)
-        .map_err(|_| EmbeddingError::Tokenization)
+        .map_err(|error| EmbeddingError::Tokenization {
+            reason: error.to_string(),
+        })
 }
 
 pub(crate) fn count_tokens(tokenizer: &Tokenizer, text: &str) -> Result<u32, EmbeddingError> {
     let encoding = tokenizer
         .encode(text, false)
-        .map_err(|_| EmbeddingError::Tokenization)?;
-    u32::try_from(encoding.len()).map_err(|_| EmbeddingError::InputTooLarge)
+        .map_err(|error| EmbeddingError::Tokenization {
+            reason: error.to_string(),
+        })?;
+    u32::try_from(encoding.len()).map_err(|error| EmbeddingError::InputTooLarge {
+        reason: error.to_string(),
+    })
 }
 
 pub(crate) fn model_input(
@@ -193,7 +206,9 @@ pub(crate) fn model_input(
     let encoding = encode_bounded(tokenizer, text, max_sequence_length)?;
     let sequence_length = encoding.len().min(max_sequence_length);
     if sequence_length == 0 {
-        return Err(EmbeddingError::Tokenization);
+        return Err(EmbeddingError::Tokenization {
+            reason: "text produced no tokens".to_owned(),
+        });
     }
     let widen = |values: &[u32]| {
         values[..sequence_length]
@@ -222,16 +237,27 @@ fn load_calibration(
     ) {
         (None, false) => Ok(SimilarityCalibration::RawCosine),
         (Some(path), true) => {
-            let file = std::fs::File::open(path).map_err(|_| EmbeddingError::InvalidCalibration)?;
+            let file =
+                std::fs::File::open(path).map_err(|error| EmbeddingError::InvalidCalibration {
+                    reason: error.to_string(),
+                })?;
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(
                 &mut std::io::Read::take(file, MAX_CALIBRATION_BYTES + 1),
                 &mut bytes,
             )
-            .map_err(|_| EmbeddingError::InvalidCalibration)?;
-            SimilarityCalibration::from_json(&bytes).map_err(|_| EmbeddingError::InvalidCalibration)
+            .map_err(|error| EmbeddingError::InvalidCalibration {
+                reason: error.to_string(),
+            })?;
+            SimilarityCalibration::from_json(&bytes).map_err(|error| {
+                EmbeddingError::InvalidCalibration {
+                    reason: error.to_string(),
+                }
+            })
         }
-        _ => Err(EmbeddingError::InvalidCalibration),
+        _ => Err(EmbeddingError::InvalidCalibration {
+            reason: "calibration file presence does not match the model family".to_owned(),
+        }),
     }
 }
 
@@ -252,27 +278,42 @@ impl OnnxEmbeddingRuntime {
         let calibration = load_calibration(&artifacts)?;
         initialize_onnx_runtime(runtime)?;
         let builder = Session::builder()
-            .map_err(|_| EmbeddingError::RuntimeUnavailable)?
+            .map_err(|error| EmbeddingError::RuntimeUnavailable {
+                reason: error.to_string(),
+            })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|_| EmbeddingError::RuntimeUnavailable)?;
+            .map_err(|error| EmbeddingError::RuntimeUnavailable {
+                reason: error.to_string(),
+            })?;
         let session = configure_execution_provider(builder, &artifacts.model_path)?
             .commit_from_file(&artifacts.model_path)
-            .map_err(|_| EmbeddingError::ModelLoad)?;
-        let mut tokenizer = Tokenizer::from_file(&artifacts.tokenizer_path)
-            .map_err(|_| EmbeddingError::TokenizerLoad)?;
+            .map_err(|error| EmbeddingError::ModelLoad {
+                reason: error.to_string(),
+            })?;
+        let mut tokenizer = Tokenizer::from_file(&artifacts.tokenizer_path).map_err(|error| {
+            EmbeddingError::TokenizerLoad {
+                reason: error.to_string(),
+            }
+        })?;
         prepare_tokenizer(&mut tokenizer)?;
         let expects_token_type_ids = session
             .inputs
             .iter()
             .any(|input| input.name.contains("token_type_ids"));
         // Force metadata access during load so malformed sessions fail before a job starts.
-        if session.outputs.is_empty()
-            || artifacts
-                .family
-                .output_name()
-                .is_some_and(|name| !session.outputs.iter().any(|output| output.name == name))
+        if session.outputs.is_empty() {
+            return Err(EmbeddingError::InvalidOutput {
+                reason: "model declares no outputs".to_owned(),
+            });
+        }
+        if artifacts
+            .family
+            .output_name()
+            .is_some_and(|name| !session.outputs.iter().any(|output| output.name == name))
         {
-            return Err(EmbeddingError::InvalidOutput);
+            return Err(EmbeddingError::InvalidOutput {
+                reason: "model lacks the expected output tensor".to_owned(),
+            });
         }
         let max_sequence_length =
             effective_max_sequence_length(artifacts.max_sequence_length, max_tokens);
@@ -322,7 +363,9 @@ impl OnnxEmbeddingRuntime {
         cancellation: &CancellationToken,
     ) -> Result<EmbeddingVector, EmbeddingError> {
         if request.text.len() > MAX_INPUT_BYTES {
-            return Err(EmbeddingError::InputTooLarge);
+            return Err(EmbeddingError::InputTooLarge {
+                reason: "request text exceeds the input size limit".to_owned(),
+            });
         }
         if cancellation.is_cancelled() {
             return Err(EmbeddingError::Cancelled);
@@ -333,13 +376,26 @@ impl OnnxEmbeddingRuntime {
             return Err(EmbeddingError::Cancelled);
         }
 
-        let input_ids = Value::from_array(([1, sequence_length], input.input_ids))
-            .map_err(|_| EmbeddingError::InvalidInputTensor)?;
+        let input_ids =
+            Value::from_array(([1, sequence_length], input.input_ids)).map_err(|error| {
+                EmbeddingError::InvalidInputTensor {
+                    reason: error.to_string(),
+                }
+            })?;
         let attention_mask = Value::from_array(([1, sequence_length], input.attention_mask))
-            .map_err(|_| EmbeddingError::InvalidInputTensor)?;
+            .map_err(|error| EmbeddingError::InvalidInputTensor {
+                reason: error.to_string(),
+            })?;
         let token_type_ids = Value::from_array(([1, sequence_length], input.token_type_ids))
-            .map_err(|_| EmbeddingError::InvalidInputTensor)?;
-        let run_options = Arc::new(RunOptions::new().map_err(|_| EmbeddingError::Inference)?);
+            .map_err(|error| EmbeddingError::InvalidInputTensor {
+                reason: error.to_string(),
+            })?;
+        let run_options =
+            Arc::new(
+                RunOptions::new().map_err(|error| EmbeddingError::Inference {
+                    reason: error.to_string(),
+                })?,
+            );
         let finished = Arc::new(AtomicBool::new(false));
         let canceller = spawn_canceller(
             Arc::clone(&run_options),
@@ -368,11 +424,13 @@ impl OnnxEmbeddingRuntime {
         if canceller.join().is_err() {
             return Err(EmbeddingError::CancellationMonitor);
         }
-        let outputs = result.map_err(|_| {
+        let outputs = result.map_err(|error| {
             if cancellation.is_cancelled() {
                 EmbeddingError::Cancelled
             } else {
-                EmbeddingError::Inference
+                EmbeddingError::Inference {
+                    reason: error.to_string(),
+                }
             }
         })?;
         if cancellation.is_cancelled() {
@@ -382,22 +440,38 @@ impl OnnxEmbeddingRuntime {
             Some(name) => outputs.get(name),
             None => (outputs.len() > 0).then(|| &outputs[0]),
         }
-        .ok_or(EmbeddingError::InvalidOutput)?;
-        let (_, values) = output
-            .try_extract_tensor::<f32>()
-            .map_err(|_| EmbeddingError::InvalidOutput)?;
+        .ok_or_else(|| EmbeddingError::InvalidOutput {
+            reason: "model has no usable output tensor".to_owned(),
+        })?;
+        let (_, values) =
+            output
+                .try_extract_tensor::<f32>()
+                .map_err(|error| EmbeddingError::InvalidOutput {
+                    reason: error.to_string(),
+                })?;
         let target = request.dimensions.get();
-        if target > self.artifacts.native_dimensions || values.len() < target {
-            return Err(EmbeddingError::InvalidOutput);
+        if target > self.artifacts.native_dimensions {
+            return Err(EmbeddingError::InvalidOutput {
+                reason: "requested dimensions exceed the model dimensions".to_owned(),
+            });
+        }
+        if values.len() < target {
+            return Err(EmbeddingError::InvalidOutput {
+                reason: "model output is shorter than the requested dimensions".to_owned(),
+            });
         }
         let mut values = values[..target].to_vec();
         if values.iter().any(|value| !value.is_finite()) {
-            return Err(EmbeddingError::InvalidOutput);
+            return Err(EmbeddingError::InvalidOutput {
+                reason: "model output contains a value that is not finite".to_owned(),
+            });
         }
         if target < self.artifacts.native_dimensions {
             l2_normalize(&mut values)?;
         } else if values.iter().all(|value| *value == 0.0) {
-            return Err(EmbeddingError::InvalidOutput);
+            return Err(EmbeddingError::InvalidOutput {
+                reason: "model output is all zeros".to_owned(),
+            });
         }
         Ok(EmbeddingVector {
             source_revision: self.artifacts.family.vector_space().to_owned(),
@@ -430,7 +504,9 @@ pub(crate) fn spawn_canceller(
 fn l2_normalize(values: &mut [f32]) -> Result<(), EmbeddingError> {
     let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
     if !norm.is_finite() || norm <= 0.0 {
-        return Err(EmbeddingError::InvalidOutput);
+        return Err(EmbeddingError::InvalidOutput {
+            reason: "truncated vector has no usable norm".to_owned(),
+        });
     }
     for value in values {
         *value /= norm;
@@ -445,7 +521,9 @@ pub(crate) fn initialize_onnx_runtime(runtime: &OnnxRuntimeLink) -> Result<(), E
     };
     crate::initialize_process_onnx_runtime(binding, "lettuce-embeddings")
         .map(|_| ())
-        .map_err(|_| EmbeddingError::RuntimeUnavailable)
+        .map_err(|error| EmbeddingError::RuntimeUnavailable {
+            reason: error.to_string(),
+        })
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
@@ -460,9 +538,13 @@ pub(crate) fn configure_execution_provider(
 
     let cache = model_path
         .parent()
-        .ok_or(EmbeddingError::ModelLoad)?
+        .ok_or_else(|| EmbeddingError::ModelLoad {
+            reason: "model path has no parent directory".to_owned(),
+        })?
         .join("coreml-cache");
-    std::fs::create_dir_all(cache).map_err(|_| EmbeddingError::ModelLoad)?;
+    std::fs::create_dir_all(cache).map_err(|error| EmbeddingError::ModelLoad {
+        reason: error.to_string(),
+    })?;
     let provider = CoreMLExecutionProvider::default()
         .with_compute_units(CoreMLComputeUnits::CPUAndNeuralEngine)
         .with_model_format(CoreMLModelFormat::MLProgram)
@@ -475,7 +557,9 @@ pub(crate) fn configure_execution_provider(
             tracing::warn!(error = %error, "CoreML unavailable; using ONNX CPU fallback");
             Session::builder()
                 .and_then(|builder| builder.with_optimization_level(GraphOptimizationLevel::Level3))
-                .map_err(|_| EmbeddingError::RuntimeUnavailable)
+                .map_err(|error| EmbeddingError::RuntimeUnavailable {
+                    reason: error.to_string(),
+                })
         }
     }
 }
@@ -492,28 +576,28 @@ pub(crate) fn configure_execution_provider(
 pub enum EmbeddingError {
     #[error("embedding model is unsupported")]
     UnsupportedModel,
-    #[error("ONNX Runtime is unavailable")]
-    RuntimeUnavailable,
-    #[error("embedding model could not be loaded")]
-    ModelLoad,
-    #[error("embedding tokenizer could not be loaded")]
-    TokenizerLoad,
-    #[error("embedding input is too large")]
-    InputTooLarge,
-    #[error("embedding tokenization failed")]
-    Tokenization,
-    #[error("embedding input tensor is invalid")]
-    InvalidInputTensor,
-    #[error("embedding inference failed")]
-    Inference,
-    #[error("embedding output is invalid")]
-    InvalidOutput,
+    #[error("ONNX Runtime is unavailable: {reason}")]
+    RuntimeUnavailable { reason: String },
+    #[error("embedding model could not be loaded: {reason}")]
+    ModelLoad { reason: String },
+    #[error("embedding tokenizer could not be loaded: {reason}")]
+    TokenizerLoad { reason: String },
+    #[error("embedding input is too large: {reason}")]
+    InputTooLarge { reason: String },
+    #[error("embedding tokenization failed: {reason}")]
+    Tokenization { reason: String },
+    #[error("embedding input tensor is invalid: {reason}")]
+    InvalidInputTensor { reason: String },
+    #[error("embedding inference failed: {reason}")]
+    Inference { reason: String },
+    #[error("embedding output is invalid: {reason}")]
+    InvalidOutput { reason: String },
     #[error("embedding inference was cancelled")]
     Cancelled,
     #[error("embedding cancellation monitor failed")]
     CancellationMonitor,
-    #[error("embedding similarity calibration is missing or invalid")]
-    InvalidCalibration,
+    #[error("embedding similarity calibration is missing or invalid: {reason}")]
+    InvalidCalibration { reason: String },
 }
 
 #[cfg(test)]

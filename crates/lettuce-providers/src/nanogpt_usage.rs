@@ -33,17 +33,17 @@ pub enum NanoGptUsageError {
     WrongProvider,
     #[error("NanoGPT API key is missing")]
     MissingApiKey,
-    #[error("NanoGPT credentials cannot be read")]
-    CredentialsUnavailable,
-    #[error("NanoGPT usage transport failed")]
-    Transport,
+    #[error("NanoGPT credentials cannot be read: {reason}")]
+    CredentialsUnavailable { reason: String },
+    #[error("NanoGPT usage transport failed: {reason}")]
+    Transport { reason: String },
     #[error("NanoGPT usage response was rejected")]
     ProviderRejected {
         status: u16,
         message: Option<String>,
     },
-    #[error("NanoGPT usage response is malformed")]
-    Malformed,
+    #[error("NanoGPT usage response is malformed: {reason}")]
+    Malformed { reason: String },
 }
 
 pub(crate) async fn fetch<S: SecretStore + ?Sized>(
@@ -62,17 +62,23 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
         .await
         .map_err(|error| match error {
             crate::common::AdapterError::CredentialRejected => NanoGptUsageError::MissingApiKey,
-            _ => NanoGptUsageError::CredentialsUnavailable,
+            error => NanoGptUsageError::CredentialsUnavailable {
+                reason: format!("reading the API key failed: {error:?}"),
+            },
         })?;
     let headers = load_secret_headers(store, &credentials)
         .await
-        .map_err(|_| NanoGptUsageError::CredentialsUnavailable)?;
+        .map_err(|error| NanoGptUsageError::CredentialsUnavailable {
+            reason: format!("reading the secret headers failed: {error:?}"),
+        })?;
     let mut sensitive = Vec::new();
     if let lettuce_network::JsonAuth::Bearer(value) = &auth {
         sensitive.push(
             value
                 .with(|secret| lettuce_settings::SecretValue::new(secret))
-                .map_err(|_| NanoGptUsageError::CredentialsUnavailable)?,
+                .map_err(|error| NanoGptUsageError::CredentialsUnavailable {
+                    reason: format!("the API key is not a valid secret value: {error:?}"),
+                })?,
         );
     }
     for header in &headers {
@@ -80,7 +86,9 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
             header
                 .value
                 .with(|secret| lettuce_settings::SecretValue::new(secret))
-                .map_err(|_| NanoGptUsageError::CredentialsUnavailable)?,
+                .map_err(|error| NanoGptUsageError::CredentialsUnavailable {
+                    reason: format!("a secret header value is not a valid secret value: {error:?}"),
+                })?,
         );
     }
     let url = usage_url(
@@ -91,7 +99,9 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
     );
     let endpoint = url
         .strip_suffix("/usage")
-        .ok_or(NanoGptUsageError::Malformed)?;
+        .ok_or_else(|| NanoGptUsageError::Malformed {
+            reason: "usage endpoint does not end with /usage".to_owned(),
+        })?;
     let response = network
         .get_json(
             endpoint,
@@ -105,7 +115,9 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
             },
         )
         .await
-        .map_err(|_| NanoGptUsageError::Transport)?;
+        .map_err(|error| NanoGptUsageError::Transport {
+            reason: format!("{error:?}"),
+        })?;
     if !(200..300).contains(&response.status) {
         let mut message = provider_message(&response.body);
         if let Some(message) = &mut message {
@@ -120,7 +132,9 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
         });
     }
     let payload =
-        serde_json::from_slice(&response.body).map_err(|_| NanoGptUsageError::Malformed)?;
+        serde_json::from_slice(&response.body).map_err(|error| NanoGptUsageError::Malformed {
+            reason: error.to_string(),
+        })?;
     parse_usage(&payload)
 }
 
@@ -139,7 +153,9 @@ pub(crate) fn provider_message(body: &[u8]) -> Option<String> {
 
 pub(crate) fn parse_usage(payload: &Value) -> Result<NanoGptUsage, NanoGptUsageError> {
     if !payload.is_object() {
-        return Err(NanoGptUsageError::Malformed);
+        return Err(NanoGptUsageError::Malformed {
+            reason: "payload is not a JSON object".to_owned(),
+        });
     }
     let usage = NanoGptUsage {
         active: find_value(payload, &["active"]).and_then(Value::as_bool),
@@ -179,7 +195,9 @@ pub(crate) fn parse_usage(payload: &Value) -> Result<NanoGptUsage, NanoGptUsageE
         && usage.current_period_end.is_none()
         && usage.grace_until.is_none()
     {
-        return Err(NanoGptUsageError::Malformed);
+        return Err(NanoGptUsageError::Malformed {
+            reason: "payload has no recognised usage fields".to_owned(),
+        });
     }
     Ok(usage)
 }

@@ -171,15 +171,17 @@ where
     }
     let _registration = match lease.cancellations {
         Some(runtime) => {
-            if runtime
-                .register_cancellation(admitted.id, handle.cancellation_token())
-                .is_err()
+            if let Err(error) =
+                runtime.register_cancellation(admitted.id, handle.cancellation_token())
             {
                 return settle(
                     repository,
                     claim,
                     job.request_id,
-                    Err(OneShotJobError::Jobs(StoreError::Storage).into()),
+                    Err(OneShotJobError::Jobs(StoreError::Storage {
+                        reason: format!("registering the job cancellation failed: {error:?}"),
+                    })
+                    .into()),
                     at,
                 );
             }

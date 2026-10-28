@@ -25,8 +25,8 @@ use crate::{
 pub enum CharacterPlanError {
     #[error("a character reference has no destination")]
     MissingReference,
-    #[error("the character is invalid")]
-    InvalidInput,
+    #[error("the character is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
 }
 
 /// Where each planned id and media use lands.
@@ -87,7 +87,9 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
         });
     }
     for (ordinal, _) in candidate.media.design_references.iter().enumerate() {
-        let ordinal = u32::try_from(ordinal).map_err(|_| CharacterPlanError::InvalidInput)?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| CharacterPlanError::InvalidInput {
+            reason: "design reference ordinal exceeds the u32 range",
+        })?;
         links.push(CharacterMediaLink {
             asset_id: asset(LegacyMediaUse::CharacterDesignReference {
                 character_id,
@@ -287,7 +289,9 @@ pub fn lorebook_details_from_candidate(
                 },
                 content: entry.content.clone(),
                 priority: entry.priority,
-                ordinal: u32::try_from(ordinal).map_err(|_| CharacterPlanError::InvalidInput)?,
+                ordinal: u32::try_from(ordinal).map_err(|_| CharacterPlanError::InvalidInput {
+                    reason: "lorebook entry ordinal exceeds the u32 range",
+                })?,
                 revision: Revision::INITIAL,
                 created_at: entry.created_at,
                 updated_at: entry.updated_at,

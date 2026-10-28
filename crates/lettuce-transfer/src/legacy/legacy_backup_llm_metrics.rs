@@ -33,8 +33,8 @@ pub struct LegacyBackupLlmMetricsPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LegacyBackupLlmMetricsError {
-    #[error("legacy metrics document is malformed")]
-    Malformed,
+    #[error("legacy metrics document is malformed: {reason}")]
+    Malformed { reason: String },
     #[error("legacy metrics document exceeds its record limit")]
     LimitExceeded,
 }
@@ -59,8 +59,12 @@ pub fn plan_legacy_backup_llm_metrics(
     else {
         return Ok(plan);
     };
-    let rows: Vec<Map<String, Value>> = serde_json::from_slice(&document.bytes)
-        .map_err(|_| LegacyBackupLlmMetricsError::Malformed)?;
+    let rows: Vec<Map<String, Value>> =
+        serde_json::from_slice(&document.bytes).map_err(|error| {
+            LegacyBackupLlmMetricsError::Malformed {
+                reason: format!("metrics document is not a json array of objects: {error}"),
+            }
+        })?;
     let mut ids = BTreeSet::new();
     for (index, row) in rows.into_iter().enumerate() {
         if row.keys().any(|key| !KNOWN_COLUMNS.contains(&key.as_str())) {
@@ -293,9 +297,9 @@ mod tests {
             plan_legacy_backup_llm_metrics(&empty).expect("plan"),
             LegacyBackupLlmMetricsPlan::default()
         );
-        assert_eq!(
+        assert!(matches!(
             plan_legacy_backup_llm_metrics(&inventory(&json!({}))),
-            Err(LegacyBackupLlmMetricsError::Malformed)
-        );
+            Err(LegacyBackupLlmMetricsError::Malformed { .. })
+        ));
     }
 }

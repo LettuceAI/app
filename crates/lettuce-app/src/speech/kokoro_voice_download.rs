@@ -30,7 +30,7 @@ pub struct KokoroVoiceBundle {
 impl KokoroVoiceBundle {
     pub fn new(mut voices: Vec<RemoteKokoroVoice>) -> Result<Self, KokoroVoiceDownloadError> {
         if voices.is_empty() || voices.len() > MAX_VOICES_PER_INSTALL {
-            return Err(KokoroVoiceDownloadError::InvalidWork);
+            return Err(KokoroVoiceDownloadError::InvalidWork { reason: "the voice bundle is empty or over the per-install limit" });
         }
         for voice in &voices {
             voice.validate()?;
@@ -38,7 +38,7 @@ impl KokoroVoiceBundle {
         voices.sort_by(|left, right| left.id.cmp(&right.id));
         for pair in voices.windows(2) {
             if pair[0].id == pair[1].id && pair[0] != pair[1] {
-                return Err(KokoroVoiceDownloadError::InvalidWork);
+                return Err(KokoroVoiceDownloadError::InvalidWork { reason: "the voice bundle repeats a voice id with different data" });
             }
         }
         voices.dedup();
@@ -55,9 +55,9 @@ impl KokoroVoiceBundle {
                 catalog
                     .iter()
                     .find(|voice| voice.id == *id)
-                    .ok_or(KokoroVoiceDownloadError::InvalidWork)?
+                    .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the voice is not in the catalog" })?
                     .remote()
-                    .map_err(|_| KokoroVoiceDownloadError::InvalidWork)
+                    .map_err(|_| KokoroVoiceDownloadError::InvalidWork { reason: "the catalog voice has no remote file" })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Self::new(voices)
@@ -71,7 +71,7 @@ impl KokoroVoiceBundle {
 
     fn validate(&self) -> Result<(), KokoroVoiceDownloadError> {
         if Self::new(self.voices.clone())? != *self {
-            return Err(KokoroVoiceDownloadError::InvalidWork);
+            return Err(KokoroVoiceDownloadError::InvalidWork { reason: "the voice bundle is not in canonical form" });
         }
         Ok(())
     }
@@ -80,7 +80,7 @@ impl KokoroVoiceBundle {
         self.voices.iter().try_fold(0_u64, |total, voice| {
             total
                 .checked_add(voice.byte_size)
-                .ok_or(KokoroVoiceDownloadError::InvalidWork)
+                .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the byte total overflowed" })
         })
     }
 }
@@ -134,7 +134,10 @@ impl KokoroVoiceDownloadSource for HuggingFaceKokoroVoiceDownloadSource {
             &voice.source_revision,
             &voice.remote_path,
         )
-        .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
+        .map_err(|error| {
+            tracing::warn!(%error, "pinned download url could not be built");
+            map_source_error(ArtifactDownloadError::InvalidRequest { reason: "pinned download url could not be built" })
+        })?;
         self.client
             .open_hugging_face(&url, offset, voice.byte_size)
             .await
@@ -203,8 +206,8 @@ pub enum KokoroVoiceDownloadError {
     Source(#[from] KokoroVoiceDownloadSourceError),
     #[error("Kokoro voice job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("Kokoro voice download work is inconsistent")]
-    InvalidWork,
+    #[error("Kokoro voice download work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
     #[error("Kokoro voice download was cancelled")]
     Cancelled,
 }
@@ -231,7 +234,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
         let asset_id = download_asset_id(&bundle);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .and_then(|subject| subject.with_display(format!("Kokoro voices ({})", bundle.voices.len())))
-            .map_err(|_| KokoroVoiceDownloadError::InvalidWork)?;
+            .map_err(|_| KokoroVoiceDownloadError::InvalidWork { reason: "the install asset id is not a valid job subject" })?;
         let mut key = format!("kokoro-voices-{asset_id}");
         for _ in 0..64 {
             let admitted = self.jobs.create_or_get(
@@ -241,7 +244,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
                     OutcomeRef::ArtifactInstallation(asset_id),
                 )
                 .with_idempotency_key(
-                    IdempotencyKey::new(key).map_err(|_| KokoroVoiceDownloadError::InvalidWork)?,
+                    IdempotencyKey::new(key).map_err(|_| KokoroVoiceDownloadError::InvalidWork { reason: "the install key is not a valid idempotency key" })?,
                 )
                 .with_priority(JobPriority::Interactive)
                 .with_resources(vec![
@@ -267,7 +270,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
             }
             key = format!("kokoro-voices-{asset_id}-after-{}", admitted.job.id);
         }
-        Err(KokoroVoiceDownloadError::InvalidWork)
+        Err(KokoroVoiceDownloadError::InvalidWork { reason: "no free idempotency key was found for the install" })
     }
 
     pub fn claim(
@@ -283,7 +286,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(KokoroVoiceDownloadError::InvalidWork)?;
+            .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the job is missing from the store" })?;
         validate_job(&job, &bundle)?;
         if job.state == JobState::Succeeded {
             return Ok(None);
@@ -319,7 +322,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(KokoroVoiceDownloadError::InvalidWork)?;
+            .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the job is missing from the store" })?;
         validate_job(&job, bundle)?;
         if job.state != JobState::Succeeded {
             return Ok(None);
@@ -327,7 +330,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
         let installed = self
             .installs
             .installed(&bundle.voices)?
-            .ok_or(KokoroVoiceDownloadError::InvalidWork)?;
+            .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the install is not complete after the download" })?;
         Ok(Some(KokoroVoiceDownloadSuccess {
             voices: summaries(installed),
             job,
@@ -347,7 +350,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(KokoroVoiceDownloadError::InvalidWork);
+            return Err(KokoroVoiceDownloadError::InvalidWork { reason: "claimed work does not match its running job, claim or handle" });
         }
         match self.execute(&work, source, now).await {
             Ok((voices, replayed)) => self.finish_success(work, voices, replayed, now),
@@ -379,7 +382,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
                 KokoroVoicePreparation::Installed(_) => {
                     completed = completed
                         .checked_add(voice.byte_size)
-                        .ok_or(KokoroVoiceDownloadError::InvalidWork)?;
+                        .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the byte total overflowed" })?;
                     self.report_progress(work, completed, total, now)?;
                 }
                 KokoroVoicePreparation::Download(mut session) => {
@@ -415,14 +418,14 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
                     session.finish()?;
                     completed = completed
                         .checked_add(voice.byte_size)
-                        .ok_or(KokoroVoiceDownloadError::InvalidWork)?;
+                        .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the byte total overflowed" })?;
                 }
             }
         }
         let installed = self
             .installs
             .installed(&work.bundle.voices)?
-            .ok_or(KokoroVoiceDownloadError::InvalidWork)?;
+            .ok_or(KokoroVoiceDownloadError::InvalidWork { reason: "the install is not complete after the download" })?;
         Ok((summaries(installed), false))
     }
 
@@ -483,7 +486,7 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
             progress: ProgressSnapshot {
                 bytes: Some(
                     BytesProgress::new(completed, Some(total))
-                        .map_err(|_| KokoroVoiceDownloadError::InvalidWork)?,
+                        .map_err(|_| KokoroVoiceDownloadError::InvalidWork { reason: "the completed bytes exceed the total bytes" })?,
                 ),
                 ..ProgressSnapshot::default()
             },
@@ -604,7 +607,7 @@ fn validate_job(
                     result_ref: OutcomeRef::ArtifactInstallation(asset_id),
                 }))
     {
-        return Err(KokoroVoiceDownloadError::InvalidWork);
+        return Err(KokoroVoiceDownloadError::InvalidWork { reason: "the job did not succeed for this asset" });
     }
     Ok(())
 }
@@ -632,7 +635,7 @@ fn classify_error(error: &KokoroVoiceDownloadError) -> (JobErrorCode, bool, &'st
             | lettuce_platform::PlatformError::RecoveryNeeded
             | lettuce_platform::PlatformError::ReplaceFailed,
         ))
-        | KokoroVoiceDownloadError::Install(KokoroInstallError::Unreadable) => (
+        | KokoroVoiceDownloadError::Install(KokoroInstallError::Unreadable { .. }) => (
             JobErrorCode::StorageFailure,
             true,
             "voice storage unavailable",
@@ -646,7 +649,7 @@ fn classify_error(error: &KokoroVoiceDownloadError) -> (JobErrorCode, bool, &'st
             "voice integrity failed",
         )),
         KokoroVoiceDownloadError::Install(
-            KokoroInstallError::Mismatch | KokoroInstallError::InvalidArtifact,
+            KokoroInstallError::Mismatch { .. } | KokoroInstallError::InvalidArtifact { .. },
         )
         | KokoroVoiceDownloadError::Source(KokoroVoiceDownloadSourceError::InvalidResponse) => (
             JobErrorCode::IntegrityFailure,
@@ -665,10 +668,10 @@ fn classify_error(error: &KokoroVoiceDownloadError) -> (JobErrorCode, bool, &'st
 
 fn map_source_error(error: ArtifactDownloadError) -> KokoroVoiceDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+        ArtifactDownloadError::Transport { .. } | ArtifactDownloadError::TimedOut => {
             KokoroVoiceDownloadSourceError::Transport
         }
-        ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
+        ArtifactDownloadError::InvalidRequest { .. } | ArtifactDownloadError::InvalidResponse { .. } => {
             KokoroVoiceDownloadSourceError::InvalidResponse
         }
         ArtifactDownloadError::Refused { status, signed_in } => {

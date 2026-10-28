@@ -36,8 +36,8 @@ pub(crate) struct StreamCompletion {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum StreamNormalizeError {
-    #[error("provider stream contains malformed JSON")]
-    MalformedJson,
+    #[error("provider stream contains malformed JSON: {reason}")]
+    MalformedJson { reason: &'static str },
     #[error("provider stream contains data after its terminal event")]
     DataAfterTerminal,
     #[error("provider stream ended before its terminal event")]
@@ -95,6 +95,7 @@ struct PendingOpenAiToolCall {
     id: Option<String>,
     name: Option<String>,
     arguments: String,
+    arguments_object: Option<Value>,
 }
 
 #[derive(Debug)]
@@ -208,7 +209,9 @@ impl StreamNormalizer {
         let split = self.thinking.finish();
         self.append_split(split, &mut tail)?;
         if !self.anthropic_server_tool_blocks.is_empty() {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "finish with provider replay: the stream payload has an unexpected shape",
+            });
         }
         let provider_replay = if self.protocol == StreamProtocol::Anthropic
             && !self.anthropic_tool_calls.is_empty()
@@ -220,7 +223,7 @@ impl StreamNormalizer {
         {
             Some(
                 serde_json::to_vec(&self.gemini_replay_parts)
-                    .map_err(|_| StreamNormalizeError::MalformedJson)?,
+                    .map_err(|error| { tracing::warn!(%error, "finish with provider replay failed"); StreamNormalizeError::MalformedJson { reason: "finish with provider replay: the stream payload could not be decoded" } })?,
             )
         } else {
             None
@@ -239,14 +242,18 @@ impl StreamNormalizer {
                         .iter()
                         .any(|call| call.provider_call_id.is_none())
                 {
-                    return Err(StreamNormalizeError::MalformedJson);
+                    return Err(StreamNormalizeError::MalformedJson {
+                        reason: "finish with provider replay: the stream payload has an unexpected shape",
+                    });
                 }
                 std::mem::take(&mut self.gemini_tool_calls)
             }
             StreamProtocol::Ollama => std::mem::take(&mut self.ollama_tool_calls),
         };
         if self.requires_anthropic_tool_calls && tool_calls.is_empty() {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "finish with provider replay: the stream payload has an unexpected shape",
+            });
         }
         if self.text.trim().is_empty()
             && self.reasoning.trim().is_empty()
@@ -287,9 +294,12 @@ impl StreamNormalizer {
             provider_request_id: self.provider_request_id,
             warning_codes: self.warning_codes,
         };
-        outcome
-            .validate()
-            .map_err(|_| StreamNormalizeError::MalformedJson)?;
+        outcome.validate().map_err(|error| {
+            tracing::warn!(%error, "finish with provider replay failed");
+            StreamNormalizeError::MalformedJson {
+                reason: "finish with provider replay: the stream payload could not be decoded",
+            }
+        })?;
         Ok(StreamCompletion {
             tail,
             outcome,
@@ -364,7 +374,9 @@ impl StreamNormalizer {
                     closed,
                 } => {
                     if !closed || thinking.is_empty() || signature.is_empty() {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "build anthropic replay: the stream payload has an unexpected shape",
+                        });
                     }
                     has_signed_thinking = true;
                     serde_json::json!({
@@ -375,33 +387,42 @@ impl StreamNormalizer {
                 }
                 AnthropicReplayBlock::RedactedThinking { data, closed } => {
                     if !closed || data.is_empty() {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "build anthropic replay: the stream payload has an unexpected shape",
+                        });
                     }
                     has_signed_thinking = true;
                     serde_json::json!({"type": "redacted_thinking", "data": data})
                 }
                 AnthropicReplayBlock::Text { text, closed } => {
                     if !closed {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "build anthropic replay: the stream payload has an unexpected shape",
+                        });
                     }
                     serde_json::json!({"type": "text", "text": text})
                 }
                 AnthropicReplayBlock::ToolUse => {
-                    let pending = self
-                        .anthropic_tool_calls
-                        .get(index)
-                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    let pending = self.anthropic_tool_calls.get(index).ok_or(
+                        StreamNormalizeError::MalformedJson {
+                            reason: "build anthropic replay: a required value is missing",
+                        },
+                    )?;
                     if !pending.closed {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "build anthropic replay: the stream payload has an unexpected shape",
+                        });
                     }
                     let input = if pending.partial_json.is_empty() {
                         pending.initial_input.clone()
                     } else {
                         serde_json::from_str::<Value>(&pending.partial_json)
-                            .map_err(|_| StreamNormalizeError::MalformedJson)?
+                            .map_err(|error| { tracing::warn!(%error, "build anthropic replay failed"); StreamNormalizeError::MalformedJson { reason: "build anthropic replay: the stream payload could not be decoded" } })?
                     };
                     if !input.is_object() {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "build anthropic replay: the stream payload has an unexpected shape",
+                        });
                     }
                     serde_json::json!({
                         "type": "tool_use",
@@ -417,11 +438,16 @@ impl StreamNormalizer {
             return Ok(None);
         }
         if self.anthropic_unreplayable_block {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "build anthropic replay: the stream payload has an unexpected shape",
+            });
         }
-        serde_json::to_vec(&blocks)
-            .map(Some)
-            .map_err(|_| StreamNormalizeError::MalformedJson)
+        serde_json::to_vec(&blocks).map(Some).map_err(|error| {
+            tracing::warn!(%error, "build anthropic replay failed");
+            StreamNormalizeError::MalformedJson {
+                reason: "build anthropic replay: the stream payload could not be decoded",
+            }
+        })
     }
 
     fn update_anthropic_usage(&mut self, usage: &Value) {
@@ -453,13 +479,17 @@ impl StreamNormalizer {
             return Err(error);
         }
         if let Some(id) = value.get("id").filter(|id| !id.is_null()) {
-            let id = id.as_str().ok_or(StreamNormalizeError::MalformedJson)?;
+            let id = id.as_str().ok_or(StreamNormalizeError::MalformedJson {
+                reason: "consume openai: a required value is missing",
+            })?;
             if self
                 .provider_response_id
                 .as_deref()
                 .is_some_and(|saved| saved != id)
             {
-                return Err(StreamNormalizeError::MalformedJson);
+                return Err(StreamNormalizeError::MalformedJson {
+                    reason: "consume openai: the stream payload has an unexpected shape",
+                });
             }
             self.provider_response_id = Some(id.to_owned());
         }
@@ -496,7 +526,9 @@ impl StreamNormalizer {
             return Ok(Vec::new());
         };
         if choices.len() > 1 {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "consume openai: the stream payload has an unexpected shape",
+            });
         }
         let Some(choice) = choices.first() else {
             return Ok(Vec::new());
@@ -506,7 +538,9 @@ impl StreamNormalizer {
             .and_then(Value::as_u64)
             .is_some_and(|index| index != 0)
         {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "consume openai: the stream payload has an unexpected shape",
+            });
         }
         let delta = choice.get("delta").or_else(|| choice.get("message"));
         let mut deltas = Vec::new();
@@ -552,36 +586,77 @@ impl StreamNormalizer {
         Ok(deltas)
     }
 
-    /// A fragment without an index opens a new call keyed after the indexed
-    /// ones.
+    /// Prefer wire indices, then stable call ids. An argument-only fragment
+    /// without either can only continue a single unambiguous pending call.
     fn append_openai_tool_call(&mut self, value: &Value) -> Result<(), StreamNormalizeError> {
-        let index = value
-            .get("index")
-            .and_then(Value::as_u64)
-            .unwrap_or_else(|| {
-                u64::try_from(self.openai_tool_calls.len())
-                    .unwrap_or(u64::MAX)
-                    .saturating_add(1000)
-            });
-        let pending = self.openai_tool_calls.entry(index).or_default();
-        merge_fragment(&mut pending.id, value.get("id").and_then(Value::as_str))?;
         let function = value.get("function");
-        merge_fragment(
-            &mut pending.name,
-            function
-                .and_then(|function| function.get("name"))
-                .and_then(Value::as_str),
-        )?;
-        if let Some(arguments) = function
-            .and_then(|function| function.get("arguments"))
-            .and_then(Value::as_str)
+        let id = value.get("id").and_then(Value::as_str).filter(|id| !id.is_empty());
+        let index = match value.get("index").filter(|index| !index.is_null()) {
+            Some(index) => index.as_u64().ok_or(StreamNormalizeError::MalformedJson {
+                reason: "tool call index is not an unsigned integer",
+            })?,
+            None => if let Some((index, _)) = self.openai_tool_calls.iter()
+                .find(|(_, pending)| id.is_some() && pending.id.as_deref() == id)
+            {
+                *index
+            } else if id.is_none() && function.and_then(|f| f.get("name"))
+                .and_then(Value::as_str).is_none_or(|name| name.is_empty()) {
+                if self.openai_tool_calls.len() != 1 {
+                    return Err(StreamNormalizeError::MalformedJson {
+                        reason: "tool fragment has no unambiguous call index or id",
+                    });
+                }
+                *self.openai_tool_calls.keys().next().expect("one pending call")
+            } else {
+                self.openai_tool_calls.keys().next_back().copied().unwrap_or(999)
+                    .checked_add(1).map(|index| index.max(1000))
+                    .ok_or(StreamNormalizeError::MalformedJson {
+                        reason: "tool call index space is exhausted",
+                    })?
+            },
+        };
+        let pending = self.openai_tool_calls.entry(index).or_default();
+        merge_fragment(&mut pending.id, id)?;
+        if let Some(name) = function.and_then(|f| f.get("name")).and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
         {
-            if pending.arguments.len().saturating_add(arguments.len()) > MAX_TOOL_ARGUMENT_BYTES {
-                return Err(StreamNormalizeError::OutputTooLarge {
-                    field: "tool_arguments",
-                });
+            let current = pending.name.get_or_insert_with(String::new);
+            if current != name {
+                if current.len().saturating_add(name.len()) > lettuce_conversations::MAX_TOOL_NAME_BYTES {
+                    return Err(StreamNormalizeError::OutputTooLarge { field: "tool_name" });
+                }
+                current.push_str(name);
             }
-            pending.arguments.push_str(arguments);
+        }
+        match function.and_then(|f| f.get("arguments")) {
+            Some(Value::String(arguments)) if !arguments.is_empty() => {
+                if pending.arguments_object.is_some() {
+                    return Err(StreamNormalizeError::MalformedJson {
+                        reason: "tool arguments mix object and string fragments",
+                    });
+                }
+                if pending.arguments.len().saturating_add(arguments.len()) > MAX_TOOL_ARGUMENT_BYTES {
+                    return Err(StreamNormalizeError::OutputTooLarge { field: "tool_arguments" });
+                }
+                pending.arguments.push_str(arguments);
+            }
+            Some(arguments @ Value::Object(_)) => {
+                if !pending.arguments.is_empty()
+                    || pending.arguments_object.as_ref().is_some_and(|saved| saved != arguments)
+                {
+                    return Err(StreamNormalizeError::MalformedJson {
+                        reason: "tool arguments contain conflicting snapshots",
+                    });
+                }
+                if arguments.to_string().len() > MAX_TOOL_ARGUMENT_BYTES {
+                    return Err(StreamNormalizeError::OutputTooLarge { field: "tool_arguments" });
+                }
+                pending.arguments_object = Some(arguments.clone());
+            }
+            Some(Value::String(_) | Value::Null) | None => {}
+            Some(_) => return Err(StreamNormalizeError::MalformedJson {
+                reason: "tool arguments are neither an object nor a string",
+            }),
         }
         Ok(())
     }
@@ -595,7 +670,9 @@ impl StreamNormalizer {
         if let (Some(event_kind), Some(json_kind)) = (record.event.as_deref(), json_kind)
             && event_kind != json_kind
         {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "consume anthropic: the stream payload has an unexpected shape",
+            });
         }
         let kind = record.event.as_deref().or(json_kind);
         if kind == Some("error") {
@@ -666,12 +743,16 @@ impl StreamNormalizer {
                         let partial = delta
                             .and_then(|delta| delta.get("partial_json"))
                             .and_then(Value::as_str)
-                            .ok_or(StreamNormalizeError::MalformedJson)?;
+                            .ok_or(StreamNormalizeError::MalformedJson {
+                                reason: "consume anthropic: a required value is missing",
+                            })?;
                         let Some(pending) = self.anthropic_tool_calls.get_mut(&index) else {
                             return if self.anthropic_server_tool_blocks.contains(&index) {
                                 Ok(deltas)
                             } else {
-                                Err(StreamNormalizeError::MalformedJson)
+                                Err(StreamNormalizeError::MalformedJson {
+                                    reason: "consume anthropic: the stream payload has an unexpected shape",
+                                })
                             };
                         };
                         if pending.closed
@@ -680,7 +761,9 @@ impl StreamNormalizer {
                                 .as_object()
                                 .is_none_or(|v| !v.is_empty())
                         {
-                            return Err(StreamNormalizeError::MalformedJson);
+                            return Err(StreamNormalizeError::MalformedJson {
+                                reason: "consume anthropic: the stream payload has an unexpected shape",
+                            });
                         }
                         if pending.partial_json.len().saturating_add(partial.len())
                             > MAX_TOOL_ARGUMENT_BYTES
@@ -695,7 +778,9 @@ impl StreamNormalizer {
                         let signature = delta
                             .and_then(|delta| delta.get("signature"))
                             .and_then(Value::as_str)
-                            .ok_or(StreamNormalizeError::MalformedJson)?;
+                            .ok_or(StreamNormalizeError::MalformedJson {
+                                reason: "consume anthropic: a required value is missing",
+                            })?;
                         let index = anthropic_index(&value)?;
                         let Some(AnthropicReplayBlock::Thinking {
                             signature: replay_signature,
@@ -703,7 +788,9 @@ impl StreamNormalizer {
                             ..
                         }) = self.anthropic_replay_blocks.get_mut(&index)
                         else {
-                            return Err(StreamNormalizeError::MalformedJson);
+                            return Err(StreamNormalizeError::MalformedJson {
+                                reason: "consume anthropic: the stream payload has an unexpected shape",
+                            });
                         };
                         if replay_signature.len().saturating_add(signature.len())
                             > MAX_THINKING_SIGNATURE_BYTES
@@ -736,7 +823,9 @@ impl StreamNormalizer {
             Some("message_stop") => self.terminal = true,
             Some("content_block_start") => {
                 let Some(block) = value.get("content_block") else {
-                    return Err(StreamNormalizeError::MalformedJson);
+                    return Err(StreamNormalizeError::MalformedJson {
+                        reason: "consume anthropic: the stream payload has an unexpected shape",
+                    });
                 };
                 if block.get("type").and_then(Value::as_str) == Some("tool_use") {
                     let index = anthropic_index(&value)?;
@@ -744,7 +833,9 @@ impl StreamNormalizer {
                         || self.anthropic_server_tool_blocks.contains(&index)
                         || self.anthropic_replay_blocks.contains_key(&index)
                     {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume anthropic: the stream payload has an unexpected shape",
+                        });
                     }
                     let id = required_nonempty(block, "id")?;
                     let name = required_nonempty(block, "name")?;
@@ -753,7 +844,9 @@ impl StreamNormalizer {
                         .cloned()
                         .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
                     if !initial_input.is_object() {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume anthropic: the stream payload has an unexpected shape",
+                        });
                     }
                     self.anthropic_tool_calls.insert(
                         index,
@@ -772,7 +865,9 @@ impl StreamNormalizer {
                     if self.anthropic_tool_calls.contains_key(&index)
                         || !self.anthropic_server_tool_blocks.insert(index)
                     {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume anthropic: the stream payload has an unexpected shape",
+                        });
                     }
                     self.anthropic_unreplayable_block = true;
                     self.push_warning(InferenceWarningCode::ProviderDegraded);
@@ -782,7 +877,9 @@ impl StreamNormalizer {
                         || self.anthropic_tool_calls.contains_key(&index)
                         || self.anthropic_server_tool_blocks.contains(&index)
                     {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume anthropic: the stream payload has an unexpected shape",
+                        });
                     }
                     let replay = match block.get("type").and_then(Value::as_str) {
                         Some("thinking") => AnthropicReplayBlock::Thinking {
@@ -822,7 +919,9 @@ impl StreamNormalizer {
                 let index = anthropic_index(&value)?;
                 if let Some(pending) = self.anthropic_tool_calls.get_mut(&index) {
                     if pending.closed {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume anthropic: the stream payload has an unexpected shape",
+                        });
                     }
                     pending.closed = true;
                 } else {
@@ -836,9 +935,15 @@ impl StreamNormalizer {
                             *closed = true;
                         }
                         Some(AnthropicReplayBlock::ToolUse) => {
-                            return Err(StreamNormalizeError::MalformedJson);
+                            return Err(StreamNormalizeError::MalformedJson {
+                                reason: "consume anthropic: the stream payload has an unexpected shape",
+                            });
                         }
-                        Some(_) => return Err(StreamNormalizeError::MalformedJson),
+                        Some(_) => {
+                            return Err(StreamNormalizeError::MalformedJson {
+                                reason: "consume anthropic: an unrecognised value was received",
+                            });
+                        }
                         None => {}
                     }
                 }
@@ -910,7 +1015,9 @@ impl StreamNormalizer {
                         || part.get("toolCall").is_some()
                         || part.get("toolResponse").is_some()
                     {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume gemini: the stream payload has an unexpected shape",
+                        });
                     }
                     if part
                         .get("thoughtSignature")
@@ -929,7 +1036,12 @@ impl StreamNormalizer {
                         continue;
                     }
                     let replay_bytes = serde_json::to_vec(part)
-                        .map_err(|_| StreamNormalizeError::MalformedJson)?
+                        .map_err(|error| {
+                            tracing::warn!(%error, "consume gemini failed");
+                            StreamNormalizeError::MalformedJson {
+                                reason: "consume gemini: the stream payload could not be decoded",
+                            }
+                        })?
                         .len();
                     self.gemini_replay_bytes = self
                         .gemini_replay_bytes
@@ -960,7 +1072,9 @@ impl StreamNormalizer {
                 if !self.gemini_tool_calls.is_empty()
                     && !matches!(reason, "STOP" | "FINISH_REASON_UNSPECIFIED")
                 {
-                    return Err(StreamNormalizeError::MalformedJson);
+                    return Err(StreamNormalizeError::MalformedJson {
+                        reason: "consume gemini: the stream payload has an unexpected shape",
+                    });
                 }
                 self.set_finish_reason(reason, FinishFamily::Gemini);
                 self.terminal = true;
@@ -974,10 +1088,16 @@ impl StreamNormalizer {
             .get("name")
             .and_then(Value::as_str)
             .filter(|name| !name.is_empty())
-            .ok_or(StreamNormalizeError::MalformedJson)?;
+            .ok_or(StreamNormalizeError::MalformedJson {
+                reason: "append gemini tool call: a required value is missing",
+            })?;
         let id = match call.get("id") {
             Some(Value::String(id)) if !id.is_empty() => Some(id.clone()),
-            Some(_) => return Err(StreamNormalizeError::MalformedJson),
+            Some(_) => {
+                return Err(StreamNormalizeError::MalformedJson {
+                    reason: "append gemini tool call: an unrecognised value was received",
+                });
+            }
             None => None,
         };
         let arguments = call
@@ -986,11 +1106,18 @@ impl StreamNormalizer {
             .unwrap_or_else(|| Value::Object(Default::default()));
         if !arguments.is_object()
             || serde_json::to_vec(&arguments)
-                .map_err(|_| StreamNormalizeError::MalformedJson)?
+                .map_err(|error| {
+                    tracing::warn!(%error, "append gemini tool call failed");
+                    StreamNormalizeError::MalformedJson {
+                        reason: "append gemini tool call: the stream payload could not be decoded",
+                    }
+                })?
                 .len()
                 > MAX_TOOL_ARGUMENT_BYTES
         {
-            return Err(StreamNormalizeError::MalformedJson);
+            return Err(StreamNormalizeError::MalformedJson {
+                reason: "append gemini tool call: the stream payload has an unexpected shape",
+            });
         }
         self.gemini_tool_calls.push(ProposedToolCall {
             provider_call_id: id,
@@ -1025,31 +1152,41 @@ impl StreamNormalizer {
             if let Some(calls) = message.get("tool_calls") {
                 let calls = calls
                     .as_array()
-                    .ok_or(StreamNormalizeError::MalformedJson)?;
+                    .ok_or(StreamNormalizeError::MalformedJson {
+                        reason: "consume ollama: a required value is missing",
+                    })?;
                 for call in calls {
-                    let function = call
-                        .get("function")
-                        .and_then(Value::as_object)
-                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    let function = call.get("function").and_then(Value::as_object).ok_or(
+                        StreamNormalizeError::MalformedJson {
+                            reason: "consume ollama: a required value is missing",
+                        },
+                    )?;
                     if call
                         .get("type")
                         .is_some_and(|kind| kind.as_str() != Some("function"))
                     {
-                        return Err(StreamNormalizeError::MalformedJson);
+                        return Err(StreamNormalizeError::MalformedJson {
+                            reason: "consume ollama: the stream payload has an unexpected shape",
+                        });
                     }
-                    let name = function
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    let name = function.get("name").and_then(Value::as_str).ok_or(
+                        StreamNormalizeError::MalformedJson {
+                            reason: "consume ollama: a required value is missing",
+                        },
+                    )?;
                     let arguments = function
                         .get("arguments")
                         .filter(|value| value.is_object())
                         .cloned()
-                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                        .ok_or(StreamNormalizeError::MalformedJson {
+                            reason: "consume ollama: a required value is missing",
+                        })?;
                     let provider_call_id = match call.get("id") {
                         Some(id) => Some(
                             id.as_str()
-                                .ok_or(StreamNormalizeError::MalformedJson)?
+                                .ok_or(StreamNormalizeError::MalformedJson {
+                                    reason: "consume ollama: a required value is missing",
+                                })?
                                 .to_owned(),
                         ),
                         None => None,
@@ -1061,9 +1198,12 @@ impl StreamNormalizer {
                         raw_arguments: None,
                         provider_replay: None,
                     };
-                    proposal
-                        .validate()
-                        .map_err(|_| StreamNormalizeError::MalformedJson)?;
+                    proposal.validate().map_err(|error| {
+                        tracing::warn!(%error, "consume ollama failed");
+                        StreamNormalizeError::MalformedJson {
+                            reason: "consume ollama: the stream payload could not be decoded",
+                        }
+                    })?;
                     self.ollama_tool_calls.push(proposal);
                 }
             }
@@ -1178,7 +1318,9 @@ fn merge_fragment(
         return Ok(());
     };
     match target {
-        Some(current) if current != fragment => Err(StreamNormalizeError::MalformedJson),
+        Some(current) if current != fragment => Err(StreamNormalizeError::MalformedJson {
+            reason: "merge fragment: the stream payload has an unexpected shape",
+        }),
         Some(_) => Ok(()),
         None => {
             *target = Some(fragment.to_owned());
@@ -1187,7 +1329,7 @@ fn merge_fragment(
     }
 }
 
-/// Streamed tool calls: missing ids are synthesized by position and the argument text is parsed leniently.
+/// Streamed tool calls: synthesize missing ids and require complete arguments.
 fn finish_openai_tool_calls(
     pending: BTreeMap<u64, PendingOpenAiToolCall>,
 ) -> Result<Vec<ProposedToolCall>, StreamNormalizeError> {
@@ -1195,21 +1337,32 @@ fn finish_openai_tool_calls(
         .into_values()
         .enumerate()
         .map(|(position, pending)| {
-            let (arguments, raw_arguments) =
-                crate::common::lenient_tool_arguments(&pending.arguments);
+            let (arguments, raw_arguments) = match pending.arguments_object {
+                Some(arguments) => (arguments, None),
+                None => crate::common::checked_tool_argument_value(Some(Value::String(pending.arguments)))
+                    .map_err(|_| StreamNormalizeError::MalformedJson {
+                        reason: "tool arguments are incomplete or not an object",
+                    })?,
+            };
             let call = ProposedToolCall {
                 provider_call_id: Some(
                     pending
                         .id
                         .unwrap_or_else(|| crate::common::synthesized_call_id(position)),
                 ),
-                name: pending.name.ok_or(StreamNormalizeError::MalformedJson)?,
+                name: pending.name.ok_or(StreamNormalizeError::MalformedJson {
+                    reason: "finish openai tool calls: a required value is missing",
+                })?,
                 arguments,
                 raw_arguments,
                 provider_replay: None,
             };
-            call.validate()
-                .map_err(|_| StreamNormalizeError::MalformedJson)?;
+            call.validate().map_err(|error| {
+                tracing::warn!(%error, "finish openai tool calls failed");
+                StreamNormalizeError::MalformedJson {
+                    reason: "finish openai tool calls: the stream payload could not be decoded",
+                }
+            })?;
             Ok(call)
         })
         .collect()
@@ -1222,13 +1375,13 @@ fn finish_anthropic_tool_calls(
         .into_values()
         .map(|pending| {
             if !pending.closed {
-                return Err(StreamNormalizeError::MalformedJson);
+                return Err(StreamNormalizeError::MalformedJson { reason: "finish anthropic tool calls: the stream payload has an unexpected shape" });
             }
             let (arguments, raw_arguments) = if pending.partial_json.is_empty() {
                 (pending.initial_input, None)
             } else {
                 let arguments = serde_json::from_str(&pending.partial_json)
-                    .map_err(|_| StreamNormalizeError::MalformedJson)?;
+                    .map_err(|error| { tracing::warn!(%error, "finish anthropic tool calls failed"); StreamNormalizeError::MalformedJson { reason: "finish anthropic tool calls: the stream payload could not be decoded" } })?;
                 (arguments, Some(pending.partial_json))
             };
             let call = ProposedToolCall {
@@ -1239,7 +1392,7 @@ fn finish_anthropic_tool_calls(
                 provider_replay: None,
             };
             call.validate()
-                .map_err(|_| StreamNormalizeError::MalformedJson)?;
+                .map_err(|error| { tracing::warn!(%error, "finish anthropic tool calls failed"); StreamNormalizeError::MalformedJson { reason: "finish anthropic tool calls: the stream payload could not be decoded" } })?;
             Ok(call)
         })
         .collect()
@@ -1249,7 +1402,9 @@ fn anthropic_index(value: &Value) -> Result<u64, StreamNormalizeError> {
     value
         .get("index")
         .and_then(Value::as_u64)
-        .ok_or(StreamNormalizeError::MalformedJson)
+        .ok_or(StreamNormalizeError::MalformedJson {
+            reason: "anthropic index: a required value is missing",
+        })
 }
 
 fn required_nonempty(value: &Value, field: &str) -> Result<String, StreamNormalizeError> {
@@ -1258,7 +1413,9 @@ fn required_nonempty(value: &Value, field: &str) -> Result<String, StreamNormali
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .map(str::to_owned)
-        .ok_or(StreamNormalizeError::MalformedJson)
+        .ok_or(StreamNormalizeError::MalformedJson {
+            reason: "required nonempty: a required value is missing",
+        })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1270,7 +1427,12 @@ enum FinishFamily {
 }
 
 fn parse_json(data: &str) -> Result<Value, StreamNormalizeError> {
-    serde_json::from_str(data).map_err(|_| StreamNormalizeError::MalformedJson)
+    serde_json::from_str(data).map_err(|error| {
+        tracing::warn!(%error, "parse json failed");
+        StreamNormalizeError::MalformedJson {
+            reason: "parse json: the stream payload could not be decoded",
+        }
+    })
 }
 
 fn token(value: &Value, fields: &[&str]) -> Option<u64> {
@@ -1613,46 +1775,107 @@ mod tests {
     }
 
     #[test]
+    fn openrouter_tool_stream_keeps_reasoning_text_and_fragmented_calls_at_byte_boundaries() {
+        use crate::streaming::stream_framing::{StreamFormat, StreamFramer};
+        let records = [
+            r#"{"choices":[{"delta":{"reasoning":"Review the facts."}}]}"#,
+            r#"{"choices":[{"delta":{"content":"Çayı hatırlayacağım.\n","tool_calls":[{"index":0,"id":"call-1","function":{"name":"create_","arguments":"{\"text\":"}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"memory","arguments":"\"Çay\",\"category\":\"preference\"}"}}]},"finish_reason":"tool_calls"}]}"#,
+            "[DONE]",
+        ];
+        let wire = records.iter().map(|data| format!("data: {data}\r\n\r\n")).collect::<String>();
+        for chunk_size in [1, 2, 3, 7, 31, wire.len()] {
+            let mut framer = StreamFramer::new(StreamFormat::Sse);
+            let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+            for chunk in wire.as_bytes().chunks(chunk_size) {
+                for record in framer.records(chunk) {
+                    normalizer.consume(&record.expect("SSE frame")).expect("tool delta");
+                }
+            }
+            assert!(framer.finish().expect("complete SSE").is_none());
+            let (_, outcome) = normalizer.finish().expect("OpenRouter tool outcome");
+            let candidate = &outcome.candidates[0];
+            assert!(candidate.provider_replay.is_none());
+            assert_eq!(candidate.parts, vec![
+                MessagePart::ReasoningSummary { text: "Review the facts.".into() },
+                MessagePart::Text { text: "Çayı hatırlayacağım.\n".into() },
+            ]);
+            assert_eq!(candidate.tool_calls[0].name, "create_memory");
+            assert_eq!(candidate.tool_calls[0].arguments, serde_json::json!({"text":"Çay","category":"preference"}));
+        }
+    }
+
+    #[test]
+    fn openai_tool_fragments_can_use_stable_ids_or_a_single_pending_call() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        normalizer.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"id":"a","function":{"name":"done","arguments":"{"}}]}}]}"#)).unwrap();
+        normalizer.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"id":"a","function":{"arguments":"\"summary\":"}}]}}]}"#)).unwrap();
+        normalizer.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"function":{"name":null,"arguments":"\"Complete\"}"}}]},"finish_reason":"tool_calls"}]}"#)).unwrap();
+        let (_, outcome) = normalizer.finish().expect("unambiguous call");
+        assert_eq!(outcome.candidates[0].tool_calls.len(), 1);
+        assert_eq!(outcome.candidates[0].tool_calls[0].arguments, serde_json::json!({"summary":"Complete"}));
+
+        let mut ambiguous = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        ambiguous.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"one","arguments":"{"}},{"index":1,"id":"b","function":{"name":"two","arguments":"{"}}]}}]}"#)).unwrap();
+        assert!(ambiguous.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"}"}}]}}]}"#)).is_err());
+    }
+
+    #[test]
+    fn openai_object_arguments_are_preserved_and_conflicting_shapes_are_rejected() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        normalizer.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"done","arguments":{"summary":"Complete"}}}]},"finish_reason":"tool_calls"}]}"#)).unwrap();
+        let (_, outcome) = normalizer.finish().expect("object arguments");
+        assert_eq!(outcome.candidates[0].tool_calls[0].arguments, serde_json::json!({"summary":"Complete"}));
+        for arguments in [serde_json::json!([]), serde_json::json!(true), serde_json::json!("{\"summary\":")] {
+            let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+            let delta = serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"done","arguments":arguments}}]},"finish_reason":"tool_calls"}]}).to_string();
+            if normalizer.consume(&record(&delta)).is_ok() {
+                assert!(normalizer.finish().is_err(), "malformed arguments cannot become an empty done");
+            }
+        }
+        let mut mixed = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        mixed.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"done","arguments":{}}}]}}]}"#)).unwrap();
+        assert!(mixed.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}"#)).is_err());
+    }
+
+    #[test]
     fn openai_rejects_conflicting_or_incomplete_tool_fragments() {
         let mut conflicting = StreamNormalizer::new(StreamProtocol::OpenAi, None);
         conflicting.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"first","function":{"name":"one","arguments":"{"}}]}}]}"#)).unwrap();
-        assert_eq!(
+        assert!(matches!(
             conflicting
                 .consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"second","function":{"arguments":"}"}}]}}]}"#))
                 .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
 
         let mut duplicate_id = StreamNormalizer::new(StreamProtocol::OpenAi, None);
         duplicate_id.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"same","function":{"name":"one","arguments":"{}"}},{"index":1,"id":"same","function":{"name":"two","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#)).unwrap();
         duplicate_id.consume(&record("[DONE]")).unwrap();
-        assert_eq!(
+        assert!(matches!(
             duplicate_id.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
     }
 
     #[test]
     fn openai_stream_rejects_non_primary_or_multiple_choices() {
         let mut non_primary = StreamNormalizer::new(StreamProtocol::OpenAi, None);
-        assert_eq!(
+        assert!(matches!(
             non_primary
                 .consume(&record(
                     r#"{"choices":[{"index":1,"delta":{"content":"wrong"}}]}"#
                 ))
                 .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
 
         let mut multiple = StreamNormalizer::new(StreamProtocol::OpenAi, None);
-        assert_eq!(
-            multiple
+        assert!(matches!(multiple
                 .consume(&record(
                     r#"{"choices":[{"index":0,"delta":{"content":"one"}},{"index":1,"delta":{"content":"two"}}]}"#
                 ))
-                .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+                .unwrap_err(), StreamNormalizeError::MalformedJson { .. }));
     }
 
     #[test]
@@ -1770,10 +1993,10 @@ mod tests {
         incomplete
             .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
             .unwrap();
-        assert_eq!(
+        assert!(matches!(
             incomplete.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
 
         let mut duplicate = StreamNormalizer::new(StreamProtocol::Anthropic, None);
         for index in [0, 1] {
@@ -1794,10 +2017,10 @@ mod tests {
         duplicate
             .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
             .unwrap();
-        assert_eq!(
+        assert!(matches!(
             duplicate.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
 
         let mut mismatched_stop = StreamNormalizer::new(StreamProtocol::Anthropic, None);
         mismatched_stop.consume(&event("content_block_start", r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu-1","name":"x","input":{}}}"#)).unwrap();
@@ -1841,10 +2064,10 @@ mod tests {
         malformed_json
             .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
             .unwrap();
-        assert_eq!(
+        assert!(matches!(
             malformed_json.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
     }
 
     #[test]
@@ -1853,12 +2076,9 @@ mod tests {
         for index in 0..100 {
             normalizer.consume(&event("content_block_start", &format!(r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"server_tool_use"}}}}"#))).unwrap();
         }
-        assert_eq!(
-            normalizer
+        assert!(matches!(normalizer
                 .consume(&event("content_block_start", r#"{"type":"content_block_start","index":7,"content_block":{"type":"server_tool_use"}}"#))
-                .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+                .unwrap_err(), StreamNormalizeError::MalformedJson { .. }));
     }
 
     #[test]
@@ -1930,29 +2150,23 @@ mod tests {
         );
 
         let mut malformed = StreamNormalizer::new(StreamProtocol::Gemini, None);
-        assert_eq!(
-            malformed
+        assert!(matches!(malformed
                 .consume(&record(
                     r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup_weather","args":[]}}]}}]}"#,
                 ))
-                .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+                .unwrap_err(), StreamNormalizeError::MalformedJson { .. }));
 
         let mut incompatible = StreamNormalizer::new(StreamProtocol::Gemini, None);
-        assert_eq!(
-            incompatible
+        assert!(matches!(incompatible
                 .consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup_weather","args":{}}}]},"finishReason":"MALFORMED_FUNCTION_CALL"}]}"#))
-                .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+                .unwrap_err(), StreamNormalizeError::MalformedJson { .. }));
 
         let mut ambiguous = StreamNormalizer::new(StreamProtocol::Gemini, None);
         ambiguous.consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup_weather","args":{}}},{"functionCall":{"name":"lookup_weather","args":{}}}]},"finishReason":"STOP"}]}"#)).unwrap();
-        assert_eq!(
+        assert!(matches!(
             ambiguous.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
     }
 
     #[test]
@@ -1972,15 +2186,12 @@ mod tests {
     #[test]
     fn anthropic_rejects_mismatched_sse_and_json_event_types() {
         let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
-        assert_eq!(
-            normalizer
+        assert!(matches!(normalizer
                 .consume(&event(
                     "message_stop",
                     r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"wrong"}}"#,
                 ))
-                .expect_err("mismatch must fail"),
-            StreamNormalizeError::MalformedJson
-        );
+                .expect_err("mismatch must fail"), StreamNormalizeError::MalformedJson { .. }));
     }
 
     #[test]
@@ -2011,19 +2222,16 @@ mod tests {
         assert_eq!(calls[1].arguments, serde_json::json!({"city":"London"}));
 
         let mut malformed = StreamNormalizer::new(StreamProtocol::Ollama, None);
-        assert_eq!(
-            malformed.consume(&record(r#"{"message":{"tool_calls":[{"function":{"name":"lookup","arguments":[]}}]},"done":true}"#)).unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+        assert!(matches!(malformed.consume(&record(r#"{"message":{"tool_calls":[{"function":{"name":"lookup","arguments":[]}}]},"done":true}"#)).unwrap_err(), StreamNormalizeError::MalformedJson { .. }));
     }
 
     #[test]
     fn malformed_json_and_data_after_terminal_are_errors() {
         let mut malformed = StreamNormalizer::new(StreamProtocol::OpenAi, None);
-        assert_eq!(
+        assert!(matches!(
             malformed.consume(&record("{")).unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
+            StreamNormalizeError::MalformedJson { .. }
+        ));
 
         let mut done = StreamNormalizer::new(StreamProtocol::OpenAi, None);
         done.consume(&record("[DONE]")).unwrap();

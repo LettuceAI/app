@@ -6010,7 +6010,7 @@ export type MemoryErrorDismissRequest = {
 	client_operation_id: string,
 };
 
-export type MemoryFailureCode = "embedding_unavailable" | "model_missing" | "model_invalid" | "prompt_missing" | "settings_invalid" | "provider_unavailable" | "provider_rejected" | "empty_response" | "timed_out" | "round_limit" | "tool_failed" | "storage_failure" | "lease_lost" | "internal";
+export type MemoryFailureCode = "embedding_unavailable" | "model_missing" | "model_invalid" | "prompt_missing" | "settings_invalid" | "provider_unavailable" | "provider_rejected" | "invalid_response" | "empty_response" | "timed_out" | "round_limit" | "tool_failed" | "storage_failure" | "lease_lost" | "internal";
 
 /**
  *  Why a forced memory cycle cannot start: the conversation does not use

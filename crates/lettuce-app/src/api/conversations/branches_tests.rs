@@ -558,12 +558,21 @@ async fn new_group_copy_rolls_back_profile_messages_and_receipt_together() {
     let draft = prepare();
     let failed: Result<dto::ConversationCopyResult, lettuce_database::ApiOperationError> = database
         .commit_api_operation("copy-fault", "copy-fault", "ab", now, |scope| {
-            scope
-                .create_conversation_copy(draft, now)
-                .map_err(|_| lettuce_database::ApiOperationError::Storage)?;
-            Err(lettuce_database::ApiOperationError::Storage)
+            scope.create_conversation_copy(draft, now).map_err(|_| {
+                lettuce_database::ApiOperationError::Storage {
+                    reason: "simulated failure",
+                }
+            })?;
+            Err(lettuce_database::ApiOperationError::Storage {
+                reason: "simulated failure",
+            })
         });
-    assert_eq!(failed, Err(lettuce_database::ApiOperationError::Storage));
+    assert_eq!(
+        failed,
+        Err(lettuce_database::ApiOperationError::Storage {
+            reason: "simulated failure"
+        })
+    );
     assert!(
         GroupRepository::get(database, group_id)
             .expect("group query")
@@ -582,9 +591,11 @@ async fn new_group_copy_rolls_back_profile_messages_and_receipt_together() {
     let draft = prepare();
     let copied: dto::ConversationCopyResult = database
         .commit_api_operation("copy-fault", "copy-fault", "ab", now, |scope| {
-            let commit = scope
-                .create_conversation_copy(draft, now)
-                .map_err(|_| lettuce_database::ApiOperationError::Storage)?;
+            let commit = scope.create_conversation_copy(draft, now).map_err(|_| {
+                lettuce_database::ApiOperationError::Storage {
+                    reason: "simulated failure",
+                }
+            })?;
             Ok::<_, lettuce_database::ApiOperationError>(dto::ConversationCopyResult {
                 conversation_id: commit.value.conversation.id.to_string(),
                 revision: commit.value.conversation.revision.get(),

@@ -124,11 +124,15 @@ pub fn reduce_staged_lorebook_writer_calls(
     let call = calls
         .iter()
         .find(|call| call.name == STAGED_LOREBOOK_WRITER_TOOL_NAME)
-        .ok_or(StagedLorebookError::InvalidDraft)?;
+        .ok_or(StagedLorebookError::InvalidDraft {
+            reason: "writer reply has no write tool call",
+        })?;
     let object = call
         .arguments
         .as_object()
-        .ok_or(StagedLorebookError::InvalidDraft)?;
+        .ok_or(StagedLorebookError::InvalidDraft {
+            reason: "writer tool call arguments are not an object",
+        })?;
     let title = required_draft_text(object.get("title"))?;
     let content = required_draft_text(object.get("content"))?;
     let always_active = object
@@ -155,12 +159,16 @@ pub fn reduce_staged_lorebook_coherence_calls(
     let call = calls
         .iter()
         .find(|call| call.name == STAGED_LOREBOOK_COHERENCE_TOOL_NAME)
-        .ok_or(StagedLorebookError::InvalidDraft)?;
+        .ok_or(StagedLorebookError::InvalidDraft {
+            reason: "coherence reply has no coherence tool call",
+        })?;
     let changes = call
         .arguments
         .get("changes")
         .and_then(Value::as_array)
-        .ok_or(StagedLorebookError::InvalidDraft)?;
+        .ok_or(StagedLorebookError::InvalidDraft {
+            reason: "coherence tool call has no changes array",
+        })?;
     let plan_id = |value: u64| {
         usize::try_from(value)
             .ok()
@@ -302,17 +310,23 @@ pub fn reduce_staged_lorebook_planner_calls(
     let call = calls
         .iter()
         .find(|call| call.name == STAGED_LOREBOOK_PLANNER_TOOL_NAME)
-        .ok_or(StagedLorebookError::InvalidOutline)?;
+        .ok_or(StagedLorebookError::InvalidOutline {
+            reason: "planner reply has no planner tool call",
+        })?;
     let entries = call
         .arguments
         .get("entries")
         .and_then(Value::as_array)
-        .ok_or(StagedLorebookError::InvalidOutline)?;
+        .ok_or(StagedLorebookError::InvalidOutline {
+            reason: "planner tool call has no entries array",
+        })?;
     let mut outline = Vec::with_capacity(entries.len());
     for (ordinal, value) in entries.iter().enumerate() {
         let object = value
             .as_object()
-            .ok_or(StagedLorebookError::InvalidOutline)?;
+            .ok_or(StagedLorebookError::InvalidOutline {
+                reason: "planner entry is not an object",
+            })?;
         let title = required_text(object.get("title"))?;
         let category = object
             .get("category")
@@ -344,7 +358,9 @@ pub fn reduce_staged_lorebook_planner_calls(
                 &project.id.as_uuid(),
                 format!("outline-{ordinal}").as_bytes(),
             )),
-            ordinal: u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline)?,
+            ordinal: u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline {
+                reason: "outline ordinal exceeds the u32 range",
+            })?,
             title,
             category,
             proposed_keys,
@@ -362,7 +378,9 @@ fn required_text(value: Option<&Value>) -> Result<String, StagedLorebookError> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .ok_or(StagedLorebookError::InvalidOutline)
+        .ok_or(StagedLorebookError::InvalidOutline {
+            reason: "outline text field is missing or blank",
+        })
 }
 
 fn required_draft_text(value: Option<&Value>) -> Result<String, StagedLorebookError> {
@@ -371,7 +389,9 @@ fn required_draft_text(value: Option<&Value>) -> Result<String, StagedLorebookEr
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .ok_or(StagedLorebookError::InvalidDraft)
+        .ok_or(StagedLorebookError::InvalidDraft {
+            reason: "draft text field is missing or blank",
+        })
 }
 
 fn string_array(value: Option<&Value>, trim: bool) -> Vec<String> {
@@ -579,14 +599,14 @@ pub struct StagedLorebookDraftBatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StagedLorebookError {
-    #[error("staged lorebook input is invalid")]
-    InvalidInput,
-    #[error("staged lorebook transition is invalid")]
-    InvalidTransition,
-    #[error("staged lorebook outline is invalid")]
-    InvalidOutline,
-    #[error("staged lorebook draft is invalid")]
-    InvalidDraft,
+    #[error("staged lorebook input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
+    #[error("staged lorebook transition is invalid: {reason}")]
+    InvalidTransition { reason: &'static str },
+    #[error("staged lorebook outline is invalid: {reason}")]
+    InvalidOutline { reason: &'static str },
+    #[error("staged lorebook draft is invalid: {reason}")]
+    InvalidDraft { reason: &'static str },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -851,12 +871,12 @@ pub enum StagedLorebookWriterRunRepositoryError {
     NotFound,
     #[error("staged lorebook writer run conflicts with durable state")]
     Conflict,
-    #[error("staged lorebook writer run is invalid")]
-    Invalid,
-    #[error("staged lorebook writer run storage failed")]
-    Failure,
-    #[error("staged lorebook writer run storage is corrupt")]
-    Corrupt,
+    #[error("staged lorebook writer run is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("staged lorebook writer run storage failed: {reason}")]
+    Failure { reason: &'static str },
+    #[error("staged lorebook writer run storage is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
 }
 
 pub trait StagedLorebookWriterRunRepository: Send + Sync {
@@ -893,12 +913,12 @@ pub enum StagedLorebookRepositoryError {
     NotFound,
     #[error("staged lorebook project conflicts with durable state")]
     Conflict,
-    #[error("staged lorebook project is invalid")]
-    Invalid,
-    #[error("staged lorebook project storage failed")]
-    Failure,
-    #[error("staged lorebook project storage is corrupt")]
-    Corrupt,
+    #[error("staged lorebook project is invalid: {reason}")]
+    Invalid { reason: String },
+    #[error("staged lorebook project storage failed: {reason}")]
+    Failure { reason: &'static str },
+    #[error("staged lorebook project storage is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
 }
 
 pub trait StagedLorebookRepository: Send + Sync {
@@ -1091,7 +1111,9 @@ impl StagedLorebookPlanningRun {
     pub fn validate(&self) -> Result<(), StagedLorebookRepositoryError> {
         self.project
             .validate()
-            .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+            .map_err(|error| StagedLorebookRepositoryError::Invalid {
+                reason: format!("project failed validation: {error}"),
+            })?;
         let mut coherence_request_ids = HashSet::with_capacity(self.coherence_runs.len());
         let mut retry_ids = HashSet::new();
         let mut previous_jobs = HashSet::new();
@@ -1108,7 +1130,10 @@ impl StagedLorebookPlanningRun {
                         || !matches!(attempt.decision, StagedLorebookPlannerDecision::Invalid)
                 })
             {
-                return Err(StagedLorebookRepositoryError::Invalid);
+                return Err(StagedLorebookRepositoryError::Invalid {
+                    reason: "planner retry lineage, revision or timestamps are inconsistent"
+                        .to_owned(),
+                });
             }
         }
         let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
@@ -1148,7 +1173,11 @@ impl StagedLorebookPlanningRun {
                     || run.validate(&self.project).is_err()
             })
         {
-            return Err(StagedLorebookRepositoryError::Invalid);
+            return Err(StagedLorebookRepositoryError::Invalid {
+                reason:
+                    "request, planner profile, planner attempt or coherence runs are inconsistent"
+                        .to_owned(),
+            });
         }
         Ok(())
     }
@@ -1177,7 +1206,9 @@ impl StagedLorebookCoherenceRun {
                 .as_ref()
                 .is_some_and(|attempt| attempt.validate(project).is_err())
         {
-            return Err(StagedLorebookRepositoryError::Invalid);
+            return Err(StagedLorebookRepositoryError::Invalid {
+                reason: "writer snapshot, profile or attempt is inconsistent".to_owned(),
+            });
         }
         Ok(())
     }
@@ -1195,7 +1226,10 @@ impl StagedLorebookCoherenceAttempt {
                 .any(|call| call.provider_replay.is_some() || call.validate().is_err())
             || matches!(&self.decision, StagedLorebookCoherenceDecision::Proposals(changes) if validate_coherence_changes(changes, &project.drafts).is_err())
         {
-            return Err(StagedLorebookRepositoryError::Invalid);
+            return Err(StagedLorebookRepositoryError::Invalid {
+                reason: "coherence attempt has a replay, invalid call or invalid proposals"
+                    .to_owned(),
+            });
         }
         Ok(())
     }
@@ -1211,7 +1245,9 @@ impl StagedLorebookPlannerAttempt {
                 .any(|call| call.provider_replay.is_some() || call.validate().is_err())
             || matches!(&self.decision, StagedLorebookPlannerDecision::Outline(outline) if validate_outline(outline).is_err())
         {
-            return Err(StagedLorebookRepositoryError::Invalid);
+            return Err(StagedLorebookRepositoryError::Invalid {
+                reason: "planner attempt has a revision of zero, replay, invalid call or invalid outline".to_owned(),
+            });
         }
         Ok(())
     }
@@ -1276,7 +1312,9 @@ impl StagedLorebookWriterRun {
                 .as_ref()
                 .is_some_and(|attempt| attempt.validate(self).is_err())
         {
-            return Err(StagedLorebookWriterRunRepositoryError::Invalid);
+            return Err(StagedLorebookWriterRunRepositoryError::Invalid {
+                reason: "writer run snapshot, profile or attempt is inconsistent",
+            });
         }
         Ok(())
     }
@@ -1294,7 +1332,9 @@ impl StagedLorebookWriterAttempt {
                 .any(|call| call.provider_replay.is_some() || call.validate().is_err())
             || matches!(&self.decision, StagedLorebookWriterDecision::Draft(draft) if validate_written_draft(draft, run.plan_id).is_err())
         {
-            return Err(StagedLorebookWriterRunRepositoryError::Invalid);
+            return Err(StagedLorebookWriterRunRepositoryError::Invalid {
+                reason: "writer attempt has a replay, invalid call or invalid draft",
+            });
         }
         Ok(())
     }
@@ -1315,16 +1355,20 @@ impl StagedLorebookProject {
             StagedLorebookStage::Committed | StagedLorebookStage::Cancelled
         ) || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is already committed or cancelled, or time moves backwards",
+            });
         }
         let mut next = self.clone();
         next.cancelled_from = Some(self.stage);
         next.stage = StagedLorebookStage::Cancelled;
         next.updated_at = now;
-        next.revision = self
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            self.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         next.validate()?;
         Ok(next)
     }
@@ -1363,15 +1407,19 @@ impl StagedLorebookProject {
 
     pub fn start_planning(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::Created || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not created or time moves backwards",
+            });
         }
         let mut next = self.clone();
         next.stage = StagedLorebookStage::Planning;
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1381,17 +1429,21 @@ impl StagedLorebookProject {
         now: TimestampMillis,
     ) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::Planning || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not planning or time moves backwards",
+            });
         }
         validate_outline(&outline)?;
         let mut next = self.clone();
         next.outline = outline;
         next.stage = StagedLorebookStage::AwaitingOutlineApproval;
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1400,7 +1452,9 @@ impl StagedLorebookProject {
             || self.outline.is_empty()
             || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not awaiting outline approval, the outline is empty or time moves backwards",
+            });
         }
         let mut next = self.clone();
         next.drafts = self
@@ -1418,10 +1472,12 @@ impl StagedLorebookProject {
             .collect();
         next.stage = StagedLorebookStage::Drafting;
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1431,20 +1487,26 @@ impl StagedLorebookProject {
         now: TimestampMillis,
     ) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::AwaitingOutlineApproval || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not awaiting outline approval or time moves backwards",
+            });
         }
         for (ordinal, plan) in outline.iter_mut().enumerate() {
             plan.ordinal =
-                u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline)?;
+                u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline {
+                    reason: "outline ordinal exceeds the u32 range",
+                })?;
         }
         validate_outline(&outline)?;
         let mut next = self.clone();
         next.outline = outline;
         next.updated_at = now;
-        next.revision = self
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            self.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1454,7 +1516,9 @@ impl StagedLorebookProject {
         now: TimestampMillis,
     ) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::Drafting || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not drafting or time moves backwards",
+            });
         }
         validate_written_draft(&draft, draft.plan_id)?;
         let position = self
@@ -1467,15 +1531,19 @@ impl StagedLorebookProject {
                     StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Drafting
                 )
             })
-            .ok_or(StagedLorebookError::InvalidTransition)?;
+            .ok_or(StagedLorebookError::InvalidTransition {
+                reason: "no draft is pending or drafting",
+            })?;
         let mut next = self.clone();
         next.drafts[position] = draft;
         next.finish_drafting_if_terminal();
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1497,7 +1565,9 @@ impl StagedLorebookProject {
             StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
         ) || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is already drafting or ready, or time moves backwards",
+            });
         }
         if self
             .drafts
@@ -1523,18 +1593,21 @@ impl StagedLorebookProject {
             next.finish_drafting_if_terminal();
         } else {
             next.draft_batch = Some(StagedLorebookDraftBatch {
-                revision: self
-                    .revision
-                    .next()
-                    .map_err(|_| StagedLorebookError::InvalidTransition)?,
+                revision: self.revision.next().map_err(|_| {
+                    StagedLorebookError::InvalidTransition {
+                        reason: "project revision overflowed",
+                    }
+                })?,
                 started_at: now,
             });
         }
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1544,7 +1617,9 @@ impl StagedLorebookProject {
             StagedLorebookStage::Committed | StagedLorebookStage::Cancelled
         ) || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is already committed or cancelled, or time moves backwards",
+            });
         }
         let mut next = self.clone();
         for draft in &mut next.drafts {
@@ -1556,10 +1631,12 @@ impl StagedLorebookProject {
             next.finish_drafting_if_terminal();
         }
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         next.validate()?;
         Ok(next)
     }
@@ -1570,7 +1647,9 @@ impl StagedLorebookProject {
         now: TimestampMillis,
     ) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::Drafting || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not drafting or time moves backwards",
+            });
         }
         let position = self
             .drafts
@@ -1578,15 +1657,19 @@ impl StagedLorebookProject {
             .position(|draft| {
                 draft.plan_id == plan_id && draft.status == StagedLorebookDraftStatus::Drafting
             })
-            .ok_or(StagedLorebookError::InvalidTransition)?;
+            .ok_or(StagedLorebookError::InvalidTransition {
+                reason: "no draft is currently drafting for the plan",
+            })?;
         let mut next = self.clone();
         next.drafts[position].status = StagedLorebookDraftStatus::Failed;
         next.finish_drafting_if_terminal();
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1602,13 +1685,17 @@ impl StagedLorebookProject {
                 | StagedLorebookStage::CoherenceReview
         ) || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not in a drafting review stage or time moves backwards",
+            });
         }
         let position = self
             .drafts
             .iter()
             .position(|draft| draft.plan_id == edit.plan_id)
-            .ok_or(StagedLorebookError::InvalidTransition)?;
+            .ok_or(StagedLorebookError::InvalidTransition {
+                reason: "draft plan id is not in the project",
+            })?;
         let mut next = self.clone();
         let draft = &mut next.drafts[position];
         draft.title = edit.title;
@@ -1627,10 +1714,12 @@ impl StagedLorebookProject {
             draft.status = StagedLorebookDraftStatus::Drafted;
         }
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         next.validate()?;
         Ok(next)
     }
@@ -1648,13 +1737,17 @@ impl StagedLorebookProject {
                 | StagedLorebookStage::CoherenceReview
         ) || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not in a drafting review stage or time moves backwards",
+            });
         }
         let position = self
             .drafts
             .iter()
             .position(|draft| draft.plan_id == plan_id)
-            .ok_or(StagedLorebookError::InvalidTransition)?;
+            .ok_or(StagedLorebookError::InvalidTransition {
+                reason: "draft plan id is not in the project",
+            })?;
         let mut next = self.clone();
         next.drafts[position].status = if approved {
             StagedLorebookDraftStatus::Approved
@@ -1662,10 +1755,12 @@ impl StagedLorebookProject {
             StagedLorebookDraftStatus::Drafted
         };
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         next.validate()?;
         Ok(next)
     }
@@ -1682,21 +1777,27 @@ impl StagedLorebookProject {
                 | StagedLorebookStage::CoherenceReview
         ) || now < self.updated_at
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not in a drafting review stage or time moves backwards",
+            });
         }
         let position = self
             .drafts
             .iter()
             .position(|stored| stored.plan_id == draft.plan_id)
-            .ok_or(StagedLorebookError::InvalidTransition)?;
+            .ok_or(StagedLorebookError::InvalidTransition {
+                reason: "draft plan id is not in the project",
+            })?;
         validate_refined_draft(&draft, &self.drafts[position])?;
         let mut next = self.clone();
         next.drafts[position] = draft;
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         next.validate()?;
         Ok(next)
     }
@@ -1707,7 +1808,9 @@ impl StagedLorebookProject {
         now: TimestampMillis,
     ) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::DraftsReady || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not ready for coherence or time moves backwards",
+            });
         }
         validate_coherence_changes(&proposals, &self.drafts)?;
         let mut next = self.clone();
@@ -1715,10 +1818,12 @@ impl StagedLorebookProject {
         next.last_coherence_application = None;
         next.stage = StagedLorebookStage::CoherenceReview;
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         Ok(next)
     }
 
@@ -1728,7 +1833,9 @@ impl StagedLorebookProject {
         now: TimestampMillis,
     ) -> Result<Self, StagedLorebookError> {
         if self.stage != StagedLorebookStage::CoherenceReview || now < self.updated_at {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "project is not in coherence review or time moves backwards",
+            });
         }
         let mut next = self.clone();
         for change in self
@@ -1745,10 +1852,12 @@ impl StagedLorebookProject {
         });
         next.stage = StagedLorebookStage::DraftsReady;
         next.updated_at = now;
-        next.revision = next
-            .revision
-            .next()
-            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.revision =
+            next.revision
+                .next()
+                .map_err(|_| StagedLorebookError::InvalidTransition {
+                    reason: "project revision overflowed",
+                })?;
         next.validate()?;
         Ok(next)
     }
@@ -1771,7 +1880,9 @@ impl StagedLorebookProject {
                 || batch.started_at < self.created_at
                 || batch.started_at > self.updated_at
         }) {
-            return Err(StagedLorebookError::InvalidInput);
+            return Err(StagedLorebookError::InvalidInput {
+                reason: "draft batch revision or timestamps are inconsistent",
+            });
         }
         if self.brief.is_empty()
             || self.brief != self.brief.trim()
@@ -1781,17 +1892,23 @@ impl StagedLorebookProject {
             || self.created_at.get() < 0
             || self.updated_at < self.created_at
         {
-            return Err(StagedLorebookError::InvalidInput);
+            return Err(StagedLorebookError::InvalidInput {
+                reason: "brief, target count, revision or timestamps are invalid",
+            });
         }
         if self.stage == StagedLorebookStage::Cancelled {
             let previous = self
                 .cancelled_from
-                .ok_or(StagedLorebookError::InvalidTransition)?;
+                .ok_or(StagedLorebookError::InvalidTransition {
+                    reason: "cancelled project has no previous stage",
+                })?;
             if matches!(
                 previous,
                 StagedLorebookStage::Cancelled | StagedLorebookStage::Committed
             ) {
-                return Err(StagedLorebookError::InvalidTransition);
+                return Err(StagedLorebookError::InvalidTransition {
+                    reason: "cancelled project was previously cancelled or committed",
+                });
             }
             let mut retained = self.clone();
             retained.stage = previous;
@@ -1801,7 +1918,9 @@ impl StagedLorebookProject {
         if self.cancelled_from.is_some()
             || (self.stage == StagedLorebookStage::Committed) != self.commit_receipt.is_some()
         {
-            return Err(StagedLorebookError::InvalidTransition);
+            return Err(StagedLorebookError::InvalidTransition {
+                reason: "cancelled_from or the commit receipt does not match the stage",
+            });
         }
         if let Some(receipt) = &self.commit_receipt {
             let (id, revision) = match &receipt.request.target {
@@ -1813,7 +1932,9 @@ impl StagedLorebookProject {
                     *id,
                     expected_revision
                         .next()
-                        .map_err(|_| StagedLorebookError::InvalidInput)?,
+                        .map_err(|_| StagedLorebookError::InvalidInput {
+                            reason: "commit receipt revision overflowed",
+                        })?,
                 ),
             };
             let accepted: Vec<_> = self
@@ -1829,7 +1950,9 @@ impl StagedLorebookProject {
                 || receipt.request.now != self.updated_at
                 || receipt.request.expected_project_revision.next().ok() != Some(self.revision)
             {
-                return Err(StagedLorebookError::InvalidInput);
+                return Err(StagedLorebookError::InvalidInput {
+                    reason: "commit receipt does not match the project",
+                });
             }
         }
         let mut source_ids = HashSet::with_capacity(self.excerpts.len());
@@ -1841,7 +1964,9 @@ impl StagedLorebookProject {
                 || !crate::staged_lorebook_sources::valid_staged_excerpt(&excerpt.content)
                 || !source_ids.insert(excerpt.source_id.as_str())
             {
-                return Err(StagedLorebookError::InvalidInput);
+                return Err(StagedLorebookError::InvalidInput {
+                    reason: "source excerpt id, label or content is invalid or duplicated",
+                });
             }
         }
         match self.stage {
@@ -1850,14 +1975,18 @@ impl StagedLorebookProject {
                     || !self.drafts.is_empty()
                     || !self.coherence_proposals.is_empty() =>
             {
-                Err(StagedLorebookError::InvalidOutline)
+                Err(StagedLorebookError::InvalidOutline {
+                    reason: "early-stage project already has outline, drafts or proposals",
+                })
             }
             StagedLorebookStage::AwaitingOutlineApproval => {
                 validate_outline(&self.outline)?;
                 if self.drafts.is_empty() && self.coherence_proposals.is_empty() {
                     Ok(())
                 } else {
-                    Err(StagedLorebookError::InvalidOutline)
+                    Err(StagedLorebookError::InvalidOutline {
+                        reason: "project awaiting outline approval has drafts or proposals",
+                    })
                 }
             }
             StagedLorebookStage::Drafting
@@ -1880,7 +2009,9 @@ impl StagedLorebookProject {
                         StagedLorebookStage::CoherenceReview | StagedLorebookStage::Committed
                     ) && !self.coherence_proposals.is_empty())
                 {
-                    Err(StagedLorebookError::InvalidDraft)
+                    Err(StagedLorebookError::InvalidDraft {
+                        reason: "drafts ready with unsettled drafts, or coherence proposals before review",
+                    })
                 } else {
                     Ok(())
                 }
@@ -1924,7 +2055,9 @@ fn validate_drafts(
                 }
         })
     {
-        return Err(StagedLorebookError::InvalidOutline);
+        return Err(StagedLorebookError::InvalidOutline {
+            reason: "draft does not match its outline plan or its status",
+        });
     }
     Ok(())
 }
@@ -1945,7 +2078,9 @@ fn validate_written_draft(
             .any(|keyword| keyword.is_empty() || keyword != keyword.trim())
         || !draft.revisions.is_empty()
     {
-        return Err(StagedLorebookError::InvalidDraft);
+        return Err(StagedLorebookError::InvalidDraft {
+            reason: "written draft is not a clean drafted entry without revisions",
+        });
     }
     Ok(())
 }
@@ -1962,7 +2097,9 @@ fn validate_refined_draft(
         base.plan_id,
     )?;
     let Some(revision) = draft.revisions.strip_prefix(base.revisions.as_slice()) else {
-        return Err(StagedLorebookError::InvalidDraft);
+        return Err(StagedLorebookError::InvalidDraft {
+            reason: "refined draft does not extend the base revisions",
+        });
     };
     if revision.len() != 1
         || revision[0].feedback.trim().is_empty()
@@ -1970,7 +2107,9 @@ fn validate_refined_draft(
         || revision[0].content != draft.content
         || revision[0].timestamp.get() < 0
     {
-        return Err(StagedLorebookError::InvalidDraft);
+        return Err(StagedLorebookError::InvalidDraft {
+            reason: "refinement revision is not a single clean revision of the draft",
+        });
     }
     Ok(())
 }
@@ -1985,7 +2124,9 @@ fn validate_draft_revisions(
             || revision.content != revision.content.trim()
             || revision.timestamp.get() < 0
     }) {
-        return Err(StagedLorebookError::InvalidDraft);
+        return Err(StagedLorebookError::InvalidDraft {
+            reason: "draft revision has blank, untrimmed or negative-time fields",
+        });
     }
     Ok(())
 }
@@ -2001,7 +2142,9 @@ fn validate_coherence_changes(
     let mut ids = HashSet::with_capacity(changes.len());
     for change in changes {
         if change.id().is_empty() || !ids.insert(change.id()) {
-            return Err(StagedLorebookError::InvalidDraft);
+            return Err(StagedLorebookError::InvalidDraft {
+                reason: "coherence change id is empty or duplicated",
+            });
         }
         let valid = match change {
             StagedLorebookCoherenceChange::MergeKeys {
@@ -2036,7 +2179,9 @@ fn validate_coherence_changes(
             }
         };
         if !valid {
-            return Err(StagedLorebookError::InvalidDraft);
+            return Err(StagedLorebookError::InvalidDraft {
+                reason: "coherence change references unknown plans or has empty fields",
+            });
         }
     }
     Ok(())
@@ -2095,7 +2240,9 @@ fn apply_coherence_change(
 /// source is kept, and the writer then reads every excerpt.
 fn validate_outline(outline: &[StagedLorebookEntryPlan]) -> Result<(), StagedLorebookError> {
     if outline.is_empty() {
-        return Err(StagedLorebookError::InvalidOutline);
+        return Err(StagedLorebookError::InvalidOutline {
+            reason: "outline is empty",
+        });
     }
     let mut plan_ids = HashSet::with_capacity(outline.len());
     for (ordinal, plan) in outline.iter().enumerate() {
@@ -2107,7 +2254,9 @@ fn validate_outline(outline: &[StagedLorebookEntryPlan]) -> Result<(), StagedLor
             || plan.rationale != plan.rationale.trim()
             || !plan_ids.insert(plan.id)
         {
-            return Err(StagedLorebookError::InvalidOutline);
+            return Err(StagedLorebookError::InvalidOutline {
+                reason: "outline entry ordinal, text fields or plan id are invalid",
+            });
         }
     }
     Ok(())
@@ -2195,7 +2344,7 @@ mod tests {
         .expect("create project")
         .start_planning(TimestampMillis::new(11))
         .expect("start planning");
-        assert_eq!(
+        assert!(matches!(
             project.submit_outline(
                 vec![StagedLorebookEntryPlan {
                     id: LorebookEntryId::new(),
@@ -2208,8 +2357,8 @@ mod tests {
                 }],
                 TimestampMillis::new(12),
             ),
-            Err(StagedLorebookError::InvalidOutline)
-        );
+            Err(StagedLorebookError::InvalidOutline { .. })
+        ));
     }
 
     #[test]
@@ -2349,7 +2498,7 @@ mod tests {
         assert!(draft.always_active);
         assert_eq!(draft.status, StagedLorebookDraftStatus::Drafted);
         assert!(draft.revisions.is_empty());
-        assert_eq!(
+        assert!(matches!(
             reduce_staged_lorebook_writer_calls(
                 plan_id,
                 &[call(
@@ -2357,8 +2506,8 @@ mod tests {
                     json!({"title": " ", "content": "Body"}),
                 )],
             ),
-            Err(StagedLorebookError::InvalidDraft)
-        );
+            Err(StagedLorebookError::InvalidDraft { .. })
+        ));
     }
 
     #[test]

@@ -68,12 +68,16 @@ impl ProviderBackupRestorePlan {
         let bytes = self
             .source
             .lock()
-            .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?
+            .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory {
+                reason: "media source lock is poisoned".to_owned(),
+            })?
             .read_section(entry.section)?;
         if u64::try_from(bytes.len()).ok() != Some(entry.byte_size)
             || content_hash(&bytes) != entry.content_hash
         {
-            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+            return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                reason: "media section size or content hash does not match its entry".to_owned(),
+            });
         }
         Ok(bytes)
     }
@@ -85,12 +89,12 @@ pub enum ProviderBackupRestorePlanError {
     Envelope(#[from] crate::BackupEnvelopeError),
     #[error("legacy backup requires the version-1 compatibility decoder")]
     LegacyRequiresCompatibility,
-    #[error("backup restore inventory is invalid")]
-    InvalidInventory,
+    #[error("backup restore inventory is invalid: {reason}")]
+    InvalidInventory { reason: String },
     #[error("backup restore graph is invalid: {0}")]
     InvalidGraph(#[from] ProviderBackupGraphError),
-    #[error("backup source could not be read")]
-    Io,
+    #[error("backup source could not be read: {reason}")]
+    Io { reason: String },
 }
 
 #[derive(Deserialize)]
@@ -215,12 +219,18 @@ pub fn decode_provider_backup_restore_plan(
     let mut read = 0;
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| ProviderBackupRestorePlanError::Io)?;
+        .map_err(|error| ProviderBackupRestorePlanError::Io {
+            reason: format!("rewinding the backup source failed: {error}"),
+        })?;
     while read < prefix.len() {
         match input.read(&mut prefix[read..]) {
             Ok(0) => break,
             Ok(count) => read += count,
-            Err(_) => return Err(ProviderBackupRestorePlanError::Io),
+            Err(error) => {
+                return Err(ProviderBackupRestorePlanError::Io {
+                    reason: format!("reading the backup source failed: {error}"),
+                });
+            }
         }
     }
     match crate::detect_backup_format(&prefix[..read])? {
@@ -231,11 +241,15 @@ pub fn decode_provider_backup_restore_plan(
     }
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| ProviderBackupRestorePlanError::Io)?;
+        .map_err(|error| ProviderBackupRestorePlanError::Io {
+            reason: format!("rewinding the backup source for hashing failed: {error}"),
+        })?;
     let mut hasher = blake3::Hasher::new();
     hasher
         .update_reader(&mut input)
-        .map_err(|_| ProviderBackupRestorePlanError::Io)?;
+        .map_err(|error| ProviderBackupRestorePlanError::Io {
+            reason: format!("hashing the backup source failed: {error}"),
+        })?;
     let source_hash = lettuce_types::ContentHash::parse(hasher.finalize().to_hex().to_string())
         .expect("BLAKE3 produces a valid content hash");
     let mut reader = BackupReader::open(Box::new(input) as Box<dyn BackupSource>, password)?;
@@ -272,18 +286,26 @@ pub fn decode_provider_backup_restore_plan(
         .sections
         .get("data/conversation-usage.json")
         .map(|(_, section)| section.schema.clone())
-        .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
+        .ok_or(ProviderBackupRestorePlanError::InvalidInventory {
+            reason: "backup has no conversation usage section".to_owned(),
+        })?;
     let usage_version = match usage_schema.as_str() {
         "conversation-usage.v1" => 1,
         "conversation-usage.v2" => 2,
         "conversation-usage.v3" => 3,
         "conversation-usage.v4" => 4,
-        _ => return Err(ProviderBackupRestorePlanError::InvalidInventory),
+        _ => {
+            return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                reason: "conversation usage schema is not a supported version".to_owned(),
+            });
+        }
     };
     let conversation_usage: crate::ConversationUsageBackup =
         take_json(sections, "data/conversation-usage.json", &usage_schema)?;
     if conversation_usage.version != usage_version {
-        return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        return Err(ProviderBackupRestorePlanError::InvalidInventory {
+            reason: "conversation usage version does not match its schema".to_owned(),
+        });
     }
     let conversation_outbox = take_json(
         sections,
@@ -334,7 +356,9 @@ pub fn decode_provider_backup_restore_plan(
     let media = take_media(sections, &graph)?;
     let artifacts = take_artifacts(sections, &graph)?;
     if !sections.sections.is_empty() {
-        return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        return Err(ProviderBackupRestorePlanError::InvalidInventory {
+            reason: "backup has sections that no inventory entry claims".to_owned(),
+        });
     }
     Ok(ProviderBackupRestorePlan {
         source_hash,
@@ -358,12 +382,16 @@ impl Sections<'_> {
         name: &str,
         schema: &str,
     ) -> Result<(usize, BackupSectionInfo), ProviderBackupRestorePlanError> {
-        let (index, section) = self
-            .sections
-            .remove(name)
-            .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
+        let (index, section) =
+            self.sections
+                .remove(name)
+                .ok_or(ProviderBackupRestorePlanError::InvalidInventory {
+                    reason: "backup section is missing".to_owned(),
+                })?;
         if section.schema != schema {
-            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+            return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                reason: "backup section schema does not match".to_owned(),
+            });
         }
         Ok((index, section))
     }
@@ -405,8 +433,11 @@ fn take_json<T: for<'de> Deserialize<'de>>(
     name: &str,
     schema: &str,
 ) -> Result<T, ProviderBackupRestorePlanError> {
-    serde_json::from_slice(&sections.read_document(name, schema)?)
-        .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)
+    serde_json::from_slice(&sections.read_document(name, schema)?).map_err(|error| {
+        ProviderBackupRestorePlanError::InvalidInventory {
+            reason: format!("backup section is not valid json for its schema: {error}"),
+        }
+    })
 }
 
 type DecodedSecrets = (Vec<ProviderBackupSecret>, Vec<ProviderBackupSecret>);
@@ -416,16 +447,22 @@ fn decode_secrets(
     graph: &ProviderBackupGraph,
 ) -> Result<DecodedSecrets, ProviderBackupRestorePlanError> {
     if document.version != PROVIDER_BACKUP_GRAPH_VERSION {
-        return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        return Err(ProviderBackupRestorePlanError::InvalidInventory {
+            reason: "secrets document version is not the supported version".to_owned(),
+        });
     }
     let expected = crate::backup::backup_graph::expected_secrets(graph)?;
     if document.secrets.len() + document.missing.len() != expected.len() {
-        return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        return Err(ProviderBackupRestorePlanError::InvalidInventory {
+            reason: "secret and missing counts do not match the expected references".to_owned(),
+        });
     }
     let mut seen = BTreeMap::new();
     for reference in &document.missing {
         if !expected.contains_key(reference) || seen.insert(*reference, ()).is_some() {
-            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+            return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                reason: "missing secret reference is unexpected or duplicated".to_owned(),
+            });
         }
     }
     let mut secrets = Vec::with_capacity(document.secrets.len());
@@ -434,7 +471,11 @@ fn decode_secrets(
             || expected.get(&secret.reference) != Some(&secret.purpose)
             || seen.insert(secret.reference, ()).is_some()
         {
-            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+            return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                reason:
+                    "secret has generation zero, an unexpected purpose or a duplicate reference"
+                        .to_owned(),
+            });
         }
         secrets.push(decoded_secret(secret)?);
     }
@@ -444,8 +485,11 @@ fn decode_secrets(
         .into_iter()
         .map(decoded_secret)
         .collect::<Result<Vec<_>, _>>()?;
-    crate::backup::backup_graph::validate_app_secrets(&app)
-        .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?;
+    crate::backup::backup_graph::validate_app_secrets(&app).map_err(|error| {
+        ProviderBackupRestorePlanError::InvalidInventory {
+            reason: format!("app secrets failed validation: {error}"),
+        }
+    })?;
     Ok((secrets, app))
 }
 
@@ -456,8 +500,11 @@ fn decoded_secret(
         reference: secret.reference,
         purpose: secret.purpose,
         generation: secret.generation,
-        value: SecretValue::new(secret.value)
-            .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?,
+        value: SecretValue::new(secret.value).map_err(|error| {
+            ProviderBackupRestorePlanError::InvalidInventory {
+                reason: format!("secret value could not be held: {error}"),
+            }
+        })?,
     })
 }
 
@@ -476,7 +523,9 @@ fn take_media(
                 crate::BACKUP_MEDIA_SECTION_SCHEMA,
             )?;
             if info.plaintext_bytes != blob.byte_size || info.content_hash != blob.content_hash {
-                return Err(ProviderBackupRestorePlanError::InvalidInventory);
+                return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                    reason: "media section size or content hash does not match the blob".to_owned(),
+                });
             }
             Ok(BackupMediaEntry {
                 content_hash: blob.content_hash.clone(),
@@ -499,7 +548,10 @@ fn take_artifacts(
             let bytes = sections.read(&name, &schema)?;
             if u64::try_from(bytes.len()).ok() != Some(byte_size) || content_hash(&bytes) != *digest
             {
-                return Err(ProviderBackupRestorePlanError::InvalidInventory);
+                return Err(ProviderBackupRestorePlanError::InvalidInventory {
+                    reason: "artifact section size or content hash does not match its descriptor"
+                        .to_owned(),
+                });
             }
             Ok(BackupConversationArtifact { descriptor, bytes })
         })

@@ -196,9 +196,9 @@ pub trait ArtifactSourceClient: Send + Sync {
 
 fn map_download_error(error: ArtifactDownloadError) -> ArtifactSourceError {
     match error {
-        ArtifactDownloadError::InvalidRequest => ArtifactSourceError::InvalidRequest,
-        ArtifactDownloadError::InvalidResponse => ArtifactSourceError::InvalidResponse,
-        ArtifactDownloadError::Transport => ArtifactSourceError::Transport,
+        ArtifactDownloadError::InvalidRequest { .. } => ArtifactSourceError::InvalidRequest,
+        ArtifactDownloadError::InvalidResponse { .. } => ArtifactSourceError::InvalidResponse,
+        ArtifactDownloadError::Transport { .. } => ArtifactSourceError::Transport,
         ArtifactDownloadError::TimedOut => ArtifactSourceError::TimedOut,
         ArtifactDownloadError::Refused { status, signed_in } => {
             ArtifactSourceError::Refused { status, signed_in }
@@ -234,7 +234,12 @@ impl ArtifactSourceClient for ArtifactDownloadClient {
                 path,
             } => match lettuce_model_hub::pinned_resolve_url(repository, revision, path) {
                 Ok(url) => self.open_hugging_face(&url, offset, expected_size).await,
-                Err(_) => Err(ArtifactDownloadError::InvalidRequest),
+                Err(error) => {
+                    tracing::warn!(%error, "pinned download url could not be built");
+                    Err(ArtifactDownloadError::InvalidRequest {
+                        reason: "pinned download url could not be built",
+                    })
+                }
             },
             ArtifactSource::Https { url } => self.open_https(url, offset, expected_size).await,
         };
@@ -282,8 +287,8 @@ pub enum ArtifactInstallError {
     Source(#[from] ArtifactSourceError),
     #[error("artifact install job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("artifact install work is inconsistent")]
-    InvalidWork,
+    #[error("artifact install work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
     #[error("artifact install was cancelled")]
     Cancelled,
     #[error("Hugging Face refused the download: {0:?}")]
@@ -340,15 +345,15 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         create: impl FnOnce(lettuce_jobs::NewJob) -> Result<lettuce_jobs::CreateJobResult, StoreError>,
     ) -> Result<ArtifactInstallAdmission, ArtifactInstallError> {
         if plan.artifacts.is_empty() {
-            return Err(ArtifactInstallError::InvalidWork);
+            return Err(ArtifactInstallError::InvalidWork { reason: "the install plan has no artifacts" });
         }
         let asset_id = plan.outcome_asset_id();
         let mut subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
-            .map_err(|_| ArtifactInstallError::InvalidWork)?;
+            .map_err(|_| ArtifactInstallError::InvalidWork { reason: "the install asset id is not a valid job subject" })?;
         if let Some(display) = display {
             subject = subject
                 .with_display(display)
-                .map_err(|_| ArtifactInstallError::InvalidWork)?;
+                .map_err(|_| ArtifactInstallError::InvalidWork { reason: "the install asset id is not a valid job subject" })?;
         }
         let mut earlier = 0_usize;
         let mut page = PageRequest::default();
@@ -384,7 +389,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
             )
             .with_idempotency_key(
                 IdempotencyKey::new(format!("artifact-install-{asset_id}-{earlier}"))
-                    .map_err(|_| ArtifactInstallError::InvalidWork)?,
+                    .map_err(|_| ArtifactInstallError::InvalidWork { reason: "the install key is not a valid idempotency key" })?,
             )
             .with_priority(JobPriority::Interactive)
             .with_resources(vec![
@@ -416,7 +421,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(ArtifactInstallError::InvalidWork)?;
+            .ok_or(ArtifactInstallError::InvalidWork { reason: "the job is missing from the store" })?;
         validate_job(&job, &plan)?;
         if job.state.is_terminal() {
             return Ok(None);
@@ -465,7 +470,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(ArtifactInstallError::InvalidWork);
+            return Err(ArtifactInstallError::InvalidWork { reason: "claimed work does not match its running job, claim or handle" });
         }
         let mut at = now.max(work.job.updated_at);
         let outcome = self.execute(&work, source, &mut at).await;
@@ -495,7 +500,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(ArtifactInstallError::InvalidWork);
+            return Err(ArtifactInstallError::InvalidWork { reason: "claimed work does not match its running job, claim or handle" });
         }
         let mut at = now.max(work.job.updated_at);
         let outcome = match self.execute(&work, source, &mut at).await {
@@ -763,7 +768,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
             progress: ProgressSnapshot {
                 bytes: Some(
                     BytesProgress::new(completed.min(total), Some(total))
-                        .map_err(|_| ArtifactInstallError::InvalidWork)?,
+                        .map_err(|_| ArtifactInstallError::InvalidWork { reason: "the completed bytes exceed the total bytes" })?,
                 ),
                 ..ProgressSnapshot::default()
             },
@@ -808,7 +813,7 @@ fn validate_job(job: &JobSnapshot, plan: &ArtifactInstallPlan) -> Result<(), Art
         || job.subject.kind != SubjectKind::ArtifactInstall
         || job.subject.id.as_str() != asset_id.to_string()
     {
-        return Err(ArtifactInstallError::InvalidWork);
+        return Err(ArtifactInstallError::InvalidWork { reason: "job differs from the install in id, kind or subject" });
     }
     Ok(())
 }

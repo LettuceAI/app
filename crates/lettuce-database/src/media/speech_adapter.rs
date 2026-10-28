@@ -12,12 +12,18 @@ use crate::{Database, decode_versioned, encode_versioned};
 const TRANSCRIPTION_REQUEST_FORMAT_VERSION: u32 = 1;
 const TRANSCRIPTION_RESULT_FORMAT_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> TranscriptionRepositoryError {
-    TranscriptionRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> TranscriptionRepositoryError {
+    tracing::warn!(?error, "speech adapter storage step failed");
+    TranscriptionRepositoryError::Storage {
+        reason: "speech adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> TranscriptionRepositoryError {
-    TranscriptionRepositoryError::InvalidData
+fn corrupt(error: impl std::fmt::Debug) -> TranscriptionRepositoryError {
+    tracing::warn!(?error, "speech adapter storage step failed");
+    TranscriptionRepositoryError::InvalidData {
+        reason: "speech adapter: a storage step failed",
+    }
 }
 
 fn load_in(
@@ -87,7 +93,9 @@ fn load_in(
             _ => true,
         }
     {
-        return Err(TranscriptionRepositoryError::InvalidData);
+        return Err(TranscriptionRepositoryError::InvalidData {
+            reason: "load in: a value failed validation",
+        });
     }
     Ok(Some(record))
 }
@@ -148,8 +156,11 @@ pub(crate) fn list_in(
     job_ids
         .iter()
         .map(|job_id| {
-            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?
-                .ok_or(TranscriptionRepositoryError::Storage)
+            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?.ok_or(
+                TranscriptionRepositoryError::Storage {
+                    reason: "list in: a required value is missing",
+                },
+            )
         })
         .collect()
 }
@@ -168,7 +179,9 @@ pub(crate) fn insert_restored_in(
         return Err(TranscriptionRepositoryError::Conflict);
     }
     if load_in(transaction, record.job_id)?.as_ref() != Some(record) {
-        return Err(TranscriptionRepositoryError::InvalidData);
+        return Err(TranscriptionRepositoryError::InvalidData {
+            reason: "insert restored in: a value failed validation",
+        });
     }
     Ok(())
 }
@@ -195,7 +208,9 @@ impl TranscriptionRepository for Database {
     ) -> Result<TranscriptionRecord, TranscriptionRepositoryError> {
         record.validate().map_err(corrupt)?;
         if !matches!(record.state, TranscriptionState::Pending) {
-            return Err(TranscriptionRepositoryError::InvalidData);
+            return Err(TranscriptionRepositoryError::InvalidData {
+                reason: "admit: a value failed validation",
+            });
         }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -210,7 +225,9 @@ impl TranscriptionRepository for Database {
         }
         let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
-            load_in(&transaction, record.job_id)?.ok_or(TranscriptionRepositoryError::Storage)?;
+            load_in(&transaction, record.job_id)?.ok_or(TranscriptionRepositoryError::Storage {
+                reason: "admit: a required value is missing",
+            })?;
         if inserted == 0
             && (stored.job_id != record.job_id || !same_request(&stored.request, &record.request))
         {
@@ -253,7 +270,10 @@ impl TranscriptionRepository for Database {
         if settle_row(&transaction, job_id, &result)? != 1 {
             return Err(TranscriptionRepositoryError::Conflict);
         }
-        let stored = load_in(&transaction, job_id)?.ok_or(TranscriptionRepositoryError::Storage)?;
+        let stored =
+            load_in(&transaction, job_id)?.ok_or(TranscriptionRepositoryError::Storage {
+                reason: "settle: a required value is missing",
+            })?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -267,9 +287,9 @@ pub(crate) fn release_input_in(
     at: TimestampMillis,
 ) -> Result<(), lettuce_jobs::StoreError> {
     if state == lettuce_jobs::JobState::Succeeded {
-        transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT audio_asset_id,?2 FROM speech_transcriptions WHERE job_id=?1 AND COALESCE(json_extract(request_json,'$.value.retain_audio'),0)=0 AND audio_asset_id IN (SELECT id FROM media_assets WHERE retention='temporary')", params![job_id.to_string(), at.get()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+        transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT audio_asset_id,?2 FROM speech_transcriptions WHERE job_id=?1 AND COALESCE(json_extract(request_json,'$.value.retain_audio'),0)=0 AND audio_asset_id IN (SELECT id FROM media_assets WHERE retention='temporary')", params![job_id.to_string(), at.get()]).map_err(|error| lettuce_jobs::StoreError::Storage { reason: error.to_string() })?;
     }
-    transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL),result_json=json_set(result_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NOT NULL", [job_id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
-    transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NULL", [job_id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+    transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL),result_json=json_set(result_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NOT NULL", [job_id.to_string()]).map_err(|error| lettuce_jobs::StoreError::Storage { reason: error.to_string() })?;
+    transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NULL", [job_id.to_string()]).map_err(|error| lettuce_jobs::StoreError::Storage { reason: error.to_string() })?;
     Ok(())
 }

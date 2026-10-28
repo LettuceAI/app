@@ -1934,7 +1934,7 @@ async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_
                     None,
                 )
                 .expect("the edit applies before the operation fails");
-            Err(lettuce_database::ApiOperationError::Storage)
+            Err(lettuce_database::ApiOperationError::Storage { reason: "simulated failure" })
         },
     );
     assert!(failed.is_err());

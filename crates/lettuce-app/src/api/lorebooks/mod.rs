@@ -30,7 +30,7 @@ impl From<ApiOperationError> for Failure {
         Self(api_error(
             match error {
                 ApiOperationError::Conflict => ApiErrorCode::Conflict,
-                ApiOperationError::InvalidData | ApiOperationError::Storage => {
+                ApiOperationError::InvalidData { .. } | ApiOperationError::Storage { .. } => {
                     ApiErrorCode::Internal
                 }
             },

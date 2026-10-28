@@ -11,10 +11,10 @@ use crate::Database;
 pub enum ApiOperationError {
     #[error("the operation key was already used for a different request")]
     Conflict,
-    #[error("the operation receipt is invalid")]
-    InvalidData,
-    #[error("operation storage failed")]
-    Storage,
+    #[error("the operation receipt is invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("operation storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -25,11 +25,18 @@ pub struct ApiOperationTransaction<'a, 'connection> {
     pub(crate) changes: &'a crate::change_signal::ChangeSignal,
 }
 
-fn storage(_: impl std::fmt::Debug) -> ApiOperationError {
-    ApiOperationError::Storage
+fn storage(error: impl std::fmt::Debug) -> ApiOperationError {
+    tracing::warn!(?error, "api operation adapter storage step failed");
+    ApiOperationError::Storage {
+        reason: "api operation adapter: a storage step failed",
+    }
 }
-fn invalid(_: impl std::fmt::Debug) -> ApiOperationError {
-    ApiOperationError::InvalidData
+
+fn invalid(error: impl std::fmt::Debug) -> ApiOperationError {
+    tracing::warn!(?error, "an operation receipt could not be decoded");
+    ApiOperationError::InvalidData {
+        reason: "the operation receipt could not be decoded",
+    }
 }
 
 pub(crate) fn lookup_in(
@@ -55,7 +62,9 @@ pub(crate) fn insert_in(
         || receipt.client_operation_id.trim().is_empty()
         || receipt.request_digest.trim().is_empty()
     {
-        return Err(ApiOperationError::InvalidData);
+        return Err(ApiOperationError::InvalidData {
+            reason: "insert in: a value failed validation",
+        });
     }
     connection.execute("INSERT INTO api_operation_receipts(command,client_operation_id,request_digest,result_json,committed_at) VALUES (?1,?2,?3,?4,?5)",
         params![receipt.command, receipt.client_operation_id, receipt.request_digest,
@@ -72,7 +81,9 @@ pub(crate) fn receipts_in(
         .map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
     keys.into_iter()
         .map(|(command, key)| {
-            lookup_in(connection, &command, &key)?.ok_or(ApiOperationError::InvalidData)
+            lookup_in(connection, &command, &key)?.ok_or(ApiOperationError::InvalidData {
+                reason: "receipts in: a required value is missing",
+            })
         })
         .collect()
 }
@@ -100,7 +111,10 @@ impl Database {
         E: From<ApiOperationError>,
     {
         if command.trim().is_empty() || key.trim().is_empty() || digest.trim().is_empty() {
-            return Err(ApiOperationError::InvalidData.into());
+            return Err(ApiOperationError::InvalidData {
+                reason: "commit api operation: a value failed validation",
+            }
+            .into());
         }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -348,9 +362,12 @@ impl ApiOperationTransaction<'_, '_> {
     ) -> Result<lettuce_speech::AsrIgnoredSuggestion, lettuce_speech::AsrLearningRepositoryError>
     {
         use lettuce_speech::AsrLearningRepositoryError;
-        suggestion
-            .validate()
-            .map_err(|_| AsrLearningRepositoryError::InvalidData)?;
+        suggestion.validate().map_err(|error| {
+            tracing::warn!(%error, "ignore suggestion failed");
+            AsrLearningRepositoryError::InvalidData {
+                reason: "ignore suggestion: a value could not be read or converted",
+            }
+        })?;
         let existing = crate::media::speech_learning_adapter::find_ignored_suggestion_in(
             self.transaction,
             &suggestion.normalized_wrong,
@@ -372,7 +389,9 @@ impl ApiOperationTransaction<'_, '_> {
             ignored_count: existing.as_ref().map_or(Ok(1), |item| {
                 item.ignored_count
                     .checked_add(1)
-                    .ok_or(AsrLearningRepositoryError::InvalidData)
+                    .ok_or(AsrLearningRepositoryError::InvalidData {
+                        reason: "ignore suggestion: a required value is missing",
+                    })
             })?,
             last_ignored_at: now,
             created_at: existing.as_ref().map_or(now, |item| item.created_at),
@@ -739,7 +758,9 @@ impl ApiOperationTransaction<'_, '_> {
     ) -> Result<Vec<lettuce_types::JobId>, lettuce_jobs::StoreError> {
         let current =
             crate::lorebook::staged_lorebook_adapter::load_in(self.transaction, request_id)
-                .map_err(|_| lettuce_jobs::StoreError::InvalidData)?
+                .map_err(|error| lettuce_jobs::StoreError::InvalidData {
+                    reason: error.to_string(),
+                })?
                 .ok_or(lettuce_jobs::StoreError::NotFound)?;
         if current
             .project
@@ -781,7 +802,9 @@ impl ApiOperationTransaction<'_, '_> {
             })
             .collect::<std::collections::HashSet<_>>();
         if provided != plan_ids || writers.len() != plan_ids.len() {
-            return Err(lettuce_jobs::StoreError::InvalidData);
+            return Err(lettuce_jobs::StoreError::InvalidData {
+                reason: "admit staged lorebook writers: a value failed validation".to_owned(),
+            });
         }
         writers
             .into_iter()
@@ -838,7 +861,7 @@ impl ApiOperationTransaction<'_, '_> {
         let next = project
             .cancel(now)
             .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
-        self.transaction.execute("UPDATE creation_staged_lorebook_projects SET revision=?2,project_json=?3 WHERE project_id=?1", params![id.to_string(), i64::try_from(next.revision.get()).map_err(|_| StagedLorebookRepositoryError::Invalid)?, crate::encode_versioned(&next,1).map_err(|_| StagedLorebookRepositoryError::Invalid)?]).map_err(|_| StagedLorebookRepositoryError::Failure)?;
+        self.transaction.execute("UPDATE creation_staged_lorebook_projects SET revision=?2,project_json=?3 WHERE project_id=?1", params![id.to_string(), i64::try_from(next.revision.get()).map_err(|error| StagedLorebookRepositoryError::Invalid { reason: error.to_string() })?, crate::encode_versioned(&next,1).map_err(|error| StagedLorebookRepositoryError::Invalid { reason: error.to_string() })?]).map_err(|error| { tracing::warn!(%error, "cancel pending lorebook project failed"); StagedLorebookRepositoryError::Failure { reason: "cancel pending lorebook project: a storage step failed" } })?;
         Ok(next)
     }
     pub fn plan_pending_lorebook_project(
@@ -851,13 +874,17 @@ impl ApiOperationTransaction<'_, '_> {
             self.transaction,
             run.project.id,
         )
-        .map_err(|_| lettuce_jobs::StoreError::InvalidData)?
+        .map_err(|error| lettuce_jobs::StoreError::InvalidData {
+            reason: error.to_string(),
+        })?
         .ok_or(lettuce_jobs::StoreError::IdempotencyConflict)?;
         if pending.revision != expected
             || pending.stage != lettuce_creation::StagedLorebookStage::Created
             || pending
                 .start_planning(run.project.updated_at)
-                .map_err(|_| lettuce_jobs::StoreError::InvalidData)?
+                .map_err(|error| lettuce_jobs::StoreError::InvalidData {
+                    reason: error.to_string(),
+                })?
                 != run.project
         {
             return Err(lettuce_jobs::StoreError::IdempotencyConflict);
@@ -874,7 +901,9 @@ impl ApiOperationTransaction<'_, '_> {
                 "DELETE FROM creation_staged_lorebook_projects WHERE project_id=?1",
                 [id.to_string()],
             )
-            .map_err(|_| lettuce_jobs::StoreError::Storage)?;
+            .map_err(|error| lettuce_jobs::StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         Ok(job.id)
     }
 }
@@ -1084,9 +1113,9 @@ mod tests {
         assert_eq!(conflict, Err(ApiOperationError::Conflict));
         let failed = database.commit_api_operation("future_create", "failed", "digest", TimestampMillis::new(3), |transaction| -> Result<String, ApiOperationError> {
             transaction.transaction.execute("INSERT INTO app_usage_days(day,active_ms,updated_at) VALUES ('2026-10-05',1,1)", []).map_err(storage)?;
-            Err(ApiOperationError::InvalidData)
+            Err(ApiOperationError::InvalidData { reason: "injected failure" })
         });
-        assert_eq!(failed, Err(ApiOperationError::InvalidData));
+        assert!(matches!(failed, Err(ApiOperationError::InvalidData { .. })));
         assert!(
             database
                 .lookup_api_operation("future_create", "failed")
@@ -1272,7 +1301,10 @@ mod tests {
                     Ok("result".into())
                 },
             );
-            assert_eq!(result, Err(ApiOperationError::Storage), "case {case}");
+            assert!(
+                matches!(result, Err(ApiOperationError::Storage { .. })),
+                "case {case}"
+            );
             assert_eq!(
                 database.read_provider_backup_graph().expect("after"),
                 before,

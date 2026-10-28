@@ -395,7 +395,7 @@ pub async fn kokoro_tokenize_preview(
                 .map_err(|error| match error {
                     crate::KokoroPhonemizationCoordinatorError::Phonemization(
                         lettuce_speech::KokoroPhonemizationError::Process(
-                            lettuce_platform::EspeakNgError::Unavailable,
+                            lettuce_platform::EspeakNgError::Unavailable { .. },
                         ),
                     ) => super::errors::speech_error(
                         ApiErrorCode::Unavailable,

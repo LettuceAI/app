@@ -10,8 +10,10 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::{dynamic_memory_run_adapter, memory_adapter};
 
-fn storage(_: impl std::fmt::Debug) -> ConversationRepositoryError {
-    ConversationRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> ConversationRepositoryError {
+    ConversationRepositoryError::Storage {
+        reason: format!("{error:?}"),
+    }
 }
 
 pub(crate) fn create_empty_branch_space_in(
@@ -115,7 +117,9 @@ pub(crate) fn seed_branch_space_in(
         Some(snapshot) => snapshot,
         None => memory_adapter::get_in(transaction, parent_space_id)
             .map_err(storage)?
-            .ok_or(ConversationRepositoryError::Storage)?,
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "seed branch space in: a required value is missing".to_owned(),
+            })?,
     };
     let space_id = if deterministic {
         MemorySpaceId::from_uuid(uuid::Uuid::new_v5(&branch_id.as_uuid(), b"memory-space"))
@@ -223,7 +227,10 @@ pub(crate) fn seed_new_conversation_space_in(
         || {
             memory_adapter::get_in(transaction, source_space)
                 .map_err(storage)?
-                .ok_or(ConversationRepositoryError::Storage)
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "seed new conversation space in: a required value is missing"
+                        .to_owned(),
+                })
         },
         Ok,
     )?;
@@ -231,7 +238,10 @@ pub(crate) fn seed_new_conversation_space_in(
         Some(id) => {
             let current = memory_adapter::get_in(transaction, id)
                 .map_err(storage)?
-                .ok_or(ConversationRepositoryError::Storage)?;
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "seed new conversation space in: a required value is missing"
+                        .to_owned(),
+                })?;
             if !current.items.is_empty()
                 || memory_adapter::get_summary_in(transaction, id)
                     .map_err(storage)?
@@ -454,7 +464,9 @@ fn branch_state_in(
         Some(memory) => memory.clone(),
         None => memory_adapter::get_in(transaction, space_id)
             .map_err(storage)?
-            .ok_or(ConversationRepositoryError::Storage)?,
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "branch state in: a required value is missing".to_owned(),
+            })?,
     };
     let boundary_revision = state.revision;
     let mut changed = false;

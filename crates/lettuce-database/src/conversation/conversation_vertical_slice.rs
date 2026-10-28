@@ -62,41 +62,62 @@ pub(crate) fn encode<T: Serialize>(value: &T) -> Result<String, ConversationRepo
         format_version: FORMAT_VERSION,
         value,
     })
-    .map_err(|_| ConversationRepositoryError::Storage)
+    .map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })
 }
 
 pub(crate) fn decode<T: DeserializeOwned>(value: &str) -> Result<T, ConversationRepositoryError> {
     let document: Document<T> =
-        serde_json::from_str(value).map_err(|_| ConversationRepositoryError::Storage)?;
+        serde_json::from_str(value).map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     if document.format_version != FORMAT_VERSION {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "decode: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(document.value)
 }
 
 pub(crate) fn db(error: rusqlite::Error) -> ConversationRepositoryError {
     match error {
-        rusqlite::Error::InvalidQuery => ConversationRepositoryError::Storage,
+        rusqlite::Error::InvalidQuery => ConversationRepositoryError::Storage {
+            reason: "db: a stored value is not recognised".to_owned(),
+        },
         rusqlite::Error::SqliteFailure(code, _) if code.extended_code == 787 => {
-            ConversationRepositoryError::Storage
+            ConversationRepositoryError::Storage {
+                reason: "db: stored data failed a consistency check".to_owned(),
+            }
         }
-        _ => ConversationRepositoryError::Storage,
+        _ => ConversationRepositoryError::Storage {
+            reason: "db: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
-pub(crate) fn parse_id<T: FromStr>(value: String) -> Result<T, ConversationRepositoryError> {
+pub(crate) fn parse_id<T: FromStr>(value: String) -> Result<T, ConversationRepositoryError>
+where
+    T::Err: std::fmt::Debug,
+{
     value
         .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        })
 }
 pub(crate) fn rev(value: i64) -> Result<Revision, ConversationRepositoryError> {
     u64::try_from(value)
         .map(Revision::new)
-        .map_err(|_| ConversationRepositoryError::Storage)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })
 }
 
 pub(crate) fn sql_revision(value: Revision) -> Result<i64, ConversationRepositoryError> {
-    i64::try_from(value.get()).map_err(|_| ConversationRepositoryError::Storage)
+    i64::try_from(value.get()).map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })
 }
 
 pub(crate) fn provenance_name(value: SettingProvenance) -> &'static str {
@@ -146,7 +167,9 @@ pub(crate) fn source_from_columns(
         ("user", None) => Ok(ParticipantSource::User),
         ("system", None) => Ok(ParticipantSource::System),
         ("character", Some(id)) => parse_id(id).map(ParticipantSource::Character),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "source from columns: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 pub(crate) fn role_name(role: ParticipantRole) -> &'static str {
@@ -161,7 +184,9 @@ pub(crate) fn role_from_name(value: &str) -> Result<ParticipantRole, Conversatio
         "user" => Ok(ParticipantRole::User),
         "character" => Ok(ParticipantRole::Character),
         "system" => Ok(ParticipantRole::System),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "role from name: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 pub(crate) fn lifecycle_name(value: ConversationLifecycle) -> &'static str {
@@ -178,7 +203,9 @@ pub(crate) fn lifecycle_from_name(
         "active" => Ok(ConversationLifecycle::Active),
         "archived" => Ok(ConversationLifecycle::Archived),
         "tombstoned" => Ok(ConversationLifecycle::Tombstoned),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "lifecycle from name: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -255,9 +282,11 @@ impl Database {
     ) -> Result<ConversationAggregate, ConversationRepositoryError> {
         plan.validate()
             .map_err(ConversationRepositoryError::Invalid)?;
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db)?;
@@ -360,9 +389,11 @@ impl Database {
         &self,
         id: ConversationId,
     ) -> Result<ConversationAggregate, ConversationRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db)?;
@@ -383,9 +414,11 @@ impl Database {
     where
         F: FnOnce(),
     {
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db)?;
@@ -453,22 +486,34 @@ where
             &source_kind,
             &source_id,
         )
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        })?;
         let reference = ProtectedSnapshotRef {
             source,
             source_revision: rev(source_revision)?,
             artifact_id: parse_id(artifact_id)?,
             digest: digest
                 .parse()
-                .map_err(|_| ConversationRepositoryError::Storage)?,
-            schema_version: u32::try_from(schema_version)
-                .map_err(|_| ConversationRepositoryError::Storage)?,
-            byte_size: u64::try_from(byte_size)
-                .map_err(|_| ConversationRepositoryError::Storage)?,
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: format!("{error}"),
+                })?,
+            schema_version: u32::try_from(schema_version).map_err(|error| {
+                ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                }
+            })?,
+            byte_size: u64::try_from(byte_size).map_err(|error| {
+                ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                }
+            })?,
         };
         reference
             .validate()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         expected_references.push(reference);
     }
     drop(origin_statement);
@@ -478,7 +523,10 @@ where
         let id = reference.artifact_id.to_string();
         if let Some(existing) = expected_by_id.get(&id) {
             if existing != &reference {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "hydrate conversation: stored data failed a consistency check"
+                        .to_owned(),
+                });
             }
         } else {
             expected_by_id.insert(id, reference);
@@ -496,14 +544,18 @@ where
         .iter()
         .any(|artifact_id| !actual_artifacts.contains(artifact_id))
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate conversation: stored data failed a consistency check".to_owned(),
+        });
     }
     for reference in expected_by_id.values() {
         crate::conversation::conversation_artifact_adapter::verify_snapshot_in_transaction(
             transaction,
             reference,
         )
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     }
 
     // The root row and required reference set have been acquired on this read
@@ -521,7 +573,9 @@ where
                     transaction,
                     reference,
                 )
-                .map_err(|_| ConversationRepositoryError::Storage)?;
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
             }
         }
     }
@@ -531,19 +585,26 @@ where
         .optional()
         .map_err(db)?;
     if let Some(settings) = &settings {
-        settings
-            .validate_against_kind(&row.kind)
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        settings.validate_against_kind(&row.kind).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?;
         for reference in lettuce_conversations::conversation_settings_snapshot_references(settings)
         {
             if !actual_artifacts.contains(&reference.artifact_id.to_string()) {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "hydrate conversation: stored data failed a consistency check"
+                        .to_owned(),
+                });
             }
             crate::conversation::conversation_artifact_adapter::verify_snapshot_in_transaction(
                 transaction,
                 reference,
             )
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         }
     }
     let mut conversation = row;
@@ -563,7 +624,9 @@ where
     };
     aggregate
         .validate()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     drop(statement);
     Ok(aggregate)
 }
@@ -1287,10 +1350,10 @@ mod tests {
                 params![other_character_id.to_string(), artifact_id.to_string()],
             )
             .expect("tamper source");
-        assert_eq!(
+        assert!(matches!(
             database.get_conversation_record(plan.conversation_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         database
             .connection()
             .expect("lock")
@@ -1299,10 +1362,10 @@ mod tests {
                 params![character_id.to_string(), b"character tampered".to_vec(), artifact_id.to_string()],
             )
             .expect("tamper bytes");
-        assert_eq!(
+        assert!(matches!(
             database.get_conversation_record(plan.conversation_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         database
             .connection()
             .expect("lock")
@@ -1311,10 +1374,10 @@ mod tests {
                 params![b"character snapshot".to_vec(), "00".repeat(32), artifact_id.to_string()],
             )
             .expect("tamper digest");
-        assert_eq!(
+        assert!(matches!(
             database.get_conversation_record(plan.conversation_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         database
             .connection()
             .expect("lock")
@@ -1355,10 +1418,10 @@ mod tests {
             )
             .expect("corrupt set");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             database.get_conversation_record(plan.conversation_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -2019,10 +2082,10 @@ mod tests {
                 params![encode(&SnapshotSelection::Explicit(override_model.clone())).expect("override model"), plan.conversation_id.to_string(), user_id.to_string()],
             )
             .expect("tamper non-character model");
-        assert_eq!(
+        assert!(matches!(
             database.get_conversation_record(plan.conversation_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
 
         let disabled: SnapshotSelection<ModelSelectionSnapshot> = SnapshotSelection::Disabled;
         let disabled_json = encode(&disabled).expect("disabled model");
@@ -2067,10 +2130,10 @@ mod tests {
                 ],
             )
             .expect("tamper current model reference");
-        assert_eq!(
+        assert!(matches!(
             database.get_conversation_record(plan.conversation_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         database
             .verify_snapshot(&model_ref)
             .expect("artifact verification remains independent");

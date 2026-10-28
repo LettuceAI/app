@@ -74,8 +74,8 @@ pub struct StagedLorebookWriterBatchAdmission {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookWriterAdmissionError {
-    #[error("staged lorebook writer admission input is invalid")]
-    InvalidInput,
+    #[error("staged lorebook writer admission input is invalid: {reason}")]
+    InvalidInput { reason: String },
     #[error("staged lorebook configuration failed: {0}")]
     Configuration(#[from] crate::StagedLorebookAdmissionError),
     #[error("staged lorebook project persistence failed: {0}")]
@@ -157,10 +157,11 @@ where
                     if !same_request(&run, &request) {
                         return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        StagedLorebookWriterAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(StagedLorebookWriterAdmission {
                         run,
@@ -187,27 +188,34 @@ where
             self.projects,
             crate::BuiltInPromptId::LorebookRuntime,
         )
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         let values = prepare_values(&project, request.plan_id, &text)?;
-        let spec = JobSpec::new(
-            JobKind::CreationRun,
-            JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
-                .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
-            OutcomeRef::Request(request.request_id),
-        )
-        .with_idempotency_key(
-            IdempotencyKey::new(format!("staged-lorebook-writer-{}", request.request_id))
-                .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
-        )
-        .with_resources(vec![
-            ResourceClass::Network,
-            ResourceClass::ModelLoad,
-            ResourceClass::DiskRead,
-            ResourceClass::DiskWrite,
-            ResourceClass::Cpu,
-        ])
-        .with_priority(JobPriority::Interactive)
-        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
+        let spec =
+            JobSpec::new(
+                JobKind::CreationRun,
+                JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
+                    .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+                        reason: error.to_string(),
+                    })?,
+                OutcomeRef::Request(request.request_id),
+            )
+            .with_idempotency_key(
+                IdempotencyKey::new(format!("staged-lorebook-writer-{}", request.request_id))
+                    .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+                        reason: error.to_string(),
+                    })?,
+            )
+            .with_resources(vec![
+                ResourceClass::Network,
+                ResourceClass::ModelLoad,
+                ResourceClass::DiskRead,
+                ResourceClass::DiskWrite,
+                ResourceClass::Cpu,
+            ])
+            .with_priority(JobPriority::Interactive)
+            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
         let run = StagedLorebookWriterRun {
             prompt_snapshot: request.prompt_snapshot,
             configured_overrides: None,
@@ -234,7 +242,9 @@ where
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
         )?;
         let lettuce_database::LorebookJobInput::Writer(run) = input else {
-            return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+            return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+                reason: "stored job input is not a writer run".to_owned(),
+            });
         };
         let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
@@ -336,12 +346,16 @@ where
         } else {
             project.project.start_draft_batch(now)
         }
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.projects,
             crate::BuiltInPromptId::LorebookRuntime,
         )
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         let mut writers = Vec::new();
         for draft in project
             .project
@@ -349,11 +363,11 @@ where
             .iter()
             .filter(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
         {
-            let batch = project
-                .project
-                .draft_batch
-                .as_ref()
-                .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+            let batch = project.project.draft_batch.as_ref().ok_or(
+                StagedLorebookWriterAdmissionError::InvalidInput {
+                    reason: "the project has no draft batch".to_owned(),
+                },
+            )?;
             let request_id = RequestId::from_uuid(Uuid::new_v5(
                 &project.project.id.as_uuid(),
                 format!("writer-{}-{}", draft.plan_id, batch.revision.get()).as_bytes(),
@@ -411,10 +425,11 @@ where
             .iter()
             .any(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
         {
-            let inputs = current
-                .writer_batch_inputs
-                .clone()
-                .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+            let inputs = current.writer_batch_inputs.clone().ok_or(
+                StagedLorebookWriterAdmissionError::InvalidInput {
+                    reason: "the project has no writer batch inputs".to_owned(),
+                },
+            )?;
             if &inputs.overrides != overrides || inputs.profile.safety_policy != safety_policy {
                 return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
             }
@@ -506,11 +521,11 @@ where
             .collect::<Vec<_>>();
         let mut writers = Vec::with_capacity(plan_ids.len());
         for plan_id in plan_ids {
-            let batch = project
-                .project
-                .draft_batch
-                .as_ref()
-                .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+            let batch = project.project.draft_batch.as_ref().ok_or(
+                StagedLorebookWriterAdmissionError::InvalidInput {
+                    reason: "the project has no draft batch".to_owned(),
+                },
+            )?;
             let request_id = RequestId::from_uuid(Uuid::new_v5(
                 &project.project.id.as_uuid(),
                 format!("writer-{plan_id}-{}", batch.revision.get()).as_bytes(),
@@ -564,10 +579,11 @@ where
                     {
                         return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        StagedLorebookWriterAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(StagedLorebookWriterAdmission {
                         run,
@@ -628,10 +644,11 @@ where
                     {
                         return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        StagedLorebookWriterAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(StagedLorebookWriterAdmission {
                         run,
@@ -658,28 +675,35 @@ where
             self.projects,
             crate::BuiltInPromptId::LorebookRuntime,
         )
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         let (values, refinement) =
             prepare_refine_values(&project, request.plan_id, &request.feedback, &text)?;
-        let spec = JobSpec::new(
-            JobKind::CreationRun,
-            JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
-                .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
-            OutcomeRef::Request(request.request_id),
-        )
-        .with_idempotency_key(
-            IdempotencyKey::new(format!("staged-lorebook-refine-{}", request.request_id))
-                .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
-        )
-        .with_resources(vec![
-            ResourceClass::Network,
-            ResourceClass::ModelLoad,
-            ResourceClass::DiskRead,
-            ResourceClass::DiskWrite,
-            ResourceClass::Cpu,
-        ])
-        .with_priority(JobPriority::Interactive)
-        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
+        let spec =
+            JobSpec::new(
+                JobKind::CreationRun,
+                JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
+                    .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+                        reason: error.to_string(),
+                    })?,
+                OutcomeRef::Request(request.request_id),
+            )
+            .with_idempotency_key(
+                IdempotencyKey::new(format!("staged-lorebook-refine-{}", request.request_id))
+                    .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+                        reason: error.to_string(),
+                    })?,
+            )
+            .with_resources(vec![
+                ResourceClass::Network,
+                ResourceClass::ModelLoad,
+                ResourceClass::DiskRead,
+                ResourceClass::DiskWrite,
+                ResourceClass::Cpu,
+            ])
+            .with_priority(JobPriority::Interactive)
+            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
         let run = StagedLorebookWriterRun {
             prompt_snapshot: Some(request.prompt.clone()),
             configured_overrides,
@@ -706,7 +730,9 @@ where
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
         )?;
         let lettuce_database::LorebookJobInput::Writer(run) = input else {
-            return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+            return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+                reason: "stored job input is not a writer run".to_owned(),
+            });
         };
         let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
@@ -746,7 +772,9 @@ fn validate_writer_inputs(
             .get(Modality::Text)
             != CapabilityStatus::Supported
     {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the model lacks text input or text output".to_owned(),
+        });
     }
     Ok(())
 }
@@ -774,7 +802,9 @@ fn validate_refine_request(
             .get(Modality::Text)
             != CapabilityStatus::Supported
     {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the model lacks text input or text output".to_owned(),
+        });
     }
     Ok(())
 }
@@ -785,29 +815,39 @@ fn prepare_values(
     text: &crate::generation::runtime_text::RuntimeText,
 ) -> Result<StagedLorebookWriterPromptValues, StagedLorebookWriterAdmissionError> {
     if run.project.stage != StagedLorebookStage::Drafting {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the project is not in the drafting stage".to_owned(),
+        });
     }
     let plan = run
         .project
         .outline
         .iter()
         .find(|plan| plan.id == plan_id)
-        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the plan is not in the project outline".to_owned(),
+        })?;
     let draft = run
         .project
         .drafts
         .iter()
         .find(|draft| draft.plan_id == plan_id)
-        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the plan has no draft in the project".to_owned(),
+        })?;
     if !matches!(
         draft.status,
         StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Drafting
     ) {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the draft is neither pending nor drafting".to_owned(),
+        });
     }
-    let none = text
-        .render_with("lorebook_none", [])
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+    let none = text.render_with("lorebook_none", []).map_err(|error| {
+        StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        }
+    })?;
     Ok(StagedLorebookWriterPromptValues {
         brief: run.project.brief.clone(),
         outline: format_outline(&run.project.outline, text, &none)?,
@@ -835,7 +875,10 @@ fn require_rendered(
                 .as_deref()
                 .is_some_and(|none| !none.is_empty()))
     {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the outline is empty or the excerpts are empty with a non-empty none marker"
+                .to_owned(),
+        });
     }
     Ok(values)
 }
@@ -855,25 +898,33 @@ fn prepare_refine_values(
             | StagedLorebookStage::DraftsReady
             | StagedLorebookStage::CoherenceReview
     ) {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the project is not drafting, drafts ready or in coherence review".to_owned(),
+        });
     }
     let plan = run
         .project
         .outline
         .iter()
         .find(|plan| plan.id == plan_id)
-        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the plan is not in the project outline".to_owned(),
+        })?;
     let draft = run
         .project
         .drafts
         .iter()
         .find(|draft| draft.plan_id == plan_id)
         .cloned()
-        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "the plan has no draft in the project".to_owned(),
+        })?;
     let feedback = feedback.trim().to_owned();
-    let none = text
-        .render_with("lorebook_none", [])
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+    let none = text.render_with("lorebook_none", []).map_err(|error| {
+        StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        }
+    })?;
     let values = StagedLorebookWriterPromptValues {
         brief: run.project.brief.clone(),
         outline: format_outline(&run.project.outline, text, &none)?,
@@ -905,9 +956,11 @@ fn format_outline(
 ) -> Result<String, StagedLorebookWriterAdmissionError> {
     use lettuce_context::PromptVariable as Variable;
     if outline.is_empty() {
-        return text
-            .render_with("staged_empty", [])
-            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput);
+        return text.render_with("staged_empty", []).map_err(|error| {
+            StagedLorebookWriterAdmissionError::InvalidInput {
+                reason: error.to_string(),
+            }
+        });
     }
     Ok(outline
         .iter()
@@ -924,7 +977,9 @@ fn format_outline(
                     ),
                 ],
             )
-            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)
+            .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+                reason: error.to_string(),
+            })
         })
         .collect::<Result<Vec<_>, _>>()?
         .join("\n"))
@@ -962,7 +1017,9 @@ fn relevant_excerpts(
             crate::lorebook::staged_lorebook_execution::format_staged_excerpt(excerpt, text)
         })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?
+        .map_err(|error| StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?
         .join("\n\n---\n\n"))
 }
 
@@ -1003,7 +1060,9 @@ fn validate_job(
         || job.subject.kind != SubjectKind::CreationProject
         || job.subject.id.as_str() != run.project_id.to_string()
     {
-        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput {
+            reason: "job differs from the run in id, kind, state or subject".to_owned(),
+        });
     }
     Ok(())
 }
@@ -1014,13 +1073,19 @@ fn writer_spec(
 ) -> Result<lettuce_jobs::NewJob, StagedLorebookWriterAdmissionError> {
     Ok(JobSpec::new(
         JobKind::CreationRun,
-        JobSubject::new(SubjectKind::CreationProject, project_id.to_string())
-            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
+        JobSubject::new(SubjectKind::CreationProject, project_id.to_string()).map_err(|error| {
+            StagedLorebookWriterAdmissionError::InvalidInput {
+                reason: error.to_string(),
+            }
+        })?,
         OutcomeRef::Request(request_id),
     )
     .with_idempotency_key(
-        IdempotencyKey::new(format!("staged-lorebook-writer-{request_id}"))
-            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
+        IdempotencyKey::new(format!("staged-lorebook-writer-{request_id}")).map_err(|error| {
+            StagedLorebookWriterAdmissionError::InvalidInput {
+                reason: error.to_string(),
+            }
+        })?,
     )
     .with_resources(vec![
         ResourceClass::Network,

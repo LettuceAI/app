@@ -4,37 +4,76 @@ use lettuce_usage::{UsageReportError, UsageReportEvidence, UsageReportRepository
 
 impl UsageReportRepository for crate::Database {
     fn read_usage_report(&self) -> Result<Vec<UsageReportRow>, UsageReportError> {
-        let mut connection = self.connection().map_err(|_| UsageReportError::Storage)?;
-        let transaction = connection
-            .transaction()
-            .map_err(|_| UsageReportError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "read usage report failed");
+            UsageReportError::Storage {
+                reason: "read usage report: a storage step failed",
+            }
+        })?;
+        let transaction = connection.transaction().map_err(|error| {
+            tracing::warn!(%error, "read usage report failed");
+            UsageReportError::Storage {
+                reason: "read usage report: a storage step failed",
+            }
+        })?;
         let costs = read_costs(&transaction, "usage_costs")?;
         let conversations = transaction
             .prepare("SELECT id,conversation_id FROM usage_events")
-            .map_err(|_| UsageReportError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "read usage report failed");
+                UsageReportError::Storage {
+                    reason: "read usage report: a storage step failed",
+                }
+            })?
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
-            .map_err(|_| UsageReportError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "read usage report failed");
+                UsageReportError::Storage {
+                    reason: "read usage report: a storage step failed",
+                }
+            })?
             .collect::<Result<BTreeMap<_, _>, _>>()
-            .map_err(|_| UsageReportError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read usage report failed");
+                UsageReportError::Storage {
+                    reason: "read usage report: a storage step failed",
+                }
+            })?;
         let events = crate::usage_adapter::load_all_usage_in(&transaction)
-            .map_err(|_| UsageReportError::InvalidData)?
+            .map_err(|error| {
+                tracing::warn!(%error, "read usage report failed");
+                UsageReportError::InvalidData {
+                    reason: "read usage report: a value could not be read or converted",
+                }
+            })?
             .into_iter()
             .map(|event| {
                 let conversation = conversations
                     .get(&event.id.to_string())
-                    .ok_or(UsageReportError::InvalidData)?
+                    .ok_or(UsageReportError::InvalidData {
+                        reason: "read usage report: a required value is missing",
+                    })?
                     .parse()
-                    .map_err(|_| UsageReportError::InvalidData)?;
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read usage report failed");
+                        UsageReportError::InvalidData {
+                            reason: "read usage report: a value could not be read or converted",
+                        }
+                    })?;
                 let basis = costs.get(&event.id.to_string()).cloned();
                 Ok((event, basis, Some(conversation)))
             })
             .collect::<Result<Vec<_>, UsageReportError>>()?;
         let dispatches = read_dispatches(&transaction)?;
         let legacy = read_legacy(&transaction)?;
-        let tombstones = crate::usage_clear::tombstones_in(&transaction)
-            .map_err(|_| UsageReportError::InvalidData)?;
+        let tombstones = crate::usage_clear::tombstones_in(&transaction).map_err(|error| {
+            tracing::warn!(%error, "read usage report failed");
+            UsageReportError::InvalidData {
+                reason: "read usage report: a value could not be read or converted",
+            }
+        })?;
         let result = UsageReportEvidence {
             events,
             dispatches,
@@ -42,9 +81,12 @@ impl UsageReportRepository for crate::Database {
             tombstones,
         }
         .charge_rows()?;
-        transaction
-            .commit()
-            .map_err(|_| UsageReportError::Storage)?;
+        transaction.commit().map_err(|error| {
+            tracing::warn!(%error, "read usage report failed");
+            UsageReportError::Storage {
+                reason: "read usage report: a storage step failed",
+            }
+        })?;
         Ok(result)
     }
 }
@@ -55,16 +97,35 @@ fn read_costs(
 ) -> Result<BTreeMap<String, lettuce_usage::UsageCostBasis>, UsageReportError> {
     let mut statement = transaction
         .prepare(&format!("SELECT event_id,basis_json FROM {table}"))
-        .map_err(|_| UsageReportError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read costs failed");
+            UsageReportError::Storage {
+                reason: "read costs: a storage step failed",
+            }
+        })?;
     statement
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-        .map_err(|_| UsageReportError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "read costs failed");
+            UsageReportError::Storage {
+                reason: "read costs: a storage step failed",
+            }
+        })?
         .map(|raw| {
-            let (id, bytes) = raw.map_err(|_| UsageReportError::Storage)?;
-            let basis =
-                crate::decode_versioned(&bytes, 1).map_err(|_| UsageReportError::InvalidData)?;
+            let (id, bytes) = raw.map_err(|error| {
+                tracing::warn!(%error, "read costs failed");
+                UsageReportError::Storage {
+                    reason: "read costs: a storage step failed",
+                }
+            })?;
+            let basis = crate::decode_versioned(&bytes, 1).map_err(|error| {
+                tracing::warn!(?error, "read costs failed");
+                UsageReportError::InvalidData {
+                    reason: "read costs: a value could not be read or converted",
+                }
+            })?;
             Ok((id, basis))
         })
         .collect()
@@ -79,7 +140,7 @@ fn read_dispatches(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<Vec<DispatchWithCost>, UsageReportError> {
     let mut statement = transaction.prepare("SELECT u.id,u.job_id,u.admitted_at,u.record_json,u.result_json,c.basis_json FROM job_inference_usage u LEFT JOIN job_usage_costs c ON c.event_id=u.id")
-        .map_err(|_| UsageReportError::Storage)?;
+        .map_err(|error| { tracing::warn!(%error, "read dispatches failed"); UsageReportError::Storage { reason: "read dispatches: a storage step failed" } })?;
     statement
         .query_map([], |row| {
             Ok((
@@ -91,28 +152,54 @@ fn read_dispatches(
                 row.get::<_, Option<String>>(5)?,
             ))
         })
-        .map_err(|_| UsageReportError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "read dispatches failed");
+            UsageReportError::Storage {
+                reason: "read dispatches: a storage step failed",
+            }
+        })?
         .map(|raw| {
-            let (id, job, time, record, result, basis) =
-                raw.map_err(|_| UsageReportError::Storage)?;
+            let (id, job, time, record, result, basis) = raw.map_err(|error| {
+                tracing::warn!(%error, "read dispatches failed");
+                UsageReportError::Storage {
+                    reason: "read dispatches: a storage step failed",
+                }
+            })?;
             let mut evidence: lettuce_usage::JobInferenceUsage =
-                crate::decode_versioned(&record, 1).map_err(|_| UsageReportError::InvalidData)?;
+                crate::decode_versioned(&record, 1).map_err(|error| {
+                    tracing::warn!(?error, "read dispatches failed");
+                    UsageReportError::InvalidData {
+                        reason: "read dispatches: a value could not be read or converted",
+                    }
+                })?;
             if evidence.id.to_string() != id
                 || evidence.job_id.to_string() != job
                 || evidence.admitted_at.get() != time
             {
-                return Err(UsageReportError::InvalidData);
+                return Err(UsageReportError::InvalidData {
+                    reason: "read dispatches: a value failed validation",
+                });
             }
             evidence.result = result
                 .as_deref()
                 .map(|bytes| crate::decode_versioned(bytes, 1))
                 .transpose()
-                .map_err(|_| UsageReportError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(?error, "read dispatches failed");
+                    UsageReportError::InvalidData {
+                        reason: "read dispatches: a value could not be read or converted",
+                    }
+                })?;
             let basis = basis
                 .as_deref()
                 .map(|bytes| crate::decode_versioned(bytes, 1))
                 .transpose()
-                .map_err(|_| UsageReportError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(?error, "read dispatches failed");
+                    UsageReportError::InvalidData {
+                        reason: "read dispatches: a value could not be read or converted",
+                    }
+                })?;
             Ok((evidence, basis))
         })
         .collect()
@@ -131,7 +218,7 @@ fn read_legacy(
         'image_tokens',u.image_tokens,'audio_tokens',u.audio_tokens,'prompt_cost',u.prompt_cost,
         'completion_cost',u.completion_cost,'total_cost',u.total_cost,'error_message',u.error_message)
         FROM legacy_usage_records u")
-        .map_err(|_| UsageReportError::Storage)?;
+        .map_err(|error| { tracing::warn!(%error, "read legacy failed"); UsageReportError::Storage { reason: "read legacy: a storage step failed" } })?;
     statement
         .query_map([], |row| {
             Ok((
@@ -140,12 +227,26 @@ fn read_legacy(
                 row.get::<_, String>(2)?,
             ))
         })
-        .map_err(|_| UsageReportError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "read legacy failed");
+            UsageReportError::Storage {
+                reason: "read legacy: a storage step failed",
+            }
+        })?
         .map(|raw| {
-            let (source, metadata, fields) = raw.map_err(|_| UsageReportError::Storage)?;
+            let (source, metadata, fields) = raw.map_err(|error| {
+                tracing::warn!(%error, "read legacy failed");
+                UsageReportError::Storage {
+                    reason: "read legacy: a storage step failed",
+                }
+            })?;
             let scope = lettuce_transfer::LegacyIdScope::new();
-            let mut row: UsageReportRow =
-                serde_json::from_str(&fields).map_err(|_| UsageReportError::InvalidData)?;
+            let mut row: UsageReportRow = serde_json::from_str(&fields).map_err(|error| {
+                tracing::warn!(%error, "read legacy failed");
+                UsageReportError::InvalidData {
+                    reason: "read legacy: a value could not be read or converted",
+                }
+            })?;
             row.id = scope.source("usage_report", &source).to_string();
             row.session_id = row
                 .session_id
@@ -156,7 +257,12 @@ fn read_legacy(
                 .filter(|id| !id.is_empty())
                 .map(|id| scope.source("character", &id).to_string());
             let metadata: BTreeMap<String, String> =
-                serde_json::from_str(&metadata).map_err(|_| UsageReportError::InvalidData)?;
+                serde_json::from_str(&metadata).map_err(|error| {
+                    tracing::warn!(%error, "read legacy failed");
+                    UsageReportError::InvalidData {
+                        reason: "read legacy: a value could not be read or converted",
+                    }
+                })?;
             let count = |keys: &[&str]| {
                 keys.iter()
                     .find_map(|key| metadata.get(*key)?.parse::<u64>().ok())

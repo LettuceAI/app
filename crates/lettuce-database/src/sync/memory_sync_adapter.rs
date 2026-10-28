@@ -396,7 +396,9 @@ pub(crate) fn sync_replace_inherited_summary(
     .map_err(storage)?
     {
         return Err(MemoryRepositoryError::Invalid(
-            lettuce_memory::MemoryValidationError::InvalidSpaceId,
+            lettuce_memory::MemoryValidationError::InvalidSpaceId {
+                reason: "inherited summary branch has no parent link to the conversation",
+            },
         ));
     }
     for message in &summary.source_message_ids {

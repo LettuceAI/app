@@ -62,15 +62,21 @@ impl KokoroNativeSynthesisCoordinator {
             .iter()
             .find(|file| file.role == KokoroArtifactRole::Model)
             .ok_or(KokoroNativeSynthesisError::MissingAssets)?;
-        let metadata = std::fs::metadata(&model.path).map_err(|_| KokoroRuntimeError::ModelLoad)?;
+        let metadata = std::fs::metadata(&model.path).map_err(|error| {
+            tracing::warn!(%error, "Kokoro model file metadata could not be read");
+            KokoroRuntimeError::ModelLoad { reason: "Kokoro model file metadata could not be read" }
+        })?;
         if let Some(settings) = &self.settings {
             self.cache.refresh_settings(|| settings.load_device_settings())
-                .map_err(|_| KokoroRuntimeError::Unavailable)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "Kokoro runtime settings could not be loaded");
+                    KokoroRuntimeError::Unavailable { reason: "Kokoro runtime settings could not be loaded" }
+                })?;
         }
         let loaded = self.cache.acquire((model.path.clone(), metadata.len(), metadata.modified().ok()), || {
             OnnxKokoroRuntime::load(&model.path, runtime).map(|runtime| Arc::new(Mutex::new(runtime)))
         })?;
-        let mut runtime = loaded.lock().map_err(|_| KokoroRuntimeError::Unavailable)?;
+        let mut runtime = loaded.lock().map_err(|_| KokoroRuntimeError::Unavailable { reason: "Kokoro runtime lock is poisoned" })?;
         synthesize_kokoro_tokens(
             &mut *runtime,
             &phonemization.token_ids,

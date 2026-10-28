@@ -169,7 +169,8 @@ async fn shrink_inputs(request: &mut ProviderImageRequest) {
         }
         Err(error) => tracing::warn!(
             component = "image_generator",
-            "Skipped reference image resizing: {error}"
+            %error,
+            "Skipped reference image resizing"
         ),
     }
 }
@@ -310,6 +311,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
         };
         tracing::warn!(
             component = "image_generator",
+            reason = "the primary endpoint answered with an error status",
             "Primary endpoint answered HTTP {}; retrying through the fallback endpoint: {}",
             lettuce_network::status_text(response.status),
             truncate_for_log(&body)
@@ -341,6 +343,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
                     attempt += 1;
                     tracing::warn!(
                         component = "image_generator",
+                        reason = "the provider answered with a server error status",
                         "Provider answered HTTP {}; retrying (attempt {attempt}/{TRANSIENT_ERROR_RETRIES}): {}",
                         lettuce_network::status_text(response.status),
                         truncate_for_log(&String::from_utf8_lossy(&response.body))
@@ -374,6 +377,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
                     attempt += 1;
                     tracing::warn!(
                         component = "image_generator",
+                        reason = "the response body carried a transient provider error",
                         "{}; retrying (attempt {attempt}/{TRANSIENT_ERROR_RETRIES})",
                         body_error.describe()
                     );

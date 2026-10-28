@@ -77,7 +77,9 @@ impl MemoryBackup {
         effects: &crate::CompanionEffectBackup,
     ) -> Result<(), MemoryBackupError> {
         if self.version != MEMORY_BACKUP_VERSION {
-            return Err(MemoryBackupError::InvalidData);
+            return Err(MemoryBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.spaces
             .sort_by_key(|space| (space.conversation_id, space.branch_id, space.snapshot.id));
@@ -95,7 +97,9 @@ impl MemoryBackup {
                             .any(|branch| branch.id == cursor.branch_id)
                 })
         }) {
-            return Err(MemoryBackupError::InvalidData);
+            return Err(MemoryBackupError::InvalidData {
+                reason: "cursor references an unknown branch",
+            });
         }
         self.pools.sort_by_key(|pool| pool.character_id);
         self.unbound_pools.sort_by_key(|space| space.id);
@@ -108,13 +112,17 @@ impl MemoryBackup {
             .chain(self.unbound_pools.iter().map(|space| space.id))
             .collect::<BTreeSet<_>>();
         if space_ids.len() != self.spaces.len() + self.unbound_pools.len() {
-            return Err(MemoryBackupError::InvalidData);
+            return Err(MemoryBackupError::InvalidData {
+                reason: "space ids are duplicated",
+            });
         }
         let mut dismissed_spaces = BTreeSet::new();
         if self.error_dismissals.iter().any(|dismissal| {
             !space_ids.contains(&dismissal.space_id) || !dismissed_spaces.insert(dismissal.space_id)
         }) {
-            return Err(MemoryBackupError::InvalidData);
+            return Err(MemoryBackupError::InvalidData {
+                reason: "error dismissal references an unknown space or is duplicated",
+            });
         }
         let mut pool_characters = BTreeSet::new();
         let mut pool_spaces = BTreeSet::new();
@@ -123,7 +131,9 @@ impl MemoryBackup {
                 || !pool_characters.insert(pool.character_id)
                 || !pool_spaces.insert(pool.space_id)
         }) {
-            return Err(MemoryBackupError::InvalidData);
+            return Err(MemoryBackupError::InvalidData {
+                reason: "pool references an unknown space or is duplicated",
+            });
         }
         self.retrieval_accesses.sort_by_key(|receipt| {
             (
@@ -169,7 +179,9 @@ impl MemoryBackup {
                             .any(|branch| branch.id == edit.edit.branch_id)
                 })
             {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "manual edit references an unknown branch",
+                });
             }
         }
         let attempts = runtime
@@ -259,7 +271,9 @@ impl MemoryBackup {
                         })
                 })
             {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "space references messages from another conversation",
+                });
             }
         }
         for space in &self.unbound_pools {
@@ -270,7 +284,9 @@ impl MemoryBackup {
                     .iter()
                     .any(|item| memory_owners.insert(item.id, space.id).is_some())
             {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "memory item belongs to more than one space",
+                });
             }
         }
         for space in self
@@ -296,7 +312,9 @@ impl MemoryBackup {
                         .len()
                         != item.supersedes.len()
             }) {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "memory item supersedes the same item twice",
+                });
             }
         }
         let binds = |conversation_id: ConversationId, space_id: lettuce_types::MemorySpaceId| {
@@ -343,7 +361,9 @@ impl MemoryBackup {
                     .iter()
                     .any(|id| !access.selected_memory_ids.contains(id))
             {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "promoted memory ids are not selected memory ids",
+                });
             }
         }
         for effect in &effects.effects {
@@ -356,7 +376,9 @@ impl MemoryBackup {
                 if effect.memory_changes == Default::default() {
                     continue;
                 }
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "effect carries memory changes without a bound space",
+                });
             }
             if effect
                 .memory_changes
@@ -370,7 +392,9 @@ impl MemoryBackup {
                         .is_some_and(|owner| !bound.contains(&owner))
                 })
             {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "effect references memory owned by an unbound space",
+                });
             }
         }
         for rewind in &effects.rewinds {
@@ -381,7 +405,9 @@ impl MemoryBackup {
                         .is_some_and(|owner| *owner != rewind.space_id)
                 })
             {
-                return Err(MemoryBackupError::InvalidData);
+                return Err(MemoryBackupError::InvalidData {
+                    reason: "rewind references memory owned by another space",
+                });
             }
         }
         Ok(())
@@ -390,6 +416,6 @@ impl MemoryBackup {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MemoryBackupError {
-    #[error("memory backup is invalid")]
-    InvalidData,
+    #[error("memory backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

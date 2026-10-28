@@ -7,9 +7,9 @@ fn conflict_error(error: ConflictRepositoryError) -> ApiError {
     let code = match error {
         ConflictRepositoryError::NotFound => ApiErrorCode::NotFound,
         ConflictRepositoryError::Conflict => ApiErrorCode::Conflict,
-        ConflictRepositoryError::Unsupported => ApiErrorCode::Unsupported,
-        ConflictRepositoryError::Unavailable => ApiErrorCode::Unavailable,
-        ConflictRepositoryError::Corrupt | ConflictRepositoryError::Storage => {
+        ConflictRepositoryError::Unsupported { .. } => ApiErrorCode::Unsupported,
+        ConflictRepositoryError::Unavailable { .. } => ApiErrorCode::Unavailable,
+        ConflictRepositoryError::Corrupt { .. } | ConflictRepositoryError::Storage { .. } => {
             ApiErrorCode::Internal
         }
     };
@@ -18,7 +18,7 @@ fn conflict_error(error: ConflictRepositoryError) -> ApiError {
         message: error.to_string(),
         details: Some(dto::ApiErrorDetails::Sync {
             reason: match error {
-                ConflictRepositoryError::Unavailable => {
+                ConflictRepositoryError::Unavailable { .. } => {
                     dto::SyncFailure::RequiredReferenceUnavailable
                 }
                 _ => dto::SyncFailure::Storage,

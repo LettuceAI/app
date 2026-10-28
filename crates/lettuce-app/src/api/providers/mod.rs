@@ -76,12 +76,12 @@ pub(super) async fn account(context: &ApiContext, id: String) -> Result<Provider
 pub(super) fn request_error(error: ProviderRequestError) -> ApiError {
     api_error(
         match error {
-            ProviderRequestError::Unsupported => ApiErrorCode::Unsupported,
-            ProviderRequestError::Rejected | ProviderRequestError::CredentialRejected => {
+            ProviderRequestError::Unsupported { .. } => ApiErrorCode::Unsupported,
+            ProviderRequestError::Rejected { .. } | ProviderRequestError::CredentialRejected => {
                 ApiErrorCode::InvalidInput
             }
-            ProviderRequestError::Unavailable => ApiErrorCode::Unavailable,
-            ProviderRequestError::Malformed => ApiErrorCode::Malformed,
+            ProviderRequestError::Unavailable { .. } => ApiErrorCode::Unavailable,
+            ProviderRequestError::Malformed { .. } => ApiErrorCode::Malformed,
         },
         error.to_string(),
     )

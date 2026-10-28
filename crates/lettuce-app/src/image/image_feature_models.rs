@@ -36,8 +36,8 @@ pub enum ImageFeatureModelError {
     LorebookEntryGenerator(LorebookEntryModelProblem),
     #[error("{0}")]
     SoulWriter(&'static str),
-    #[error("model storage is unavailable")]
-    Storage,
+    #[error("model storage is unavailable: {reason}")]
+    Storage { reason: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -51,8 +51,10 @@ pub enum LorebookEntryModelProblem {
 }
 
 impl From<ModelRepositoryError> for ImageFeatureModelError {
-    fn from(_: ModelRepositoryError) -> Self {
-        Self::Storage
+    fn from(error: ModelRepositoryError) -> Self {
+        Self::Storage {
+            reason: error.to_string(),
+        }
     }
 }
 

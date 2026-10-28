@@ -504,10 +504,10 @@ pub struct CharacterFileRelationship {
 pub enum CharacterFileRepositoryError {
     #[error("the character file conflicts with stored data")]
     Conflict,
-    #[error("the character file is invalid")]
-    InvalidInput,
-    #[error("character file storage failed")]
-    Storage,
+    #[error("the character file is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
+    #[error("character file storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait CharacterFileRepository: Send + Sync {
@@ -562,8 +562,11 @@ impl CharacterFilePlan {
                 Ok(LorebookBinding {
                     lorebook_id: *lorebook_id,
                     enabled: true,
-                    ordinal: u32::try_from(ordinal)
-                        .map_err(|_| CharacterPlanError::InvalidInput)?,
+                    ordinal: u32::try_from(ordinal).map_err(|_| {
+                        CharacterPlanError::InvalidInput {
+                            reason: "lorebook binding ordinal exceeds the u32 range",
+                        }
+                    })?,
                     revision: Revision::INITIAL,
                     created_at: character.created_at,
                     updated_at: character.updated_at,

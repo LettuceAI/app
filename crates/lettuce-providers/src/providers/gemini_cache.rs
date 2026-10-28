@@ -80,6 +80,7 @@ impl GeminiCache {
             tracing::warn!(
                 provider = "gemini",
                 cache_result = "request_too_large",
+                reason = "request too large",
                 "explicit prompt cache unavailable; sending the full request"
             );
             return Ok(None);
@@ -109,6 +110,7 @@ impl GeminiCache {
                 tracing::warn!(
                     provider = "gemini",
                     cache_result = "transport_error",
+                    reason = "transport error",
                     "explicit prompt cache unavailable; sending the full request"
                 );
                 return Ok(None);
@@ -119,6 +121,7 @@ impl GeminiCache {
                 provider = "gemini",
                 cache_result = "provider_rejected",
                 status = response.status,
+                reason = "provider rejected",
                 "explicit prompt cache unavailable; sending the full request"
             );
             return Ok(None);
@@ -127,6 +130,7 @@ impl GeminiCache {
             tracing::warn!(
                 provider = "gemini",
                 cache_result = "malformed_response",
+                reason = "malformed response",
                 "explicit prompt cache unavailable; sending the full request"
             );
             return Ok(None);
@@ -135,6 +139,7 @@ impl GeminiCache {
             tracing::warn!(
                 provider = "gemini",
                 cache_result = "missing_name",
+                reason = "missing name",
                 "explicit prompt cache unavailable; sending the full request"
             );
             return Ok(None);

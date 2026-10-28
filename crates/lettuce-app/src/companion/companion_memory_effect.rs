@@ -17,10 +17,10 @@ pub struct CompanionPostTurnEffect<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionPostTurnEffectError {
-    #[error("companion post-turn memory snapshots do not share one valid history")]
-    InvalidSnapshots,
-    #[error("companion post-turn effect input is invalid")]
-    InvalidEffect,
+    #[error("companion post-turn memory snapshots do not share one valid history: {reason}")]
+    InvalidSnapshots { reason: String },
+    #[error("companion post-turn effect input is invalid: {reason}")]
+    InvalidEffect { reason: &'static str },
     #[error("companion post-turn effect repository failed: {0:?}")]
     Repository(CompanionTurnEffectRepositoryError),
 }
@@ -54,14 +54,21 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized> CompanionPostTurnEffectCoord
         settled_at: TimestampMillis,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionPostTurnEffectError> {
         if before.id != after.id || before.revision.get() > after.revision.get() {
-            return Err(CompanionPostTurnEffectError::InvalidSnapshots);
+            return Err(CompanionPostTurnEffectError::InvalidSnapshots {
+                reason: "snapshots belong to different spaces or run backwards in revision"
+                    .to_owned(),
+            });
         }
         before
             .validate()
-            .map_err(|_| CompanionPostTurnEffectError::InvalidSnapshots)?;
+            .map_err(|error| CompanionPostTurnEffectError::InvalidSnapshots {
+                reason: format!("the snapshot before the cycle failed validation: {error}"),
+            })?;
         after
             .validate()
-            .map_err(|_| CompanionPostTurnEffectError::InvalidSnapshots)?;
+            .map_err(|error| CompanionPostTurnEffectError::InvalidSnapshots {
+                reason: format!("the snapshot after the cycle failed validation: {error}"),
+            })?;
         let before_by_id = before
             .items
             .iter()
@@ -79,7 +86,9 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized> CompanionPostTurnEffectCoord
                     CompanionTurnEffectStatus::Processing | CompanionTurnEffectStatus::Ready
                 )
             {
-                return Err(CompanionPostTurnEffectError::InvalidEffect);
+                return Err(CompanionPostTurnEffectError::InvalidEffect {
+                    reason: "effect input repeats an effect, was enqueued after settlement, or is not processing or ready",
+                });
             }
             let message_ids = effect_message_ids(effect);
             let memory_changes = memory_changes_for_turn(&message_ids, &before_by_id, after);

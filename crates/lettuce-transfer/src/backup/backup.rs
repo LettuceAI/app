@@ -127,7 +127,9 @@ pub fn detect_backup_format(prefix: &[u8]) -> Result<BackupFormatVersion, Backup
     } else if prefix.starts_with(&LEGACY_ZIP_PREFIX) {
         Ok(BackupFormatVersion::LegacyV1)
     } else {
-        Err(BackupEnvelopeError::InvalidEnvelope)
+        Err(BackupEnvelopeError::InvalidEnvelope {
+            reason: "file is neither a version 2 nor a version 1 backup",
+        })
     }
 }
 
@@ -135,22 +137,22 @@ pub fn detect_backup_format(prefix: &[u8]) -> Result<BackupFormatVersion, Backup
 pub enum BackupEnvelopeError {
     #[error("backup password is empty or exceeds its limit")]
     InvalidPassword,
-    #[error("backup metadata is invalid")]
-    InvalidMetadata,
-    #[error("backup entry name is unsafe or duplicated")]
-    InvalidEntryName,
-    #[error("backup entry schema is invalid")]
-    InvalidSchema,
-    #[error("backup entry or aggregate size exceeds its limit")]
-    LimitExceeded,
-    #[error("backup encryption failed")]
-    Encryption,
-    #[error("backup authentication failed")]
-    Authentication,
-    #[error("backup payload is truncated or has trailing data")]
-    InvalidEnvelope,
-    #[error("backup file could not be read or written")]
-    Io,
+    #[error("backup metadata is invalid: {reason}")]
+    InvalidMetadata { reason: String },
+    #[error("backup entry name is unsafe or duplicated: {reason}")]
+    InvalidEntryName { reason: &'static str },
+    #[error("backup entry schema is invalid: {reason}")]
+    InvalidSchema { reason: &'static str },
+    #[error("backup entry or aggregate size exceeds its limit: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("backup encryption failed: {reason}")]
+    Encryption { reason: &'static str },
+    #[error("backup authentication failed: {reason}")]
+    Authentication { reason: &'static str },
+    #[error("backup payload is truncated or has trailing data: {reason}")]
+    InvalidEnvelope { reason: &'static str },
+    #[error("backup file could not be read or written: {reason}")]
+    Io { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,10 +263,15 @@ impl<W: Write> BackupWriter<W> {
         };
         let header = encode_header(&kdf, created_at, &app_version);
         let key = derive_key(password, &kdf)?;
-        let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
-            .map_err(|_| BackupEnvelopeError::Encryption)?;
+        let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref()).map_err(|_| {
+            BackupEnvelopeError::Encryption {
+                reason: "cipher key has an invalid length",
+            }
+        })?;
         out.write_all(&header)
-            .map_err(|_| BackupEnvelopeError::Io)?;
+            .map_err(|error| BackupEnvelopeError::Io {
+                reason: format!("writing the backup header failed: {error}"),
+            })?;
         Ok(Self {
             out,
             cipher,
@@ -297,7 +304,9 @@ impl<W: Write> BackupWriter<W> {
         source: &mut dyn Read,
     ) -> Result<(), BackupEnvelopeError> {
         if self.failed {
-            return Err(BackupEnvelopeError::InvalidEnvelope);
+            return Err(BackupEnvelopeError::InvalidEnvelope {
+                reason: "envelope writer already failed",
+            });
         }
         let result = self.write_section(name, schema, source);
         self.failed = result.is_err();
@@ -313,10 +322,14 @@ impl<W: Write> BackupWriter<W> {
         validate_entry_name(name)?;
         validate_schema(schema)?;
         if self.entries.len() >= MAX_BACKUP_ENTRIES {
-            return Err(BackupEnvelopeError::LimitExceeded);
+            return Err(BackupEnvelopeError::LimitExceeded {
+                reason: "backup has too many entries",
+            });
         }
         if self.names.contains(name) {
-            return Err(BackupEnvelopeError::InvalidEntryName);
+            return Err(BackupEnvelopeError::InvalidEntryName {
+                reason: "section name is already written",
+            });
         }
         let mut nonce_prefix = [0u8; ENTRY_NONCE_PREFIX_BYTES];
         loop {
@@ -341,13 +354,17 @@ impl<W: Write> BackupWriter<W> {
             let last = next_len == 0;
             let plaintext = &current[..current_len];
             hasher.update(plaintext);
-            size = size
-                .checked_add(current_len as u64)
-                .ok_or(BackupEnvelopeError::LimitExceeded)?;
+            size =
+                size.checked_add(current_len as u64)
+                    .ok_or(BackupEnvelopeError::LimitExceeded {
+                        reason: "section size overflowed",
+                    })?;
             if size > MAX_BACKUP_ENTRY_BYTES
                 || self.total.saturating_add(size) > MAX_BACKUP_TOTAL_BYTES
             {
-                return Err(BackupEnvelopeError::LimitExceeded);
+                return Err(BackupEnvelopeError::LimitExceeded {
+                    reason: "section or backup total exceeds the size limit",
+                });
             }
             let encrypted = self
                 .cipher
@@ -358,10 +375,14 @@ impl<W: Write> BackupWriter<W> {
                         aad: &aad,
                     },
                 )
-                .map_err(|_| BackupEnvelopeError::Encryption)?;
+                .map_err(|_| BackupEnvelopeError::Encryption {
+                    reason: "encrypting a section chunk failed",
+                })?;
             self.out
                 .write_all(&encrypted)
-                .map_err(|_| BackupEnvelopeError::Io)?;
+                .map_err(|error| BackupEnvelopeError::Io {
+                    reason: format!("writing an encrypted section chunk failed: {error}"),
+                })?;
             if last {
                 break;
             }
@@ -369,13 +390,17 @@ impl<W: Write> BackupWriter<W> {
             current_len = next_len;
             counter = counter
                 .checked_add(1)
-                .ok_or(BackupEnvelopeError::LimitExceeded)?;
+                .ok_or(BackupEnvelopeError::LimitExceeded {
+                    reason: "section chunk counter overflowed",
+                })?;
         }
         self.total = self
             .total
             .checked_add(size)
             .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
-            .ok_or(BackupEnvelopeError::LimitExceeded)?;
+            .ok_or(BackupEnvelopeError::LimitExceeded {
+                reason: "backup total size overflowed or exceeds the limit",
+            })?;
         self.names.insert(name.to_owned());
         self.entries.push(BackupEntryDescriptor {
             name: name.to_owned(),
@@ -391,10 +416,14 @@ impl<W: Write> BackupWriter<W> {
     /// Writes the encrypted manifest trailer and returns the sink.
     pub fn finish(mut self) -> Result<W, BackupEnvelopeError> {
         if self.failed {
-            return Err(BackupEnvelopeError::InvalidEnvelope);
+            return Err(BackupEnvelopeError::InvalidEnvelope {
+                reason: "envelope writer already failed",
+            });
         }
         if self.entries.is_empty() {
-            return Err(BackupEnvelopeError::LimitExceeded);
+            return Err(BackupEnvelopeError::LimitExceeded {
+                reason: "backup has no sections",
+            });
         }
         let manifest = BackupManifest {
             version: BACKUP_ENVELOPE_VERSION,
@@ -402,11 +431,15 @@ impl<W: Write> BackupWriter<W> {
             app_version: std::mem::take(&mut self.app_version),
             entries: std::mem::take(&mut self.entries),
         };
-        let manifest_bytes = Zeroizing::new(
-            serde_json::to_vec(&manifest).map_err(|_| BackupEnvelopeError::InvalidMetadata)?,
-        );
+        let manifest_bytes = Zeroizing::new(serde_json::to_vec(&manifest).map_err(|error| {
+            BackupEnvelopeError::InvalidMetadata {
+                reason: format!("manifest could not be serialized: {error}"),
+            }
+        })?);
         if manifest_bytes.len() > MAX_MANIFEST_BYTES {
-            return Err(BackupEnvelopeError::LimitExceeded);
+            return Err(BackupEnvelopeError::LimitExceeded {
+                reason: "manifest exceeds the size limit",
+            });
         }
         let mut nonce = [0u8; NONCE_BYTES];
         OsRng.fill_bytes(&mut nonce);
@@ -419,9 +452,13 @@ impl<W: Write> BackupWriter<W> {
                     aad: &self.binding,
                 },
             )
-            .map_err(|_| BackupEnvelopeError::Encryption)?;
+            .map_err(|_| BackupEnvelopeError::Encryption {
+                reason: "encrypting the manifest failed",
+            })?;
         let length =
-            u32::try_from(encrypted.len()).map_err(|_| BackupEnvelopeError::LimitExceeded)?;
+            u32::try_from(encrypted.len()).map_err(|_| BackupEnvelopeError::LimitExceeded {
+                reason: "encrypted manifest length exceeds the u32 range",
+            })?;
         let mut footer = Vec::with_capacity(FOOTER_BYTES);
         footer.extend_from_slice(&nonce);
         footer.extend_from_slice(&length.to_be_bytes());
@@ -430,7 +467,9 @@ impl<W: Write> BackupWriter<W> {
             .write_all(&encrypted)
             .and_then(|()| self.out.write_all(&footer))
             .and_then(|()| self.out.flush())
-            .map_err(|_| BackupEnvelopeError::Io)?;
+            .map_err(|error| BackupEnvelopeError::Io {
+                reason: format!("writing the backup footer failed: {error}"),
+            })?;
         Ok(self.out)
     }
 }
@@ -459,11 +498,16 @@ impl<R: Read + Seek> BackupReader<R> {
         validate_password(password)?;
         let layout = read_layout(&mut input)?;
         let key = derive_key(password, &layout.kdf)?;
-        let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
-            .map_err(|_| BackupEnvelopeError::Authentication)?;
+        let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref()).map_err(|_| {
+            BackupEnvelopeError::Authentication {
+                reason: "cipher key has an invalid length",
+            }
+        })?;
         input
             .seek(SeekFrom::Start(layout.manifest_offset))
-            .map_err(|_| BackupEnvelopeError::Io)?;
+            .map_err(|error| BackupEnvelopeError::Io {
+                reason: format!("seeking to the manifest failed: {error}"),
+            })?;
         let mut encrypted = vec![0u8; layout.manifest_len];
         input
             .read_exact(&mut encrypted)
@@ -477,16 +521,24 @@ impl<R: Read + Seek> BackupReader<R> {
                         aad: &layout.binding,
                     },
                 )
-                .map_err(|_| BackupEnvelopeError::Authentication)?,
+                .map_err(|_| BackupEnvelopeError::Authentication {
+                    reason: "manifest authentication failed",
+                })?,
         );
-        let manifest: BackupManifest = serde_json::from_slice(&manifest_bytes)
-            .map_err(|_| BackupEnvelopeError::InvalidMetadata)?;
+        let manifest: BackupManifest =
+            serde_json::from_slice(&manifest_bytes).map_err(|error| {
+                BackupEnvelopeError::InvalidMetadata {
+                    reason: format!("manifest is not valid json: {error}"),
+                }
+            })?;
         validate_manifest(&manifest)?;
         if manifest.version != layout.metadata.version
             || manifest.created_at != layout.metadata.created_at
             || manifest.app_version != layout.metadata.app_version
         {
-            return Err(BackupEnvelopeError::InvalidMetadata);
+            return Err(BackupEnvelopeError::InvalidMetadata {
+                reason: "manifest header and manifest metadata do not match".to_owned(),
+            });
         }
         let mut offsets = Vec::with_capacity(manifest.entries.len());
         let mut position = HEADER_BYTES as u64;
@@ -494,10 +546,14 @@ impl<R: Read + Seek> BackupReader<R> {
             offsets.push(position);
             position = position
                 .checked_add(encrypted_len(entry.plaintext_bytes)?)
-                .ok_or(BackupEnvelopeError::InvalidEnvelope)?;
+                .ok_or(BackupEnvelopeError::InvalidEnvelope {
+                    reason: "section offset overflowed",
+                })?;
         }
         if position != layout.manifest_offset {
-            return Err(BackupEnvelopeError::InvalidEnvelope);
+            return Err(BackupEnvelopeError::InvalidEnvelope {
+                reason: "sections do not end at the manifest offset",
+            });
         }
         Ok(Self {
             input,
@@ -547,11 +603,16 @@ impl<R: Read + Seek> BackupReader<R> {
             .manifest
             .entries
             .get(index)
-            .ok_or(BackupEnvelopeError::InvalidMetadata)?
+            .ok_or(BackupEnvelopeError::InvalidMetadata {
+                reason: "section index is out of range".to_owned(),
+            })?
             .plaintext_bytes;
-        let mut bytes = Zeroizing::new(Vec::with_capacity(
-            usize::try_from(size).map_err(|_| BackupEnvelopeError::LimitExceeded)?,
-        ));
+        let mut bytes =
+            Zeroizing::new(Vec::with_capacity(usize::try_from(size).map_err(|_| {
+                BackupEnvelopeError::LimitExceeded {
+                    reason: "section size exceeds the platform size",
+                }
+            })?));
         self.copy_section(index, &mut *bytes)?;
         Ok(bytes)
     }
@@ -564,22 +625,29 @@ impl<R: Read + Seek> BackupReader<R> {
         index: usize,
         out: &mut dyn Write,
     ) -> Result<(), BackupEnvelopeError> {
-        let entry = self
-            .manifest
-            .entries
-            .get(index)
-            .ok_or(BackupEnvelopeError::InvalidMetadata)?;
+        let entry =
+            self.manifest
+                .entries
+                .get(index)
+                .ok_or(BackupEnvelopeError::InvalidMetadata {
+                    reason: "section index is out of range".to_owned(),
+                })?;
         let aad = entry_aad(&self.binding, index)?;
         self.input
             .seek(SeekFrom::Start(self.offsets[index]))
-            .map_err(|_| BackupEnvelopeError::Io)?;
+            .map_err(|error| BackupEnvelopeError::Io {
+                reason: format!("seeking to the section failed: {error}"),
+            })?;
         let mut hasher = blake3::Hasher::new();
         let mut remaining = entry.plaintext_bytes;
         let mut counter = 0u32;
         let mut encrypted = vec![0u8; CHUNK_BYTES + TAG_BYTES];
         loop {
-            let chunk = usize::try_from(remaining.min(CHUNK_BYTES as u64))
-                .map_err(|_| BackupEnvelopeError::LimitExceeded)?;
+            let chunk = usize::try_from(remaining.min(CHUNK_BYTES as u64)).map_err(|_| {
+                BackupEnvelopeError::LimitExceeded {
+                    reason: "section chunk size exceeds the platform size",
+                }
+            })?;
             let last = remaining <= CHUNK_BYTES as u64;
             let buffer = &mut encrypted[..chunk + TAG_BYTES];
             self.input
@@ -594,23 +662,31 @@ impl<R: Read + Seek> BackupReader<R> {
                             aad: &aad,
                         },
                     )
-                    .map_err(|_| BackupEnvelopeError::Authentication)?,
+                    .map_err(|_| BackupEnvelopeError::Authentication {
+                        reason: "section chunk authentication failed",
+                    })?,
             );
             hasher.update(&plaintext);
             out.write_all(&plaintext)
-                .map_err(|_| BackupEnvelopeError::Io)?;
+                .map_err(|error| BackupEnvelopeError::Io {
+                    reason: format!("writing the decrypted section failed: {error}"),
+                })?;
             remaining -= chunk as u64;
             if last {
                 break;
             }
             counter = counter
                 .checked_add(1)
-                .ok_or(BackupEnvelopeError::InvalidEnvelope)?;
+                .ok_or(BackupEnvelopeError::InvalidEnvelope {
+                    reason: "section chunk counter overflowed",
+                })?;
         }
         if ContentHash::parse(hasher.finalize().to_hex().to_string()).as_ref()
             != Ok(&entry.content_hash)
         {
-            return Err(BackupEnvelopeError::Authentication);
+            return Err(BackupEnvelopeError::Authentication {
+                reason: "section content hash does not match its manifest entry",
+            });
         }
         Ok(())
     }
@@ -661,21 +737,34 @@ struct BackupLayout {
 }
 
 fn read_error(failure: std::io::Error) -> BackupEnvelopeError {
-    if failure.kind() == std::io::ErrorKind::UnexpectedEof { BackupEnvelopeError::InvalidEnvelope }
-    else { BackupEnvelopeError::Io }
+    if failure.kind() == std::io::ErrorKind::UnexpectedEof {
+        BackupEnvelopeError::InvalidEnvelope {
+            reason: "backup ended before the expected length",
+        }
+    } else {
+        BackupEnvelopeError::Io {
+            reason: format!("reading the backup failed: {failure}"),
+        }
+    }
 }
 
 fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnvelopeError> {
     let total = input
         .seek(SeekFrom::End(0))
-        .map_err(|_| BackupEnvelopeError::Io)?;
+        .map_err(|error| BackupEnvelopeError::Io {
+            reason: format!("seeking to the end of the backup failed: {error}"),
+        })?;
     let minimum = (HEADER_BYTES + TAG_BYTES + FOOTER_BYTES) as u64;
     if total < minimum {
-        return Err(BackupEnvelopeError::InvalidEnvelope);
+        return Err(BackupEnvelopeError::InvalidEnvelope {
+            reason: "backup is shorter than the minimum envelope size",
+        });
     }
     input
         .seek(SeekFrom::Start(0))
-        .map_err(|_| BackupEnvelopeError::Io)?;
+        .map_err(|error| BackupEnvelopeError::Io {
+            reason: format!("seeking to the start of the backup failed: {error}"),
+        })?;
     let mut header = [0u8; HEADER_BYTES];
     input
         .read_exact(&mut header)
@@ -683,29 +772,40 @@ fn read_layout(input: &mut (impl Read + Seek)) -> Result<BackupLayout, BackupEnv
     let (kdf, metadata) = decode_header(&header)?;
     input
         .seek(SeekFrom::Start(total - FOOTER_BYTES as u64))
-        .map_err(|_| BackupEnvelopeError::Io)?;
+        .map_err(|error| BackupEnvelopeError::Io {
+            reason: format!("seeking to the footer failed: {error}"),
+        })?;
     let mut footer = [0u8; FOOTER_BYTES];
     input
         .read_exact(&mut footer)
         .map_err(read_error)?;
     if footer[NONCE_BYTES + 4..] != FOOTER_MAGIC {
-        return Err(BackupEnvelopeError::InvalidEnvelope);
+        return Err(BackupEnvelopeError::InvalidEnvelope {
+            reason: "footer magic is missing",
+        });
     }
-    let manifest_nonce: [u8; NONCE_BYTES] = footer[..NONCE_BYTES]
-        .try_into()
-        .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?;
-    let manifest_len = u32::from_be_bytes(
-        footer[NONCE_BYTES..NONCE_BYTES + 4]
+    let manifest_nonce: [u8; NONCE_BYTES] =
+        footer[..NONCE_BYTES]
             .try_into()
-            .map_err(|_| BackupEnvelopeError::InvalidEnvelope)?,
-    ) as usize;
+            .map_err(|_| BackupEnvelopeError::InvalidEnvelope {
+                reason: "footer nonce has an unexpected length",
+            })?;
+    let manifest_len = u32::from_be_bytes(footer[NONCE_BYTES..NONCE_BYTES + 4].try_into().map_err(
+        |_| BackupEnvelopeError::InvalidEnvelope {
+            reason: "footer manifest length has an unexpected length",
+        },
+    )?) as usize;
     if manifest_len <= TAG_BYTES || manifest_len > MAX_MANIFEST_BYTES + TAG_BYTES {
-        return Err(BackupEnvelopeError::LimitExceeded);
+        return Err(BackupEnvelopeError::LimitExceeded {
+            reason: "manifest length is out of range",
+        });
     }
     let manifest_offset = (total - FOOTER_BYTES as u64)
         .checked_sub(manifest_len as u64)
         .filter(|offset| *offset >= HEADER_BYTES as u64)
-        .ok_or(BackupEnvelopeError::InvalidEnvelope)?;
+        .ok_or(BackupEnvelopeError::InvalidEnvelope {
+            reason: "manifest offset is out of range",
+        })?;
     Ok(BackupLayout {
         kdf,
         metadata,
@@ -744,7 +844,9 @@ fn decode_header(
     header: &[u8; HEADER_BYTES],
 ) -> Result<(BackupKdf, BackupHeader), BackupEnvelopeError> {
     if header[..MAGIC.len()] != MAGIC {
-        return Err(BackupEnvelopeError::InvalidEnvelope);
+        return Err(BackupEnvelopeError::InvalidEnvelope {
+            reason: "header magic is missing",
+        });
     }
     let value = |at: usize| {
         u32::from_be_bytes(
@@ -765,7 +867,9 @@ fn decode_header(
         || !(1..=MAX_ARGON2_ITERATIONS).contains(&kdf.iterations)
         || !(1..=MAX_ARGON2_LANES).contains(&kdf.lanes)
     {
-        return Err(BackupEnvelopeError::InvalidMetadata);
+        return Err(BackupEnvelopeError::InvalidMetadata {
+            reason: "key derivation parameters are out of range".to_owned(),
+        });
     }
     let start = MAGIC.len() + 12;
     let version = value(start);
@@ -776,14 +880,21 @@ fn decode_header(
     ));
     let length = usize::from(header[start + 12]);
     if version != BACKUP_ENVELOPE_VERSION || length == 0 || length > MAX_APP_VERSION_BYTES {
-        return Err(BackupEnvelopeError::InvalidMetadata);
+        return Err(BackupEnvelopeError::InvalidMetadata {
+            reason: "app version field is unsupported or has an invalid length".to_owned(),
+        });
     }
     let text = &header[start + 13..start + 13 + MAX_APP_VERSION_BYTES];
     if text[length..].iter().any(|byte| *byte != 0) {
-        return Err(BackupEnvelopeError::InvalidMetadata);
+        return Err(BackupEnvelopeError::InvalidMetadata {
+            reason: "app version field has non-zero padding".to_owned(),
+        });
     }
-    let app_version =
-        std::str::from_utf8(&text[..length]).map_err(|_| BackupEnvelopeError::InvalidMetadata)?;
+    let app_version = std::str::from_utf8(&text[..length]).map_err(|error| {
+        BackupEnvelopeError::InvalidMetadata {
+            reason: format!("app version is not valid utf-8: {error}"),
+        }
+    })?;
     validate_app_version(app_version)?;
     Ok((
         kdf,
@@ -800,7 +911,9 @@ fn encrypted_len(plaintext_bytes: u64) -> Result<u64, BackupEnvelopeError> {
     chunks
         .checked_mul(TAG_BYTES as u64)
         .and_then(|tags| tags.checked_add(plaintext_bytes))
-        .ok_or(BackupEnvelopeError::LimitExceeded)
+        .ok_or(BackupEnvelopeError::LimitExceeded {
+            reason: "encrypted section length overflowed",
+        })
 }
 
 fn chunk_nonce(prefix: &[u8; ENTRY_NONCE_PREFIX_BYTES], counter: u32, last: bool) -> XNonce {
@@ -818,7 +931,11 @@ fn fill(source: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, BackupEnvelop
             Ok(0) => break,
             Ok(read) => filled += read,
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(_) => return Err(BackupEnvelopeError::Io),
+            Err(error) => {
+                return Err(BackupEnvelopeError::Io {
+                    reason: format!("reading the backup failed: {error}"),
+                });
+            }
         }
     }
     Ok(filled)
@@ -826,11 +943,15 @@ fn fill(source: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, BackupEnvelop
 
 fn validate_manifest(manifest: &BackupManifest) -> Result<(), BackupEnvelopeError> {
     if manifest.version != BACKUP_ENVELOPE_VERSION {
-        return Err(BackupEnvelopeError::InvalidMetadata);
+        return Err(BackupEnvelopeError::InvalidMetadata {
+            reason: "manifest version is not the supported version".to_owned(),
+        });
     }
     validate_app_version(&manifest.app_version)?;
     if manifest.entries.is_empty() || manifest.entries.len() > MAX_BACKUP_ENTRIES {
-        return Err(BackupEnvelopeError::LimitExceeded);
+        return Err(BackupEnvelopeError::LimitExceeded {
+            reason: "manifest has no entries or too many entries",
+        });
     }
     let mut names = HashSet::with_capacity(manifest.entries.len());
     let mut prefixes = HashSet::with_capacity(manifest.entries.len());
@@ -839,20 +960,28 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), BackupEnvelopeErro
         validate_entry_name(&entry.name)?;
         validate_schema(&entry.schema)?;
         if !names.insert(entry.name.as_str()) {
-            return Err(BackupEnvelopeError::InvalidEntryName);
+            return Err(BackupEnvelopeError::InvalidEntryName {
+                reason: "manifest entry name is duplicated",
+            });
         }
         if !prefixes.insert(entry.nonce_prefix) {
-            return Err(BackupEnvelopeError::InvalidMetadata);
+            return Err(BackupEnvelopeError::InvalidMetadata {
+                reason: "manifest entry nonce prefix is duplicated".to_owned(),
+            });
         }
         if entry.plaintext_bytes > MAX_BACKUP_ENTRY_BYTES
             || ContentHash::parse(entry.content_hash.as_str()).as_ref() != Ok(&entry.content_hash)
         {
-            return Err(BackupEnvelopeError::LimitExceeded);
+            return Err(BackupEnvelopeError::LimitExceeded {
+                reason: "manifest entry size or content hash is invalid",
+            });
         }
         total = total
             .checked_add(entry.plaintext_bytes)
             .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
-            .ok_or(BackupEnvelopeError::LimitExceeded)?;
+            .ok_or(BackupEnvelopeError::LimitExceeded {
+                reason: "manifest total size overflowed or exceeds the limit",
+            })?;
     }
     Ok(())
 }
@@ -871,7 +1000,9 @@ fn validate_app_version(value: &str) -> Result<(), BackupEnvelopeError> {
         || value.len() > MAX_APP_VERSION_BYTES
         || value.chars().any(char::is_control)
     {
-        Err(BackupEnvelopeError::InvalidMetadata)
+        Err(BackupEnvelopeError::InvalidMetadata {
+            reason: "app version is empty, too long or has control characters".to_owned(),
+        })
     } else {
         Ok(())
     }
@@ -895,7 +1026,9 @@ fn validate_entry_name(value: &str) -> Result<(), BackupEnvelopeError> {
                 })
         })
     {
-        Err(BackupEnvelopeError::InvalidEntryName)
+        Err(BackupEnvelopeError::InvalidEntryName {
+            reason: "entry name is empty, too long or unsafe",
+        })
     } else {
         Ok(())
     }
@@ -908,20 +1041,28 @@ fn validate_schema(value: &str) -> Result<(), BackupEnvelopeError> {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
         })
     {
-        Err(BackupEnvelopeError::InvalidSchema)
+        Err(BackupEnvelopeError::InvalidSchema {
+            reason: "schema is empty, too long or has unsupported characters",
+        })
     } else {
         Ok(())
     }
 }
 
 fn derive_key(password: &str, kdf: &BackupKdf) -> Result<Zeroizing<[u8; 32]>, BackupEnvelopeError> {
-    let params = Params::new(kdf.memory_kib, kdf.iterations, kdf.lanes, Some(32))
-        .map_err(|_| BackupEnvelopeError::InvalidMetadata)?;
+    let params =
+        Params::new(kdf.memory_kib, kdf.iterations, kdf.lanes, Some(32)).map_err(|error| {
+            BackupEnvelopeError::InvalidMetadata {
+                reason: format!("key derivation parameters are invalid: {error}"),
+            }
+        })?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = Zeroizing::new([0u8; 32]);
     argon2
         .hash_password_into(password.as_bytes(), &kdf.salt, key.as_mut())
-        .map_err(|_| BackupEnvelopeError::Authentication)?;
+        .map_err(|_| BackupEnvelopeError::Authentication {
+            reason: "key derivation failed",
+        })?;
     Ok(key)
 }
 
@@ -930,7 +1071,9 @@ fn entry_aad(binding: &[u8; 32], index: usize) -> Result<[u8; 40], BackupEnvelop
     aad[..32].copy_from_slice(binding);
     aad[32..].copy_from_slice(
         &u64::try_from(index)
-            .map_err(|_| BackupEnvelopeError::LimitExceeded)?
+            .map_err(|_| BackupEnvelopeError::LimitExceeded {
+                reason: "section index exceeds the u64 range",
+            })?
             .to_be_bytes(),
     );
     Ok(aad)
@@ -964,7 +1107,9 @@ impl BackupArchiveStore {
                 if file.len() == total_bytes {
                     Ok(total_bytes)
                 } else {
-                    Err(BackupArchiveStoreError::Conflict)
+                    Err(BackupArchiveStoreError::Conflict {
+                        reason: "staged file size does not match the expected size",
+                    })
                 }
             }
             InstallPreparation::Resume(file) => Ok(file.offset()),
@@ -979,13 +1124,19 @@ impl BackupArchiveStore {
         bytes: &[u8],
     ) -> Result<u64, BackupArchiveStoreError> {
         if bytes.is_empty() || bytes.len() > MAX_BACKUP_WRITE_CHUNK_BYTES {
-            return Err(BackupArchiveStoreError::LimitExceeded);
+            return Err(BackupArchiveStoreError::LimitExceeded {
+                reason: "chunk is empty or exceeds the chunk size limit",
+            });
         }
         match self.prepare(backup_id, total_bytes)? {
-            InstallPreparation::Installed(_) => Err(BackupArchiveStoreError::Conflict),
+            InstallPreparation::Installed(_) => Err(BackupArchiveStoreError::Conflict {
+                reason: "backup is already installed",
+            }),
             InstallPreparation::Resume(mut file) => {
                 if file.offset() != offset {
-                    return Err(BackupArchiveStoreError::Conflict);
+                    return Err(BackupArchiveStoreError::Conflict {
+                        reason: "chunk offset does not match the staged size",
+                    });
                 }
                 file.append(bytes)
                     .map_err(BackupArchiveStoreError::Platform)
@@ -1002,7 +1153,9 @@ impl BackupArchiveStore {
         match self.prepare(backup_id, total_bytes)? {
             InstallPreparation::Installed(mut file) => {
                 if file.len() != total_bytes || hash_reader(&mut file)? != *expected_hash {
-                    return Err(BackupArchiveStoreError::Conflict);
+                    return Err(BackupArchiveStoreError::Conflict {
+                        reason: "installed backup size or hash does not match",
+                    });
                 }
                 Ok(file.native_path().to_owned())
             }
@@ -1016,14 +1169,16 @@ impl BackupArchiveStore {
                     return Err(BackupArchiveStoreError::HashMismatch);
                 }
                 if let Err(error) = verify_backup_frame(&mut file) {
-                    if error != BackupEnvelopeError::Io {
+                    if !matches!(error, BackupEnvelopeError::Io { .. }) {
                         file.restart().map_err(BackupArchiveStoreError::Platform)?;
                     }
                     return Err(BackupArchiveStoreError::Envelope(error));
                 }
                 file.commit_new().map_err(|error| {
                     if error == PlatformError::Conflict {
-                        BackupArchiveStoreError::Conflict
+                        BackupArchiveStoreError::Conflict {
+                            reason: "installed backup conflicts with an existing file",
+                        }
                     } else {
                         BackupArchiveStoreError::Platform(error)
                     }
@@ -1047,9 +1202,13 @@ impl BackupArchiveStore {
                         (HEADER_BYTES + MAX_MANIFEST_BYTES + TAG_BYTES + FOOTER_BYTES) as u64,
                     )
             })
-            .ok_or(BackupArchiveStoreError::LimitExceeded)?;
+            .ok_or(BackupArchiveStoreError::LimitExceeded {
+                reason: "expected backup size limit could not be computed",
+            })?;
         if total_bytes == 0 || total_bytes > max {
-            return Err(BackupArchiveStoreError::LimitExceeded);
+            return Err(BackupArchiveStoreError::LimitExceeded {
+                reason: "expected size is zero or exceeds the limit",
+            });
         }
         let id = backup_id.to_string();
         let partial = ObjectKey::from_segments(["backups", &format!("{id}.partial")])
@@ -1064,10 +1223,10 @@ impl BackupArchiveStore {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BackupArchiveStoreError {
-    #[error("backup staging exceeds its size or chunk limit")]
-    LimitExceeded,
-    #[error("backup staging offset or installed target conflicts")]
-    Conflict,
+    #[error("backup staging exceeds its size or chunk limit: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("backup staging offset or installed target conflicts: {reason}")]
+    Conflict { reason: &'static str },
     #[error("backup staging is incomplete")]
     Incomplete,
     #[error("backup staging content hash does not match")]
@@ -1141,10 +1300,10 @@ mod tests {
     fn plaintext_metadata_tampering_fails_authentication() {
         let mut bytes = envelope("password");
         bytes[MAGIC.len() + 12 + 11] ^= 1;
-        assert_eq!(
+        assert!(matches!(
             open_backup(&bytes, "password"),
-            Err(BackupEnvelopeError::Authentication)
-        );
+            Err(BackupEnvelopeError::Authentication { .. })
+        ));
     }
 
     #[test]
@@ -1158,10 +1317,10 @@ mod tests {
         assert_eq!(header.created_at, info.created_at);
         assert_eq!(header.app_version, info.app_version);
         for length in [0, MAGIC.len(), HEADER_BYTES - 1] {
-            assert_eq!(
+            assert!(matches!(
                 read_backup_header(&mut std::io::Cursor::new(&bytes[..length])),
-                Err(BackupEnvelopeError::InvalidEnvelope)
-            );
+                Err(BackupEnvelopeError::InvalidEnvelope { .. })
+            ));
         }
     }
 
@@ -1237,65 +1396,65 @@ mod tests {
             detect_backup_format(b"PK\x03\x04legacy archive bytes"),
             Ok(BackupFormatVersion::LegacyV1)
         );
-        assert_eq!(
+        assert!(matches!(
             detect_backup_format(b"unrecognized backup"),
-            Err(BackupEnvelopeError::InvalidEnvelope)
-        );
+            Err(BackupEnvelopeError::InvalidEnvelope { .. })
+        ));
     }
 
     #[test]
     fn envelope_rejects_wrong_password_tampering_truncation_and_bad_names() {
         let bytes = envelope("correct password");
-        assert_eq!(
+        assert!(matches!(
             open_backup(&bytes, "wrong password"),
-            Err(BackupEnvelopeError::Authentication)
-        );
+            Err(BackupEnvelopeError::Authentication { .. })
+        ));
         for position in [HEADER_BYTES + 3, bytes.len() - FOOTER_BYTES - 1] {
             let mut tampered = bytes.clone();
             tampered[position] ^= 1;
-            assert_eq!(
+            assert!(matches!(
                 open_backup(&tampered, "correct password"),
-                Err(BackupEnvelopeError::Authentication)
-            );
+                Err(BackupEnvelopeError::Authentication { .. })
+            ));
         }
         let mut salt_changed = bytes.clone();
         salt_changed[HEADER_BYTES - 1] ^= 1;
-        assert_eq!(
+        assert!(matches!(
             open_backup(&salt_changed, "correct password"),
-            Err(BackupEnvelopeError::Authentication)
-        );
+            Err(BackupEnvelopeError::Authentication { .. })
+        ));
         let mut weak = bytes.clone();
         weak[MAGIC.len()..MAGIC.len() + 4].copy_from_slice(&1024u32.to_be_bytes());
-        assert_eq!(
+        assert!(matches!(
             open_backup(&weak, "correct password"),
-            Err(BackupEnvelopeError::InvalidMetadata)
-        );
+            Err(BackupEnvelopeError::InvalidMetadata { .. })
+        ));
         let mut trailing = bytes.clone();
         trailing.push(0);
-        assert_eq!(
+        assert!(matches!(
             open_backup(&trailing, "correct password"),
-            Err(BackupEnvelopeError::InvalidEnvelope)
-        );
+            Err(BackupEnvelopeError::InvalidEnvelope { .. })
+        ));
         let mut truncated = bytes[..HEADER_BYTES + 20].to_vec();
         truncated.extend_from_slice(&bytes[bytes.len() - FOOTER_BYTES..]);
         assert!(open_backup(&truncated, "correct password").is_err());
 
         let mut unsafe_sections = sections();
         unsafe_sections[0].name = "../personas.json".into();
-        assert_eq!(
+        assert!(matches!(
             seal_backup(
                 "1.2.3",
                 TimestampMillis::new(1),
                 "password",
                 unsafe_sections
             ),
-            Err(BackupEnvelopeError::InvalidEntryName)
-        );
+            Err(BackupEnvelopeError::InvalidEntryName { .. })
+        ));
         let duplicate = vec![sections()[0].clone(), sections()[0].clone()];
-        assert_eq!(
+        assert!(matches!(
             seal_backup("1.2.3", TimestampMillis::new(1), "password", duplicate),
-            Err(BackupEnvelopeError::InvalidEntryName)
-        );
+            Err(BackupEnvelopeError::InvalidEntryName { .. })
+        ));
     }
 
     #[test]
@@ -1310,18 +1469,18 @@ mod tests {
             BackupWriter::new(Vec::new(), "1.2.3", TimestampMillis::new(1), "password")
                 .expect("writer");
         writer.append_bytes("data/a", "a.v1", b"first").expect("a");
-        assert_eq!(
+        assert!(matches!(
             writer.append_section("data/b", "b.v1", &mut Failing),
-            Err(BackupEnvelopeError::Io)
-        );
-        assert_eq!(
+            Err(BackupEnvelopeError::Io { .. })
+        ));
+        assert!(matches!(
             writer.append_bytes("data/c", "c.v1", b"third"),
-            Err(BackupEnvelopeError::InvalidEnvelope)
-        );
-        assert_eq!(
+            Err(BackupEnvelopeError::InvalidEnvelope { .. })
+        ));
+        assert!(matches!(
             writer.finish().map(|_| ()),
-            Err(BackupEnvelopeError::InvalidEnvelope)
-        );
+            Err(BackupEnvelopeError::InvalidEnvelope { .. })
+        ));
     }
 
     #[test]
@@ -1338,10 +1497,10 @@ mod tests {
             .copy_from_slice(&bytes[HEADER_BYTES + entry..HEADER_BYTES + 2 * entry]);
         swapped[HEADER_BYTES + entry..HEADER_BYTES + 2 * entry]
             .copy_from_slice(&bytes[HEADER_BYTES..HEADER_BYTES + entry]);
-        assert_eq!(
+        assert!(matches!(
             open_backup(&swapped, "password"),
-            Err(BackupEnvelopeError::Authentication)
-        );
+            Err(BackupEnvelopeError::Authentication { .. })
+        ));
     }
 
     #[test]
@@ -1394,10 +1553,10 @@ mod tests {
 
         let changed = seal_backup("1.2.3", TimestampMillis::new(1235), "password", sections())
             .expect("changed backup");
-        assert_eq!(
+        assert!(matches!(
             reopened.append(id, total, total, &changed[..1]),
-            Err(BackupArchiveStoreError::Conflict)
-        );
+            Err(BackupArchiveStoreError::Conflict { .. })
+        ));
         assert_eq!(std::fs::read(installed).expect("preserved bytes"), envelope);
     }
 }

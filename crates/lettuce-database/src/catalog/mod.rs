@@ -18,16 +18,22 @@ fn replace_media_links(
     use rusqlite::params;
 
     let (table, owner_column, image_kind) = table;
-    let ids = serde_json::to_string(&links.iter().map(|link| &link.0).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    let ids = serde_json::to_string(&links.iter().map(|link| &link.0).collect::<Vec<_>>()).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     tx.execute(&format!("DELETE FROM {table} WHERE {owner_column}=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))"), params![owner, ids]).map_err(db_error)?;
     let mut statement = tx.prepare(&format!("SELECT asset_id,slot,ordinal FROM {table} WHERE {owner_column}=?1")).map_err(db_error)?;
     let existing = statement.query_map([owner], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u32>(2)?))).map_err(db_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
     drop(statement);
     let offset = existing.iter().map(|row| i64::from(row.2)).chain(links.iter().map(|link| i64::from(link.2))).max().unwrap_or(0) + 1;
     for (index, (asset, slot, ordinal)) in existing.iter().enumerate() {
-        let link = links.iter().find(|link| link.0 == *asset).ok_or(RepositoryError::Storage)?;
+        let link = links.iter().find(|link| link.0 == *asset).ok_or_else(|| RepositoryError::Storage {
+            reason: "replace media links: a required value is missing".to_owned(),
+        })?;
         if *slot != link.1 || *ordinal != link.2 {
-            tx.execute(&format!("UPDATE {table} SET slot='design_reference',ordinal=?3 WHERE {owner_column}=?1 AND asset_id=?2"), params![owner, asset, offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+            tx.execute(&format!("UPDATE {table} SET slot='design_reference',ordinal=?3 WHERE {owner_column}=?1 AND asset_id=?2"), params![owner, asset, offset + i64::try_from(index).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?]).map_err(db_error)?;
         }
     }
     let (kind_column, kind_value) = if image_kind { (",blob_kind", ",'image'") } else { ("", "") };
@@ -58,7 +64,7 @@ fn cursor_encode(
         value: (key, id, sort, query, search_nickname, include_archived, entity),
     })
     .map(|bytes| crate::hex_encode(&bytes))
-    .map_err(|_| lettuce_characters::RepositoryError::Storage)
+    .map_err(|error| lettuce_characters::RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn cursor_decode(
@@ -72,7 +78,9 @@ fn cursor_decode(
         "character" => "character.cursor",
         "persona" => "persona.cursor",
         "group" => "group.cursor",
-        _ => return Err(RepositoryError::Storage),
+        _ => return Err(RepositoryError::Storage {
+            reason: "cursor decode: a stored value is not recognised".to_owned(),
+        }),
     };
     let invalid = || RepositoryError::Invalid(ValidationError::InvalidValue { field });
     let Some(value) = value else { return Ok(None) };

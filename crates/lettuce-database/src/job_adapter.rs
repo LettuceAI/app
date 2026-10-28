@@ -54,10 +54,16 @@ pub(crate) fn ensure_job_attempt_in(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|_| StoreError::Storage)?
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?
         .ok_or(StoreError::NotFound)?;
-    let snapshot = decode_versioned::<JobSnapshot>(&encoded, JOB_FORMAT_VERSION)
-        .map_err(|_| StoreError::Storage)?;
+    let snapshot =
+        decode_versioned::<JobSnapshot>(&encoded, JOB_FORMAT_VERSION).map_err(|error| {
+            StoreError::Storage {
+                reason: format!("{error:?}"),
+            }
+        })?;
     if snapshot.attempt.get() != attempt
         || snapshot.claim.is_none()
         || (snapshot.state != lettuce_jobs::JobState::Running
@@ -80,10 +86,14 @@ impl Database {
         detail: &serde_json::Value,
         id: JobId,
     ) -> Result<JobSnapshot, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let (job, _, _) = admit_job_detail_with_id_in(
             &transaction,
             spec,
@@ -92,7 +102,9 @@ impl Database {
             detail,
             Some(id),
         )?;
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -127,13 +139,19 @@ impl Database {
         detail: &serde_json::Value,
         receipt: Option<(&str, &str, &str, lettuce_types::TimestampMillis)>,
     ) -> Result<CreateJobResult, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         if let Some((command, key, digest, _)) = receipt
             && let Some(prior) = crate::api_operation_adapter::lookup_in(&transaction, command, key)
-                .map_err(|_| StoreError::Storage)?
+                .map_err(|error| StoreError::Storage {
+                    reason: format!("{error:?}"),
+                })?
         {
             if prior.request_digest != digest {
                 return Err(StoreError::IdempotencyConflict);
@@ -142,12 +160,20 @@ impl Database {
                 .result
                 .get("job_id")
                 .and_then(serde_json::Value::as_str)
-                .ok_or(StoreError::InvalidData)?
+                .ok_or_else(|| StoreError::InvalidData {
+                    reason: "admit memory job with api receipt: a required value is missing"
+                        .to_owned(),
+                })?
                 .parse()
-                .map_err(|_| StoreError::InvalidData)?;
+                .map_err(|error| StoreError::InvalidData {
+                    reason: format!("{error}"),
+                })?;
             let job = select_ids(&transaction, [id])?
                 .remove(&id)
-                .ok_or(StoreError::InvalidData)?
+                .ok_or_else(|| StoreError::InvalidData {
+                    reason: "admit memory job with api receipt: a required value is missing"
+                        .to_owned(),
+                })?
                 .snapshot;
             return Ok(CreateJobResult {
                 job,
@@ -163,7 +189,9 @@ impl Database {
                 params![conversation_id.to_string(), branch_id.to_string()],
                 |row| row.get(0),
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         if !present {
             return Err(StoreError::NotFound);
         }
@@ -182,7 +210,9 @@ impl Database {
                 params![conversation_id.to_string(), key],
                 |row| row.get(0),
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         if active {
             return Err(StoreError::AlreadyActive);
         }
@@ -200,9 +230,13 @@ impl Database {
                     committed_at: at,
                 },
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(CreateJobResult { job, created })
     }
 
@@ -212,13 +246,19 @@ impl Database {
         detail: &serde_json::Value,
     ) -> Result<JobSnapshot, StoreError> {
         if !matches!(mutation, JobMutation::StageChanged { .. }) || !detail.is_object() {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "checkpoint backup job: a value failed validation".to_owned(),
+            });
         }
         let id = mutation.job_id();
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let before = load_with_children(&transaction, [id])?;
         let current = before.get(&id).ok_or(StoreError::NotFound)?;
         if current.snapshot.state != lettuce_jobs::JobState::Running {
@@ -228,7 +268,9 @@ impl Database {
             current.snapshot.kind,
             lettuce_jobs::JobKind::BackupExport | lettuce_jobs::JobKind::BackupRestore
         ) {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "checkpoint backup job: a value failed validation".to_owned(),
+            });
         }
         let job = apply_to_job_set(&transaction, before, |store| {
             store.append_and_transition(mutation)
@@ -238,11 +280,17 @@ impl Database {
                 "UPDATE job_details SET detail_json=?2 WHERE job_id=?1",
                 params![id.to_string(), detail.to_string()],
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         if changed != 1 {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "checkpoint backup job: a value failed validation".to_owned(),
+            });
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -257,19 +305,27 @@ impl Database {
         if result.is_some_and(|value| !value.is_object())
             || failure.is_some_and(|value| !value.is_object())
         {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "settle job with detail: a value failed validation".to_owned(),
+            });
         }
         let id = mutation.job_id();
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let before = load_with_children(&transaction, [id])?;
         let job = apply_to_job_set(&transaction, before, |store| {
             store.append_and_transition(mutation)
         })?;
         if !job.state.is_terminal() {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "settle job with detail: a value failed validation".to_owned(),
+            });
         }
         let changed = transaction
             .execute(
@@ -280,11 +336,17 @@ impl Database {
                     failure.map(ToString::to_string)
                 ],
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         if changed != 1 {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "settle job with detail: a value failed validation".to_owned(),
+            });
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -296,12 +358,19 @@ impl Database {
         use rusqlite::OptionalExtension;
         spec.validate()?;
         if !detail.is_object() {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "create or get with local model detail: a value failed validation"
+                    .to_owned(),
+            });
         }
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let before = creation_set(&transaction, &spec)?;
         let created = apply_to_job_set(&transaction, before, |store| store.create_or_get(spec))?;
         let stored: Option<String> = transaction
@@ -311,26 +380,39 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         if let Some(stored) = stored {
             let stored: serde_json::Value =
-                serde_json::from_str(&stored).map_err(|_| StoreError::InvalidData)?;
+                serde_json::from_str(&stored).map_err(|error| StoreError::InvalidData {
+                    reason: error.to_string(),
+                })?;
             if &stored != detail {
                 return Err(StoreError::IdempotencyConflict);
             }
         } else {
             if !created.created {
-                return Err(StoreError::InvalidData);
+                return Err(StoreError::InvalidData {
+                    reason: "create or get with local model detail: a value failed validation"
+                        .to_owned(),
+                });
             }
-            let text = serde_json::to_string(detail).map_err(|_| StoreError::InvalidData)?;
+            let text = serde_json::to_string(detail).map_err(|error| StoreError::InvalidData {
+                reason: error.to_string(),
+            })?;
             transaction
                 .execute(
                     "INSERT INTO local_model_jobs(job_id,detail_json) VALUES (?1,?2)",
                     params![created.job.id.to_string(), text],
                 )
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(created)
     }
 
@@ -341,13 +423,19 @@ impl Database {
         request_digest: &str,
         detail: &serde_json::Value,
     ) -> Result<CreateJobResult, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let (job, _, created) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(CreateJobResult { job, created })
     }
 
@@ -358,13 +446,19 @@ impl Database {
         request_digest: &str,
         detail: &serde_json::Value,
     ) -> Result<JobSnapshot, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let (job, _, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -375,11 +469,19 @@ impl Database {
         request_digest: &str,
         request: lettuce_speech::SynthesisRequest,
     ) -> Result<JobSnapshot, StoreError> {
-        request.validate().map_err(|_| StoreError::InvalidData)?;
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        request
+            .validate()
+            .map_err(|error| StoreError::InvalidData {
+                reason: error.to_string(),
+            })?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let detail = serde_json::json!({"kind": "speech_synthesize"});
         let (job, replayed, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, &detail)?;
@@ -390,9 +492,13 @@ impl Database {
                 state: lettuce_speech::SynthesisState::Pending,
             };
             crate::media::tts_synthesis_adapter::insert_restored_in(&transaction, &record)
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -405,12 +511,18 @@ impl Database {
     ) -> Result<Option<JobSnapshot>, StoreError> {
         use rusqlite::OptionalExtension;
         if operation_key.trim().is_empty() || request_digest.is_empty() {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "reuse speech synthesis: a value failed validation".to_owned(),
+            });
         }
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let prior = transaction
             .query_row(
                 "SELECT request_digest,job_id FROM job_operations WHERE operation_key=?1",
@@ -418,29 +530,39 @@ impl Database {
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: format!("{error:?}"),
+            })?;
         let job = if let Some((digest, id)) = prior {
             if digest != request_digest {
                 return Err(StoreError::IdempotencyConflict);
             }
-            let id = id.parse().map_err(|_| StoreError::InvalidData)?;
+            let id = id.parse().map_err(|error| StoreError::InvalidData {
+                reason: format!("{error}"),
+            })?;
             Some(
                 select_ids(&transaction, [id])?
                     .remove(&id)
-                    .ok_or(StoreError::InvalidData)?
+                    .ok_or_else(|| StoreError::InvalidData {
+                        reason: "reuse speech synthesis: a required value is missing".to_owned(),
+                    })?
                     .snapshot,
             )
         } else if let Some(record) =
             crate::media::tts_synthesis_adapter::find_reusable_in(&transaction, reuse_key, now)
-                .map_err(|_| StoreError::Storage)?
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?
         {
             let job = select_ids(&transaction, [record.job_id])?
                 .remove(&record.job_id)
-                .ok_or(StoreError::InvalidData)?
+                .ok_or_else(|| StoreError::InvalidData {
+                    reason: "reuse speech synthesis: a required value is missing".to_owned(),
+                })?
                 .snapshot;
             if job.state == lettuce_jobs::JobState::Succeeded {
                 transaction.execute("INSERT INTO job_operations(operation_key,request_digest,job_id) VALUES (?1,?2,?3)",
-                    params![operation_key, request_digest, job.id.to_string()]).map_err(|_| StoreError::Storage)?;
+                    params![operation_key, request_digest, job.id.to_string()]).map_err(|error| StoreError::Storage { reason: error.to_string() })?;
                 Some(job)
             } else {
                 None
@@ -448,7 +570,9 @@ impl Database {
         } else {
             None
         };
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -460,11 +584,19 @@ impl Database {
         detail: &serde_json::Value,
         request: lettuce_speech::TranscriptionRequest,
     ) -> Result<JobSnapshot, StoreError> {
-        request.validate().map_err(|_| StoreError::InvalidData)?;
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        request
+            .validate()
+            .map_err(|error| StoreError::InvalidData {
+                reason: error.to_string(),
+            })?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let (job, replayed, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
         if !replayed {
@@ -473,10 +605,15 @@ impl Database {
                 request,
                 state: lettuce_speech::TranscriptionState::Pending,
             };
-            crate::media::speech_adapter::insert_restored_in(&transaction, &record)
-                .map_err(|_| StoreError::Storage)?;
+            crate::media::speech_adapter::insert_restored_in(&transaction, &record).map_err(
+                |error| StoreError::Storage {
+                    reason: error.to_string(),
+                },
+            )?;
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -494,10 +631,14 @@ impl Database {
             target,
             prompt,
         } = admission;
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let detail = serde_json::json!({"kind": "scene_image", "conversation_id": conversation_id, "message_id": message_id, "target": target});
         let (job, replayed, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, &detail)?;
@@ -508,7 +649,9 @@ impl Database {
                 conversation_id,
                 target,
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
             if current
                 .as_ref()
                 .is_some_and(|current| current.state.generating())
@@ -524,10 +667,12 @@ impl Database {
                 mode: SceneFollowUpMode::Manual,
                 state: SceneFollowUpState::Approved,
                 generation: match &current {
-                    Some(current) => current
-                        .generation
-                        .checked_add(1)
-                        .ok_or(StoreError::InvalidData)?,
+                    Some(current) => current.generation.checked_add(1).ok_or_else(|| {
+                        StoreError::InvalidData {
+                            reason: "admit manual scene image: a required value is missing"
+                                .to_owned(),
+                        }
+                    })?,
                     None => 1,
                 },
                 attempt: 1,
@@ -539,13 +684,15 @@ impl Database {
                     .map_or(now, |current| now.max(current.updated_at)),
             };
             if current.is_some() {
-                transaction.execute("UPDATE scene_image_follow_ups SET prompt = ?4, mode = 'manual', state = 'approved', generation = ?5, attempt = 1, request_id = ?6, failure = NULL, updated_at = ?7 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3", params![conversation_id.to_string(), target.kind(), target.id(), follow_up.prompt, follow_up.generation, request.id.to_string(), follow_up.updated_at.get()]).map_err(|_| StoreError::Storage)?;
+                transaction.execute("UPDATE scene_image_follow_ups SET prompt = ?4, mode = 'manual', state = 'approved', generation = ?5, attempt = 1, request_id = ?6, failure = NULL, updated_at = ?7 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3", params![conversation_id.to_string(), target.kind(), target.id(), follow_up.prompt, follow_up.generation, request.id.to_string(), follow_up.updated_at.get()]).map_err(|error| StoreError::Storage { reason: error.to_string() })?;
             } else {
                 crate::conversation::scene_follow_up_adapter::insert_restored_in(
                     &transaction,
                     &follow_up,
                 )
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             }
             let record = lettuce_image_generation::ImageGenerationRecord {
                 job_id: job.id,
@@ -553,9 +700,13 @@ impl Database {
                 state: lettuce_image_generation::ImageGenerationState::Pending,
             };
             crate::media::image_generation_adapter::insert_pending_row(&transaction, &record)
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(job)
     }
 
@@ -563,12 +714,18 @@ impl Database {
         &self,
         operation: impl FnOnce(&Transaction<'_>) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let result = operation(&transaction)?;
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(result)
     }
 
@@ -579,13 +736,19 @@ impl Database {
         select: impl FnOnce(&Transaction<'_>) -> Result<JobRecords, StoreError>,
         operation: impl FnOnce(&InMemoryJobStore) -> Result<R, StoreError>,
     ) -> Result<R, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let before = select(&transaction)?;
         let result = apply_to_job_set(&transaction, before, operation)?;
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(result)
     }
 }
@@ -617,7 +780,9 @@ fn admit_job_detail_with_id_in(
 ) -> Result<(JobSnapshot, bool, bool), StoreError> {
     spec.validate()?;
     if operation_key.trim().is_empty() || request_digest.is_empty() || !detail.is_object() {
-        return Err(StoreError::InvalidData);
+        return Err(StoreError::InvalidData {
+            reason: "admit job detail with id in: a value failed validation".to_owned(),
+        });
     }
     use rusqlite::OptionalExtension;
     let prior: Option<(String, String)> = transaction
@@ -627,19 +792,25 @@ fn admit_job_detail_with_id_in(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: format!("{error:?}"),
+        })?;
     if let Some((digest, job_id)) = prior {
         if digest != request_digest {
             return Err(StoreError::IdempotencyConflict);
         }
-        let id = job_id.parse().map_err(|_| StoreError::InvalidData)?;
+        let id = job_id.parse().map_err(|error| StoreError::InvalidData {
+            reason: format!("{error}"),
+        })?;
         if identity.is_some_and(|identity| identity != id) {
             return Err(StoreError::IdempotencyConflict);
         }
         return Ok((
             select_ids(transaction, [id])?
                 .remove(&id)
-                .ok_or(StoreError::InvalidData)?
+                .ok_or_else(|| StoreError::InvalidData {
+                    reason: "admit job detail with id in: a required value is missing".to_owned(),
+                })?
                 .snapshot,
             true,
             false,
@@ -660,16 +831,20 @@ fn admit_job_detail_with_id_in(
             |row| row.get(0),
         )
         .optional()
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     if let Some(stored) = stored {
         let value: serde_json::Value =
-            serde_json::from_str(&stored).map_err(|_| StoreError::InvalidData)?;
+            serde_json::from_str(&stored).map_err(|error| StoreError::InvalidData {
+                reason: error.to_string(),
+            })?;
         if value != *detail {
             return Err(StoreError::IdempotencyConflict);
         }
     }
-    transaction.execute("INSERT INTO job_details (job_id, detail_json) VALUES (?1, ?2) ON CONFLICT(job_id) DO NOTHING", params![admitted.job.id.to_string(), detail.to_string()]).map_err(|_| StoreError::Storage)?;
-    transaction.execute("INSERT INTO job_operations (operation_key, request_digest, job_id) VALUES (?1, ?2, ?3)", params![operation_key, request_digest, admitted.job.id.to_string()]).map_err(|_| StoreError::Storage)?;
+    transaction.execute("INSERT INTO job_details (job_id, detail_json) VALUES (?1, ?2) ON CONFLICT(job_id) DO NOTHING", params![admitted.job.id.to_string(), detail.to_string()]).map_err(|error| StoreError::Storage { reason: error.to_string() })?;
+    transaction.execute("INSERT INTO job_operations (operation_key, request_digest, job_id) VALUES (?1, ?2, ?3)", params![operation_key, request_digest, admitted.job.id.to_string()]).map_err(|error| StoreError::Storage { reason: error.to_string() })?;
     Ok((admitted.job, false, admitted.created))
 }
 
@@ -729,13 +904,23 @@ fn select_rows(
         .prepare(&format!(
             "SELECT {JOB_COLUMNS} FROM jobs WHERE {filter} ORDER BY id"
         ))
-        .map_err(|_| StoreError::Storage)?;
-    let mut rows = statement.query(values).map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let mut rows = statement
+        .query(values)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let mut records = BTreeMap::new();
-    while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+    while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })? {
         let record = decode_job_row(row)?;
         if records.insert(record.snapshot.id, record).is_some() {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "select rows: a value failed validation".to_owned(),
+            });
         }
     }
     Ok(records)
@@ -757,12 +942,18 @@ pub(crate) fn select_ids(
         .prepare(&format!(
             "SELECT {JOB_COLUMNS} FROM jobs WHERE id IN ({placeholders}) ORDER BY id"
         ))
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let mut rows = statement
         .query(params_from_iter(ids.iter()))
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let mut records = BTreeMap::new();
-    while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+    while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })? {
         let record = decode_job_row(row)?;
         records.insert(record.snapshot.id, record);
     }
@@ -793,18 +984,28 @@ fn with_latest_events(
         .prepare(&format!(
             "SELECT {EVENT_COLUMNS} FROM job_events WHERE job_id=?1 ORDER BY seq DESC LIMIT 1"
         ))
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     for (id, record) in &mut records {
         let mut rows = statement
             .query([id.to_string()])
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let row = rows
             .next()
-            .map_err(|_| StoreError::Storage)?
-            .ok_or(StoreError::InvalidData)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?
+            .ok_or_else(|| StoreError::InvalidData {
+                reason: "with latest events: a required value is missing".to_owned(),
+            })?;
         let event = decode_event_row(row)?;
         if event.job_id != *id {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "with latest events: a value failed validation".to_owned(),
+            });
         }
         record.events = vec![event];
     }
@@ -812,30 +1013,82 @@ fn with_latest_events(
 }
 
 fn decode_job_row(row: &Row<'_>) -> Result<StoredJobRecord, StoreError> {
-    let id = row.get::<_, String>(0).map_err(|_| StoreError::Storage)?;
+    let id = row
+        .get::<_, String>(0)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let idempotency_key = row
         .get::<_, Option<String>>(1)
-        .map_err(|_| StoreError::Storage)?;
-    let kind = row.get::<_, String>(2).map_err(|_| StoreError::Storage)?;
-    let subject_kind = row.get::<_, String>(3).map_err(|_| StoreError::Storage)?;
-    let subject_id = row.get::<_, String>(4).map_err(|_| StoreError::Storage)?;
-    let state = row.get::<_, String>(5).map_err(|_| StoreError::Storage)?;
-    let priority = row.get::<_, String>(6).map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let kind = row
+        .get::<_, String>(2)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let subject_kind = row
+        .get::<_, String>(3)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let subject_id = row
+        .get::<_, String>(4)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let state = row
+        .get::<_, String>(5)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let priority = row
+        .get::<_, String>(6)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let parent_id = row
         .get::<_, Option<String>>(7)
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let lease_expires_at = row
         .get::<_, Option<i64>>(8)
-        .map_err(|_| StoreError::Storage)?;
-    let created_at = row.get::<_, i64>(9).map_err(|_| StoreError::Storage)?;
-    let updated_at = row.get::<_, i64>(10).map_err(|_| StoreError::Storage)?;
-    let spec_json = row.get::<_, String>(11).map_err(|_| StoreError::Storage)?;
-    let snapshot_json = row.get::<_, String>(12).map_err(|_| StoreError::Storage)?;
-    let id = id.parse::<JobId>().map_err(|_| StoreError::InvalidData)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let created_at = row.get::<_, i64>(9).map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })?;
+    let updated_at = row.get::<_, i64>(10).map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })?;
+    let spec_json = row
+        .get::<_, String>(11)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let snapshot_json = row
+        .get::<_, String>(12)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let id = id
+        .parse::<JobId>()
+        .map_err(|error| StoreError::InvalidData {
+            reason: error.to_string(),
+        })?;
     let spec: NewJob =
-        decode_versioned(&spec_json, JOB_FORMAT_VERSION).map_err(|()| StoreError::InvalidData)?;
-    let snapshot: JobSnapshot = decode_versioned(&snapshot_json, JOB_FORMAT_VERSION)
-        .map_err(|()| StoreError::InvalidData)?;
+        decode_versioned(&spec_json, JOB_FORMAT_VERSION).map_err(|()| StoreError::InvalidData {
+            reason: "decode job row: a value failed validation".to_owned(),
+        })?;
+    let snapshot: JobSnapshot =
+        decode_versioned(&snapshot_json, JOB_FORMAT_VERSION).map_err(|()| {
+            StoreError::InvalidData {
+                reason: "decode job row: a value failed validation".to_owned(),
+            }
+        })?;
     if snapshot.id != id
         || idempotency_key != snapshot.idempotency_key.as_ref().map(ToString::to_string)
         || kind != enum_name(snapshot.kind)?
@@ -848,7 +1101,9 @@ fn decode_job_row(row: &Row<'_>) -> Result<StoredJobRecord, StoreError> {
         || created_at != snapshot.created_at.get()
         || updated_at != snapshot.updated_at.get()
     {
-        return Err(StoreError::InvalidData);
+        return Err(StoreError::InvalidData {
+            reason: "decode job row: a value failed validation".to_owned(),
+        });
     }
     Ok(StoredJobRecord {
         spec,
@@ -858,20 +1113,46 @@ fn decode_job_row(row: &Row<'_>) -> Result<StoredJobRecord, StoreError> {
 }
 
 fn decode_event_row(row: &Row<'_>) -> Result<JobEventEnvelope, StoreError> {
-    let job_id = row.get::<_, String>(0).map_err(|_| StoreError::Storage)?;
-    let seq = row.get::<_, i64>(1).map_err(|_| StoreError::Storage)?;
-    let at = row.get::<_, i64>(2).map_err(|_| StoreError::Storage)?;
-    let correlation_id = row.get::<_, String>(3).map_err(|_| StoreError::Storage)?;
-    let event_json = row.get::<_, String>(4).map_err(|_| StoreError::Storage)?;
+    let job_id = row
+        .get::<_, String>(0)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let seq = row.get::<_, i64>(1).map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })?;
+    let at = row.get::<_, i64>(2).map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })?;
+    let correlation_id = row
+        .get::<_, String>(3)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let event_json = row
+        .get::<_, String>(4)
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     let job_id = job_id
         .parse::<JobId>()
-        .map_err(|_| StoreError::InvalidData)?;
-    let seq = u64::try_from(seq).map_err(|_| StoreError::InvalidData)?;
+        .map_err(|error| StoreError::InvalidData {
+            reason: error.to_string(),
+        })?;
+    let seq = u64::try_from(seq).map_err(|error| StoreError::InvalidData {
+        reason: error.to_string(),
+    })?;
     let correlation_id = uuid::Uuid::parse_str(&correlation_id)
         .map(lettuce_jobs::CorrelationId::from)
-        .map_err(|_| StoreError::InvalidData)?;
-    let event: JobEvent = decode_versioned(&event_json, JOB_EVENT_FORMAT_VERSION)
-        .map_err(|()| StoreError::InvalidData)?;
+        .map_err(|error| StoreError::InvalidData {
+            reason: error.to_string(),
+        })?;
+    let event: JobEvent =
+        decode_versioned(&event_json, JOB_EVENT_FORMAT_VERSION).map_err(|()| {
+            StoreError::InvalidData {
+                reason: "decode event row: a value failed validation".to_owned(),
+            }
+        })?;
     Ok(JobEventEnvelope {
         job_id,
         seq: EventSeq::new(seq),
@@ -901,8 +1182,11 @@ pub(crate) fn retry_staged_planner_job(
     }
     let mut spec = previous.spec;
     spec.idempotency_key = Some(
-        lettuce_jobs::IdempotencyKey::new(format!("staged-planner-retry-{retry_id}"))
-            .map_err(|_| StoreError::InvalidData)?,
+        lettuce_jobs::IdempotencyKey::new(format!("staged-planner-retry-{retry_id}")).map_err(
+            |error| StoreError::InvalidData {
+                reason: error.to_string(),
+            },
+        )?,
     );
     let before = creation_set(transaction, &spec)?;
     let created = apply_to_job_set(transaction, before, |store| store.create_or_get(spec))?;
@@ -917,7 +1201,9 @@ pub(crate) fn cancel_creation_project_jobs(
     use lettuce_jobs::{CancellationReason, JobKind, SubjectKind};
     let subject =
         lettuce_jobs::JobSubject::new(SubjectKind::CreationProject, project_id.to_string())
-            .map_err(|_| StoreError::InvalidData)?;
+            .map_err(|error| StoreError::InvalidData {
+                reason: error.to_string(),
+            })?;
     let rows = select_rows(
         transaction,
         "kind=?1 AND subject_kind=?2 AND subject_id=?3",
@@ -958,34 +1244,44 @@ fn writer_slot_available(transaction: &Transaction<'_>, id: JobId) -> Result<boo
     let writer: Option<(String, String, String)> = transaction.query_row(
         "SELECT project_request_id, project_id, plan_id FROM creation_staged_lorebook_writer_runs WHERE job_id=?1",
         [id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    ).optional().map_err(|_| StoreError::Storage)?;
+    ).optional().map_err(|error| StoreError::Storage { reason: format!("{error:?}") })?;
     let Some((request, project_id, plan_id)) = writer else {
         return Ok(true);
     };
     let project = crate::lorebook::staged_lorebook_adapter::load_in(
         transaction,
-        request.parse().map_err(|_| StoreError::InvalidData)?,
+        request.parse().map_err(|error| StoreError::InvalidData {
+            reason: format!("{error}"),
+        })?,
     )
-    .map_err(|_| StoreError::InvalidData)?
-    .ok_or(StoreError::InvalidData)?;
+    .map_err(|error| StoreError::InvalidData {
+        reason: error.to_string(),
+    })?
+    .ok_or_else(|| StoreError::InvalidData {
+        reason: "writer slot available: a required value is missing".to_owned(),
+    })?;
     let slot = project
         .project
         .outline
         .iter()
         .position(|plan| plan.id.to_string() == plan_id)
-        .ok_or(StoreError::InvalidData)?
+        .ok_or_else(|| StoreError::InvalidData {
+            reason: "writer slot available: a required value is missing".to_owned(),
+        })?
         % lettuce_creation::STAGED_LOREBOOK_DRAFT_BATCH_SIZE;
     let active: Vec<String> = transaction.prepare(
         "SELECT writer.plan_id FROM creation_staged_lorebook_writer_runs writer JOIN jobs job ON job.id=writer.job_id WHERE writer.project_id=?1 AND writer.job_id<>?2 AND job.state IN ('claimed','running','cancellation_requested','cleaning_up')",
-    ).map_err(|_| StoreError::Storage)?.query_map(params![project_id, id.to_string()], |row| row.get(0))
-        .map_err(|_| StoreError::Storage)?.collect::<rusqlite::Result<_>>().map_err(|_| StoreError::Storage)?;
+    ).map_err(|error| StoreError::Storage { reason: error.to_string() })?.query_map(params![project_id, id.to_string()], |row| row.get(0))
+        .map_err(|error| StoreError::Storage { reason: error.to_string() })?.collect::<rusqlite::Result<_>>().map_err(|error| StoreError::Storage { reason: error.to_string() })?;
     for active_plan in active {
         let active_slot = project
             .project
             .outline
             .iter()
             .position(|plan| plan.id.to_string() == active_plan)
-            .ok_or(StoreError::InvalidData)?
+            .ok_or_else(|| StoreError::InvalidData {
+                reason: "writer slot available: a required value is missing".to_owned(),
+            })?
             % lettuce_creation::STAGED_LOREBOOK_DRAFT_BATCH_SIZE;
         if active_slot == slot {
             return Ok(false);
@@ -1014,13 +1310,21 @@ pub(crate) fn load_store(transaction: &Transaction<'_>) -> Result<InMemoryJobSto
         .prepare(&format!(
             "SELECT {EVENT_COLUMNS} FROM job_events ORDER BY job_id, seq"
         ))
-        .map_err(|_| StoreError::Storage)?;
-    let mut rows = statement.query([]).map_err(|_| StoreError::Storage)?;
-    while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
+    let mut rows = statement.query([]).map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })?;
+    while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+        reason: error.to_string(),
+    })? {
         let event = decode_event_row(row)?;
         records
             .get_mut(&event.job_id)
-            .ok_or(StoreError::InvalidData)?
+            .ok_or_else(|| StoreError::InvalidData {
+                reason: "load store: a required value is missing".to_owned(),
+            })?
             .events
             .push(event);
     }
@@ -1035,16 +1339,25 @@ pub(crate) fn persist_changes(
     for id in before.keys().filter(|id| !after.contains_key(id)) {
         transaction
             .execute("DELETE FROM jobs WHERE id=?1", [id.to_string()])
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
     }
     for (id, record) in after {
         if before.get(id) == Some(record) {
             continue;
         }
-        let spec_json = encode_versioned(&record.spec, JOB_FORMAT_VERSION)
-            .map_err(|_| StoreError::InvalidData)?;
-        let snapshot_json = encode_versioned(&record.snapshot, JOB_FORMAT_VERSION)
-            .map_err(|_| StoreError::InvalidData)?;
+        let spec_json = encode_versioned(&record.spec, JOB_FORMAT_VERSION).map_err(|error| {
+            StoreError::InvalidData {
+                reason: error.to_string(),
+            }
+        })?;
+        let snapshot_json =
+            encode_versioned(&record.snapshot, JOB_FORMAT_VERSION).map_err(|error| {
+                StoreError::InvalidData {
+                    reason: error.to_string(),
+                }
+            })?;
         let snapshot = &record.snapshot;
         transaction
             .execute(
@@ -1072,7 +1385,7 @@ pub(crate) fn persist_changes(
                     snapshot_json,
                 ],
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage { reason: error.to_string() })?;
         if snapshot.kind == lettuce_jobs::JobKind::SpeechTranscribe && snapshot.state.is_terminal()
         {
             crate::media::speech_adapter::release_input_in(
@@ -1087,24 +1400,36 @@ pub(crate) fn persist_changes(
             .get(id)
             .is_some_and(|stored| !record.events.starts_with(&stored.events))
         {
-            return Err(StoreError::InvalidData);
+            return Err(StoreError::InvalidData {
+                reason: "persist changes: a value failed validation".to_owned(),
+            });
         }
         for event in record.events.iter().skip(persisted_event_count) {
-            let event_json = encode_versioned(&event.event, JOB_EVENT_FORMAT_VERSION)
-                .map_err(|_| StoreError::InvalidData)?;
+            let event_json =
+                encode_versioned(&event.event, JOB_EVENT_FORMAT_VERSION).map_err(|error| {
+                    StoreError::InvalidData {
+                        reason: error.to_string(),
+                    }
+                })?;
             transaction
                 .execute(
                     "INSERT INTO job_events (job_id, seq, at, correlation_id, event_json) \
                      VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![
                         id.to_string(),
-                        i64::try_from(event.seq.get()).map_err(|_| StoreError::InvalidData)?,
+                        i64::try_from(event.seq.get()).map_err(|error| {
+                            StoreError::InvalidData {
+                                reason: error.to_string(),
+                            }
+                        })?,
                         event.at.get(),
                         event.correlation_id.to_string(),
                         event_json,
                     ],
                 )
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
         }
         let ended_now = snapshot.is_terminal()
             && before
@@ -1140,7 +1465,9 @@ fn settle_memory_attempts_of_ended_job(
              WHERE job_id = ?1 AND status IN ('created', 'processing')",
             params![job.id.to_string(), processing_to, job.updated_at.get()],
         )
-        .map_err(|_| StoreError::Storage)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
     Ok(())
 }
 
@@ -1152,10 +1479,14 @@ impl Database {
         &self,
         conversation_id: lettuce_types::ConversationId,
     ) -> Result<usize, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let terminal = [
             lettuce_jobs::JobState::Succeeded,
             lettuce_jobs::JobState::Failed,
@@ -1175,7 +1506,9 @@ impl Database {
                        AND attempt.status IN ('created', 'processing') \
                        AND job.state IN (?2, ?3, ?4, ?5)",
                 )
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             statement
                 .query_map(
                     params![
@@ -1188,17 +1521,26 @@ impl Database {
                     |row| row.get::<_, String>(0),
                 )
                 .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
-                .map_err(|_| StoreError::Storage)?
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?
         };
         let ids = jobs
             .iter()
-            .map(|id| id.parse::<JobId>().map_err(|_| StoreError::InvalidData))
+            .map(|id| {
+                id.parse::<JobId>()
+                    .map_err(|error| StoreError::InvalidData {
+                        reason: error.to_string(),
+                    })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let records = select_ids(&transaction, ids)?;
         for record in records.values() {
             settle_memory_attempts_of_ended_job(&transaction, &record.snapshot)?;
         }
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(records.len())
     }
 }
@@ -1207,7 +1549,9 @@ fn enum_name(value: impl serde::Serialize) -> Result<String, StoreError> {
     serde_json::to_value(value)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
-        .ok_or(StoreError::InvalidData)
+        .ok_or_else(|| StoreError::InvalidData {
+            reason: "enum name: a required value is missing".to_owned(),
+        })
 }
 
 const JOB_BINDING_QUERY: &str = "SELECT job_id FROM speech_transcriptions \
@@ -1259,12 +1603,18 @@ impl JobStore for Database {
                      AND (?2 IS NULL OR kind=?2) AND (?3 IS NULL OR subject_id=?3) \
                      ORDER BY created_at, id LIMIT ?4 OFFSET ?5"
                 ))
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut rows = statement
                 .query(params![state, kind, subject, limit + 1, start])
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut items = Vec::new();
-            while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+            while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })? {
                 items.push(decode_job_row(row)?.snapshot);
             }
             let has_more = items.len() > usize::from(query.page.limit.get());
@@ -1281,10 +1631,14 @@ impl JobStore for Database {
         limit: u32,
     ) -> Result<Vec<JobEventEnvelope>, StoreError> {
         if limit == 0 || limit > 1_000 {
-            return Err(StoreError::InvalidLimit);
+            return Err(StoreError::InvalidLimit {
+                reason: "events since: a value failed validation".to_owned(),
+            });
         }
         let after = after.map_or(Ok(0), |seq| i64::try_from(seq.get()));
-        let after = after.map_err(|_| StoreError::InvalidData)?;
+        let after = after.map_err(|error| StoreError::InvalidData {
+            reason: error.to_string(),
+        })?;
         self.read_job_rows(|transaction| {
             if select_ids(transaction, [id])?.is_empty() {
                 return Err(StoreError::NotFound);
@@ -1294,12 +1648,18 @@ impl JobStore for Database {
                     "SELECT {EVENT_COLUMNS} FROM job_events WHERE job_id=?1 AND seq>?2 \
                      ORDER BY seq LIMIT ?3"
                 ))
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut rows = statement
                 .query(params![id.to_string(), after, i64::from(limit)])
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut events = Vec::new();
-            while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+            while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })? {
                 events.push(decode_event_row(row)?);
             }
             Ok(events)
@@ -1407,10 +1767,14 @@ impl JobStore for Database {
     /// an image generation, a staged lorebook project or a companion growth
     /// run still binds, together with every ancestor such a kept job points at.
     fn prune(&self, policy: RetentionPolicy, now: Timestamp) -> Result<PruneReport, StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let rows = select_rows(&transaction, "1=1", &[])?;
         let before = with_latest_events(&transaction, rows)?;
         let store = InMemoryJobStore::restore_working_set(before.values().cloned().collect())?;
@@ -1422,9 +1786,16 @@ impl JobStore for Database {
                     .query_map([], |row| row.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()
             })
-            .map_err(|_| StoreError::Storage)?
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?
             .into_iter()
-            .map(|id| id.parse::<JobId>().map_err(|_| StoreError::InvalidData))
+            .map(|id| {
+                id.parse::<JobId>()
+                    .map_err(|error| StoreError::InvalidData {
+                        reason: error.to_string(),
+                    })
+            })
             .collect::<Result<BTreeSet<_>, _>>()?;
         let removed = report.removed.iter().copied().collect::<BTreeSet<_>>();
         let mut kept = removed
@@ -1450,7 +1821,9 @@ impl JobStore for Database {
         }
         report.removed.retain(|id| !kept.contains(id));
         persist_changes(&transaction, &before, &after)?;
-        transaction.commit().map_err(|_| StoreError::Storage)?;
+        transaction.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(report)
     }
 }
@@ -1500,21 +1873,29 @@ impl JobCatalog for Database {
         } else {
             clauses.join(" AND ")
         };
-        values.push(Box::new(
-            i64::try_from(limit + 1).map_err(|_| StoreError::InvalidLimit)?,
-        ));
+        values.push(Box::new(i64::try_from(limit + 1).map_err(|error| {
+            StoreError::InvalidLimit {
+                reason: error.to_string(),
+            }
+        })?));
         self.read_job_rows(|transaction| {
             let mut statement = transaction
                 .prepare(&format!(
                     "SELECT {JOB_COLUMNS} FROM jobs WHERE {filter_sql} \
                      ORDER BY created_at DESC, id DESC LIMIT ?"
                 ))
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut rows = statement
                 .query(params_from_iter(values.iter()))
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut items = Vec::new();
-            while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+            while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })? {
                 items.push(decode_job_row(row)?.snapshot);
             }
             let mut next_cursor = None;
@@ -1534,14 +1915,20 @@ impl JobCatalog for Database {
                 .query_row("SELECT max(position) FROM job_changes", [], |row| {
                     row.get(0)
                 })
-                .map_err(|_| StoreError::Storage)?;
-            u64::try_from(position.unwrap_or(0)).map_err(|_| StoreError::InvalidData)
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
+            u64::try_from(position.unwrap_or(0)).map_err(|error| StoreError::InvalidData {
+                reason: error.to_string(),
+            })
         })
     }
 
     fn job_changes_since(&self, after: u64, limit: u32) -> Result<Vec<JobChange>, StoreError> {
         if limit == 0 {
-            return Err(StoreError::InvalidLimit);
+            return Err(StoreError::InvalidLimit {
+                reason: "job changes since: a value failed validation".to_owned(),
+            });
         }
         let after = i64::try_from(after).map_err(|_| StoreError::InvalidCursor)?;
         self.read_job_rows(|transaction| {
@@ -1550,21 +1937,35 @@ impl JobCatalog for Database {
                     "SELECT job_id, position FROM job_changes WHERE position>?1 \
                      ORDER BY position LIMIT ?2",
                 )
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut rows = statement
                 .query(params![after, i64::from(limit)])
-                .map_err(|_| StoreError::Storage)?;
+                .map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
             let mut changes = Vec::new();
-            while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+            while let Some(row) = rows.next().map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })? {
                 let job_id = row
                     .get::<_, String>(0)
-                    .map_err(|_| StoreError::Storage)?
+                    .map_err(|error| StoreError::Storage {
+                        reason: error.to_string(),
+                    })?
                     .parse::<JobId>()
-                    .map_err(|_| StoreError::InvalidData)?;
-                let position = row.get::<_, i64>(1).map_err(|_| StoreError::Storage)?;
+                    .map_err(|error| StoreError::InvalidData {
+                        reason: error.to_string(),
+                    })?;
+                let position = row.get::<_, i64>(1).map_err(|error| StoreError::Storage {
+                    reason: error.to_string(),
+                })?;
                 changes.push(JobChange {
                     job_id,
-                    position: u64::try_from(position).map_err(|_| StoreError::InvalidData)?,
+                    position: u64::try_from(position).map_err(|error| StoreError::InvalidData {
+                        reason: error.to_string(),
+                    })?,
                 });
             }
             Ok(changes)
@@ -1621,12 +2022,18 @@ impl Database {
         input: LorebookJobInput,
         operation: Option<(&str, &str)>,
     ) -> Result<(JobSnapshot, bool, LorebookJobInput), StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let result = admit_lorebook_job_in(&tx, spec, input, operation)?;
-        tx.commit().map_err(|_| StoreError::Storage)?;
+        tx.commit().map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?;
         Ok(result)
     }
 }
@@ -1640,11 +2047,15 @@ pub(crate) fn admit_lorebook_job_in(
     let key = spec
         .idempotency_key
         .as_ref()
-        .ok_or(StoreError::InvalidData)?
+        .ok_or_else(|| StoreError::InvalidData {
+            reason: "admit lorebook job in: a required value is missing".to_owned(),
+        })?
         .as_str()
         .to_owned();
     let id = input.request_id();
-    let detail = serde_json::to_value(&input).map_err(|_| StoreError::InvalidData)?;
+    let detail = serde_json::to_value(&input).map_err(|error| StoreError::InvalidData {
+        reason: error.to_string(),
+    })?;
     let id_digest = id.to_string();
     let (key, digest) = operation.unwrap_or((&key, &id_digest));
     let (job, replay, created) = admit_job_detail_in(tx, spec, key, digest, &detail)?;
@@ -1655,14 +2066,20 @@ pub(crate) fn admit_lorebook_job_in(
                 [job.id.to_string()],
                 |row| row.get(0),
             )
-            .map_err(|_| StoreError::Storage)?;
-        input = serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidData)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
+        input = serde_json::from_str(&encoded).map_err(|error| StoreError::InvalidData {
+            reason: error.to_string(),
+        })?;
         input.set_job(job.id);
         return Ok((job, false, input));
     }
     input.set_job(job.id);
     fn invalid(_: impl std::fmt::Debug) -> StoreError {
-        StoreError::InvalidData
+        StoreError::InvalidData {
+            reason: "invalid: a value failed validation".to_owned(),
+        }
     }
     match &input {
         LorebookJobInput::Entry(run) => {
@@ -1685,7 +2102,9 @@ pub(crate) fn admit_lorebook_job_in(
             let project =
                 crate::lorebook::staged_lorebook_adapter::load_in(tx, run.project_request_id)
                     .map_err(invalid)?
-                    .ok_or(StoreError::InvalidData)?;
+                    .ok_or_else(|| StoreError::InvalidData {
+                        reason: "invalid: a required value is missing".to_owned(),
+                    })?;
             if project.project.revision != run.project_revision
                 || matches!(
                     project.project.stage,
@@ -1705,7 +2124,9 @@ pub(crate) fn admit_lorebook_job_in(
             let mut project =
                 crate::lorebook::staged_lorebook_adapter::load_in(tx, *project_request_id)
                     .map_err(invalid)?
-                    .ok_or(StoreError::InvalidData)?;
+                    .ok_or_else(|| StoreError::InvalidData {
+                        reason: "invalid: a required value is missing".to_owned(),
+                    })?;
             if project.project.stage != lettuce_creation::StagedLorebookStage::DraftsReady
                 || project.project.revision != run.project_revision
             {
@@ -1718,7 +2139,9 @@ pub(crate) fn admit_lorebook_job_in(
                 "UPDATE creation_staged_lorebook_runs SET run_json = ?2 WHERE request_id = ?1",
                 params![project_request_id.to_string(), encoded],
             )
-            .map_err(|_| StoreError::Storage)?;
+            .map_err(|error| StoreError::Storage {
+                reason: error.to_string(),
+            })?;
         }
     }
     Ok((job, created, input))
@@ -1728,7 +2151,7 @@ pub(crate) fn lorebook_project_jobs_in(
     tx: &Transaction<'_>,
     project: lettuce_types::CreationWorkflowId,
 ) -> Result<Vec<JobSnapshot>, StoreError> {
-    let ids = tx.prepare("SELECT id FROM jobs WHERE subject_kind='creation_project' AND subject_id=?1 ORDER BY created_at,id").map_err(|_| StoreError::Storage)?.query_map([project.to_string()], |row| row.get::<_, String>(0)).map_err(|_| StoreError::Storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| StoreError::Storage)?.into_iter().map(|id| id.parse().map_err(|_| StoreError::InvalidData)).collect::<Result<Vec<JobId>, _>>()?;
+    let ids = tx.prepare("SELECT id FROM jobs WHERE subject_kind='creation_project' AND subject_id=?1 ORDER BY created_at,id").map_err(|error| StoreError::Storage { reason: error.to_string() })?.query_map([project.to_string()], |row| row.get::<_, String>(0)).map_err(|error| StoreError::Storage { reason: error.to_string() })?.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| StoreError::Storage { reason: format!("{error:?}") })?.into_iter().map(|id| id.parse().map_err(|error| StoreError::InvalidData { reason: format!("{error}") })).collect::<Result<Vec<JobId>, _>>()?;
     Ok(select_ids(tx, ids)?
         .into_values()
         .map(|record| record.snapshot)
@@ -1741,9 +2164,9 @@ pub(crate) fn queued_lorebook_writer_plans_in(
 ) -> Result<Vec<lettuce_types::LorebookEntryId>, StoreError> {
     connection.prepare(
         "SELECT writer.plan_id FROM creation_staged_lorebook_writer_runs writer JOIN jobs job ON job.id=writer.job_id WHERE writer.project_id=?1 AND job.state='queued'",
-    ).map_err(|_| StoreError::Storage)?.query_map([project.to_string()], |row| row.get::<_, String>(0))
-        .map_err(|_| StoreError::Storage)?
-        .map(|row| row.map_err(|_| StoreError::Storage)?.parse().map_err(|_| StoreError::InvalidData))
+    ).map_err(|error| StoreError::Storage { reason: error.to_string() })?.query_map([project.to_string()], |row| row.get::<_, String>(0))
+        .map_err(|error| StoreError::Storage { reason: error.to_string() })?
+        .map(|row| row.map_err(|error| StoreError::Storage { reason: format!("{error:?}") })?.parse().map_err(|error| StoreError::InvalidData { reason: format!("{error}") }))
         .collect()
 }
 
@@ -2016,14 +2439,14 @@ mod tests {
             },
             at,
         };
-        assert_eq!(
+        assert!(matches!(
             database.settle_job_with_detail(
                 mutation.clone(),
                 Some(&serde_json::json!({"voice_id":"created"})),
                 None
             ),
-            Err(StoreError::Storage)
-        );
+            Err(StoreError::Storage { .. })
+        ));
         assert_eq!(
             database.get(job.id).expect("get").expect("job").state,
             JobState::Running
@@ -2070,10 +2493,10 @@ mod tests {
         ).expect("fault injection");
         let detail =
             serde_json::json!({"root": "/models/embedding", "enable_dynamic_memory": true});
-        assert_eq!(
+        assert!(matches!(
             database.create_or_get_with_local_model_detail(spec("atomic-install"), &detail),
-            Err(StoreError::Storage)
-        );
+            Err(StoreError::Storage { .. })
+        ));
         assert!(
             database
                 .list(JobQuery::default())
@@ -2174,15 +2597,15 @@ mod tests {
         database.connection().expect("connection").execute_batch(
             "CREATE TRIGGER reject_synthesis BEFORE INSERT ON speech_syntheses BEGIN SELECT RAISE(ABORT, 'injected speech failure'); END;"
         ).expect("fault injection");
-        assert_eq!(
+        assert!(matches!(
             database.admit_speech_synthesis(
                 job.clone(),
                 "speech-operation",
                 "digest",
                 request.clone()
             ),
-            Err(StoreError::Storage)
-        );
+            Err(StoreError::Storage { .. })
+        ));
         assert!(
             database
                 .job_operation("speech-operation")
@@ -2272,15 +2695,15 @@ mod tests {
         let database = Database::open(&path).expect("database");
         let detail = serde_json::json!({"version": 1, "batch": {"branch_id": "frozen-parent"}});
         database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_frozen_detail BEFORE INSERT ON job_details BEGIN SELECT RAISE(ABORT, 'injected'); END;").expect("trigger");
-        assert_eq!(
+        assert!(matches!(
             database.admit_job_with_detail_result(
                 spec("frozen-key"),
                 "frozen-operation",
                 "digest",
                 &detail
             ),
-            Err(StoreError::Storage)
-        );
+            Err(StoreError::Storage { .. })
+        ));
         for table in ["jobs", "job_details", "job_operations"] {
             let count: i64 = database
                 .connection()
@@ -2332,10 +2755,10 @@ mod tests {
         let database = Database::open(&path).expect("database");
         database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_detail BEFORE INSERT ON job_details BEGIN SELECT RAISE(ABORT, 'injected detail failure'); END;").expect("trigger");
         let detail = serde_json::json!({"kind":"test","text":"first"});
-        assert_eq!(
+        assert!(matches!(
             database.admit_job_with_detail(spec("detail-key"), "operation", "digest", &detail),
-            Err(StoreError::Storage)
-        );
+            Err(StoreError::Storage { .. })
+        ));
         let count: i64 = database
             .connection()
             .expect("connection")
@@ -2640,7 +3063,7 @@ mod tests {
                 at: Timestamp::new(claimed_at.get() + 2),
             })
             .expect("progress");
-        assert_eq!(
+        assert!(matches!(
             database.append_and_transition(JobMutation::Progress {
                 claim: claim.claim.clone(),
                 progress: ProgressSnapshot {
@@ -2649,8 +3072,8 @@ mod tests {
                 },
                 at: Timestamp::new(claimed_at.get() + 3),
             }),
-            Err(StoreError::InvalidProgress)
-        );
+            Err(StoreError::InvalidProgress { .. })
+        ));
         database
             .append_and_transition(JobMutation::RetryScheduled {
                 claim: claim.claim,
@@ -2809,7 +3232,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![4, 5, 6, 7, 8, 9]
         );
-        assert_eq!(database.get(other.job.id), Err(StoreError::InvalidData));
+        assert!(matches!(
+            database.get(other.job.id),
+            Err(StoreError::InvalidData { .. })
+        ));
     }
 
     #[test]
@@ -2898,7 +3324,10 @@ mod tests {
                 [created.job.id.to_string()],
             )
             .expect("corrupt projection");
-        assert_eq!(database.get(created.job.id), Err(StoreError::InvalidData));
+        assert!(matches!(
+            database.get(created.job.id),
+            Err(StoreError::InvalidData { .. })
+        ));
     }
     #[test]
     fn backup_publication_checkpoint_keeps_claim_cancel_and_rollback_guards() {
@@ -2960,10 +3389,10 @@ mod tests {
             original
         );
         database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_backup_checkpoint BEFORE UPDATE ON job_details BEGIN SELECT RAISE(ABORT,'injected'); END;").expect("inject");
-        assert_eq!(
+        assert!(matches!(
             database.checkpoint_backup_job(mutation.clone(), &updated),
-            Err(StoreError::Storage)
-        );
+            Err(StoreError::Storage { .. })
+        ));
         assert_eq!(
             database
                 .job_detail(job.id)

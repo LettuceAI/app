@@ -52,9 +52,13 @@ impl LegacyImportBackup {
         let mut run_ids = BTreeSet::new();
         for entry in &self.runs {
             let run_id =
-                backup_sql_text(&entry.run, "id").ok_or(LegacyImportBackupError::InvalidData)?;
+                backup_sql_text(&entry.run, "id").ok_or(LegacyImportBackupError::InvalidData {
+                    reason: "run row has no id",
+                })?;
             if !run_ids.insert(run_id) {
-                return Err(LegacyImportBackupError::InvalidData);
+                return Err(LegacyImportBackupError::InvalidData {
+                    reason: "run id is duplicated",
+                });
             }
             for row in entry
                 .assignments
@@ -69,7 +73,9 @@ impl LegacyImportBackup {
                 .chain(&entry.preserved_rows)
             {
                 if backup_sql_text(row, "run_id") != Some(run_id) {
-                    return Err(LegacyImportBackupError::InvalidData);
+                    return Err(LegacyImportBackupError::InvalidData {
+                        reason: "run row belongs to another run",
+                    });
                 }
             }
             let mut paths = BTreeSet::new();
@@ -79,17 +85,27 @@ impl LegacyImportBackup {
                 if backup_sql_text(assignment, "source_kind") != Some("media") {
                     continue;
                 }
-                let key = backup_sql_text(assignment, "source_key")
-                    .ok_or(LegacyImportBackupError::InvalidData)?;
-                let asset = backup_sql_text(assignment, "destination_id")
-                    .ok_or(LegacyImportBackupError::InvalidData)?;
+                let key = backup_sql_text(assignment, "source_key").ok_or(
+                    LegacyImportBackupError::InvalidData {
+                        reason: "media assignment has no source key",
+                    },
+                )?;
+                let asset = backup_sql_text(assignment, "destination_id").ok_or(
+                    LegacyImportBackupError::InvalidData {
+                        reason: "media assignment has no destination id",
+                    },
+                )?;
                 if media_assignments.insert((key, asset), assignment).is_some() {
-                    return Err(LegacyImportBackupError::InvalidData);
+                    return Err(LegacyImportBackupError::InvalidData {
+                        reason: "media assignment is duplicated",
+                    });
                 }
             }
             for proof in &entry.media_completions {
                 let text = |column| {
-                    backup_sql_text(proof, column).ok_or(LegacyImportBackupError::InvalidData)
+                    backup_sql_text(proof, column).ok_or(LegacyImportBackupError::InvalidData {
+                        reason: "media completion has no value for a required column",
+                    })
                 };
                 let path = text("relative_path")?;
                 let asset = text("destination_asset_id")?;
@@ -97,11 +113,17 @@ impl LegacyImportBackup {
                 let hash = text("content_hash")?;
                 let bytes = match proof.get("byte_len") {
                     Some(BackupSqlValue::Integer(bytes)) if *bytes >= 0 => *bytes,
-                    _ => return Err(LegacyImportBackupError::InvalidData),
+                    _ => {
+                        return Err(LegacyImportBackupError::InvalidData {
+                            reason: "media completion byte length is missing or negative",
+                        });
+                    }
                 };
-                let assignment = media_assignments
-                    .get(&(path, asset))
-                    .ok_or(LegacyImportBackupError::InvalidData)?;
+                let assignment = media_assignments.get(&(path, asset)).ok_or(
+                    LegacyImportBackupError::InvalidData {
+                        reason: "media completion has no matching assignment",
+                    },
+                )?;
                 if proof.len() != 7
                     || !matches!(proof.get("completed_at"), Some(BackupSqlValue::Integer(_)))
                     || !paths.insert(path)
@@ -113,14 +135,18 @@ impl LegacyImportBackup {
                     || backup_sql_text(assignment, "expected_content_hash") != Some(hash)
                     || assignment.get("expected_byte_len") != Some(&BackupSqlValue::Integer(bytes))
                 {
-                    return Err(LegacyImportBackupError::InvalidData);
+                    return Err(LegacyImportBackupError::InvalidData {
+                        reason: "media completion does not match its assignment",
+                    });
                 }
             }
         }
         if self.usage_records.iter().any(|row| {
             backup_sql_text(row, "run_id").is_none() || backup_sql_text(row, "source_id").is_none()
         }) {
-            return Err(LegacyImportBackupError::InvalidData);
+            return Err(LegacyImportBackupError::InvalidData {
+                reason: "usage record has no run id or source id",
+            });
         }
         self.runs.sort_by(|left, right| {
             backup_sql_text(&left.run, "id").cmp(&backup_sql_text(&right.run, "id"))
@@ -152,12 +178,20 @@ impl LegacyImportBackup {
             .map(|blob| (blob.id.to_string(), blob))
             .collect::<BTreeMap<_, _>>();
         for proof in self.runs.iter().flat_map(|entry| &entry.media_completions) {
-            let asset = backup_sql_text(proof, "destination_asset_id")
-                .ok_or(LegacyImportBackupError::InvalidData)?;
+            let asset = backup_sql_text(proof, "destination_asset_id").ok_or(
+                LegacyImportBackupError::InvalidData {
+                    reason: "media completion has no destination asset id",
+                },
+            )?;
             let blob =
-                backup_sql_text(proof, "blob_id").ok_or(LegacyImportBackupError::InvalidData)?;
-            let hash = backup_sql_text(proof, "content_hash")
-                .ok_or(LegacyImportBackupError::InvalidData)?;
+                backup_sql_text(proof, "blob_id").ok_or(LegacyImportBackupError::InvalidData {
+                    reason: "media completion has no blob id",
+                })?;
+            let hash = backup_sql_text(proof, "content_hash").ok_or(
+                LegacyImportBackupError::InvalidData {
+                    reason: "media completion has no content hash",
+                },
+            )?;
             if assets
                 .get(asset)
                 .is_some_and(|asset| asset.blob_id.to_string() != blob)
@@ -170,7 +204,9 @@ impl LegacyImportBackup {
                             != proof.get("byte_len")
                 })
             {
-                return Err(LegacyImportBackupError::InvalidData);
+                return Err(LegacyImportBackupError::InvalidData {
+                    reason: "media completion does not match the media snapshot",
+                });
             }
         }
         Ok(())
@@ -181,6 +217,6 @@ impl LegacyImportBackup {
 pub enum LegacyImportBackupError {
     #[error("legacy import backup exceeds its limit")]
     LimitExceeded,
-    #[error("legacy import backup is invalid")]
-    InvalidData,
+    #[error("legacy import backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

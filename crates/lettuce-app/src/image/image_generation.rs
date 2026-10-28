@@ -67,20 +67,20 @@ pub enum ImageGenerationError {
     Media(#[from] ImageMediaError),
     #[error(transparent)]
     Provider(#[from] ImageProviderError),
-    #[error("image generation usage could not be recorded")]
-    Usage,
+    #[error("image generation usage could not be recorded: {reason}")]
+    Usage { reason: String },
     #[error("the image character no longer exists")]
     CharacterMissing,
-    #[error("the image character could not be read")]
-    CharacterStorage,
+    #[error("the image character could not be read: {reason}")]
+    CharacterStorage { reason: String },
     #[error("the LoRA library could not be read")]
     LoraLibrary(#[from] LoraLibraryRepositoryError),
     #[error("image generation persistence failed: {0}")]
     Repository(#[from] ImageGenerationRepositoryError),
     #[error("image generation job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("image generation job and request are inconsistent")]
-    InvalidWork,
+    #[error("image generation job and request are inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 /// Runs one image generation as an `ImageGenerate` job: the request is
@@ -125,10 +125,10 @@ impl ImageGenerationError {
                 ImageFailureKind::LocalUnsupported
             }
             Self::Provider(ImageProviderError::Cancelled) => ImageFailureKind::Cancelled,
-            Self::Usage | Self::CharacterStorage | Self::LoraLibrary(_) | Self::Repository(_) | Self::Jobs(_) => {
+            Self::Usage { .. } | Self::CharacterStorage { .. } | Self::LoraLibrary(_) | Self::Repository(_) | Self::Jobs(_) => {
                 ImageFailureKind::StorageFailed
             }
-            Self::InvalidWork => ImageFailureKind::Other,
+            Self::InvalidWork { .. } => ImageFailureKind::Other,
         }
     }
 }
@@ -187,9 +187,9 @@ impl<
             request.settings.seed = Some(playground_seed(request.id));
         }
         let subject = JobSubject::new(SubjectKind::ImageRequest, request.id.to_string())
-            .map_err(|_| ImageGenerationError::InvalidWork)?;
+            .map_err(|_| ImageGenerationError::InvalidWork { reason: "the image request id is not a valid job subject" })?;
         let key = IdempotencyKey::new(format!("image-generate-{}", request.id))
-            .map_err(|_| ImageGenerationError::InvalidWork)?;
+            .map_err(|_| ImageGenerationError::InvalidWork { reason: "the image request id does not make a valid idempotency key" })?;
         let resources = if profile.is_local_diffusion() {
             vec![
                 ResourceClass::ModelLoad,
@@ -227,7 +227,7 @@ impl<
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(ImageGenerationError::InvalidWork)?;
+            .ok_or(ImageGenerationError::InvalidWork { reason: "the job is missing from the store" })?;
         validate_job_record(&job, &record)?;
         if job.state.is_terminal() {
             self.reconcile(&job, record)?;
@@ -238,7 +238,7 @@ impl<
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(record.request.id) {
-            return Err(ImageGenerationError::InvalidWork);
+            return Err(ImageGenerationError::InvalidWork { reason: "claim input differs from the request" });
         }
         self.jobs.append_and_transition(JobMutation::Start {
             claim: claim.claim.clone(),
@@ -280,7 +280,7 @@ impl<
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(ImageGenerationError::InvalidWork);
+            return Err(ImageGenerationError::InvalidWork { reason: "claim or handle belongs to another job than the work" });
         }
         if work.record.state != ImageGenerationState::Pending {
             return self.finish(work, cancellation_reason, now, None);
@@ -375,7 +375,7 @@ impl<
         );
         let character_name = request.attribution.character_id.map(|id| {
             CharacterRepository::get(models, id)
-                .map_err(|_| ImageGenerationError::CharacterStorage)?
+                .map_err(|error| ImageGenerationError::CharacterStorage { reason: error.to_string() })?
                 .map(|details| details.character.profile.name)
                 .ok_or(ImageGenerationError::CharacterMissing)
         }).transpose()?;
@@ -402,7 +402,7 @@ impl<
                 admitted_at: now,
                 result: None,
             })
-            .map_err(|_| ImageGenerationError::Usage)?;
+            .map_err(|error| ImageGenerationError::Usage { reason: error.to_string() })?;
         let inputs = load_inputs(&work.handle, request, media);
         let output = match inputs {
             Ok((input_images, mask_image)) => provider
@@ -446,7 +446,7 @@ impl<
         };
         self.generations
             .settle_job_usage(usage_id, settled)
-            .map_err(|_| ImageGenerationError::Usage)?;
+            .map_err(|error| ImageGenerationError::Usage { reason: error.to_string() })?;
         let output = output?;
         check_cancelled(&work.handle)?;
         let mut images = Vec::with_capacity(output.images.len());
@@ -494,7 +494,7 @@ impl<
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(ImageGenerationError::InvalidWork)?;
+            .ok_or(ImageGenerationError::InvalidWork { reason: "the job is missing from the store" })?;
         validate_job_record(&job, &record)?;
         if !job.state.is_terminal() {
             return Ok(None);
@@ -516,12 +516,12 @@ impl<
         for usage in self
             .generations
             .job_usage(job.id)
-            .map_err(|_| ImageGenerationError::Usage)?
+            .map_err(|error| ImageGenerationError::Usage { reason: error.to_string() })?
         {
             if usage.result.is_none() {
                 self.generations
                     .settle_job_usage(usage.id, JobInferenceUsageResult::InferenceFailed)
-                    .map_err(|_| ImageGenerationError::Usage)?;
+                    .map_err(|error| ImageGenerationError::Usage { reason: error.to_string() })?;
             }
         }
         let completed_at = job.updated_at.max(record.request.created_at);
@@ -550,7 +550,7 @@ impl<
         let at = now.max(current.updated_at);
         let claim = work.claim.claim;
         match &work.record.state {
-            ImageGenerationState::Pending => Err(ImageGenerationError::InvalidWork),
+            ImageGenerationState::Pending => Err(ImageGenerationError::InvalidWork { reason: "the generation record is still pending" }),
             ImageGenerationState::Succeeded { .. } => {
                 let job = self.jobs.append_and_transition(JobMutation::Succeed {
                     claim,
@@ -650,12 +650,12 @@ fn validate_job_record(
         || job.subject.kind != SubjectKind::ImageRequest
         || job.subject.id.as_str() != record.request.id.to_string()
     {
-        return Err(ImageGenerationError::InvalidWork);
+        return Err(ImageGenerationError::InvalidWork { reason: "job differs from the record in id, kind or subject" });
     }
     if job.state == JobState::Succeeded
         && !matches!(record.state, ImageGenerationState::Succeeded { .. })
     {
-        return Err(ImageGenerationError::InvalidWork);
+        return Err(ImageGenerationError::InvalidWork { reason: "job already succeeded but the record did not" });
     }
     Ok(())
 }
@@ -1297,7 +1297,7 @@ mod tests {
 
     impl JobUsageLedger for FailedUsageSettlement<'_> {
         fn admit_job_usage(&self, record: JobInferenceUsage) -> Result<(), lettuce_usage::UsageLedgerError> { self.0.admit_job_usage(record) }
-        fn settle_job_usage(&self, _: UsageEventId, _: JobInferenceUsageResult) -> Result<(), lettuce_usage::UsageLedgerError> { Err(lettuce_usage::UsageLedgerError::Storage) }
+        fn settle_job_usage(&self, _: UsageEventId, _: JobInferenceUsageResult) -> Result<(), lettuce_usage::UsageLedgerError> { Err(lettuce_usage::UsageLedgerError::Storage { reason: "simulated failure" }) }
         fn job_usage(&self, id: JobId) -> Result<Vec<JobInferenceUsage>, lettuce_usage::UsageLedgerError> { self.0.job_usage(id) }
     }
 
@@ -1323,7 +1323,7 @@ mod tests {
         let result = coordinator.run(work, &fixture.database, &fixture.media, &provider, ImageRun { progress: None, cancellation_reason: CancellationReason::User, now: TimestampMillis::new(2_000) }).await.expect("typed failure settlement");
         let ImageGenerationRunResult::Failed { record, job } = result else { panic!("usage persistence failure must fail: {result:?}"); };
         assert_eq!(job.state, JobState::Failed);
-        assert!(matches!(record.state, ImageGenerationState::Failed { message, .. } if message == "image generation usage could not be recorded"));
+        assert!(matches!(record.state, ImageGenerationState::Failed { message, .. } if message.starts_with("image generation usage could not be recorded")));
         assert_eq!(provider.requests.lock().expect("requests").len(), 1);
         let evidence = fixture.database.job_usage(job.id).expect("evidence");
         assert_eq!(evidence.len(), 1);

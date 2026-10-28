@@ -87,8 +87,8 @@ pub enum LegacyBackupMemoryMaterialization {
 pub enum LegacyBackupMemoryEmbeddingError {
     #[error("legacy backup memory-embedding document is malformed")]
     Malformed { field: String },
-    #[error("legacy backup memory-embedding document exceeds its record limit")]
-    LimitExceeded,
+    #[error("legacy backup memory-embedding document exceeds its record limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("legacy backup memory-embedding graph contains an orphaned link")]
     Orphan { field: String },
     #[error("legacy backup memory-embedding copies disagree")]
@@ -265,8 +265,11 @@ fn map_owners(
         let source_message_ids = source_message_ids(kind, &row.session_id, source);
         let memories = map_memories(parsed, &source_message_ids, &path, notices)?;
         owners.push(LegacyBackupMemoryEmbeddingOwner {
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupMemoryEmbeddingError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupMemoryEmbeddingError::LimitExceeded {
+                    reason: "owner ordinal exceeds the u64 range",
+                }
+            })?,
             source_id: row.session_id,
             kind,
             memory_embeddings_json: row.memory_embeddings,
@@ -447,8 +450,11 @@ fn map_memories(
             LegacyBackupMemoryMaterialization::RetainedEvidence
         };
         memories.push(LegacyBackupMemoryEmbedding {
-            ordinal: u64::try_from(index)
-                .map_err(|_| LegacyBackupMemoryEmbeddingError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| {
+                LegacyBackupMemoryEmbeddingError::LimitExceeded {
+                    reason: "memory ordinal exceeds the u64 range",
+                }
+            })?,
             id: row.id,
             text: row.text,
             embedding: row.embedding,
@@ -606,7 +612,9 @@ fn parse_json<T: for<'de> Deserialize<'de>>(
     path: &str,
 ) -> Result<T, LegacyBackupMemoryEmbeddingError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupMemoryEmbeddingError::LimitExceeded);
+        return Err(LegacyBackupMemoryEmbeddingError::LimitExceeded {
+            reason: "json document exceeds the size limit",
+        });
     }
     serde_json::from_str(raw).map_err(|_| malformed(format!("{path}.memory_embeddings")))
 }

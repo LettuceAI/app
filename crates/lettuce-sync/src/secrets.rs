@@ -44,10 +44,10 @@ pub struct StoredSecretVersion {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SyncSecretError {
-    #[error("sync secret state is corrupt")]
-    Corrupt,
-    #[error("sync secret storage failed")]
-    Storage,
+    #[error("sync secret state is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
+    #[error("sync secret storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait SyncSecretRepository: Send + Sync {

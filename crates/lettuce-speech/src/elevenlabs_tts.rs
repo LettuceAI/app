@@ -113,19 +113,31 @@ impl AudioProviderVerifier for ElevenLabsTtsRuntime {
         provider: &AudioProvider,
         credential: Option<&SecretValue>,
     ) -> Result<bool, AudioProviderVerificationError> {
-        provider
-            .validate()
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            AudioProviderVerificationError::InvalidInput {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         if !matches!(&provider.config, AudioProviderConfig::Elevenlabs) {
-            return Err(AudioProviderVerificationError::InvalidInput);
+            return Err(AudioProviderVerificationError::InvalidInput {
+                reason: "provider config is not the expected kind",
+            });
         }
-        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput)?;
+        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput {
+            reason: "api key is missing",
+        })?;
         let auth = JsonAuth::Header {
-            name: HeaderName::new("xi-api-key")
-                .map_err(|_| AudioProviderVerificationError::InvalidInput)?,
+            name: HeaderName::new("xi-api-key").map_err(|_| {
+                AudioProviderVerificationError::InvalidInput {
+                    reason: "auth header name is invalid",
+                }
+            })?,
             value: credential
                 .with(|value| SecretValue::new(value.to_owned()))
-                .map_err(|_| AudioProviderVerificationError::InvalidInput)?,
+                .map_err(|_| AudioProviderVerificationError::InvalidInput {
+                    reason: "api key is not a valid header value",
+                })?,
         };
         let response = self
             .network
@@ -150,17 +162,26 @@ impl ElevenLabsTtsRuntime {
         credential: &SecretValue,
         search: Option<&str>,
     ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
-        provider
-            .validate()
-            .map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            VoiceDiscoveryError::InvalidData {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         if !matches!(&provider.config, AudioProviderConfig::Elevenlabs) {
-            return Err(VoiceDiscoveryError::InvalidData);
+            return Err(VoiceDiscoveryError::InvalidData {
+                reason: "provider config is not the expected kind",
+            });
         }
         let auth = JsonAuth::Header {
-            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDiscoveryError::InvalidData)?,
+            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDiscoveryError::InvalidData {
+                reason: "auth header name is invalid",
+            })?,
             value: credential
                 .with(|value| SecretValue::new(value.to_owned()))
-                .map_err(|_| VoiceDiscoveryError::InvalidData)?,
+                .map_err(|_| VoiceDiscoveryError::InvalidData {
+                    reason: "api key is not a valid header value",
+                })?,
         };
         let response = self
             .network
@@ -183,12 +204,21 @@ impl ElevenLabsTtsRuntime {
             .map_err(map_discovery_network)?;
         if !(200..300).contains(&response.status) {
             return Err(match response.status {
-                408 | 429 | 500..=599 => VoiceDiscoveryError::Unavailable,
-                _ => VoiceDiscoveryError::InvalidData,
+                408 | 429 | 500..=599 => VoiceDiscoveryError::Unavailable {
+                    reason: "provider returned a transient http status",
+                },
+                _ => VoiceDiscoveryError::InvalidData {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
         let response: ElevenLabsVoicesResponse =
-            serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
+            serde_json::from_slice(&response.body).map_err(|error| {
+                tracing::warn!(%error, "provider response is not valid json");
+                VoiceDiscoveryError::InvalidData {
+                    reason: "provider response is not valid json",
+                }
+            })?;
         response
             .voices
             .into_iter()
@@ -244,24 +274,42 @@ impl TtsRuntime for ElevenLabsTtsRuntime {
         credential: Option<&SecretValue>,
         cancellation: &CancellationToken,
     ) -> Result<RuntimeSynthesis, TtsRuntimeError> {
-        request.validate().map_err(|_| TtsRuntimeError::Rejected)?;
+        request.validate().map_err(|error| {
+            tracing::warn!(%error, "request failed validation");
+            TtsRuntimeError::Rejected {
+                reason: "request failed validation",
+            }
+        })?;
         if !matches!(&request.provider.config, AudioProviderConfig::Elevenlabs)
             || !valid_path_segment(&request.voice_id)
         {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected {
+                reason: "request provider is not elevenlabs or the voice id is not a valid path segment",
+            });
         }
-        let credential = credential.ok_or(TtsRuntimeError::Rejected)?;
+        let credential = credential.ok_or(TtsRuntimeError::Rejected {
+            reason: "api key is missing",
+        })?;
         let auth = JsonAuth::Header {
-            name: HeaderName::new("xi-api-key").map_err(|_| TtsRuntimeError::Rejected)?,
+            name: HeaderName::new("xi-api-key").map_err(|_| TtsRuntimeError::Rejected {
+                reason: "auth header name is invalid",
+            })?,
             value: credential
                 .with(|value| SecretValue::new(value.to_owned()))
-                .map_err(|_| TtsRuntimeError::Rejected)?,
+                .map_err(|_| TtsRuntimeError::Rejected {
+                    reason: "api key is not a valid header value",
+                })?,
         };
         let body = serde_json::to_vec(&ElevenLabsRequest {
             text: &request.text,
             model_id: &request.model_id,
         })
-        .map_err(|_| TtsRuntimeError::Rejected)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "request body could not be serialized");
+            TtsRuntimeError::Rejected {
+                reason: "request body could not be serialized",
+            }
+        })?;
         if cancellation.is_cancelled() {
             return Err(TtsRuntimeError::Cancelled);
         }
@@ -284,7 +332,9 @@ impl TtsRuntime for ElevenLabsTtsRuntime {
                 408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
                     status: response.status,
                 },
-                _ => TtsRuntimeError::Rejected,
+                _ => TtsRuntimeError::Rejected {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
         Ok(RuntimeSynthesis {
@@ -302,14 +352,21 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
         credential: &SecretValue,
         cancellation: &CancellationToken,
     ) -> Result<Vec<RuntimeVoiceDesignPreview>, VoiceDesignRuntimeError> {
-        request
-            .validate()
-            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        request.validate().map_err(|error| {
+            tracing::warn!(%error, "request failed validation");
+            VoiceDesignRuntimeError::Rejected {
+                reason: "request failed validation",
+            }
+        })?;
         let auth = JsonAuth::Header {
-            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDesignRuntimeError::Rejected {
+                reason: "auth header name is invalid",
+            })?,
             value: credential
                 .with(|value| SecretValue::new(value.to_owned()))
-                .map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+                .map_err(|_| VoiceDesignRuntimeError::Rejected {
+                    reason: "api key is not a valid header value",
+                })?,
         };
         let body = serde_json::to_vec(&ElevenLabsVoiceDesignRequest {
             text: &request.text_sample,
@@ -318,7 +375,12 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
             loudness: None,
             num_previews: request.num_previews,
         })
-        .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "request body could not be serialized");
+            VoiceDesignRuntimeError::Rejected {
+                reason: "request body could not be serialized",
+            }
+        })?;
         if cancellation.is_cancelled() {
             return Err(VoiceDesignRuntimeError::Cancelled);
         }
@@ -336,22 +398,33 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
         };
         if !(200..300).contains(&response.status) {
             return Err(match response.status {
-                408 | 429 | 500..=599 => VoiceDesignRuntimeError::Unavailable,
-                _ => VoiceDesignRuntimeError::Rejected,
+                408 | 429 | 500..=599 => VoiceDesignRuntimeError::Unavailable {
+                    reason: "provider returned a transient http status",
+                },
+                _ => VoiceDesignRuntimeError::Rejected {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
         if cancellation.is_cancelled() {
             return Err(VoiceDesignRuntimeError::Cancelled);
         }
         let response: ElevenLabsVoiceDesignResponse = serde_json::from_slice(&response.body)
-            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "provider response is not valid json");
+                VoiceDesignRuntimeError::Rejected {
+                    reason: "provider response is not valid json",
+                }
+            })?;
         if response.previews.is_empty()
             || response.previews.len() > 3
             || request
                 .num_previews
                 .is_some_and(|count| response.previews.len() != count as usize)
         {
-            return Err(VoiceDesignRuntimeError::Rejected);
+            return Err(VoiceDesignRuntimeError::Rejected {
+                reason: "preview list is empty, oversized or does not match the requested count",
+            });
         }
         response
             .previews
@@ -359,15 +432,21 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
             .map(|preview| {
                 let output = RuntimeVoiceDesignPreview {
                     generated_voice_id: preview.generated_voice_id,
-                    bytes: STANDARD
-                        .decode(preview.audio_base_64)
-                        .map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+                    bytes: STANDARD.decode(preview.audio_base_64).map_err(|error| {
+                        tracing::warn!(%error, "audio payload is not valid base64");
+                        VoiceDesignRuntimeError::Rejected {
+                            reason: "audio payload is not valid base64",
+                        }
+                    })?,
                     duration_secs: preview.duration_secs,
                     declared_mime_type: preview.media_type,
                 };
-                output
-                    .validate()
-                    .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+                output.validate().map_err(|error| {
+                    tracing::warn!(%error, "output failed validation");
+                    VoiceDesignRuntimeError::Rejected {
+                        reason: "output failed validation",
+                    }
+                })?;
                 Ok(output)
             })
             .collect()
@@ -379,14 +458,21 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
         credential: &SecretValue,
         cancellation: &CancellationToken,
     ) -> Result<CreatedVoice, VoiceDesignRuntimeError> {
-        request
-            .validate()
-            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        request.validate().map_err(|error| {
+            tracing::warn!(%error, "request failed validation");
+            VoiceDesignRuntimeError::Rejected {
+                reason: "request failed validation",
+            }
+        })?;
         let auth = JsonAuth::Header {
-            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDesignRuntimeError::Rejected {
+                reason: "auth header name is invalid",
+            })?,
             value: credential
                 .with(|value| SecretValue::new(value.to_owned()))
-                .map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+                .map_err(|_| VoiceDesignRuntimeError::Rejected {
+                    reason: "api key is not a valid header value",
+                })?,
         };
         let body = serde_json::to_vec(&ElevenLabsVoiceCreationRequest {
             voice_name: &request.voice_name,
@@ -394,7 +480,12 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
             voice_description: &request.voice_description,
             labels: None,
         })
-        .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "request body could not be serialized");
+            VoiceDesignRuntimeError::Rejected {
+                reason: "request body could not be serialized",
+            }
+        })?;
         if cancellation.is_cancelled() {
             return Err(VoiceDesignRuntimeError::Cancelled);
         }
@@ -408,9 +499,9 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
                 Vec::new(),
                 RequestPolicy::GENERATION_ONCE,
             ) => response.map_err(|error| match error {
-                JsonClientError::Transport | JsonClientError::ResponseTooLarge => VoiceDesignRuntimeError::OutcomeUnknown,
-                JsonClientError::ClientConfiguration => VoiceDesignRuntimeError::Unavailable,
-                _ => VoiceDesignRuntimeError::Rejected,
+                JsonClientError::Transport { .. } | JsonClientError::ResponseTooLarge => VoiceDesignRuntimeError::OutcomeUnknown { reason: "transport failed or the response was too large after the request was sent" },
+                JsonClientError::ClientConfiguration { .. } => VoiceDesignRuntimeError::Unavailable { reason: "http client configuration failed" },
+                _ => VoiceDesignRuntimeError::Rejected { reason: "http client rejected the request" },
             })?,
             () = cancellation.cancelled() => return Err(VoiceDesignRuntimeError::Cancelled),
         };
@@ -420,13 +511,21 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
             });
         }
         let response: ElevenLabsVoiceCreationResponse = serde_json::from_slice(&response.body)
-            .map_err(|_| VoiceDesignRuntimeError::OutcomeUnknown)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "provider response is not valid json");
+                VoiceDesignRuntimeError::OutcomeUnknown {
+                    reason: "provider response is not valid json",
+                }
+            })?;
         let created = CreatedVoice {
             voice_id: response.voice_id,
         };
-        created
-            .validate()
-            .map_err(|_| VoiceDesignRuntimeError::OutcomeUnknown)?;
+        created.validate().map_err(|error| {
+            tracing::warn!(%error, "created voice failed validation");
+            VoiceDesignRuntimeError::OutcomeUnknown {
+                reason: "created voice failed validation",
+            }
+        })?;
         Ok(created)
     }
 }
@@ -440,47 +539,55 @@ fn valid_path_segment(value: &str) -> bool {
 
 fn map_network(error: JsonClientError) -> TtsRuntimeError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
-        JsonClientError::Transport => TtsRuntimeError::NetworkUnavailable,
-        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable,
+        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } => TtsRuntimeError::NetworkUnavailable { reason },
+        JsonClientError::ClientConfiguration { reason } => TtsRuntimeError::Unavailable { reason },
     }
 }
 
 fn map_voice_design_network(error: JsonClientError) -> VoiceDesignRuntimeError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => VoiceDesignRuntimeError::Rejected,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            VoiceDesignRuntimeError::Unavailable
+        | JsonClientError::ResponseTooLarge => VoiceDesignRuntimeError::Rejected {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            VoiceDesignRuntimeError::Unavailable { reason }
         }
     }
 }
 
 fn map_discovery_network(error: JsonClientError) -> VoiceDiscoveryError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            VoiceDiscoveryError::Unavailable
+        | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            VoiceDiscoveryError::Unavailable { reason }
         }
     }
 }
 
 fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            AudioProviderVerificationError::Unavailable
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            AudioProviderVerificationError::Unavailable { reason }
         }
     }
 }
@@ -638,7 +745,7 @@ mod tests {
                     &CancellationToken::new(),
                 )
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
     }
 
@@ -733,7 +840,7 @@ mod tests {
                 "redirect" => "ProviderRejected { status: 307 }",
                 _ => "OutcomeUnknown",
             };
-            assert_eq!(format!("{:?}", outcome.expect_err("failure")), expected);
+            assert!(format!("{:?}", outcome.expect_err("failure")).starts_with(expected));
             assert_eq!(
                 requests.load(Ordering::SeqCst),
                 1,

@@ -138,7 +138,9 @@ pub trait MemoryAdmissionStore: JobStore {
         operation: &MemoryControlOperation,
     ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
         let _ = (spec, batch, operation);
-        Err(StoreError::InvalidData)
+        Err(StoreError::InvalidData {
+            reason: "this store does not admit memory jobs".to_owned(),
+        })
     }
 
 }
@@ -154,9 +156,14 @@ pub(crate) fn decode_memory_admission(
     detail: serde_json::Value,
 ) -> Result<CompanionPostTurnMemoryBatch, StoreError> {
     let frozen: FrozenMemoryAdmission =
-        serde_json::from_value(detail).map_err(|_| StoreError::InvalidData)?;
+        serde_json::from_value(detail).map_err(|error| StoreError::InvalidData {
+            reason: format!("frozen memory admission could not be decoded: {error}"),
+        })?;
     if frozen.version != 1 || frozen.batch.source_messages().is_none() {
-        return Err(StoreError::InvalidData);
+        return Err(StoreError::InvalidData {
+            reason: "frozen memory admission has an unknown version or no source messages"
+                .to_owned(),
+        });
     }
     Ok(frozen.batch)
 }
@@ -187,13 +194,17 @@ fn admit_database_memory_batch(
     operation: Option<&MemoryControlOperation>,
 ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
     if batch.source_messages().is_none() || batch.summary_message_interval == 0 {
-        return Err(StoreError::InvalidData);
+        return Err(StoreError::InvalidData {
+            reason: "memory batch has no source messages or a zero summary interval".to_owned(),
+        });
     }
     let key = batch.idempotency_key.as_str().to_owned();
     let conversation_id = batch.conversation_id;
     let branch_id = batch.branch_id;
     let detail = serde_json::to_value(FrozenMemoryAdmission { version: 1, batch })
-        .map_err(|_| StoreError::InvalidData)?;
+        .map_err(|error| StoreError::InvalidData {
+            reason: format!("memory admission could not be encoded: {error}"),
+        })?;
     let admitted = database.admit_memory_job_with_api_receipt(
         conversation_id,
         branch_id,
@@ -205,11 +216,17 @@ fn admit_database_memory_batch(
     )?;
     let stored = database
         .job_detail(admitted.job.id)
-        .map_err(|_| StoreError::Storage)?
-        .ok_or(StoreError::InvalidData)?;
+        .map_err(|error| StoreError::Storage {
+            reason: error.to_string(),
+        })?
+        .ok_or_else(|| StoreError::InvalidData {
+            reason: "admitted memory job has no stored detail".to_owned(),
+        })?;
     let batch = decode_memory_admission(stored.detail)?;
     if operation.is_none() && batch.idempotency_key.as_str() != key {
-        return Err(StoreError::InvalidData);
+        return Err(StoreError::InvalidData {
+            reason: "stored memory admission has a different idempotency key".to_owned(),
+        });
     }
     Ok(CompanionPostTurnMemoryAdmission {
         batch,
@@ -222,8 +239,8 @@ fn admit_database_memory_batch(
 pub enum CompanionPostTurnMemoryAdmissionError {
     #[error("companion effect discovery failed: {0:?}")]
     Effects(CompanionTurnEffectRepositoryError),
-    #[error("companion effect batch is invalid")]
-    InvalidBatch,
+    #[error("companion effect batch is invalid: {reason}")]
+    InvalidBatch { reason: String },
     #[error("post-turn memory job admission failed: {0}")]
     Jobs(StoreError),
     #[error("dynamic memory approval persistence failed: {0}")]
@@ -271,7 +288,7 @@ impl<
         now: TimestampMillis,
     ) -> Result<Vec<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError> {
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "limit or summary interval is zero, or the limit is above the effect maximum".to_owned() });
         }
         let effects = self
             .effects
@@ -284,7 +301,7 @@ impl<
                 || effect.source_window.is_some()
                 || effect.summary.is_some()
             {
-                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect is not a fresh processing effect".to_owned() });
             }
             let branch_id = self
                 .effects
@@ -323,7 +340,7 @@ impl<
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "limit or summary interval is zero, or the limit is above the effect maximum".to_owned() });
         }
         let effects = self
             .effects
@@ -338,7 +355,7 @@ impl<
                 || effect.source_window.is_some()
                 || effect.summary.is_some()
         }) {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect is not processing, belongs to another conversation or already has a window or summary".to_owned() });
         }
         let branch_id = self
             .effects
@@ -375,7 +392,7 @@ impl<
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "limit or summary interval is zero, or the limit is above the effect maximum".to_owned() });
         }
         let effects = self
             .effects
@@ -390,7 +407,7 @@ impl<
                 || effect.source_window.is_some()
                 || effect.summary.is_some()
         }) {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect is not processing, belongs to another conversation or already has a window or summary".to_owned() });
         }
         let mut selected = Vec::new();
         for effect in effects {
@@ -458,7 +475,7 @@ impl<
                 .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
                 != branch_id
             {
-                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect belongs to another branch than the requested one".to_owned() });
             }
         }
         let admission = self.admit_selected(
@@ -529,7 +546,7 @@ impl<
             .active_branch_for_conversation(conversation_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "limit or summary interval is zero, or the limit is above the effect maximum".to_owned() });
         }
         let pending = self
             .effects
@@ -575,7 +592,7 @@ impl<
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "limit or summary interval is zero, or the limit is above the effect maximum".to_owned() });
         }
         let mut effects = self
             .effects
@@ -587,7 +604,7 @@ impl<
                 || effect.source_window.is_some()
                 || effect.summary.is_some()
         }) {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect is not processing, belongs to another conversation or already has a window or summary".to_owned() });
         }
         let branch_id = self
             .effects
@@ -616,12 +633,12 @@ impl<
         let (effects, source_effect_offset) = match window_selection {
             CompanionMemoryWindowSelection::Automatic => (
                 forced_effect_prefix(effects, summary_message_interval)
-                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?,
+                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the effects do not cover a whole interval for the automatic window".to_owned() })?,
                 0,
             ),
             CompanionMemoryWindowSelection::Recent => {
                 let source_effect_offset = recent_effect_offset(&effects, summary_message_interval)
-                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the effects do not cover the recent window".to_owned() })?;
                 (effects, source_effect_offset)
             }
         };
@@ -636,7 +653,7 @@ impl<
                 .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
                 != branch_id
             {
-                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect belongs to another branch than the requested one".to_owned() });
             }
         }
         let admitted = self.admit_selected(
@@ -676,7 +693,7 @@ impl<
         let aggregate = ConversationReader::get(self.effects, conversation_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?;
         if !matches!(aggregate.conversation.kind, ConversationKind::Direct(_)) {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the conversation is not a direct conversation".to_owned() });
         }
         self.trigger_and_admit_inner(
             conversation_id,
@@ -733,7 +750,7 @@ impl<
             .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
             .is_empty()
         {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the conversation still has processing effects".to_owned() });
         }
         self.trigger_recent_messages_and_admit(
             conversation_id,
@@ -760,7 +777,7 @@ impl<
         let interval = usize::try_from(summary_message_interval)
             .ok()
             .filter(|interval| *interval >= 1)
-            .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+            .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "summary message interval is zero or does not fit in usize".to_owned() })?;
         let branch_id = ConversationReader::get(self.effects, conversation_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?
             .conversation
@@ -777,7 +794,7 @@ impl<
                     .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
                     .is_some()
             {
-                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the last assistant message already has an effect".to_owned() });
             }
         let space = lettuce_memory::MemoryRepository::get_for_branch(
             self.effects,
@@ -785,7 +802,7 @@ impl<
             branch_id,
         )
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
-        .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the conversation has no memory space for the branch".to_owned() })?;
         let cursor = lettuce_memory::MemorySummaryRepository::summary_cursor(
             self.effects,
             space.id,
@@ -794,7 +811,7 @@ impl<
         )
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
-            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "memory summary cursor does not fit in usize".to_owned() })?;
         if messages.is_empty() {
             self.effects
                 .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
@@ -803,7 +820,7 @@ impl<
         }
         let unsummarized = messages.len().saturating_sub(cursor);
         let unsummarized_message_count = u64::try_from(unsummarized)
-            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "unsummarized message count does not fit in u64".to_owned() })?;
         let source_count = interval.min(messages.len());
         let admitted = self.admit_selected(
             conversation_id,
@@ -865,7 +882,7 @@ impl<
         let interval = usize::try_from(summary_message_interval)
             .ok()
             .filter(|interval| *interval >= 1)
-            .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+            .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "summary message interval is zero or does not fit in usize".to_owned() })?;
         if run_mode == DynamicMemoryRunMode::Manual {
             return Ok(None);
         }
@@ -883,7 +900,7 @@ impl<
             .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
             .is_some()
         {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the last assistant message already has an effect".to_owned() });
         }
         let space = lettuce_memory::MemoryRepository::get_for_branch(
             self.effects,
@@ -891,7 +908,7 @@ impl<
             branch_id,
         )
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
-        .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the conversation has no memory space for the branch".to_owned() })?;
         let cursor = lettuce_memory::MemorySummaryRepository::summary_cursor(
             self.effects,
             space.id,
@@ -900,13 +917,13 @@ impl<
         )
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
-            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "memory summary cursor does not fit in usize".to_owned() })?;
         let unsummarized = messages.len().saturating_sub(cursor);
         if unsummarized < interval {
             return Ok(None);
         }
         let unsummarized_message_count = u64::try_from(unsummarized)
-            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "unsummarized message count does not fit in u64".to_owned() })?;
         if run_mode == DynamicMemoryRunMode::AskFirst {
             self.effects
                 .prompt_dynamic_memory_if_due(
@@ -954,7 +971,7 @@ impl<
                     || effect.status == CompanionTurnEffectStatus::Invalidated
             })
         {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "interval is zero, or the effects are empty, over the limit, from another conversation or invalidated".to_owned() });
         }
         effects.sort_by_key(|effect| (effect.created_at, effect.id));
         let unsummarized_message_count = effect_message_count(&effects);
@@ -969,7 +986,7 @@ impl<
                 .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
                 != branch_id
             {
-                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "an effect belongs to another branch than the requested one".to_owned() });
             }
         }
         self.admit_selected(
@@ -1015,7 +1032,7 @@ impl<
             || (window_selection == CompanionMemoryWindowSelection::Automatic
                 && unsummarized_message_count == 0)
         {
-            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "source is empty, its effect offset is out of range, or an automatic window has no unsummarized messages".to_owned() });
         }
         let idempotency_key = batch_idempotency_key(
             conversation_id,
@@ -1165,7 +1182,7 @@ fn batch_idempotency_key(
         PostTurnMemorySource::Messages(messages) => !messages.is_empty(),
     };
     if !valid {
-        return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "batch source is empty or has effects of another conversation".to_owned() });
     }
     let mut digest = blake3::Hasher::new();
     digest.update(conversation_id.to_string().as_bytes());
@@ -1206,7 +1223,9 @@ fn batch_idempotency_key(
         }
     }
     IdempotencyKey::new(format!("companion-memory-{}", digest.finalize().to_hex()))
-        .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)
+        .map_err(|error| CompanionPostTurnMemoryAdmissionError::InvalidBatch {
+            reason: format!("batch idempotency key is invalid: {error}"),
+        })
 }
 
 /// Key for retrying a window whose job failed or was cancelled.
@@ -1218,7 +1237,9 @@ fn retry_idempotency_key(
     digest.update(key.as_str().as_bytes());
     digest.update(ended.to_string().as_bytes());
     IdempotencyKey::new(format!("companion-memory-{}", digest.finalize().to_hex()))
-        .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)
+        .map_err(|error| CompanionPostTurnMemoryAdmissionError::InvalidBatch {
+            reason: format!("batch idempotency key is invalid: {error}"),
+        })
 }
 
 fn recent_effect_offset(
@@ -1290,7 +1311,9 @@ pub(crate) fn job_spec(
     idempotency_key: IdempotencyKey,
 ) -> Result<JobSpec, CompanionPostTurnMemoryAdmissionError> {
     let subject = JobSubject::new(SubjectKind::Conversation, conversation_id.to_string())
-        .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        .map_err(|error| CompanionPostTurnMemoryAdmissionError::InvalidBatch {
+            reason: format!("job subject is invalid: {error}"),
+        })?;
     Ok(JobSpec::new(
         JobKind::MemoryExtraction,
         subject,
@@ -2406,7 +2429,7 @@ mod tests {
             .settle_run(
                 retry_work,
                 Err(crate::CompanionMemoryJobRunError::Admission(
-                    crate::CompanionPostTurnMemoryRunError::InvalidAdmission,
+                    crate::CompanionPostTurnMemoryRunError::InvalidAdmission { reason: "simulated failure".to_owned() },
                 )),
                 CancellationReason::Recovery,
                 TimestampMillis::new(61),

@@ -100,7 +100,9 @@ async fn kokoro_commits_the_runtime_only_when_nothing_committed_it() {
     assert_eq!(
         committed_or_initialize(
             Some(evidence),
-            initialize(Err(lettuce_speech::TtsRuntimeError::Unavailable))
+            initialize(Err(lettuce_speech::TtsRuntimeError::Unavailable {
+                reason: "simulated failure"
+            }))
         )
         .await,
         Ok(evidence)
@@ -113,14 +115,16 @@ async fn kokoro_commits_the_runtime_only_when_nothing_committed_it() {
     );
     assert_eq!(calls.get(), 1);
 
-    assert_eq!(
+    assert!(matches!(
         committed_or_initialize(
             None,
-            initialize(Err(lettuce_speech::TtsRuntimeError::Unavailable))
+            initialize(Err(lettuce_speech::TtsRuntimeError::Unavailable {
+                reason: "simulated failure"
+            }))
         )
         .await,
-        Err(lettuce_speech::TtsRuntimeError::Unavailable)
-    );
+        Err(lettuce_speech::TtsRuntimeError::Unavailable { .. })
+    ));
     assert_eq!(calls.get(), 2);
 }
 
@@ -594,7 +598,9 @@ mod linux {
             mutation: lettuce_jobs::JobMutation,
         ) -> Result<lettuce_jobs::JobSnapshot, lettuce_jobs::StoreError> {
             if matches!(mutation, lettuce_jobs::JobMutation::Succeed { .. }) {
-                return Err(lettuce_jobs::StoreError::Storage);
+                return Err(lettuce_jobs::StoreError::Storage {
+                    reason: "simulated failure".to_owned(),
+                });
             }
             self.0.append_and_transition(mutation)
         }

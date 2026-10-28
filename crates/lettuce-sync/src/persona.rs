@@ -15,25 +15,36 @@ const PERSONA_OPERATION_NAMESPACE: Uuid = Uuid::from_u128(0x8ea33b8a_f812_55df_9
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PersonaSyncError {
-    #[error("persona snapshot is invalid")]
-    InvalidPersona,
-    #[error("persona snapshot could not be encoded")]
-    Encoding,
-    #[error("persona snapshot payload is invalid")]
-    InvalidPayload,
+    #[error("persona snapshot is invalid: {reason}")]
+    InvalidPersona { reason: String },
+    #[error("persona snapshot could not be encoded: {reason}")]
+    Encoding { reason: String },
+    #[error("persona snapshot payload is invalid: {reason}")]
+    InvalidPayload { reason: String },
 }
 
 pub fn canonical_persona_payload(persona: &Persona) -> Result<CanonicalPayload, PersonaSyncError> {
     persona
         .validate()
-        .map_err(|_| PersonaSyncError::InvalidPersona)?;
-    let bytes = serde_json::to_vec(persona).map_err(|_| PersonaSyncError::Encoding)?;
-    CanonicalPayload::new(PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, bytes)
-        .map_err(|_: SyncChangeError| PersonaSyncError::InvalidPayload)
+        .map_err(|error| PersonaSyncError::InvalidPersona {
+            reason: format!("persona failed validation: {error}"),
+        })?;
+    let bytes = serde_json::to_vec(persona).map_err(|error| PersonaSyncError::Encoding {
+        reason: format!("persona could not be serialized: {error}"),
+    })?;
+    CanonicalPayload::new(PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, bytes).map_err(
+        |error: SyncChangeError| PersonaSyncError::InvalidPayload {
+            reason: format!(
+                "persona payload was rejected by the canonical payload constructor: {error}"
+            ),
+        },
+    )
 }
 
 pub fn persona_sync_entity(id: PersonaId) -> Result<SyncEntity, PersonaSyncError> {
-    SyncEntity::new("persona", id.to_string()).map_err(|_| PersonaSyncError::InvalidPayload)
+    SyncEntity::new("persona", id.to_string()).map_err(|error| PersonaSyncError::InvalidPayload {
+        reason: format!("persona id is not a valid sync entity id: {error}"),
+    })
 }
 
 pub fn canonical_persona_default_payload(
@@ -41,18 +52,30 @@ pub fn canonical_persona_default_payload(
 ) -> Result<CanonicalPayload, PersonaSyncError> {
     state
         .validate()
-        .map_err(|_| PersonaSyncError::InvalidPersona)?;
-    let bytes = serde_json::to_vec(state).map_err(|_| PersonaSyncError::Encoding)?;
+        .map_err(|error| PersonaSyncError::InvalidPersona {
+            reason: format!("persona default state failed validation: {error}"),
+        })?;
+    let bytes = serde_json::to_vec(state).map_err(|error| PersonaSyncError::Encoding {
+        reason: format!("persona default state could not be serialized: {error}"),
+    })?;
     CanonicalPayload::new(
         PERSONA_DEFAULT_SYNC_SCHEMA,
         PERSONA_DEFAULT_SYNC_VERSION,
         bytes,
     )
-    .map_err(|_: SyncChangeError| PersonaSyncError::InvalidPayload)
+    .map_err(|error: SyncChangeError| PersonaSyncError::InvalidPayload {
+        reason: format!(
+            "persona default payload was rejected by the canonical payload constructor: {error}"
+        ),
+    })
 }
 
 pub fn persona_default_sync_entity() -> Result<SyncEntity, PersonaSyncError> {
-    SyncEntity::new("persona_default", "application").map_err(|_| PersonaSyncError::InvalidPayload)
+    SyncEntity::new("persona_default", "application").map_err(|error| {
+        PersonaSyncError::InvalidPayload {
+            reason: format!("persona default entity id is not a valid sync entity id: {error}"),
+        }
+    })
 }
 
 #[must_use]

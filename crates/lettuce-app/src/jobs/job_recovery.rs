@@ -199,7 +199,7 @@ impl crate::AppBackend {
         for state in [JobState::Interrupted, JobState::Cancelled] {
             let mut cursor = None;
             loop {
-                let Ok(page) = self.database().list(lettuce_jobs::JobQuery {
+                let page = match self.database().list(lettuce_jobs::JobQuery {
                     state: Some(state),
                     kind: Some(JobKind::ImageGenerate),
                     subject: None,
@@ -207,9 +207,12 @@ impl crate::AppBackend {
                         cursor: cursor.take(),
                         limit: lettuce_types::PageLimit::new(STARTUP_RECOVERY_PAGE as u16),
                     },
-                }) else {
-                    tracing::warn!("startup could not list ended image generations");
-                    break;
+                }) {
+                    Ok(page) => page,
+                    Err(error) => {
+                        tracing::warn!(%error, "startup could not list ended image generations");
+                        break;
+                    }
                 };
                 interrupted.extend(page.items.into_iter().map(|job| job.id));
                 match page.next_cursor {
@@ -379,7 +382,7 @@ impl crate::AppBackend {
         for state in [JobState::Queued, JobState::CancellationRequested] {
             let mut cursor = None;
             loop {
-                let Ok(page) = self.database().list(lettuce_jobs::JobQuery {
+                let page = match self.database().list(lettuce_jobs::JobQuery {
                     state: Some(state),
                     kind: Some(kind),
                     subject: None,
@@ -387,9 +390,12 @@ impl crate::AppBackend {
                         cursor: cursor.take(),
                         limit: lettuce_types::PageLimit::new(STARTUP_RECOVERY_PAGE as u16),
                     },
-                }) else {
-                    tracing::warn!(?kind, "startup could not list waiting jobs");
-                    break;
+                }) {
+                    Ok(page) => page,
+                    Err(error) => {
+                        tracing::warn!(?kind, %error, "startup could not list waiting jobs");
+                        break;
+                    }
                 };
                 jobs.extend(page.items.into_iter().filter(|job| job.claim.is_none()));
                 match page.next_cursor {

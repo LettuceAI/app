@@ -104,7 +104,11 @@ impl TtsRuntime for RemoteTtsRuntime {
             AudioProviderConfig::FishTts => &self.fish,
             AudioProviderConfig::FishSpeech { .. } => &self.fish_speech,
             AudioProviderConfig::OpenAiCompatible { .. } => &self.open_ai,
-            AudioProviderConfig::Kokoro { .. } => return Err(TtsRuntimeError::Rejected),
+            AudioProviderConfig::Kokoro { .. } => {
+                return Err(TtsRuntimeError::Rejected {
+                    reason: "local kokoro provider cannot use the remote runtime",
+                });
+            }
         };
         runtime.synthesize(request, credential, cancellation).await
     }
@@ -274,7 +278,7 @@ mod tests {
                     &CancellationToken::new(),
                 )
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
     }
 }

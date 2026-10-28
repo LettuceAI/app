@@ -303,7 +303,7 @@ pub async fn whisper_preload(
                 .whisper_runtime()
                 .preload(&model, &options)
                 .map_err(|error| match error {
-                    lettuce_speech::AsrRuntimeError::ModelUnavailable => whisper_required(),
+                    lettuce_speech::AsrRuntimeError::ModelUnavailable { .. } => whisper_required(),
                     error => api_error(ApiErrorCode::Unavailable, error.to_string()),
                 })
         })

@@ -4,8 +4,8 @@ use rusqlite::params;
 
 use crate::Database;
 
-fn storage(_: impl std::fmt::Debug) -> MemoryRepositoryError {
-    MemoryRepositoryError::Failure("memory change read failed".into())
+fn storage(error: impl std::fmt::Debug) -> MemoryRepositoryError {
+    MemoryRepositoryError::Failure(format!("memory change read failed: {error:?}"))
 }
 
 impl Database {

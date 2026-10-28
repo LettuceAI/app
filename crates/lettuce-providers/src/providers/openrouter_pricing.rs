@@ -16,7 +16,9 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         model: &str,
     ) -> Result<Vec<OpenRouterEndpointPricing>, ProviderRequestError> {
         let Some((author, slug)) = model.split_once('/') else {
-            return Err(ProviderRequestError::Unsupported);
+            return Err(ProviderRequestError::Unsupported {
+                reason: "model reference is not author/slug",
+            });
         };
         if [author, slug].iter().any(|part| {
             part.is_empty()
@@ -24,7 +26,9 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
                 || part.contains(['/', '\\', '?', '#', '%'])
                 || part.chars().any(|c| c.is_control() || c.is_whitespace())
         }) {
-            return Err(ProviderRequestError::Unsupported);
+            return Err(ProviderRequestError::Unsupported {
+                reason: "model reference has an empty or unsafe path part",
+            });
         }
         let response = self
             .openrouter_get(account, &format!("models/{model}/endpoints"), &[])
@@ -38,7 +42,9 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         generation_id: &str,
     ) -> Result<Option<OpenRouterGenerationDetails>, ProviderRequestError> {
         if generation_id.trim().is_empty() {
-            return Err(ProviderRequestError::Unsupported);
+            return Err(ProviderRequestError::Unsupported {
+                reason: "generation id is blank",
+            });
         }
         let response = self
             .openrouter_get(

@@ -136,11 +136,11 @@ impl IntoApiError for crate::TtsProviderVerificationError {
         match self {
             Self::Configuration(error) => error.into_api_error(),
             Self::SecretStore(_) => super::errors::secret_missing(),
-            Self::InvalidInput
-            | Self::Verification(AudioProviderVerificationError::InvalidInput) => {
+            Self::InvalidInput { .. }
+            | Self::Verification(AudioProviderVerificationError::InvalidInput { .. }) => {
                 invalid_field("draft", self.to_string())
             }
-            Self::Verification(AudioProviderVerificationError::Unavailable) => {
+            Self::Verification(AudioProviderVerificationError::Unavailable { .. }) => {
                 api_error(ApiErrorCode::Unavailable, self.to_string())
             }
         }
@@ -152,7 +152,7 @@ impl IntoApiError for crate::TtsVoiceRefreshError {
         match self {
             Self::Configuration(error) => error.into_api_error(),
             Self::SecretStore(_) => super::errors::secret_missing(),
-            Self::InvalidInput => invalid_field("provider_id", self.to_string()),
+            Self::InvalidInput { .. } => invalid_field("provider_id", self.to_string()),
             Self::Repository(_) => api_error(ApiErrorCode::Internal, self.to_string()),
             Self::Discovery(_) => api_error(ApiErrorCode::Unavailable, self.to_string()),
         }
@@ -379,7 +379,7 @@ impl IntoApiError for crate::TtsConfigurationCoordinatorError {
     fn into_api_error(self) -> ApiError {
         match self {
             Self::Repository(error) => error.into_api_error(),
-            Self::InvalidInput => invalid_field("request", self.to_string()),
+            Self::InvalidInput { .. } => invalid_field("request", self.to_string()),
             Self::SecretStore(lettuce_settings::SecretStoreError::StaleGeneration) => api_error(
                 ApiErrorCode::Conflict,
                 "the audio credential generation changed",
@@ -610,7 +610,9 @@ pub async fn audio_provider_voices_search(
 impl IntoApiError for crate::TtsVoiceDesignError {
     fn into_api_error(self) -> ApiError {
         match self {
-            Self::InvalidInput | Self::Validation(_) => invalid_field("request", self.to_string()),
+            Self::InvalidInput { .. } | Self::Validation(_) => {
+                invalid_field("request", self.to_string())
+            }
             Self::Configuration(error) => error.into_api_error(),
             Self::SecretStore(_) => super::errors::secret_missing(),
             Self::Runtime(lettuce_speech::VoiceDesignRuntimeError::Cancelled) => {

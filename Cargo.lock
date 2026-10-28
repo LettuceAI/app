@@ -3040,6 +3040,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
  "unicode-normalization",
  "whatlang",
 ]
@@ -3096,6 +3097,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tracing",
  "uuid",
 ]
 
@@ -3214,6 +3216,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
  "uuid",
  "zeroize",
 ]

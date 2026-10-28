@@ -147,9 +147,13 @@ pub struct InstalledModelArtifact {
 
 impl InstalledModelArtifact {
     pub fn inspect(path: PathBuf) -> Result<Self, ModelArtifactError> {
-        let metadata = std::fs::metadata(&path).map_err(|_| ModelArtifactError::Missing)?;
+        let metadata = std::fs::metadata(&path).map_err(|error| ModelArtifactError::Missing {
+            reason: format!("model artifact metadata could not be read: {error}"),
+        })?;
         if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_EMBEDDING_FILE_BYTES {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "model artifact is not a non-empty file within the size limit".to_owned(),
+            });
         }
         let blake3 = hash_file(&path)?;
         Ok(Self {
@@ -178,14 +182,19 @@ impl InstalledEmbeddingManifest {
     pub fn verify(&self) -> Result<VerifiedEmbeddingArtifacts, ModelArtifactError> {
         let revision = self.source_revision.trim();
         if revision.is_empty() || revision.len() > MAX_SOURCE_REVISION_BYTES {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "source revision is blank or too long".to_owned(),
+            });
         }
         if self.max_sequence_length == 0
             || self.max_sequence_length > self.family.max_positions()
             || self.native_dimensions != self.family.native_dimensions()
             || self.calibration.is_some() != self.family.requires_calibration()
         {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "embedding manifest fields are inconsistent with the model family"
+                    .to_owned(),
+            });
         }
         verify_artifact(&self.model)?;
         verify_artifact(&self.tokenizer)?;
@@ -215,34 +224,50 @@ impl InstalledEmbeddingManifest {
 
 pub(crate) fn verify_artifact(artifact: &InstalledModelArtifact) -> Result<(), ModelArtifactError> {
     if artifact.byte_size == 0 || artifact.byte_size > MAX_EMBEDDING_FILE_BYTES {
-        return Err(ModelArtifactError::InvalidManifest);
+        return Err(ModelArtifactError::InvalidManifest {
+            reason: "artifact size is zero or exceeds the limit".to_owned(),
+        });
     }
-    let metadata = std::fs::metadata(&artifact.path).map_err(|_| ModelArtifactError::Missing)?;
+    let metadata =
+        std::fs::metadata(&artifact.path).map_err(|error| ModelArtifactError::Missing {
+            reason: format!("artifact metadata could not be read: {error}"),
+        })?;
     if !metadata.is_file() || metadata.len() != artifact.byte_size {
-        return Err(ModelArtifactError::Mismatch);
+        return Err(ModelArtifactError::Mismatch {
+            reason: "artifact is not a file of the recorded size",
+        });
     }
     let actual = hash_file(&artifact.path)?;
     if actual != artifact.blake3 {
-        return Err(ModelArtifactError::Mismatch);
+        return Err(ModelArtifactError::Mismatch {
+            reason: "artifact hash does not match the recorded hash",
+        });
     }
     Ok(())
 }
 
 fn hash_file(path: &Path) -> Result<ContentHash, ModelArtifactError> {
-    let mut file = File::open(path).map_err(|_| ModelArtifactError::Unreadable)?;
+    let mut file = File::open(path).map_err(|error| ModelArtifactError::Unreadable {
+        reason: format!("opening the artifact failed: {error}"),
+    })?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
-            .map_err(|_| ModelArtifactError::Unreadable)?;
+            .map_err(|error| ModelArtifactError::Unreadable {
+                reason: format!("reading the artifact failed: {error}"),
+            })?;
         if read == 0 {
             break;
         }
         hasher.update(&buffer[..read]);
     }
-    ContentHash::parse(hasher.finalize().to_hex().to_string())
-        .map_err(|_| ModelArtifactError::InvalidManifest)
+    ContentHash::parse(hasher.finalize().to_hex().to_string()).map_err(|error| {
+        ModelArtifactError::InvalidManifest {
+            reason: format!("artifact digest is not a valid content hash: {error}"),
+        }
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,14 +283,14 @@ pub struct VerifiedEmbeddingArtifacts {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModelArtifactError {
-    #[error("model artifact manifest is invalid")]
-    InvalidManifest,
-    #[error("model artifact is missing")]
-    Missing,
-    #[error("model artifact cannot be read")]
-    Unreadable,
-    #[error("model artifact does not match its verified manifest")]
-    Mismatch,
+    #[error("model artifact manifest is invalid: {reason}")]
+    InvalidManifest { reason: String },
+    #[error("model artifact is missing: {reason}")]
+    Missing { reason: String },
+    #[error("model artifact cannot be read: {reason}")]
+    Unreadable { reason: String },
+    #[error("model artifact does not match its verified manifest: {reason}")]
+    Mismatch { reason: &'static str },
 }
 
 /// How a pinned repository file is checked once downloaded: LFS files by
@@ -338,8 +363,11 @@ pub fn parse_embedding_pin(
         .iter()
         .map(|remote| remote.remote_path)
         .collect::<Vec<_>>();
-    let pinned = crate::pinned_files(family.repository(), body, &paths)
-        .map_err(|_| EmbeddingInstallError::InvalidPin)?;
+    let pinned = crate::pinned_files(family.repository(), body, &paths).map_err(|error| {
+        EmbeddingInstallError::InvalidPin {
+            reason: format!("repository listing does not pin the expected files: {error}"),
+        }
+    })?;
     let files = family
         .remote_files()
         .iter()
@@ -350,10 +378,17 @@ pub fn parse_embedding_pin(
                     EmbeddingFileDigest::Sha256(sha256)
                 }
                 (None, Some(blob_id)) => EmbeddingFileDigest::GitBlobSha1(blob_id),
-                _ => return Err(EmbeddingInstallError::InvalidPin),
+                _ => {
+                    return Err(EmbeddingInstallError::InvalidPin {
+                        reason: "file pin has neither a sha256 nor a git blob id, or has both"
+                            .to_owned(),
+                    });
+                }
             };
             if file.path != remote.remote_path || file.size > MAX_EMBEDDING_FILE_BYTES {
-                return Err(EmbeddingInstallError::InvalidPin);
+                return Err(EmbeddingInstallError::InvalidPin {
+                    reason: "file pin path or size does not match the expected file".to_owned(),
+                });
             }
             Ok(EmbeddingPinnedFile {
                 role: remote.role,
@@ -372,14 +407,14 @@ pub fn parse_embedding_pin(
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EmbeddingInstallError {
-    #[error("embedding repository listing is invalid")]
-    InvalidPin,
+    #[error("embedding repository listing is invalid: {reason}")]
+    InvalidPin { reason: String },
     #[error("embedding install does not match its pin")]
     PinMismatch,
     #[error("embedding artifact failed verification: {0}")]
     Artifact(#[from] ModelArtifactError),
-    #[error("embedding install storage failed")]
-    Storage,
+    #[error("embedding install storage failed: {reason}")]
+    Storage { reason: String },
 }
 
 /// Installed embedding models below one root: one `manifest.json` per
@@ -414,16 +449,32 @@ impl EmbeddingInstallStore {
         let metadata = match std::fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(EmbeddingInstallError::Storage),
+            Err(error) => {
+                return Err(EmbeddingInstallError::Storage {
+                    reason: format!("reading the manifest metadata failed: {error}"),
+                });
+            }
         };
         if !metadata.is_file() || metadata.len() > MAX_MANIFEST_BYTES {
-            return Err(ModelArtifactError::InvalidManifest.into());
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "manifest is not a file within the size limit".to_owned(),
+            }
+            .into());
         }
-        let bytes = std::fs::read(&path).map_err(|_| EmbeddingInstallError::Storage)?;
-        let manifest: InstalledEmbeddingManifest = serde_json::from_slice(&bytes)
-            .map_err(|_| EmbeddingInstallError::Artifact(ModelArtifactError::InvalidManifest))?;
+        let bytes = std::fs::read(&path).map_err(|error| EmbeddingInstallError::Storage {
+            reason: format!("reading the manifest failed: {error}"),
+        })?;
+        let manifest: InstalledEmbeddingManifest =
+            serde_json::from_slice(&bytes).map_err(|error| {
+                EmbeddingInstallError::Artifact(ModelArtifactError::InvalidManifest {
+                    reason: format!("manifest is not valid json: {error}"),
+                })
+            })?;
         if manifest.family != family {
-            return Err(ModelArtifactError::InvalidManifest.into());
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "manifest family does not match the requested family".to_owned(),
+            }
+            .into());
         }
         Ok(Some(manifest))
     }
@@ -436,17 +487,30 @@ impl EmbeddingInstallStore {
     ) -> Result<(), EmbeddingInstallError> {
         manifest.verify()?;
         let path = self.manifest_path(manifest.family);
-        let folder = path.parent().ok_or(EmbeddingInstallError::Storage)?;
-        std::fs::create_dir_all(folder).map_err(|_| EmbeddingInstallError::Storage)?;
-        let bytes =
-            serde_json::to_vec_pretty(manifest).map_err(|_| EmbeddingInstallError::Storage)?;
+        let folder = path.parent().ok_or(EmbeddingInstallError::Storage {
+            reason: "manifest path has no parent folder".to_owned(),
+        })?;
+        std::fs::create_dir_all(folder).map_err(|error| EmbeddingInstallError::Storage {
+            reason: format!("creating the manifest folder failed: {error}"),
+        })?;
+        let bytes = serde_json::to_vec_pretty(manifest).map_err(|error| {
+            EmbeddingInstallError::Storage {
+                reason: format!("manifest could not be serialized: {error}"),
+            }
+        })?;
         let partial = folder.join(format!("{MANIFEST_FILE}.partial"));
-        let mut file = File::create(&partial).map_err(|_| EmbeddingInstallError::Storage)?;
+        let mut file = File::create(&partial).map_err(|error| EmbeddingInstallError::Storage {
+            reason: format!("creating the partial manifest failed: {error}"),
+        })?;
         file.write_all(&bytes)
             .and_then(|()| file.sync_all())
-            .map_err(|_| EmbeddingInstallError::Storage)?;
+            .map_err(|error| EmbeddingInstallError::Storage {
+                reason: format!("writing the partial manifest failed: {error}"),
+            })?;
         drop(file);
-        std::fs::rename(&partial, &path).map_err(|_| EmbeddingInstallError::Storage)
+        std::fs::rename(&partial, &path).map_err(|error| EmbeddingInstallError::Storage {
+            reason: format!("replacing the manifest failed: {error}"),
+        })
     }
 
     /// Every family with a recorded manifest.
@@ -470,7 +534,11 @@ impl EmbeddingInstallStore {
                     match std::fs::remove_file(&artifact.path) {
                         Ok(()) => {}
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(_) => return Err(EmbeddingInstallError::Storage),
+                        Err(error) => {
+                            return Err(EmbeddingInstallError::Storage {
+                                reason: format!("removing the model files failed: {error}"),
+                            });
+                        }
                     }
                 }
             }
@@ -478,7 +546,9 @@ impl EmbeddingInstallStore {
         match std::fs::remove_dir_all(&folder) {
             Ok(()) => Ok(existed),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(existed),
-            Err(_) => Err(EmbeddingInstallError::Storage),
+            Err(error) => Err(EmbeddingInstallError::Storage {
+                reason: format!("removing the install folder failed: {error}"),
+            }),
         }
     }
 }
@@ -494,9 +564,17 @@ pub fn inspect_legacy_embedding_install(
     for path in [&model, &tokenizer] {
         match std::fs::symlink_metadata(path) {
             Ok(metadata) if metadata.is_file() => {}
-            Ok(_) => return Err(ModelArtifactError::InvalidManifest),
+            Ok(_) => {
+                return Err(ModelArtifactError::InvalidManifest {
+                    reason: "legacy embedding path is not a file".to_owned(),
+                });
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(ModelArtifactError::Unreadable),
+            Err(error) => {
+                return Err(ModelArtifactError::Unreadable {
+                    reason: format!("inspecting the legacy embedding path failed: {error}"),
+                });
+            }
         }
     }
     let model = InstalledModelArtifact::inspect(model)?;
@@ -585,7 +663,10 @@ mod tests {
             max_sequence_length: 128,
             native_dimensions: 768,
         };
-        assert_eq!(manifest.verify(), Err(ModelArtifactError::Mismatch));
+        assert!(matches!(
+            manifest.verify(),
+            Err(ModelArtifactError::Mismatch { .. })
+        ));
         std::fs::remove_file(path).expect("cleanup");
     }
 
@@ -609,28 +690,31 @@ mod tests {
         };
         let verified = eidos.verify().expect("eidos at 4096");
         assert_eq!(verified.calibration_path, Some(calibration_path));
-        assert_eq!(
+        assert!(matches!(
             InstalledEmbeddingManifest {
                 calibration: None,
                 ..eidos.clone()
             }
             .verify(),
-            Err(ModelArtifactError::InvalidManifest)
-        );
-        assert_eq!(
+            Err(ModelArtifactError::InvalidManifest { .. })
+        ));
+        assert!(matches!(
             InstalledEmbeddingManifest {
                 max_sequence_length: 4097,
                 ..eidos.clone()
             }
             .verify(),
-            Err(ModelArtifactError::InvalidManifest)
-        );
+            Err(ModelArtifactError::InvalidManifest { .. })
+        ));
         let v4 = InstalledEmbeddingManifest {
             family: EmbeddingModelFamily::LettuceEmbV4,
             calibration: None,
             ..eidos.clone()
         };
-        assert_eq!(v4.verify(), Err(ModelArtifactError::InvalidManifest));
+        assert!(matches!(
+            v4.verify(),
+            Err(ModelArtifactError::InvalidManifest { .. })
+        ));
         assert!(
             InstalledEmbeddingManifest {
                 max_sequence_length: 2048,
@@ -639,15 +723,15 @@ mod tests {
             .verify()
             .is_ok()
         );
-        assert_eq!(
+        assert!(matches!(
             InstalledEmbeddingManifest {
                 calibration: eidos.calibration.clone(),
                 max_sequence_length: 2048,
                 ..v4
             }
             .verify(),
-            Err(ModelArtifactError::InvalidManifest)
-        );
+            Err(ModelArtifactError::InvalidManifest { .. })
+        ));
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 
@@ -711,21 +795,21 @@ mod tests {
             ]
         );
         let without_calibration = pin_body().replace("calibration.json", "other.json");
-        assert_eq!(
+        assert!(matches!(
             parse_embedding_pin(
                 EmbeddingModelFamily::LettuceEidosV5,
                 without_calibration.as_bytes()
             ),
-            Err(EmbeddingInstallError::InvalidPin)
-        );
+            Err(EmbeddingInstallError::InvalidPin { .. })
+        ));
         let without_digest = pin_body().replace("\"blobId\":\"19f9", "\"other\":\"19f9");
-        assert_eq!(
+        assert!(matches!(
             parse_embedding_pin(
                 EmbeddingModelFamily::LettuceEidosV5,
                 without_digest.as_bytes()
             ),
-            Err(EmbeddingInstallError::InvalidPin)
-        );
+            Err(EmbeddingInstallError::InvalidPin { .. })
+        ));
     }
 
     #[test]

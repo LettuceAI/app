@@ -137,8 +137,12 @@ impl<J: JobStore + ?Sized> ProcessOnnxRuntime<J> {
         &self,
         cancellation: &CancellationToken,
     ) -> Result<OnnxRuntimeCommitted, lettuce_speech::TtsRuntimeError> {
-        let client = ArtifactDownloadClient::new()
-            .map_err(|_| lettuce_speech::TtsRuntimeError::Unavailable)?;
+        let client = ArtifactDownloadClient::new().map_err(|error| {
+            tracing::warn!(%error, "download client could not be created");
+            lettuce_speech::TtsRuntimeError::Unavailable {
+                reason: "download client could not be created",
+            }
+        })?;
         let ready = OnnxRuntimeInstaller::new(self.jobs.as_ref(), self.paths.clone())
             .ensure(&client, cancellation, &|_| {})
             .await
@@ -146,15 +150,21 @@ impl<J: JobStore + ?Sized> ProcessOnnxRuntime<J> {
                 OnnxRuntimeInstallError::Cancelled => lettuce_speech::TtsRuntimeError::Cancelled,
                 error => {
                     tracing::warn!(%error, "ONNX Runtime is unavailable for Kokoro");
-                    lettuce_speech::TtsRuntimeError::Unavailable
+                    lettuce_speech::TtsRuntimeError::Unavailable {
+                        reason: "ONNX Runtime install failed",
+                    }
                 }
             })?;
         tokio::task::spawn_blocking(move || ready.initialize())
             .await
-            .map_err(|_| lettuce_speech::TtsRuntimeError::Unavailable)?
+            .map_err(|_| lettuce_speech::TtsRuntimeError::Unavailable {
+                reason: "ONNX Runtime initialization task failed",
+            })?
             .map_err(|error| {
                 tracing::warn!(%error, "ONNX Runtime could not be initialized for Kokoro");
-                lettuce_speech::TtsRuntimeError::Unavailable
+                lettuce_speech::TtsRuntimeError::Unavailable {
+                    reason: "ONNX Runtime could not be initialized",
+                }
             })
     }
 }
@@ -230,14 +240,14 @@ impl OnnxRuntimeDownloadSource for ArtifactDownloadClient {
             .map_err(|error| match error {
                 ArtifactProbeError::Refused(_) => ArtifactSourceError::InvalidResponse,
                 ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::Transport
+                    lettuce_network::ArtifactDownloadError::Transport { .. }
                     | lettuce_network::ArtifactDownloadError::TimedOut,
                 ) => ArtifactSourceError::Transport,
                 ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::InvalidRequest,
+                    lettuce_network::ArtifactDownloadError::InvalidRequest { .. },
                 ) => ArtifactSourceError::InvalidRequest,
                 ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::InvalidResponse
+                    lettuce_network::ArtifactDownloadError::InvalidResponse { .. }
                     | lettuce_network::ArtifactDownloadError::Refused { .. },
                 ) => ArtifactSourceError::InvalidResponse,
             })
@@ -429,10 +439,13 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
                 |paths, token| {
                     let unpacked = &unpacked;
                     async move {
-                        let archive_file = paths
-                            .into_iter()
-                            .next()
-                            .ok_or(ArtifactInstallError::InvalidWork)?;
+                        let archive_file =
+                            paths
+                                .into_iter()
+                                .next()
+                                .ok_or(ArtifactInstallError::InvalidWork {
+                                    reason: "the download produced no archive file",
+                                })?;
                         events(OnnxRuntimeInstallEvent::Unpacking { job_id });
                         let outcome = unpack_archive(os, archive, archive_file, install_dir, token)
                             .await
@@ -488,7 +501,9 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
                 Err(OnnxRuntimeInstallError::Download(error))
             }
             (ArtifactInstallRunResult::Succeeded { .. }, _) => Err(
-                OnnxRuntimeInstallError::Download(ArtifactInstallError::InvalidWork),
+                OnnxRuntimeInstallError::Download(ArtifactInstallError::InvalidWork {
+                    reason: "the install result is not a failure",
+                }),
             ),
         }
     }

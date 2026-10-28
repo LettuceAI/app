@@ -49,8 +49,10 @@ pub(crate) struct SyncConversationRoot {
     pub initial_messages: Vec<SyncInitialMessage>,
 }
 
-fn storage(_: impl std::fmt::Debug) -> ConversationRepositoryError {
-    ConversationRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> ConversationRepositoryError {
+    ConversationRepositoryError::Storage {
+        reason: format!("{error:?}"),
+    }
 }
 
 pub(crate) fn sync_conversation_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
@@ -136,7 +138,9 @@ pub(crate) fn sync_load_conversation_root(
         .branches
         .iter()
         .find(|branch| branch.parent_branch_id.is_none())
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "sync load conversation root: a required value is missing".to_owned(),
+        })?;
     let initial_ids = transaction
         .prepare(
             "SELECT message_id FROM conversation_initial_message_origins WHERE conversation_id = ?1",
@@ -917,7 +921,9 @@ pub(crate) fn sync_insert_branch(
         params![conversation_id, branch.id.to_string()],
     )? {
         let current = sync_load_branch(transaction, branch.conversation_id, branch.id)?
-            .ok_or(ConversationRepositoryError::Storage)?;
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "sync insert branch: a required value is missing".to_owned(),
+            })?;
         if current.parent_branch_id != branch.parent_branch_id
             || current.fork_message_id != branch.fork_message_id
             || current.created_at != branch.created_at
@@ -940,7 +946,9 @@ pub(crate) fn sync_insert_branch(
             )
             .map_err(|error| match error {
                 crate::purge::PurgeError::Busy => ConversationRepositoryError::Busy,
-                _ => ConversationRepositoryError::Storage,
+                _ => ConversationRepositoryError::Storage {
+                    reason: "sync insert branch: a stored value is not recognised".to_owned(),
+                },
             })?;
             transaction.execute("UPDATE conversations SET active_branch_id = (SELECT id FROM conversation_branches WHERE conversation_id = ?1 AND parent_branch_id IS NULL) WHERE id = ?1 AND active_branch_id = ?2",params![conversation_id,branch.id.to_string()]).map_err(storage)?;
         }
@@ -1517,7 +1525,9 @@ fn flattened_revision(
             .find(|candidate| candidate.id == id)
             .map(|candidate| candidate.parts.clone()),
     }
-    .ok_or(ConversationRepositoryError::Storage)?;
+    .ok_or_else(|| ConversationRepositoryError::Storage {
+        reason: "flattened revision: a required value is missing".to_owned(),
+    })?;
     let revision = MessageRevision {
         id: lettuce_types::MessageRevisionId::from_uuid(uuid::Uuid::new_v5(
             &copy_id.as_uuid(),

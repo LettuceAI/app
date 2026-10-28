@@ -29,22 +29,22 @@ pub struct StagedLorebookCoherenceExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookCoherenceExecutionError {
-    #[error("staged lorebook coherence execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("staged lorebook coherence prompt is invalid")]
-    InvalidPrompt,
+    #[error("staged lorebook coherence execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("staged lorebook coherence prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("staged lorebook coherence inference was cancelled")]
     Cancelled,
-    #[error("staged lorebook coherence inference returned an invalid response")]
-    InvalidResponse,
-    #[error("staged lorebook coherence request is too large")]
-    ContextTooLarge,
+    #[error("staged lorebook coherence inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
+    #[error("staged lorebook coherence request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("staged lorebook coherence prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("staged lorebook coherence provider failed: {0}")]
     Inference(PortError),
-    #[error("staged lorebook coherence replay cleanup failed")]
-    ReplayCleanup,
+    #[error("staged lorebook coherence replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("staged lorebook coherence persistence failed: {0}")]
     Repository(StagedLorebookRepositoryError),
 }
@@ -99,9 +99,13 @@ where
             .iter()
             .find(|run| run.request_id == coherence_request_id)
             .cloned()
-            .ok_or(StagedLorebookCoherenceExecutionError::InvalidOwnership)?;
+            .ok_or(StagedLorebookCoherenceExecutionError::InvalidOwnership {
+                reason: "coherence run is not in the project",
+            })?;
         if run.job_id != handle.id() {
-            return Err(StagedLorebookCoherenceExecutionError::InvalidOwnership);
+            return Err(StagedLorebookCoherenceExecutionError::InvalidOwnership {
+                reason: "run belongs to another job",
+            });
         }
         if project.project.stage == lettuce_creation::StagedLorebookStage::Cancelled {
             return Err(StagedLorebookCoherenceExecutionError::Cancelled);
@@ -125,7 +129,11 @@ where
                     self.repository,
                     crate::BuiltInPromptId::LorebookRuntime,
                 )
-                .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)?,
+                .map_err(|error| {
+                    StagedLorebookCoherenceExecutionError::InvalidPrompt {
+                        reason: error.to_string(),
+                    }
+                })?,
                 handle,
                 stream_sink,
             )?,
@@ -143,8 +151,11 @@ where
         if handle.cancellation_token().is_cancelled()
             || matches!(outcome.finish_reason, FinishReason::Cancelled)
         {
-            cleanup_outcome_replays(self.repository, &outcome)
-                .map_err(|_| StagedLorebookCoherenceExecutionError::ReplayCleanup)?;
+            cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                StagedLorebookCoherenceExecutionError::ReplayCleanup {
+                    reason: error.to_string(),
+                }
+            })?;
             return Err(StagedLorebookCoherenceExecutionError::Cancelled);
         }
         let valid = outcome.validate().is_ok()
@@ -182,8 +193,11 @@ where
             provider_request_id: outcome.provider_request_id.clone(),
             completed_at: now,
         };
-        cleanup_outcome_replays(self.repository, &outcome)
-            .map_err(|_| StagedLorebookCoherenceExecutionError::ReplayCleanup)?;
+        cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+            StagedLorebookCoherenceExecutionError::ReplayCleanup {
+                reason: error.to_string(),
+            }
+        })?;
         if self
             .repository
             .load_staged_lorebook(project_request_id)
@@ -207,14 +221,18 @@ where
             .coherence_runs
             .iter()
             .find(|run| run.request_id == coherence_request_id)
-            .ok_or(StagedLorebookCoherenceExecutionError::InvalidResponse)?;
+            .ok_or(StagedLorebookCoherenceExecutionError::InvalidResponse {
+                reason: "coherence run is not in the project".to_owned(),
+            })?;
         settle(
             self.repository,
             project_request_id,
             run,
             run.attempt
                 .clone()
-                .ok_or(StagedLorebookCoherenceExecutionError::InvalidResponse)?,
+                .ok_or(StagedLorebookCoherenceExecutionError::InvalidResponse {
+                    reason: "stored run has no attempt".to_owned(),
+                })?,
             false,
         )
     }
@@ -228,7 +246,9 @@ fn settle<R: StagedLorebookRepository + ?Sized>(
     replayed: bool,
 ) -> Result<StagedLorebookCoherenceExecutionResult, StagedLorebookCoherenceExecutionError> {
     let StagedLorebookCoherenceDecision::Proposals(proposals) = attempt.decision else {
-        return Err(StagedLorebookCoherenceExecutionError::InvalidResponse);
+        return Err(StagedLorebookCoherenceExecutionError::InvalidResponse {
+            reason: "stored attempt decision holds no proposals".to_owned(),
+        });
     };
     let run = repository
         .submit_staged_lorebook_coherence(
@@ -252,7 +272,9 @@ fn validate_ownership(
         || prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::LorebookGeneratorCoherence
     {
-        return Err(StagedLorebookCoherenceExecutionError::InvalidOwnership);
+        return Err(StagedLorebookCoherenceExecutionError::InvalidOwnership {
+            reason: "run belongs to another job, or the prompt differs from the run snapshot or is not an active prompt of the right purpose",
+        });
     }
     Ok(())
 }
@@ -284,9 +306,11 @@ fn build_request(
         })),
         prompt_cache_key: None,
     };
-    request
-        .validate()
-        .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)?;
+    request.validate().map_err(
+        |error| StagedLorebookCoherenceExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        },
+    )?;
     Ok(request)
 }
 
@@ -333,7 +357,11 @@ fn render_context(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)?;
+        .map_err(
+            |error| StagedLorebookCoherenceExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            },
+        )?;
     if prompt.condense {
         condense_prompt_messages(&mut messages);
     }
@@ -343,7 +371,11 @@ fn render_context(
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)
+                .map_err(
+                    |error| StagedLorebookCoherenceExecutionError::InvalidPrompt {
+                        reason: error.to_string(),
+                    },
+                )
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
@@ -355,7 +387,11 @@ fn render_context(
                     lettuce_creation::STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION_KEY,
                     [],
                 )
-                .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)?,
+                .map_err(
+                    |error| StagedLorebookCoherenceExecutionError::InvalidPrompt {
+                        reason: error.to_string(),
+                    },
+                )?,
         }],
     });
     let input_bytes = messages
@@ -367,7 +403,9 @@ fn render_context(
         })
         .try_fold(0usize, usize::checked_add)
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(StagedLorebookCoherenceExecutionError::ContextTooLarge)?;
+        .ok_or(StagedLorebookCoherenceExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
     Ok(ProviderNeutralContext {
         messages,
         attributions: ContextAttributions {

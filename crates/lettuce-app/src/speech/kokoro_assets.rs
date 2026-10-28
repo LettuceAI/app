@@ -41,8 +41,11 @@ impl KokoroAssetInventoryCoordinator {
         Ok(Self {
             store: KokoroAssetStore::open(root.as_ref())
                 .map_err(KokoroAssetInventoryError::Assets)?,
-            voices: lettuce_model_hub::KokoroVoiceInstallStore::open(root).map_err(|_| {
-                KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact)
+            voices: lettuce_model_hub::KokoroVoiceInstallStore::open(root).map_err(|error| {
+                tracing::warn!(%error, "Kokoro voice install store could not be opened");
+                KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact {
+                    reason: "voice install store could not be opened",
+                })
             })?,
         })
     }
@@ -88,15 +91,18 @@ impl KokoroAssetInventoryCoordinator {
                 )
             })
             .collect::<std::collections::BTreeMap<_, _>>();
-        let descriptors = self
-            .voices
-            .installed_descriptors()
-            .map_err(|_| KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact))?;
-        if let Some(installed) = self
-            .voices
-            .installed(&descriptors)
-            .map_err(|_| KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact))?
-        {
+        let descriptors = self.voices.installed_descriptors().map_err(|error| {
+            tracing::warn!(%error, "installed voice descriptors could not be read");
+            KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact {
+                reason: "installed voice descriptors could not be read",
+            })
+        })?;
+        if let Some(installed) = self.voices.installed(&descriptors).map_err(|error| {
+            tracing::warn!(%error, "installed voices could not be read");
+            KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact {
+                reason: "installed voices could not be read",
+            })
+        })? {
             for voice in installed {
                 voices.insert(
                     voice.id.clone(),

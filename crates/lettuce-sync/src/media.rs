@@ -31,7 +31,9 @@ impl SyncBlobChunk {
             || self.bytes.len() > MAX_SYNC_BLOB_CHUNK_BYTES
             || (self.bytes.is_empty() && !self.complete)
         {
-            return Err(MediaSyncError::InvalidChunk);
+            return Err(MediaSyncError::InvalidChunk {
+                reason: "chunk offset, size or completion flag is inconsistent",
+            });
         }
         Ok(())
     }
@@ -39,16 +41,16 @@ impl SyncBlobChunk {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MediaSyncError {
-    #[error("sync media asset is invalid")]
-    InvalidAsset,
-    #[error("sync media exceeds its limit")]
-    LimitExceeded,
-    #[error("sync media chunk is invalid")]
-    InvalidChunk,
-    #[error("sync media payload could not be encoded")]
-    Encoding,
-    #[error("sync media storage failed")]
-    Storage,
+    #[error("sync media asset is invalid: {reason}")]
+    InvalidAsset { reason: &'static str },
+    #[error("sync media exceeds its limit: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("sync media chunk is invalid: {reason}")]
+    InvalidChunk { reason: &'static str },
+    #[error("sync media payload could not be encoded: {reason}")]
+    Encoding { reason: &'static str },
+    #[error("sync media storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// Media assets deferred incoming changes wait for; their blobs are fetched
@@ -69,14 +71,23 @@ pub trait MediaSyncRepository: Send + Sync {
 pub fn canonical_media_asset_payload(
     value: &CanonicalMediaAsset,
 ) -> Result<CanonicalPayload, MediaSyncError> {
-    value.validate().map_err(|_| MediaSyncError::InvalidAsset)?;
-    let bytes = serde_json::to_vec(value).map_err(|_| MediaSyncError::Encoding)?;
-    CanonicalPayload::new(MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION, bytes)
-        .map_err(|_: SyncChangeError| MediaSyncError::InvalidAsset)
+    value.validate().map_err(|_| MediaSyncError::InvalidAsset {
+        reason: "media asset failed validation",
+    })?;
+    let bytes = serde_json::to_vec(value).map_err(|_| MediaSyncError::Encoding {
+        reason: "media asset could not be serialized",
+    })?;
+    CanonicalPayload::new(MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION, bytes).map_err(
+        |_: SyncChangeError| MediaSyncError::InvalidAsset {
+            reason: "media asset payload was rejected by the canonical payload constructor",
+        },
+    )
 }
 
 pub fn media_asset_sync_entity(id: AssetId) -> Result<SyncEntity, MediaSyncError> {
-    SyncEntity::new("media_asset", id.to_string()).map_err(|_| MediaSyncError::InvalidAsset)
+    SyncEntity::new("media_asset", id.to_string()).map_err(|_| MediaSyncError::InvalidAsset {
+        reason: "media asset id is not a valid sync entity id",
+    })
 }
 
 pub fn media_asset_insert_change(
@@ -88,7 +99,9 @@ pub fn media_asset_insert_change(
         None,
         Some(canonical_media_asset_payload(value)?),
     )
-    .map_err(|_| MediaSyncError::InvalidAsset)
+    .map_err(|_| MediaSyncError::InvalidAsset {
+        reason: "media asset change was rejected by the change constructor",
+    })
 }
 
 #[must_use]

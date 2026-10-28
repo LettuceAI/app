@@ -62,7 +62,9 @@ impl AsrVocabularyTerm {
             || self.scope != normalize_scope(Some(&self.scope))
             || self.created_at > self.updated_at
         {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "vocabulary term fields are not normalized or timestamps are out of order",
+            });
         }
         validate_optional_bounded(&self.language)?;
         validate_optional_payload(&self.category)?;
@@ -152,7 +154,9 @@ impl AsrCorrectionRule {
                 .last_seen_at
                 .is_some_and(|value| value > self.updated_at)
         {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "correction fields are not normalized, out of range or timestamps are out of order",
+            });
         }
         validate_optional_bounded(&self.language)?;
         validate_bounded_text(&self.scope)
@@ -187,7 +191,9 @@ impl AsrCorrectionDraft {
             explicit.map(Ok).unwrap_or_else(|| {
                 previous
                     .checked_add(increment)
-                    .ok_or(AsrLearningError::InvalidData)
+                    .ok_or(AsrLearningError::InvalidData {
+                        reason: "usage counter overflows",
+                    })
             })
         };
         let accepted = count(
@@ -283,7 +289,9 @@ impl AsrLearnedSuggestion {
             || !self.confidence.is_finite()
             || !(0.0..=1.0).contains(&self.confidence)
         {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "suggestion fields are not normalized, identical or out of range",
+            });
         }
         validate_optional_bounded(&self.language)?;
         validate_bounded_text(&self.scope)
@@ -319,7 +327,9 @@ impl AsrIgnoredSuggestion {
             || self.created_at > self.updated_at
             || self.last_ignored_at > self.updated_at
         {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "ignored suggestion fields are not normalized, identical or out of order",
+            });
         }
         validate_optional_bounded(&self.language)?;
         validate_bounded_text(&self.scope)
@@ -404,7 +414,9 @@ impl AsrVoiceExample {
             || self.scope != normalize_scope(Some(&self.scope))
             || self.created_at > self.updated_at
         {
-            return Err(AsrLearningError::InvalidData);
+            return Err(AsrLearningError::InvalidData {
+                reason: "example fields are not normalized or timestamps are out of order",
+            });
         }
         validate_optional_bounded(&self.language)?;
         validate_bounded_text(&self.scope)
@@ -853,13 +865,22 @@ impl<R: AsrLearningRepository + ?Sized> AsrPromptLibrary for AsrLearningLibrary<
         language: Option<&str>,
         scopes: &[String],
     ) -> Result<String, AsrLibraryError> {
-        let (language, scopes) =
-            normalize_query(language, scopes).map_err(|_| AsrLibraryError::InvalidData)?;
+        let (language, scopes) = normalize_query(language, scopes).map_err(|error| {
+            tracing::warn!(%error, "vocabulary query is invalid");
+            AsrLibraryError::InvalidData {
+                reason: "vocabulary query is invalid",
+            }
+        })?;
         let terms = self
             .repository
             .list_vocabulary(language.as_deref(), &scopes)
             .map_err(map_repository_error)?;
-        build_prompt(terms).map_err(|_| AsrLibraryError::InvalidData)
+        build_prompt(terms).map_err(|error| {
+            tracing::warn!(%error, "building the vocabulary prompt failed");
+            AsrLibraryError::InvalidData {
+                reason: "building the vocabulary prompt failed",
+            }
+        })
     }
 
     fn apply_corrections(
@@ -868,13 +889,22 @@ impl<R: AsrLearningRepository + ?Sized> AsrPromptLibrary for AsrLearningLibrary<
         language: Option<&str>,
         scopes: &[String],
     ) -> Result<(String, Vec<AppliedCorrection>), AsrLibraryError> {
-        let (language, scopes) =
-            normalize_query(language, scopes).map_err(|_| AsrLibraryError::InvalidData)?;
+        let (language, scopes) = normalize_query(language, scopes).map_err(|error| {
+            tracing::warn!(%error, "correction query is invalid");
+            AsrLibraryError::InvalidData {
+                reason: "correction query is invalid",
+            }
+        })?;
         let corrections = self
             .repository
             .list_corrections(language.as_deref(), &scopes)
             .map_err(map_repository_error)?;
-        apply_corrections(text, &corrections).map_err(|_| AsrLibraryError::InvalidData)
+        apply_corrections(text, &corrections).map_err(|error| {
+            tracing::warn!(%error, "applying corrections failed");
+            AsrLibraryError::InvalidData {
+                reason: "applying corrections failed",
+            }
+        })
     }
 }
 
@@ -919,8 +949,12 @@ fn apply_corrections(
             .map(regex::escape)
             .collect::<Vec<_>>()
             .join(r"\s+");
-        let pattern = Regex::new(&format!(r"(?i)\b{escaped}\b"))
-            .map_err(|_| AsrLearningError::InvalidData)?;
+        let pattern = Regex::new(&format!(r"(?i)\b{escaped}\b")).map_err(|error| {
+            tracing::warn!(%error, "correction pattern does not compile");
+            AsrLearningError::InvalidData {
+                reason: "correction pattern does not compile",
+            }
+        })?;
         let matches = pattern
             .find_iter(&corrected)
             .map(|found| found.as_str().to_owned())
@@ -1138,7 +1172,9 @@ fn normalize_query(
     let language = normalize_language(language);
     validate_optional_bounded(&language)?;
     if scopes.len() > 8 {
-        return Err(AsrLearningError::InvalidData);
+        return Err(AsrLearningError::InvalidData {
+            reason: "query has more than 8 scopes",
+        });
     }
     let source = if scopes.is_empty() {
         vec![DEFAULT_SCOPE.to_owned()]
@@ -1161,7 +1197,9 @@ fn normalize_query(
 
 fn validate_bounded_text(value: &str) -> Result<(), AsrLearningError> {
     if value.trim() != value || value.is_empty() || value.chars().any(char::is_control) {
-        return Err(AsrLearningError::InvalidData);
+        return Err(AsrLearningError::InvalidData {
+            reason: "text is empty, has outer whitespace or control characters",
+        });
     }
     Ok(())
 }
@@ -1175,24 +1213,34 @@ fn validate_optional_bounded(value: &Option<String>) -> Result<(), AsrLearningEr
 
 fn validate_authored_text(value: &str) -> Result<(), AsrLearningError> {
     if value.is_empty() || value.contains('\0') || normalize_lookup_text(value).is_empty() {
-        return Err(AsrLearningError::InvalidData);
+        return Err(AsrLearningError::InvalidData {
+            reason: "text is empty, contains a nul or has no lookup form",
+        });
     }
     Ok(())
 }
 
 fn validate_optional_payload(value: &Option<String>) -> Result<(), AsrLearningError> {
     if value.as_ref().is_some_and(|value| value.contains('\0')) {
-        return Err(AsrLearningError::InvalidData);
+        return Err(AsrLearningError::InvalidData {
+            reason: "payload contains a nul",
+        });
     }
     Ok(())
 }
 
 fn map_repository_error(error: AsrLearningRepositoryError) -> AsrLibraryError {
     match error {
-        AsrLearningRepositoryError::InvalidData => AsrLibraryError::InvalidData,
-        AsrLearningRepositoryError::NotFound
-        | AsrLearningRepositoryError::Conflict
-        | AsrLearningRepositoryError::Storage => AsrLibraryError::Unavailable,
+        AsrLearningRepositoryError::InvalidData { reason } => {
+            AsrLibraryError::InvalidData { reason }
+        }
+        AsrLearningRepositoryError::NotFound => AsrLibraryError::Unavailable {
+            reason: "learning record was not found",
+        },
+        AsrLearningRepositoryError::Conflict => AsrLibraryError::Unavailable {
+            reason: "learning record conflicts with stored data",
+        },
+        AsrLearningRepositoryError::Storage { reason } => AsrLibraryError::Unavailable { reason },
     }
 }
 
@@ -1202,16 +1250,16 @@ pub enum AsrLearningRepositoryError {
     NotFound,
     #[error("ASR learning record conflicts with stored data")]
     Conflict,
-    #[error("ASR learning record is invalid")]
-    InvalidData,
-    #[error("ASR learning storage failed")]
-    Storage,
+    #[error("ASR learning record is invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("ASR learning storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AsrLearningError {
-    #[error("ASR learning data are invalid")]
-    InvalidData,
+    #[error("ASR learning data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
     #[error("ASR learning persistence failed: {0}")]
     Repository(#[from] AsrLearningRepositoryError),
 }

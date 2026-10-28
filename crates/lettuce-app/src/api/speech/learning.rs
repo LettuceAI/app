@@ -689,6 +689,6 @@ pub async fn asr_prompt_preview(
     use lettuce_speech::AsrPromptLibrary;
     context.blocking(move |context| {
         context.backend().asr_learning().build_prompt(request.language.as_deref(), &request.scopes)
-            .map_err(|error| crate::api::error::api_error(match error { lettuce_speech::AsrLibraryError::InvalidData => dto::ApiErrorCode::InvalidInput, lettuce_speech::AsrLibraryError::Unavailable => dto::ApiErrorCode::Unavailable }, error.to_string()))
+            .map_err(|error| crate::api::error::api_error(match error { lettuce_speech::AsrLibraryError::InvalidData { .. } => dto::ApiErrorCode::InvalidInput, lettuce_speech::AsrLibraryError::Unavailable { .. } => dto::ApiErrorCode::Unavailable }, error.to_string()))
     }).await
 }

@@ -15,7 +15,9 @@ use crate::{Database, conversation::conversation_query, decode_versioned, encode
 const TOOL_JSON_VERSION: u32 = 1;
 
 fn storage<T>(_: T) -> ConversationRepositoryError {
-    ConversationRepositoryError::Storage
+    ConversationRepositoryError::Storage {
+        reason: "storage: stored data failed a consistency check".to_owned(),
+    }
 }
 
 fn status_name(status: ToolExecutionStatus) -> &'static str {
@@ -41,7 +43,11 @@ fn parse_status(value: &str) -> Result<ToolExecutionStatus, ConversationReposito
         "failed" => ToolExecutionStatus::Failed,
         "cancelled" => ToolExecutionStatus::Cancelled,
         "interrupted" => ToolExecutionStatus::Interrupted,
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "parse status: a stored value is not recognised".to_owned(),
+            });
+        }
     })
 }
 
@@ -64,7 +70,11 @@ fn parse_failure(value: &str) -> Result<ToolFailureCode, ConversationRepositoryE
         "handler_failed" => ToolFailureCode::HandlerFailed,
         "result_invalid" => ToolFailureCode::ResultInvalid,
         "internal" => ToolFailureCode::Internal,
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "parse failure: a stored value is not recognised".to_owned(),
+            });
+        }
     })
 }
 
@@ -345,7 +355,9 @@ pub(super) fn insert_in(
         )
         .map_err(|error| match error.sqlite_error_code() {
             Some(rusqlite::ErrorCode::ConstraintViolation) => ConversationRepositoryError::Conflict,
-            _ => ConversationRepositoryError::Storage,
+            _ => ConversationRepositoryError::Storage {
+                reason: "insert in: a stored value is not recognised".to_owned(),
+            },
         })?;
     get_in(transaction, execution.id)
 }
@@ -671,7 +683,11 @@ mod tests {
         database
             .append_tool_executions(execution.ordinal, std::slice::from_ref(execution))?
             .pop()
-            .ok_or(lettuce_conversations::ConversationRepositoryError::Storage)
+            .ok_or_else(
+                || lettuce_conversations::ConversationRepositoryError::Storage {
+                    reason: "insert one: a required value is missing".to_owned(),
+                },
+            )
     }
 
     #[test]

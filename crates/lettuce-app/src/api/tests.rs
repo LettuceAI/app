@@ -1000,10 +1000,10 @@ fn domain_errors_map_to_api_codes() {
             ApiErrorCode::Conflict,
         ),
         (
-            ConversationRepositoryError::Unsupported,
+            ConversationRepositoryError::Unsupported { reason: "simulated failure" },
             ApiErrorCode::Unsupported,
         ),
-        (ConversationRepositoryError::Storage, ApiErrorCode::Internal),
+        (ConversationRepositoryError::Storage { reason: "simulated failure".to_owned() }, ApiErrorCode::Internal),
     ] {
         assert_eq!(error.into_api_error().code, code);
     }
@@ -1399,7 +1399,7 @@ async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
         &harness.context,
         request.clone(),
         stream.clone(),
-        |_, _, _| Err(crate::ConversationGenerationDispatchError::InvalidWork),
+        |_, _, _| Err(crate::ConversationGenerationDispatchError::InvalidWork { reason: "simulated failure" }),
     )
     .await
     .expect_err("schedule failed");

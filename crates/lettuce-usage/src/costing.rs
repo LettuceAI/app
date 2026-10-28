@@ -17,10 +17,14 @@ pub struct UsageCostBasis {
 impl UsageCostBasis {
     pub fn calculate(&self, event: &UsageEvent) -> Result<RequestCost, UsageLedgerError> {
         if self.openrouter.is_some() {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "cost basis carries openrouter evidence for a non-job event",
+            });
         }
         let lettuce_conversations::UsageCounters::Known(tokens) = &event.record.usage else {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "usage counters are not known",
+            });
         };
         self.calculate_usage(
             event.record.model_profile_id,
@@ -39,12 +43,16 @@ impl UsageCostBasis {
             ..
         }) = &event.result
         else {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "job result carries no known usage or response id",
+            });
         };
         let billing;
         let tokens = if let Some(evidence) = &self.openrouter {
             if self.pricing != evidence.endpoint.pricing {
-                return Err(UsageLedgerError::Invalid);
+                return Err(UsageLedgerError::Invalid {
+                    reason: "openrouter evidence pricing does not match the cost basis pricing",
+                });
             }
             billing = evidence.billing_usage(provider_response_id.as_deref(), tokens)?;
             &billing
@@ -73,7 +81,9 @@ impl UsageCostBasis {
             return Ok(None);
         };
         if provider_response_id.as_deref() != Some(generation.generation_id.as_str()) {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "provider response id does not match the openrouter generation id",
+            });
         }
         let matched = generation.provider_name.as_deref().and_then(|provider| {
             endpoints
@@ -154,10 +164,15 @@ impl UsageCostBasis {
                 .authoritative_total_cost
                 .is_some_and(|value| !value.is_finite() || value < 0.0)
         {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "usage evidence does not match the cost basis",
+            });
         }
-        crate::calculate_openrouter_request_cost(&self.input, &self.pricing)
-            .ok_or(UsageLedgerError::Invalid)
+        crate::calculate_openrouter_request_cost(&self.input, &self.pricing).ok_or(
+            UsageLedgerError::Invalid {
+                reason: "openrouter request cost could not be calculated",
+            },
+        )
     }
 }
 

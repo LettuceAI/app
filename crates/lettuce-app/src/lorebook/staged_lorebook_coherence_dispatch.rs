@@ -48,8 +48,8 @@ pub enum StagedLorebookCoherenceDispatchError {
     Jobs(#[from] StoreError),
     #[error("staged lorebook coherence repository operation failed: {0}")]
     Repository(#[from] StagedLorebookRepositoryError),
-    #[error("staged lorebook coherence claimed work is inconsistent")]
-    InvalidWork,
+    #[error("staged lorebook coherence claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -84,13 +84,18 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .iter()
             .find(|run| run.request_id == coherence_request_id)
             .cloned()
-            .ok_or(StagedLorebookCoherenceDispatchError::InvalidWork)?;
-        let job = self
-            .jobs
-            .get(run.job_id)?
-            .ok_or(StagedLorebookCoherenceDispatchError::InvalidWork)?;
+            .ok_or(StagedLorebookCoherenceDispatchError::InvalidWork {
+                reason: "job of the run is missing from the store",
+            })?;
+        let job = self.jobs.get(run.job_id)?.ok_or(
+            StagedLorebookCoherenceDispatchError::InvalidWork {
+                reason: "job of the run is missing from the store",
+            },
+        )?;
         if job.kind != JobKind::CreationRun {
-            return Err(StagedLorebookCoherenceDispatchError::InvalidWork);
+            return Err(StagedLorebookCoherenceDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -100,7 +105,9 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(coherence_request_id) {
-            return Err(StagedLorebookCoherenceDispatchError::InvalidWork);
+            return Err(StagedLorebookCoherenceDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(run.job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -137,7 +144,9 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.state != JobState::Running
             || work.claim.input_ref != OutcomeRef::Request(work.run.request_id)
         {
-            return Err(StagedLorebookCoherenceDispatchError::InvalidWork);
+            return Err(StagedLorebookCoherenceDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         let cancelled = self
@@ -211,6 +220,7 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(StagedLorebookCoherenceSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "staged lorebook coherence job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -226,28 +236,28 @@ fn retryable(error: &StagedLorebookCoherenceExecutionError) -> bool {
     matches!(
         error,
         StagedLorebookCoherenceExecutionError::Inference(PortError::Unavailable)
-            | StagedLorebookCoherenceExecutionError::ReplayCleanup
+            | StagedLorebookCoherenceExecutionError::ReplayCleanup { .. }
             | StagedLorebookCoherenceExecutionError::Repository(
-                StagedLorebookRepositoryError::Failure
+                StagedLorebookRepositoryError::Failure { .. }
             )
     ) || matches!(error, StagedLorebookCoherenceExecutionError::Inference(PortError::Provider(failure)) if failure.kind == ProviderFailureKind::Unavailable)
 }
 
 fn job_error(error: &StagedLorebookCoherenceExecutionError) -> JobError {
     let (code, message) = match error {
-        StagedLorebookCoherenceExecutionError::InvalidOwnership
-        | StagedLorebookCoherenceExecutionError::InvalidPrompt
-        | StagedLorebookCoherenceExecutionError::ContextTooLarge => (
+        StagedLorebookCoherenceExecutionError::InvalidOwnership { .. }
+        | StagedLorebookCoherenceExecutionError::InvalidPrompt { .. }
+        | StagedLorebookCoherenceExecutionError::ContextTooLarge { .. } => (
             JobErrorCode::InvalidInput,
             "staged-lorebook-coherence-invalid-input",
         ),
         StagedLorebookCoherenceExecutionError::Inference(_)
-        | StagedLorebookCoherenceExecutionError::InvalidResponse => (
+        | StagedLorebookCoherenceExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "staged-lorebook-coherence-provider-rejected",
         ),
         StagedLorebookCoherenceExecutionError::Prompt(_)
-        | StagedLorebookCoherenceExecutionError::ReplayCleanup
+        | StagedLorebookCoherenceExecutionError::ReplayCleanup { .. }
         | StagedLorebookCoherenceExecutionError::Repository(_) => (
             JobErrorCode::StorageFailure,
             "staged-lorebook-coherence-storage-failed",
@@ -269,7 +279,9 @@ mod tests {
             &StagedLorebookCoherenceExecutionError::Inference(PortError::Unavailable)
         ));
         assert!(!retryable(
-            &StagedLorebookCoherenceExecutionError::InvalidResponse
+            &StagedLorebookCoherenceExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
         ));
     }
 }

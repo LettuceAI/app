@@ -48,8 +48,8 @@ pub enum CompanionConsolidationDispatchError {
     Jobs(#[from] StoreError),
     #[error("companion consolidation run operation failed: {0}")]
     Run(#[from] CompanionConsolidationRunRepositoryError),
-    #[error("companion consolidation claimed work is inconsistent")]
-    InvalidWork,
+    #[error("companion consolidation claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -78,19 +78,25 @@ impl<R: CompanionConsolidationRunRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<Option<CompanionConsolidationClaimedWork>, CompanionConsolidationDispatchError>
     {
         let run = self.runs.load_companion_consolidation_run(job_id)?;
-        let job = self
-            .jobs
-            .get(job_id)?
-            .ok_or(CompanionConsolidationDispatchError::InvalidWork)?;
+        let job =
+            self.jobs
+                .get(job_id)?
+                .ok_or(CompanionConsolidationDispatchError::InvalidWork {
+                    reason: "job of the run is missing from the store",
+                })?;
         if job.kind != JobKind::CompanionConsolidation {
-            return Err(CompanionConsolidationDispatchError::InvalidWork);
+            return Err(CompanionConsolidationDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self.jobs.claim(job_id, worker_id, at, lease_for, allowed)? else {
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Character(run.character_id) {
-            return Err(CompanionConsolidationDispatchError::InvalidWork);
+            return Err(CompanionConsolidationDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -124,7 +130,9 @@ impl<R: CompanionConsolidationRunRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.kind != JobKind::CompanionConsolidation
             || work.job.state != JobState::Running
         {
-            return Err(CompanionConsolidationDispatchError::InvalidWork);
+            return Err(CompanionConsolidationDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         match result {
@@ -133,7 +141,9 @@ impl<R: CompanionConsolidationRunRepository + ?Sized, J: JobStore + ?Sized>
                     receipt.owner != work.run.soul_owner()
                         || receipt.operation_id != work.run.operation_id
                 }) {
-                    return Err(CompanionConsolidationDispatchError::InvalidWork);
+                    return Err(CompanionConsolidationDispatchError::InvalidWork {
+                        reason: "result receipt differs from the run owner or operation",
+                    });
                 }
                 self.jobs.append_and_transition(JobMutation::Progress {
                     claim: work.claim.claim.clone(),
@@ -184,6 +194,7 @@ impl<R: CompanionConsolidationRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(CompanionConsolidationSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "companion consolidation job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -201,30 +212,30 @@ fn retryable(error: &CompanionConsolidationExecutionError) -> bool {
         CompanionConsolidationExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        CompanionConsolidationExecutionError::ReplayCleanup
+        CompanionConsolidationExecutionError::ReplayCleanup { .. }
         | CompanionConsolidationExecutionError::Run(
-            CompanionConsolidationRunRepositoryError::Failure,
+            CompanionConsolidationRunRepositoryError::Failure { .. },
         )
-        | CompanionConsolidationExecutionError::Soul(SoulRepositoryError::Failure) => true,
+        | CompanionConsolidationExecutionError::Soul(SoulRepositoryError::Failure { .. }) => true,
         _ => false,
     }
 }
 
 fn job_error(error: &CompanionConsolidationExecutionError) -> JobError {
     let (code, message) = match error {
-        CompanionConsolidationExecutionError::InvalidOwnership
-        | CompanionConsolidationExecutionError::InvalidPrompt
-        | CompanionConsolidationExecutionError::ContextTooLarge => (
+        CompanionConsolidationExecutionError::InvalidOwnership { .. }
+        | CompanionConsolidationExecutionError::InvalidPrompt { .. }
+        | CompanionConsolidationExecutionError::ContextTooLarge { .. } => (
             JobErrorCode::InvalidInput,
             "companion-consolidation-invalid-input",
         ),
         CompanionConsolidationExecutionError::Inference(_)
-        | CompanionConsolidationExecutionError::InvalidResponse => (
+        | CompanionConsolidationExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "companion-consolidation-provider-rejected",
         ),
         CompanionConsolidationExecutionError::Prompt(_)
-        | CompanionConsolidationExecutionError::ReplayCleanup
+        | CompanionConsolidationExecutionError::ReplayCleanup { .. }
         | CompanionConsolidationExecutionError::Run(_)
         | CompanionConsolidationExecutionError::Soul(_) => (
             JobErrorCode::StorageFailure,
@@ -251,10 +262,14 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(retryable(&CompanionConsolidationExecutionError::Run(
-            CompanionConsolidationRunRepositoryError::Failure
+            CompanionConsolidationRunRepositoryError::Failure {
+                reason: "simulated failure".to_owned()
+            }
         )));
         assert!(!retryable(
-            &CompanionConsolidationExecutionError::InvalidResponse
+            &CompanionConsolidationExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
         ));
         assert!(!retryable(&CompanionConsolidationExecutionError::Soul(
             SoulRepositoryError::Conflict

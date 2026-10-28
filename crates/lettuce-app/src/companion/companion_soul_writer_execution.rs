@@ -36,24 +36,24 @@ pub struct CompanionSoulWriterExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionSoulWriterExecutionError {
-    #[error("companion Soul-writer execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("companion Soul-writer prompt is invalid")]
-    InvalidPrompt,
+    #[error("companion Soul-writer execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("companion Soul-writer prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("companion Soul-writer inference was cancelled")]
     Cancelled,
-    #[error("companion Soul-writer inference returned an invalid response")]
-    InvalidResponse,
+    #[error("companion Soul-writer inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
     #[error("companion Soul-writer stopped before done")]
     RoundLimit,
-    #[error("companion Soul-writer request is too large")]
-    ContextTooLarge,
+    #[error("companion Soul-writer request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("companion Soul-writer prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("companion Soul-writer provider failed: {0}")]
     Inference(PortError),
-    #[error("companion Soul-writer replay cleanup failed")]
-    ReplayCleanup,
+    #[error("companion Soul-writer replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("companion Soul-writer run persistence failed: {0}")]
     Run(CompanionSoulWriterRunRepositoryError),
 }
@@ -108,7 +108,9 @@ impl<
             || prompt.status != LifecycleStatus::Active
             || prompt.purpose != PromptPurpose::CompanionSoulWriter
         {
-            return Err(CompanionSoulWriterExecutionError::InvalidOwnership);
+            return Err(CompanionSoulWriterExecutionError::InvalidOwnership {
+                reason: "run belongs to another job, or the prompt differs from the run snapshot or is not an active prompt of the right purpose",
+            });
         }
         let replayed = !run.rounds.is_empty();
         if run.rounds.last().is_some_and(|round| round.completed) {
@@ -133,7 +135,7 @@ impl<
             }
             Err(
                 error @ (CompanionSoulWriterExecutionError::Run(_)
-                | CompanionSoulWriterExecutionError::ReplayCleanup),
+                | CompanionSoulWriterExecutionError::ReplayCleanup { .. }),
             ) => Err(error),
             Err(_primary_error)
                 if target == SoulWriterProfileTarget::Primary
@@ -197,9 +199,9 @@ impl<
             .await
             {
                 Ok(outcome) => outcome,
-                Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence) => {
+                Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence { reason }) => {
                     return Err(CompanionSoulWriterExecutionError::Run(
-                        CompanionSoulWriterRunRepositoryError::Failure,
+                        CompanionSoulWriterRunRepositoryError::Failure { reason },
                     ));
                 }
                 Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(
@@ -225,7 +227,7 @@ impl<
             cleanup(self.repository, &outcome)?;
             let calls = match calls {
                 Ok(calls) if !calls.is_empty() => calls,
-                Ok(_) | Err(CompanionSoulWriterExecutionError::InvalidResponse) => {
+                Ok(_) | Err(CompanionSoulWriterExecutionError::InvalidResponse { .. }) => {
                     if has_rounds(run, target) {
                         return draft_result(run, target, replayed);
                     }
@@ -258,9 +260,9 @@ impl<
         .await
         .map_err(|error| {
             let error = match error {
-                crate::jobs::job_inference_usage::JobInferenceError::Evidence => {
+                crate::jobs::job_inference_usage::JobInferenceError::Evidence { reason } => {
                     return CompanionSoulWriterExecutionError::Run(
-                        CompanionSoulWriterRunRepositoryError::Failure,
+                        CompanionSoulWriterRunRepositoryError::Failure { reason },
                     );
                 }
                 crate::jobs::job_inference_usage::JobInferenceError::Provider(error) => error,
@@ -348,10 +350,16 @@ fn fallback_calls(
             _ => None,
         })
         .collect::<String>();
-    let mut calls = parse_soul_writer_fallback_calls(&text, run.fallback_format)
-        .map_err(|_| CompanionSoulWriterExecutionError::InvalidResponse)?;
+    let mut calls =
+        parse_soul_writer_fallback_calls(&text, run.fallback_format).map_err(|error| {
+            CompanionSoulWriterExecutionError::InvalidResponse {
+                reason: error.to_string(),
+            }
+        })?;
     if calls.is_empty() {
-        return Err(CompanionSoulWriterExecutionError::InvalidResponse);
+        return Err(CompanionSoulWriterExecutionError::InvalidResponse {
+            reason: "fallback reply produced no tool calls".to_owned(),
+        });
     }
     if let Some(done) = calls
         .iter()
@@ -365,11 +373,20 @@ fn fallback_calls(
 fn valid_candidate(
     outcome: &InferenceOutcome,
 ) -> Result<&lettuce_conversations::InferenceCandidate, CompanionSoulWriterExecutionError> {
-    if outcome.validate().is_err()
-        || outcome.candidates.len() != 1
-        || matches!(outcome.finish_reason, FinishReason::Error)
-    {
-        return Err(CompanionSoulWriterExecutionError::InvalidResponse);
+    if let Err(error) = outcome.validate() {
+        return Err(CompanionSoulWriterExecutionError::InvalidResponse {
+            reason: format!("outcome failed validation: {error}"),
+        });
+    }
+    if outcome.candidates.len() != 1 {
+        return Err(CompanionSoulWriterExecutionError::InvalidResponse {
+            reason: "outcome has more or fewer than one candidate".to_owned(),
+        });
+    }
+    if matches!(outcome.finish_reason, FinishReason::Error) {
+        return Err(CompanionSoulWriterExecutionError::InvalidResponse {
+            reason: "provider finished with an error".to_owned(),
+        });
     }
     if matches!(outcome.finish_reason, FinishReason::Cancelled) {
         return Err(CompanionSoulWriterExecutionError::Cancelled);
@@ -420,11 +437,11 @@ fn completed_result(
     run: &CompanionSoulWriterRun,
     replayed: bool,
 ) -> Result<CompanionSoulWriterExecutionResult, CompanionSoulWriterExecutionError> {
-    let round = run
-        .rounds
-        .last()
-        .filter(|round| round.completed)
-        .ok_or(CompanionSoulWriterExecutionError::InvalidResponse)?;
+    let round = run.rounds.last().filter(|round| round.completed).ok_or(
+        CompanionSoulWriterExecutionError::InvalidResponse {
+            reason: "the last round is not completed".to_owned(),
+        },
+    )?;
     Ok(CompanionSoulWriterExecutionResult {
         draft: round.resulting_draft.clone(),
         rounds: u32::try_from(run.rounds.len())
@@ -449,7 +466,9 @@ impl SoulWriterRequestText {
             repository,
             crate::BuiltInPromptId::CompanionRuntime,
         )
-        .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)?;
+        .map_err(|error| CompanionSoulWriterExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
         let fallback = [
             soul_writer_fallback_prompt_key(run.fallback_format),
             soul_writer_fact_fallback_prompt_key(run.fallback_format),
@@ -457,7 +476,9 @@ impl SoulWriterRequestText {
         .into_iter()
         .map(|key| text.render_with(key, []))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)?
+        .map_err(|error| CompanionSoulWriterExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?
         .into_iter()
         .filter(|part| !part.trim().is_empty())
         .collect::<Vec<_>>()
@@ -524,7 +545,9 @@ fn build_request(
     };
     request
         .validate()
-        .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)?;
+        .map_err(|error| CompanionSoulWriterExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     Ok(request)
 }
 
@@ -534,10 +557,11 @@ fn profile_for(
 ) -> Result<&ResolvedInferenceProfile, CompanionSoulWriterExecutionError> {
     match target {
         SoulWriterProfileTarget::Primary => Ok(&run.primary_profile),
-        SoulWriterProfileTarget::Fallback => run
-            .fallback_profile
-            .as_ref()
-            .ok_or(CompanionSoulWriterExecutionError::InvalidOwnership),
+        SoulWriterProfileTarget::Fallback => run.fallback_profile.as_ref().ok_or(
+            CompanionSoulWriterExecutionError::InvalidOwnership {
+                reason: "run has no fallback profile",
+            },
+        ),
     }
 }
 
@@ -587,14 +611,18 @@ fn render_context(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)?;
+        .map_err(|error| CompanionSoulWriterExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     let in_chat = rendered
         .in_chat
         .iter()
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)
+                .map_err(|error| CompanionSoulWriterExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
@@ -710,13 +738,18 @@ fn text_bytes(
         })
         .try_fold(0usize, usize::checked_add)
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(CompanionSoulWriterExecutionError::ContextTooLarge)
+        .ok_or(CompanionSoulWriterExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })
 }
 
 fn cleanup<R: ProviderReplayArtifactPort + ?Sized>(
     repository: &R,
     outcome: &InferenceOutcome,
 ) -> Result<(), CompanionSoulWriterExecutionError> {
-    cleanup_outcome_replays(repository, outcome)
-        .map_err(|_| CompanionSoulWriterExecutionError::ReplayCleanup)
+    cleanup_outcome_replays(repository, outcome).map_err(|error| {
+        CompanionSoulWriterExecutionError::ReplayCleanup {
+            reason: error.to_string(),
+        }
+    })
 }

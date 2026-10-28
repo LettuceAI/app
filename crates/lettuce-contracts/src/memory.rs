@@ -356,6 +356,7 @@ pub enum MemoryFailureCode {
     SettingsInvalid,
     ProviderUnavailable,
     ProviderRejected,
+    InvalidResponse,
     EmptyResponse,
     TimedOut,
     RoundLimit,

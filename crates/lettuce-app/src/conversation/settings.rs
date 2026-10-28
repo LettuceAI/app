@@ -106,7 +106,9 @@ pub fn apply_settings_change(
                 lettuce_conversations::ConversationRepositoryError::Invalid(error),
             )
         }
-        _ => ConversationEditError::Snapshot,
+        error => ConversationEditError::Snapshot {
+            reason: error.to_string(),
+        },
     })?;
     Ok(
         lettuce_conversations::ConversationRepository::update_settings(database, prepared, now)?
@@ -142,7 +144,9 @@ pub fn prepare_scene_selection(
         },
         builder.drafts,
     )
-    .map_err(|_| ConversationEditError::Snapshot)?;
+    .map_err(|error| ConversationEditError::Snapshot {
+        reason: error.to_string(),
+    })?;
     Ok((prepared, text))
 }
 
@@ -156,8 +160,10 @@ fn invalid(field: &'static str) -> ConversationEditError {
     ConversationEditError::InvalidInput { field }
 }
 
-fn source<E>(_: E) -> ConversationEditError {
-    ConversationEditError::Source
+fn source<E: std::fmt::Debug>(error: E) -> ConversationEditError {
+    ConversationEditError::Source {
+        reason: format!("{error:?}"),
+    }
 }
 
 impl Builder<'_> {
@@ -176,7 +182,9 @@ impl Builder<'_> {
             revision,
             body,
         )
-        .map_err(|_| ConversationEditError::Snapshot)
+        .map_err(|error| ConversationEditError::Snapshot {
+            reason: error.to_string(),
+        })
     }
 
     fn stage(&mut self, draft: SnapshotArtifactDraft) -> ProtectedSnapshotRef {

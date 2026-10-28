@@ -14,18 +14,30 @@ use crate::{Database, decode_versioned, encode_versioned};
 
 const RUN_FORMAT_VERSION: u32 = 1;
 
-fn failure(_: impl std::fmt::Debug) -> StagedLorebookWriterRunRepositoryError {
-    StagedLorebookWriterRunRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> StagedLorebookWriterRunRepositoryError {
+    tracing::warn!(?error, "staged lorebook writer adapter storage step failed");
+    StagedLorebookWriterRunRepositoryError::Failure {
+        reason: "staged lorebook writer adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> StagedLorebookWriterRunRepositoryError {
-    StagedLorebookWriterRunRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> StagedLorebookWriterRunRepositoryError {
+    tracing::warn!(?error, "staged lorebook writer adapter storage step failed");
+    StagedLorebookWriterRunRepositoryError::Corrupt {
+        reason: "staged lorebook writer adapter: a storage step failed",
+    }
 }
 
-fn parse_id<T: FromStr>(value: &str) -> Result<T, StagedLorebookWriterRunRepositoryError> {
-    value
-        .parse()
-        .map_err(|_| StagedLorebookWriterRunRepositoryError::Corrupt)
+fn parse_id<T: FromStr>(value: &str) -> Result<T, StagedLorebookWriterRunRepositoryError>
+where
+    T::Err: std::fmt::Debug,
+{
+    value.parse().map_err(|error| {
+        tracing::warn!(?error, "parse id failed");
+        StagedLorebookWriterRunRepositoryError::Corrupt {
+            reason: "parse id: a storage step failed",
+        }
+    })
 }
 
 fn positive_revision(value: i64) -> Result<Revision, StagedLorebookWriterRunRepositoryError> {
@@ -33,7 +45,9 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookWriterRunRepo
         .ok()
         .filter(|value| *value > 0)
         .map(Revision::new)
-        .ok_or(StagedLorebookWriterRunRepositoryError::Corrupt)
+        .ok_or(StagedLorebookWriterRunRepositoryError::Corrupt {
+            reason: "positive revision: a required value is missing",
+        })
 }
 
 pub(crate) fn load_in(
@@ -93,7 +107,9 @@ pub(crate) fn load_in(
         || run.created_at != TimestampMillis::new(created_at)
         || run.validate().is_err()
     {
-        return Err(StagedLorebookWriterRunRepositoryError::Corrupt);
+        return Err(StagedLorebookWriterRunRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check",
+        });
     }
     Ok(Some(run))
 }
@@ -171,8 +187,11 @@ impl StagedLorebookWriterRunRepository for Database {
                 ],
             )
             .map_err(failure)?;
-        let stored = load_in(&transaction, run.request_id)?
-            .ok_or(StagedLorebookWriterRunRepositoryError::Failure)?;
+        let stored = load_in(&transaction, run.request_id)?.ok_or(
+            StagedLorebookWriterRunRepositoryError::Failure {
+                reason: "admit staged lorebook writer run: a required value is missing",
+            },
+        )?;
         if inserted == 0 && stored != run {
             return Err(StagedLorebookWriterRunRepositoryError::Conflict);
         }

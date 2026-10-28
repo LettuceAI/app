@@ -60,10 +60,10 @@ pub const fn kokoro_model_ready(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum EspeakBundleError {
-    #[error("the eSpeak NG bundle is not a valid archive")]
-    InvalidArchive,
-    #[error("the eSpeak NG data could not be written")]
-    Io,
+    #[error("the eSpeak NG bundle is not a valid archive: {reason}")]
+    InvalidArchive { reason: &'static str },
+    #[error("the eSpeak NG data could not be written: {reason}")]
+    Io { reason: &'static str },
 }
 
 /// Whether `root` holds an extracted `espeak-ng-data` folder.
@@ -85,7 +85,12 @@ pub fn install_espeak_data(archive: &Path, root: &Path) -> Result<PathBuf, Espea
     let stage = root.join(STAGE_DIRECTORY);
     remove_directory(&stage)?;
     let result = extract_into(archive, &stage).and_then(|()| {
-        fs::rename(stage.join(ESPEAK_DATA_DIRECTORY), &target).map_err(|_| EspeakBundleError::Io)
+        fs::rename(stage.join(ESPEAK_DATA_DIRECTORY), &target).map_err(|error| {
+            tracing::warn!(%error, "moving the extracted data into place failed");
+            EspeakBundleError::Io {
+                reason: "moving the extracted data into place failed",
+            }
+        })
     });
     let cleanup = remove_directory(&stage);
     result?;
@@ -101,7 +106,12 @@ pub fn remove_espeak_data(root: &Path) -> Result<bool, EspeakBundleError> {
     if !espeak_data_installed(root) {
         return Ok(false);
     }
-    fs::rename(root.join(ESPEAK_DATA_DIRECTORY), &stage).map_err(|_| EspeakBundleError::Io)?;
+    fs::rename(root.join(ESPEAK_DATA_DIRECTORY), &stage).map_err(|error| {
+        tracing::warn!(%error, "moving the installed data aside failed");
+        EspeakBundleError::Io {
+            reason: "moving the installed data aside failed",
+        }
+    })?;
     remove_directory(&stage)?;
     Ok(true)
 }
@@ -110,25 +120,52 @@ fn remove_directory(path: &Path) -> Result<(), EspeakBundleError> {
     match fs::remove_dir_all(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(EspeakBundleError::Io),
+        Err(error) => {
+            tracing::warn!(%error, "removing the staging directory failed");
+            Err(EspeakBundleError::Io {
+                reason: "removing the staging directory failed",
+            })
+        }
     }
 }
 
 fn extract_into(archive: &Path, stage: &Path) -> Result<(), EspeakBundleError> {
-    fs::create_dir_all(stage).map_err(|_| EspeakBundleError::Io)?;
-    let file = fs::File::open(archive).map_err(|_| EspeakBundleError::Io)?;
+    fs::create_dir_all(stage).map_err(|error| {
+        tracing::warn!(%error, "creating the staging directory failed");
+        EspeakBundleError::Io {
+            reason: "creating the staging directory failed",
+        }
+    })?;
+    let file = fs::File::open(archive).map_err(|error| {
+        tracing::warn!(%error, "opening the archive failed");
+        EspeakBundleError::Io {
+            reason: "opening the archive failed",
+        }
+    })?;
     let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(file));
     let mut extracted = 0_u64;
     let mut found = false;
     for (index, entry) in tar
         .entries()
-        .map_err(|_| EspeakBundleError::InvalidArchive)?
+        .map_err(|error| {
+            tracing::warn!(%error, "reading the archive entries failed");
+            EspeakBundleError::InvalidArchive {
+                reason: "reading the archive entries failed",
+            }
+        })?
         .enumerate()
     {
         if index >= MAX_ENTRIES {
-            return Err(EspeakBundleError::InvalidArchive);
+            return Err(EspeakBundleError::InvalidArchive {
+                reason: "archive has too many entries",
+            });
         }
-        let mut entry = entry.map_err(|_| EspeakBundleError::InvalidArchive)?;
+        let mut entry = entry.map_err(|error| {
+            tracing::warn!(%error, "reading an archive entry failed");
+            EspeakBundleError::InvalidArchive {
+                reason: "reading an archive entry failed",
+            }
+        })?;
         let kind = entry.header().entry_type();
         if kind.is_pax_global_extensions()
             || kind.is_pax_local_extensions()
@@ -139,11 +176,18 @@ fn extract_into(archive: &Path, stage: &Path) -> Result<(), EspeakBundleError> {
         }
         let path = entry
             .path()
-            .map_err(|_| EspeakBundleError::InvalidArchive)?
+            .map_err(|error| {
+                tracing::warn!(%error, "reading an archive entry path failed");
+                EspeakBundleError::InvalidArchive {
+                    reason: "reading an archive entry path failed",
+                }
+            })?
             .into_owned();
         let relative = archive_relative_path(&path)?;
         if !(kind.is_file() || kind.is_dir()) {
-            return Err(EspeakBundleError::InvalidArchive);
+            return Err(EspeakBundleError::InvalidArchive {
+                reason: "archive entry is not a file or a directory",
+            });
         }
         if relative.components().next() != Some(Component::Normal(ESPEAK_DATA_DIRECTORY.as_ref())) {
             continue;
@@ -151,32 +195,64 @@ fn extract_into(archive: &Path, stage: &Path) -> Result<(), EspeakBundleError> {
         found = true;
         let destination = stage.join(&relative);
         if kind.is_dir() {
-            fs::create_dir_all(&destination).map_err(|_| EspeakBundleError::Io)?;
+            fs::create_dir_all(&destination).map_err(|error| {
+                tracing::warn!(%error, "creating an extraction directory failed");
+                EspeakBundleError::Io {
+                    reason: "creating an extraction directory failed",
+                }
+            })?;
             continue;
         }
-        let size = entry
-            .header()
-            .size()
-            .map_err(|_| EspeakBundleError::InvalidArchive)?;
+        let size = entry.header().size().map_err(|error| {
+            tracing::warn!(%error, "reading an archive entry size failed");
+            EspeakBundleError::InvalidArchive {
+                reason: "reading an archive entry size failed",
+            }
+        })?;
         extracted = extracted
             .checked_add(size)
             .filter(|total| *total <= MAX_EXTRACTED_BYTES)
-            .ok_or(EspeakBundleError::InvalidArchive)?;
+            .ok_or(EspeakBundleError::InvalidArchive {
+                reason: "extracted size exceeds the limit",
+            })?;
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|_| EspeakBundleError::Io)?;
+            fs::create_dir_all(parent).map_err(|error| {
+                tracing::warn!(%error, "creating the parent directory failed");
+                EspeakBundleError::Io {
+                    reason: "creating the parent directory failed",
+                }
+            })?;
         }
-        let mut output = fs::File::create_new(&destination).map_err(|_| EspeakBundleError::Io)?;
-        let written = io::copy(&mut (&mut entry).take(size), &mut output)
-            .map_err(|_| EspeakBundleError::InvalidArchive)?;
+        let mut output = fs::File::create_new(&destination).map_err(|error| {
+            tracing::warn!(%error, "creating the extracted file failed");
+            EspeakBundleError::Io {
+                reason: "creating the extracted file failed",
+            }
+        })?;
+        let written = io::copy(&mut (&mut entry).take(size), &mut output).map_err(|error| {
+            tracing::warn!(%error, "copying the archive entry failed");
+            EspeakBundleError::InvalidArchive {
+                reason: "copying the archive entry failed",
+            }
+        })?;
         if written != size {
-            return Err(EspeakBundleError::InvalidArchive);
+            return Err(EspeakBundleError::InvalidArchive {
+                reason: "archive entry is shorter than its declared size",
+            });
         }
-        output.sync_all().map_err(|_| EspeakBundleError::Io)?;
+        output.sync_all().map_err(|error| {
+            tracing::warn!(%error, "syncing the extracted file failed");
+            EspeakBundleError::Io {
+                reason: "syncing the extracted file failed",
+            }
+        })?;
     }
     if found {
         Ok(())
     } else {
-        Err(EspeakBundleError::InvalidArchive)
+        Err(EspeakBundleError::InvalidArchive {
+            reason: "archive has no espeak data files",
+        })
     }
 }
 
@@ -187,7 +263,9 @@ fn archive_relative_path(path: &Path) -> Result<PathBuf, EspeakBundleError> {
             Component::Normal(part) => relative.push(part),
             Component::CurDir => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(EspeakBundleError::InvalidArchive);
+                return Err(EspeakBundleError::InvalidArchive {
+                    reason: "archive entry path escapes the extraction directory",
+                });
             }
         }
     }
@@ -318,10 +396,10 @@ mod tests {
         ] {
             let root = temp_root("espeak-reject");
             let archive = archive(&root, &entries);
-            assert_eq!(
+            assert!(matches!(
                 install_espeak_data(&archive, &root),
-                Err(EspeakBundleError::InvalidArchive)
-            );
+                Err(EspeakBundleError::InvalidArchive { .. })
+            ));
             assert!(!espeak_data_installed(&root));
             assert!(!root.join(STAGE_DIRECTORY).exists());
             assert!(!root.join("escaped").exists());

@@ -247,16 +247,16 @@ fn map_framing(error: FramingError) -> AdapterError {
 
 fn map_normalize(error: StreamNormalizeError, request_id: Option<String>) -> AdapterError {
     let reason = match &error {
-        StreamNormalizeError::MalformedJson => "malformed_json",
+        StreamNormalizeError::MalformedJson { .. } => "malformed_json",
         StreamNormalizeError::DataAfterTerminal => "data_after_terminal",
         StreamNormalizeError::PrematureEof => "premature_eof",
         StreamNormalizeError::OutputTooLarge { .. } => "output_too_large",
         StreamNormalizeError::EmptyResponse => "empty_response",
         StreamNormalizeError::Provider { .. } => "provider_error",
     };
-    tracing::warn!(reason, "provider stream normalization failed");
+    tracing::warn!(reason, %error, "provider stream normalization failed");
     match error {
-        StreamNormalizeError::MalformedJson
+        StreamNormalizeError::MalformedJson { .. }
         | StreamNormalizeError::DataAfterTerminal => AdapterError::MalformedResponse,
         StreamNormalizeError::PrematureEof => AdapterError::Transport,
         StreamNormalizeError::OutputTooLarge { .. } => AdapterError::Transport,

@@ -30,16 +30,25 @@ pub(crate) fn conversation_state_error(
         Error::AlreadyExists | Error::Conflict | Error::OperationMismatch => {
             lettuce_conversations::ConversationRepositoryError::Conflict
         }
-        _ => lettuce_conversations::ConversationRepositoryError::Storage,
+        Error::Invalid { reason } | Error::Corrupt { reason } | Error::Failure { reason } => {
+            lettuce_conversations::ConversationRepositoryError::Storage { reason }
+        }
+        _ => lettuce_conversations::ConversationRepositoryError::Storage {
+            reason: "conversation state error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
-fn failure(_: impl std::fmt::Debug) -> Error {
-    Error::Failure
+fn failure(error: impl std::fmt::Debug) -> Error {
+    Error::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> Error {
-    Error::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> Error {
+    Error::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 fn persona_key(owner: CompanionStateOwner) -> String {
@@ -50,7 +59,9 @@ fn persona_key(owner: CompanionStateOwner) -> String {
 }
 
 fn parse_companion_id<T: FromStr>(value: String) -> Result<T, Error> {
-    value.parse().map_err(|_| Error::Corrupt)
+    value.parse().map_err(|_| Error::Corrupt {
+        reason: "a stored companion id could not be parsed".to_owned(),
+    })
 }
 
 fn sql_revision(value: Revision) -> Result<i64, Error> {
@@ -61,7 +72,9 @@ fn parse_revision(value: i64) -> Result<Revision, Error> {
     let value = u64::try_from(value).map_err(corrupt)?;
     (value > 0)
         .then(|| Revision::new(value))
-        .ok_or(Error::Corrupt)
+        .ok_or_else(|| Error::Corrupt {
+            reason: "a stored companion revision is zero".to_owned(),
+        })
 }
 
 fn vector_values(vector: &EmotionVector) -> [f64; 10] {
@@ -246,7 +259,9 @@ pub(crate) fn get_in(
         .map(|value| PersonaId::from_str(&value).map_err(corrupt))
         .transpose()?;
     if stored_character != owner.character_id {
-        return Err(Error::Corrupt);
+        return Err(Error::Corrupt {
+            reason: "the stored companion state belongs to another character".to_owned(),
+        });
     }
     let relationship = read_relationship(tx, owner)?;
     let relationship = match relationship {
@@ -258,8 +273,14 @@ pub(crate) fn get_in(
                 ..owner
             },
         )?
-        .ok_or(Error::Corrupt)?,
-        None => return Err(Error::Corrupt),
+        .ok_or_else(|| Error::Corrupt {
+            reason: "the relationship of the stored persona is missing".to_owned(),
+        })?,
+        None => {
+            return Err(Error::Corrupt {
+                reason: "the relationship state of the companion is missing".to_owned(),
+            });
+        }
     };
     let state = CompanionRuntimeState {
         emotional_state: EmotionalState {
@@ -275,7 +296,9 @@ pub(crate) fn get_in(
         active_signals: read_signals(tx, owner.conversation_id, "active")?,
         updated_at: TimestampMillis::new(row.4),
     };
-    validate_runtime_state(&state).map_err(|_| Error::Corrupt)?;
+    validate_runtime_state(&state).map_err(|error| Error::Corrupt {
+        reason: format!("the stored runtime state is invalid: {error:?}"),
+    })?;
     Ok(Some(CompanionStateSnapshot {
         owner,
         session_revision: parse_revision(row.5)?,
@@ -325,7 +348,9 @@ pub(crate) fn read_private_relationships_in(
         });
     }
     if values.is_empty() {
-        return Err(Error::Corrupt);
+        return Err(Error::Corrupt {
+            reason: "the conversation has no stored relationship rows".to_owned(),
+        });
     }
     Ok(Some(values))
 }
@@ -336,7 +361,9 @@ pub(crate) fn write_private_relationships_in(
     values: &[lettuce_transfer::BackupCompanionRelationship],
 ) -> Result<(), Error> {
     if values.is_empty() {
-        return Err(Error::Invalid);
+        return Err(Error::Invalid {
+            reason: "the relationship backup has no values".to_owned(),
+        });
     }
     tx.execute(
         "UPDATE companion_session_states SET private_relationship = 1 WHERE conversation_id = ?1",
@@ -562,7 +589,10 @@ fn load_receipt(
                     .map_err(corrupt)?
             || row.8.len() != 32
         {
-            return Err(Error::Corrupt);
+            return Err(Error::Corrupt {
+                reason: "a stored receipt has a non-consecutive revision or a bad digest length"
+                    .to_owned(),
+            });
         }
         Ok((receipt, row.8))
     })
@@ -595,7 +625,9 @@ pub(crate) fn create_in(
         )
         .map_err(corrupt)?;
     if !valid_owner {
-        return Err(Error::Invalid);
+        return Err(Error::Invalid {
+            reason: "the state owner does not match a stored conversation".to_owned(),
+        });
     }
     if let Some(existing) = get_in(tx, owner)? {
         let stored_hash = tx
@@ -659,7 +691,9 @@ pub(crate) fn create_in(
         emotional,
         &initial.active_signals,
     )?;
-    get_in(tx, owner)?.ok_or(Error::Corrupt)
+    get_in(tx, owner)?.ok_or_else(|| Error::Corrupt {
+        reason: "the created companion state could not be read back".to_owned(),
+    })
 }
 
 pub(crate) fn ensure_continuity_episode_in(
@@ -1075,20 +1109,31 @@ impl CompanionConversationCreator for Database {
                     owner.character_id,
                     now,
                 )
-                .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+                .map_err(|error| {
+                    lettuce_conversations::ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }
+                })?;
                 if !crate::catalog::character_adapter::companion_soul_shared_in(
                     tx,
                     owner.character_id,
                 )
-                .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?
-                {
+                .map_err(|error| {
+                    lettuce_conversations::ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }
+                })? {
                     crate::companion::soul_adapter::seed_conversation_soul_in(
                         tx,
                         owner.character_id,
                         owner.conversation_id,
                         now,
                     )
-                    .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+                    .map_err(|error| {
+                        lettuce_conversations::ConversationRepositoryError::Storage {
+                            reason: format!("{error:?}"),
+                        }
+                    })?;
                 }
                 if time_awareness {
                     let settings = lettuce_conversations::CurrentConversationSettingsPatch {
@@ -1176,12 +1221,16 @@ impl CompanionConversationContinuer for Database {
     }
 }
 
-fn effect_failure(_: impl std::fmt::Debug) -> CompanionTurnEffectRepositoryError {
-    CompanionTurnEffectRepositoryError::Failure
+fn effect_failure(error: impl std::fmt::Debug) -> CompanionTurnEffectRepositoryError {
+    CompanionTurnEffectRepositoryError::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn effect_corrupt(_: impl std::fmt::Debug) -> CompanionTurnEffectRepositoryError {
-    CompanionTurnEffectRepositoryError::Corrupt
+fn effect_corrupt(error: impl std::fmt::Debug) -> CompanionTurnEffectRepositoryError {
+    CompanionTurnEffectRepositoryError::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 fn effect_conversation_error(
@@ -1191,7 +1240,9 @@ fn effect_conversation_error(
         CompanionTurnEffectRepositoryError::Conflict => {
             lettuce_conversations::ConversationRepositoryError::Conflict
         }
-        _ => lettuce_conversations::ConversationRepositoryError::Storage,
+        _ => lettuce_conversations::ConversationRepositoryError::Storage {
+            reason: "effect conversation error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
@@ -1436,7 +1487,11 @@ pub(crate) fn finalize_turn_effect_in(
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()
-        .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+        .map_err(
+            |error| lettuce_conversations::ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            },
+        )?;
     let Some((effect_id, user_message_id)) = draft else {
         return Ok(());
     };
@@ -1454,7 +1509,11 @@ pub(crate) fn finalize_turn_effect_in(
             now.get()
         ],
     )
-    .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+    .map_err(
+        |error| lettuce_conversations::ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        },
+    )?;
     Ok(())
 }
 
@@ -1465,7 +1524,10 @@ pub(crate) fn retry_turn_effect_draft_in(
     retry_turn_id: GenerationTurnId,
     now: TimestampMillis,
 ) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
-    let storage = |_| lettuce_conversations::ConversationRepositoryError::Storage;
+    let storage =
+        |error: rusqlite::Error| lettuce_conversations::ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        };
     tx.execute("INSERT INTO companion_turn_effect_drafts (conversation_id, turn_id, effect_id, user_message_id, closeness_delta, trust_delta, affection_delta, tension_delta, stability_delta, created_at) SELECT conversation_id, ?3, ?4, user_message_id, closeness_delta, trust_delta, affection_delta, tension_delta, stability_delta, ?5 FROM companion_turn_effect_drafts WHERE conversation_id = ?1 AND turn_id = ?2", params![conversation_id.to_string(), source_turn_id.to_string(), retry_turn_id.to_string(), CompanionEffectId::new().to_string(), now.get()]).map_err(storage)?;
     tx.execute("INSERT INTO companion_turn_effect_emotion_deltas (conversation_id, turn_id, kind, warmth, trust, calm, vulnerability, longing, hurt, tension, irritation, affection_intensity, reassurance_need) SELECT conversation_id, ?3, kind, warmth, trust, calm, vulnerability, longing, hurt, tension, irritation, affection_intensity, reassurance_need FROM companion_turn_effect_emotion_deltas WHERE conversation_id = ?1 AND turn_id = ?2", params![conversation_id.to_string(), source_turn_id.to_string(), retry_turn_id.to_string()]).map_err(storage)?;
     tx.execute("INSERT INTO companion_turn_effect_signal_changes (conversation_id, turn_id, change_kind, ordinal, value) SELECT conversation_id, ?3, change_kind, ordinal, value FROM companion_turn_effect_signal_changes WHERE conversation_id = ?1 AND turn_id = ?2", params![conversation_id.to_string(), source_turn_id.to_string(), retry_turn_id.to_string()]).map_err(storage)?;
@@ -1486,7 +1548,11 @@ pub(crate) fn discard_turn_effect_draft_in(
            )",
         params![conversation_id.to_string(), turn_id.to_string()],
     )
-    .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+    .map_err(
+        |error| lettuce_conversations::ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        },
+    )?;
     Ok(())
 }
 
@@ -1605,7 +1671,11 @@ pub(crate) fn load_effect(
         "processing" => CompanionTurnEffectStatus::Processing,
         "ready" => CompanionTurnEffectStatus::Ready,
         "failed" => CompanionTurnEffectStatus::Failed,
-        _ => return Err(CompanionTurnEffectRepositoryError::Corrupt),
+        _ => {
+            return Err(CompanionTurnEffectRepositoryError::Corrupt {
+                reason: "a stored effect status is not recognised".to_owned(),
+            });
+        }
     };
     let signal_sql = "SELECT value FROM companion_turn_effect_signal_changes
                       WHERE conversation_id = ?1 AND turn_id = ?2 AND change_kind = ?3
@@ -1682,7 +1752,9 @@ pub(crate) fn load_effect(
     };
     effect.seed.validate()?;
     if effect.updated_at < effect.created_at {
-        return Err(CompanionTurnEffectRepositoryError::Corrupt);
+        return Err(CompanionTurnEffectRepositoryError::Corrupt {
+            reason: "a stored effect was updated before it was created".to_owned(),
+        });
     }
     match stored_status {
         CompanionTurnEffectStatus::Processing
@@ -1692,10 +1764,11 @@ pub(crate) fn load_effect(
         CompanionTurnEffectStatus::Ready => CompanionTurnEffectOutcome::Ready {
             summary: effect.summary.clone(),
             memory_changes: effect.memory_changes.clone(),
-            source_window: effect
-                .source_window
-                .clone()
-                .ok_or(CompanionTurnEffectRepositoryError::Corrupt)?,
+            source_window: effect.source_window.clone().ok_or_else(|| {
+                CompanionTurnEffectRepositoryError::Corrupt {
+                    reason: "a ready effect has no source window".to_owned(),
+                }
+            })?,
         }
         .validate()?,
         CompanionTurnEffectStatus::Failed
@@ -1703,14 +1776,20 @@ pub(crate) fn load_effect(
                 && effect.source_window.is_none() =>
         {
             CompanionTurnEffectOutcome::Failed {
-                summary: effect
-                    .summary
-                    .clone()
-                    .ok_or(CompanionTurnEffectRepositoryError::Corrupt)?,
+                summary: effect.summary.clone().ok_or_else(|| {
+                    CompanionTurnEffectRepositoryError::Corrupt {
+                        reason: "a failed effect has no summary".to_owned(),
+                    }
+                })?,
             }
             .validate()?;
         }
-        _ => return Err(CompanionTurnEffectRepositoryError::Corrupt),
+        _ => {
+            return Err(CompanionTurnEffectRepositoryError::Corrupt {
+                reason: "a stored effect combines a status with fields that do not belong to it"
+                    .to_owned(),
+            });
+        }
     }
     if connection
         .query_row(
@@ -1820,7 +1899,9 @@ impl CompanionTurnEffectRepository for Database {
         limit: u16,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
         if limit == 0 || limit > 512 {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
+            return Err(CompanionTurnEffectRepositoryError::Invalid {
+                reason: "the processing effect limit is zero or above 512".to_owned(),
+            });
         }
         let connection = self.connection().map_err(effect_failure)?;
         let identities = {
@@ -1852,8 +1933,11 @@ impl CompanionTurnEffectRepository for Database {
                     ConversationId::from_str(&conversation_id).map_err(effect_corrupt)?;
                 let assistant_message_id =
                     MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
-                load_effect(&connection, conversation_id, assistant_message_id)?
-                    .ok_or(CompanionTurnEffectRepositoryError::Corrupt)
+                load_effect(&connection, conversation_id, assistant_message_id)?.ok_or_else(|| {
+                    CompanionTurnEffectRepositoryError::Corrupt {
+                        reason: "a listed effect row has no stored effect".to_owned(),
+                    }
+                })
             })
             .collect()
     }
@@ -1883,8 +1967,11 @@ impl CompanionTurnEffectRepository for Database {
             .map(|assistant_message_id| {
                 let assistant_message_id =
                     MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
-                load_effect(&connection, conversation_id, assistant_message_id)?
-                    .ok_or(CompanionTurnEffectRepositoryError::Corrupt)
+                load_effect(&connection, conversation_id, assistant_message_id)?.ok_or_else(|| {
+                    CompanionTurnEffectRepositoryError::Corrupt {
+                        reason: "a listed effect row has no stored effect".to_owned(),
+                    }
+                })
             })
             .collect()
     }
@@ -1895,7 +1982,9 @@ impl CompanionTurnEffectRepository for Database {
         limit: u16,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
         if limit == 0 || limit > 512 {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
+            return Err(CompanionTurnEffectRepositoryError::Invalid {
+                reason: "the processing effect limit is zero or above 512".to_owned(),
+            });
         }
         let connection = self.connection().map_err(effect_failure)?;
         let assistant_ids = {
@@ -1926,8 +2015,11 @@ impl CompanionTurnEffectRepository for Database {
             .map(|assistant_message_id| {
                 let assistant_message_id =
                     MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
-                load_effect(&connection, conversation_id, assistant_message_id)?
-                    .ok_or(CompanionTurnEffectRepositoryError::Corrupt)
+                load_effect(&connection, conversation_id, assistant_message_id)?.ok_or_else(|| {
+                    CompanionTurnEffectRepositoryError::Corrupt {
+                        reason: "a listed effect row has no stored effect".to_owned(),
+                    }
+                })
             })
             .collect()
     }
@@ -2012,8 +2104,12 @@ impl Database {
                 ConversationId::from_str(&conversation_id).map_err(effect_corrupt)?;
             let assistant_message_id =
                 MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
-            let existing = load_effect(&tx, conversation_id, assistant_message_id)?
-                .ok_or(CompanionTurnEffectRepositoryError::Corrupt)?;
+            let existing =
+                load_effect(&tx, conversation_id, assistant_message_id)?.ok_or_else(|| {
+                    CompanionTurnEffectRepositoryError::Corrupt {
+                        reason: "a settled effect row has no stored effect".to_owned(),
+                    }
+                })?;
             let exact = match (&existing.status, &outcome) {
                 (
                     CompanionTurnEffectStatus::Ready,
@@ -2040,7 +2136,9 @@ impl Database {
             return Ok(existing);
         }
         if now < TimestampMillis::new(created_at) {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
+            return Err(CompanionTurnEffectRepositoryError::Invalid {
+                reason: "the settlement time is before the effect was created".to_owned(),
+            });
         }
         let (status, summary, memory_changes, source_window) = match outcome {
             CompanionTurnEffectOutcome::Ready {
@@ -2065,7 +2163,10 @@ impl Database {
                 || actual != expected
                 || window.enqueued_at > now
             {
-                return Err(CompanionTurnEffectRepositoryError::Invalid);
+                return Err(CompanionTurnEffectRepositoryError::Invalid {
+                    reason: "the source window differs from the stored messages or was enqueued after the settlement"
+                        .to_owned(),
+                });
             }
         }
         let enqueued_at = source_window.as_ref().map(|value| value.enqueued_at.get());
@@ -2120,8 +2221,11 @@ impl Database {
         let conversation_id = ConversationId::from_str(&conversation_id).map_err(effect_corrupt)?;
         let assistant_message_id =
             MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
-        let effect = load_effect(&tx, conversation_id, assistant_message_id)?
-            .ok_or(CompanionTurnEffectRepositoryError::Corrupt)?;
+        let effect = load_effect(&tx, conversation_id, assistant_message_id)?.ok_or_else(|| {
+            CompanionTurnEffectRepositoryError::Corrupt {
+                reason: "the stored effect could not be read back".to_owned(),
+            }
+        })?;
         tx.commit().map_err(effect_failure)?;
         Ok(effect)
     }
@@ -2522,9 +2626,9 @@ mod tests {
                 [conversation_id.to_string()],
             )
             .expect("delete vector");
-        assert_eq!(
+        assert!(matches!(
             database.get(owner),
-            Err(CompanionStateRepositoryError::Corrupt)
-        );
+            Err(CompanionStateRepositoryError::Corrupt { .. })
+        ));
     }
 }

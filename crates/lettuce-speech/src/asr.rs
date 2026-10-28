@@ -127,7 +127,9 @@ impl TranscriptionOptions {
         validate_optional_text(&self.language, MAX_LANGUAGE_SCALARS)?;
         validate_optional_text(&self.initial_prompt, MAX_PROMPT_SCALARS)?;
         if self.scopes.len() > 8 {
-            return Err(AsrValidationError::InvalidOptions);
+            return Err(AsrValidationError::InvalidOptions {
+                reason: "options carry more than 8 scopes",
+            });
         }
         for scope in &self.scopes {
             validate_text(scope, MAX_SCOPE_SCALARS)?;
@@ -139,7 +141,9 @@ impl TranscriptionOptions {
             || self.temperature.is_some_and(|value| !value.is_finite())
             || self.temperature_inc.is_some_and(|value| !value.is_finite())
         {
-            return Err(AsrValidationError::InvalidOptions);
+            return Err(AsrValidationError::InvalidOptions {
+                reason: "thread count, gpu device or temperature option is out of range",
+            });
         }
         Ok(())
     }
@@ -217,14 +221,18 @@ impl TranscriptionResult {
             || self.sample_rate_hz != 16_000
             || self.segments.len() > MAX_SEGMENTS
         {
-            return Err(AsrValidationError::InvalidResult);
+            return Err(AsrValidationError::InvalidResult {
+                reason: "result does not match the request or exceeds the segment limit",
+            });
         }
         validate_result_text(&self.prompt)?;
         validate_result_text(&self.raw_text)?;
         validate_result_text(&self.corrected_text)?;
         validate_optional_text(&self.detected_language, MAX_LANGUAGE_SCALARS)?;
         if self.prompt.chars().count() > MAX_PROMPT_SCALARS {
-            return Err(AsrValidationError::InvalidResult);
+            return Err(AsrValidationError::InvalidResult {
+                reason: "prompt exceeds the scalar limit",
+            });
         }
         validate_segments(&self.segments)?;
         for correction in &self.applied_corrections {
@@ -232,7 +240,9 @@ impl TranscriptionResult {
                 || correction.correction_id.chars().count() > 128
                 || correction.correction_id.chars().any(char::is_control)
             {
-                return Err(AsrValidationError::InvalidResult);
+                return Err(AsrValidationError::InvalidResult {
+                    reason: "correction id is empty, too long or has control characters",
+                });
             }
             validate_result_text(&correction.wrong)?;
             validate_result_text(&correction.correct)?;
@@ -287,7 +297,9 @@ impl DecodedAudio {
                 .is_multiple_of(usize::from(self.channels))
             || self.samples.iter().any(|sample| !sample.is_finite())
         {
-            return Err(AsrAudioError::InvalidAudio);
+            return Err(AsrAudioError::InvalidAudio {
+                reason: "audio samples are oversized, misaligned or not finite",
+            });
         }
         Ok(())
     }
@@ -348,7 +360,9 @@ pub fn merge_transcription_prompt(
         .collect::<Vec<_>>()
         .join(" ");
     if prompt.chars().count() > MAX_PROMPT_SCALARS || prompt.contains('\0') {
-        return Err(AsrValidationError::InvalidOptions);
+        return Err(AsrValidationError::InvalidOptions {
+            reason: "prompt exceeds the scalar limit or contains a nul",
+        });
     }
     Ok(prompt)
 }
@@ -401,14 +415,19 @@ where
     AR: MediaAssetRepository,
 {
     fn decode(&self, asset_id: AssetId) -> Result<DecodedAudio, AsrAudioError> {
-        let opened = self
-            .open_ready(asset_id)
-            .map_err(|_| AsrAudioError::Unavailable)?;
+        let opened = self.open_ready(asset_id).map_err(|error| {
+            tracing::warn!(%error, "audio asset could not be opened as a ready blob");
+            AsrAudioError::Unavailable {
+                reason: "audio asset could not be opened as a ready blob",
+            }
+        })?;
         if !matches!(
             opened.asset.kind,
             AssetKind::MessageAudio | AssetKind::OtherAudio
         ) {
-            return Err(AsrAudioError::InvalidAudio);
+            return Err(AsrAudioError::InvalidAudio {
+                reason: "asset is not an audio kind",
+            });
         }
         let byte_size =
             usize::try_from(opened.blob.byte_size).map_err(|_| AsrAudioError::TooLarge)?;
@@ -417,9 +436,16 @@ where
             .reader
             .take(opened.blob.byte_size.saturating_add(1))
             .read_to_end(&mut bytes)
-            .map_err(|_| AsrAudioError::Unreadable)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "reading the audio blob failed");
+                AsrAudioError::Unreadable {
+                    reason: "reading the audio blob failed",
+                }
+            })?;
         if bytes.len() != byte_size {
-            return Err(AsrAudioError::Unreadable);
+            return Err(AsrAudioError::Unreadable {
+                reason: "audio blob length differs from its recorded size",
+            });
         }
         decode_wav(&bytes)
     }
@@ -427,7 +453,9 @@ where
 
 fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
     if bytes.len() < 44 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Err(AsrAudioError::UnsupportedFormat);
+        return Err(AsrAudioError::UnsupportedFormat {
+            reason: "wav header is missing the riff or wave marker",
+        });
     }
     let mut format = None;
     let mut data = None;
@@ -437,13 +465,17 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
         let size = usize::try_from(u32::from_le_bytes(
             bytes[cursor + 4..cursor + 8]
                 .try_into()
-                .map_err(|_| AsrAudioError::InvalidAudio)?,
+                .map_err(|_| AsrAudioError::InvalidAudio {
+                    reason: "wav chunk size field is truncated",
+                })?,
         ))
         .map_err(|_| AsrAudioError::TooLarge)?;
         let start = cursor + 8;
         let end = start.checked_add(size).ok_or(AsrAudioError::TooLarge)?;
         if end > bytes.len() {
-            return Err(AsrAudioError::InvalidAudio);
+            return Err(AsrAudioError::InvalidAudio {
+                reason: "wav chunk extends past the end of the data",
+            });
         }
         if id == b"fmt " {
             format = Some(&bytes[start..end]);
@@ -454,23 +486,32 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
     }
     let format = format
         .filter(|chunk| chunk.len() >= 16)
-        .ok_or(AsrAudioError::InvalidAudio)?;
-    let data = data.ok_or(AsrAudioError::InvalidAudio)?;
+        .ok_or(AsrAudioError::InvalidAudio {
+            reason: "wav fmt chunk is missing or shorter than 16 bytes",
+        })?;
+    let data = data.ok_or(AsrAudioError::InvalidAudio {
+        reason: "wav data chunk is missing",
+    })?;
     let codec = u16::from_le_bytes([format[0], format[1]]);
     let channels = u16::from_le_bytes([format[2], format[3]]);
     let sample_rate_hz = u32::from_le_bytes([format[4], format[5], format[6], format[7]]);
     let block_align = u16::from_le_bytes([format[12], format[13]]);
     let bits = u16::from_le_bytes([format[14], format[15]]);
-    let expected_block_align = channels
-        .checked_mul(bits / 8)
-        .ok_or(AsrAudioError::InvalidAudio)?;
+    let expected_block_align =
+        channels
+            .checked_mul(bits / 8)
+            .ok_or(AsrAudioError::InvalidAudio {
+                reason: "wav block alignment overflows",
+            })?;
     if bits == 0
         || bits % 8 != 0
         || block_align == 0
         || block_align != expected_block_align
         || data.len() % usize::from(block_align) != 0
     {
-        return Err(AsrAudioError::InvalidAudio);
+        return Err(AsrAudioError::InvalidAudio {
+            reason: "wav format fields are inconsistent",
+        });
     }
     let samples = match (codec, bits) {
         (1, 16) => data
@@ -505,7 +546,11 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
             .iter()
             .map(|chunk| f32::from_le_bytes(*chunk))
             .collect(),
-        _ => return Err(AsrAudioError::UnsupportedFormat),
+        _ => {
+            return Err(AsrAudioError::UnsupportedFormat {
+                reason: "wav sample encoding is not supported",
+            });
+        }
     };
     let audio = DecodedAudio {
         samples,
@@ -520,48 +565,48 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedAudio, AsrAudioError> {
 pub enum AsrValidationError {
     #[error("ASR model id is invalid")]
     InvalidModelId,
-    #[error("transcription options are invalid")]
-    InvalidOptions,
+    #[error("transcription options are invalid: {reason}")]
+    InvalidOptions { reason: &'static str },
     #[error("the selected model does not support the requested language")]
     UnsupportedLanguage,
-    #[error("transcription result is invalid")]
-    InvalidResult,
+    #[error("transcription result is invalid: {reason}")]
+    InvalidResult { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AsrAudioError {
-    #[error("audio is unavailable")]
-    Unavailable,
-    #[error("audio cannot be read")]
-    Unreadable,
-    #[error("audio format is unsupported")]
-    UnsupportedFormat,
-    #[error("audio is invalid")]
-    InvalidAudio,
+    #[error("audio is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("audio cannot be read: {reason}")]
+    Unreadable { reason: &'static str },
+    #[error("audio format is unsupported: {reason}")]
+    UnsupportedFormat { reason: &'static str },
+    #[error("audio is invalid: {reason}")]
+    InvalidAudio { reason: &'static str },
     #[error("audio exceeds the native sample-count range")]
     TooLarge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AsrLibraryError {
-    #[error("speech learning library is unavailable")]
-    Unavailable,
-    #[error("speech learning library returned invalid data")]
-    InvalidData,
+    #[error("speech learning library is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("speech learning library returned invalid data: {reason}")]
+    InvalidData { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AsrRuntimeError {
     #[error("transcription was cancelled")]
     Cancelled,
-    #[error("speech runtime is unavailable")]
-    Unavailable,
-    #[error("speech model is unavailable")]
-    ModelUnavailable,
-    #[error("speech runtime rejected the request")]
-    Rejected,
-    #[error("speech runtime failed")]
-    Failed,
+    #[error("speech runtime is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("speech model is unavailable: {reason}")]
+    ModelUnavailable { reason: &'static str },
+    #[error("speech runtime rejected the request: {reason}")]
+    Rejected { reason: &'static str },
+    #[error("speech runtime failed: {reason}")]
+    Failed { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -570,10 +615,10 @@ pub enum TranscriptionRepositoryError {
     NotFound,
     #[error("transcription conflicts with durable state")]
     Conflict,
-    #[error("transcription data are invalid")]
-    InvalidData,
-    #[error("transcription storage failed")]
-    Storage,
+    #[error("transcription data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("transcription storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 fn validate_text(value: &str, max: usize) -> Result<(), AsrValidationError> {
@@ -582,7 +627,9 @@ fn validate_text(value: &str, max: usize) -> Result<(), AsrValidationError> {
         || value.chars().count() > max
         || value.chars().any(char::is_control)
     {
-        return Err(AsrValidationError::InvalidOptions);
+        return Err(AsrValidationError::InvalidOptions {
+            reason: "text is empty, too long or has control characters",
+        });
     }
     Ok(())
 }
@@ -596,14 +643,18 @@ fn validate_optional_text(value: &Option<String>, max: usize) -> Result<(), AsrV
 
 fn validate_result_text(value: &str) -> Result<(), AsrValidationError> {
     if value.chars().count() > MAX_RESULT_TEXT_SCALARS || value.contains('\0') {
-        return Err(AsrValidationError::InvalidResult);
+        return Err(AsrValidationError::InvalidResult {
+            reason: "result text exceeds the scalar limit or contains a nul",
+        });
     }
     Ok(())
 }
 
 fn validate_segments(segments: &[TranscriptionSegment]) -> Result<(), AsrValidationError> {
     if segments.len() > MAX_SEGMENTS {
-        return Err(AsrValidationError::InvalidResult);
+        return Err(AsrValidationError::InvalidResult {
+            reason: "segment count exceeds the limit",
+        });
     }
     for (index, segment) in segments.iter().enumerate() {
         if usize::try_from(segment.index).ok() != Some(index)
@@ -611,7 +662,9 @@ fn validate_segments(segments: &[TranscriptionSegment]) -> Result<(), AsrValidat
             || !segment.no_speech_probability.is_finite()
             || !(0.0..=1.0).contains(&segment.no_speech_probability)
         {
-            return Err(AsrValidationError::InvalidResult);
+            return Err(AsrValidationError::InvalidResult {
+                reason: "segment index, time range or probability is invalid",
+            });
         }
         validate_result_text(&segment.text)?;
     }
@@ -652,13 +705,19 @@ mod tests {
             sample_rate_hz: 16_000,
             channels: 1,
         };
-        assert_eq!(nonfinite.validate(), Err(AsrAudioError::InvalidAudio));
+        assert!(matches!(
+            nonfinite.validate(),
+            Err(AsrAudioError::InvalidAudio { .. })
+        ));
         let unaligned = DecodedAudio {
             samples: vec![0.0, 0.0, 0.0],
             sample_rate_hz: 16_000,
             channels: 2,
         };
-        assert_eq!(unaligned.validate(), Err(AsrAudioError::InvalidAudio));
+        assert!(matches!(
+            unaligned.validate(),
+            Err(AsrAudioError::InvalidAudio { .. })
+        ));
     }
 
     #[test]
@@ -702,7 +761,10 @@ mod tests {
         wav[34..36].copy_from_slice(&16_u16.to_le_bytes());
         wav[36..40].copy_from_slice(b"data");
         wav[40..44].copy_from_slice(&1_u32.to_le_bytes());
-        assert_eq!(decode_wav(&wav), Err(AsrAudioError::InvalidAudio));
+        assert!(matches!(
+            decode_wav(&wav),
+            Err(AsrAudioError::InvalidAudio { .. })
+        ));
     }
 
     #[test]

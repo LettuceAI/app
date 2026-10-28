@@ -13,12 +13,18 @@ use crate::lorebook::lorebook_adapter::OwnerKind;
 
 type Error = ProviderBackupRestoreWriteError;
 
-fn storage<E>(_: E) -> Error {
-    Error::Storage
+fn storage<E: std::fmt::Debug>(error: E) -> Error {
+    tracing::warn!(?error, "a provider backup restore write step failed");
+    Error::Storage {
+        reason: "a provider backup restore write step failed",
+    }
 }
 
-fn invalid<E>(_: E) -> Error {
-    Error::InvalidData
+fn invalid<E: std::fmt::Debug>(error: E) -> Error {
+    tracing::warn!(?error, "a provider backup restore value is invalid");
+    Error::InvalidData {
+        reason: "a provider backup restore value is invalid",
+    }
 }
 
 fn sql_revision(revision: Revision) -> Result<i64, Error> {
@@ -69,7 +75,12 @@ impl ProviderBackupRestoreWriter for Database {
                     "INSERT INTO app_usage_days (day, active_ms, updated_at) VALUES (?1, ?2, ?3)",
                     params![
                         day.day,
-                        i64::try_from(day.active_ms).map_err(|_| Error::InvalidData)?,
+                        i64::try_from(day.active_ms).map_err(|error| {
+                            tracing::warn!(%error, "restore provider backup graph failed");
+                            Error::InvalidData {
+                                reason: "restore provider backup graph: a value could not be read or converted",
+                            }
+                        })?,
                         day.updated_at.get()
                     ],
                 )
@@ -333,7 +344,9 @@ impl ProviderBackupRestoreWriter for Database {
                 .pools
                 .iter()
                 .find(|pool| pool.space_id == space.id)
-                .ok_or(Error::InvalidData)?;
+                .ok_or(Error::InvalidData {
+                    reason: "restore provider backup graph: a required value is missing",
+                })?;
             transaction
                 .execute(
                     "INSERT INTO memory_spaces (id, revision) VALUES (?1, ?2)",
@@ -662,7 +675,9 @@ impl ProviderBackupRestoreWriter for Database {
                 )
                 .map_err(invalid)?;
             if stored != pool.space_id.to_string() {
-                return Err(Error::InvalidData);
+                return Err(Error::InvalidData {
+                    reason: "restore provider backup graph: a value failed validation",
+                });
             }
         }
         for record in &graph.memory.manual_edits {
@@ -789,7 +804,12 @@ impl ProviderBackupRestoreWriter for Database {
                 &transaction,
                 project,
             )
-            .map_err(|_| Error::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "restore provider backup graph failed");
+                Error::InvalidData {
+                    reason: "restore provider backup graph: a value could not be read or converted",
+                }
+            })?;
         }
         for run in &creation.staged_lorebooks {
             crate::lorebook::staged_lorebook_adapter::insert_restored_in(&transaction, run)
@@ -844,7 +864,9 @@ impl ProviderBackupRestoreWriter for Database {
             let trigger: String = transaction.query_row("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'usage_events_require_attempt'", [], |row| row.get(0)).map_err(invalid)?;
             transaction.execute_batch("DROP TRIGGER usage_events_require_attempt").map_err(invalid)?;
             for entry in detached {
-                let conversation_id = entry.conversation_id.ok_or(Error::InvalidData)?;
+                let conversation_id = entry.conversation_id.ok_or(Error::InvalidData {
+                    reason: "restore provider backup graph: a required value is missing",
+                })?;
                 crate::usage_adapter::insert_usage_event_in(&transaction, &conversation_id.to_string(), &entry.event).map_err(invalid)?;
             }
             transaction.execute_batch(&trigger).map_err(invalid)?;
@@ -866,9 +888,13 @@ impl ProviderBackupRestoreWriter for Database {
             rusqlite::Error::SqliteFailure(failure, _)
                 if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
             {
-                Error::InvalidData
+                Error::InvalidData {
+                    reason: "restore provider backup graph: a value failed validation",
+                }
             }
-            _ => Error::Storage,
+            _ => Error::Storage {
+                reason: "restore provider backup graph: a stored value is not recognised",
+            },
         })
     }
 }

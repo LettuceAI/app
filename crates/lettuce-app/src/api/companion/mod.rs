@@ -28,8 +28,8 @@ fn soul_error(error: SoulRepositoryError) -> ApiError {
             | SoulRepositoryError::AlreadyExists
             | SoulRepositoryError::OperationMismatch => ApiErrorCode::Conflict,
             SoulRepositoryError::Invalid(_)
-            | SoulRepositoryError::Corrupt
-            | SoulRepositoryError::Failure => ApiErrorCode::Internal,
+            | SoulRepositoryError::Corrupt { .. }
+            | SoulRepositoryError::Failure { .. } => ApiErrorCode::Internal,
         },
         format!("the Soul could not be updated: {error:?}"),
     )
@@ -41,9 +41,9 @@ fn note_error(error: CompanionScheduledNoteError) -> ApiError {
             CompanionScheduledNoteError::NotFound
             | CompanionScheduledNoteError::CharacterNotFound => ApiErrorCode::NotFound,
             CompanionScheduledNoteError::NotCompanion => ApiErrorCode::Unsupported,
-            CompanionScheduledNoteError::Invalid => ApiErrorCode::InvalidInput,
+            CompanionScheduledNoteError::Invalid { .. } => ApiErrorCode::InvalidInput,
             CompanionScheduledNoteError::Conflict => ApiErrorCode::Conflict,
-            CompanionScheduledNoteError::Failure | CompanionScheduledNoteError::Corrupt => {
+            CompanionScheduledNoteError::Failure { .. } | CompanionScheduledNoteError::Corrupt { .. } => {
                 ApiErrorCode::Internal
             }
         },

@@ -45,12 +45,12 @@ pub enum ImageProfileError {
     AccountMismatch,
     #[error("the image model's provider account is disabled")]
     AccountDisabled,
-    #[error("the image model's provider connection is invalid")]
-    InvalidConnection,
+    #[error("the image model's provider connection is invalid: {reason}")]
+    InvalidConnection { reason: &'static str },
     #[error("the model does not generate images")]
     NotAnImageModel,
-    #[error("the image model's settings are invalid")]
-    InvalidSettings,
+    #[error("the image model's settings are invalid: {reason}")]
+    InvalidSettings { reason: &'static str },
 }
 
 /// Any model whose output scopes include images is an image model, whatever
@@ -65,7 +65,12 @@ pub fn resolve_image_profile(
     if !account.enabled {
         return Err(ImageProfileError::AccountDisabled);
     }
-    validate_provider_connection(account).map_err(|_| ImageProfileError::InvalidConnection)?;
+    validate_provider_connection(account).map_err(|error| {
+        tracing::warn!(?error, "provider connection failed validation");
+        ImageProfileError::InvalidConnection {
+            reason: "provider connection failed validation",
+        }
+    })?;
     let capabilities = &profile.config.capabilities;
     if capabilities.output_modalities.image != CapabilityStatus::Supported {
         return Err(ImageProfileError::NotAnImageModel);
@@ -74,7 +79,12 @@ pub fn resolve_image_profile(
         .config
         .stable_diffusion
         .validate()
-        .map_err(|_| ImageProfileError::InvalidSettings)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "stable diffusion settings failed validation");
+            ImageProfileError::InvalidSettings {
+                reason: "stable diffusion settings failed validation",
+            }
+        })?;
     Ok(ResolvedImageProfile {
         model_profile_id: profile.id,
         model_revision: profile.revision,

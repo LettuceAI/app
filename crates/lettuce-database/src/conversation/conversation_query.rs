@@ -62,7 +62,9 @@ fn encode_cursor(
         text: text.to_owned(),
         number,
     })
-    .map_err(|_| ConversationRepositoryError::Storage)?;
+    .map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
@@ -97,15 +99,23 @@ fn validate_cursor_number(
     if valid { Ok(()) } else { Err(cursor_error()) }
 }
 
-pub(crate) fn parse<T: FromStr>(value: String) -> Result<T, ConversationRepositoryError> {
+pub(crate) fn parse<T: FromStr>(value: String) -> Result<T, ConversationRepositoryError>
+where
+    T::Err: std::fmt::Debug,
+{
     value
         .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        })
 }
 
 pub(crate) fn parse_opt<T: FromStr>(
     value: Option<String>,
-) -> Result<Option<T>, ConversationRepositoryError> {
+) -> Result<Option<T>, ConversationRepositoryError>
+where
+    T::Err: std::fmt::Debug,
+{
     value.map(parse).transpose()
 }
 
@@ -118,7 +128,9 @@ fn open_read<'a>(
 ) -> Result<crate::write_fence::DatabaseConnection<'a>, ConversationRepositoryError> {
     database
         .connection()
-        .map_err(|_| ConversationRepositoryError::Storage)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })
 }
 
 pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationRepositoryError> {
@@ -152,7 +164,11 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "resolve_speaker" => OperationKind::ResolveSpeaker,
         "append_message" => OperationKind::AppendMessage,
         "prepare_generation" => OperationKind::PrepareGeneration,
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "operation kind: a stored value is not recognised".to_owned(),
+            });
+        }
     })
 }
 
@@ -163,7 +179,9 @@ pub(crate) fn generation_operation(
         "send" => Ok(GenerationOperation::Send),
         "continue" => Ok(GenerationOperation::Continue),
         "regenerate" => Ok(GenerationOperation::Regenerate),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "generation operation: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -184,7 +202,11 @@ pub(crate) fn generation_status(
         "cancelled" => Cancelled,
         "interrupted" => Interrupted,
         "recovering" => Recovering,
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "generation status: a stored value is not recognised".to_owned(),
+            });
+        }
     })
 }
 
@@ -200,7 +222,11 @@ pub(crate) fn attempt_status(
         "failed" => Failed,
         "cancelled" => Cancelled,
         "interrupted" => Interrupted,
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "attempt status: a stored value is not recognised".to_owned(),
+            });
+        }
     })
 }
 
@@ -221,7 +247,9 @@ pub(crate) fn failure(
             "recovery_unavailable" => Ok(GenerationFailureCode::RecoveryUnavailable),
             "embedding_unavailable" => Ok(GenerationFailureCode::EmbeddingUnavailable),
             "internal" => Ok(GenerationFailureCode::Internal),
-            _ => Err(ConversationRepositoryError::Storage),
+            _ => Err(ConversationRepositoryError::Storage {
+                reason: "failure: stored data failed a consistency check".to_owned(),
+            }),
         })
         .transpose()
 }
@@ -232,7 +260,9 @@ pub(crate) fn message_role(value: &str) -> Result<MessageRole, ConversationRepos
         "assistant" => Ok(MessageRole::Assistant),
         "system" => Ok(MessageRole::System),
         "scene" => Ok(MessageRole::Scene),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "message role: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -243,7 +273,9 @@ pub(crate) fn message_visibility(
         "visible" => Ok(MessageVisibility::Visible),
         "hidden" => Ok(MessageVisibility::Hidden),
         "tombstoned" => Ok(MessageVisibility::Tombstoned),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "message visibility: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -252,7 +284,9 @@ pub(crate) fn replay_codec(value: &str) -> Result<ReplayCodec, ConversationRepos
         "json" => Ok(ReplayCodec::Json),
         "cbor" => Ok(ReplayCodec::Cbor),
         "binary" => Ok(ReplayCodec::Binary),
-        _ => Err(ConversationRepositoryError::Storage),
+        _ => Err(ConversationRepositoryError::Storage {
+            reason: "replay codec: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -265,10 +299,14 @@ pub(crate) fn replay_ref(
         return Ok(None);
     }
     let (Some(artifact_id), Some(retention)) = (artifact_id, retention) else {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "replay ref: stored data failed a consistency check".to_owned(),
+        });
     };
     if retention != "conversation" {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "replay ref: stored data failed a consistency check".to_owned(),
+        });
     }
     let (digest, schema, size, codec, stored_retention): (String, i64, i64, String, String) = transaction
         .query_row(
@@ -278,22 +316,35 @@ pub(crate) fn replay_ref(
         )
         .optional()
         .map_err(slice::db)?
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage { reason: "replay ref: a required value is missing".to_owned() })?;
     if stored_retention != "conversation" {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "replay ref: stored data failed a consistency check".to_owned(),
+        });
     }
     let reference = ReplayArtifactRef {
         artifact_id: parse(artifact_id)?,
         digest: digest
             .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?,
-        schema_version: u32::try_from(schema).map_err(|_| ConversationRepositoryError::Storage)?,
-        byte_size: u64::try_from(size).map_err(|_| ConversationRepositoryError::Storage)?,
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: format!("{error}"),
+            })?,
+        schema_version: u32::try_from(schema).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?,
+        byte_size: u64::try_from(size).map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         retention: ReplayRetention::Conversation,
         codec: replay_codec(&codec)?,
     };
-    conversation_artifact_adapter::verify_replay_in_transaction(transaction, &reference)
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+    conversation_artifact_adapter::verify_replay_in_transaction(transaction, &reference).map_err(
+        |error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        },
+    )?;
     Ok(Some(reference))
 }
 
@@ -340,7 +391,9 @@ pub(crate) fn verify_media_projection(
                     || !matches!(actual.3.as_str(), "active" | "historical")
             })
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "verify media projection: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(())
 }
@@ -377,13 +430,21 @@ pub(crate) fn validate_outbox_event_exact(
                     )
                     .map_err(slice::db)?;
                 if origins != 0 {
-                    return Err(ConversationRepositoryError::Storage);
+                    return Err(ConversationRepositoryError::Storage {
+                        reason:
+                            "validate outbox event exact: stored data failed a consistency check"
+                                .to_owned(),
+                    });
                 }
                 return Ok(());
             }
-            let head = head_message_id
-                .as_ref()
-                .ok_or(ConversationRepositoryError::Storage)?;
+            let head =
+                head_message_id
+                    .as_ref()
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "validate outbox event exact: a required value is missing"
+                            .to_owned(),
+                    })?;
             let chain: Vec<(String, Option<String>, i64)> = transaction
                 .prepare(
                     "WITH RECURSIVE chain(id, parent_message_id, depth) AS (
@@ -416,12 +477,18 @@ pub(crate) fn validate_outbox_event_exact(
                 || total_origins != i64::from(*initial_message_count)
                 || !has_terminal_root(&chain)
             {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "validate outbox event exact: stored data failed a consistency check"
+                        .to_owned(),
+                });
             }
             for (index, (message_id, parent_message_id, _depth)) in chain.iter().enumerate() {
                 let message_id: MessageId = slice::parse_id(message_id.clone())?;
                 let origin = hydrate_initial_origin(transaction, conversation_id, message_id)?
-                    .ok_or(ConversationRepositoryError::Storage)?;
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "validate outbox event exact: a required value is missing"
+                            .to_owned(),
+                    })?;
                 validate_initial_origin_message(
                     transaction,
                     conversation_id,
@@ -431,7 +498,11 @@ pub(crate) fn validate_outbox_event_exact(
                 if matches!(origin, InitialMessageOrigin::SelectedScene { .. })
                     && (index + 1 != chain.len() || parent_message_id.is_some())
                 {
-                    return Err(ConversationRepositoryError::Storage);
+                    return Err(ConversationRepositoryError::Storage {
+                        reason:
+                            "validate outbox event exact: stored data failed a consistency check"
+                                .to_owned(),
+                    });
                 }
             }
         }
@@ -768,7 +839,10 @@ pub(crate) fn validate_outbox_event_exact(
                 )?;
             }
             if message_revision_id.is_none() == candidate_id.is_none() {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "validate outbox event exact: stored data failed a consistency check"
+                        .to_owned(),
+                });
             }
             for delta in changes {
                 validate_asset_delta(transaction, conversation_id, delta)?;
@@ -812,7 +886,9 @@ pub(crate) fn hydrate_revision_row(
     };
     value
         .validate()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     let owner_ok: bool = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2 AND branch_id = ?3)",
@@ -821,7 +897,9 @@ pub(crate) fn hydrate_revision_row(
         )
         .map_err(slice::db)?;
     if !owner_ok {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate revision row: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(value)
 }
@@ -857,8 +935,11 @@ pub(crate) fn hydrate_candidate_row(
         turn_id,
         attempt_id,
         author_participant_id: parse(row.get::<_, String>(12).map_err(slice::db)?)?,
-        ordinal: u16::try_from(row.get::<_, i64>(6).map_err(slice::db)?)
-            .map_err(|_| ConversationRepositoryError::Storage)?,
+        ordinal: u16::try_from(row.get::<_, i64>(6).map_err(slice::db)?).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?,
         parts,
         model,
         created_at: timestamp(row.get(9).map_err(slice::db)?),
@@ -866,7 +947,9 @@ pub(crate) fn hydrate_candidate_row(
     };
     value
         .validate()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     let owner_ok: bool = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2 AND branch_id = ?3) AND EXISTS(SELECT 1 FROM conversation_turns WHERE conversation_id = ?1 AND id = ?4 AND branch_id = ?3)",
@@ -875,7 +958,9 @@ pub(crate) fn hydrate_candidate_row(
         )
         .map_err(slice::db)?;
     if !owner_ok {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate candidate row: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(value)
 }
@@ -892,7 +977,11 @@ pub(crate) fn message_row(
     let active_render_source = match (active_revision_id, active_candidate_id) {
         (Some(id), None) => MessageRenderSource::Revision(id),
         (None, Some(id)) => MessageRenderSource::Candidate(id),
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "message row: a stored value is not recognised".to_owned(),
+            });
+        }
     };
     let message = Message {
         id,
@@ -913,7 +1002,9 @@ pub(crate) fn message_row(
     };
     message
         .validate()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     let active_revision = if let Some(revision_id) = active_revision_id {
         let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
         Some(
@@ -927,7 +1018,9 @@ pub(crate) fn message_row(
                 )
                 .optional()
                 .map_err(slice::db)?
-                .ok_or(ConversationRepositoryError::Storage)?,
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "message row: a required value is missing".to_owned(),
+                })?,
         )
     } else {
         None
@@ -945,7 +1038,9 @@ pub(crate) fn message_row(
                 )
                 .optional()
                 .map_err(slice::db)?
-                .ok_or(ConversationRepositoryError::Storage)?,
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "message row: a required value is missing".to_owned(),
+                })?,
         )
     } else {
         None
@@ -957,7 +1052,9 @@ pub(crate) fn message_row(
             .as_ref()
             .is_some_and(|value| value.message_id != message.id)
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "message row: stored data failed a consistency check".to_owned(),
+        });
     }
     let initial_origin = hydrate_initial_origin(transaction, conversation_id, id)?;
     let copied_scene_source = hydrate_copied_scene_source(transaction, conversation_id, id)?;
@@ -965,7 +1062,9 @@ pub(crate) fn message_row(
         && initial_origin.is_none()
         && copied_scene_source.is_none()
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "message row: stored data failed a consistency check".to_owned(),
+        });
     }
     validate_initial_origin_message(transaction, conversation_id, id, initial_origin.as_ref())?;
     Ok((
@@ -999,16 +1098,30 @@ pub(crate) fn hydrate_copied_scene_source(
         artifact_id: parse(artifact_id)?,
         digest: digest
             .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?,
-        schema_version: u32::try_from(schema_version)
-            .map_err(|_| ConversationRepositoryError::Storage)?,
-        byte_size: u64::try_from(byte_size).map_err(|_| ConversationRepositoryError::Storage)?,
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: format!("{error}"),
+            })?,
+        schema_version: u32::try_from(schema_version).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?,
+        byte_size: u64::try_from(byte_size).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?,
     };
     reference
         .validate()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     if hydrate_initial_origin(transaction, conversation_id, message_id)?.is_some() {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate copied scene source: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     validate_initial_origin_message(
         transaction,
@@ -1047,7 +1160,9 @@ fn validate_initial_origin_message(
             let parts: Vec<MessagePart> = slice::decode(&parts_json)?;
             for part in &parts {
                 part.validate()
-                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?;
             }
             parts
         }
@@ -1062,17 +1177,30 @@ fn validate_initial_origin_message(
                     |part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()),
                 )
             {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason:
+                        "validate initial origin message: stored data failed a consistency check"
+                            .to_owned(),
+                });
             }
         }
         InitialMessageOrigin::StarterMessage { .. } => {
             let Some(author) = author else {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason:
+                        "validate initial origin message: stored data failed a consistency check"
+                            .to_owned(),
+                });
             };
             let expected_role = match role.as_str() {
                 "user" => "user",
                 "assistant" => "character",
-                _ => return Err(ConversationRepositoryError::Storage),
+                _ => {
+                    return Err(ConversationRepositoryError::Storage {
+                        reason: "validate initial origin message: a stored value is not recognised"
+                            .to_owned(),
+                    });
+                }
             };
             let participant_role: String = transaction
                 .query_row(
@@ -1082,7 +1210,11 @@ fn validate_initial_origin_message(
                 )
                 .map_err(slice::db)?;
             if participant_role != expected_role {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason:
+                        "validate initial origin message: stored data failed a consistency check"
+                            .to_owned(),
+                });
             }
         }
     }
@@ -1129,13 +1261,19 @@ fn hydrate_initial_origin(
         return Ok(None);
     };
     if kind != artifact_kind {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate initial origin: stored data failed a consistency check".to_owned(),
+        });
     }
     let source_revision = slice::rev(source_revision)?;
     let source = match kind.as_str() {
         "scene" => lettuce_conversations::SnapshotSource::Scene(parse(source_id)?),
         "starter" => lettuce_conversations::SnapshotSource::Starter(parse(source_id)?),
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "hydrate initial origin: a stored value is not recognised".to_owned(),
+            });
+        }
     };
     let reference = ProtectedSnapshotRef {
         source,
@@ -1143,14 +1281,25 @@ fn hydrate_initial_origin(
         artifact_id: parse(artifact_id)?,
         digest: digest
             .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?,
-        schema_version: u32::try_from(schema_version)
-            .map_err(|_| ConversationRepositoryError::Storage)?,
-        byte_size: u64::try_from(byte_size).map_err(|_| ConversationRepositoryError::Storage)?,
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: format!("{error}"),
+            })?,
+        schema_version: u32::try_from(schema_version).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?,
+        byte_size: u64::try_from(byte_size).map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?,
     };
     reference
         .validate()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     let origin = match kind.as_str() {
         "scene" if starter_message_id.is_none() => InitialMessageOrigin::SelectedScene {
             snapshot_ref: reference,
@@ -1161,7 +1310,11 @@ fn hydrate_initial_origin(
                 starter_message_id: parse(starter_message_id)?,
             }
         }
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "hydrate initial origin: a stored value is not recognised".to_owned(),
+            });
+        }
     };
 
     // The normalized origin row is only an index into the immutable artifact
@@ -1212,14 +1365,18 @@ fn hydrate_initial_origin(
         },
     };
     let Some((selected_ref, _)) = selected_ref else {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate initial origin: stored data failed a consistency check".to_owned(),
+        });
     };
     let origin_ref = match &origin {
         InitialMessageOrigin::SelectedScene { snapshot_ref }
         | InitialMessageOrigin::StarterMessage { snapshot_ref, .. } => snapshot_ref,
     };
     if origin_ref != selected_ref {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate initial origin: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(Some(origin))
 }
@@ -1234,7 +1391,9 @@ pub(crate) fn branch_path(
     let mut current = Some(selected);
     while let Some(id) = current {
         if !visited.insert(id) {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "branch path: stored data failed a consistency check".to_owned(),
+            });
         }
         let mut statement = transaction.prepare("SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
         let branch = statement
@@ -1247,7 +1406,9 @@ pub(crate) fn branch_path(
             .ok_or(if id == selected {
                 ConversationRepositoryError::NotFound
             } else {
-                ConversationRepositoryError::Storage
+                ConversationRepositoryError::Storage {
+                    reason: "branch path: stored data failed a consistency check".to_owned(),
+                }
             })?;
         current = branch.parent_branch_id;
         path.push(branch);
@@ -1265,7 +1426,9 @@ fn hydrate_timeline(
     let branches = branch_path(transaction, conversation_id, branch_id)?;
     let selected = branches
         .last()
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "hydrate timeline: a required value is missing".to_owned(),
+        })?;
     if selected.status != lettuce_conversations::BranchStatus::Active {
         return Err(ConversationRepositoryError::Invalid(
             lettuce_conversations::ValidationError::InvalidReference {
@@ -1327,7 +1490,9 @@ fn hydrate_timeline(
     };
     result
         .validate_page()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     Ok(result)
 }
 
@@ -1355,7 +1520,9 @@ fn active_branch_path(
     let branches = branch_path(transaction, conversation_id, branch_id)?;
     let selected = branches
         .last()
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "active branch path: a required value is missing".to_owned(),
+        })?;
     if selected.status != lettuce_conversations::BranchStatus::Active {
         return Err(ConversationRepositoryError::Invalid(
             lettuce_conversations::ValidationError::InvalidReference {
@@ -1432,7 +1599,9 @@ pub(crate) fn any_on_other_branches(
             .map(ToString::to_string)
             .collect::<Vec<_>>(),
     )
-    .map_err(|_| ConversationRepositoryError::Storage)?;
+    .map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     transaction
         .query_row(
             &format!(
@@ -1592,7 +1761,9 @@ fn hydrate_timeline_after(
     };
     result
         .validate_page()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     Ok((result, item_cursors))
 }
 
@@ -1652,9 +1823,14 @@ pub(crate) fn hydrate_branch_timeline_all(
     let branches = branch_path(transaction, conversation_id, branch_id)?;
     let selected = branches
         .last()
-        .ok_or(ConversationRepositoryError::Storage)?;
+        .ok_or_else(|| ConversationRepositoryError::Storage {
+            reason: "hydrate branch timeline all: a required value is missing".to_owned(),
+        })?;
     if selected.status != lettuce_conversations::BranchStatus::Active {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate branch timeline all: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     let mut statement = transaction
         .prepare("SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m WHERE m.conversation_id = ?1 AND m.branch_id = ?2 ORDER BY m.timeline_ordinal, m.id")
@@ -1670,7 +1846,10 @@ pub(crate) fn hydrate_branch_timeline_all(
     {
         let (item, ordinal) = row.map_err(slice::db)?;
         if ordinal != last_ordinal + 1 {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "hydrate branch timeline all: stored data failed a consistency check"
+                    .to_owned(),
+            });
         }
         last_ordinal = ordinal;
         items.push(item);
@@ -1686,7 +1865,9 @@ pub(crate) fn hydrate_branch_timeline_all(
     };
     result
         .validate_page()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     Ok(result)
 }
 
@@ -1698,7 +1879,9 @@ pub(crate) fn stored_speaker(
         return Ok(None);
     }
     let (Some(participant_id), Some(payload)) = (participant_id, payload) else {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "stored speaker: stored data failed a consistency check".to_owned(),
+        });
     };
     let participant_id: ConversationParticipantId = parse(participant_id)?;
     #[derive(Debug, Deserialize)]
@@ -1776,12 +1959,18 @@ pub(crate) fn hydrate_attempts(
         let value = GenerationAttempt {
             id,
             turn_id,
-            ordinal: u16::try_from(ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+            ordinal: u16::try_from(ordinal).map_err(|error| {
+                ConversationRepositoryError::Storage {
+                    reason: format!("{error:?}"),
+                }
+            })?,
             parent_attempt_id: parse_opt(parent)?,
             status: status_value,
-            job_idempotency_key: key
-                .parse()
-                .map_err(|_| ConversationRepositoryError::Storage)?,
+            job_idempotency_key: key.parse().map_err(|error| {
+                ConversationRepositoryError::Storage {
+                    reason: format!("{error}"),
+                }
+            })?,
             job_id: parse_opt(job)?,
             started_at: started.map(timestamp),
             finished_at: finished.map(timestamp),
@@ -1791,7 +1980,9 @@ pub(crate) fn hydrate_attempts(
         };
         value
             .validate()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         attempts.push(value);
     }
     Ok((attempts, all_candidates))
@@ -1843,7 +2034,9 @@ fn hydrate_turn_row_inner(
     let conversation_id: ConversationId = parse(row.get::<_, String>(0).map_err(slice::db)?)?;
     let id: GenerationTurnId = parse(row.get::<_, String>(1).map_err(slice::db)?)?;
     if !visited.insert(id) {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate turn row inner: stored data failed a consistency check".to_owned(),
+        });
     }
     let branch_id: ConversationBranchId = parse(row.get::<_, String>(2).map_err(slice::db)?)?;
     let operation = generation_operation(&row.get::<_, String>(3).map_err(slice::db)?)?;
@@ -1858,7 +2051,11 @@ fn hydrate_turn_row_inner(
             message_id: parse(row.get::<_, String>(7).map_err(slice::db)?)?,
             candidate_id: parse(row.get::<_, String>(8).map_err(slice::db)?)?,
         },
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "hydrate turn row inner: a stored value is not recognised".to_owned(),
+            });
+        }
     };
     let status = generation_status(&row.get::<_, String>(10).map_err(slice::db)?)?;
     let selected_speaker = stored_speaker(
@@ -1883,7 +2080,9 @@ fn hydrate_turn_row_inner(
         || prompt_id.is_some() != prompt_entry_ids_json.is_some()
         || prompt_id.is_some() != prompt_name.is_some()
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate turn row inner: stored data failed a consistency check".to_owned(),
+        });
     }
     let selected_entry_ids: Option<Vec<PromptEntryId>> = prompt_entry_ids_json
         .map(|entry_ids_json| slice::decode(&entry_ids_json))
@@ -1927,7 +2126,11 @@ fn hydrate_turn_row_inner(
                 prior_candidate_id,
             }
         }
-        _ => return Err(ConversationRepositoryError::Storage),
+        _ => {
+            return Err(ConversationRepositoryError::Storage {
+                reason: "hydrate turn row inner: a stored value is not recognised".to_owned(),
+            });
+        }
     };
     let guidance = row.get::<_, Option<String>>(28).map_err(slice::db)?;
     let requested_model_override = row
@@ -1945,14 +2148,18 @@ fn hydrate_turn_row_inner(
         .get::<_, String>(9)
         .map_err(slice::db)?
         .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error}"),
+        })?;
     let correlation_id = row
         .get::<_, Option<String>>(23)
         .map_err(slice::db)?
         .map(|value| {
             value
                 .parse()
-                .map_err(|_| ConversationRepositoryError::Storage)
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: format!("{error}"),
+                })
         })
         .transpose()?;
     let (attempts, candidate_ids) = hydrate_attempts(transaction, conversation_id, id)?;
@@ -1997,7 +2204,9 @@ fn hydrate_turn_row_inner(
     };
     value
         .validate(group)
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     if let Some(source_id) = value.retry_of_turn_id {
         let source_sql = format!(
             "{} WHERE conversation_id = ?1 AND id = ?2",
@@ -2014,10 +2223,14 @@ fn hydrate_turn_row_inner(
             )
             .optional()
             .map_err(slice::db)?
-            .ok_or(ConversationRepositoryError::Storage)?;
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "hydrate turn row inner: a required value is missing".to_owned(),
+            })?;
         value
             .validate_retry_against(&source, group)
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
     }
     Ok(value)
 }
@@ -2042,7 +2255,9 @@ pub(crate) fn owned_ref(
     if present {
         Ok(())
     } else {
-        Err(ConversationRepositoryError::Storage)
+        Err(ConversationRepositoryError::Storage {
+            reason: "owned ref: stored data failed a consistency check".to_owned(),
+        })
     }
 }
 
@@ -2061,7 +2276,10 @@ pub(crate) fn validate_character_participant(
     if valid {
         Ok(())
     } else {
-        Err(ConversationRepositoryError::Storage)
+        Err(ConversationRepositoryError::Storage {
+            reason: "validate character participant: stored data failed a consistency check"
+                .to_owned(),
+        })
     }
 }
 
@@ -2073,7 +2291,7 @@ pub(crate) fn validate_operation_result_ownership(
     match result {
         OperationResultRef::Conversation(id) => {
             if *id != conversation_id {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage { reason: "validate operation result ownership: stored data failed a consistency check".to_owned() });
             }
         }
         OperationResultRef::Turn(id) => {
@@ -2115,7 +2333,9 @@ pub(crate) fn require_exists<P: rusqlite::Params>(
     if exists {
         Ok(())
     } else {
-        Err(ConversationRepositoryError::Storage)
+        Err(ConversationRepositoryError::Storage {
+            reason: "require exists: stored data failed a consistency check".to_owned(),
+        })
     }
 }
 
@@ -2132,7 +2352,10 @@ pub(crate) fn validate_asset_delta(
     match delta.retainer {
         AssetRetainer::Conversation(id) => {
             if id != conversation_id {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "validate asset delta: stored data failed a consistency check"
+                        .to_owned(),
+                });
             }
         }
         AssetRetainer::Message(id) => owned_ref(
@@ -2235,7 +2458,10 @@ pub(crate) fn validate_outbox_event_timestamp(
     if event_at == record.at {
         Ok(())
     } else {
-        Err(ConversationRepositoryError::Storage)
+        Err(ConversationRepositoryError::Storage {
+            reason: "validate outbox event timestamp: stored data failed a consistency check"
+                .to_owned(),
+        })
     }
 }
 
@@ -2619,13 +2845,18 @@ pub(crate) fn unique_message_conversation(
     }
     drop(statement);
     if values.len() > 1 {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "unique message conversation: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     values
         .pop()
         .ok_or(ConversationRepositoryError::NotFound)?
         .parse()
-        .map_err(|_| ConversationRepositoryError::Storage)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error}"),
+        })
 }
 
 fn read_revision_page(
@@ -2758,8 +2989,11 @@ impl lettuce_conversations::ConversationLaunchIntentReader for Database {
             .map_err(slice::db)?;
         digest
             .map(|digest| {
-                lettuce_types::ContentHash::parse(digest)
-                    .map_err(|_| ConversationRepositoryError::Storage)
+                lettuce_types::ContentHash::parse(digest).map_err(|error| {
+                    ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }
+                })
             })
             .transpose()
     }
@@ -2775,7 +3009,9 @@ impl lettuce_conversations::ConversationChangeFeed for Database {
                 |row| row.get(0),
             )
             .map_err(slice::db)?;
-        u64::try_from(position.unwrap_or(0)).map_err(|_| ConversationRepositoryError::Storage)
+        u64::try_from(position.unwrap_or(0)).map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })
     }
 
     fn conversation_changes_since(
@@ -2802,8 +3038,11 @@ impl lettuce_conversations::ConversationChangeFeed for Database {
             let (conversation_id, position, removed) = row.map_err(slice::db)?;
             changes.push(lettuce_conversations::ConversationChange {
                 conversation_id: parse(conversation_id)?,
-                position: u64::try_from(position)
-                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                position: u64::try_from(position).map_err(|error| {
+                    ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }
+                })?,
                 removed: removed != 0,
             });
         }
@@ -2817,7 +3056,9 @@ impl lettuce_conversations::ConversationChangeFeed for Database {
                 row.get(0)
             })
             .map_err(slice::db)?;
-        u64::try_from(position.unwrap_or(0)).map_err(|_| ConversationRepositoryError::Storage)
+        u64::try_from(position.unwrap_or(0)).map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })
     }
 
     fn message_signals_since(
@@ -2854,8 +3095,11 @@ impl Database {
         {
             let (position, kind, conversation_id, message_id) = row.map_err(slice::db)?;
             signals.push(lettuce_conversations::MessageSignal {
-                position: u64::try_from(position)
-                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                position: u64::try_from(position).map_err(|error| {
+                    ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }
+                })?,
                 kind: match kind.as_str() {
                     "companion_effect_settled" => {
                         lettuce_conversations::MessageSignalKind::CompanionEffectSettled
@@ -2863,7 +3107,12 @@ impl Database {
                     "scene_image_changed" => {
                         lettuce_conversations::MessageSignalKind::SceneImageChanged
                     }
-                    _ => return Err(ConversationRepositoryError::Storage),
+                    _ => {
+                        return Err(ConversationRepositoryError::Storage {
+                            reason: "message signal rows: a stored value is not recognised"
+                                .to_owned(),
+                        });
+                    }
                 },
                 conversation_id: parse(conversation_id)?,
                 message_id: parse(message_id)?,
@@ -2889,7 +3138,9 @@ impl lettuce_conversations::LiveTurnReader for Database {
             ids.push(
                 id.map_err(slice::db)?
                     .parse::<GenerationTurnId>()
-                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
             );
         }
         Ok(ids)
@@ -2942,7 +3193,7 @@ impl lettuce_conversations::ConversationOverviewReader for Database {
             "WITH RECURSIVE ancestry(branch_id, id) AS (SELECT branch.id, coalesce(branch.head_message_id, branch.fork_message_id) FROM conversation_branches AS branch WHERE branch.conversation_id = ?1 AND branch.status <> 'tombstoned' AND coalesce(branch.head_message_id, branch.fork_message_id) IS NOT NULL UNION ALL SELECT ancestry.branch_id, message.parent_message_id FROM ancestry JOIN conversation_messages AS message ON message.conversation_id = ?1 AND message.id = ancestry.id WHERE message.parent_message_id IS NOT NULL) SELECT ancestry.branch_id, count(*) FROM ancestry JOIN conversation_messages AS message ON message.conversation_id = ?1 AND message.id = ancestry.id WHERE message.visibility = 'visible' GROUP BY ancestry.branch_id",
         ).map_err(slice::db)?.query_map([conversation_id.to_string()], |row| Ok((row.get(0)?, row.get::<_, i64>(1)?))).map_err(slice::db)?.map(|row| {
             let (id, count) = row.map_err(slice::db)?;
-            Ok((id, u64::try_from(count).map_err(|_| ConversationRepositoryError::Storage)?))
+            Ok((id, u64::try_from(count).map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?))
         }).collect::<Result<_, ConversationRepositoryError>>()?;
         let revision = aggregate.conversation.revision;
         let branches = aggregate
@@ -3052,7 +3303,9 @@ impl lettuce_conversations::ConversationOverviewReader for Database {
             if count > 0 {
                 counts.push((
                     *message_id,
-                    u32::try_from(count).map_err(|_| ConversationRepositoryError::Storage)?,
+                    u32::try_from(count).map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                 ));
             }
         }
@@ -3273,7 +3526,9 @@ fn overview_conversation(
     if let Some(settings) = &settings {
         settings
             .validate_against_kind(&conversation.kind)
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
     }
     conversation.current_settings = settings;
     Ok(conversation)
@@ -3294,7 +3549,9 @@ fn message_counts(
             .map(ToString::to_string)
             .collect::<Vec<_>>(),
     )
-    .map_err(|_| ConversationRepositoryError::Storage)?;
+    .map_err(|error| ConversationRepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     let mut statement = transaction
         .prepare("WITH RECURSIVE ancestry(conversation_id, id) AS (SELECT branch.conversation_id, coalesce(branch.head_message_id, branch.fork_message_id) FROM conversations AS conversation JOIN conversation_branches AS branch ON branch.conversation_id = conversation.id AND branch.id = conversation.active_branch_id WHERE conversation.id IN (SELECT value FROM json_each(?1)) AND coalesce(branch.head_message_id, branch.fork_message_id) IS NOT NULL UNION ALL SELECT m.conversation_id, m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.conversation_id = ancestry.conversation_id AND m.id = ancestry.id WHERE m.parent_message_id IS NOT NULL) SELECT m.conversation_id, count(*) FROM conversation_messages AS m JOIN ancestry ON m.conversation_id = ancestry.conversation_id AND m.id = ancestry.id WHERE m.visibility = 'visible' AND m.role <> 'system' GROUP BY m.conversation_id")
         .map_err(slice::db)?;
@@ -3308,7 +3565,9 @@ fn message_counts(
         let (conversation_id, count) = row.map_err(slice::db)?;
         counts.insert(
             parse(conversation_id)?,
-            u64::try_from(count).map_err(|_| ConversationRepositoryError::Storage)?,
+            u64::try_from(count).map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
         );
     }
     Ok(counts)
@@ -3534,7 +3793,9 @@ impl ConversationReader for Database {
         }
         drop(statement);
         if values.len() > 1 {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "get message revision: stored data failed a consistency check".to_owned(),
+            });
         }
         transaction.commit().map_err(slice::db)?;
         values.pop().ok_or(ConversationRepositoryError::NotFound)
@@ -3575,7 +3836,9 @@ impl ConversationReader for Database {
         }
         drop(statement);
         if values.len() > 1 {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "get candidate: stored data failed a consistency check".to_owned(),
+            });
         }
         transaction.commit().map_err(slice::db)?;
         values.pop().ok_or(ConversationRepositoryError::NotFound)
@@ -3617,7 +3880,9 @@ impl ConversationReader for Database {
         }
         drop(statement);
         if values.len() > 1 {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "get turn: stored data failed a consistency check".to_owned(),
+            });
         }
         transaction.commit().map_err(slice::db)?;
         values.pop().ok_or(ConversationRepositoryError::NotFound)
@@ -3718,12 +3983,18 @@ impl ConversationReader for Database {
             return Err(ConversationRepositoryError::NotFound);
         }
         let kind_name = serde_json::to_value(kind)
-            .map_err(|_| ConversationRepositoryError::Storage)?
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?
             .as_str()
-            .ok_or(ConversationRepositoryError::Storage)?
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "operation record: a required value is missing".to_owned(),
+            })?
             .to_owned();
         if operation_kind(&kind_name)? != kind {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "operation record: stored data failed a consistency check".to_owned(),
+            });
         }
         let row: Option<(String, String, String, String, String, String, i64)> = transaction.query_row("SELECT id, operation_key, request_digest, result_kind, result_id, result_json, created_at FROM conversation_operations WHERE conversation_id = ?1 AND kind = ?2 AND operation_key = ?3", params![conversation_id.to_string(), kind_name, token.key.as_str()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))).optional().map_err(slice::db)?;
         let Some((operation_id, key, digest, result_kind, result_id, result_json, created_at)) =
@@ -3732,12 +4003,17 @@ impl ConversationReader for Database {
             transaction.commit().map_err(slice::db)?;
             return Ok(None);
         };
-        let stored_key: lettuce_jobs::IdempotencyKey = key
-            .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
-        let stored_digest: lettuce_types::ContentHash = digest
-            .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let stored_key: lettuce_jobs::IdempotencyKey =
+            key.parse()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: format!("{error}"),
+                })?;
+        let stored_digest: lettuce_types::ContentHash =
+            digest
+                .parse()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: format!("{error}"),
+                })?;
         if stored_digest != token.request_digest {
             return Err(ConversationRepositoryError::Conflict);
         }
@@ -3752,7 +4028,11 @@ impl ConversationReader for Database {
                 OperationResultRef::Candidate(value)
             }
             ("branch", OperationResultRef::Branch(value)) => OperationResultRef::Branch(value),
-            _ => return Err(ConversationRepositoryError::Storage),
+            _ => {
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "operation record: a stored value is not recognised".to_owned(),
+                });
+            }
         };
         let projected_id = match &expected {
             OperationResultRef::Conversation(value) => value.to_string(),
@@ -3762,7 +4042,9 @@ impl ConversationReader for Database {
             OperationResultRef::Branch(value) => value.to_string(),
         };
         if projected_id != result_id {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "operation record: stored data failed a consistency check".to_owned(),
+            });
         }
         validate_operation_result_ownership(&transaction, conversation_id, &expected)?;
         let value = OperationRecord {
@@ -3844,11 +4126,15 @@ impl ConversationReader for Database {
             let value = row.map_err(slice::db)?;
             value
                 .validate()
-                .map_err(|_| ConversationRepositoryError::Storage)?;
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
             validate_outbox_event_timestamp(&value)?;
             let operation_exists: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_operations WHERE conversation_id = ?1 AND id = ?2)", params![conversation_id.to_string(), value.operation_record_id.to_string()], |row| row.get(0)).map_err(slice::db)?;
             if !operation_exists {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "page outbox: stored data failed a consistency check".to_owned(),
+                });
             }
             let operation_kind: String = transaction
                 .query_row(
@@ -3862,7 +4148,9 @@ impl ConversationReader for Database {
                 ConversationOutboxEvent::ConversationCreated { .. }
             );
             if (operation_kind == "create") != is_created {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "page outbox: stored data failed a consistency check".to_owned(),
+                });
             }
             validate_outbox_event(&transaction, &value)?;
             items.push(value);
@@ -3874,8 +4162,11 @@ impl ConversationReader for Database {
                 Some(encode_cursor(
                     &scope,
                     &last.id.to_string(),
-                    i64::try_from(last.sequence)
-                        .map_err(|_| ConversationRepositoryError::Storage)?,
+                    i64::try_from(last.sequence).map_err(|error| {
+                        ConversationRepositoryError::Storage {
+                            reason: error.to_string(),
+                        }
+                    })?,
                 )?)
             } else {
                 None
@@ -4363,10 +4654,10 @@ mod tests {
             )
             .expect("typed id corruption fixture");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             database.get_turn(current_turn),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -4539,10 +4830,10 @@ mod tests {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .expect("transaction");
-        assert_eq!(
+        assert!(matches!(
             validate_outbox_event_exact(&transaction, &corrupt_record),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         transaction.rollback().expect("validation rollback");
         drop(connection);
         database
@@ -4643,10 +4934,10 @@ mod tests {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .expect("transaction");
-        assert_eq!(
+        assert!(matches!(
             validate_outbox_event_exact(&transaction, &record),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -4670,15 +4961,15 @@ mod tests {
         conversation_id: ConversationId,
         branch_id: lettuce_types::ConversationBranchId,
     ) {
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::timeline_page(
                 database,
                 conversation_id,
                 branch_id,
                 &PageRequest::default(),
             ),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -5254,10 +5545,10 @@ mod tests {
         assert_eq!(older.items.len(), 1);
         assert!(older.next_cursor.is_none());
         database.connection().expect("connection").execute("UPDATE conversation_replay_artifacts SET bytes = ?1 WHERE artifact_id = (SELECT provider_replay_artifact_id FROM conversation_message_revisions WHERE id = ?2)", params![b"broken".to_vec(), revision_id.to_string()]).expect("tamper");
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::get_message_revision(&database, revision_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -5282,10 +5573,10 @@ mod tests {
             )
             .expect("second cycle edge");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::get_turn(&database, current_turn),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -5406,10 +5697,10 @@ mod tests {
             )
             .expect("tamper media role");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::get_message_revision(&database, revision_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -5497,30 +5788,30 @@ mod tests {
             .expect("duplicate turn");
         transaction.commit().expect("commit");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::page_message_revisions(
                 &database,
                 first_message,
                 &PageRequest::default()
             ),
-            Err(ConversationRepositoryError::Storage)
-        );
-        assert_eq!(
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
+        assert!(matches!(
             ConversationReader::page_candidates(&database, first_message, &PageRequest::default()),
-            Err(ConversationRepositoryError::Storage)
-        );
-        assert_eq!(
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
+        assert!(matches!(
             ConversationReader::get_message_revision(&database, first_revision),
-            Err(ConversationRepositoryError::Storage)
-        );
-        assert_eq!(
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
+        assert!(matches!(
             ConversationReader::get_candidate(&database, first_candidate),
-            Err(ConversationRepositoryError::Storage)
-        );
-        assert_eq!(
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
+        assert!(matches!(
             ConversationReader::get_turn(&database, first_turn),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -5596,15 +5887,15 @@ mod tests {
             )
             .expect("foreign result");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::operation_record(
                 &database,
                 conversation_id,
                 OperationKind::Send,
                 &token
             ),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
 
         let event = ConversationOutboxEvent::ConversationTombstoned {
             conversation_id,
@@ -5673,10 +5964,10 @@ mod tests {
             )
             .expect("tamper outbox timestamp");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::page_outbox(&database, conversation_id, &PageRequest::default()),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         let connection = database.connection().expect("connection");
         connection
             .execute(
@@ -5685,15 +5976,15 @@ mod tests {
             )
             .expect("tamper result id");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::operation_record(
                 &database,
                 conversation_id,
                 OperationKind::Send,
                 &token
             ),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]
@@ -5966,10 +6257,10 @@ mod tests {
             )
             .expect("corrupt selected speaker");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             ConversationReader::get_turn(&database, turn_id),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
     }
 
     #[test]

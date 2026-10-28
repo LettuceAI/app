@@ -114,7 +114,9 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         handle: &JobHandle,
     ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
         if calls.is_empty() {
-            return Err(DynamicMemoryPreparationError::InvalidExecution);
+            return Err(DynamicMemoryPreparationError::InvalidExecution {
+                reason: "no tool calls to prepare",
+            });
         }
         let run_id = calls[0].run_id;
         let attempt_id = calls[0].attempt_id;
@@ -122,8 +124,12 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         let mut previous = None;
         let mut ids = HashSet::with_capacity(calls.len());
         for call in calls {
-            call.validate()
-                .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?;
+            call.validate().map_err(|error| {
+                tracing::warn!(%error, "tool call evidence failed validation");
+                DynamicMemoryPreparationError::InvalidExecution {
+                    reason: "tool call evidence failed validation",
+                }
+            })?;
             if call.run_id != run_id
                 || call.attempt_id != attempt_id
                 || call.round_ordinal != round_ordinal
@@ -131,7 +137,9 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 || previous.is_some_and(|ordinal| call.ordinal != ordinal + 1)
                 || !ids.insert(call.id)
             {
-                return Err(DynamicMemoryPreparationError::InvalidExecution);
+                return Err(DynamicMemoryPreparationError::InvalidExecution {
+                    reason: "tool calls differ in run, attempt, round, version or ordinal order",
+                });
             }
             previous = Some(call.ordinal);
         }
@@ -183,12 +191,16 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                     .filter(|(_, _, name, _)| *name == "create_memory")
                     .count()
         {
-            return Err(DynamicMemoryPreparationError::InvalidSeeds);
+            return Err(DynamicMemoryPreparationError::InvalidSeeds {
+                reason: "seed count differs from the create_memory call count",
+            });
         }
         let mut prepared = Vec::with_capacity(seeds.len());
         for (execution_id, definition_version, name, value) in calls {
             if definition_version != TOOL_VERSION {
-                return Err(DynamicMemoryPreparationError::InvalidExecution);
+                return Err(DynamicMemoryPreparationError::InvalidExecution {
+                    reason: "tool call uses an unsupported definition version",
+                });
             }
             let arguments = MemoryToolArguments::parse_or_skip(name, value);
             let MemoryToolArguments::CreateMemory { text, .. } = arguments else {
@@ -197,9 +209,12 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 }
                 continue;
             };
-            let seed = seeds
-                .remove(&execution_id)
-                .ok_or(DynamicMemoryPreparationError::InvalidSeeds)?;
+            let seed =
+                seeds
+                    .remove(&execution_id)
+                    .ok_or(DynamicMemoryPreparationError::InvalidSeeds {
+                        reason: "create_memory call has no seed",
+                    })?;
             if cancellation.is_cancelled() {
                 return Err(DynamicMemoryPreparationError::Cancelled);
             }
@@ -263,7 +278,9 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
             });
         }
         if !seeds.is_empty() {
-            return Err(DynamicMemoryPreparationError::InvalidSeeds);
+            return Err(DynamicMemoryPreparationError::InvalidSeeds {
+                reason: "seeds are left over after matching the calls",
+            });
         }
         Ok(prepared)
     }
@@ -284,19 +301,21 @@ fn validate_embedding_admission(
             .iter()
             .any(|resource| !claim.resources.contains(resource))
     {
-        return Err(DynamicMemoryPreparationError::InvalidAdmission);
+        return Err(DynamicMemoryPreparationError::InvalidAdmission {
+            reason: "claim does not belong to the job, is not cooperative or lacks a required resource",
+        });
     }
     Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum DynamicMemoryPreparationError {
-    #[error("embedding job admission is invalid")]
-    InvalidAdmission,
-    #[error("dynamic-memory execution is invalid or not running")]
-    InvalidExecution,
-    #[error("dynamic-memory create seeds are invalid")]
-    InvalidSeeds,
+    #[error("embedding job admission is invalid: {reason}")]
+    InvalidAdmission { reason: &'static str },
+    #[error("dynamic-memory execution is invalid or not running: {reason}")]
+    InvalidExecution { reason: &'static str },
+    #[error("dynamic-memory create seeds are invalid: {reason}")]
+    InvalidSeeds { reason: &'static str },
     #[error("dynamic-memory preparation was cancelled")]
     Cancelled,
     #[error("the embedding model dynamic memory needs is unavailable")]

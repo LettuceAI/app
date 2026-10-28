@@ -94,7 +94,12 @@ async fn run_cycle(keep: bool, cancel: bool) {
         if round > 0 { assert_eq!(observed.embeddings.load(Ordering::SeqCst), round * 2); }
         if cancel && round == 1 { cancellation.cancel(); }
         let candidate = outcome.candidates.first_mut().expect("candidate");
-        candidate.parts.clear();
+        // OpenRouter-style replies can include reasoning and visible text
+        // alongside every recursive tool round, including the final `done`.
+        candidate.parts = vec![
+            lettuce_conversations::MessagePart::ReasoningSummary { text: "Reviewing lasting facts.".into() },
+            lettuce_conversations::MessagePart::Text { text: format!("Memory round {round}.") },
+        ];
         if round < 2 {
             candidate.tool_calls = (0..2).map(|item| lettuce_conversations::ProposedToolCall {
                 provider_call_id: Some(format!("create-{round}-{item}")),

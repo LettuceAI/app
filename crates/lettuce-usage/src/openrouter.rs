@@ -40,7 +40,9 @@ impl OpenRouterCostEvidence {
             || generation.generation_id.trim().is_empty()
             || generation.model.trim().is_empty()
         {
-            return Err(crate::UsageLedgerError::Invalid);
+            return Err(crate::UsageLedgerError::Invalid {
+                reason: "generation id does not match the response id or generation id or model is blank",
+            });
         }
         let mut billing = usage.clone();
         billing.input_tokens = generation

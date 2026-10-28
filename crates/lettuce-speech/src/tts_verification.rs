@@ -14,8 +14,8 @@ pub trait AudioProviderVerifier: Send + Sync {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AudioProviderVerificationError {
-    #[error("audio provider verification input is invalid")]
-    InvalidInput,
-    #[error("audio provider verification is temporarily unavailable")]
-    Unavailable,
+    #[error("audio provider verification input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
+    #[error("audio provider verification is temporarily unavailable: {reason}")]
+    Unavailable { reason: &'static str },
 }

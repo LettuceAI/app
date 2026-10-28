@@ -406,10 +406,10 @@ pub type AssetReference = AssetRetainer;
 /// Errors while reading typed asset associations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum AssetReferenceReaderError {
-    #[error("asset reference data are invalid")]
-    InvalidData,
-    #[error("asset reference storage failed")]
-    Storage,
+    #[error("asset reference data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("asset reference storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// Reads domain-owned references that keep an asset reachable.

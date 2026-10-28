@@ -29,10 +29,14 @@ fn verify_usage(
     let Some((admission, result)) = usage else {
         return Err(ConversationRepositoryError::Conflict);
     };
-    let admission: lettuce_usage::JobInferenceUsage =
-        crate::decode_versioned(&admission, 1).map_err(|_| ConversationRepositoryError::Storage)?;
-    let result: lettuce_usage::JobInferenceUsageResult =
-        crate::decode_versioned(&result, 1).map_err(|_| ConversationRepositoryError::Storage)?;
+    let admission: lettuce_usage::JobInferenceUsage = crate::decode_versioned(&admission, 1)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        })?;
+    let result: lettuce_usage::JobInferenceUsageResult = crate::decode_versioned(&result, 1)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        })?;
     admission
         .validate_result_snapshot(&result)
         .map_err(|_| ConversationRepositoryError::Conflict)?;
@@ -110,13 +114,18 @@ fn load_attempt(
     if stored_job_id != job_id.to_string() {
         return Err(ConversationRepositoryError::Conflict);
     }
-    let request_fingerprint: [u8; 32] = fingerprint
-        .try_into()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+    let request_fingerprint: [u8; 32] =
+        fingerprint
+            .try_into()
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: format!("{error:?}"),
+            })?;
     let decision: Option<lettuce_conversations::SelectedSpeakerDecision> =
         decision.as_deref().map(slice::decode).transpose()?;
     if decision.is_some() != settled_at.is_some() || settled_at.is_some_and(|at| at < admitted_at) {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "load attempt: stored data failed a consistency check".to_owned(),
+        });
     }
     let record = SpeakerInferenceRecord {
         binding: SpeakerInferenceBinding {
@@ -126,17 +135,21 @@ fn load_attempt(
             job_id,
             request_fingerprint,
         },
-        usage_event_id: usage_event_id
-            .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?,
+        usage_event_id: usage_event_id.parse().map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: format!("{error}"),
+            }
+        })?,
         admitted_at: TimestampMillis::new(admitted_at),
         decision,
         settled_at: settled_at.map(TimestampMillis::new),
     };
     if let Some(decision) = &record.decision {
-        decision
-            .validate_for_persistence()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        decision.validate_for_persistence().map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+        })?;
         verify_usage(transaction, &record, decision)?;
     }
     Ok(Some(record))
@@ -171,9 +184,11 @@ impl SpeakerInferenceRepository for Database {
         &self,
         binding: &SpeakerInferenceBinding,
     ) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection.transaction().map_err(slice::db)?;
         let record = load(&transaction, binding)?;
         transaction.commit().map_err(slice::db)?;
@@ -187,9 +202,11 @@ impl SpeakerInferenceRepository for Database {
         attempt_id: GenerationAttemptId,
         job_id: JobId,
     ) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection.transaction().map_err(slice::db)?;
         let record = load_attempt(&transaction, conversation_id, turn_id, attempt_id, job_id)?;
         transaction.commit().map_err(slice::db)?;
@@ -204,9 +221,11 @@ impl SpeakerInferenceRepository for Database {
     ) -> Result<SpeakerInferenceAdmission, ConversationRepositoryError> {
         let binding = SpeakerInferenceBinding::from_request(conversation_id, request)
             .map_err(ConversationRepositoryError::Invalid)?;
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(slice::db)?;
@@ -280,9 +299,11 @@ impl SpeakerInferenceRepository for Database {
         {
             return Err(ConversationRepositoryError::Conflict);
         }
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(slice::db)?;

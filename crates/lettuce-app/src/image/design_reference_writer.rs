@@ -67,12 +67,12 @@ pub enum DesignReferenceError {
     NoContent,
     #[error("Design reference writer model is invalid: {0}")]
     InvalidModel(lettuce_models::ChatProfileResolutionError),
-    #[error("Design reference prompt is unavailable")]
-    MissingPrompt,
-    #[error("Design reference prompt could not be rendered")]
-    InvalidPrompt,
-    #[error("design reference storage failed")]
-    Storage,
+    #[error("Design reference prompt is unavailable: {reason}")]
+    MissingPrompt { reason: String },
+    #[error("Design reference prompt could not be rendered: {reason}")]
+    InvalidPrompt { reason: String },
+    #[error("design reference storage failed: {reason}")]
+    Storage { reason: String },
     #[error("design reference job storage failed: {0}")]
     Jobs(#[from] StoreError),
     #[error("design reference request was already settled")]
@@ -81,18 +81,18 @@ pub enum DesignReferenceError {
     NotClaimed,
     #[error("design reference inference failed: {0}")]
     Inference(PortError),
-    #[error("design reference usage evidence could not be recorded")]
-    Evidence,
+    #[error("design reference usage evidence could not be recorded: {reason}")]
+    Evidence { reason: String },
     #[error("Failed to extract text from response")]
     NoText,
     #[error("Design reference generation returned an empty result")]
     Empty,
     #[error("design reference request was cancelled")]
     Cancelled,
-    #[error("design reference replay cleanup failed")]
-    ReplayCleanup,
-    #[error("design reference result could not be stored")]
-    ResultStorage,
+    #[error("design reference replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
+    #[error("design reference result could not be stored: {reason}")]
+    ResultStorage { reason: String },
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for DesignReferenceError {
@@ -113,8 +113,8 @@ impl crate::jobs::one_shot_job::OneShotFailure for DesignReferenceError {
     fn job_error(&self) -> JobError {
         let (code, retryable, message) = match self {
             Self::Inference(PortError::Unavailable)
-            | Self::Evidence
-            | Self::ReplayCleanup
+            | Self::Evidence { .. }
+            | Self::ReplayCleanup { .. }
             | Self::NotClaimed
             | Self::AlreadySettled => (
                 JobErrorCode::ResourceUnavailable,
@@ -135,12 +135,14 @@ impl crate::jobs::one_shot_job::OneShotFailure for DesignReferenceError {
                 false,
                 "design-reference-inference-failed",
             ),
-            Self::ResultStorage => (
+            Self::ResultStorage { .. } => (
                 JobErrorCode::StorageFailure,
                 true,
                 crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
             ),
-            Self::Jobs(_) | Self::Storage | Self::Model(ImageFeatureModelError::Storage) => (
+            Self::Jobs(_)
+            | Self::Storage { .. }
+            | Self::Model(ImageFeatureModelError::Storage { .. }) => (
                 JobErrorCode::StorageFailure,
                 true,
                 "design-reference-storage-failed",
@@ -162,8 +164,8 @@ impl crate::jobs::one_shot_job::OneShotFailure for DesignReferenceError {
             ),
             Self::Model(_)
             | Self::NoContent
-            | Self::MissingPrompt
-            | Self::InvalidPrompt
+            | Self::MissingPrompt { .. }
+            | Self::InvalidPrompt { .. }
             | Self::Cancelled => (
                 JobErrorCode::InvalidInput,
                 false,
@@ -269,7 +271,9 @@ where
         allowed: &ResourceAvailability,
     ) -> Result<DesignReferenceReply, DesignReferenceError> {
         let settings = GlobalSettingsStore::load(self.repository)
-            .map_err(|_| DesignReferenceError::Storage)?
+            .map_err(|error| DesignReferenceError::Storage {
+                reason: error.to_string(),
+            })?
             .settings;
         let writer = crate::scene_writer_model(self.repository, &settings, true)?;
         if request.avatar.is_none() && request.references.is_empty() {
@@ -299,7 +303,9 @@ where
                 if let Some(recorder) = self.recorder
                     && !recorder.record(handle.id(), &text)
                 {
-                    return Err(DesignReferenceError::ResultStorage);
+                    return Err(DesignReferenceError::ResultStorage {
+                        reason: "the result recorder rejected the text".to_owned(),
+                    });
                 }
                 Ok(text)
             },
@@ -336,11 +342,16 @@ where
             Err(JobInferenceError::Provider(error)) => {
                 return Err(DesignReferenceError::Inference(error));
             }
-            Err(JobInferenceError::Evidence) => return Err(DesignReferenceError::Evidence),
+            Err(JobInferenceError::Evidence { reason }) => {
+                return Err(DesignReferenceError::Evidence { reason });
+            }
         };
         let text = generated_text(&outcome);
-        cleanup_outcome_replays(self.repository, &outcome)
-            .map_err(|_| DesignReferenceError::ReplayCleanup)?;
+        cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+            DesignReferenceError::ReplayCleanup {
+                reason: error.to_string(),
+            }
+        })?;
         let cleaned = clean_design_reference(&text.ok_or(DesignReferenceError::NoText)?);
         if cleaned.is_empty() {
             return Err(DesignReferenceError::Empty);
@@ -355,8 +366,12 @@ where
         request: &DesignReferenceRequest,
         handle: &JobHandle,
     ) -> Result<InferenceRequest, DesignReferenceError> {
-        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
-            .map_err(|_| DesignReferenceError::MissingPrompt)?;
+        let text =
+            RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime).map_err(|error| {
+                DesignReferenceError::MissingPrompt {
+                    reason: error.to_string(),
+                }
+            })?;
         let present = |value: &Option<String>| {
             value
                 .as_deref()
@@ -368,7 +383,9 @@ where
             Some(name) => name,
             None => text
                 .render_with("design_reference_unnamed_subject", [])
-                .map_err(|_| DesignReferenceError::MissingPrompt)?,
+                .map_err(|error| DesignReferenceError::MissingPrompt {
+                    reason: error.to_string(),
+                })?,
         };
         let subject_description = present(&request.subject_description);
         let current_description = present(&request.current_description);
@@ -422,8 +439,12 @@ where
             self.repository,
             BuiltInPromptId::DesignReference,
         )
-        .map_err(|_| DesignReferenceError::MissingPrompt)?
-        .ok_or(DesignReferenceError::MissingPrompt)?;
+        .map_err(|error| DesignReferenceError::MissingPrompt {
+            reason: error.to_string(),
+        })?
+        .ok_or(DesignReferenceError::MissingPrompt {
+            reason: "the design reference prompt is not stored".to_owned(),
+        })?;
         let messages = design_reference_messages(
             &document,
             &PromptRenderContext { conditions, values },
@@ -443,7 +464,9 @@ where
             .collect();
         let global =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
-                .map_err(|_| DesignReferenceError::Storage)?
+                .map_err(|error| DesignReferenceError::Storage {
+                    reason: error.to_string(),
+                })?
                 .0;
         let (model, account) = (&writer.profile, &writer.account);
         let chat_profile = lettuce_models::resolve_chat_profile(
@@ -499,7 +522,9 @@ where
         };
         inference_request
             .validate()
-            .map_err(|_| DesignReferenceError::InvalidPrompt)?;
+            .map_err(|error| DesignReferenceError::InvalidPrompt {
+                reason: error.to_string(),
+            })?;
         Ok(inference_request)
     }
 }
@@ -568,8 +593,11 @@ fn design_reference_messages(
     avatar: Option<AssetId>,
     references: &[AssetId],
 ) -> Result<Vec<ProviderNeutralMessage>, DesignReferenceError> {
-    let entries = render_feature_entries(document, context, &DESIGN_TOKENS)
-        .map_err(|_| DesignReferenceError::InvalidPrompt)?;
+    let entries = render_feature_entries(document, context, &DESIGN_TOKENS).map_err(|error| {
+        DesignReferenceError::InvalidPrompt {
+            reason: error.to_string(),
+        }
+    })?;
     let (relative, others): (Vec<_>, Vec<_>) = entries
         .iter()
         .partition(|entry| entry.position == PromptEntryPosition::Relative);

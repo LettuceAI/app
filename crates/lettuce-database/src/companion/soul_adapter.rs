@@ -10,12 +10,16 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::Database;
 
-fn failure(_: impl std::fmt::Debug) -> SoulRepositoryError {
-    SoulRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> SoulRepositoryError {
+    SoulRepositoryError::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> SoulRepositoryError {
-    SoulRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> SoulRepositoryError {
+    SoulRepositoryError::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 fn sql_revision(value: Revision) -> Result<i64, SoulRepositoryError> {
@@ -25,7 +29,9 @@ fn sql_revision(value: Revision) -> Result<i64, SoulRepositoryError> {
 fn parse_revision(value: i64) -> Result<Revision, SoulRepositoryError> {
     let value = u64::try_from(value).map_err(corrupt)?;
     if value == 0 {
-        return Err(SoulRepositoryError::Corrupt);
+        return Err(SoulRepositoryError::Corrupt {
+            reason: "a stored soul revision is zero".to_owned(),
+        });
     }
     Ok(Revision::new(value))
 }
@@ -48,7 +54,9 @@ fn parse_category(value: &str) -> Result<SoulCategory, SoulRepositoryError> {
         "fears" => Ok(SoulCategory::Fears),
         "habits" => Ok(SoulCategory::Habits),
         "boundaries" => Ok(SoulCategory::Boundaries),
-        _ => Err(SoulRepositoryError::Corrupt),
+        _ => Err(SoulRepositoryError::Corrupt {
+            reason: "a stored soul category is not recognised".to_owned(),
+        }),
     }
 }
 
@@ -67,7 +75,9 @@ fn parse_kind(value: &str) -> Result<SoulFactKind, SoulRepositoryError> {
         "adjust" => Ok(SoulFactKind::Adjust),
         "authored" => Ok(SoulFactKind::Authored),
         "consolidated" => Ok(SoulFactKind::Consolidated),
-        _ => Err(SoulRepositoryError::Corrupt),
+        _ => Err(SoulRepositoryError::Corrupt {
+            reason: "a stored soul fact kind is not recognised".to_owned(),
+        }),
     }
 }
 
@@ -84,7 +94,9 @@ fn parse_policy(value: &str) -> Result<SoulFactPolicy, SoulRepositoryError> {
         "current" => Ok(SoulFactPolicy::Current),
         "adaptive" => Ok(SoulFactPolicy::Adaptive),
         "historical" => Ok(SoulFactPolicy::Historical),
-        _ => Err(SoulRepositoryError::Corrupt),
+        _ => Err(SoulRepositoryError::Corrupt {
+            reason: "a stored soul fact policy is not recognised".to_owned(),
+        }),
     }
 }
 
@@ -223,7 +235,9 @@ pub(crate) fn get_in(
         revision: parse_revision(revision)?,
         facts,
     };
-    validate_state(&state).map_err(|_| SoulRepositoryError::Corrupt)?;
+    validate_state(&state).map_err(|error| SoulRepositoryError::Corrupt {
+        reason: format!("the stored soul state failed validation: {error:?}"),
+    })?;
     Ok(Some(state))
 }
 
@@ -413,7 +427,9 @@ pub(crate) fn apply_sharing_change_in(
                 .map_err(failure)?;
             if let Some(scope) = latest {
                 let facts = get_in(tx, owner_of(character_id, &scope)?)?
-                    .ok_or(SoulRepositoryError::Corrupt)?
+                    .ok_or_else(|| SoulRepositoryError::Corrupt {
+                        reason: "the latest soul scope has no stored state".to_owned(),
+                    })?
                     .facts;
                 if get_in(tx, SoulOwner::Character(character_id))?
                     .is_none_or(|current| current.facts != facts)
@@ -668,7 +684,10 @@ fn load_receipt(
         if receipt.resulting_revision != receipt.expected_revision.next().map_err(corrupt)?
             || row.4.len() != 32
         {
-            return Err(SoulRepositoryError::Corrupt);
+            return Err(SoulRepositoryError::Corrupt {
+                reason: "a stored receipt has a non-consecutive revision or a bad digest length"
+                    .to_owned(),
+            });
         }
         Ok((receipt, row.4))
     })
@@ -1175,9 +1194,9 @@ mod tests {
             )
             .expect("corrupt");
         drop(connection);
-        assert_eq!(
+        assert!(matches!(
             database.get(owner(character_id)),
-            Err(SoulRepositoryError::Corrupt)
-        );
+            Err(SoulRepositoryError::Corrupt { .. })
+        ));
     }
 }

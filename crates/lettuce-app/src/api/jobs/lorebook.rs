@@ -300,7 +300,9 @@ impl ClaimedJob for ClaimedWriter {
             crate::StagedLorebookWriterDispatchCoordinator::new(db, db, db)
                 .settle(
                     self.0,
-                    Err(crate::StagedLorebookWriterExecutionError::InvalidPrompt),
+                    Err(crate::StagedLorebookWriterExecutionError::InvalidPrompt {
+                        reason: "the writer run has no prompt snapshot".to_owned(),
+                    }),
                     CancellationReason::User,
                     context.now(),
                 )
@@ -364,7 +366,11 @@ impl ClaimedJob for ClaimedCoherence {
             crate::StagedLorebookCoherenceDispatchCoordinator::new(db, db)
                 .settle(
                     self.0,
-                    Err(crate::StagedLorebookCoherenceExecutionError::InvalidPrompt),
+                    Err(
+                        crate::StagedLorebookCoherenceExecutionError::InvalidPrompt {
+                            reason: "the coherence run has no prompt snapshot".to_owned(),
+                        },
+                    ),
                     CancellationReason::User,
                     context.now(),
                 )
@@ -429,7 +435,9 @@ impl ClaimedJob for ClaimedPlanner {
             crate::StagedLorebookPlannerDispatchCoordinator::new(db, db)
                 .settle(
                     self.0,
-                    Err(crate::StagedLorebookPlannerExecutionError::InvalidPrompt),
+                    Err(crate::StagedLorebookPlannerExecutionError::InvalidPrompt {
+                        reason: "the planner run has no prompt snapshot".to_owned(),
+                    }),
                     CancellationReason::User,
                     context.now(),
                 )

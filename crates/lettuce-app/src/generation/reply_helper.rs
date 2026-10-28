@@ -95,12 +95,12 @@ pub enum ReplyHelperError {
     MissingModel,
     #[error("Help Me Reply model is invalid: {0}")]
     InvalidModel(lettuce_models::ChatProfileResolutionError),
-    #[error("Help Me Reply model could not be read")]
-    ModelUnavailable,
-    #[error("Help Me Reply prompt is unavailable")]
-    MissingPrompt,
-    #[error("Help Me Reply prompt could not be rendered")]
-    InvalidPrompt,
+    #[error("Help Me Reply model could not be read: {reason}")]
+    ModelUnavailable { reason: String },
+    #[error("Help Me Reply prompt is unavailable: {reason}")]
+    MissingPrompt { reason: String },
+    #[error("Help Me Reply prompt could not be rendered: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("reply helper job storage failed: {0}")]
     Jobs(#[from] StoreError),
     #[error("reply helper request was already settled")]
@@ -109,16 +109,16 @@ pub enum ReplyHelperError {
     NotClaimed,
     #[error("reply helper inference failed: {0}")]
     Inference(PortError),
-    #[error("reply helper usage evidence could not be recorded")]
-    Evidence,
+    #[error("reply helper usage evidence could not be recorded: {reason}")]
+    Evidence { reason: String },
     #[error("Failed to extract text from response")]
     EmptyResponse,
     #[error("reply helper request was cancelled")]
     Cancelled,
-    #[error("reply helper replay cleanup failed")]
-    ReplayCleanup,
-    #[error("reply helper result could not be stored")]
-    ResultStorage,
+    #[error("reply helper replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
+    #[error("reply helper result could not be stored: {reason}")]
+    ResultStorage { reason: String },
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for ReplyHelperError {
@@ -334,7 +334,9 @@ where
                 if let Some(recorder) = self.recorder
                     && !recorder.record(handle.id(), &text)
                 {
-                    return Err(ReplyHelperError::ResultStorage);
+                    return Err(ReplyHelperError::ResultStorage {
+                        reason: "the result recorder rejected the text".to_owned(),
+                    });
                 }
                 Ok(text)
             },
@@ -370,11 +372,16 @@ where
             Err(JobInferenceError::Provider(error)) => {
                 return Err(ReplyHelperError::Inference(error));
             }
-            Err(JobInferenceError::Evidence) => return Err(ReplyHelperError::Evidence),
+            Err(JobInferenceError::Evidence { reason }) => {
+                return Err(ReplyHelperError::Evidence { reason });
+            }
         };
         let text = generated_text(&outcome);
-        cleanup_outcome_replays(self.repository, &outcome)
-            .map_err(|_| ReplyHelperError::ReplayCleanup)?;
+        cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+            ReplyHelperError::ReplayCleanup {
+                reason: error.to_string(),
+            }
+        })?;
         let text = text.ok_or(ReplyHelperError::EmptyResponse)?;
         Ok(clean_reply(&text, &prepared.user_name))
     }
@@ -388,8 +395,12 @@ where
         let settings = &stored.settings.help_me_reply;
         let aggregate = ConversationReader::get(self.repository, request.conversation_id)
             .map_err(ReplyHelperError::Conversation)?;
-        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
-            .map_err(|_| ReplyHelperError::MissingPrompt)?;
+        let text =
+            RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime).map_err(|error| {
+                ReplyHelperError::MissingPrompt {
+                    reason: error.to_string(),
+                }
+            })?;
         let persona = effective_persona(&aggregate.conversation)
             .map(|persona| PersonaRepository::get(self.repository, persona.source_id))
             .transpose()
@@ -449,7 +460,9 @@ where
                     .join(", ");
                 let group_description = text
                     .render_with("runtime_group_reply_helper_character_description", [])
-                    .map_err(|_| ReplyHelperError::MissingPrompt)?;
+                    .map_err(|error| ReplyHelperError::MissingPrompt {
+                        reason: error.to_string(),
+                    })?;
                 Cast {
                     speakers: speakers(&character_list, &group_description, persona, false),
                     swap_places: false,
@@ -468,10 +481,14 @@ where
             .or(stored.default_model_profile_id)
             .ok_or(ReplyHelperError::MissingModel)?;
         let model = ModelProfileRepository::get(self.repository, model_id)
-            .map_err(|_| ReplyHelperError::ModelUnavailable)?
+            .map_err(|error| ReplyHelperError::ModelUnavailable {
+                reason: error.to_string(),
+            })?
             .ok_or(ReplyHelperError::MissingModel)?;
         let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
-            .map_err(|_| ReplyHelperError::ModelUnavailable)?
+            .map_err(|error| ReplyHelperError::ModelUnavailable {
+                reason: error.to_string(),
+            })?
             .ok_or(ReplyHelperError::MissingModel)?;
         let streaming = settings.streaming;
         let chat_profile = lettuce_models::resolve_chat_profile(
@@ -494,7 +511,9 @@ where
                 &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
                     self.repository,
                 )
-                .map_err(|_| ReplyHelperError::ModelUnavailable)?
+                .map_err(|error| ReplyHelperError::ModelUnavailable {
+                    reason: error.to_string(),
+                })?
                 .0,
                 settings.max_output_tokens,
             ),
@@ -516,7 +535,9 @@ where
         let document = match override_id
             .map(|id| PromptRepository::get(self.repository, id))
             .transpose()
-            .map_err(|_| ReplyHelperError::MissingPrompt)?
+            .map_err(|error| ReplyHelperError::MissingPrompt {
+                reason: error.to_string(),
+            })?
             .flatten()
             .filter(|document| {
                 document.status == LifecycleStatus::Active && document.purpose == built_in.purpose()
@@ -526,8 +547,12 @@ where
                 self.repository,
                 built_in,
             )
-            .map_err(|_| ReplyHelperError::MissingPrompt)?
-            .ok_or(ReplyHelperError::MissingPrompt)?,
+            .map_err(|error| ReplyHelperError::MissingPrompt {
+                reason: error.to_string(),
+            })?
+            .ok_or(ReplyHelperError::MissingPrompt {
+                reason: "the built-in reply helper prompt is not stored".to_owned(),
+            })?,
         };
         let mut messages = render_entries(&document, speakers, request.current_draft.as_deref())?;
         messages.push(ProviderNeutralMessage {
@@ -564,7 +589,9 @@ where
         };
         request
             .validate()
-            .map_err(|_| ReplyHelperError::InvalidPrompt)?;
+            .map_err(|error| ReplyHelperError::InvalidPrompt {
+                reason: error.to_string(),
+            })?;
         Ok(PreparedReply {
             request,
             user_name: cast.speakers.persona_name,
@@ -688,7 +715,9 @@ fn render_entries(
             values,
         },
     )
-    .map_err(|_| ReplyHelperError::InvalidPrompt)?;
+    .map_err(|error| ReplyHelperError::InvalidPrompt {
+        reason: error.to_string(),
+    })?;
     Ok(rendered
         .relative
         .into_iter()
@@ -719,7 +748,9 @@ fn reply_input(
     let speakers = &cast.speakers;
     let unknown = if cast.group {
         text.render_with("runtime_group_reply_helper_unknown_speaker", [])
-            .map_err(|_| ReplyHelperError::MissingPrompt)?
+            .map_err(|error| ReplyHelperError::MissingPrompt {
+                reason: error.to_string(),
+            })?
     } else {
         String::new()
     };
@@ -749,7 +780,9 @@ fn reply_input(
             line(name, &entry.text)
         })
         .collect::<Result<Vec<_>, RuntimeTextError>>()
-        .map_err(|_| ReplyHelperError::MissingPrompt)?
+        .map_err(|error| ReplyHelperError::MissingPrompt {
+            reason: error.to_string(),
+        })?
         .join("\n\n");
     text.render_with(
         if cast.group {
@@ -762,7 +795,9 @@ fn reply_input(
             (Variable::SpeakerName, speakers.persona_name.clone()),
         ],
     )
-    .map_err(|_| ReplyHelperError::MissingPrompt)
+    .map_err(|error| ReplyHelperError::MissingPrompt {
+        reason: error.to_string(),
+    })
 }
 
 fn message_text(parts: &[MessagePart]) -> String {
@@ -798,8 +833,8 @@ fn clean_reply(text: &str, user_name: &str) -> String {
 fn job_error(error: &ReplyHelperError) -> JobError {
     let (code, retryable, message) = match error {
         ReplyHelperError::Inference(PortError::Unavailable)
-        | ReplyHelperError::Evidence
-        | ReplyHelperError::ReplayCleanup
+        | ReplyHelperError::Evidence { .. }
+        | ReplyHelperError::ReplayCleanup { .. }
         | ReplyHelperError::NotClaimed
         | ReplyHelperError::AlreadySettled => (
             JobErrorCode::ResourceUnavailable,
@@ -825,7 +860,7 @@ fn job_error(error: &ReplyHelperError) -> JobError {
             false,
             "reply-helper-inference-failed",
         ),
-        ReplyHelperError::ResultStorage => (
+        ReplyHelperError::ResultStorage { .. } => (
             JobErrorCode::StorageFailure,
             true,
             crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
@@ -848,15 +883,15 @@ fn job_error(error: &ReplyHelperError) -> JobError {
             false,
             crate::jobs::failure_labels::HELP_ME_REPLY_NO_HISTORY,
         ),
-        ReplyHelperError::MissingModel | ReplyHelperError::ModelUnavailable => (
+        ReplyHelperError::MissingModel | ReplyHelperError::ModelUnavailable { .. } => (
             JobErrorCode::InvalidInput,
             false,
             crate::jobs::failure_labels::HELP_ME_REPLY_NO_MODEL,
         ),
         ReplyHelperError::NoCharacters
         | ReplyHelperError::InvalidModel(_)
-        | ReplyHelperError::MissingPrompt
-        | ReplyHelperError::InvalidPrompt
+        | ReplyHelperError::MissingPrompt { .. }
+        | ReplyHelperError::InvalidPrompt { .. }
         | ReplyHelperError::Cancelled => (
             JobErrorCode::InvalidInput,
             false,

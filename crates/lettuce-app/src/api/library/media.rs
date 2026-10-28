@@ -14,7 +14,7 @@ fn input_error(error: MediaStoreError) -> ApiError {
     match error {
         MediaStoreError::UnsupportedFormat
         | MediaStoreError::KindMismatch
-        | MediaStoreError::InvalidHeader
+        | MediaStoreError::InvalidHeader { .. }
         | MediaStoreError::EmptyInput
         | MediaStoreError::InputTooLarge
         | MediaStoreError::PixelLimitExceeded

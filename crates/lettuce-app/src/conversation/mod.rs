@@ -24,10 +24,10 @@ pub enum ConversationEditError {
     InvalidInput { field: &'static str },
     #[error(transparent)]
     Conversation(#[from] ConversationRepositoryError),
-    #[error("a source could not be read")]
-    Source,
-    #[error("a snapshot could not be built")]
-    Snapshot,
+    #[error("a source could not be read: {reason}")]
+    Source { reason: String },
+    #[error("a snapshot could not be built: {reason}")]
+    Snapshot { reason: String },
 }
 
 /// An artifact id derived from the conversation and what it snapshots, so a
@@ -56,8 +56,11 @@ pub fn edit_operation(
         key: IdempotencyKey::new(key).map_err(|_| ConversationEditError::InvalidInput {
             field: "client_operation_id",
         })?,
-        request_digest: ContentHash::parse(hasher.finalize().to_hex().as_str())
-            .map_err(|_| ConversationEditError::Snapshot)?,
+        request_digest: ContentHash::parse(hasher.finalize().to_hex().as_str()).map_err(
+            |error| ConversationEditError::Snapshot {
+                reason: error.to_string(),
+            },
+        )?,
     })
 }
 

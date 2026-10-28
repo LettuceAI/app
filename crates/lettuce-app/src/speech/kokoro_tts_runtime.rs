@@ -119,15 +119,15 @@ impl TtsRuntime for KokoroTtsRuntime {
         if !matches!(request.provider.config, AudioProviderConfig::Kokoro { .. })
             || credential.is_some()
         {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected { reason: "request is not a Kokoro request or carries a credential" });
         }
         if cancellation.is_cancelled() {
             return Err(TtsRuntimeError::Cancelled);
         }
         let variant =
-            KokoroModelVariant::parse(&request.model_id).map_err(|_| TtsRuntimeError::Rejected)?;
+            KokoroModelVariant::parse(&request.model_id).map_err(|_| TtsRuntimeError::Rejected { reason: "model id is not a known Kokoro model variant" })?;
         if !kokoro_platform_allows_variant(variant) {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected { reason: "model variant is not allowed on this platform" });
         }
         let specs = parse_voice_blend(&request.voice_id)?;
         let speed = parse_speed(request.prompt.as_deref());
@@ -158,7 +158,7 @@ impl TtsRuntime for KokoroTtsRuntime {
             let primary_voice = voice
                 .normalized_specs()
                 .first()
-                .ok_or(TtsRuntimeError::Rejected)?
+                .ok_or(TtsRuntimeError::Rejected { reason: "voice blend has no voices" })?
                 .voice_id
                 .clone();
             let lexicon = models
@@ -168,7 +168,10 @@ impl TtsRuntime for KokoroTtsRuntime {
                     parse_kokoro_lexicon(material.bytes(), kokoro_voice_language(&primary_voice))
                 })
                 .transpose()
-                .map_err(|_| TtsRuntimeError::Rejected)?
+                .map_err(|error| {
+                    tracing::warn!(%error, "Kokoro lexicon could not be parsed");
+                    TtsRuntimeError::Rejected { reason: "Kokoro lexicon could not be parsed" }
+                })?
                 .unwrap_or_default();
             let phonemization = KokoroPhonemizationCoordinator::new(models.clone())
                 .phonemize(
@@ -196,7 +199,10 @@ impl TtsRuntime for KokoroTtsRuntime {
             })
         })
         .await
-        .map_err(|_| TtsRuntimeError::Failed)?
+        .map_err(|error| {
+            tracing::warn!(%error, "Kokoro synthesis task failed");
+            TtsRuntimeError::Failed { reason: "Kokoro synthesis task failed" }
+        })?
     }
 }
 
@@ -210,7 +216,10 @@ struct PersistedVoiceBlend {
 fn parse_voice_blend(value: &str) -> Result<Vec<KokoroVoiceBlendSpec>, TtsRuntimeError> {
     if value.starts_with('[') {
         let entries = serde_json::from_str::<Vec<PersistedVoiceBlend>>(value)
-            .map_err(|_| TtsRuntimeError::Rejected)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "voice blend is not valid JSON");
+                TtsRuntimeError::Rejected { reason: "voice blend is not valid JSON" }
+            })?;
         return Ok(entries
             .into_iter()
             .filter(|entry| entry.weight > 0.0)
@@ -237,51 +246,76 @@ fn parse_speed(prompt: Option<&str>) -> f32 {
 
 fn map_voice_error(error: KokoroVoiceBlendCoordinatorError) -> TtsRuntimeError {
     match error {
-        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::Mismatch)
-        | KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::InvalidArtifact)
-        | KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::Unreadable) => {
-            TtsRuntimeError::Failed
-        }
-        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::InvalidManifest)
+        KokoroVoiceBlendCoordinatorError::Install(
+            KokoroInstallError::Mismatch { reason }
+            | KokoroInstallError::InvalidArtifact { reason }
+            | KokoroInstallError::Unreadable { reason },
+        ) => TtsRuntimeError::Failed { reason },
+        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::InvalidManifest { reason })
         | KokoroVoiceBlendCoordinatorError::Voice(
-            KokoroVoiceError::InvalidBlend | KokoroVoiceError::InvalidVoiceData,
-        ) => TtsRuntimeError::Rejected,
-        KokoroVoiceBlendCoordinatorError::Voice(KokoroVoiceError::MissingVoice)
+            KokoroVoiceError::InvalidBlend { reason } | KokoroVoiceError::InvalidVoiceData { reason },
+        ) => TtsRuntimeError::Rejected { reason },
+        KokoroVoiceBlendCoordinatorError::Voice(KokoroVoiceError::MissingVoice { .. })
         | KokoroVoiceBlendCoordinatorError::MissingDescriptor
         | KokoroVoiceBlendCoordinatorError::MissingAssets => TtsRuntimeError::VoiceMissing,
-        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::Platform(_)) => {
-            TtsRuntimeError::Unavailable
+        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::Platform(error)) => {
+            tracing::warn!(%error, "Kokoro voice storage is unavailable");
+            TtsRuntimeError::Unavailable {
+                reason: "Kokoro voice storage is unavailable",
+            }
         }
     }
 }
 
 fn map_lexicon_store_error(error: KokoroInstallError) -> TtsRuntimeError {
     match error {
-        KokoroInstallError::Platform(_) => TtsRuntimeError::Unavailable,
-        KokoroInstallError::InvalidManifest => TtsRuntimeError::Rejected,
-        KokoroInstallError::Mismatch
-        | KokoroInstallError::Unreadable
-        | KokoroInstallError::InvalidArtifact => TtsRuntimeError::Failed,
+        KokoroInstallError::Platform(error) => {
+            tracing::warn!(%error, "Kokoro lexicon storage is unavailable");
+            TtsRuntimeError::Unavailable {
+                reason: "Kokoro lexicon storage is unavailable",
+            }
+        }
+        KokoroInstallError::InvalidManifest { reason } => TtsRuntimeError::Rejected { reason },
+        KokoroInstallError::Mismatch { reason }
+        | KokoroInstallError::Unreadable { reason }
+        | KokoroInstallError::InvalidArtifact { reason } => TtsRuntimeError::Failed { reason },
     }
 }
 
 fn map_phonemization_error(error: KokoroPhonemizationCoordinatorError) -> TtsRuntimeError {
     match error {
-        KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::InvalidManifest)
+        KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::InvalidManifest {
+            reason,
+        })
         | KokoroPhonemizationCoordinatorError::Phonemization(
-            KokoroPhonemizationError::InvalidInput
-            | KokoroPhonemizationError::LimitExceeded
-            | KokoroPhonemizationError::InvalidLexicon,
-        ) => TtsRuntimeError::Rejected,
+            KokoroPhonemizationError::InvalidInput { reason }
+            | KokoroPhonemizationError::InvalidLexicon { reason },
+        ) => TtsRuntimeError::Rejected { reason },
+        KokoroPhonemizationCoordinatorError::Phonemization(
+            KokoroPhonemizationError::LimitExceeded,
+        ) => TtsRuntimeError::Rejected {
+            reason: "phonemization exceeds its token limit",
+        },
         KokoroPhonemizationCoordinatorError::MissingAssets => TtsRuntimeError::ModelMissing,
         KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(
-            EspeakNgError::Unavailable,
+            EspeakNgError::Unavailable { .. },
         )) => TtsRuntimeError::EspeakMissing,
-        KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::Platform(_)) => {
-            TtsRuntimeError::Unavailable
+        KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::Platform(error)) => {
+            tracing::warn!(%error, "Kokoro model storage is unavailable");
+            TtsRuntimeError::Unavailable {
+                reason: "Kokoro model storage is unavailable",
+            }
         }
-        KokoroPhonemizationCoordinatorError::Install(_)
-        | KokoroPhonemizationCoordinatorError::Phonemization(_) => TtsRuntimeError::Failed,
+        KokoroPhonemizationCoordinatorError::Install(
+            KokoroInstallError::Mismatch { reason }
+            | KokoroInstallError::Unreadable { reason }
+            | KokoroInstallError::InvalidArtifact { reason },
+        )
+        | KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(
+            EspeakNgError::InvalidConfiguration { reason }
+            | EspeakNgError::Execution { reason }
+            | EspeakNgError::InvalidOutput { reason },
+        )) => TtsRuntimeError::Failed { reason },
     }
 }
 
@@ -290,20 +324,35 @@ fn map_native_error(error: KokoroNativeSynthesisError) -> TtsRuntimeError {
         KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::Cancelled) => {
             TtsRuntimeError::Cancelled
         }
-        KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::InvalidInput) => {
-            TtsRuntimeError::Rejected
+        KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::InvalidInput { reason }) => {
+            TtsRuntimeError::Rejected { reason }
         }
         KokoroNativeSynthesisError::MissingAssets => TtsRuntimeError::ModelMissing,
-        KokoroNativeSynthesisError::Install(KokoroInstallError::Platform(_))
-        | KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::Unavailable) => {
-            TtsRuntimeError::Unavailable
+        KokoroNativeSynthesisError::Install(KokoroInstallError::Platform(error)) => {
+            tracing::warn!(%error, "Kokoro model storage is unavailable");
+            TtsRuntimeError::Unavailable {
+                reason: "Kokoro model storage is unavailable",
+            }
         }
-        KokoroNativeSynthesisError::Install(KokoroInstallError::InvalidManifest) => {
-            TtsRuntimeError::Rejected
+        KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::Unavailable { reason }) => {
+            TtsRuntimeError::Unavailable { reason }
         }
-        KokoroNativeSynthesisError::Install(_) | KokoroNativeSynthesisError::Runtime(_) => {
-            TtsRuntimeError::Failed
+        KokoroNativeSynthesisError::Install(KokoroInstallError::InvalidManifest { reason }) => {
+            TtsRuntimeError::Rejected { reason }
         }
+        KokoroNativeSynthesisError::Install(
+            KokoroInstallError::Mismatch { reason }
+            | KokoroInstallError::Unreadable { reason }
+            | KokoroInstallError::InvalidArtifact { reason },
+        )
+        | KokoroNativeSynthesisError::Runtime(
+            KokoroRuntimeError::ModelLoad { reason }
+            | KokoroRuntimeError::InvalidModel { reason }
+            | KokoroRuntimeError::Inference { reason }
+            | KokoroRuntimeError::InvalidOutput { reason }
+            | KokoroRuntimeError::LimitExceeded { reason }
+            | KokoroRuntimeError::CancellationMonitor { reason },
+        ) => TtsRuntimeError::Failed { reason },
     }
 }
 
@@ -410,7 +459,7 @@ mod tests {
             _cancellation: &CancellationToken,
         ) -> Result<OnnxRuntimeCommitted, TtsRuntimeError> {
             self.0.fetch_add(1, Ordering::Relaxed);
-            Err(TtsRuntimeError::Unavailable)
+            Err(TtsRuntimeError::Unavailable { reason: "simulated failure" })
         }
     }
 
@@ -500,7 +549,7 @@ mod tests {
             runtime
                 .synthesize(&request(), None, &CancellationToken::new())
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
         assert_eq!(phonemizer.0.load(Ordering::Relaxed), 0);
         assert!(root.join("lexicon.json").exists());

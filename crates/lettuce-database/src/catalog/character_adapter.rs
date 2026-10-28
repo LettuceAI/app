@@ -108,7 +108,7 @@ fn follow_soul_sharing(
             !synced,
             now,
         )
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: format!("{error:?}") })?;
     }
     let (Some(was_shared), Some(shared)) = (was_shared, soul_sharing(defaults)) else {
         return Ok(());
@@ -121,7 +121,7 @@ fn follow_soul_sharing(
         synced,
         now,
     )
-    .map_err(|_| RepositoryError::Storage)
+    .map_err(|error| RepositoryError::Storage { reason: format!("{error:?}") })
 }
 
 /// Gives the character of a new companion conversation its shared Soul when
@@ -146,7 +146,7 @@ pub(crate) fn ensure_companion_soul_in(
         false,
         now,
     )
-    .map_err(|_| RepositoryError::Storage)
+    .map_err(|error| RepositoryError::Storage { reason: format!("{error:?}") })
 }
 
 /// Whether the character's companion conversations use its memory pool: only
@@ -194,7 +194,9 @@ fn db_error(error: rusqlite::Error) -> RepositoryError {
                 field: "character.storage",
             })
         }
-        _ => RepositoryError::Storage,
+        _ => RepositoryError::Storage {
+            reason: "db error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
@@ -311,7 +313,7 @@ fn parse_id<T: std::str::FromStr>(value: String) -> Result<T, rusqlite::Error> {
 }
 
 fn sql_u64(value: u64) -> Result<i64, RepositoryError> {
-    i64::try_from(value).map_err(|_| RepositoryError::Storage)
+    i64::try_from(value).map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn rev(value: i64) -> Result<Revision, rusqlite::Error> {
@@ -321,7 +323,7 @@ fn rev(value: i64) -> Result<Revision, rusqlite::Error> {
 }
 
 fn next_revision(value: Revision) -> Result<Revision, RepositoryError> {
-    value.next().map_err(|_| RepositoryError::Storage)
+    value.next().map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn id_text<T: ToString>(value: Option<T>) -> Option<String> {
@@ -975,7 +977,9 @@ fn insert_character_presentation_refs(
     character_id: CharacterId,
     presentation: &CharacterPresentationV1,
 ) -> Result<(), RepositoryError> {
-    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    let ids = serde_json::to_string(&presentation.referenced_asset_ids().iter().map(ToString::to_string).collect::<Vec<_>>()).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     tx.execute("DELETE FROM character_presentation_asset_refs WHERE character_id=?1 AND asset_id NOT IN (SELECT value FROM json_each(?2))", params![character_id.to_string(), ids]).map_err(db_error)?;
     for asset_id in presentation.referenced_asset_ids() {
         tx.execute(
@@ -1039,7 +1043,9 @@ fn insert_starter(
     for (ordinal, message) in starter.messages.iter().enumerate() {
         tx.execute(
             "INSERT INTO starter_messages (character_id,starter_id,id,role,content,ordinal) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![character_id.to_string(), starter.id.to_string(), message.id.to_string(), role_name(message.role), message.content, i64::try_from(ordinal).map_err(|_| RepositoryError::Storage)?],
+            params![character_id.to_string(), starter.id.to_string(), message.id.to_string(), role_name(message.role), message.content, i64::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?],
         ).map_err(db_error)?;
     }
     Ok(())
@@ -1063,14 +1069,14 @@ pub(crate) fn insert_character_plan(
             plan.character.defaults.companion_soul.as_ref(),
             plan.character.created_at,
         )
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: format!("{error:?}") })?;
         crate::companion::soul_adapter::create_in(
             tx,
             SoulOwner::Character(plan.character.id),
             &state,
             plan.character.created_at,
         )
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: format!("{error:?}") })?;
     }
     replace_character_media(tx, plan.character.id, &plan.character.media)?;
     insert_character_presentation_refs(tx, plan.character.id, &plan.character.presentation)?;
@@ -1085,7 +1091,9 @@ pub(crate) fn insert_character_plan(
     }
     load_details(tx, plan.character.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "insert character plan: a required value is missing".to_owned(),
+        })
 }
 
 /// Writes a synced character aggregate exactly, in place: the root row is
@@ -1190,14 +1198,20 @@ fn replace_character_graph(
         .map_err(db_error)?;
     }
     let assets = details.scenes.iter().flat_map(|scene| scene.assets.iter().map(move |link| (link.id.to_string(), scene.id.to_string(), link.asset_id.to_string(), scene_slot_name(link.slot), link.ordinal))).collect::<Vec<_>>();
-    let assets = serde_json::to_string(&assets).map_err(|_| RepositoryError::Storage)?;
+    let assets = serde_json::to_string(&assets).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     tx.execute("DELETE FROM scene_assets WHERE character_id=?1 AND NOT EXISTS (SELECT 1 FROM json_each(?2) WHERE (scene_assets.id,scene_assets.scene_id,scene_assets.asset_id,scene_assets.slot,scene_assets.ordinal) = (json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),json_extract(value,'$[4]')))", params![id.to_string(), assets]).map_err(db_error)?;
-    let scene_ids = serde_json::to_string(&details.scenes.iter().map(|scene| scene.id.to_string()).collect::<Vec<_>>()).map_err(|_| RepositoryError::Storage)?;
+    let scene_ids = serde_json::to_string(&details.scenes.iter().map(|scene| scene.id.to_string()).collect::<Vec<_>>()).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     tx.execute("DELETE FROM scenes WHERE character_id=?1 AND id NOT IN (SELECT value FROM json_each(?2))", params![id.to_string(), scene_ids]).map_err(db_error)?;
     let offset = current.scenes.iter().map(|scene| i64::from(scene.ordinal)).chain(details.scenes.iter().map(|scene| i64::from(scene.ordinal))).max().unwrap_or(0) + 1;
     for (index, old) in current.scenes.iter().enumerate() {
         if details.scenes.iter().any(|scene| scene.id == old.id && scene.ordinal != old.ordinal) {
-            tx.execute("UPDATE scenes SET ordinal=?3 WHERE character_id=?1 AND id=?2", params![id.to_string(), old.id.to_string(), offset + i64::try_from(index).map_err(|_| RepositoryError::Storage)?]).map_err(db_error)?;
+            tx.execute("UPDATE scenes SET ordinal=?3 WHERE character_id=?1 AND id=?2", params![id.to_string(), old.id.to_string(), offset + i64::try_from(index).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?]).map_err(db_error)?;
         }
     }
     update_character_root(tx, &details.character, synced)?;
@@ -1245,7 +1259,7 @@ pub(crate) fn replace_character_profile_scenes(
         profile: plan.character.profile.clone(),
         revision: expected_revision
             .next()
-            .map_err(|_| RepositoryError::Storage)?,
+            .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?,
         updated_at: plan.character.updated_at,
         ..current.character.clone()
     };
@@ -1279,7 +1293,7 @@ pub(crate) fn replace_character_profile_scenes(
             starter.revision = starter
                 .revision
                 .next()
-                .map_err(|_| RepositoryError::Storage)?;
+                .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
             starter.updated_at = plan.character.updated_at;
             unlinked_starters.push(starter.clone());
         }
@@ -1371,7 +1385,9 @@ pub(crate) fn replace_character_profile_scenes(
     )?;
     load_details(tx, plan.character.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "replace character profile scenes: a required value is missing".to_owned(),
+        })
 }
 
 impl CharacterRepository for Database {
@@ -1379,7 +1395,9 @@ impl CharacterRepository for Database {
         &self,
         plan: CreateCharacterPlan,
     ) -> Result<lettuce_characters::CharacterDetails, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1392,7 +1410,9 @@ impl CharacterRepository for Database {
         &self,
         id: CharacterId,
     ) -> Result<Option<lettuce_characters::CharacterDetails>, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1427,7 +1447,9 @@ impl CharacterRepository for Database {
         let sql = format!(
             "SELECT id FROM characters WHERE (?1 OR status='active') AND (normalized_name LIKE ?2 ESCAPE '\\' OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\') OR (?7 AND character_search_description(profile_json) LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
         );
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         connection.create_scalar_function(
             "character_search_description", 1,
             rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
@@ -1488,7 +1510,9 @@ impl CharacterRepository for Database {
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
         validate(profile.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1521,7 +1545,9 @@ impl CharacterRepository for Database {
         if let Some(value) = &recommendation {
             validate(value.validate())?;
         }
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1549,7 +1575,9 @@ impl CharacterRepository for Database {
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
         validate(provenance.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1573,7 +1601,9 @@ impl CharacterRepository for Database {
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
         validate(defaults.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1622,7 +1652,9 @@ impl CharacterRepository for Database {
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
         validate(presentation.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         image_assets(&connection, presentation.referenced_asset_ids())?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1655,7 +1687,9 @@ impl CharacterRepository for Database {
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
         validate(media.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         image_assets(&connection, media.links.iter().map(|link| link.asset_id))?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1675,7 +1709,9 @@ impl CharacterRepository for Database {
         link: CharacterMediaLink,
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         image_assets(&connection, [link.asset_id])?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1721,7 +1757,9 @@ impl CharacterRepository for Database {
         slot: CharacterMediaSlot,
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1763,7 +1801,9 @@ impl CharacterRepository for Database {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1840,7 +1880,9 @@ impl Database {
         status: LifecycleStatus,
         now: TimestampMillis,
     ) -> Result<Character, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1871,7 +1913,9 @@ fn set_character_status_in(
 
 impl CharacterDependencyReader for Database {
     fn dependencies(&self, id: CharacterId) -> Result<DependencyReport, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1955,7 +1999,9 @@ impl ProfileDuplicateRepository for Database {
         &self,
         request: ProfileDuplicateRequest,
     ) -> Result<ProfileDuplicateResult, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -2145,7 +2191,7 @@ fn duplicate_character_in(
             true,
             request.now,
         )
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: format!("{error:?}") })?;
     }
     replace_character_media(tx, plan.character.id, &plan.character.media)?;
     insert_character_presentation_refs(tx, plan.character.id, &plan.character.presentation)?;
@@ -2163,7 +2209,7 @@ fn duplicate_character_in(
         crate::lorebook::lorebook_adapter::OwnerKind::Character,
         &request.source_character_id.to_string(),
     )
-    .map_err(|_| RepositoryError::Storage)?;
+    .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     for binding in &mut bindings {
         binding.revision = Revision::INITIAL;
         binding.created_at = request.now;
@@ -2188,16 +2234,18 @@ fn duplicate_character_in(
     for id in note_ids {
         let mut note = crate::memory::scheduled_note_adapter::load_in(
             tx,
-            id.parse().map_err(|_| RepositoryError::Storage)?,
+            id.parse().map_err(|error| RepositoryError::Storage { reason: format!("{error}") })?,
         )
-        .map_err(|_| RepositoryError::Storage)?
-        .ok_or(RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "duplicate character in: a required value is missing".to_owned(),
+        })?;
         note.id = uuid::Uuid::new_v4();
         note.character_id = request.destination_character_id;
         note.created_at = request.now;
         note.updated_at = request.now;
         crate::memory::scheduled_note_adapter::insert_restored_note_in(tx, &note)
-            .map_err(|_| RepositoryError::Storage)?;
+            .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     }
     let mut retained = duplicate_external_references(&source);
     retained
@@ -2232,10 +2280,14 @@ impl crate::ApiOperationTransaction<'_, '_> {
         let mut media = current.character.media;
         let count = media.links.iter().filter(|link| link.slot == slot).count();
         if (slot != CharacterMediaSlot::DesignReference && ordinal != 0)
-            || usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? > count
+            || usize::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })? > count
             || (slot == CharacterMediaSlot::DesignReference
                 && asset.is_none()
-                && usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? == count)
+                && usize::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                    reason: error.to_string(),
+                })? == count)
         {
             return Err(RepositoryError::Invalid(
                 lettuce_characters::ValidationError::InvalidValue { field: "ordinal" },
@@ -2380,7 +2432,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
         replace_character_graph(self.transaction, &details, false)?;
         load_details(self.transaction, details.character.id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "save character: a required value is missing".to_owned(),
+            })
     }
 
     pub fn duplicate_character(
@@ -2507,7 +2561,9 @@ fn rewrite_scene_order(
         let changed = previous
             .get(scene_id)
             .is_some_and(|old| *old != ordinal as u32);
-        tx.execute("UPDATE scenes SET ordinal=?3,revision=revision+?4,updated_at=CASE WHEN ?4=1 THEN ?5 ELSE updated_at END WHERE character_id=?1 AND id=?2", params![character_id.to_string(), scene_id.to_string(), i64::try_from(ordinal).map_err(|_| RepositoryError::Storage)?, changed as i64, now.get()]).map_err(db_error)?;
+        tx.execute("UPDATE scenes SET ordinal=?3,revision=revision+?4,updated_at=CASE WHEN ?4=1 THEN ?5 ELSE updated_at END WHERE character_id=?1 AND id=?2", params![character_id.to_string(), scene_id.to_string(), i64::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?, changed as i64, now.get()]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -2529,7 +2585,9 @@ fn rewrite_variant_order(
         let changed = previous
             .get(variant_id)
             .is_some_and(|old| *old != ordinal as u32);
-        tx.execute("UPDATE scene_variants SET ordinal=?3,revision=revision+?4,updated_at=CASE WHEN ?4=1 THEN ?5 ELSE updated_at END WHERE character_id=?1 AND id=?2", params![character_id.to_string(), variant_id.to_string(), i64::try_from(ordinal).map_err(|_| RepositoryError::Storage)?, changed as i64, now.get()]).map_err(db_error)?;
+        tx.execute("UPDATE scene_variants SET ordinal=?3,revision=revision+?4,updated_at=CASE WHEN ?4=1 THEN ?5 ELSE updated_at END WHERE character_id=?1 AND id=?2", params![character_id.to_string(), variant_id.to_string(), i64::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?, changed as i64, now.get()]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -2550,7 +2608,9 @@ fn rewrite_starter_order(
         let changed = previous
             .get(starter_id)
             .is_some_and(|old| *old != ordinal as u32);
-        tx.execute("UPDATE conversation_starters SET ordinal=?3,revision=revision+?4,updated_at=CASE WHEN ?4=1 THEN ?5 ELSE updated_at END WHERE character_id=?1 AND id=?2", params![character_id.to_string(), starter_id.to_string(), i64::try_from(ordinal).map_err(|_| RepositoryError::Storage)?, changed as i64, now.get()]).map_err(db_error)?;
+        tx.execute("UPDATE conversation_starters SET ordinal=?3,revision=revision+?4,updated_at=CASE WHEN ?4=1 THEN ?5 ELSE updated_at END WHERE character_id=?1 AND id=?2", params![character_id.to_string(), starter_id.to_string(), i64::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?, changed as i64, now.get()]).map_err(db_error)?;
     }
     Ok(())
 }
@@ -2568,7 +2628,9 @@ fn rewrite_message_order(
             params![
                 character_id.to_string(),
                 message_id.to_string(),
-                i64::try_from(ordinal).map_err(|_| RepositoryError::Storage)?
+                i64::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                    reason: error.to_string(),
+                })?
             ],
         )
         .map_err(db_error)?;
@@ -2595,7 +2657,9 @@ impl SceneRepository for Database {
             ));
         }
         scene.validate_selected_variant(&[])?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         image_assets(&connection, scene.assets.iter().map(|asset| asset.asset_id))?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -2623,11 +2687,15 @@ impl SceneRepository for Database {
         bump_root(&tx, character_id, expected_character_revision, now)?;
         let result = load_details(&tx, character_id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "add scene: a required value is missing".to_owned(),
+            })?
             .scenes
             .into_iter()
             .find(|value| value.id == scene.id)
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "add scene: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -2641,7 +2709,9 @@ impl SceneRepository for Database {
         now: TimestampMillis,
     ) -> Result<Scene, RepositoryError> {
         draft.validate()?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -2664,11 +2734,15 @@ impl SceneRepository for Database {
         bump_root(&tx, character_id, expected_character_revision, now)?;
         let result = load_details(&tx, character_id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update scene: a required value is missing".to_owned(),
+            })?
             .scenes
             .into_iter()
             .find(|value| value.id == scene_id)
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update scene: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -2681,7 +2755,9 @@ impl SceneRepository for Database {
         replacement_default: Option<SceneId>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -2759,7 +2835,9 @@ impl SceneRepository for Database {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -2796,7 +2874,9 @@ impl SceneRepository for Database {
         let mut variant = variant;
         variant.updated_at = now;
         validate(variant.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -2847,11 +2927,15 @@ impl SceneRepository for Database {
         bump_root(&tx, character_id, expected_character_revision, now)?;
         let result = load_details(&tx, character_id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "add variant: a required value is missing".to_owned(),
+            })?
             .variants
             .into_iter()
             .find(|value| value.id == variant.id)
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "add variant: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -2865,7 +2949,9 @@ impl SceneRepository for Database {
         now: TimestampMillis,
     ) -> Result<SceneVariant, RepositoryError> {
         draft.validate()?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -2895,11 +2981,15 @@ impl SceneRepository for Database {
         bump_root(&tx, character_id, expected_character_revision, now)?;
         let result = load_details(&tx, character_id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update variant: a required value is missing".to_owned(),
+            })?
             .variants
             .into_iter()
             .find(|value| value.id == variant_id)
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update variant: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -2913,7 +3003,9 @@ impl SceneRepository for Database {
         replacement_selected: Option<SceneVariantId>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3003,7 +3095,9 @@ impl SceneRepository for Database {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3047,7 +3141,9 @@ impl SceneRepository for Database {
         variant_id: Option<SceneVariantId>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3079,7 +3175,9 @@ impl SceneRepository for Database {
         assets: Vec<SceneAssetLink>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         image_assets(&connection, assets.iter().map(|asset| asset.asset_id))?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -3160,17 +3258,23 @@ fn add_starter_in(tx: &rusqlite::Transaction<'_>, character_id: CharacterId, exp
     bump_root(tx, character_id, expected_character_revision, now)?;
     let result = load_details(tx, character_id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)?
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "add starter in: a required value is missing".to_owned(),
+        })?
         .starters
         .into_iter()
         .find(|value| value.id == starter.id)
-        .ok_or(RepositoryError::Storage)?;
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "add starter in: a required value is missing".to_owned(),
+        })?;
     Ok(result)
 }
 
 impl StarterRepository for Database {
     fn add_starter(&self, character_id: CharacterId, expected_character_revision: Revision, starter: ConversationStarter, now: TimestampMillis) -> Result<ConversationStarter, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
         let starter = add_starter_in(&tx, character_id, expected_character_revision, starter, now)?;
         tx.commit().map_err(db_error)?;
@@ -3186,7 +3290,9 @@ impl StarterRepository for Database {
         now: TimestampMillis,
     ) -> Result<ConversationStarter, RepositoryError> {
         draft.validate()?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3212,11 +3318,15 @@ impl StarterRepository for Database {
         bump_root(&tx, character_id, expected_character_revision, now)?;
         let result = load_details(&tx, character_id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update starter: a required value is missing".to_owned(),
+            })?
             .starters
             .into_iter()
             .find(|value| value.id == starter_id)
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update starter: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -3229,7 +3339,9 @@ impl StarterRepository for Database {
         replacement_default: Option<ConversationStarterId>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3299,7 +3411,9 @@ impl StarterRepository for Database {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3335,7 +3449,9 @@ impl StarterRepository for Database {
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
         validate(message.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3369,7 +3485,9 @@ impl StarterRepository for Database {
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
         validate(message.validate())?;
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3401,7 +3519,9 @@ impl StarterRepository for Database {
         message_id: StarterMessageId,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3435,7 +3555,9 @@ impl StarterRepository for Database {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3525,7 +3647,9 @@ impl StarterRepository for Database {
         starter_id: Option<ConversationStarterId>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -3566,7 +3690,9 @@ impl Database {
         lorebooks: Option<Selection<Vec<LorebookId>>>,
         now: TimestampMillis,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -4130,10 +4256,7 @@ mod smoke_tests {
                 )
                 .expect("trigger");
         }
-        assert_eq!(
-            CharacterRepository::create(&database, companion_plan(character_id)),
-            Err(RepositoryError::Storage)
-        );
+        assert!(matches!(CharacterRepository::create(&database, companion_plan(character_id)), Err(RepositoryError::Storage { .. })));
         assert_eq!(
             CharacterRepository::get(&database, character_id).expect("get character"),
             None
@@ -5757,11 +5880,13 @@ mod smoke_tests {
                             now: TimestampMillis::new(20),
                         })
                         .map(|result| result.character_id.to_string())
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "duplicate and operation receipt roll back and replay together failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
         };
-        assert_eq!(apply("digest"), Err(crate::ApiOperationError::Storage));
+        assert!(matches!(apply("digest"), Err(crate::ApiOperationError::Storage { .. })));
         assert!(
             CharacterRepository::get(&database, destination)
                 .expect("copy")
@@ -5814,7 +5939,9 @@ mod smoke_tests {
         plan.scenes[1].content = SceneDocumentV1::new(vec![ScenePart::Text { text: "Second scene".into() }]).expect("content");
         plan.scenes[0].content = SceneDocumentV1::new(vec![ScenePart::InlineAsset { link_id: plan.scenes[0].assets[0].id }, ScenePart::InlineAsset { link_id: moved.id }]).expect("content");
         plan.scenes[0].assets.push(moved);
-        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "move-link", "move-link", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("move link");
+        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "move-link", "move-link", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "character save moves scene asset link to an earlier scene failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("move link");
         assert_eq!(saved.scenes[0].assets, plan.scenes[0].assets);
         assert!(saved.scenes[1].assets.is_empty());
         assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(saved));
@@ -5828,7 +5955,9 @@ mod smoke_tests {
         plan.scenes[0].assets[0].ordinal = 1;
         plan.scenes[0].assets[1].ordinal = 0;
         plan.scenes[0].assets.sort_by_key(|link| link.ordinal);
-        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "swap-links", "swap-links", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("swap ordinals");
+        let saved = database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "swap-links", "swap-links", TimestampMillis::new(10), |scope| scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "character save swaps scene asset ordinals failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("swap ordinals");
         assert_eq!(saved.scenes[0].assets, plan.scenes[0].assets);
         assert_eq!(CharacterRepository::get(&database, plan.character.id).expect("get"), Some(saved));
     }
@@ -5839,7 +5968,9 @@ mod smoke_tests {
         let (mut plan, avatar, _, _) = graph_fixture(&database);
         CharacterRepository::create(&database, plan.clone()).expect("create");
         let save = |plan: CreateCharacterPlan, revision, key: &str| {
-            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", key, key, TimestampMillis::new(10), |scope| scope.save_character(plan, Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+            database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", key, key, TimestampMillis::new(10), |scope| scope.save_character(plan, Some(Revision::new(revision)), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "character save queues only detached assets failed"); crate::ApiOperationError::Storage {
+                reason: "injected failure",
+            } })).expect("save");
         };
         let queued = || {
             let connection = database.connection().expect("lock");
@@ -5876,15 +6007,14 @@ mod smoke_tests {
             database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", key, digest, TimestampMillis::new(2), |scope| {
             scope.save_character(plan.clone(), Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|error| match error {
                 RepositoryError::StaleRevision { .. } => crate::ApiOperationError::Conflict,
-                _ => crate::ApiOperationError::Storage,
+                _ => crate::ApiOperationError::Storage {
+                    reason: "injected failure",
+                },
             })
         })
         };
         database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_character_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
-        assert_eq!(
-            apply("save", "digest"),
-            Err(crate::ApiOperationError::Storage)
-        );
+        assert!(matches!(apply("save", "digest"), Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             CharacterRepository::get(&database, before.character.id).expect("get"),
             Some(before.clone())
@@ -5972,7 +6102,9 @@ mod smoke_tests {
                 connection.execute_batch("CREATE TEMP TRIGGER crash_character_save_scene BEFORE INSERT ON scenes BEGIN SELECT crash_character_save(); END;").expect("trigger");
             }
             database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", "crash", "digest", TimestampMillis::new(2), |scope| {
-                scope.save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+                scope.save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|error| { tracing::warn!(%error, "character save process exit mid graph preserves the complete original failed"); crate::ApiOperationError::Storage {
+                    reason: "injected failure",
+                } })
             }).expect("save");
             panic!("crash hook was not reached");
         }
@@ -6020,7 +6152,9 @@ mod smoke_tests {
                 |scope| {
                     scope
                         .save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "character save process exit mid graph preserves the complete original failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("retry");
@@ -6043,7 +6177,9 @@ mod smoke_tests {
                 database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_save", &format!("writer-{index}"), "digest", TimestampMillis::new(2), |scope| {
                     scope.save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2)).map_err(|error| match error {
                         RepositoryError::StaleRevision { .. } => crate::ApiOperationError::Conflict,
-                        _ => crate::ApiOperationError::Storage,
+                        _ => crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        },
                     })
                 })
             })
@@ -6084,7 +6220,9 @@ mod smoke_tests {
                 |scope| {
                     scope
                         .save_character(plan.clone(), None, TimestampMillis::new(5))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "character save assigns metadata and rejects missing live references failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("create");
@@ -6145,7 +6283,9 @@ mod smoke_tests {
                 |scope| {
                     scope
                         .save_character(plan, Some(Revision::INITIAL), TimestampMillis::new(2))
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "character save preserves existing scene lifecycle failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("save");
@@ -6160,11 +6300,13 @@ mod smoke_tests {
             database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
             "character_archive", "archive", "digest", TimestampMillis::new(2), |scope| {
                 scope.set_library_character_status(before.character.id, Revision::INITIAL, LifecycleStatus::Archived, TimestampMillis::new(2))
-                    .map_err(|_| crate::ApiOperationError::Storage)
+                    .map_err(|error| { tracing::warn!(%error, "character lifecycle and receipt roll back together failed"); crate::ApiOperationError::Storage {
+                        reason: "injected failure",
+                    } })
             })
         };
         database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_archive_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
-        assert_eq!(apply(), Err(crate::ApiOperationError::Storage));
+        assert!(matches!(apply(), Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             CharacterRepository::get(&database, before.character.id).expect("get"),
             Some(before.clone())
@@ -6200,7 +6342,7 @@ mod smoke_tests {
             )
         };
         database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_character_delete_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
-        assert_eq!(apply("digest"), Err(crate::PurgeError::Storage));
+        assert!(matches!(apply("digest"), Err(crate::PurgeError::Storage { .. })));
         assert_eq!(
             CharacterRepository::get(&database, before.character.id).expect("get"),
             Some(before.clone())
@@ -6288,12 +6430,16 @@ mod smoke_tests {
         let apply = || {
             database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>(
             "character_media_set", "upload", "digest", TimestampMillis::new(2), |scope| {
-                let asset = scope.install_library_upload(lettuce_media::IngestedMedia { asset: upload.asset.clone(), blob: upload.blob.clone() }).map_err(|_| crate::ApiOperationError::Storage)?;
-                scope.set_library_character_media(before.character.id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+                let asset = scope.install_library_upload(lettuce_media::IngestedMedia { asset: upload.asset.clone(), blob: upload.blob.clone() }).map_err(|error| { tracing::warn!(%error, "library media receipt failure rolls back catalog owner and gc queue failed"); crate::ApiOperationError::Storage {
+                    reason: "injected failure",
+                } })?;
+                scope.set_library_character_media(before.character.id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|error| { tracing::warn!(%error, "library media receipt failure rolls back catalog owner and gc queue failed"); crate::ApiOperationError::Storage {
+                    reason: "injected failure",
+                } })
             })
         };
         database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_library_upload_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
-        assert_eq!(apply(), Err(crate::ApiOperationError::Storage));
+        assert!(matches!(apply(), Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             CharacterRepository::get(&database, before.character.id).expect("get"),
             Some(before.clone())
@@ -6354,8 +6500,12 @@ mod smoke_tests {
                 connection.execute_batch("CREATE TEMP TRIGGER crash_upload_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT crash_library_upload(); END;").expect("trigger");
             }
             database.commit_api_operation::<lettuce_characters::CharacterDetails, crate::ApiOperationError>("character_media_set", "crash-upload", "digest", TimestampMillis::new(2), |scope| {
-                let asset = scope.install_library_upload(library_upload_candidate()).map_err(|_| crate::ApiOperationError::Storage)?;
-                scope.set_library_character_media(id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|_| crate::ApiOperationError::Storage)
+                let asset = scope.install_library_upload(library_upload_candidate()).map_err(|error| { tracing::warn!(%error, "library media process exit before receipt preserves original catalog and owner failed"); crate::ApiOperationError::Storage {
+                    reason: "injected failure",
+                } })?;
+                scope.set_library_character_media(id, Revision::INITIAL, CharacterMediaSlot::AvatarOriginal, 0, Some(asset), TimestampMillis::new(2)).map_err(|error| { tracing::warn!(%error, "library media process exit before receipt preserves original catalog and owner failed"); crate::ApiOperationError::Storage {
+                    reason: "injected failure",
+                } })
             }).expect("upload");
             panic!("crash hook was not reached");
         }
@@ -6407,7 +6557,9 @@ mod smoke_tests {
                 |scope| {
                     let asset = scope
                         .install_library_upload(library_upload_candidate())
-                        .map_err(|_| crate::ApiOperationError::Storage)?;
+                        .map_err(|error| { tracing::warn!(%error, "library media process exit before receipt preserves original catalog and owner failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })?;
                     scope
                         .set_library_character_media(
                             before.character.id,
@@ -6417,7 +6569,9 @@ mod smoke_tests {
                             Some(asset),
                             TimestampMillis::new(2),
                         )
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "library media process exit before receipt preserves original catalog and owner failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("retry");

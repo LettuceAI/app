@@ -645,7 +645,9 @@ impl lettuce_usage::JobUsageLedger for FailingUsageRepository<'_> {
         record: lettuce_usage::JobInferenceUsage,
     ) -> Result<(), lettuce_usage::UsageLedgerError> {
         if self.fail_admission {
-            return Err(lettuce_usage::UsageLedgerError::Storage);
+            return Err(lettuce_usage::UsageLedgerError::Storage {
+                reason: "simulated failure",
+            });
         }
         lettuce_usage::JobUsageLedger::admit_job_usage(self.database, record)
     }
@@ -654,7 +656,9 @@ impl lettuce_usage::JobUsageLedger for FailingUsageRepository<'_> {
         _: lettuce_types::UsageEventId,
         _: lettuce_usage::JobInferenceUsageResult,
     ) -> Result<(), lettuce_usage::UsageLedgerError> {
-        Err(lettuce_usage::UsageLedgerError::Storage)
+        Err(lettuce_usage::UsageLedgerError::Storage {
+            reason: "simulated failure",
+        })
     }
     fn job_usage(
         &self,
@@ -1985,7 +1989,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 )
                 .await,
             Err(crate::CompanionSoulWriterExecutionError::Run(
-                lettuce_companions::CompanionSoulWriterRunRepositoryError::Failure
+                lettuce_companions::CompanionSoulWriterRunRepositoryError::Failure { .. }
             ))
         ));
         assert_eq!(
@@ -2871,7 +2875,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         assert!(matches!(
             failed,
             Err(crate::CompanionMemoryInferenceError::Run(
-                lettuce_memory::DynamicMemoryRunRepositoryError::Storage
+                lettuce_memory::DynamicMemoryRunRepositoryError::Storage { .. }
             ))
         ));
         assert_eq!(
@@ -7416,7 +7420,7 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
     assert!(matches!(
         coordinator.admit(invalid),
         Err(crate::LorebookEntryAdmissionError::Run(
-            lettuce_creation::LorebookEntryRunRepositoryError::Invalid
+            lettuce_creation::LorebookEntryRunRepositoryError::Invalid { .. }
         ))
     ));
     let admitted = coordinator.admit(make_request()).expect("admit run");
@@ -7510,7 +7514,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     invalid.content = "  ".into();
     assert!(matches!(
         coordinator.prepare_and_admit(invalid),
-        Err(crate::LorebookKeywordAdmissionError::InvalidInput)
+        Err(crate::LorebookKeywordAdmissionError::InvalidInput { .. })
     ));
 
     let admitted = coordinator
@@ -7913,7 +7917,7 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     invalid.overrides.planner_prompt_id = Some(builtins.lorebook_generator_writer);
     assert!(matches!(
         coordinator.admit_configured(invalid.clone(), &builtins),
-        Err(crate::StagedLorebookAdmissionError::InvalidInput)
+        Err(crate::StagedLorebookAdmissionError::InvalidInput { .. })
     ));
     invalid.overrides.planner_prompt_id = None;
     assert_eq!(
@@ -8117,7 +8121,7 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
     assert!(matches!(
         coordinator.admit_configured(wrong_role, &builtins),
         Err(crate::StagedLorebookAdmissionError::Repository(
-            lettuce_creation::StagedLorebookRepositoryError::Invalid
+            lettuce_creation::StagedLorebookRepositoryError::Invalid { .. }
         ))
     ));
     let mut invalid = request.clone();
@@ -8130,7 +8134,7 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
         matches!(
             invalid_result,
             Err(crate::StagedLorebookAdmissionError::Repository(
-                lettuce_creation::StagedLorebookRepositoryError::Invalid
+                lettuce_creation::StagedLorebookRepositoryError::Invalid { .. }
             ))
         ),
         "{invalid_result:?}"
@@ -8597,7 +8601,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 batch_prompt,
                 TimestampMillis::new(NOW.get() + 9),
             ),
-            Err(crate::StagedLorebookWriterAdmissionError::InvalidInput)
+            Err(crate::StagedLorebookWriterAdmissionError::InvalidInput { .. })
         ));
         assert_eq!(
             lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, request_id)
@@ -8734,7 +8738,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             prompt: &writer_prompt,
             now: TimestampMillis::new(NOW.get() + 10),
         }),
-        Err(crate::StagedLorebookWriterAdmissionError::InvalidInput)
+        Err(crate::StagedLorebookWriterAdmissionError::InvalidInput { .. })
     ));
     assert!(matches!(
         lettuce_creation::StagedLorebookWriterRunRepository::load_staged_lorebook_writer_run(
@@ -9268,7 +9272,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .expect("refinement work");
     let failed_refine_at = failed_refine_work.job.updated_at;
     assert!(matches!(writer_dispatcher.settle(
-        failed_refine_work, Err(crate::StagedLorebookWriterExecutionError::InvalidResponse),
+        failed_refine_work, Err(crate::StagedLorebookWriterExecutionError::InvalidResponse { reason: "simulated failure".to_owned() }),
         CancellationReason::User, failed_refine_at,
     ).expect("settle failed refinement"), crate::StagedLorebookWriterSettledWork::Failed { ref job, .. } if job.state == JobState::Failed));
     assert_eq!(
@@ -9838,7 +9842,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .await;
     assert!(matches!(
         invalid_result,
-        Err(crate::StagedLorebookPlannerExecutionError::InvalidResponse)
+        Err(crate::StagedLorebookPlannerExecutionError::InvalidResponse { .. })
     ));
     let old_job_id = work.job.id;
     assert_evidence(&database, old_job_id, "gen-invalid-planner", 6);
@@ -10121,7 +10125,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("claim failing writer")
             .expect("failing work");
         assert!(
-            matches!(writer_dispatcher.settle(work, Err(crate::StagedLorebookWriterExecutionError::InvalidResponse), CancellationReason::User, TimestampMillis::new(NOW.get() + 154)).expect("settle failed writer"),
+            matches!(writer_dispatcher.settle(work, Err(crate::StagedLorebookWriterExecutionError::InvalidResponse { reason: "simulated failure".to_owned() }), CancellationReason::User, TimestampMillis::new(NOW.get() + 154)).expect("settle failed writer"),
             crate::StagedLorebookWriterSettledWork::Failed { ref job, .. } if job.state == JobState::Failed)
         );
     }
@@ -10256,7 +10260,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .await;
     assert!(matches!(
         rejected.as_slice(),
-        [Err(crate::StagedLorebookWriterDispatchError::InvalidWork)]
+        [Err(
+            crate::StagedLorebookWriterDispatchError::InvalidWork { .. }
+        )]
     ));
     assert_eq!(
         concurrent.calls.load(std::sync::atomic::Ordering::SeqCst),
@@ -10833,7 +10839,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         assert!(matches!(
             coordinator
                 .prepare_and_admit(make_request(rejected_request_id, vec![rejected_message_id])),
-            Err(crate::LorebookEntryPreparationError::InvalidInput)
+            Err(crate::LorebookEntryPreparationError::InvalidInput { .. })
         ));
         assert!(matches!(
             lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_run(
@@ -10865,7 +10871,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         rejected.selected_memory_ids = vec![rejected_memory_id];
         assert!(matches!(
             coordinator.prepare_and_admit(rejected),
-            Err(crate::LorebookEntryPreparationError::InvalidInput)
+            Err(crate::LorebookEntryPreparationError::InvalidInput { .. })
         ));
         assert!(matches!(
             lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_run(
@@ -11489,7 +11495,7 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
     assert!(matches!(
         crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &jobs)
             .retry_direct_with_model_and_admit(conversation.id, 512, 20, model_id, true),
-        Err(crate::CompanionPostTurnMemoryAdmissionError::InvalidBatch)
+        Err(crate::CompanionPostTurnMemoryAdmissionError::InvalidBatch { .. })
     ));
     let anchor = ConversationReader::timeline_page(
         &database,

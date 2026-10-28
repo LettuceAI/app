@@ -8,7 +8,9 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 
 fn storage<E>(_: E) -> ChatImportRepositoryError {
-    ChatImportRepositoryError::Storage
+    ChatImportRepositoryError::Storage {
+        reason: "storage: stored data failed a consistency check",
+    }
 }
 
 impl crate::ApiOperationTransaction<'_, '_> {
@@ -20,8 +22,12 @@ impl crate::ApiOperationTransaction<'_, '_> {
         now: TimestampMillis,
     ) -> Result<(), ChatImportRepositoryError> {
         if let Some(group) = group {
-            self.save_group(group, None, now)
-                .map_err(|_| ChatImportRepositoryError::InvalidInput)?;
+            self.save_group(group, None, now).map_err(|error| {
+                tracing::warn!(%error, "import chat failed");
+                ChatImportRepositoryError::InvalidInput {
+                    reason: "import chat: a value could not be read or converted",
+                }
+            })?;
         }
         import_chat_in(self.transaction, record, companion, now)
     }
@@ -45,13 +51,23 @@ pub(crate) fn import_chat_in(
     let conversation_id = record.history.aggregate.conversation.id;
     let operation = lettuce_conversations::OperationToken {
         key: lettuce_conversations::IdempotencyKey::new(format!("chat-import.{conversation_id}"))
-            .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
+            .map_err(|error| {
+            tracing::warn!(%error, "import chat in failed");
+            ChatImportRepositoryError::InvalidInput {
+                reason: "import chat in: a value could not be read or converted",
+            }
+        })?,
         request_digest: ContentHash::parse(
             blake3::hash(conversation_id.to_string().as_bytes())
                 .to_hex()
                 .to_string(),
         )
-        .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
+        .map_err(|error| {
+            tracing::warn!(%error, "import chat in failed");
+            ChatImportRepositoryError::InvalidInput {
+                reason: "import chat in: a value could not be read or converted",
+            }
+        })?,
     };
     crate::conversation::conversation_history_writer::insert_historical_conversation(
         tx,
@@ -77,9 +93,13 @@ pub(crate) fn import_chat_in(
         }
         lettuce_conversations::ConversationRepositoryError::Invalid(_)
         | lettuce_conversations::ConversationRepositoryError::ArtifactReference(_) => {
-            ChatImportRepositoryError::InvalidInput
+            ChatImportRepositoryError::InvalidInput {
+                reason: "import chat in: a value failed validation",
+            }
         }
-        _ => ChatImportRepositoryError::Storage,
+        _ => ChatImportRepositoryError::Storage {
+            reason: "import chat in: a stored value is not recognised",
+        },
     })?;
     Ok(())
 }
@@ -122,12 +142,18 @@ fn next_episode(
         .map_err(storage)?;
     }
     Ok(LegacyCompanionEpisodeRecord {
-        episode_index: u32::try_from(next_index)
-            .map_err(|_| ChatImportRepositoryError::InvalidInput)?,
-        previous_conversation_id: previous
-            .map(|id| id.parse())
-            .transpose()
-            .map_err(|_| ChatImportRepositoryError::Storage)?,
+        episode_index: u32::try_from(next_index).map_err(|error| {
+            tracing::warn!(%error, "next episode failed");
+            ChatImportRepositoryError::InvalidInput {
+                reason: "next episode: a value could not be read or converted",
+            }
+        })?,
+        previous_conversation_id: previous.map(|id| id.parse()).transpose().map_err(|error| {
+            tracing::warn!(%error, "next episode failed");
+            ChatImportRepositoryError::Storage {
+                reason: "next episode: a storage step failed",
+            }
+        })?,
         started_at: now,
         ended_at: None,
         updated_at: now,

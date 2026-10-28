@@ -21,6 +21,7 @@ rand.workspace = true
 serde.workspace = true
 lettuce-types.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 serde_json.workspace = true

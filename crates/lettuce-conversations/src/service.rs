@@ -739,7 +739,9 @@ mod tests {
             _failure: Option<ToolFailure>,
             _at: TimestampMillis,
         ) -> Result<ToolExecution, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn transition_tool_execution_batch(
@@ -747,7 +749,9 @@ mod tests {
             _transitions: &[ToolExecutionTransition],
             _at: TimestampMillis,
         ) -> Result<Vec<ToolExecution>, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
     }
 
@@ -756,14 +760,18 @@ mod tests {
             &self,
             _id: lettuce_types::ConversationId,
         ) -> Result<ConversationAggregate, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn page(
             &self,
             _query: &ConversationQuery,
         ) -> Result<KeysetPage<ConversationSummary>, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn timeline_page(
@@ -772,14 +780,18 @@ mod tests {
             _branch_id: lettuce_types::ConversationBranchId,
             _page: &lettuce_types::PageRequest,
         ) -> Result<TimelinePage, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn get_message_revision(
             &self,
             _id: lettuce_types::MessageRevisionId,
         ) -> Result<crate::content::MessageRevision, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn page_message_revisions(
@@ -788,14 +800,18 @@ mod tests {
             _page: &lettuce_types::PageRequest,
         ) -> Result<KeysetPage<crate::content::MessageRevision>, ConversationRepositoryError>
         {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn get_candidate(
             &self,
             _id: lettuce_types::MessageCandidateId,
         ) -> Result<crate::content::MessageCandidate, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn page_candidates(
@@ -804,14 +820,18 @@ mod tests {
             _page: &lettuce_types::PageRequest,
         ) -> Result<KeysetPage<crate::content::MessageCandidate>, ConversationRepositoryError>
         {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn get_turn(
             &self,
             _id: lettuce_types::GenerationTurnId,
         ) -> Result<GenerationTurn, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn page_turns(
@@ -819,7 +839,9 @@ mod tests {
             _conversation_id: lettuce_types::ConversationId,
             _page: &lettuce_types::PageRequest,
         ) -> Result<KeysetPage<GenerationTurn>, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn operation_record(
@@ -828,7 +850,9 @@ mod tests {
             _kind: OperationKind,
             _token: &crate::commands::OperationToken,
         ) -> Result<Option<crate::ports::OperationRecord>, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
 
         fn page_outbox(
@@ -836,7 +860,9 @@ mod tests {
             _conversation_id: lettuce_types::ConversationId,
             _page: &lettuce_types::PageRequest,
         ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError> {
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage {
+                reason: "the test repository does not store".to_owned(),
+            })
         }
     }
 
@@ -851,7 +877,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ConversationServiceError::Repository(
-                ConversationRepositoryError::Storage
+                ConversationRepositoryError::Storage { .. }
             ))
         ));
     }

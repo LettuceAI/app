@@ -143,12 +143,16 @@ impl Database {
         &self,
         patch: serde_json::Map<String, serde_json::Value>,
     ) -> Result<serde_json::Map<String, serde_json::Value>, GlobalSettingsStoreError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| GlobalSettingsStoreError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let stored: Option<String> = transaction
             .query_row(
                 "SELECT state_json FROM device_ui_state WHERE id = 1",
@@ -156,11 +160,15 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage {
+                reason: error.to_string(),
+            })?;
         let mut state = match stored {
             Some(stored) => {
                 serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stored)
-                    .map_err(|_| GlobalSettingsStoreError::InvalidData)?
+                    .map_err(|error| GlobalSettingsStoreError::InvalidData {
+                        reason: error.to_string(),
+                    })?
             }
             None => serde_json::Map::new(),
         };
@@ -171,11 +179,16 @@ impl Database {
                 state.insert(key, value);
             }
         }
-        crate::write_device_ui_state(&transaction, &state)
-            .map_err(|_| GlobalSettingsStoreError::InvalidData)?;
+        crate::write_device_ui_state(&transaction, &state).map_err(|error| {
+            GlobalSettingsStoreError::InvalidData {
+                reason: error.to_string(),
+            }
+        })?;
         transaction
             .commit()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage {
+                reason: error.to_string(),
+            })?;
         Ok(state)
     }
 }

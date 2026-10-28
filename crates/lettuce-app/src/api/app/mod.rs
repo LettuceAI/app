@@ -39,18 +39,18 @@ use super::error::{api_error, invalid_field};
 
 pub(super) fn settings_error(error: GlobalSettingsStoreError) -> ApiError {
     let code = match error {
-        GlobalSettingsStoreError::InvalidData => ApiErrorCode::InvalidInput,
+        GlobalSettingsStoreError::InvalidData { .. } => ApiErrorCode::InvalidInput,
         GlobalSettingsStoreError::StaleRevision => ApiErrorCode::Conflict,
         GlobalSettingsStoreError::ModelProfileMissing => ApiErrorCode::NotFound,
-        GlobalSettingsStoreError::Storage => ApiErrorCode::Internal,
+        GlobalSettingsStoreError::Storage { .. } => ApiErrorCode::Internal,
     };
     let reason = match error {
-        GlobalSettingsStoreError::InvalidData => dto::SettingsFailureReason::InvalidData,
+        GlobalSettingsStoreError::InvalidData { .. } => dto::SettingsFailureReason::InvalidData,
         GlobalSettingsStoreError::StaleRevision => dto::SettingsFailureReason::StaleRevision,
         GlobalSettingsStoreError::ModelProfileMissing => {
             dto::SettingsFailureReason::ModelProfileMissing
         }
-        GlobalSettingsStoreError::Storage => dto::SettingsFailureReason::Storage,
+        GlobalSettingsStoreError::Storage { .. } => dto::SettingsFailureReason::Storage,
     };
     ApiError {
         code,

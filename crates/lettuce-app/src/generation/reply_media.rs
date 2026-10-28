@@ -103,7 +103,12 @@ where
         if let Err(error) = self.store.release_blob(blob_id, |_| {
             self.repository
                 .release_unused_blob(blob_id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)
+                .map_err(|error| {
+                    tracing::warn!(%error, "unused reply blob release failed");
+                    MediaStoreError::CatalogFailure {
+                        reason: "unused reply blob release failed",
+                    }
+                })
         }) {
             tracing::warn!(%asset_id, %error, "unused reply image bytes were not deleted");
         }
@@ -164,7 +169,7 @@ pub(crate) fn attach_reply_media(
             Err(
                 error @ (MediaStoreError::EmptyInput
                 | MediaStoreError::UnsupportedFormat
-                | MediaStoreError::InvalidHeader
+                | MediaStoreError::InvalidHeader { .. }
                 | MediaStoreError::KindMismatch
                 | MediaStoreError::MimeMismatch
                 | MediaStoreError::PixelLimitExceeded
@@ -233,7 +238,9 @@ mod tests {
                 return Err(MediaStoreError::UnsupportedFormat);
             }
             if bytes == b"down" {
-                return Err(MediaStoreError::CatalogFailure);
+                return Err(MediaStoreError::CatalogFailure {
+                    reason: "simulated failure",
+                });
             }
             self.0
                 .lock()
@@ -328,7 +335,7 @@ mod tests {
             model_profile_id: ModelProfileId::new(),
         };
         let mut reply = candidate(vec![image("AQID"), image("ZG93bg=="), image("BAU")]);
-        assert_eq!(
+        assert!(matches!(
             attach_reply_media(
                 Some(&store),
                 attempt_id,
@@ -336,8 +343,10 @@ mod tests {
                 &mut reply,
                 TimestampMillis::new(1)
             ),
-            Err(ReplyMediaError::Store(MediaStoreError::CatalogFailure))
-        );
+            Err(ReplyMediaError::Store(
+                MediaStoreError::CatalogFailure { .. }
+            ))
+        ));
         assert_eq!(
             *store.1.lock().expect("discard lock"),
             vec![reply_image_asset_id(attempt_id, 0)]

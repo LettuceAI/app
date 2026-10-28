@@ -973,7 +973,7 @@ pub async fn prompt_preview(
                         ))
                         .map_err(|error| match error {
                             crate::ConversationGenerationInputError::Context(
-                                lettuce_conversations::ContextAssemblyError::RuntimeTextUnavailable,
+                                lettuce_conversations::ContextAssemblyError::RuntimeTextUnavailable { .. },
                             ) => runtime_text_error(),
                             crate::ConversationGenerationInputError::EmbeddingUnavailable => {
                                 crate::api::error::model_error(

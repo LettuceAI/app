@@ -54,18 +54,38 @@ impl OnnxKokoroRuntime {
         _runtime: OnnxRuntimeCommitted,
     ) -> Result<Self, KokoroRuntimeError> {
         let session = Session::builder()
-            .map_err(|_| KokoroRuntimeError::Unavailable)?
+            .map_err(|error| {
+                tracing::warn!(%error, "creating the onnx session builder failed");
+                KokoroRuntimeError::Unavailable {
+                    reason: "creating the onnx session builder failed",
+                }
+            })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|_| KokoroRuntimeError::Unavailable)?
+            .map_err(|error| {
+                tracing::warn!(%error, "setting the onnx optimization level failed");
+                KokoroRuntimeError::Unavailable {
+                    reason: "setting the onnx optimization level failed",
+                }
+            })?
             .commit_from_file(model_path)
-            .map_err(|_| KokoroRuntimeError::ModelLoad)?;
-        let tokens_input_name = detect_tokens_input_name(&session.inputs)
-            .ok_or(KokoroRuntimeError::InvalidModel)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "loading the kokoro model file failed");
+                KokoroRuntimeError::ModelLoad {
+                    reason: "loading the kokoro model file failed",
+                }
+            })?;
+        let tokens_input_name = detect_tokens_input_name(&session.inputs).ok_or(
+            KokoroRuntimeError::InvalidModel {
+                reason: "model has no tokens input",
+            },
+        )?;
         if !session.inputs.iter().any(|input| input.name == "style")
             || !session.inputs.iter().any(|input| input.name == "speed")
             || session.outputs.is_empty()
         {
-            return Err(KokoroRuntimeError::InvalidModel);
+            return Err(KokoroRuntimeError::InvalidModel {
+                reason: "model lacks the style or speed input or has no outputs",
+            });
         }
         let speed_uses_int32 = detect_speed_uses_int32(&session.inputs);
         Ok(Self {
@@ -98,11 +118,25 @@ impl KokoroChunkRuntime for OnnxKokoroRuntime {
         let sequence_length = token_ids.len() + 2;
         let mut padded = vec![0_i64; sequence_length];
         padded[1..sequence_length - 1].copy_from_slice(token_ids);
-        let tokens = Value::from_array(([1_usize, sequence_length], padded))
-            .map_err(|_| KokoroRuntimeError::InvalidInput)?;
+        let tokens = Value::from_array(([1_usize, sequence_length], padded)).map_err(|error| {
+            tracing::warn!(%error, "building the tokens tensor failed");
+            KokoroRuntimeError::InvalidInput {
+                reason: "building the tokens tensor failed",
+            }
+        })?;
         let style = Value::from_array(([1_usize, KOKORO_STYLE_DIMENSIONS], style.to_vec()))
-            .map_err(|_| KokoroRuntimeError::InvalidInput)?;
-        let options = Arc::new(RunOptions::new().map_err(|_| KokoroRuntimeError::Inference)?);
+            .map_err(|error| {
+                tracing::warn!(%error, "building the style tensor failed");
+                KokoroRuntimeError::InvalidInput {
+                    reason: "building the style tensor failed",
+                }
+            })?;
+        let options = Arc::new(RunOptions::new().map_err(|error| {
+            tracing::warn!(%error, "creating the onnx run options failed");
+            KokoroRuntimeError::Inference {
+                reason: "creating the onnx run options failed",
+            }
+        })?);
         let finished = Arc::new(AtomicBool::new(false));
         let canceller = spawn_canceller(
             Arc::clone(&options),
@@ -110,8 +144,13 @@ impl KokoroChunkRuntime for OnnxKokoroRuntime {
             cancellation.clone(),
         );
         let result = if self.speed_uses_int32 {
-            let speed = Value::from_array(([1_usize], vec![speed.round() as i32]))
-                .map_err(|_| KokoroRuntimeError::InvalidInput)?;
+            let speed =
+                Value::from_array(([1_usize], vec![speed.round() as i32])).map_err(|error| {
+                    tracing::warn!(%error, "building the int32 speed tensor failed");
+                    KokoroRuntimeError::InvalidInput {
+                        reason: "building the int32 speed tensor failed",
+                    }
+                })?;
             self.session.run_with_options(
                 inputs![
                     self.tokens_input_name.as_str() => tokens,
@@ -121,8 +160,12 @@ impl KokoroChunkRuntime for OnnxKokoroRuntime {
                 options.as_ref(),
             )
         } else {
-            let speed = Value::from_array(([1_usize], vec![speed]))
-                .map_err(|_| KokoroRuntimeError::InvalidInput)?;
+            let speed = Value::from_array(([1_usize], vec![speed])).map_err(|error| {
+                tracing::warn!(%error, "building the speed tensor failed");
+                KokoroRuntimeError::InvalidInput {
+                    reason: "building the speed tensor failed",
+                }
+            })?;
             self.session.run_with_options(
                 inputs![
                     self.tokens_input_name.as_str() => tokens,
@@ -134,13 +177,18 @@ impl KokoroChunkRuntime for OnnxKokoroRuntime {
         };
         finished.store(true, Ordering::Release);
         if canceller.join().is_err() {
-            return Err(KokoroRuntimeError::CancellationMonitor);
+            return Err(KokoroRuntimeError::CancellationMonitor {
+                reason: "cancellation monitor thread panicked",
+            });
         }
-        let outputs = result.map_err(|_| {
+        let outputs = result.map_err(|error| {
             if cancellation.is_cancelled() {
                 KokoroRuntimeError::Cancelled
             } else {
-                KokoroRuntimeError::Inference
+                tracing::warn!(%error, "onnx run failed");
+                KokoroRuntimeError::Inference {
+                    reason: "onnx run failed",
+                }
             }
         })?;
         if cancellation.is_cancelled() {
@@ -149,10 +197,15 @@ impl KokoroChunkRuntime for OnnxKokoroRuntime {
         let output = outputs
             .values()
             .next()
-            .ok_or(KokoroRuntimeError::InvalidOutput)?;
-        let (_, samples) = output
-            .try_extract_tensor::<f32>()
-            .map_err(|_| KokoroRuntimeError::InvalidOutput)?;
+            .ok_or(KokoroRuntimeError::InvalidOutput {
+                reason: "inference produced no output",
+            })?;
+        let (_, samples) = output.try_extract_tensor::<f32>().map_err(|error| {
+            tracing::warn!(%error, "reading the output tensor as f32 failed");
+            KokoroRuntimeError::InvalidOutput {
+                reason: "reading the output tensor as f32 failed",
+            }
+        })?;
         validate_samples(samples)?;
         Ok(samples.to_vec())
     }
@@ -166,7 +219,9 @@ pub fn synthesize_kokoro_tokens(
     cancellation: &CancellationToken,
 ) -> Result<Vec<u8>, KokoroRuntimeError> {
     if !speed.is_finite() || speed <= 0.0 {
-        return Err(KokoroRuntimeError::InvalidInput);
+        return Err(KokoroRuntimeError::InvalidInput {
+            reason: "speed is not a positive finite number",
+        });
     }
     if cancellation.is_cancelled() {
         return Err(KokoroRuntimeError::Cancelled);
@@ -228,7 +283,9 @@ fn append_with_crossfade(dst: &mut Vec<f32>, src: &[f32]) -> Result<(), KokoroRu
         .len()
         .checked_add(src.len().saturating_sub(overlap))
         .filter(|length| *length <= maximum_samples)
-        .ok_or(KokoroRuntimeError::LimitExceeded)?;
+        .ok_or(KokoroRuntimeError::LimitExceeded {
+            reason: "merged audio exceeds the sample limit",
+        })?;
     if overlap == 0 {
         dst.extend_from_slice(src);
         return Ok(());
@@ -250,10 +307,14 @@ fn encode_kokoro_wav(samples: &[f32]) -> Result<Vec<u8>, KokoroRuntimeError> {
         .len()
         .checked_mul(2)
         .and_then(|length| u32::try_from(length).ok())
-        .ok_or(KokoroRuntimeError::LimitExceeded)?;
+        .ok_or(KokoroRuntimeError::LimitExceeded {
+            reason: "audio data size overflows the wav header",
+        })?;
     let riff_bytes = data_bytes
         .checked_add(36)
-        .ok_or(KokoroRuntimeError::LimitExceeded)?;
+        .ok_or(KokoroRuntimeError::LimitExceeded {
+            reason: "audio riff size overflows the wav header",
+        })?;
     let mut wav = Vec::with_capacity(WAV_HEADER_BYTES + samples.len() * 2);
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&riff_bytes.to_le_bytes());
@@ -290,7 +351,9 @@ fn validate_chunk(
         || !speed.is_finite()
         || speed <= 0.0
     {
-        return Err(KokoroRuntimeError::InvalidInput);
+        return Err(KokoroRuntimeError::InvalidInput {
+            reason: "tokens, style or speed are out of range",
+        });
     }
     Ok(())
 }
@@ -298,7 +361,9 @@ fn validate_chunk(
 fn validate_samples(samples: &[f32]) -> Result<(), KokoroRuntimeError> {
     let maximum_samples = (lettuce_media::MAX_MEDIA_BLOB_BYTES as usize - WAV_HEADER_BYTES) / 2;
     if samples.len() > maximum_samples || samples.iter().any(|sample| !sample.is_finite()) {
-        return Err(KokoroRuntimeError::InvalidOutput);
+        return Err(KokoroRuntimeError::InvalidOutput {
+            reason: "samples exceed the media size limit or are not finite",
+        });
     }
     Ok(())
 }
@@ -343,24 +408,24 @@ fn spawn_canceller(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum KokoroRuntimeError {
-    #[error("Kokoro ONNX Runtime is unavailable")]
-    Unavailable,
-    #[error("Kokoro model could not be loaded")]
-    ModelLoad,
-    #[error("Kokoro model contract is invalid")]
-    InvalidModel,
-    #[error("Kokoro synthesis input is invalid")]
-    InvalidInput,
-    #[error("Kokoro inference failed")]
-    Inference,
-    #[error("Kokoro inference output is invalid")]
-    InvalidOutput,
-    #[error("Kokoro synthesis output exceeds its limit")]
-    LimitExceeded,
+    #[error("Kokoro ONNX Runtime is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("Kokoro model could not be loaded: {reason}")]
+    ModelLoad { reason: &'static str },
+    #[error("Kokoro model contract is invalid: {reason}")]
+    InvalidModel { reason: &'static str },
+    #[error("Kokoro synthesis input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
+    #[error("Kokoro inference failed: {reason}")]
+    Inference { reason: &'static str },
+    #[error("Kokoro inference output is invalid: {reason}")]
+    InvalidOutput { reason: &'static str },
+    #[error("Kokoro synthesis output exceeds its limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("Kokoro synthesis was cancelled")]
     Cancelled,
-    #[error("Kokoro cancellation monitor failed")]
-    CancellationMonitor,
+    #[error("Kokoro cancellation monitor failed: {reason}")]
+    CancellationMonitor { reason: &'static str },
 }
 
 #[cfg(test)]

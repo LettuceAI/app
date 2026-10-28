@@ -41,8 +41,12 @@ pub fn admit_creation_turn_dispatch<R: CreationAttemptRepository + ?Sized>(
     request: CreationTurnDispatchRequest,
     handle: &JobHandle,
 ) -> Result<CreationTurnAttemptAdmission, CreationContinuationError> {
-    let profile_fingerprint = creation_inference_profile_fingerprint(&request.profile)
-        .map_err(|_| CreationContinuationError::InvalidProfile)?;
+    let profile_fingerprint =
+        creation_inference_profile_fingerprint(&request.profile).map_err(|error| {
+            CreationContinuationError::InvalidProfile {
+                reason: error.to_string(),
+            }
+        })?;
     repository
         .admit_creation_turn_attempt(NewCreationTurnAttempt {
             workflow_id: request.workflow_id,
@@ -78,8 +82,12 @@ pub fn admit_creation_regeneration_dispatch<R: CreationAttemptRepository + ?Size
     request: CreationRegenerationDispatchRequest,
     handle: &JobHandle,
 ) -> Result<CreationTurnAttemptAdmission, CreationContinuationError> {
-    let profile_fingerprint = creation_inference_profile_fingerprint(&request.profile)
-        .map_err(|_| CreationContinuationError::InvalidProfile)?;
+    let profile_fingerprint =
+        creation_inference_profile_fingerprint(&request.profile).map_err(|error| {
+            CreationContinuationError::InvalidProfile {
+                reason: error.to_string(),
+            }
+        })?;
     repository
         .admit_creation_regeneration(lettuce_creation::NewCreationRegeneration {
             workflow_id: request.workflow_id,
@@ -111,8 +119,12 @@ pub fn recover_creation_dispatch<R: CreationAttemptRepository + ?Sized>(
     request: CreationRecoveryDispatchRequest,
     child_handle: &JobHandle,
 ) -> Result<CreationAttemptRecovery, CreationContinuationError> {
-    let profile_fingerprint = creation_inference_profile_fingerprint(&request.profile)
-        .map_err(|_| CreationContinuationError::InvalidProfile)?;
+    let profile_fingerprint =
+        creation_inference_profile_fingerprint(&request.profile).map_err(|error| {
+            CreationContinuationError::InvalidProfile {
+                reason: error.to_string(),
+            }
+        })?;
     repository
         .recover_creation_attempt(NewCreationAttemptRecovery {
             owner: CreationAttemptOwner {
@@ -185,13 +197,19 @@ impl<
     ) -> Result<CreationContinuationResult, CreationContinuationError> {
         let mut attempt = self.repository.load_creation_attempt(attempt_id)?;
         if attempt.job_id != handle.id() {
-            return Err(CreationContinuationError::InvalidJobOwnership);
+            return Err(CreationContinuationError::InvalidJobOwnership {
+                reason: "attempt belongs to another job",
+            });
         }
-        if creation_inference_profile_fingerprint(&profile)
-            .map_err(|_| CreationContinuationError::InvalidProfile)?
-            != attempt.profile_fingerprint
+        if creation_inference_profile_fingerprint(&profile).map_err(|error| {
+            CreationContinuationError::InvalidProfile {
+                reason: error.to_string(),
+            }
+        })? != attempt.profile_fingerprint
         {
-            return Err(CreationContinuationError::InvalidProfile);
+            return Err(CreationContinuationError::InvalidProfile {
+                reason: "the profile fingerprint differs from the stored attempt".to_owned(),
+            });
         }
         if attempt.status == CreationAttemptStatus::Created {
             attempt = self.repository.transition_creation_attempt(
@@ -222,7 +240,9 @@ impl<
             || (workflow.current_proposal_id != attempt.base_proposal_id
                 && workflow.current_proposal_id != attempt.planned_proposal_id)
         {
-            return Err(CreationContinuationError::InvalidOwnership);
+            return Err(CreationContinuationError::InvalidOwnership {
+                reason: "the workflow, base or attempt differ in stage, target or proposal",
+            });
         }
         let prepared = self.prompt_text(&attempt).and_then(|text| {
             build_creation_inference_request(
@@ -253,7 +273,9 @@ impl<
         let mut terminal = false;
         for (index, round) in rounds.iter().enumerate() {
             if terminal {
-                return Err(CreationContinuationError::InvalidRoundHistory);
+                return Err(CreationContinuationError::InvalidRoundHistory {
+                    reason: "a round follows a terminal round".to_owned(),
+                });
             }
             let replayed = self.fail_unless_storage(
                 &attempt,
@@ -272,7 +294,9 @@ impl<
             visible_parts.extend(round.parts.clone());
             terminal = replayed.terminal;
             if terminal && index + 1 != rounds.len() {
-                return Err(CreationContinuationError::InvalidRoundHistory);
+                return Err(CreationContinuationError::InvalidRoundHistory {
+                    reason: "a terminal round is not the last round".to_owned(),
+                });
             }
         }
         if terminal || attempt_limit_reached(&rounds, &calls) {
@@ -299,13 +323,18 @@ impl<
                     self.cancel_attempt(&attempt, now)?;
                     return Err(CreationContinuationError::Cancelled);
                 }
-                Err(JobInferenceError::Evidence) => {
-                    return Err(CreationRepositoryError::Storage.into());
+                Err(JobInferenceError::Evidence { reason }) => {
+                    tracing::warn!(%reason, "creation inference usage evidence failed");
+                    return Err(CreationRepositoryError::Storage {
+                        reason: "inference usage evidence could not be recorded",
+                    }
+                    .into());
                 }
                 Err(JobInferenceError::Provider(error)) => {
                     let code = match error {
                         PortError::Rejected => CreationAttemptFailureCode::ProviderRejected,
                         PortError::Empty => CreationAttemptFailureCode::EmptyResponse,
+                        PortError::InvalidResponse => CreationAttemptFailureCode::Internal,
                         PortError::Unavailable | PortError::Provider(_) => {
                             CreationAttemptFailureCode::ProviderUnavailable
                         }
@@ -340,8 +369,11 @@ impl<
             };
             let round_ordinal =
                 u8::try_from(rounds.len()).map_err(|_| CreationContinuationError::RoundLimit)?;
-            let next_call_ordinal = u16::try_from(calls.len())
-                .map_err(|_| CreationContinuationError::InvalidRoundHistory)?;
+            let next_call_ordinal = u16::try_from(calls.len()).map_err(|error| {
+                CreationContinuationError::InvalidRoundHistory {
+                    reason: error.to_string(),
+                }
+            })?;
             let mut new_round = match plan_round(&attempt, round_ordinal, &candidate, &outcome, now)
             {
                 Ok(round) => round,
@@ -474,10 +506,11 @@ impl<
         calls: Vec<AdmittedCreationToolCall>,
         visible_parts: Vec<MessagePart>,
     ) -> Result<CreationContinuationResult, CreationContinuationError> {
-        let finished_at = rounds
-            .last()
-            .map(|round| round.admitted_at)
-            .ok_or(CreationContinuationError::InvalidRoundHistory)?;
+        let finished_at = rounds.last().map(|round| round.admitted_at).ok_or(
+            CreationContinuationError::InvalidRoundHistory {
+                reason: "the attempt has no rounds".to_owned(),
+            },
+        )?;
         let proposal = if calls.is_empty() {
             None
         } else {
@@ -588,7 +621,7 @@ fn build_creation_inference_request(
     if (tool_fallback.is_none() && profile.tool_policy != ToolPolicy::Allowed)
         || base.id != attempt.base_proposal_id
     {
-        return Err(CreationContinuationError::InvalidProfile);
+        return Err(CreationContinuationError::InvalidProfile { reason: "the profile has no tool fallback for a non-allowed tool policy, or the base proposal changed".to_owned() });
     }
     let tools = lettuce_creation::describe_creation_tools(&attempt.tool_request, &|key| {
         text.runtime.render_with(key, []).unwrap_or_default()
@@ -603,7 +636,9 @@ fn build_creation_inference_request(
                 CreationContinuationError::RuntimeTextUnavailable
             }
             crate::generation::runtime_text::RuntimeTextError::Render => {
-                CreationContinuationError::PromptRender
+                CreationContinuationError::PromptRender {
+                    reason: "runtime prompt text failed to render".to_owned(),
+                }
             }
         })?;
     if tool_fallback.is_some() {
@@ -623,7 +658,9 @@ fn build_creation_inference_request(
             CreationContinuationError::RuntimeTextUnavailable
         }
         crate::generation::runtime_text::RuntimeTextError::Render => {
-            CreationContinuationError::PromptRender
+            CreationContinuationError::PromptRender {
+                reason: "runtime prompt text failed to render".to_owned(),
+            }
         }
     })?;
     let input_bytes = messages
@@ -721,7 +758,9 @@ fn plan_round(
     };
     round
         .validate()
-        .map_err(|_| CreationContinuationError::InvalidCandidate)?;
+        .map_err(|error| CreationContinuationError::InvalidCandidate {
+            reason: error.to_string(),
+        })?;
     Ok(round)
 }
 
@@ -741,7 +780,9 @@ fn replay_round(
 ) -> Result<ReplayedRound, CreationContinuationError> {
     round
         .validate()
-        .map_err(|_| CreationContinuationError::InvalidRoundHistory)?;
+        .map_err(|error| CreationContinuationError::InvalidRoundHistory {
+            reason: error.to_string(),
+        })?;
     let mut calls = prior_calls.to_vec();
     calls.extend(round.calls.iter().map(|evidence| AdmittedCreationToolCall {
         definition_version: evidence.definition_version,
@@ -787,7 +828,9 @@ fn replay_round(
                 crate::creation::creation_prompt::render_tool_output(
                     text, &call.call, outcome, &draft,
                 )
-                .map_err(|_| CreationContinuationError::PromptRender)?,
+                .map_err(|error| CreationContinuationError::PromptRender {
+                    reason: error.to_string(),
+                })?,
             );
         }
         outputs
@@ -880,10 +923,11 @@ fn structured_fallback_candidate(
             raw_arguments: None,
             provider_replay: None,
         };
-        if proposed.validate().is_ok() {
-            tool_calls.push(proposed);
-        } else {
-            tracing::warn!("creation fallback call is not a valid tool call");
+        match proposed.validate() {
+            Ok(()) => tool_calls.push(proposed),
+            Err(error) => {
+                tracing::warn!(%error, "creation fallback call is not a valid tool call");
+            }
         }
     }
     let mut parts = candidate
@@ -913,7 +957,9 @@ fn validate_outcome(
 ) -> Result<&lettuce_conversations::InferenceCandidate, CreationContinuationError> {
     outcome
         .validate()
-        .map_err(|_| CreationContinuationError::InvalidCandidate)?;
+        .map_err(|error| CreationContinuationError::InvalidCandidate {
+            reason: error.to_string(),
+        })?;
     if outcome.candidates.len() != 1 {
         return Err(CreationContinuationError::MultipleCandidates);
     }
@@ -1028,7 +1074,7 @@ impl CreationContinuationError {
     const fn failure_code(&self) -> CreationAttemptFailureCode {
         match self {
             Self::ProviderFailed => CreationAttemptFailureCode::ProviderRejected,
-            Self::MultipleCandidates | Self::InvalidCandidate => {
+            Self::MultipleCandidates | Self::InvalidCandidate { .. } => {
                 CreationAttemptFailureCode::ProviderRejected
             }
             _ => CreationAttemptFailureCode::Internal,
@@ -1050,26 +1096,26 @@ pub enum CreationContinuationError {
     Validation(#[from] lettuce_conversations::ValidationError),
     #[error("creation attempt is not runnable")]
     AttemptNotRunnable,
-    #[error("creation attempt ownership is invalid")]
-    InvalidOwnership,
-    #[error("creation attempt job ownership is invalid")]
-    InvalidJobOwnership,
-    #[error("creation inference profile is invalid")]
-    InvalidProfile,
+    #[error("creation attempt ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("creation attempt job ownership is invalid: {reason}")]
+    InvalidJobOwnership { reason: &'static str },
+    #[error("creation inference profile is invalid: {reason}")]
+    InvalidProfile { reason: String },
     #[error("creation prompt context is too large")]
     ContextTooLarge,
-    #[error("creation inference round history is invalid")]
-    InvalidRoundHistory,
+    #[error("creation inference round history is invalid: {reason}")]
+    InvalidRoundHistory { reason: String },
     #[error("provider returned multiple creation candidates")]
     MultipleCandidates,
-    #[error("provider returned an invalid creation candidate")]
-    InvalidCandidate,
+    #[error("provider returned an invalid creation candidate: {reason}")]
+    InvalidCandidate { reason: String },
     #[error("provider failed the creation request")]
     ProviderFailed,
     #[error("creation runtime text is unavailable")]
     RuntimeTextUnavailable,
-    #[error("creation prompt could not be rendered")]
-    PromptRender,
+    #[error("creation prompt could not be rendered: {reason}")]
+    PromptRender { reason: String },
     #[error("creation request was cancelled")]
     Cancelled,
     #[error("creation inference reached its round limit")]
@@ -2128,7 +2174,7 @@ mod tests {
                 .run(attempt_id, profile, &handle, None, TimestampMillis::new(4))
                 .await,
             Err(CreationContinuationError::Repository(
-                CreationRepositoryError::Storage
+                CreationRepositoryError::Storage { .. }
             ))
         ));
         assert!(inference.requests.lock().expect("requests").is_empty());
@@ -2163,7 +2209,7 @@ mod tests {
                     TimestampMillis::new(4),
                 )
                 .await,
-            Err(CreationContinuationError::InvalidJobOwnership)
+            Err(CreationContinuationError::InvalidJobOwnership { .. })
         ));
         assert!(matches!(
             CreationContinuationCoordinator::new(&database, &inference)
@@ -2175,7 +2221,7 @@ mod tests {
                     TimestampMillis::new(4),
                 )
                 .await,
-            Err(CreationContinuationError::InvalidProfile)
+            Err(CreationContinuationError::InvalidProfile { .. })
         ));
         assert_eq!(
             database

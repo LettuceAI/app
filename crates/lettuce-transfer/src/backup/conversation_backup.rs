@@ -48,7 +48,9 @@ impl ConversationHistoryBackup {
         media_asset_ids: &BTreeSet<lettuce_types::AssetId>,
     ) -> Result<(), ConversationHistoryBackupError> {
         if self.version != CONVERSATION_HISTORY_BACKUP_VERSION {
-            return Err(ConversationHistoryBackupError::InvalidData);
+            return Err(ConversationHistoryBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.conversations
             .sort_by_key(|value| value.aggregate.conversation.id);
@@ -61,7 +63,9 @@ impl ConversationHistoryBackup {
             if !conversation_ids.insert(conversation_id)
                 || conversation.aggregate.validate().is_err()
             {
-                return Err(ConversationHistoryBackupError::InvalidData);
+                return Err(ConversationHistoryBackupError::InvalidData {
+                    reason: "conversation is duplicated or its aggregate is invalid",
+                });
             }
             conversation
                 .messages
@@ -95,7 +99,9 @@ impl ConversationHistoryBackup {
                         .iter()
                         .find(|message| message.message.id == follow_up.message_id)
                 })
-                .ok_or(ConversationHistoryBackupError::InvalidData)?;
+                .ok_or(ConversationHistoryBackupError::InvalidData {
+                    reason: "follow-up references an unknown message",
+                })?;
             let valid = match follow_up.target {
                 lettuce_conversations::SceneFollowUpTarget::Candidate(id) => message
                     .candidates
@@ -116,7 +122,9 @@ impl ConversationHistoryBackup {
                     follow_up.target.id(),
                 ))
             {
-                return Err(ConversationHistoryBackupError::InvalidData);
+                return Err(ConversationHistoryBackupError::InvalidData {
+                    reason: "follow-up target does not match its message",
+                });
             }
         }
         Ok(())
@@ -194,7 +202,9 @@ pub(crate) fn insert_snapshot(
             .insert(reference.artifact_id, reference.clone())
             .is_some_and(|existing| existing != *reference)
     {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "snapshot artifact id maps to two different references",
+        });
     }
     Ok(())
 }
@@ -208,7 +218,9 @@ pub(crate) fn insert_replay(
             .insert(reference.artifact_id, reference.clone())
             .is_some_and(|existing| existing != *reference)
     {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "replay artifact id maps to two different references",
+        });
     }
     Ok(())
 }
@@ -229,7 +241,9 @@ fn validate_conversation(
         .and_then(|settings| settings.background)
         && !media_asset_ids.contains(&asset_id)
     {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "conversation background references an unknown media asset",
+        });
     }
     let branch_ids = backup
         .aggregate
@@ -261,7 +275,9 @@ fn validate_conversation(
         })
         .collect::<BTreeMap<_, _>>();
     if local_messages.len() != backup.messages.len() {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "message count does not match the stored messages",
+        });
     }
     for branch in &backup.aggregate.branches {
         if branch.fork_message_id.is_some_and(|id| {
@@ -275,14 +291,19 @@ fn validate_conversation(
                 .get(&id)
                 .is_none_or(|(message_branch_id, _)| *message_branch_id != branch.id)
         }) {
-            return Err(ConversationHistoryBackupError::InvalidData);
+            return Err(ConversationHistoryBackupError::InvalidData {
+                reason: "branch references messages that belong to another branch",
+            });
         }
     }
     let mut starter_ids = BTreeSet::new();
     let mut scene_origins = 0_usize;
     for (index, entry) in backup.messages.iter_mut().enumerate() {
-        let expected_ordinal =
-            u64::try_from(index + 1).map_err(|_| ConversationHistoryBackupError::LimitExceeded)?;
+        let expected_ordinal = u64::try_from(index + 1).map_err(|_| {
+            ConversationHistoryBackupError::LimitExceeded {
+                reason: "message ordinal exceeds the u64 range",
+            }
+        })?;
         if entry.timeline_ordinal != expected_ordinal
             || entry.message.conversation_id != conversation_id
             || !branch_ids.contains(&entry.message.branch_id)
@@ -293,7 +314,9 @@ fn validate_conversation(
                 .author_participant_id
                 .is_some_and(|id| !participant_ids.contains(&id))
         {
-            return Err(ConversationHistoryBackupError::InvalidData);
+            return Err(ConversationHistoryBackupError::InvalidData {
+                reason: "message author is not a conversation participant",
+            });
         }
         validate_parent_link(entry, &local_messages, &branches)?;
         validate_initial_origin(entry, &mut starter_ids, &mut scene_origins)?;
@@ -307,7 +330,9 @@ fn validate_conversation(
                 || !revision_sequences.insert(revision.sequence)
                 || has_unknown_media(&revision.parts, media_asset_ids)
             {
-                return Err(ConversationHistoryBackupError::InvalidData);
+                return Err(ConversationHistoryBackupError::InvalidData {
+                    reason: "message revision is invalid, duplicated or references unknown media",
+                });
             }
         }
         let mut candidate_ordinals = BTreeSet::new();
@@ -319,7 +344,9 @@ fn validate_conversation(
                 || !candidate_ordinals.insert(candidate.ordinal)
                 || has_unknown_media(&candidate.parts, media_asset_ids)
             {
-                return Err(ConversationHistoryBackupError::InvalidData);
+                return Err(ConversationHistoryBackupError::InvalidData {
+                    reason: "message candidate is invalid, duplicated or references unknown media",
+                });
             }
         }
         entry.historical_media_revision_ids.sort();
@@ -345,7 +372,9 @@ fn validate_conversation(
                     .all(|candidate| candidate.id != *id || !has_media(&candidate.parts))
             })
         {
-            return Err(ConversationHistoryBackupError::InvalidData);
+            return Err(ConversationHistoryBackupError::InvalidData {
+                reason: "active selection references media candidates",
+            });
         }
         let active_present = match entry.message.active_render_source {
             MessageRenderSource::Revision(id) => {
@@ -356,7 +385,9 @@ fn validate_conversation(
             }
         };
         if !active_present {
-            return Err(ConversationHistoryBackupError::InvalidData);
+            return Err(ConversationHistoryBackupError::InvalidData {
+                reason: "message has no active revision or candidate",
+            });
         }
     }
     Ok(())
@@ -370,27 +401,38 @@ fn validate_parent_link(
         &lettuce_conversations::ConversationBranch,
     >,
 ) -> Result<(), ConversationHistoryBackupError> {
-    let branch = branches
-        .get(&entry.message.branch_id)
-        .ok_or(ConversationHistoryBackupError::InvalidData)?;
+    let branch = branches.get(&entry.message.branch_id).ok_or(
+        ConversationHistoryBackupError::InvalidData {
+            reason: "message branch is unknown",
+        },
+    )?;
     let Some(parent_id) = entry.message.parent_message_id else {
         return if branch.parent_branch_id.is_none() && entry.timeline_ordinal == 1 {
             Ok(())
         } else {
-            Err(ConversationHistoryBackupError::InvalidData)
+            Err(ConversationHistoryBackupError::InvalidData {
+                reason: "root message is not the first message of a root branch",
+            })
         };
     };
-    let (parent_branch_id, parent_ordinal) = messages
-        .get(&parent_id)
-        .ok_or(ConversationHistoryBackupError::InvalidData)?;
+    let (parent_branch_id, parent_ordinal) =
+        messages
+            .get(&parent_id)
+            .ok_or(ConversationHistoryBackupError::InvalidData {
+                reason: "parent message is unknown",
+            })?;
     if *parent_ordinal >= entry.timeline_ordinal {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "parent message is not before its child",
+        });
     }
     if *parent_branch_id != entry.message.branch_id
         && (branch.parent_branch_id != Some(*parent_branch_id)
             || branch.fork_message_id != Some(parent_id))
     {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "branch fork does not match the parent message",
+        });
     }
     Ok(())
 }
@@ -412,7 +454,9 @@ fn validate_initial_origin(
                 )
             }))
     {
-        return Err(ConversationHistoryBackupError::InvalidData);
+        return Err(ConversationHistoryBackupError::InvalidData {
+            reason: "initial origin does not match the conversation scene or starter",
+        });
     }
     let Some(origin) = &entry.initial_origin else {
         return Ok(());
@@ -427,7 +471,9 @@ fn validate_initial_origin(
                 || !matches!(snapshot_ref.source, SnapshotSource::Scene(_))
                 || snapshot_ref.validate().is_err()
             {
-                return Err(ConversationHistoryBackupError::InvalidData);
+                return Err(ConversationHistoryBackupError::InvalidData {
+                    reason: "scene origin snapshot is not a valid scene snapshot",
+                });
             }
         }
         InitialMessageOrigin::StarterMessage {
@@ -443,7 +489,9 @@ fn validate_initial_origin(
                 || !matches!(snapshot_ref.source, SnapshotSource::Starter(_))
                 || snapshot_ref.validate().is_err()
             {
-                return Err(ConversationHistoryBackupError::InvalidData);
+                return Err(ConversationHistoryBackupError::InvalidData {
+                    reason: "starter origin snapshot is not a valid starter snapshot",
+                });
             }
         }
     }
@@ -468,8 +516,8 @@ fn has_unknown_media(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ConversationHistoryBackupError {
-    #[error("conversation history backup exceeds its limit")]
-    LimitExceeded,
-    #[error("conversation history backup is invalid")]
-    InvalidData,
+    #[error("conversation history backup exceeds its limit: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("conversation history backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

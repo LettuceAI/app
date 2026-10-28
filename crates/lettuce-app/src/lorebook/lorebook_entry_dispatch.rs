@@ -47,8 +47,8 @@ pub enum LorebookEntryDispatchError {
     Jobs(#[from] StoreError),
     #[error("lorebook entry generation run operation failed: {0}")]
     Run(#[from] LorebookEntryRunRepositoryError),
-    #[error("lorebook entry generation claimed work is inconsistent")]
-    InvalidWork,
+    #[error("lorebook entry generation claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -79,9 +79,13 @@ impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(run.job_id)?
-            .ok_or(LorebookEntryDispatchError::InvalidWork)?;
+            .ok_or(LorebookEntryDispatchError::InvalidWork {
+                reason: "job of the run is missing from the store",
+            })?;
         if job.kind != JobKind::CreationRun {
-            return Err(LorebookEntryDispatchError::InvalidWork);
+            return Err(LorebookEntryDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -91,7 +95,9 @@ impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(request_id) {
-            return Err(LorebookEntryDispatchError::InvalidWork);
+            return Err(LorebookEntryDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(run.job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -126,7 +132,9 @@ impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.state != JobState::Running
             || work.claim.input_ref != OutcomeRef::Request(work.run.request_id)
         {
-            return Err(LorebookEntryDispatchError::InvalidWork);
+            return Err(LorebookEntryDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         match result {
@@ -180,6 +188,7 @@ impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(LorebookEntrySettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "lorebook entry job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -197,26 +206,26 @@ fn retryable(error: &LorebookEntryExecutionError) -> bool {
         LorebookEntryExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        LorebookEntryExecutionError::ReplayCleanup
-        | LorebookEntryExecutionError::Run(LorebookEntryRunRepositoryError::Failure) => true,
+        LorebookEntryExecutionError::ReplayCleanup { .. }
+        | LorebookEntryExecutionError::Run(LorebookEntryRunRepositoryError::Failure { .. }) => true,
         _ => false,
     }
 }
 
 fn job_error(error: &LorebookEntryExecutionError) -> JobError {
     let (code, message) = match error {
-        LorebookEntryExecutionError::InvalidOwnership
-        | LorebookEntryExecutionError::InvalidPrompt
-        | LorebookEntryExecutionError::ContextTooLarge => {
+        LorebookEntryExecutionError::InvalidOwnership { .. }
+        | LorebookEntryExecutionError::InvalidPrompt { .. }
+        | LorebookEntryExecutionError::ContextTooLarge { .. } => {
             (JobErrorCode::InvalidInput, "lorebook-entry-invalid-input")
         }
         LorebookEntryExecutionError::Inference(_)
-        | LorebookEntryExecutionError::InvalidResponse => (
+        | LorebookEntryExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "lorebook-entry-provider-rejected",
         ),
         LorebookEntryExecutionError::Prompt(_)
-        | LorebookEntryExecutionError::ReplayCleanup
+        | LorebookEntryExecutionError::ReplayCleanup { .. }
         | LorebookEntryExecutionError::Run(_) => (
             JobErrorCode::StorageFailure,
             "lorebook-entry-storage-failed",
@@ -238,8 +247,12 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(retryable(&LorebookEntryExecutionError::Run(
-            LorebookEntryRunRepositoryError::Failure
+            LorebookEntryRunRepositoryError::Failure {
+                reason: "simulated failure"
+            }
         )));
-        assert!(!retryable(&LorebookEntryExecutionError::InvalidResponse));
+        assert!(!retryable(&LorebookEntryExecutionError::InvalidResponse {
+            reason: "simulated failure".to_owned()
+        }));
     }
 }

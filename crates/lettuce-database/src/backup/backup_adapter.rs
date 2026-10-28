@@ -24,16 +24,23 @@ use crate::{Database, model_from_row, parse_id, provider_from_row};
 
 fn backup_error(error: rusqlite::Error) -> ProviderBackupSourceError {
     if error == rusqlite::Error::InvalidQuery {
-        ProviderBackupSourceError::InvalidData
+        ProviderBackupSourceError::InvalidData { reason: "backup error: a value failed validation" }
     } else {
-        ProviderBackupSourceError::Storage
+        ProviderBackupSourceError::Storage {
+            reason: "backup error: stored data failed a consistency check",
+        }
     }
 }
 
 fn read_creation(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<lettuce_transfer::CreationBackup, ProviderBackupSourceError> {
-    let invalid = |_| ProviderBackupSourceError::InvalidData;
+    let invalid = |error| {
+        tracing::warn!(%error, "read creation failed");
+        ProviderBackupSourceError::InvalidData {
+            reason: "read creation: a value could not be read or converted",
+        }
+    };
     let request_ids = |table: &str| {
         read_ids::<lettuce_types::RequestId>(
             transaction,
@@ -44,7 +51,12 @@ fn read_creation(
         staged_lorebook_projects: crate::lorebook::staged_lorebook_adapter::pending_projects_in(
             transaction,
         )
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        .map_err(|error| {
+            tracing::warn!(%error, "read creation failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read creation: a value could not be read or converted",
+            }
+        })?,
         ..Default::default()
     };
     for id in request_ids("creation_lorebook_entry_runs")? {
@@ -53,10 +65,14 @@ fn read_creation(
             .push(lettuce_transfer::BackupLorebookEntryRun {
                 run: crate::lorebook::lorebook_entry_run_adapter::load_in(transaction, id)
                     .map_err(invalid)?
-                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+                    .ok_or(ProviderBackupSourceError::InvalidData {
+                        reason: "read creation: a required value is missing",
+                    })?,
                 attempts: crate::lorebook::lorebook_entry_run_adapter::load_attempts_in(transaction, id)
                     .map_err(invalid)?
-                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+                    .ok_or(ProviderBackupSourceError::InvalidData {
+                        reason: "read creation: a required value is missing",
+                    })?,
             });
     }
     for id in request_ids("creation_lorebook_keyword_runs")? {
@@ -64,29 +80,62 @@ fn read_creation(
             .lorebook_keyword_runs
             .push(lettuce_transfer::BackupLorebookKeywordRun {
                 run: crate::lorebook::lorebook_keyword_run_adapter::load_in(transaction, id)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read creation failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read creation: a value could not be read or converted",
+                        }
+                    })?
+                    .ok_or(ProviderBackupSourceError::InvalidData {
+                        reason: "read creation: a required value is missing",
+                    })?,
                 attempts: crate::lorebook::lorebook_keyword_run_adapter::load_attempts_in(transaction, id)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read creation failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read creation: a value could not be read or converted",
+                        }
+                    })?
+                    .ok_or(ProviderBackupSourceError::InvalidData {
+                        reason: "read creation: a required value is missing",
+                    })?,
             });
     }
     for id in request_ids("creation_staged_lorebook_runs")? {
         creation.staged_lorebooks.push(
             crate::lorebook::staged_lorebook_adapter::load_in(transaction, id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                .ok_or(ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read creation failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read creation: a value could not be read or converted",
+                    }
+                })?
+                .ok_or(ProviderBackupSourceError::InvalidData {
+                    reason: "read creation: a required value is missing",
+                })?,
         );
     }
     for id in request_ids("creation_staged_lorebook_writer_runs")? {
         creation.staged_lorebook_writer_runs.push(
             crate::lorebook::staged_lorebook_writer_adapter::load_in(transaction, id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                .ok_or(ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read creation failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read creation: a value could not be read or converted",
+                    }
+                })?
+                .ok_or(ProviderBackupSourceError::InvalidData {
+                    reason: "read creation: a required value is missing",
+                })?,
         );
     }
     creation.workflows = crate::catalog::creation_adapter::read_workflows_in(transaction)
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read creation failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read creation: a value could not be read or converted",
+            }
+        })?;
     Ok(creation)
 }
 
@@ -108,13 +157,30 @@ fn read_companion_effects(
         .map(|(conversation_id, message_id)| {
             let conversation_id = conversation_id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?;
             let message_id = message_id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?;
             crate::conversation::state_adapter::load_effect(transaction, conversation_id, message_id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                .ok_or(ProviderBackupSourceError::InvalidData)
+                .map_err(|error| {
+                    tracing::warn!(?error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?
+                .ok_or(ProviderBackupSourceError::InvalidData {
+                    reason: "read companion effects: a required value is missing",
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     let rows = transaction
@@ -144,15 +210,30 @@ fn read_companion_effects(
         let operation_id: lettuce_types::OperationId = row
             .0
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion effects failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion effects: a value could not be read or converted",
+                }
+            })?;
         let resulting_memory: lettuce_memory::MemorySpaceSnapshot =
             crate::decode_versioned(&row.8, 1)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(?error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?;
         let resulting_summary = row
             .9
             .map(|value| crate::decode_versioned(&value, 1))
             .transpose()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read companion effects failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion effects: a value could not be read or converted",
+                }
+            })?;
         let invalidated_effect_ids = transaction
             .prepare(
                 "SELECT effect_id FROM companion_turn_effect_invalidations WHERE operation_id=?1 ORDER BY ordinal",
@@ -167,7 +248,12 @@ fn read_companion_effects(
             .map(|value| {
                 value
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion effects failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion effects: a value could not be read or converted",
+                        }
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         rewinds.push(lettuce_transfer::BackupDynamicMemoryRewind {
@@ -175,27 +261,52 @@ fn read_companion_effects(
             request_digest: row
                 .1
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?,
             conversation_id: row
                 .2
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?,
             invalid_run_id: row
                 .3
                 .map(|value| value.parse())
                 .transpose()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?,
             space_id: row
                 .4
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?,
             source_memory_revision: backup_revision(row.5)?,
             resulting_memory_revision: backup_revision(row.6)?,
             restored_summary_run_id: row
                 .7
                 .map(|value| value.parse())
                 .transpose()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion effects failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion effects: a value could not be read or converted",
+                    }
+                })?,
             resulting_memory,
             resulting_summary,
             invalidated_effect_ids,
@@ -234,13 +345,23 @@ fn read_memory(
             own_branches.insert(
                 space_id.clone(),
                 branch_id.parse::<lettuce_types::ConversationBranchId>()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
             );
         }
         bound.entry(space_id).or_default().push(
             conversation_id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?,
         );
     }
     let spaces = bound
@@ -256,20 +377,42 @@ fn read_memory(
                 .map_err(backup_error)?
                 .map(|value| value.parse::<ConversationId>())
                 .transpose()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?;
             let branch_id = own_branches.get(&space_id).copied();
             let space_id = space_id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?;
             let owner_index = summary_owner
                 .and_then(|owner| conversations.iter().position(|id| *id == owner))
                 .unwrap_or(0);
             let conversation_id = conversations.remove(owner_index);
             let snapshot = crate::memory::memory_adapter::get_in(transaction, space_id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                .ok_or(ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?
+                .ok_or(ProviderBackupSourceError::InvalidData {
+                    reason: "read memory: a required value is missing",
+                })?;
             let summary = crate::memory::memory_adapter::get_summary_in(transaction, space_id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?;
             let inherited_summary = branch_id
                 .map(|branch_id| {
                     crate::memory::memory_branch_adapter::load_materialised_summary_in(
@@ -279,7 +422,12 @@ fn read_memory(
                     )
                 })
                 .transpose()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?
                 .flatten();
             Ok(BackupMemorySpace {
                 conversation_id,
@@ -319,27 +467,57 @@ fn read_memory(
                     conversation_id: row
                         .0
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read memory failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read memory: a value could not be read or converted",
+                            }
+                        })?,
                     turn_id: row
                         .1
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read memory failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read memory: a value could not be read or converted",
+                            }
+                        })?,
                     attempt_id: row
                         .2
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read memory failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read memory: a value could not be read or converted",
+                            }
+                        })?,
                     space_id: row
                         .3
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read memory failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read memory: a value could not be read or converted",
+                            }
+                        })?,
                     expected_revision: backup_revision(row.4)?,
                     selected_memory_ids: serde_json::from_str(&row.6)
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read memory failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read memory: a value could not be read or converted",
+                            }
+                        })?,
                     accessed_at: TimestampMillis::new(row.7),
                 },
                 resulting_revision: backup_revision(row.5)?,
                 promoted_memory_ids: serde_json::from_str(&row.8)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
@@ -358,10 +536,20 @@ fn read_memory(
             Ok(lettuce_transfer::BackupCompanionMemoryPool {
                 character_id: character_id
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
                 space_id: space_id
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
@@ -374,8 +562,15 @@ fn read_memory(
         })
         .map(|pool| {
             crate::memory::memory_adapter::get_in(transaction, pool.space_id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?
-                .ok_or(ProviderBackupSourceError::InvalidData)
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?
+                .ok_or(ProviderBackupSourceError::InvalidData {
+                    reason: "read memory: a required value is missing",
+                })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     let synced_cursors = transaction
@@ -394,11 +589,26 @@ fn read_memory(
         .map(|(conversation, branch, end)| {
             Ok(lettuce_transfer::BackupMemoryCursor {
                 conversation_id: conversation.parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
                 branch_id: branch.parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
                 window_end: u64::try_from(end)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory: a value could not be read or converted",
+                        }
+                    })?,
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
@@ -406,14 +616,24 @@ fn read_memory(
         .and_then(|mut statement| statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(backup_error)?.into_iter().map(|(history, undone_at)| {
             Ok(lettuce_transfer::BackupMemoryManualEdit {
-                history: serde_json::from_str(&history).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                history: serde_json::from_str(&history).map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?,
                 undone_at: undone_at.map(TimestampMillis::new),
             })
         }).collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     let error_dismissals = crate::memory::memory_cycle_revert_adapter::dismissal_records_in(
         transaction,
     )
-    .map_err(|_| ProviderBackupSourceError::InvalidData)?
+    .map_err(|error| {
+        tracing::warn!(%error, "read memory failed");
+        ProviderBackupSourceError::InvalidData {
+            reason: "read memory: a value could not be read or converted",
+        }
+    })?
     .into_iter()
     .map(
         |(space_id, job_id, dismissed_at)| lettuce_transfer::BackupMemoryErrorDismissal {
@@ -469,20 +689,37 @@ fn read_memory_projections(
                     BackupMemoryProjectionState::Ready { vector_le_hex }
                 }
                 ("repair_needed", None) => BackupMemoryProjectionState::RepairNeeded,
-                _ => return Err(ProviderBackupSourceError::InvalidData),
+                _ => return Err(ProviderBackupSourceError::InvalidData {
+                    reason: "read memory projections: a stored value is not recognised",
+                }),
             };
             Ok(BackupMemoryProjection {
                 space_id: row
                     .0
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory projections failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory projections: a value could not be read or converted",
+                        }
+                    })?,
                 memory_id: row
                     .1
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory projections failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory projections: a value could not be read or converted",
+                        }
+                    })?,
                 source_revision: row.2,
                 dimensions: u16::try_from(row.3)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read memory projections failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read memory projections: a value could not be read or converted",
+                        }
+                    })?,
                 source_text: row.4,
                 state,
                 updated_at: TimestampMillis::new(row.7),
@@ -522,13 +759,28 @@ fn read_dynamic_memory(
                 conversation_id: row
                     .0
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read dynamic memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read dynamic memory: a value could not be read or converted",
+                        }
+                    })?,
                 branch_id: row
                     .5
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read dynamic memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read dynamic memory: a value could not be read or converted",
+                        }
+                    })?,
                 prompted_message_count: u64::try_from(row.1)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read dynamic memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read dynamic memory: a value could not be read or converted",
+                        }
+                    })?,
                 pending: row.2,
                 skipped: row.3,
                 updated_at: TimestampMillis::new(row.4),
@@ -547,7 +799,12 @@ fn read_dynamic_memory(
         .map(|(payload, recorded_at)| {
             Ok(lettuce_transfer::BackupPendingSuffixRewind {
                 pending: crate::decode_versioned(&payload, 1)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(?error, "read dynamic memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read dynamic memory: a value could not be read or converted",
+                        }
+                    })?,
                 recorded_at: TimestampMillis::new(recorded_at),
             })
         })
@@ -564,9 +821,19 @@ fn read_dynamic_memory(
     for run_id in run_ids {
         let run_id = run_id
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read dynamic memory failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read dynamic memory: a value could not be read or converted",
+                }
+            })?;
         let run = crate::memory::dynamic_memory_run_adapter::load_run_in(transaction, run_id)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read dynamic memory failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read dynamic memory: a value could not be read or converted",
+                }
+            })?;
         let attempt_ids = transaction
             .prepare("SELECT id FROM dynamic_memory_run_attempts WHERE run_id=?1 ORDER BY ordinal")
             .and_then(|mut statement| {
@@ -579,13 +846,28 @@ fn read_dynamic_memory(
         for attempt_id in attempt_ids {
             let attempt_id = attempt_id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read dynamic memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read dynamic memory: a value could not be read or converted",
+                    }
+                })?;
             let attempt =
                 crate::memory::dynamic_memory_run_adapter::load_attempt_in(transaction, attempt_id)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read dynamic memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read dynamic memory: a value could not be read or converted",
+                        }
+                    })?;
             let round_values =
                 crate::memory::dynamic_memory_run_adapter::list_rounds_in(transaction, run_id, attempt_id)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read dynamic memory failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read dynamic memory: a value could not be read or converted",
+                        }
+                    })?;
             let rounds = round_values
                 .into_iter()
                 .map(|round| {
@@ -596,7 +878,12 @@ fn read_dynamic_memory(
                             attempt_id,
                             round.ordinal,
                         )
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read dynamic memory failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read dynamic memory: a value could not be read or converted",
+                            }
+                        })?;
                     Ok(BackupDynamicMemoryRound {
                         round,
                         settlement: settlement.as_ref().map(|value| value.0.clone()),
@@ -608,13 +895,23 @@ fn read_dynamic_memory(
         }
         let summary_checkpoint =
             crate::memory::dynamic_memory_run_adapter::load_summary_checkpoint_in(transaction, run_id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read dynamic memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read dynamic memory: a value could not be read or converted",
+                    }
+                })?;
         runs.push(BackupDynamicMemoryRun {
             run,
             attempts,
             summary_checkpoint,
             changed_item_ids: crate::memory::dynamic_memory_run_adapter::changed_items_in(transaction, run_id)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read dynamic memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read dynamic memory: a value could not be read or converted",
+                    }
+                })?,
         });
     }
     Ok(DynamicMemoryBackup {
@@ -623,7 +920,12 @@ fn read_dynamic_memory(
         pending_suffix_rewinds,
         runs,
         cycle_reverts: crate::memory::memory_cycle_revert_adapter::revert_records_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read dynamic memory failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read dynamic memory: a value could not be read or converted",
+                }
+            })?,
     })
 }
 
@@ -678,12 +980,22 @@ fn read_companion_state(
                 let persona_id = persona_id
                     .map(|value| value.parse::<PersonaId>())
                     .transpose()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?;
                 validate_persona_key(&persona_key, persona_id)?;
                 Ok(lettuce_transfer::BackupCompanionRelationship {
                     character_id: character_id
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read companion state failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read companion state: a value could not be read or converted",
+                            }
+                        })?,
                     persona_id,
                     state: lettuce_companions::RelationshipState {
                         closeness,
@@ -692,7 +1004,12 @@ fn read_companion_state(
                         tension,
                         stability,
                         interaction_count: u32::try_from(interaction_count)
-                            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                            .map_err(|error| {
+                                tracing::warn!(%error, "read companion state failed");
+                                ProviderBackupSourceError::InvalidData {
+                                    reason: "read companion state: a value could not be read or converted",
+                                }
+                            })?,
                         last_interaction_at: TimestampMillis::new(last_interaction_at),
                     },
                     revision: backup_revision(revision)?,
@@ -729,12 +1046,22 @@ fn read_companion_state(
         let conversation_id: ConversationId = row
             .0
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?;
         let persona_id = row
             .3
             .map(|value| value.parse::<PersonaId>())
             .transpose()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?;
         validate_persona_key(&row.2, persona_id)?;
         sessions.push(lettuce_transfer::BackupCompanionSession {
             owner: lettuce_companions::CompanionStateOwner {
@@ -742,7 +1069,12 @@ fn read_companion_state(
                 character_id: row
                     .1
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 persona_id,
             },
             initial_state_hash: backup_hash(&row.4)?,
@@ -750,30 +1082,60 @@ fn read_companion_state(
                 transaction,
                 conversation_id,
             )
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(?error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?,
             emotional_state: lettuce_companions::EmotionalState {
                 felt: crate::conversation::state_adapter::read_vector(transaction, conversation_id, "felt")
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(?error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 expressed: crate::conversation::state_adapter::read_vector(
                     transaction,
                     conversation_id,
                     "expressed",
                 )
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(?error, "read companion state failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion state: a value could not be read or converted",
+                    }
+                })?,
                 blocked: crate::conversation::state_adapter::read_vector(transaction, conversation_id, "blocked")
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(?error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 momentum: crate::conversation::state_adapter::read_vector(
                     transaction,
                     conversation_id,
                     "momentum",
                 )
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(?error, "read companion state failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion state: a value could not be read or converted",
+                    }
+                })?,
                 active_drivers: crate::conversation::state_adapter::read_signals(
                     transaction,
                     conversation_id,
                     "driver",
                 )
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(?error, "read companion state failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion state: a value could not be read or converted",
+                    }
+                })?,
                 confidence: row.5,
                 updated_at: TimestampMillis::new(row.6),
             },
@@ -782,7 +1144,12 @@ fn read_companion_state(
                 conversation_id,
                 "active",
             )
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(?error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?,
             state_updated_at: TimestampMillis::new(row.7),
             revision: backup_revision(row.8)?,
             created_at: TimestampMillis::new(row.9),
@@ -816,25 +1183,50 @@ fn read_companion_state(
                 .3
                 .map(|value| value.parse::<PersonaId>())
                 .transpose()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion state failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion state: a value could not be read or converted",
+                    }
+                })?;
             validate_persona_key(&row.2, persona_id)?;
             Ok(lettuce_companions::CompanionContinuityEpisode {
                 conversation_id: row
                     .0
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 character_id: row
                     .1
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 persona_id,
                 episode_index: u32::try_from(row.4)
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 previous_conversation_id: row
                     .5
                     .map(|value| value.parse())
                     .transpose()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read companion state failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read companion state: a value could not be read or converted",
+                        }
+                    })?,
                 started_at: TimestampMillis::new(row.6),
                 ended_at: row.7.map(TimestampMillis::new),
                 updated_at: TimestampMillis::new(row.8),
@@ -868,23 +1260,43 @@ fn read_companion_state(
             let persona_id = (row.3 != "__default__")
                 .then(|| row.3.parse::<PersonaId>())
                 .transpose()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read companion state failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read companion state: a value could not be read or converted",
+                    }
+                })?;
             validate_persona_key(&row.3, persona_id)?;
             Ok(lettuce_transfer::BackupCompanionStateReceipt {
                 receipt: lettuce_companions::CompanionStateApplyReceipt {
                     operation_id: row
                         .0
                         .parse::<OperationRecordId>()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read companion state failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read companion state: a value could not be read or converted",
+                            }
+                        })?,
                     owner: lettuce_companions::CompanionStateOwner {
                         conversation_id: row
                             .1
                             .parse()
-                            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                            .map_err(|error| {
+                                tracing::warn!(%error, "read companion state failed");
+                                ProviderBackupSourceError::InvalidData {
+                                    reason: "read companion state: a value could not be read or converted",
+                                }
+                            })?,
                         character_id: row
                             .2
                             .parse()
-                            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                            .map_err(|error| {
+                                tracing::warn!(%error, "read companion state failed");
+                                ProviderBackupSourceError::InvalidData {
+                                    reason: "read companion state: a value could not be read or converted",
+                                }
+                            })?,
                         persona_id,
                     },
                     expected_session_revision: backup_revision(row.4)?,
@@ -918,12 +1330,29 @@ fn read_companion_state(
     for (character_id, created_at, updated_at, scope) in soul_rows {
         let character_id: CharacterId = character_id
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?;
         let owner = crate::companion::soul_adapter::owner_of(character_id, &scope)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?;
         let state = crate::companion::soul_adapter::get_in(transaction, owner)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?
-            .ok_or(ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read companion state: a required value is missing",
+            })?;
         let receipts = transaction
             .prepare(
                 "SELECT operation_id, expected_revision, resulting_revision, applied_at, change_hash FROM companion_soul_apply_receipts WHERE character_id = ?1 AND scope = ?2 ORDER BY applied_at, operation_id",
@@ -948,7 +1377,12 @@ fn read_companion_state(
                     operation_id: row
                         .0
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read companion state failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read companion state: a value could not be read or converted",
+                            }
+                        })?,
                     expected_revision: backup_revision(row.1)?,
                     resulting_revision: backup_revision(row.2)?,
                     applied_at: TimestampMillis::new(row.3),
@@ -986,8 +1420,15 @@ fn read_companion_state(
     .into_iter()
     .map(|id| {
         crate::companion::growth_adapter::load_in(transaction, id)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?
-            .ok_or(ProviderBackupSourceError::InvalidData)
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read companion state: a required value is missing",
+            })
     })
     .collect::<Result<Vec<_>, _>>()?;
     let consolidation_runs = read_ids::<lettuce_types::JobId>(
@@ -997,8 +1438,15 @@ fn read_companion_state(
     .into_iter()
     .map(|id| {
         crate::memory::consolidation_adapter::load_in(transaction, id)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?
-            .ok_or(ProviderBackupSourceError::InvalidData)
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read companion state: a required value is missing",
+            })
     })
     .collect::<Result<Vec<_>, _>>()?;
     let soul_writer_runs = read_ids::<lettuce_types::RequestId>(
@@ -1008,8 +1456,15 @@ fn read_companion_state(
     .into_iter()
     .map(|id| {
         crate::companion::soul_writer_adapter::load_in(transaction, id)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?
-            .ok_or(ProviderBackupSourceError::InvalidData)
+            .map_err(|error| {
+                tracing::warn!(%error, "read companion state failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read companion state: a value could not be read or converted",
+                }
+            })?
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read companion state: a required value is missing",
+            })
     })
     .collect::<Result<Vec<_>, _>>()?;
     Ok(CompanionStateBackup {
@@ -1027,9 +1482,16 @@ fn read_companion_state(
 }
 
 fn backup_revision(value: i64) -> Result<Revision, ProviderBackupSourceError> {
-    let value = u64::try_from(value).map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    let value = u64::try_from(value).map_err(|error| {
+        tracing::warn!(%error, "backup revision failed");
+        ProviderBackupSourceError::InvalidData {
+            reason: "backup revision: a value could not be read or converted",
+        }
+    })?;
     if value == 0 {
-        return Err(ProviderBackupSourceError::InvalidData);
+        return Err(ProviderBackupSourceError::InvalidData {
+            reason: "backup revision: a value failed validation",
+        });
     }
     Ok(Revision::new(value))
 }
@@ -1037,9 +1499,19 @@ fn backup_revision(value: i64) -> Result<Revision, ProviderBackupSourceError> {
 fn backup_hash(value: &[u8]) -> Result<ContentHash, ProviderBackupSourceError> {
     let bytes: [u8; 32] = value
         .try_into()
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "backup hash failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "backup hash: a value could not be read or converted",
+            }
+        })?;
     ContentHash::parse(blake3::Hash::from_bytes(bytes).to_hex().to_string())
-        .map_err(|_| ProviderBackupSourceError::InvalidData)
+        .map_err(|error| {
+            tracing::warn!(%error, "backup hash failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "backup hash: a value could not be read or converted",
+            }
+        })
 }
 
 fn validate_persona_key(
@@ -1052,7 +1524,9 @@ fn validate_persona_key(
     if key == expected {
         Ok(())
     } else {
-        Err(ProviderBackupSourceError::InvalidData)
+        Err(ProviderBackupSourceError::InvalidData {
+            reason: "validate persona key: a value failed validation",
+        })
     }
 }
 
@@ -1060,7 +1534,12 @@ impl ProviderBackupSource for Database {
     fn read_provider_backup_graph(&self) -> Result<ProviderBackupGraph, ProviderBackupSourceError> {
         let mut connection = self
             .connection()
-            .map_err(|_| ProviderBackupSourceError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read provider backup graph failed");
+                ProviderBackupSourceError::Storage {
+                    reason: "read provider backup graph: a storage step failed",
+                }
+            })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(backup_error)?;
@@ -1144,7 +1623,9 @@ impl ProviderBackupSource for Database {
             )
             .optional()
             .map_err(backup_error)?
-            .ok_or(ProviderBackupSourceError::InvalidData)?;
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read provider backup graph: a required value is missing",
+            })?;
         let audio_providers = transaction
             .prepare(&format!(
                 "{} ORDER BY id",
@@ -1244,7 +1725,12 @@ impl ProviderBackupSource for Database {
             })
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(backup_error)?;
-        let omitted = Database::unreferenced_temporary_assets(&transaction).map_err(|_| ProviderBackupSourceError::Storage)?;
+        let omitted = Database::unreferenced_temporary_assets(&transaction).map_err(|error| {
+            tracing::warn!(%error, "read provider backup graph failed");
+            ProviderBackupSourceError::Storage {
+                reason: "read provider backup graph: a storage step failed",
+            }
+        })?;
         let omitted_blobs = media_assets.iter().filter(|asset| omitted.contains(&asset.id.to_string())).map(|asset| asset.blob_id).collect::<std::collections::BTreeSet<_>>();
         media_assets.retain(|asset| !omitted.contains(&asset.id.to_string()));
         let retained_blobs = media_assets.iter().map(|asset| asset.blob_id).collect::<std::collections::BTreeSet<_>>();
@@ -1263,10 +1749,14 @@ impl ProviderBackupSource for Database {
         let learning =
             crate::media::speech_learning_adapter::read_all_learning(&transaction).map_err(|error| {
                 match error {
-                    lettuce_speech::AsrLearningRepositoryError::InvalidData => {
-                        ProviderBackupSourceError::InvalidData
+                    lettuce_speech::AsrLearningRepositoryError::InvalidData { .. } => {
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read provider backup graph: a value failed validation",
+                        }
                     }
-                    _ => ProviderBackupSourceError::Storage,
+                    _ => ProviderBackupSourceError::Storage {
+                        reason: "read provider backup graph: a stored value is not recognised",
+                    },
                 }
             })?;
         let media_assets_by_id = media_assets
@@ -1286,14 +1776,20 @@ impl ProviderBackupSource for Database {
             .map(|asset_id| {
                 let asset = media_assets_by_id
                     .get(&asset_id)
-                    .ok_or(ProviderBackupSourceError::InvalidData)?;
+                    .ok_or(ProviderBackupSourceError::InvalidData {
+                        reason: "read provider backup graph: a required value is missing",
+                    })?;
                 let blob = media_blobs_by_id
                     .get(&asset.blob_id)
-                    .ok_or(ProviderBackupSourceError::InvalidData)?;
+                    .ok_or(ProviderBackupSourceError::InvalidData {
+                        reason: "read provider backup graph: a required value is missing",
+                    })?;
                 if blob.state != lettuce_media::BlobState::Ready
                     || blob.kind != lettuce_media::MediaKind::Audio
                 {
-                    return Err(ProviderBackupSourceError::InvalidData);
+                    return Err(ProviderBackupSourceError::InvalidData {
+                        reason: "read provider backup graph: a value failed validation",
+                    });
                 }
                 Ok(AsrLearningAudioAsset {
                     asset_id,
@@ -1317,7 +1813,12 @@ impl ProviderBackupSource for Database {
         };
         asr_learning
             .validate()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read provider backup graph failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read provider backup graph: a value could not be read or converted",
+                }
+            })?;
         let conversation_history = read_conversation_history(&transaction)?;
         let conversation_runtime = read_conversation_runtime(&transaction, &conversation_history)?;
         let job_backup = read_job_backup(&transaction)?;
@@ -1388,7 +1889,12 @@ fn read_device_state(
         .map_err(backup_error)?
         .map(|json| serde_json::from_str::<lettuce_settings::DeviceSettings>(&json))
         .transpose()
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .map_err(|error| {
+            tracing::warn!(%error, "read device state failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read device state: a value could not be read or converted",
+            }
+        })?
         .unwrap_or_default();
     let app_usage_days = transaction
         .prepare("SELECT day, active_ms, updated_at FROM app_usage_days ORDER BY day")
@@ -1464,12 +1970,27 @@ fn read_conversation_outbox(
         ) = row.map_err(backup_error)?;
         let conversation_id: ConversationId = conversation_id
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation outbox failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation outbox: a value could not be read or converted",
+                }
+            })?;
         let kind = crate::conversation::conversation_query::operation_kind(&kind)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation outbox failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation outbox: a value could not be read or converted",
+                }
+            })?;
         let result: lettuce_conversations::OperationResultRef =
             crate::conversation::conversation_vertical_slice::decode(&result_json)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "read conversation outbox failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read conversation outbox: a value could not be read or converted",
+                    }
+                })?;
         let (expected_kind, expected_id) = match &result {
             lettuce_conversations::OperationResultRef::Conversation(id) => {
                 ("conversation", id.to_string())
@@ -1482,31 +2003,55 @@ fn read_conversation_outbox(
             lettuce_conversations::OperationResultRef::Branch(id) => ("branch", id.to_string()),
         };
         if result_kind != expected_kind || result_id != expected_id {
-            return Err(ProviderBackupSourceError::InvalidData);
+            return Err(ProviderBackupSourceError::InvalidData {
+                reason: "read conversation outbox: a value failed validation",
+            });
         }
         crate::conversation::conversation_query::validate_operation_result_ownership(
             transaction,
             conversation_id,
             &result,
         )
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read conversation outbox failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read conversation outbox: a value could not be read or converted",
+            }
+        })?;
         conversations
             .get_mut(&conversation_id)
-            .ok_or(ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read conversation outbox: a required value is missing",
+            })?
             .operations
             .push(lettuce_conversations::OperationRecord {
                 id: id
                     .parse()
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "read conversation outbox failed");
+                        ProviderBackupSourceError::InvalidData {
+                            reason: "read conversation outbox: a value could not be read or converted",
+                        }
+                    })?,
                 conversation_id,
                 kind,
                 operation: lettuce_conversations::OperationToken {
                     key: key
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read conversation outbox failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read conversation outbox: a value could not be read or converted",
+                            }
+                        })?,
                     request_digest: digest
                         .parse()
-                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "read conversation outbox failed");
+                            ProviderBackupSourceError::InvalidData {
+                                reason: "read conversation outbox: a value could not be read or converted",
+                            }
+                        })?,
                 },
                 result,
                 created_at: TimestampMillis::new(created_at),
@@ -1534,34 +2079,76 @@ fn read_conversation_outbox(
             row.map_err(backup_error)?;
         let conversation_id: ConversationId = conversation_id
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation outbox failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation outbox: a value could not be read or converted",
+                }
+            })?;
         let record = lettuce_conversations::ConversationOutboxRecord {
             format_version: 1,
             id: id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read conversation outbox failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read conversation outbox: a value could not be read or converted",
+                    }
+                })?,
             conversation_id,
             conversation_revision: Revision::new(
-                u64::try_from(revision).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                u64::try_from(revision).map_err(|error| {
+                    tracing::warn!(%error, "read conversation outbox failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read conversation outbox: a value could not be read or converted",
+                    }
+                })?,
             ),
             sequence: u64::try_from(sequence)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read conversation outbox failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read conversation outbox: a value could not be read or converted",
+                    }
+                })?,
             operation_record_id: operation_id
                 .parse()
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read conversation outbox failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read conversation outbox: a value could not be read or converted",
+                    }
+                })?,
             at: TimestampMillis::new(at),
             event: crate::conversation::conversation_vertical_slice::decode(&event_json)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "read conversation outbox failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read conversation outbox: a value could not be read or converted",
+                    }
+                })?,
         };
         record
             .validate()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation outbox failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation outbox: a value could not be read or converted",
+                }
+            })?;
         crate::conversation::conversation_query::validate_outbox_event_timestamp(&record)
             .and_then(|()| crate::conversation::conversation_query::validate_outbox_event(transaction, &record))
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation outbox failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation outbox: a value could not be read or converted",
+                }
+            })?;
         conversations
             .get_mut(&conversation_id)
-            .ok_or(ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read conversation outbox: a required value is missing",
+            })?
             .events
             .push(record);
     }
@@ -1576,7 +2163,12 @@ fn read_conversation_usage(
     jobs: &JobBackup,
 ) -> Result<ConversationUsageBackup, ProviderBackupSourceError> {
     let usage = crate::usage_adapter::load_all_usage_in(transaction)
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read conversation usage failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read conversation usage: a value could not be read or converted",
+            }
+        })?;
     let owners = transaction.prepare("SELECT id, conversation_id FROM usage_events ORDER BY id")
         .and_then(|mut statement| statement.query_map([], |row| Ok((parse_id(row.get(0)?)?, parse_id(row.get(1)?)?)))?
             .collect::<rusqlite::Result<std::collections::BTreeMap<lettuce_types::UsageEventId, ConversationId>>>())
@@ -1594,15 +2186,32 @@ fn read_conversation_usage(
         let (event_id, basis) = row.map_err(backup_error)?;
         let event_id: lettuce_types::UsageEventId = event_id
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation usage failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation usage: a value could not be read or converted",
+                }
+            })?;
         let basis = crate::decode_versioned(&basis, 1)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read conversation usage failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation usage: a value could not be read or converted",
+                }
+            })?;
         if costs.insert(event_id, basis).is_some() {
-            return Err(ProviderBackupSourceError::InvalidData);
+            return Err(ProviderBackupSourceError::InvalidData {
+                reason: "read conversation usage: a value failed validation",
+            });
         }
     }
     let tombstones = crate::usage_clear::tombstones_in(transaction)
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read conversation usage failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read conversation usage: a value could not be read or converted",
+            }
+        })?;
     let mut overlaps = jobs.inference.iter().fold(
         std::collections::BTreeMap::<_, Vec<_>>::new(),
         |mut values, dispatch| {
@@ -1621,7 +2230,9 @@ fn read_conversation_usage(
     let events = usage
         .into_iter()
         .map(|event| Ok(BackupConversationUsage {
-            conversation_id: Some(*owners.get(&event.id).ok_or(ProviderBackupSourceError::InvalidData)?),
+            conversation_id: Some(*owners.get(&event.id).ok_or(ProviderBackupSourceError::InvalidData {
+                reason: "read conversation usage: a required value is missing",
+            })?),
             cost_basis: costs.remove(&event.id),
             overlapping_job_inference_ids: overlaps
                 .get(&event.record.attempt_id)
@@ -1631,7 +2242,9 @@ fn read_conversation_usage(
         }))
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     if !costs.is_empty() {
-        return Err(ProviderBackupSourceError::InvalidData);
+        return Err(ProviderBackupSourceError::InvalidData {
+            reason: "read conversation usage: a value failed validation",
+        });
     }
     Ok(ConversationUsageBackup {
         version: CONVERSATION_USAGE_BACKUP_VERSION,
@@ -1644,7 +2257,12 @@ fn read_job_backup(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<JobBackup, ProviderBackupSourceError> {
     let records = crate::job_adapter::load_store(transaction)
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .map_err(|error| {
+            tracing::warn!(%error, "read job backup failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read job backup: a value could not be read or converted",
+            }
+        })?
         .stored_records();
     let mut inference = Vec::new();
     let mut statement = transaction
@@ -1669,23 +2287,40 @@ fn read_job_backup(
     for row in rows {
         let (id, job_id, admitted_at, record, result, cost_basis) = row.map_err(backup_error)?;
         let mut evidence: lettuce_usage::JobInferenceUsage = crate::decode_versioned(&record, 1)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?;
         evidence.result = result
             .as_deref()
             .map(|value| crate::decode_versioned(value, 1))
             .transpose()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?;
         if id != evidence.id.to_string()
             || job_id != evidence.job_id.to_string()
             || admitted_at != evidence.admitted_at.get()
         {
-            return Err(ProviderBackupSourceError::InvalidData);
+            return Err(ProviderBackupSourceError::InvalidData {
+                reason: "read job backup: a value failed validation",
+            });
         }
         let cost_basis = cost_basis
             .as_deref()
             .map(|value| crate::decode_versioned(value, 1))
             .transpose()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?;
         inference.push(BackupJobInference {
             evidence,
             cost_basis,
@@ -1696,20 +2331,65 @@ fn read_job_backup(
         jobs: records,
         inference,
         speech_transcriptions: crate::media::speech_adapter::list_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?,
         speech_syntheses: crate::media::tts_synthesis_adapter::list_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?,
         image_generations: crate::media::image_generation_adapter::list_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
-        job_details: crate::job_details_adapter::jobs_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
-        api_operation_receipts: crate::api_operation_adapter::receipts_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
-        job_operations: crate::job_details_adapter::operations_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?,
+        job_details: crate::job_details_adapter::jobs_in(transaction).map_err(|error| {
+            tracing::warn!(%error, "read job backup failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read job backup: a value could not be read or converted",
+            }
+        })?,
+        api_operation_receipts: crate::api_operation_adapter::receipts_in(transaction).map_err(|error| {
+            tracing::warn!(%error, "read job backup failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read job backup: a value could not be read or converted",
+            }
+        })?,
+        job_operations: crate::job_details_adapter::operations_in(transaction).map_err(|error| {
+            tracing::warn!(%error, "read job backup failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read job backup: a value could not be read or converted",
+            }
+        })?,
         local_model_jobs: crate::models::local_model_jobs_adapter::jobs_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?,
         local_model_operations: crate::models::local_model_jobs_adapter::operations_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?,
         hugging_face_refusals: crate::models::local_model_jobs_adapter::refusals_in(transaction)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read job backup failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read job backup: a value could not be read or converted",
+                }
+            })?,
     })
 }
 
@@ -1832,7 +2512,12 @@ fn read_attempt_runtime(
             )
         })
         .transpose()
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .map_err(|error| {
+            tracing::warn!(%error, "read attempt runtime failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read attempt runtime: a value could not be read or converted",
+            }
+        })?
         .flatten();
     let speaker_inference = read_speaker_inference(
         transaction,
@@ -1870,17 +2555,34 @@ fn read_speaker_inference(
     };
     let job_id = job_id
         .parse()
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read speaker inference failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read speaker inference: a value could not be read or converted",
+            }
+        })?;
     let request_fingerprint: [u8; 32] = fingerprint
         .try_into()
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(?error, "read speaker inference failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read speaker inference: a value could not be read or converted",
+            }
+        })?;
     let decision = decision
         .as_deref()
         .map(crate::conversation::conversation_vertical_slice::decode)
         .transpose()
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "read speaker inference failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read speaker inference: a value could not be read or converted",
+            }
+        })?;
     if expected_job_id != Some(job_id) || decision.is_some() != settled_at.is_some() {
-        return Err(ProviderBackupSourceError::InvalidData);
+        return Err(ProviderBackupSourceError::InvalidData {
+            reason: "read speaker inference: a value failed validation",
+        });
     }
     Ok(Some(lettuce_conversations::SpeakerInferenceRecord {
         binding: lettuce_conversations::SpeakerInferenceBinding {
@@ -1892,7 +2594,12 @@ fn read_speaker_inference(
         },
         usage_event_id: usage_event_id
             .parse()
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "read speaker inference failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read speaker inference: a value could not be read or converted",
+                }
+            })?,
         admitted_at: TimestampMillis::new(admitted_at),
         decision,
         settled_at: settled_at.map(TimestampMillis::new),
@@ -1914,7 +2621,12 @@ fn read_conversation_history(
                 conversation_id,
                 || {},
             )
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "read conversation history failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read conversation history: a value could not be read or converted",
+                }
+            })?;
             let messages = read_backup_messages(transaction, conversation_id)?;
             Ok(BackupConversation {
                 aggregate,
@@ -1923,7 +2635,12 @@ fn read_conversation_history(
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ConversationHistoryBackup {
-        scene_follow_ups: crate::conversation::scene_follow_up_adapter::all_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        scene_follow_ups: crate::conversation::scene_follow_up_adapter::all_in(transaction).map_err(|error| {
+            tracing::warn!(%error, "read conversation history failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "read conversation history: a value could not be read or converted",
+            }
+        })?,
         version: CONVERSATION_HISTORY_BACKUP_VERSION,
         conversations,
     })
@@ -1994,7 +2711,12 @@ fn backup_message(
     row: &rusqlite::Row<'_>,
 ) -> Result<BackupMessage, ProviderBackupSourceError> {
     let (item, ordinal) = crate::conversation::conversation_query::message_row(transaction, row)
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "backup message failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "backup message: a value could not be read or converted",
+            }
+        })?;
     let revisions = read_backup_revisions(transaction, conversation_id, item.message.id)?;
     let candidates = read_backup_candidates(transaction, conversation_id, item.message.id)?;
     let historical_media_revision_ids = read_ids(
@@ -2015,11 +2737,21 @@ fn backup_message(
         crate::conversation::conversation_query::hydrate_copied_scene_source(
             transaction, conversation_id, item.message.id,
         )
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "backup message failed");
+            ProviderBackupSourceError::InvalidData {
+                reason: "backup message: a value could not be read or converted",
+            }
+        })?;
     Ok(BackupMessage {
         message: item.message,
         timeline_ordinal: u64::try_from(ordinal)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            .map_err(|error| {
+                tracing::warn!(%error, "backup message failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "backup message: a value could not be read or converted",
+                }
+            })?,
         initial_origin: item.initial_origin,
         copied_scene_source,
         revisions,
@@ -2104,7 +2836,12 @@ where
         .map(|owner_id| {
             crate::lorebook::lorebook_adapter::read_bindings(transaction, kind, &owner_id.to_string())
                 .map(|bindings| BackupLorebookBindings { owner_id, bindings })
-                .map_err(|_| ProviderBackupSourceError::InvalidData)
+                .map_err(|error| {
+                    tracing::warn!(%error, "read bindings failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read bindings: a value could not be read or converted",
+                    }
+                })
         })
         .collect()
 }

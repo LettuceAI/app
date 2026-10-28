@@ -26,7 +26,9 @@ pub(crate) async fn store_legacy_app_secrets<S: SecretStore + ?Sized>(
                     .value
                     .with(|value| SecretValue::new(value))
                     .map_err(|_| {
-                        SecretStoreError::Backend(lettuce_settings::SecretBackendError::Corrupt)
+                        SecretStoreError::Backend(lettuce_settings::SecretBackendError::Corrupt {
+                            reason: "legacy secret value is not a valid secret",
+                        })
                     })?;
                 store
                     .put(

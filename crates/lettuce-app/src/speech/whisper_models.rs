@@ -190,7 +190,7 @@ mod tests {
         assert!(matches!(
             coordinator.resolve(Some("base")),
             Err(WhisperModelCoordinatorError::Model(
-                WhisperModelError::Mismatch
+                WhisperModelError::Mismatch { .. }
             ))
         ));
         let replacement =

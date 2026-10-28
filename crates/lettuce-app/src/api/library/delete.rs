@@ -13,7 +13,7 @@ fn failure(error: PurgeError) -> ApiError {
             PurgeError::Conflict => ApiErrorCode::Conflict,
             PurgeError::NotFound => ApiErrorCode::NotFound,
             PurgeError::Busy => ApiErrorCode::Busy,
-            PurgeError::Integrity | PurgeError::Storage => ApiErrorCode::Internal,
+            PurgeError::Integrity | PurgeError::Storage { .. } => ApiErrorCode::Internal,
         },
         error.to_string(),
     )

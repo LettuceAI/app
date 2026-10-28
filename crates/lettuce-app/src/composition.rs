@@ -1063,10 +1063,13 @@ impl AppBackend {
         let mut clients = self
             .provider_json_clients
             .lock()
-            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration { reason: "provider JSON client list lock is poisoned" })?;
         let policy = self
             .tls_policy()
-            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "TLS policy could not be built");
+                lettuce_network::JsonClientError::ClientConfiguration { reason: "TLS policy could not be built" }
+            })?;
         client.reload_tls(&policy)?;
         clients.retain(|client| client.upgrade().is_some());
         clients.push(client.downgrade());
@@ -1079,10 +1082,13 @@ impl AppBackend {
         let mut clients = self
             .provider_bulk_clients
             .lock()
-            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration { reason: "provider bulk client list lock is poisoned" })?;
         let policy = self
             .tls_policy()
-            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "TLS policy could not be built");
+                lettuce_network::JsonClientError::ClientConfiguration { reason: "TLS policy could not be built" }
+            })?;
         client.reload_tls(&policy)?;
         clients.retain(|client| client.upgrade().is_some());
         clients.push(client.downgrade());

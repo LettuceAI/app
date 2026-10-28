@@ -51,14 +51,14 @@ pub(crate) fn settle_usage_snapshot(
 
 #[derive(Debug)]
 pub(crate) enum JobInferenceError {
-    Evidence,
+    Evidence { reason: String },
     Provider(PortError),
 }
 
 impl From<JobInferenceError> for PortError {
     fn from(error: JobInferenceError) -> Self {
         match error {
-            JobInferenceError::Evidence => Self::Unavailable,
+            JobInferenceError::Evidence { .. } => Self::Unavailable,
             JobInferenceError::Provider(error) => error,
         }
     }
@@ -111,7 +111,9 @@ pub(crate) async fn run_job_inference_with_id<
             admitted_at: now,
             result: None,
         })
-        .map_err(|_| JobInferenceError::Evidence)?;
+        .map_err(|error| JobInferenceError::Evidence {
+            reason: format!("admitting the job usage record failed: {error}"),
+        })?;
     let outcome = inference.run(request).await;
     let result = match &outcome {
         Ok(outcome) => JobInferenceUsageResult::Response {
@@ -135,12 +137,17 @@ pub(crate) async fn run_job_inference_with_id<
             }),
         },
     };
-    if repository.settle_job_usage(id, result).is_err() {
+    if let Err(error) = repository.settle_job_usage(id, result) {
         if let Ok(outcome) = &outcome {
-            crate::cleanup_outcome_replays(repository, outcome)
-                .map_err(|_| JobInferenceError::Evidence)?;
+            crate::cleanup_outcome_replays(repository, outcome).map_err(|error| {
+                JobInferenceError::Evidence {
+                    reason: format!("cleaning up replay artifacts failed: {error}"),
+                }
+            })?;
         }
-        return Err(JobInferenceError::Evidence);
+        return Err(JobInferenceError::Evidence {
+            reason: format!("settling the job usage record failed: {error}"),
+        });
     }
     outcome.map_err(JobInferenceError::Provider)
 }

@@ -76,24 +76,24 @@ pub struct OutboundChangeBatch {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum LocalChangeJournalError {
-    #[error("local sync change input is invalid")]
-    Invalid,
+    #[error("local sync change input is invalid: {reason}")]
+    Invalid { reason: &'static str },
     #[error("local sync operation was already used for different input")]
     Conflict,
-    #[error("stored local sync change is corrupt")]
-    Corrupt,
-    #[error("local sync sequence or clock counter is exhausted")]
-    Exhausted,
-    #[error("local sync frontier is invalid")]
-    InvalidFrontier,
+    #[error("stored local sync change is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
+    #[error("local sync sequence or clock counter is exhausted: {reason}")]
+    Exhausted { reason: &'static str },
+    #[error("local sync frontier is invalid: {reason}")]
+    InvalidFrontier { reason: &'static str },
     #[error("local sync journal is missing an expected change sequence")]
     MissingSequence,
     #[error("local sync change exceeds the requested outbound payload limit")]
     ChangeTooLarge,
     #[error("local sync change has unsatisfied causal dependencies")]
     UnsatisfiedDependencies,
-    #[error("local sync journal storage failed")]
-    Storage,
+    #[error("local sync journal storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait LocalChangeJournal: Send + Sync {

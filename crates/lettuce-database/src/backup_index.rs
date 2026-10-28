@@ -14,8 +14,11 @@ pub struct BackupIndexRecord {
     pub size: u64,
 }
 
-fn storage(_: impl std::fmt::Debug) -> ApiOperationError {
-    ApiOperationError::Storage
+fn storage(error: impl std::fmt::Debug) -> ApiOperationError {
+    tracing::warn!(?error, "backup index storage step failed");
+    ApiOperationError::Storage {
+        reason: "backup index: a storage step failed",
+    }
 }
 
 fn read_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<BackupIndexRecord> {
@@ -53,9 +56,13 @@ impl Database {
             || entry.app_version.is_empty() || entry.app_version.len() > 64
             || entry.app_version.chars().any(char::is_control)
         {
-            return Err(ApiOperationError::InvalidData);
+            return Err(ApiOperationError::InvalidData {
+                reason: "record backup: a value failed validation",
+            });
         }
-        let size = i64::try_from(entry.size).map_err(|_| ApiOperationError::InvalidData)?;
+        let size = i64::try_from(entry.size).map_err(|error| { tracing::warn!(%error, "record backup failed"); ApiOperationError::InvalidData {
+            reason: "record backup: a value could not be read or converted",
+        } })?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(storage)?;
         if let Some(existing) = lookup(&transaction, entry.id)? {
@@ -131,9 +138,11 @@ mod mutation_tests {
         database.record_backup(&entry).expect("entry");
         let failure = database.commit_api_operation("backup-delete", "key", "digest", TimestampMillis::new(2), |transaction| {
             assert!(transaction.forget_backup(entry.id)?);
-            Err::<(), _>(ApiOperationError::Storage)
+            Err::<(), _>(ApiOperationError::Storage {
+                reason: "injected failure",
+            })
         });
-        assert_eq!(failure, Err(ApiOperationError::Storage));
+        assert!(matches!(failure, Err(ApiOperationError::Storage { .. })));
         assert_eq!(database.backup_index().expect("retained"), vec![entry]);
         assert!(database.lookup_api_operation("backup-delete", "key").expect("receipt").is_none());
     }

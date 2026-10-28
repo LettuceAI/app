@@ -32,8 +32,8 @@ pub struct CreationFallbackReply {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CreationFallbackError {
-    #[error("creation fallback reply is not a valid envelope")]
-    InvalidEnvelope,
+    #[error("creation fallback reply is not a valid envelope: {reason}")]
+    InvalidEnvelope { reason: &'static str },
     #[error("creation fallback call has no name")]
     MissingName,
 }
@@ -53,7 +53,9 @@ pub fn parse_creation_fallback(
 fn parse_json(raw: &str) -> Result<CreationFallbackReply, CreationFallbackError> {
     let normalized = normalize_fallback_text(raw);
     let value: Value = serde_json::from_str(json_snippet(&normalized).unwrap_or(&normalized))
-        .map_err(|_| CreationFallbackError::InvalidEnvelope)?;
+        .map_err(|_| CreationFallbackError::InvalidEnvelope {
+            reason: "fallback reply is not valid json",
+        })?;
     let entries = match value {
         Value::Array(items) => items,
         Value::Object(map) => map
@@ -62,8 +64,14 @@ fn parse_json(raw: &str) -> Result<CreationFallbackReply, CreationFallbackError>
             .or_else(|| map.get("toolCalls"))
             .and_then(Value::as_array)
             .cloned()
-            .ok_or(CreationFallbackError::InvalidEnvelope)?,
-        _ => return Err(CreationFallbackError::InvalidEnvelope),
+            .ok_or(CreationFallbackError::InvalidEnvelope {
+                reason: "fallback json has no tool call array",
+            })?,
+        _ => {
+            return Err(CreationFallbackError::InvalidEnvelope {
+                reason: "fallback json is neither an object nor an array",
+            });
+        }
     };
     let mut parsed = CreationFallbackReply::default();
     for item in entries {
@@ -109,7 +117,9 @@ fn xml_reference(reference: BytesRef<'_>) -> Result<String, CreationFallbackErro
     }
     let content = reference
         .xml_content()
-        .map_err(|_| CreationFallbackError::InvalidEnvelope)?;
+        .map_err(|_| CreationFallbackError::InvalidEnvelope {
+            reason: "xml reference could not be resolved",
+        })?;
     Ok(resolve_xml_entity(&content).map_or_else(|| format!("&{content};"), ToOwned::to_owned))
 }
 
@@ -171,8 +181,11 @@ fn parse_xml(raw: &str) -> Result<CreationFallbackReply, CreationFallbackError> 
             Ok(Event::Text(event)) => {
                 if argument_key.is_some() {
                     argument_text.push_str(
-                        &unescape(&String::from_utf8_lossy(event.as_ref()))
-                            .map_err(|_| CreationFallbackError::InvalidEnvelope)?,
+                        &unescape(&String::from_utf8_lossy(event.as_ref())).map_err(|_| {
+                            CreationFallbackError::InvalidEnvelope {
+                                reason: "xml text could not be unescaped",
+                            }
+                        })?,
                     );
                 }
             }
@@ -203,13 +216,19 @@ fn parse_xml(raw: &str) -> Result<CreationFallbackReply, CreationFallbackError> 
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => return Err(CreationFallbackError::InvalidEnvelope),
+            Err(_) => {
+                return Err(CreationFallbackError::InvalidEnvelope {
+                    reason: "xml event stream could not be read",
+                });
+            }
             _ => {}
         }
         buffer.clear();
     }
     if !root_seen {
-        return Err(CreationFallbackError::InvalidEnvelope);
+        return Err(CreationFallbackError::InvalidEnvelope {
+            reason: "fallback xml has no root element",
+        });
     }
     Ok(parsed)
 }
@@ -250,10 +269,10 @@ mod tests {
             parse_creation_fallback(CreationFallbackFormat::Json, "[{\"arguments\":{}}]"),
             Err(CreationFallbackError::MissingName)
         );
-        assert_eq!(
+        assert!(matches!(
             parse_creation_fallback(CreationFallbackFormat::Json, "All set!"),
-            Err(CreationFallbackError::InvalidEnvelope)
-        );
+            Err(CreationFallbackError::InvalidEnvelope { .. })
+        ));
     }
 
     #[test]
@@ -279,9 +298,9 @@ mod tests {
             ]
         );
         assert_eq!(parsed.reply.as_deref(), Some("Done."));
-        assert_eq!(
+        assert!(matches!(
             parse_creation_fallback(CreationFallbackFormat::Xml, "<reply>hi</reply>"),
-            Err(CreationFallbackError::InvalidEnvelope)
-        );
+            Err(CreationFallbackError::InvalidEnvelope { .. })
+        ));
     }
 }

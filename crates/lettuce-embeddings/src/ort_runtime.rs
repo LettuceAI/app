@@ -274,6 +274,7 @@ fn usable_override(os: OnnxRuntimeHostOs, value: &OsStr) -> Option<PathBuf> {
         if std::fs::symlink_metadata(&path).is_ok() {
             tracing::warn!(
                 path = %path.display(),
+                reason = "the file is empty or unreadable",
                 "ORT_DYLIB_PATH points to an empty or invalid file; ignoring it"
             );
         }
@@ -288,6 +289,7 @@ fn usable_override(os: OnnxRuntimeHostOs, value: &OsStr) -> Option<PathBuf> {
             } else {
                 tracing::warn!(
                     path = %path.display(),
+                    reason = "the library is not a loadable MH_DYLIB for this architecture",
                     "ORT_DYLIB_PATH is not a usable macOS MH_DYLIB for this architecture; ignoring it"
                 );
                 None
@@ -332,6 +334,7 @@ fn downloaded_library(os: OnnxRuntimeHostOs, install_dir: &Path) -> Option<PathB
         if std::fs::symlink_metadata(&library).is_ok() {
             tracing::warn!(
                 path = %library.display(),
+                reason = "the library file is empty",
                 "deleting an empty ONNX Runtime library so it is downloaded again"
             );
             remove_quietly(&library);
@@ -348,6 +351,7 @@ fn downloaded_library(os: OnnxRuntimeHostOs, install_dir: &Path) -> Option<PathB
             } else {
                 tracing::warn!(
                     path = %library.display(),
+                    reason = "the library is not a loadable MH_DYLIB for this architecture",
                     "deleting an unusable ONNX Runtime library so it is downloaded again"
                 );
                 remove_quietly(&library);
@@ -386,6 +390,7 @@ fn warn_missing_macos_providers(os: OnnxRuntimeHostOs, library: &Path) {
             tracing::warn!(
                 library = %library.display(),
                 provider,
+                reason = "the provider dylib is missing or empty",
                 "ONNX Runtime provider dylib is missing; CoreML acceleration may be unavailable"
             );
         }
@@ -824,7 +829,7 @@ mod macos {
                 ),
                 Ok(output) => tracing::warn!(
                     path = %path.display(),
-                    stderr = %String::from_utf8_lossy(&output.stderr).trim(),
+                    error = %String::from_utf8_lossy(&output.stderr).trim(),
                     "could not re-sign ONNX Runtime dylib ad hoc"
                 ),
                 Err(error) => tracing::warn!(
@@ -961,6 +966,7 @@ impl RuntimeOnce {
                     tracing::warn!(
                         ?existing,
                         ?requested,
+                        reason = "the process already committed to a different library",
                         "ONNX Runtime is already initialized from another library; continuing with it"
                     );
                 }

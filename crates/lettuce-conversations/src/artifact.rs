@@ -124,8 +124,8 @@ pub enum ArtifactError {
     ImmutableConflict,
     #[error("artifact was not found")]
     NotFound,
-    #[error("artifact storage is unavailable")]
-    Storage,
+    #[error("artifact storage is unavailable: {reason}")]
+    Storage { reason: String },
     #[error("artifact reference is invalid: {0}")]
     InvalidReference(ValidationError),
 }
@@ -715,10 +715,10 @@ pub enum TrustedArtifactDescriptor {
 pub enum ArtifactTransferError {
     #[error("trusted artifact was not found")]
     NotFound,
-    #[error("trusted artifact sink rejected a chunk")]
-    SinkRejected,
-    #[error("trusted artifact transfer storage is unavailable")]
-    Storage,
+    #[error("trusted artifact sink rejected a chunk: {reason}")]
+    SinkRejected { reason: &'static str },
+    #[error("trusted artifact transfer storage is unavailable: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// Sink owned by an encrypted backup or sync adapter. It receives metadata

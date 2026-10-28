@@ -10,7 +10,9 @@ use crate::Database;
 const COLUMNS: &str = "conversation_id, message_id, prompt, mode, state, generation, attempt, request_id, failure, created_at, updated_at, target_kind, target_id";
 
 fn storage<E>(_: E) -> SceneFollowUpError {
-    SceneFollowUpError::Storage
+    SceneFollowUpError::Storage {
+        reason: "storage: stored data failed a consistency check",
+    }
 }
 
 pub(crate) const fn mode_text(mode: SceneFollowUpMode) -> &'static str {
@@ -38,7 +40,11 @@ fn parse_mode(text: &str) -> Result<SceneFollowUpMode, SceneFollowUpError> {
         "auto" => SceneFollowUpMode::Auto,
         "ask_first" => SceneFollowUpMode::AskFirst,
         "manual" => SceneFollowUpMode::Manual,
-        _ => return Err(SceneFollowUpError::Storage),
+        _ => {
+            return Err(SceneFollowUpError::Storage {
+                reason: "parse mode: a stored value is not recognised",
+            });
+        }
     })
 }
 
@@ -51,7 +57,11 @@ fn parse_state(text: &str) -> Result<SceneFollowUpState, SceneFollowUpError> {
         "done" => SceneFollowUpState::Done,
         "failed" => SceneFollowUpState::Failed,
         "dismissed" => SceneFollowUpState::Dismissed,
-        _ => return Err(SceneFollowUpError::Storage),
+        _ => {
+            return Err(SceneFollowUpError::Storage {
+                reason: "parse state: a stored value is not recognised",
+            });
+        }
     })
 }
 
@@ -78,7 +88,11 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Result<SceneFollowUp, SceneFollowUpEr
                 "starter_revision" => {
                     SceneFollowUpTarget::StarterRevision(target_id.parse().map_err(storage)?)
                 }
-                _ => return Err(SceneFollowUpError::Storage),
+                _ => {
+                    return Err(SceneFollowUpError::Storage {
+                        reason: "read: a stored value is not recognised",
+                    });
+                }
             },
             prompt,
             mode: parse_mode(&mode)?,
@@ -207,7 +221,9 @@ impl SceneFollowUpRepository for Database {
                 params![conversation_id.to_string(), target.kind(), target.id().to_string(), if let SceneFollowUpTarget::Candidate(id) = target { Some(id.to_string()) } else { None }, if let SceneFollowUpTarget::StarterRevision(id) = target { Some(id.to_string()) } else { None }, message_id.to_string(), prompt, mode_text(mode), now.get()],
             )
             .map_err(storage)?;
-        one(&connection, conversation_id, target)?.ok_or(SceneFollowUpError::Storage)
+        one(&connection, conversation_id, target)?.ok_or(SceneFollowUpError::Storage {
+            reason: "ensure follow up: a required value is missing",
+        })
     }
 
     fn change_follow_up(

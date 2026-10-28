@@ -206,7 +206,7 @@ fn pure_mode_settings(
     stored: Result<lettuce_settings::PureMode, lettuce_settings::GlobalSettingsStoreError>,
 ) -> Result<PureModeLevel, PortError> {
     let stored = stored.map_err(|error| match error {
-        lettuce_settings::GlobalSettingsStoreError::InvalidData => PortError::Rejected,
+        lettuce_settings::GlobalSettingsStoreError::InvalidData { .. } => PortError::Rejected,
         _ => PortError::Unavailable,
     })?;
     Ok(pure_mode_level(stored))
@@ -335,11 +335,17 @@ mod tests {
     #[test]
     fn slice_7c_unreadable_pure_mode_is_typed() {
         assert_eq!(
-            super::pure_mode_settings(Err(lettuce_settings::GlobalSettingsStoreError::Storage)),
+            super::pure_mode_settings(Err(lettuce_settings::GlobalSettingsStoreError::Storage {
+                reason: "simulated failure".to_owned()
+            })),
             Err(lettuce_conversations::PortError::Unavailable)
         );
         assert_eq!(
-            super::pure_mode_settings(Err(lettuce_settings::GlobalSettingsStoreError::InvalidData)),
+            super::pure_mode_settings(Err(
+                lettuce_settings::GlobalSettingsStoreError::InvalidData {
+                    reason: "simulated failure".to_owned()
+                }
+            )),
             Err(lettuce_conversations::PortError::Rejected)
         );
     }

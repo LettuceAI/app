@@ -631,6 +631,7 @@
       "settings_invalid": "The memory settings aren't valid.",
       "provider_unavailable": "The provider didn't answer.",
       "provider_rejected": "The provider rejected the request.",
+      "invalid_response": "The model's memory response could not be processed. Try the cycle again.",
       "empty_response": "The model returned an empty reply.",
       "timed_out": "The model took too long to answer.",
       "round_limit": "The model used too many steps.",

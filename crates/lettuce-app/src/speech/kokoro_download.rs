@@ -76,7 +76,12 @@ impl KokoroDownloadSource for HuggingFaceKokoroDownloadSource {
             &model.source_revision,
             &artifact.remote_path,
         )
-        .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
+        .map_err(|error| {
+            tracing::warn!(%error, "pinned download url could not be built");
+            map_source_error(ArtifactDownloadError::InvalidRequest {
+                reason: "pinned download url could not be built",
+            })
+        })?;
         self.client
             .open_hugging_face(&url, offset, artifact.byte_size)
             .await
@@ -145,8 +150,8 @@ pub enum KokoroDownloadError {
     Source(#[from] KokoroDownloadSourceError),
     #[error("Kokoro model job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("Kokoro model download work is inconsistent")]
-    InvalidWork,
+    #[error("Kokoro model download work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
     #[error("Kokoro model download was cancelled")]
     Cancelled,
 }
@@ -178,12 +183,16 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
     ) -> Result<KokoroDownloadAdmission, KokoroDownloadError> {
         self.installs.validate_model(&model)?;
         if !lettuce_model_hub::kokoro_platform_allows_variant(model.variant) {
-            return Err(KokoroDownloadError::InvalidWork);
+            return Err(KokoroDownloadError::InvalidWork {
+                reason: "the model variant is not allowed on this platform",
+            });
         }
         let asset_id = download_asset_id(&model);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .and_then(|subject| subject.with_display(model.variant.label()))
-            .map_err(|_| KokoroDownloadError::InvalidWork)?;
+            .map_err(|_| KokoroDownloadError::InvalidWork {
+                reason: "the install asset id is not a valid job subject",
+            })?;
         let mut key = format!("kokoro-install-{asset_id}");
         for _ in 0..64 {
             let admitted = self.jobs.create_or_get(
@@ -192,9 +201,11 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
                     subject.clone(),
                     OutcomeRef::ArtifactInstallation(asset_id),
                 )
-                .with_idempotency_key(
-                    IdempotencyKey::new(key).map_err(|_| KokoroDownloadError::InvalidWork)?,
-                )
+                .with_idempotency_key(IdempotencyKey::new(key).map_err(|_| {
+                    KokoroDownloadError::InvalidWork {
+                        reason: "the install key is not a valid idempotency key",
+                    }
+                })?)
                 .with_priority(JobPriority::Interactive)
                 .with_resources(vec![
                     ResourceClass::Network,
@@ -219,7 +230,9 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
             }
             key = format!("kokoro-install-{asset_id}-after-{}", admitted.job.id);
         }
-        Err(KokoroDownloadError::InvalidWork)
+        Err(KokoroDownloadError::InvalidWork {
+            reason: "no free idempotency key was found for the install",
+        })
     }
 
     pub fn claim(
@@ -235,7 +248,9 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(KokoroDownloadError::InvalidWork)?;
+            .ok_or(KokoroDownloadError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job(&job, &model)?;
         if job.state == JobState::Succeeded {
             return Ok(None);
@@ -270,15 +285,19 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(KokoroDownloadError::InvalidWork)?;
+            .ok_or(KokoroDownloadError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job(&job, model)?;
         if job.state != JobState::Succeeded {
             return Ok(None);
         }
-        let installed = self
-            .installs
-            .installed(model)?
-            .ok_or(KokoroDownloadError::InvalidWork)?;
+        let installed =
+            self.installs
+                .installed(model)?
+                .ok_or(KokoroDownloadError::InvalidWork {
+                    reason: "the install is not complete after the download",
+                })?;
         Ok(Some(KokoroDownloadSuccess {
             model: installed,
             job,
@@ -298,7 +317,9 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(KokoroDownloadError::InvalidWork);
+            return Err(KokoroDownloadError::InvalidWork {
+                reason: "claimed work does not match its running job, claim or handle",
+            });
         }
         let result = self.execute(&work, source, now).await;
         match result {
@@ -375,11 +396,18 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         let model = work.model.clone();
         tokio::task::spawn_blocking(move || installs.install_espeak_data(&model))
             .await
-            .map_err(|_| KokoroDownloadError::InvalidWork)??;
-        let installed = self
-            .installs
-            .installed(&work.model)?
-            .ok_or(KokoroDownloadError::InvalidWork)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "the eSpeak data install task failed");
+                KokoroDownloadError::InvalidWork {
+                    reason: "the eSpeak data install task failed",
+                }
+            })??;
+        let installed =
+            self.installs
+                .installed(&work.model)?
+                .ok_or(KokoroDownloadError::InvalidWork {
+                    reason: "the install is not complete after the download",
+                })?;
         self.installs.record_model(&work.model)?;
         Ok((installed, false))
     }
@@ -435,8 +463,11 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
             claim: work.claim.claim.clone(),
             progress: ProgressSnapshot {
                 bytes: Some(
-                    BytesProgress::new(completed, Some(work.model.total_bytes()))
-                        .map_err(|_| KokoroDownloadError::InvalidWork)?,
+                    BytesProgress::new(completed, Some(work.model.total_bytes())).map_err(
+                        |_| KokoroDownloadError::InvalidWork {
+                            reason: "the completed bytes exceed the total bytes",
+                        },
+                    )?,
                 ),
                 ..ProgressSnapshot::default()
             },
@@ -539,7 +570,9 @@ fn validate_job(job: &JobSnapshot, model: &RemoteKokoroModel) -> Result<(), Koko
                     result_ref: OutcomeRef::ArtifactInstallation(asset_id),
                 }))
     {
-        return Err(KokoroDownloadError::InvalidWork);
+        return Err(KokoroDownloadError::InvalidWork {
+            reason: "the job did not succeed for this asset",
+        });
     }
     Ok(())
 }
@@ -571,7 +604,7 @@ fn classify_error(error: &KokoroDownloadError) -> (JobErrorCode, bool, &'static 
             true,
             "download storage unavailable",
         ),
-        KokoroDownloadError::Install(KokoroInstallError::Unreadable) => (
+        KokoroDownloadError::Install(KokoroInstallError::Unreadable { .. }) => (
             JobErrorCode::StorageFailure,
             true,
             "download storage unavailable",
@@ -584,7 +617,7 @@ fn classify_error(error: &KokoroDownloadError) -> (JobErrorCode, bool, &'static 
             ))
         }
         KokoroDownloadError::Install(
-            KokoroInstallError::Mismatch | KokoroInstallError::InvalidArtifact,
+            KokoroInstallError::Mismatch { .. } | KokoroInstallError::InvalidArtifact { .. },
         )
         | KokoroDownloadError::Source(KokoroDownloadSourceError::InvalidResponse) => (
             JobErrorCode::IntegrityFailure,
@@ -611,10 +644,11 @@ fn abandons_partial(error: &KokoroDownloadError) -> bool {
 
 fn map_source_error(error: ArtifactDownloadError) -> KokoroDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+        ArtifactDownloadError::Transport { .. } | ArtifactDownloadError::TimedOut => {
             KokoroDownloadSourceError::Transport
         }
-        ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
+        ArtifactDownloadError::InvalidRequest { .. }
+        | ArtifactDownloadError::InvalidResponse { .. } => {
             KokoroDownloadSourceError::InvalidResponse
         }
         ArtifactDownloadError::Refused { status, signed_in } => {

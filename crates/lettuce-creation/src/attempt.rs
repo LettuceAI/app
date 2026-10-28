@@ -65,7 +65,10 @@ pub type CreationInferenceProfileFingerprint = [u8; 32];
 pub fn creation_inference_profile_fingerprint(
     profile: &ResolvedInferenceProfile,
 ) -> Result<CreationInferenceProfileFingerprint, CreationAttemptError> {
-    let encoded = serde_json::to_vec(profile).map_err(|_| CreationAttemptError::InvalidContract)?;
+    let encoded =
+        serde_json::to_vec(profile).map_err(|_| CreationAttemptError::InvalidContract {
+            reason: "inference profile could not be serialized for the fingerprint",
+        })?;
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"lettuce-creation-profile-v1\0");
     hasher.update(&encoded);
@@ -183,37 +186,51 @@ impl CreationInferenceAttempt {
     pub fn validate(&self) -> Result<(), CreationAttemptError> {
         self.tool_request
             .validate()
-            .map_err(|_| CreationAttemptError::InvalidContract)?;
+            .map_err(|_| CreationAttemptError::InvalidContract {
+                reason: "tool request failed validation",
+            })?;
         if creation_tool_request(self.target) != self.tool_request {
-            return Err(CreationAttemptError::InvalidContract);
+            return Err(CreationAttemptError::InvalidContract {
+                reason: "tool request does not match the target kind",
+            });
         }
         if (self.ordinal == 0) != self.retry_parent_id.is_none()
             || self.base_proposal_id == self.planned_proposal_id
             || self.revision.get() == 0
             || self.updated_at < self.created_at
         {
-            return Err(CreationAttemptError::InvalidState);
+            return Err(CreationAttemptError::InvalidState {
+                reason: "retry lineage, proposal ids, revision or timestamps are inconsistent",
+            });
         }
         match self.status {
             CreationAttemptStatus::Created
                 if self.started_at.is_some() || self.finished_at.is_some() =>
             {
-                return Err(CreationAttemptError::InvalidState);
+                return Err(CreationAttemptError::InvalidState {
+                    reason: "created attempt carries a start or finish time",
+                });
             }
             CreationAttemptStatus::Running
                 if self.started_at.is_none() || self.finished_at.is_some() =>
             {
-                return Err(CreationAttemptError::InvalidState);
+                return Err(CreationAttemptError::InvalidState {
+                    reason: "running attempt has no start time or carries a finish time",
+                });
             }
             CreationAttemptStatus::Succeeded
             | CreationAttemptStatus::Failed
             | CreationAttemptStatus::Interrupted
                 if self.started_at.is_none() || self.finished_at.is_none() =>
             {
-                return Err(CreationAttemptError::InvalidState);
+                return Err(CreationAttemptError::InvalidState {
+                    reason: "finished attempt has no start or finish time",
+                });
             }
             CreationAttemptStatus::Cancelled if self.finished_at.is_none() => {
-                return Err(CreationAttemptError::InvalidState);
+                return Err(CreationAttemptError::InvalidState {
+                    reason: "cancelled attempt has no finish time",
+                });
             }
             _ => {}
         }
@@ -226,7 +243,9 @@ impl CreationInferenceAttempt {
                 .is_some_and(|finished| finished < self.created_at || finished > self.updated_at)
             || matches!((self.started_at, self.finished_at), (Some(started), Some(finished)) if started > finished)
         {
-            return Err(CreationAttemptError::InvalidState);
+            return Err(CreationAttemptError::InvalidState {
+                reason: "failure, start or finish timestamps are inconsistent with the status",
+            });
         }
         Ok(())
     }
@@ -238,18 +257,24 @@ impl CreationInferenceAttempt {
         at: TimestampMillis,
     ) -> Result<Self, CreationAttemptError> {
         if !self.status.can_transition_to(next) || at < self.updated_at {
-            return Err(CreationAttemptError::InvalidTransition);
+            return Err(CreationAttemptError::InvalidTransition {
+                reason: "status change is not allowed or time moves backwards",
+            });
         }
         if failure.is_some() != matches!(next, CreationAttemptStatus::Failed) {
-            return Err(CreationAttemptError::InvalidTransition);
+            return Err(CreationAttemptError::InvalidTransition {
+                reason: "failure presence does not match the next status",
+            });
         }
         let mut updated = self.clone();
         updated.status = next;
         updated.failure = failure;
-        updated.revision = self
-            .revision
-            .next()
-            .map_err(|_| CreationAttemptError::InvalidState)?;
+        updated.revision =
+            self.revision
+                .next()
+                .map_err(|_| CreationAttemptError::InvalidState {
+                    reason: "attempt revision overflowed",
+                })?;
         updated.updated_at = at;
         if next == CreationAttemptStatus::Running {
             updated.started_at = Some(at);
@@ -295,31 +320,43 @@ impl NewCreationInferenceRound {
         if self.ordinal >= MAX_CREATION_INFERENCE_ROUNDS
             || (self.parts.is_empty() && self.calls.is_empty())
         {
-            return Err(CreationAttemptError::InvalidRound);
+            return Err(CreationAttemptError::InvalidRound {
+                reason: "round ordinal exceeds the limit or the round is empty",
+            });
         }
         if self
             .provider_request_id
             .as_ref()
             .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
         {
-            return Err(CreationAttemptError::InvalidRound);
+            return Err(CreationAttemptError::InvalidRound {
+                reason: "provider request id is blank or too long",
+            });
         }
         for part in &self.parts {
             part.validate()
-                .map_err(|_| CreationAttemptError::InvalidRound)?;
+                .map_err(|_| CreationAttemptError::InvalidRound {
+                    reason: "round message part failed validation",
+                })?;
             if !matches!(
                 part,
                 MessagePart::Text { .. } | MessagePart::ReasoningSummary { .. }
             ) {
-                return Err(CreationAttemptError::InvalidRound);
+                return Err(CreationAttemptError::InvalidRound {
+                    reason: "round message part is not text or a reasoning summary",
+                });
             }
         }
         if let Some(replay) = &self.provider_replay {
             replay
                 .validate()
-                .map_err(|_| CreationAttemptError::InvalidRound)?;
+                .map_err(|_| CreationAttemptError::InvalidRound {
+                    reason: "provider replay failed validation",
+                })?;
             if replay.retention != ReplayRetention::Conversation {
-                return Err(CreationAttemptError::InvalidRound);
+                return Err(CreationAttemptError::InvalidRound {
+                    reason: "provider replay is not retained for the conversation",
+                });
             }
         }
         let mut ids = std::collections::HashSet::new();
@@ -327,7 +364,9 @@ impl NewCreationInferenceRound {
         for call in &self.calls {
             call.call
                 .validate()
-                .map_err(|_| CreationAttemptError::InvalidCall)?;
+                .map_err(|_| CreationAttemptError::InvalidCall {
+                    reason: "round tool call failed validation",
+                })?;
             if call.definition_version == 0
                 || !ids.insert(call.id)
                 || call
@@ -337,7 +376,9 @@ impl NewCreationInferenceRound {
                     .is_some_and(|id| !provider_ids.insert(id))
                 || call.call.provider_replay.as_ref() != self.provider_replay.as_ref()
             {
-                return Err(CreationAttemptError::InvalidCall);
+                return Err(CreationAttemptError::InvalidCall {
+                    reason: "tool call definition version, id, provider call id or replay is inconsistent",
+                });
             }
         }
         Ok(())
@@ -396,13 +437,21 @@ impl CreationInferenceRound {
             .checked_add(self.calls.len())
             .is_none_or(|count| count > crate::proposal::MAX_CREATION_OPERATIONS)
         {
-            return Err(CreationAttemptError::InvalidRound);
+            return Err(CreationAttemptError::InvalidRound {
+                reason: "round operation count exceeds the limit",
+            });
         }
         for (offset, call) in self.calls.iter().enumerate() {
             let expected = self
                 .first_call_ordinal
-                .checked_add(u16::try_from(offset).map_err(|_| CreationAttemptError::InvalidRound)?)
-                .ok_or(CreationAttemptError::InvalidRound)?;
+                .checked_add(u16::try_from(offset).map_err(|_| {
+                    CreationAttemptError::InvalidRound {
+                        reason: "round call offset exceeds the ordinal range",
+                    }
+                })?)
+                .ok_or(CreationAttemptError::InvalidRound {
+                    reason: "round call ordinal overflows",
+                })?;
             if call.workflow_id != self.workflow_id
                 || call.turn_id != self.turn_id
                 || call.attempt_id != self.attempt_id
@@ -410,7 +459,9 @@ impl CreationInferenceRound {
                 || call.ordinal != expected
                 || call.admitted_at != self.admitted_at
             {
-                return Err(CreationAttemptError::InvalidRound);
+                return Err(CreationAttemptError::InvalidRound {
+                    reason: "round call does not match the round identity, ordinal or admission time",
+                });
             }
         }
         Ok(())
@@ -435,9 +486,13 @@ impl CreationToolCallEvidence {
     pub fn validate(&self) -> Result<(), CreationAttemptError> {
         self.call
             .validate()
-            .map_err(|_| CreationAttemptError::InvalidCall)?;
+            .map_err(|_| CreationAttemptError::InvalidCall {
+                reason: "tool call failed validation",
+            })?;
         if self.definition_version == 0 {
-            return Err(CreationAttemptError::InvalidCall);
+            return Err(CreationAttemptError::InvalidCall {
+                reason: "tool call definition version is zero",
+            });
         }
         Ok(())
     }
@@ -445,16 +500,16 @@ impl CreationToolCallEvidence {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CreationAttemptError {
-    #[error("creation inference contract is invalid")]
-    InvalidContract,
-    #[error("creation inference attempt state is invalid")]
-    InvalidState,
-    #[error("creation inference transition is invalid")]
-    InvalidTransition,
-    #[error("creation tool call is invalid")]
-    InvalidCall,
-    #[error("creation inference round is invalid")]
-    InvalidRound,
+    #[error("creation inference contract is invalid: {reason}")]
+    InvalidContract { reason: &'static str },
+    #[error("creation inference attempt state is invalid: {reason}")]
+    InvalidState { reason: &'static str },
+    #[error("creation inference transition is invalid: {reason}")]
+    InvalidTransition { reason: &'static str },
+    #[error("creation tool call is invalid: {reason}")]
+    InvalidCall { reason: &'static str },
+    #[error("creation inference round is invalid: {reason}")]
+    InvalidRound { reason: &'static str },
 }
 
 #[cfg(test)]
@@ -530,9 +585,9 @@ mod tests {
     fn attempt_rejects_a_tool_contract_from_another_target() {
         let mut attempt = attempt();
         attempt.tool_request = creation_tool_request(CreationTargetKind::Persona);
-        assert_eq!(
+        assert!(matches!(
             attempt.validate(),
-            Err(CreationAttemptError::InvalidContract)
-        );
+            Err(CreationAttemptError::InvalidContract { .. })
+        ));
     }
 }

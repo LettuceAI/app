@@ -29,12 +29,18 @@ pub struct MemoryCycleRevertRecord {
 
 impl MemoryCycleRevertRecord {
     pub fn validate(&self) -> Result<(), MemoryRepositoryError> {
-        if self.source_revision.get() == 0
-            || self.source_revision.next().ok() != Some(self.resulting_revision)
-            || self.restored_summary_run_id == Some(self.run_id)
-        {
+        let reason = if self.source_revision.get() == 0 {
+            Some("source revision is zero")
+        } else if self.source_revision.next().ok() != Some(self.resulting_revision) {
+            Some("resulting revision is not the source revision plus one")
+        } else if self.restored_summary_run_id == Some(self.run_id) {
+            Some("restored summary run is the reverted run")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
             return Err(MemoryRepositoryError::Invalid(
-                crate::MemoryValidationError::InvalidRevision,
+                crate::MemoryValidationError::InvalidRevision { reason },
             ));
         }
         Ok(())
@@ -57,8 +63,8 @@ pub enum MemoryCycleRevertError {
     Dependent { later_run_id: DynamicMemoryRunId },
     #[error("a memory the cycle changed was edited by the user afterwards")]
     UserEdited { memory_id: MemoryId },
-    #[error("the revert is invalid")]
-    Invalid,
-    #[error("memory storage failed")]
-    Storage,
+    #[error("the revert is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("memory storage failed: {reason}")]
+    Storage { reason: &'static str },
 }

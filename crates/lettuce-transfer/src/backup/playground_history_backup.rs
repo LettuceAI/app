@@ -20,8 +20,8 @@ pub struct PlaygroundHistoryBackup {
 pub enum PlaygroundHistoryBackupError {
     #[error("playground history backup exceeds its limit")]
     LimitExceeded,
-    #[error("playground history backup is invalid")]
-    InvalidData,
+    #[error("playground history backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }
 
 fn ordinal(row: &BackupSqlRow) -> Option<i64> {
@@ -38,9 +38,13 @@ impl PlaygroundHistoryBackup {
         let mut ids = BTreeSet::new();
         for entry in &self.entries {
             let id =
-                backup_sql_text(entry, "id").ok_or(PlaygroundHistoryBackupError::InvalidData)?;
+                backup_sql_text(entry, "id").ok_or(PlaygroundHistoryBackupError::InvalidData {
+                    reason: "history entry has no id",
+                })?;
             if !ids.insert(id) {
-                return Err(PlaygroundHistoryBackupError::InvalidData);
+                return Err(PlaygroundHistoryBackupError::InvalidData {
+                    reason: "history entry id is duplicated",
+                });
             }
         }
         let mut images = BTreeSet::new();
@@ -48,9 +52,13 @@ impl PlaygroundHistoryBackup {
             let key = backup_sql_text(image, "history_id")
                 .filter(|history_id| ids.contains(history_id))
                 .zip(ordinal(image))
-                .ok_or(PlaygroundHistoryBackupError::InvalidData)?;
+                .ok_or(PlaygroundHistoryBackupError::InvalidData {
+                    reason: "history image has no known history id or ordinal",
+                })?;
             if !images.insert(key) {
-                return Err(PlaygroundHistoryBackupError::InvalidData);
+                return Err(PlaygroundHistoryBackupError::InvalidData {
+                    reason: "history image is duplicated",
+                });
             }
         }
         self.entries

@@ -130,8 +130,8 @@ pub struct StagedLorebookConfiguredCoherenceRequest {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookAdmissionError {
-    #[error("staged lorebook admission input is invalid")]
-    InvalidInput,
+    #[error("staged lorebook admission input is invalid: {reason}")]
+    InvalidInput { reason: String },
     #[error("no lorebook generator model is configured")]
     MissingModel,
     #[error("selected lorebook generator prompt does not exist")]
@@ -208,7 +208,11 @@ impl<
             PromptPurpose::LorebookGeneratorWriter => selected.writer_prompt_id,
             PromptPurpose::LorebookGeneratorRefine => selected.refine_prompt_id,
             PromptPurpose::LorebookGeneratorCoherence => selected.coherence_prompt_id,
-            _ => return Err(StagedLorebookAdmissionError::InvalidInput),
+            _ => {
+                return Err(StagedLorebookAdmissionError::InvalidInput {
+                    reason: "prompt purpose is not a lorebook generator purpose".to_owned(),
+                });
+            }
         }
         .ok_or(StagedLorebookAdmissionError::MissingPrompt)?;
         let model = lettuce_models::ModelProfileRepository::get(
@@ -226,7 +230,9 @@ impl<
         let prompt = lettuce_context::PromptRepository::get(self.repository, prompt_id)?
             .ok_or(StagedLorebookAdmissionError::MissingPrompt)?;
         if prompt.status != LifecycleStatus::Active || prompt.purpose != purpose {
-            return Err(StagedLorebookAdmissionError::InvalidInput);
+            return Err(StagedLorebookAdmissionError::InvalidInput {
+                reason: "prompt is inactive or has the wrong purpose".to_owned(),
+            });
         }
         let chat_profile = lettuce_models::resolve_chat_profile(
             &lettuce_models::ExpectedModelIdentity {
@@ -311,7 +317,11 @@ impl<
                         request.excerpts,
                         request.now,
                     )
-                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
+                    .map_err(|error| {
+                        StagedLorebookAdmissionError::InvalidInput {
+                            reason: error.to_string(),
+                        }
+                    })?;
                     let mut expected = run.clone();
                     expected.project = project;
                     expected.configured_inputs = Some(configured_inputs);
@@ -319,10 +329,11 @@ impl<
                     if !same_admission(&run, &expected) {
                         return Err(StagedLorebookRepositoryError::Conflict.into());
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        StagedLorebookAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(StagedLorebookAdmission {
                         run,
@@ -370,7 +381,9 @@ impl<
             request.excerpts.clone(),
             request.now,
         )
-        .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
+        .map_err(|error| StagedLorebookAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         if self.operation.is_none() {
             match self.repository.load_staged_lorebook(request.request_id) {
                 Ok(run) => {
@@ -378,10 +391,11 @@ impl<
                     if !same_admission(&run, &expected) {
                         return Err(StagedLorebookRepositoryError::Conflict.into());
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        StagedLorebookAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(StagedLorebookAdmission {
                         run,
@@ -395,13 +409,19 @@ impl<
         }
         let spec = JobSpec::new(
             JobKind::CreationRun,
-            JobSubject::new(SubjectKind::CreationProject, request.project_id.to_string())
-                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            JobSubject::new(SubjectKind::CreationProject, request.project_id.to_string()).map_err(
+                |error| StagedLorebookAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                },
+            )?,
             OutcomeRef::Request(request.request_id),
         )
         .with_idempotency_key(
-            IdempotencyKey::new(format!("staged-lorebook-{}", request.request_id))
-                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            IdempotencyKey::new(format!("staged-lorebook-{}", request.request_id)).map_err(
+                |error| StagedLorebookAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                },
+            )?,
         )
         .with_resources(vec![
             ResourceClass::Network,
@@ -423,13 +443,15 @@ impl<
                     .map(|(key, digest)| (key.as_str(), digest.as_str())),
             )
             .map_err(|error| match error {
-                StoreError::InvalidData => {
-                    StagedLorebookAdmissionError::Repository(StagedLorebookRepositoryError::Invalid)
-                }
+                StoreError::InvalidData { reason } => StagedLorebookAdmissionError::Repository(
+                    StagedLorebookRepositoryError::Invalid { reason },
+                ),
                 error => StagedLorebookAdmissionError::Job(error),
             })?;
         let lettuce_database::LorebookJobInput::Planner(run) = input else {
-            return Err(StagedLorebookAdmissionError::InvalidInput);
+            return Err(StagedLorebookAdmissionError::InvalidInput {
+                reason: "stored job input is not a planner run".to_owned(),
+            });
         };
         let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
@@ -601,10 +623,12 @@ impl<
             {
                 return Err(StagedLorebookRepositoryError::Conflict.into());
             }
-            let job = self
-                .jobs
-                .get(run.job_id)?
-                .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+            let job =
+                self.jobs
+                    .get(run.job_id)?
+                    .ok_or(StagedLorebookAdmissionError::InvalidInput {
+                        reason: "job of the run is missing from the store".to_owned(),
+                    })?;
             return Ok(StagedLorebookCoherenceAdmission {
                 run: project,
                 job,
@@ -666,10 +690,11 @@ impl<
             {
                 return Err(StagedLorebookRepositoryError::Conflict.into());
             }
-            let job = self
-                .jobs
-                .get(stored.job_id)?
-                .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+            let job = self.jobs.get(stored.job_id)?.ok_or(
+                StagedLorebookAdmissionError::InvalidInput {
+                    reason: "job of the run is missing from the store".to_owned(),
+                },
+            )?;
             return Ok(StagedLorebookCoherenceAdmission {
                 run: project,
                 job,
@@ -677,7 +702,9 @@ impl<
             });
         }
         if project.project.stage != lettuce_creation::StagedLorebookStage::DraftsReady {
-            return Err(StagedLorebookAdmissionError::InvalidInput);
+            return Err(StagedLorebookAdmissionError::InvalidInput {
+                reason: "the project is not in the drafts-ready stage".to_owned(),
+            });
         }
         let drafted_entries = format_drafted_entries(
             &project.project.drafts,
@@ -685,20 +712,29 @@ impl<
                 self.repository,
                 crate::BuiltInPromptId::LorebookRuntime,
             )
-            .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            .map_err(|error| StagedLorebookAdmissionError::InvalidInput {
+                reason: error.to_string(),
+            })?,
         )?;
         if drafted_entries.is_empty() {
-            return Err(StagedLorebookAdmissionError::InvalidInput);
+            return Err(StagedLorebookAdmissionError::InvalidInput {
+                reason: "the project has no drafted entries to review".to_owned(),
+            });
         }
         let spec = JobSpec::new(
             JobKind::CreationRun,
-            JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
-                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string()).map_err(
+                |error| StagedLorebookAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                },
+            )?,
             OutcomeRef::Request(request.request_id),
         )
         .with_idempotency_key(
             IdempotencyKey::new(format!("staged-lorebook-coherence-{}", request.request_id))
-                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+                .map_err(|error| StagedLorebookAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                })?,
         )
         .with_resources(vec![
             ResourceClass::Network,
@@ -766,7 +802,9 @@ fn validate_coherence_request(
             .get(Modality::Text)
             != CapabilityStatus::Supported
     {
-        return Err(StagedLorebookAdmissionError::InvalidInput);
+        return Err(StagedLorebookAdmissionError::InvalidInput {
+            reason: "the model lacks text input or text output".to_owned(),
+        });
     }
     Ok(())
 }
@@ -788,8 +826,11 @@ fn format_drafted_entries(
 ) -> Result<String, StagedLorebookAdmissionError> {
     use lettuce_context::PromptVariable as Variable;
     let fragment = |key: &str, variables: Vec<(Variable, String)>| {
-        text.render_with(key, variables)
-            .map_err(|_| StagedLorebookAdmissionError::InvalidInput)
+        text.render_with(key, variables).map_err(|error| {
+            StagedLorebookAdmissionError::InvalidInput {
+                reason: error.to_string(),
+            }
+        })
     };
     let none = fragment("lorebook_none", Vec::new())?;
     if drafts.is_empty() {
@@ -861,7 +902,9 @@ fn validate_request(
             .get(Modality::Text)
             != CapabilityStatus::Supported
     {
-        return Err(StagedLorebookAdmissionError::InvalidInput);
+        return Err(StagedLorebookAdmissionError::InvalidInput {
+            reason: "the model lacks text input or text output".to_owned(),
+        });
     }
     Ok(())
 }
@@ -897,7 +940,9 @@ fn validate_job(
         || job.subject.kind != SubjectKind::CreationProject
         || job.subject.id.as_str() != run.project.id.to_string()
     {
-        return Err(StagedLorebookAdmissionError::InvalidInput);
+        return Err(StagedLorebookAdmissionError::InvalidInput {
+            reason: "job differs from the run in id, kind, state or subject".to_owned(),
+        });
     }
     Ok(())
 }

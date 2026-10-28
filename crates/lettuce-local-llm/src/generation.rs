@@ -1227,6 +1227,7 @@ impl Run<'_> {
                 .any(|(device, _, _)| device == id)
             {
                 tracing::warn!(
+                    reason = "device is missing from the ggml query results",
                     device = id,
                     imputed_bytes = (*free).max(*total),
                     "multi-gpu vram query: device not in ggml query results; imputing capacity"
@@ -1398,6 +1399,7 @@ impl Run<'_> {
             );
             if manual_layers_aligned.iter().all(|layers| *layers == 0) {
                 tracing::warn!(
+                    reason = "every manual layer count is zero",
                     "multi-gpu manual distribution: all layer counts are zero; llamaGpuManualLayers may be missing or device IDs may not match; falling through to CPU"
                 );
             }
@@ -1414,6 +1416,7 @@ impl Run<'_> {
                         .map_or(0, |(_, free, total)| (*free).max(*total));
                     if capacity > 0 && projected > capacity {
                         tracing::warn!(
+                            reason = "manual distribution exceeds the device capacity",
                             layers,
                             projected_gib = projected as f64 / gib,
                             device = rt.gpu_device_ids.get(position).copied().unwrap_or(position),
@@ -1741,6 +1744,7 @@ impl Run<'_> {
         }
         if let Some(forced) = forced_smart_gpu_layers {
             tracing::warn!(
+                reason = "gpu kv context ran out of memory",
                 layers = forced,
                 "retrying model load at KV-aware layer estimate after GPU KV context OOM"
             );
@@ -1845,6 +1849,7 @@ impl Run<'_> {
         let dflash_active = dflash_requested && !use_vision && mtp_draft_model.is_some();
         if dflash_active && rt.mtp_enabled {
             tracing::warn!(
+                reason = "dflash and mtp share one draft slot",
                 "DFlash and MTP are both enabled but they share one draft slot; continuing with DFlash only"
             );
         }
@@ -1855,6 +1860,7 @@ impl Run<'_> {
                 let capable = mtp_bundled || mtp_draft_model.is_some();
                 if !capable {
                     tracing::warn!(
+                        reason = "model has no mtp layers or external draft model",
                         "MTP requested but the model has no bundled NextN/MTP layers and no external MTP draft model was found; continuing without MTP"
                     );
                 }
@@ -1862,6 +1868,7 @@ impl Run<'_> {
             };
         if rt.mtp_enabled && use_vision {
             tracing::warn!(
+                reason = "vision input is active",
                 "MTP requested but disabled for this request because vision input is active"
             );
             self.observer.notice(LlamaNotice::MtpDisabledForVision);
@@ -2234,6 +2241,7 @@ impl Run<'_> {
                     return Err(AttemptError::RetryAtLayers(estimate));
                 }
                 tracing::warn!(
+                    reason = "context did not fit with gpu kqv offload",
                     requested_ctx = requested_ctx_size,
                     initial_batch,
                     "requested context did not fit with GPU KQV offload; retrying with KV cache on RAM"
@@ -2333,12 +2341,14 @@ impl Run<'_> {
                             preferred_offload_kqv == Some(true) && attempt_kqv == Some(false);
                         if kqv_fallback_activated {
                             tracing::warn!(
+                                reason = "kqv gpu offload fallback is active",
                                 ctx = attempt_ctx,
                                 "KQV GPU offload fallback activated: preserving context with KV cache on RAM"
                             );
                         }
                         if (attempt_ctx, attempt_batch) != (ctx_size, initial_batch) {
                             tracing::warn!(
+                                reason = "context did not fit the requested size",
                                 requested_ctx = ctx_size,
                                 requested_batch = initial_batch,
                                 ctx = attempt_ctx,
@@ -2771,6 +2781,7 @@ impl Run<'_> {
                         }
                         self.cached_prompt_tokens = 0;
                         tracing::warn!(
+                            reason = "prompt kv cache could not be partially rewound",
                             "prompt KV cache could not be partially rewound; evaluating the full prompt"
                         );
                     }
@@ -3392,6 +3403,7 @@ impl Run<'_> {
         tracing::error!(%error, "local inference error");
         if !self.output.is_empty() {
             tracing::warn!(
+                reason = "local inference failed after partial output",
                 request_id = ?self.request.request_id,
                 model_path = self.model_path,
                 failure_stage = self.failure_stage,

@@ -603,10 +603,10 @@ pub enum GlobalSettingsStoreError {
     StaleRevision,
     #[error("the selected model profile does not exist")]
     ModelProfileMissing,
-    #[error("stored settings are invalid")]
-    InvalidData,
-    #[error("settings storage failed")]
-    Storage,
+    #[error("stored settings are invalid: {reason}")]
+    InvalidData { reason: String },
+    #[error("settings storage failed: {reason}")]
+    Storage { reason: String },
 }
 
 /// The app shell's state about this install (onboarding progress, dismissed

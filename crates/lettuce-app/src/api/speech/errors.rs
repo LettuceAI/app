@@ -69,13 +69,13 @@ impl IntoApiError for SpeechTranscriptionError {
     fn into_api_error(self) -> ApiError {
         match self {
             Self::Invalid(error) => error.into_api_error(),
-            Self::Audio(AsrAudioError::UnsupportedFormat | AsrAudioError::InvalidAudio) => {
-                invalid_field("source", "the audio is not a supported WAV file")
-            }
+            Self::Audio(
+                AsrAudioError::UnsupportedFormat { .. } | AsrAudioError::InvalidAudio { .. },
+            ) => invalid_field("source", "the audio is not a supported WAV file"),
             Self::Audio(AsrAudioError::TooLarge) => {
                 invalid_field("source", "the audio exceeds the native sample-count range")
             }
-            Self::Runtime(AsrRuntimeError::ModelUnavailable) => whisper_required(),
+            Self::Runtime(AsrRuntimeError::ModelUnavailable { .. }) => whisper_required(),
             Self::Repository(TranscriptionRepositoryError::Conflict) => api_error(
                 ApiErrorCode::Conflict,
                 "another transcription already uses this request id",
@@ -115,7 +115,7 @@ impl IntoApiError for AsrLearningRepositoryError {
 impl IntoApiError for AsrLearningError {
     fn into_api_error(self) -> ApiError {
         match self {
-            Self::InvalidData => invalid_field("request", self.to_string()),
+            Self::InvalidData { .. } => invalid_field("request", self.to_string()),
             error => api_error(ApiErrorCode::Internal, error.to_string()),
         }
     }
@@ -149,8 +149,8 @@ impl IntoApiError for TtsConfigurationRepositoryError {
             Self::StaleRevision | Self::AlreadyExists | Self::InUse { .. } => {
                 ApiErrorCode::Conflict
             }
-            Self::InvalidData => ApiErrorCode::InvalidInput,
-            Self::Storage => ApiErrorCode::Internal,
+            Self::InvalidData { .. } => ApiErrorCode::InvalidInput,
+            Self::Storage { .. } => ApiErrorCode::Internal,
         };
         api_error(code, self.to_string())
     }

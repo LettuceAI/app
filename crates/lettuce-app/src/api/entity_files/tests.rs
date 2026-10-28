@@ -477,10 +477,10 @@ async fn chat_apply_rolls_back_all_rows_and_two_workers_import_once() {
                     harness.context.now(),
                 )
                 .expect("chat write");
-            Err(ApiOperationError::Storage)
+            Err(ApiOperationError::Storage { reason: "simulated failure" })
         },
     );
-    assert_eq!(result, Err(ApiOperationError::Storage));
+    assert_eq!(result, Err(ApiOperationError::Storage { reason: "simulated failure" }));
     assert_eq!(
         database.read_provider_backup_graph().expect("after"),
         before
@@ -963,7 +963,7 @@ async fn every_export_is_complete_and_failed_writes_preserve_the_old_target() {
     let chat = prepared.record.history.aggregate.conversation.id.to_string();
     harness.context.backend().database().commit_api_operation::<(), lettuce_database::ApiOperationError>("import_chat_apply", &chat, &chat, harness.context.now(), |scope| {
         scope.import_chat(prepared.group, prepared.record, prepared.companion, harness.context.now())
-            .map_err(|_| lettuce_database::ApiOperationError::Storage)
+            .map_err(|_| lettuce_database::ApiOperationError::Storage { reason: "simulated failure" })
     }).expect("chat");
     let fail = failing_exports(&harness, &root);
     let android = export_context(&harness, &root, Arc::new(AndroidDownloads(root.clone())));
@@ -1162,10 +1162,10 @@ async fn group_and_whole_transcript_roll_back_together_then_import_once() {
                     harness.context.now(),
                 )
                 .expect("group and transcript");
-            Err(ApiOperationError::Storage)
+            Err(ApiOperationError::Storage { reason: "simulated failure" })
         },
     );
-    assert_eq!(result, Err(ApiOperationError::Storage));
+    assert_eq!(result, Err(ApiOperationError::Storage { reason: "simulated failure" }));
     assert_eq!(
         database.read_provider_backup_graph().expect("after"),
         before
@@ -1277,9 +1277,9 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
                     scope.save_model_profile(model.profile.clone(),None,true).expect("model and default");
                 },
             }
-            Err(ApiOperationError::Storage)
+            Err(ApiOperationError::Storage { reason: "simulated failure" })
         });
-        assert_eq!(result, Err(ApiOperationError::Storage));
+        assert_eq!(result, Err(ApiOperationError::Storage { reason: "simulated failure" }));
         assert_eq!(
             database.read_provider_backup_graph().expect("after"),
             before
@@ -2449,10 +2449,10 @@ async fn uec3_prompt_document_and_receipt_roll_back_together_on_late_failure() {
         harness.context.now(),
         |scope| {
             scope.import_prompt_file(&document).expect("write");
-            Err(lettuce_database::ApiOperationError::Storage)
+            Err(lettuce_database::ApiOperationError::Storage { reason: "simulated failure" })
         },
     );
-    assert_eq!(result, Err(lettuce_database::ApiOperationError::Storage));
+    assert_eq!(result, Err(lettuce_database::ApiOperationError::Storage { reason: "simulated failure" }));
     assert_eq!(
         database.read_provider_backup_graph().expect("after"),
         before

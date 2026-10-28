@@ -13,8 +13,11 @@ use super::{
 };
 use crate::ApiOperationTransaction;
 
-fn storage(_: impl std::fmt::Debug) -> MemoryCycleRevertError {
-    MemoryCycleRevertError::Storage
+fn storage(error: impl std::fmt::Debug) -> MemoryCycleRevertError {
+    tracing::warn!(?error, "memory cycle revert adapter storage step failed");
+    MemoryCycleRevertError::Storage {
+        reason: "memory cycle revert adapter: a storage step failed",
+    }
 }
 
 fn rewind_error(error: lettuce_memory::DynamicMemorySuffixRewindError) -> MemoryCycleRevertError {
@@ -25,8 +28,14 @@ fn rewind_error(error: lettuce_memory::DynamicMemorySuffixRewindError) -> Memory
         lettuce_memory::DynamicMemorySuffixRewindError::NotFound => {
             MemoryCycleRevertError::NotFound
         }
-        lettuce_memory::DynamicMemorySuffixRewindError::Invalid => MemoryCycleRevertError::Invalid,
-        _ => MemoryCycleRevertError::Storage,
+        lettuce_memory::DynamicMemorySuffixRewindError::Invalid { .. } => {
+            MemoryCycleRevertError::Invalid {
+                reason: "rewind error: a stored value is not recognised",
+            }
+        }
+        _ => MemoryCycleRevertError::Storage {
+            reason: "rewind error: a stored value is not recognised",
+        },
     }
 }
 
@@ -36,8 +45,12 @@ fn memory_error(error: MemoryRepositoryError) -> MemoryCycleRevertError {
         MemoryRepositoryError::Conflict | MemoryRepositoryError::AlreadyExists => {
             MemoryCycleRevertError::Conflict
         }
-        MemoryRepositoryError::Invalid(_) => MemoryCycleRevertError::Invalid,
-        MemoryRepositoryError::Failure(_) => MemoryCycleRevertError::Storage,
+        MemoryRepositoryError::Invalid(_) => MemoryCycleRevertError::Invalid {
+            reason: "memory error: a stored value is not recognised",
+        },
+        MemoryRepositoryError::Failure(_) => MemoryCycleRevertError::Storage {
+            reason: "memory error: a stored value is not recognised",
+        },
     }
 }
 
@@ -232,7 +245,9 @@ impl ApiOperationTransaction<'_, '_> {
                 lettuce_memory::DynamicMemoryRunRepositoryError::NotFound => {
                     MemoryCycleRevertError::NotFound
                 }
-                _ => MemoryCycleRevertError::Storage,
+                _ => MemoryCycleRevertError::Storage {
+                    reason: "revert memory cycle: a stored value is not recognised",
+                },
             },
         )?;
         if run.space_id != space_id {
@@ -326,7 +341,12 @@ impl ApiOperationTransaction<'_, '_> {
         if !pooled
             && let Some(checkpoint) =
                 dynamic_memory_run_adapter::load_summary_checkpoint_in(transaction, run.id)
-                    .map_err(|_| MemoryCycleRevertError::Storage)?
+                    .map_err(|error| {
+                        tracing::warn!(%error, "revert memory cycle failed");
+                        MemoryCycleRevertError::Storage {
+                            reason: "revert memory cycle: a storage step failed",
+                        }
+                    })?
             && let Some(published) = &summary
             && published.origin == MemoryOrigin::Model
             && published.text == checkpoint.summary.text

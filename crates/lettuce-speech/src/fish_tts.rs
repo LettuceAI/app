@@ -85,16 +85,25 @@ impl AudioProviderVerifier for FishTtsRuntime {
         provider: &AudioProvider,
         credential: Option<&SecretValue>,
     ) -> Result<bool, AudioProviderVerificationError> {
-        provider
-            .validate()
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            AudioProviderVerificationError::InvalidInput {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         if !matches!(&provider.config, AudioProviderConfig::FishTts) {
-            return Err(AudioProviderVerificationError::InvalidInput);
+            return Err(AudioProviderVerificationError::InvalidInput {
+                reason: "provider config is not the expected kind",
+            });
         }
-        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput)?;
+        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput {
+            reason: "api key is missing",
+        })?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+            .map_err(|_| AudioProviderVerificationError::InvalidInput {
+                reason: "api key is not a valid header value",
+            })?;
         let response = self
             .network
             .get_json_with_query(
@@ -128,15 +137,22 @@ impl VoiceDiscovery for FishTtsRuntime {
         provider: &AudioProvider,
         credential: &SecretValue,
     ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
-        provider
-            .validate()
-            .map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            VoiceDiscoveryError::InvalidData {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         if !matches!(&provider.config, AudioProviderConfig::FishTts) {
-            return Err(VoiceDiscoveryError::InvalidData);
+            return Err(VoiceDiscoveryError::InvalidData {
+                reason: "provider config is not the expected kind",
+            });
         }
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
-            .map_err(|_| VoiceDiscoveryError::InvalidData)?;
+            .map_err(|_| VoiceDiscoveryError::InvalidData {
+                reason: "api key is not a valid header value",
+            })?;
         let response = self
             .network
             .get_json_with_query(
@@ -165,12 +181,21 @@ impl VoiceDiscovery for FishTtsRuntime {
             .map_err(map_discovery_network)?;
         if !(200..300).contains(&response.status) {
             return Err(match response.status {
-                408 | 429 | 500..=599 => VoiceDiscoveryError::Unavailable,
-                _ => VoiceDiscoveryError::InvalidData,
+                408 | 429 | 500..=599 => VoiceDiscoveryError::Unavailable {
+                    reason: "provider returned a transient http status",
+                },
+                _ => VoiceDiscoveryError::InvalidData {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
         let response: FishModelsResponse =
-            serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
+            serde_json::from_slice(&response.body).map_err(|error| {
+                tracing::warn!(%error, "provider response is not valid json");
+                VoiceDiscoveryError::InvalidData {
+                    reason: "provider response is not valid json",
+                }
+            })?;
         response
             .items
             .into_iter()
@@ -214,16 +239,29 @@ impl TtsRuntime for FishTtsRuntime {
         credential: Option<&SecretValue>,
         cancellation: &CancellationToken,
     ) -> Result<RuntimeSynthesis, TtsRuntimeError> {
-        request.validate().map_err(|_| TtsRuntimeError::Rejected)?;
+        request.validate().map_err(|error| {
+            tracing::warn!(%error, "request failed validation");
+            TtsRuntimeError::Rejected {
+                reason: "request failed validation",
+            }
+        })?;
         if !matches!(&request.provider.config, AudioProviderConfig::FishTts) {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected {
+                reason: "request provider config is not the fish tts kind",
+            });
         }
-        let credential = credential.ok_or(TtsRuntimeError::Rejected)?;
+        let credential = credential.ok_or(TtsRuntimeError::Rejected {
+            reason: "api key is missing",
+        })?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
-            .map_err(|_| TtsRuntimeError::Rejected)?;
+            .map_err(|_| TtsRuntimeError::Rejected {
+                reason: "api key is not a valid header value",
+            })?;
         let model =
-            SecretValue::new(request.model_id.clone()).map_err(|_| TtsRuntimeError::Rejected)?;
+            SecretValue::new(request.model_id.clone()).map_err(|_| TtsRuntimeError::Rejected {
+                reason: "model id cannot be held as a secret value",
+            })?;
         let speed = request
             .prompt
             .as_deref()
@@ -244,7 +282,12 @@ impl TtsRuntime for FishTtsRuntime {
                 normalize_loudness: true,
             },
         })
-        .map_err(|_| TtsRuntimeError::Rejected)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "request body could not be serialized");
+            TtsRuntimeError::Rejected {
+                reason: "request body could not be serialized",
+            }
+        })?;
         if cancellation.is_cancelled() {
             return Err(TtsRuntimeError::Cancelled);
         }
@@ -256,7 +299,7 @@ impl TtsRuntime for FishTtsRuntime {
                 &[],
                 JsonAuth::Bearer(auth),
                 vec![JsonSecretHeader {
-                    name: HeaderName::new("model").map_err(|_| TtsRuntimeError::Rejected)?,
+                    name: HeaderName::new("model").map_err(|_| TtsRuntimeError::Rejected { reason: "auth header name is invalid" })?,
                     value: model,
                 }],
                 RequestPolicy::GENERATION,
@@ -268,7 +311,9 @@ impl TtsRuntime for FishTtsRuntime {
                 408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
                     status: response.status,
                 },
-                _ => TtsRuntimeError::Rejected,
+                _ => TtsRuntimeError::Rejected {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
         Ok(RuntimeSynthesis {
@@ -288,35 +333,41 @@ fn parse_speed_from_prompt(prompt: &str) -> Option<f32> {
 
 fn map_network(error: JsonClientError) -> TtsRuntimeError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
-        JsonClientError::Transport => TtsRuntimeError::NetworkUnavailable,
-        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable,
+        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } => TtsRuntimeError::NetworkUnavailable { reason },
+        JsonClientError::ClientConfiguration { reason } => TtsRuntimeError::Unavailable { reason },
     }
 }
 
 fn map_discovery_network(error: JsonClientError) -> VoiceDiscoveryError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            VoiceDiscoveryError::Unavailable
+        | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            VoiceDiscoveryError::Unavailable { reason }
         }
     }
 }
 
 fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            AudioProviderVerificationError::Unavailable
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            AudioProviderVerificationError::Unavailable { reason }
         }
     }
 }
@@ -454,7 +505,7 @@ mod tests {
             runtime
                 .synthesize(&request(None), Some(&credential), &CancellationToken::new(),)
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
         let cancellation = CancellationToken::new();
         cancellation.cancel();

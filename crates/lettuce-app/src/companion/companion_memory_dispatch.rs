@@ -49,8 +49,8 @@ pub enum CompanionMemoryDispatchError {
     Admission(#[from] CompanionPostTurnMemoryAdmissionError),
     #[error("post-turn memory job claim failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("post-turn memory claimed work is inconsistent")]
-    InvalidWork,
+    #[error("post-turn memory claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -431,7 +431,9 @@ where
             || work.job.id != work.claim.claim.job_id
             || work.job.state != JobState::Running
         {
-            return Err(CompanionMemoryDispatchError::InvalidWork);
+            return Err(CompanionMemoryDispatchError::InvalidWork {
+                reason: "claimed work does not match its admission, handle or running job",
+            });
         }
         let at = now.max(work.job.updated_at);
         match result {
@@ -439,7 +441,9 @@ where
                 if result.dispatch.run.conversation_id != work.admission.batch.conversation_id
                     || result.dispatch.attempt.job_id != work.claim.claim.job_id
                 {
-                    return Err(CompanionMemoryDispatchError::InvalidWork);
+                    return Err(CompanionMemoryDispatchError::InvalidWork {
+                        reason: "run result does not match the admitted conversation or job",
+                    });
                 }
                 self.jobs.append_and_transition(JobMutation::Progress {
                     claim: work.claim.claim.clone(),
@@ -464,23 +468,26 @@ where
                 })
             }
             Err(error @ CompanionMemoryJobRunError::RuntimeInputs(input))
-                if input != crate::CompanionMemoryRuntimeInputError::Storage =>
+                if !matches!(
+                    input,
+                    crate::CompanionMemoryRuntimeInputError::Storage { .. }
+                ) =>
             {
                 let (code, label) = match input {
-                    crate::CompanionMemoryRuntimeInputError::MissingModel => {
+                    crate::CompanionMemoryRuntimeInputError::MissingModel { .. } => {
                         (JobErrorCode::CapabilityUnavailable, "memory-model-required")
                     }
-                    crate::CompanionMemoryRuntimeInputError::InvalidModel => {
+                    crate::CompanionMemoryRuntimeInputError::InvalidModel { .. } => {
                         (JobErrorCode::InvalidInput, "memory-model-invalid")
                     }
-                    crate::CompanionMemoryRuntimeInputError::MissingPrompt => (
+                    crate::CompanionMemoryRuntimeInputError::MissingPrompt { .. } => (
                         JobErrorCode::CapabilityUnavailable,
                         "memory-prompt-required",
                     ),
-                    crate::CompanionMemoryRuntimeInputError::InvalidSettings => {
+                    crate::CompanionMemoryRuntimeInputError::InvalidSettings { .. } => {
                         (JobErrorCode::InvalidInput, "memory-settings-invalid")
                     }
-                    crate::CompanionMemoryRuntimeInputError::Storage => unreachable!(),
+                    crate::CompanionMemoryRuntimeInputError::Storage { .. } => unreachable!(),
                 };
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
@@ -512,6 +519,7 @@ where
                     Ok(CompanionMemorySettledWork::Cancelled { error, job })
                 }
                 Some(failure) => {
+                    tracing::warn!(job_id = %work.job.id, ?failure, %error, "dynamic-memory cycle failed");
                     let job = self.jobs.append_and_transition(JobMutation::Fail {
                         claim: work.claim.claim,
                         error: job_error(failure),
@@ -520,6 +528,7 @@ where
                     Ok(CompanionMemorySettledWork::Failed { error, job })
                 }
                 None => {
+                    tracing::warn!(job_id = %work.job.id, %error, "dynamic-memory cycle will retry");
                     let job = self
                         .jobs
                         .append_and_transition(JobMutation::RetryScheduled {
@@ -548,6 +557,11 @@ fn job_error(failure: CompanionMemoryTerminalFailure) -> JobError {
             JobErrorCode::WorkerFailed,
             false,
             "companion-memory-provider-rejected",
+        ),
+        CompanionMemoryTerminalFailure::InvalidResponse => (
+            JobErrorCode::WorkerFailed,
+            false,
+            "companion-memory-invalid-response",
         ),
         CompanionMemoryTerminalFailure::EmptyResponse => (
             JobErrorCode::WorkerFailed,

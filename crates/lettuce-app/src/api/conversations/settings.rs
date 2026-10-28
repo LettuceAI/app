@@ -701,7 +701,7 @@ pub(super) fn edit_error(error: ConversationEditError) -> ApiError {
             invalid_field(field, format!("{field} does not name a usable source"))
         }
         ConversationEditError::Conversation(error) => error.into_api_error(),
-        ConversationEditError::Source | ConversationEditError::Snapshot => {
+        ConversationEditError::Source { .. } | ConversationEditError::Snapshot { .. } => {
             api_error(ApiErrorCode::Internal, error.to_string())
         }
     }

@@ -756,7 +756,7 @@ enum ClaimFailure {
 impl ClaimFailure {
     fn of_store(error: &StoreError) -> Self {
         match error {
-            StoreError::Storage => Self::Transient(error.to_string()),
+            StoreError::Storage { .. } => Self::Transient(error.to_string()),
             _ => Self::Invalid(error.to_string()),
         }
     }
@@ -1196,15 +1196,21 @@ mod claim_failure_tests {
     #[test]
     fn only_storage_failures_are_retried() {
         assert!(matches!(
-            ClaimFailure::artifact(ArtifactInstallError::Jobs(StoreError::Storage)),
+            ClaimFailure::artifact(ArtifactInstallError::Jobs(StoreError::Storage {
+                reason: "simulated failure".to_owned()
+            })),
             ClaimFailure::Transient(_)
         ));
         assert!(matches!(
-            ClaimFailure::artifact(ArtifactInstallError::InvalidWork),
+            ClaimFailure::artifact(ArtifactInstallError::InvalidWork {
+                reason: "simulated failure"
+            }),
             ClaimFailure::Invalid(_)
         ));
         assert!(matches!(
-            ClaimFailure::kokoro_model(crate::KokoroDownloadError::Jobs(StoreError::Storage)),
+            ClaimFailure::kokoro_model(crate::KokoroDownloadError::Jobs(StoreError::Storage {
+                reason: "simulated failure".to_owned()
+            })),
             ClaimFailure::Transient(_)
         ));
         assert!(matches!(

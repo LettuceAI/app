@@ -59,7 +59,9 @@ impl<R: ?Sized> WhisperCppRuntime<R> {
         let contexts = self
             .contexts
             .lock()
-            .map_err(|_| AsrRuntimeError::Unavailable)?;
+            .map_err(|_| AsrRuntimeError::Unavailable {
+                reason: "context cache lock is poisoned",
+            })?;
         Ok(contexts.keys().map(|key| key.model_path.clone()).collect())
     }
 
@@ -67,7 +69,9 @@ impl<R: ?Sized> WhisperCppRuntime<R> {
         let mut contexts = self
             .contexts
             .lock()
-            .map_err(|_| AsrRuntimeError::Unavailable)?;
+            .map_err(|_| AsrRuntimeError::Unavailable {
+                reason: "context cache lock is poisoned",
+            })?;
         let count = contexts.len();
         contexts.clear();
         Ok(count)
@@ -80,7 +84,12 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
         model: &AsrModelDescriptor,
         options: &TranscriptionOptions,
     ) -> Result<(), AsrRuntimeError> {
-        options.validate().map_err(|_| AsrRuntimeError::Rejected)?;
+        options.validate().map_err(|error| {
+            tracing::warn!(%error, "transcription options failed validation");
+            AsrRuntimeError::Rejected {
+                reason: "transcription options failed validation",
+            }
+        })?;
         let artifacts = self.resolve_verified(model)?;
         let key = context_key(&artifacts, options);
         let _ = self.context(&artifacts, &key, true)?;
@@ -94,16 +103,28 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
         let manifest = self
             .repository
             .get_whisper_model(model.id.as_str())
-            .map_err(|_| AsrRuntimeError::Unavailable)?
-            .ok_or(AsrRuntimeError::ModelUnavailable)?;
-        let artifacts = manifest
-            .verify()
-            .map_err(|_| AsrRuntimeError::ModelUnavailable)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "reading the whisper model manifest failed");
+                AsrRuntimeError::Unavailable {
+                    reason: "reading the whisper model manifest failed",
+                }
+            })?
+            .ok_or(AsrRuntimeError::ModelUnavailable {
+                reason: "whisper model is not installed",
+            })?;
+        let artifacts = manifest.verify().map_err(|error| {
+            tracing::warn!(%error, "whisper model artifacts failed verification");
+            AsrRuntimeError::ModelUnavailable {
+                reason: "whisper model artifacts failed verification",
+            }
+        })?;
         if artifacts.model_id != model.id.as_str()
             || artifacts.blake3 != model.artifact_hash
             || artifacts.english_only != model.english_only
         {
-            return Err(AsrRuntimeError::ModelUnavailable);
+            return Err(AsrRuntimeError::ModelUnavailable {
+                reason: "installed model does not match the requested model",
+            });
         }
         Ok(artifacts)
     }
@@ -118,7 +139,9 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
             && let Some(context) = self
                 .contexts
                 .lock()
-                .map_err(|_| AsrRuntimeError::Unavailable)?
+                .map_err(|_| AsrRuntimeError::Unavailable {
+                    reason: "context cache lock is poisoned",
+                })?
                 .get(key)
                 .cloned()
         {
@@ -144,7 +167,9 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
             WhisperContext::new_with_params(&artifacts.model_path, parameters).map_err(
                 |error| {
                     warn!(model_id = artifacts.model_id, %error, "failed to load Whisper model");
-                    AsrRuntimeError::ModelUnavailable
+                    AsrRuntimeError::ModelUnavailable {
+                        reason: "loading the whisper model failed",
+                    }
                 },
             )?,
         );
@@ -154,7 +179,9 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
         let mut contexts = self
             .contexts
             .lock()
-            .map_err(|_| AsrRuntimeError::Unavailable)?;
+            .map_err(|_| AsrRuntimeError::Unavailable {
+                reason: "context cache lock is poisoned",
+            })?;
         Ok(contexts
             .entry(key.clone())
             .or_insert_with(|| context.clone())
@@ -174,12 +201,19 @@ impl<R: WhisperModelRepository + ?Sized> AsrRuntime for WhisperCppRuntime<R> {
         if cancellation.is_cancelled() {
             return Err(AsrRuntimeError::Cancelled);
         }
-        options.validate().map_err(|_| AsrRuntimeError::Rejected)?;
+        options.validate().map_err(|error| {
+            tracing::warn!(%error, "transcription options failed validation");
+            AsrRuntimeError::Rejected {
+                reason: "transcription options failed validation",
+            }
+        })?;
         if mono_16khz.is_empty()
             || mono_16khz.iter().any(|sample| !sample.is_finite())
             || prompt.contains('\0')
         {
-            return Err(AsrRuntimeError::Rejected);
+            return Err(AsrRuntimeError::Rejected {
+                reason: "audio is empty or not finite, or the prompt contains a nul",
+            });
         }
         let artifacts = self.resolve_verified(model)?;
         if cancellation.is_cancelled() {
@@ -192,7 +226,9 @@ impl<R: WhisperModelRepository + ?Sized> AsrRuntime for WhisperCppRuntime<R> {
         }
         let mut state = context.create_state().map_err(|error| {
             warn!(model_id = artifacts.model_id, %error, "failed to create Whisper state");
-            AsrRuntimeError::Failed
+            AsrRuntimeError::Failed {
+                reason: "creating the whisper state failed",
+            }
         })?;
         let language = options.language.as_deref().map(str::to_ascii_lowercase);
         let mut params = build_params(options, language.as_deref(), prompt);
@@ -212,7 +248,9 @@ impl<R: WhisperModelRepository + ?Sized> AsrRuntime for WhisperCppRuntime<R> {
                 return Err(AsrRuntimeError::Cancelled);
             }
             warn!(model_id = artifacts.model_id, %error, "Whisper transcription failed");
-            return Err(AsrRuntimeError::Failed);
+            return Err(AsrRuntimeError::Failed {
+                reason: "whisper transcription run failed",
+            });
         }
         if cancellation.is_cancelled() {
             return Err(AsrRuntimeError::Cancelled);
@@ -230,7 +268,12 @@ impl<R: WhisperModelRepository + ?Sized> AsrRuntime for WhisperCppRuntime<R> {
             detected_language,
             segments,
         };
-        result.validate().map_err(|_| AsrRuntimeError::Failed)?;
+        result.validate().map_err(|error| {
+            tracing::warn!(%error, "transcription result failed validation");
+            AsrRuntimeError::Failed {
+                reason: "transcription result failed validation",
+            }
+        })?;
         Ok(result)
     }
 }
@@ -315,27 +358,50 @@ fn whisper_language(detect_language: bool, language: Option<&str>) -> Option<&st
 fn collect_segments(
     state: &whisper_rs::WhisperState,
 ) -> Result<Vec<TranscriptionSegment>, AsrRuntimeError> {
-    let count = usize::try_from(state.full_n_segments()).map_err(|_| AsrRuntimeError::Failed)?;
+    let count = usize::try_from(state.full_n_segments()).map_err(|_| AsrRuntimeError::Failed {
+        reason: "segment count is out of range",
+    })?;
     if count > MAX_SEGMENTS {
-        return Err(AsrRuntimeError::Failed);
+        return Err(AsrRuntimeError::Failed {
+            reason: "segment count exceeds the limit",
+        });
     }
     (0..count)
         .map(|index| {
-            let native_index = i32::try_from(index).map_err(|_| AsrRuntimeError::Failed)?;
+            let native_index = i32::try_from(index).map_err(|_| AsrRuntimeError::Failed {
+                reason: "segment index exceeds the native range",
+            })?;
             let segment = state
                 .get_segment(native_index)
-                .ok_or(AsrRuntimeError::Failed)?;
-            let start_ms = u64::try_from(segment.start_timestamp().saturating_mul(10))
-                .map_err(|_| AsrRuntimeError::Failed)?;
-            let end_ms = u64::try_from(segment.end_timestamp().saturating_mul(10))
-                .map_err(|_| AsrRuntimeError::Failed)?;
+                .ok_or(AsrRuntimeError::Failed {
+                    reason: "native segment is missing",
+                })?;
+            let start_ms =
+                u64::try_from(segment.start_timestamp().saturating_mul(10)).map_err(|_| {
+                    AsrRuntimeError::Failed {
+                        reason: "segment start timestamp is negative",
+                    }
+                })?;
+            let end_ms =
+                u64::try_from(segment.end_timestamp().saturating_mul(10)).map_err(|_| {
+                    AsrRuntimeError::Failed {
+                        reason: "segment end timestamp is negative",
+                    }
+                })?;
             Ok(TranscriptionSegment {
-                index: u32::try_from(index).map_err(|_| AsrRuntimeError::Failed)?,
+                index: u32::try_from(index).map_err(|_| AsrRuntimeError::Failed {
+                    reason: "segment index exceeds the u32 range",
+                })?,
                 start_ms,
                 end_ms,
                 text: segment
                     .to_str_lossy()
-                    .map_err(|_| AsrRuntimeError::Failed)?
+                    .map_err(|error| {
+                        tracing::warn!(%error, "segment text could not be read");
+                        AsrRuntimeError::Failed {
+                            reason: "segment text could not be read",
+                        }
+                    })?
                     .into_owned(),
                 no_speech_probability: segment.no_speech_probability(),
                 speaker_turn_next: segment.next_segment_speaker_turn(),
@@ -426,7 +492,7 @@ mod tests {
                 },
             )
             .expect_err("invalid native model");
-        assert_eq!(error, AsrRuntimeError::ModelUnavailable);
+        assert!(matches!(error, AsrRuntimeError::ModelUnavailable { .. }));
         assert_eq!(runtime.clear_cache(), Ok(0));
         std::fs::remove_dir_all(root).expect("cleanup");
     }
@@ -437,10 +503,10 @@ mod tests {
         let (repository, mut descriptor) = fixture(&root);
         descriptor.artifact_hash = ContentHash::parse("ab".repeat(32)).expect("different hash");
         let runtime = WhisperCppRuntime::new(repository);
-        assert_eq!(
+        assert!(matches!(
             runtime.preload(&descriptor, &TranscriptionOptions::default()),
-            Err(AsrRuntimeError::ModelUnavailable)
-        );
+            Err(AsrRuntimeError::ModelUnavailable { .. })
+        ));
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 

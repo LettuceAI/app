@@ -675,10 +675,10 @@ pub enum ModelRepositoryError {
     InUse(Vec<ModelDependencyReference>),
     #[error("provider account does not exist")]
     AccountMissing,
-    #[error("stored model data are invalid")]
-    InvalidData,
-    #[error("model storage failed")]
-    Storage,
+    #[error("stored model data are invalid: {reason}")]
+    InvalidData { reason: String },
+    #[error("model storage failed: {reason}")]
+    Storage { reason: String },
 }
 
 /// App-wide model settings underneath every model's own

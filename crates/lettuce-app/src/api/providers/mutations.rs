@@ -34,7 +34,7 @@ pub(in crate::api) fn model_error(error: ModelRepositoryError) -> ApiError {
         ModelRepositoryError::AccountInUse(_) | ModelRepositoryError::InUse(_) => {
             ApiErrorCode::InUse
         }
-        ModelRepositoryError::InvalidData => ApiErrorCode::InvalidInput,
+        ModelRepositoryError::InvalidData { .. } => ApiErrorCode::InvalidInput,
         _ => ApiErrorCode::Internal,
     };
     let details = if let ModelRepositoryError::AccountInUse(models) = &error {
@@ -127,8 +127,8 @@ async fn cleanup_secrets_inner(context: &ApiContext, staged: bool) -> Result<(),
         })
         .await?;
     for record in records {
-        if context.secret_store().delete(&record.reference, &record.purpose, None).await.is_err() {
-            tracing::warn!("provider credential deletion deferred");
+        if let Err(error) = context.secret_store().delete(&record.reference, &record.purpose, None).await {
+            tracing::warn!(%error, "provider credential deletion deferred");
             continue;
         }
         context

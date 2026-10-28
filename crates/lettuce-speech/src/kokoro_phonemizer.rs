@@ -33,14 +33,14 @@ pub struct KokoroPhonemizationSegment {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum KokoroPhonemizationError {
-    #[error("Kokoro phonemization input is invalid")]
-    InvalidInput,
+    #[error("Kokoro phonemization input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
     #[error("Kokoro phonemizer failed: {0}")]
     Process(EspeakNgError),
     #[error("Kokoro phonemization exceeds its token limit")]
     LimitExceeded,
-    #[error("Kokoro lexicon is invalid")]
-    InvalidLexicon,
+    #[error("Kokoro lexicon is invalid: {reason}")]
+    InvalidLexicon { reason: &'static str },
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,8 +59,12 @@ pub fn parse_kokoro_lexicon(
     bytes: &[u8],
     language: &str,
 ) -> Result<HashMap<String, String>, KokoroPhonemizationError> {
-    let parsed = serde_json::from_slice::<KokoroLexiconFile>(bytes)
-        .map_err(|_| KokoroPhonemizationError::InvalidLexicon)?;
+    let parsed = serde_json::from_slice::<KokoroLexiconFile>(bytes).map_err(|error| {
+        tracing::warn!(%error, "lexicon file is not valid json");
+        KokoroPhonemizationError::InvalidLexicon {
+            reason: "lexicon file is not valid json",
+        }
+    })?;
     let mut entries = match parsed {
         KokoroLexiconFile::Flat(entries) => entries,
         KokoroLexiconFile::Scoped {
@@ -81,7 +85,9 @@ pub fn parse_kokoro_lexicon(
             .iter()
             .any(|(key, value)| key.len() > 256 || value.len() > 4096)
     {
-        return Err(KokoroPhonemizationError::InvalidLexicon);
+        return Err(KokoroPhonemizationError::InvalidLexicon {
+            reason: "lexicon has too many entries or an oversized entry",
+        });
     }
     Ok(entries)
 }
@@ -117,7 +123,9 @@ pub fn phonemize_kokoro<P: EspeakPhonemizer + ?Sized>(
                 || value.len() > 4096
         })
     {
-        return Err(KokoroPhonemizationError::InvalidInput);
+        return Err(KokoroPhonemizationError::InvalidInput {
+            reason: "text, voice id or lexicon violates the phonemization limits",
+        });
     }
     let language = kokoro_voice_language(&input.voice_id);
     let vocab = kokoro_vocab();
@@ -882,10 +890,10 @@ mod tests {
         .expect("scoped lexicon");
         assert_eq!(scoped["Lettuce"], "british");
         assert_eq!(scoped["Shared"], "same");
-        assert_eq!(
+        assert!(matches!(
             parse_kokoro_lexicon(b"not JSON", "en-US"),
-            Err(KokoroPhonemizationError::InvalidLexicon)
-        );
+            Err(KokoroPhonemizationError::InvalidLexicon { .. })
+        ));
     }
 
     #[derive(Debug)]

@@ -101,7 +101,9 @@ fn copy_candidates_in(
         let usage_id = UsageEventId::new();
         let old_usage =
             crate::usage_adapter::load_turn_usage_in(transaction, &old_turn.to_string())
-                .map_err(|_| ConversationRepositoryError::Storage)?
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?
                 .into_iter()
                 .find(|event| event.record.attempt_id == old_attempt)
                 .ok_or_else(|| invalid("copy.candidate_usage"))?;
@@ -462,7 +464,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
                     command.source_conversation_id,
                     item.message.id,
                 )
-                .map_err(|_| ConversationRepositoryError::Storage)?
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?
             } else {
                 None
             };
@@ -696,9 +700,11 @@ impl crate::ApiOperationTransaction<'_, '_> {
         ).optional().map_err(slice::db)?;
         let companion = pooled_character
             .map(|id| {
-                let character_id = id
-                    .parse()
-                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                let character_id =
+                    id.parse()
+                        .map_err(|error| ConversationRepositoryError::Storage {
+                            reason: format!("{error}"),
+                        })?;
                 let effective =
                     lettuce_conversations::resolve_effective_settings(&source.conversation, None)
                         .map_err(ConversationRepositoryError::Invalid)?;
@@ -774,7 +780,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 self.transaction,
                 owner.character_id,
             )
-            .map_err(|_| ConversationRepositoryError::Storage)?
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?
         {
             crate::companion::soul_adapter::clone_conversation_soul_in(
                 self.transaction,
@@ -784,7 +792,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 &memory_ids,
                 now,
             )
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: format!("{error:?}"),
+            })?;
         }
         commit.value =
             slice::hydrate_conversation(self.transaction, command.conversation_id, || {})?;
@@ -846,7 +856,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
         if let Some((id, revision)) = draft.source_character_revision {
             let current =
                 crate::catalog::character_adapter::load_character_details(self.transaction, id)
-                    .map_err(|_| ConversationRepositoryError::Storage)?
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?
                     .ok_or(ConversationRepositoryError::NotFound)?;
             if current.character.revision != revision {
                 return Err(ConversationRepositoryError::Conflict);
@@ -864,8 +876,12 @@ impl crate::ApiOperationTransaction<'_, '_> {
                     | lettuce_characters::RepositoryError::AlreadyActive => {
                         ConversationRepositoryError::Conflict
                     }
-                    lettuce_characters::RepositoryError::Storage => {
-                        ConversationRepositoryError::Storage
+                    lettuce_characters::RepositoryError::Storage { .. } => {
+                        ConversationRepositoryError::Storage {
+                            reason:
+                                "create conversation copy: stored data failed a consistency check"
+                                    .to_owned(),
+                        }
                     }
                     lettuce_characters::RepositoryError::Archived
                     | lettuce_characters::RepositoryError::MissingDefaultRevision
@@ -897,20 +913,27 @@ impl crate::ApiOperationTransaction<'_, '_> {
                         owner.character_id,
                         now,
                     )
-                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?;
                     if !crate::catalog::character_adapter::companion_soul_shared_in(
                         transaction,
                         owner.character_id,
                     )
-                    .map_err(|_| ConversationRepositoryError::Storage)?
-                    {
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })? {
                         crate::companion::soul_adapter::seed_conversation_soul_in(
                             transaction,
                             owner.character_id,
                             owner.conversation_id,
                             now,
                         )
-                        .map_err(|_| ConversationRepositoryError::Storage)?;
+                        .map_err(|error| {
+                            ConversationRepositoryError::Storage {
+                                reason: format!("{error:?}"),
+                            }
+                        })?;
                     }
                     if *time_awareness {
                         let mut settings =
@@ -974,12 +997,16 @@ impl crate::Database {
         reference: &lettuce_conversations::ProtectedSnapshotRef,
     ) -> Result<lettuce_conversations::SnapshotArtifactDraft, lettuce_conversations::ArtifactError>
     {
-        let mut connection = self
-            .connection()
-            .map_err(|_| lettuce_conversations::ArtifactError::Storage)?;
-        let transaction = connection
-            .transaction()
-            .map_err(|_| lettuce_conversations::ArtifactError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| lettuce_conversations::ArtifactError::Storage {
+                    reason: error.to_string(),
+                })?;
+        let transaction = connection.transaction().map_err(|error| {
+            lettuce_conversations::ArtifactError::Storage {
+                reason: error.to_string(),
+            }
+        })?;
         super::conversation_artifact_adapter::snapshot_draft_in(&transaction, reference)
     }
 }

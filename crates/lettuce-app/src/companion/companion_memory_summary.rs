@@ -93,11 +93,20 @@ impl<
             .repository
             .load_dynamic_memory_attempt(attempt_id)
             .map_err(CompanionMemoryInferenceError::Run)?;
-        if attempt.run_id != run.id
-            || attempt.job_id != handle.id()
-            || attempt.status != lettuce_memory::DynamicMemoryAttemptStatus::Processing
-        {
-            return Err(CompanionMemoryInferenceError::InvalidOwnership);
+        if attempt.run_id != run.id {
+            return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "attempt belongs to another run",
+            });
+        }
+        if attempt.job_id != handle.id() {
+            return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "attempt belongs to another job",
+            });
+        }
+        if attempt.status != lettuce_memory::DynamicMemoryAttemptStatus::Processing {
+            return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "attempt is not processing",
+            });
         }
         if let Some(checkpoint) = self
             .repository
@@ -120,7 +129,9 @@ impl<
             .repository
             .get(run.space_id)
             .map_err(CompanionMemoryInferenceError::Memory)?
-            .ok_or(CompanionMemoryInferenceError::InvalidOwnership)?;
+            .ok_or(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "memory space of the run does not exist",
+            })?;
         let previous = self
             .repository
             .get_summary_for_branch(run.space_id, run.conversation_id, run.branch_id)
@@ -132,17 +143,23 @@ impl<
             run.summary_window,
             window_selection,
         ) {
-            return Err(CompanionMemoryInferenceError::InvalidOwnership);
+            return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "the summary window is already summarized",
+            });
         }
         let sources = materialize_sources(self.conversations, &run)?;
         let runtime_text = crate::generation::runtime_text::RuntimeText::load(
             self.repository,
             crate::BuiltInPromptId::MemoryRuntime,
         )
-        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("memory runtime prompt text could not be loaded: {error}"),
+        })?;
         let fallback_request = runtime_text
             .render_with("summary_fallback_request", [])
-            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+            .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("summary fallback request could not be rendered: {error}"),
+            })?;
         let request = build_summary_request(
             &run,
             &attempt,
@@ -219,9 +236,12 @@ impl<
             Err(JobInferenceError::Provider(PortError::Cancelled)) => {
                 return Err(CompanionMemoryInferenceError::Cancelled);
             }
-            Err(JobInferenceError::Evidence) => {
+            Err(JobInferenceError::Evidence { reason }) => {
+                tracing::warn!(%reason, "memory summary inference usage evidence failed");
                 return Err(CompanionMemoryInferenceError::Run(
-                    lettuce_memory::DynamicMemoryRunRepositoryError::Storage,
+                    lettuce_memory::DynamicMemoryRunRepositoryError::Storage {
+                        reason: "summary inference usage evidence could not be recorded",
+                    },
                 ));
             }
             Err(JobInferenceError::Provider(_)) => None,
@@ -260,7 +280,9 @@ impl<
         });
         fallback
             .validate()
-            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+            .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("summary fallback request failed validation: {error}"),
+            })?;
         let fallback_context = fallback.context.clone();
         let outcome =
             run_job_inference(self.repository, self.inference, handle.id(), fallback, now)
@@ -272,9 +294,14 @@ impl<
                     JobInferenceError::Provider(error) => {
                         CompanionMemoryInferenceError::Inference(error)
                     }
-                    JobInferenceError::Evidence => CompanionMemoryInferenceError::Run(
-                        lettuce_memory::DynamicMemoryRunRepositoryError::Storage,
-                    ),
+                    JobInferenceError::Evidence { reason } => {
+                        tracing::warn!(%reason, "memory summary fallback usage evidence failed");
+                        CompanionMemoryInferenceError::Run(
+                            lettuce_memory::DynamicMemoryRunRepositoryError::Storage {
+                                reason: "summary fallback usage evidence could not be recorded",
+                            },
+                        )
+                    }
                 })?;
         let text = match summary_from_outcome(&outcome, false) {
             Ok(text) => text,
@@ -337,15 +364,26 @@ fn build_summary_request(
     stream_sink: Option<RequestId>,
     now: TimestampMillis,
 ) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
-    if prompt.status != LifecycleStatus::Active
-        || prompt.purpose != PromptPurpose::DynamicMemorySummarizer
-        || sources.len() != run.source_messages.len()
-    {
-        return Err(CompanionMemoryInferenceError::InvalidPrompt);
+    if prompt.status != LifecycleStatus::Active {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "summarizer prompt is not active".to_owned(),
+        });
+    }
+    if prompt.purpose != PromptPurpose::DynamicMemorySummarizer {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "prompt purpose is not dynamic memory summarizer".to_owned(),
+        });
+    }
+    if sources.len() != run.source_messages.len() {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "materialized sources differ from the run source messages".to_owned(),
+        });
     }
     let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
         text.render_with(key, variables)
-            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)
+            .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("summary prompt fragment {key} could not be rendered: {error}"),
+            })
     };
     let group_variant = |direct: &'static str, group: &'static str| {
         if is_group { group } else { direct }
@@ -482,7 +520,9 @@ fn build_summary_request(
             _ => None,
         })
         .and_then(|size| u32::try_from(size).ok())
-        .ok_or(CompanionMemoryInferenceError::ContextTooLarge)?;
+        .ok_or(CompanionMemoryInferenceError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
     let mut profile = run.profile.clone();
     profile.tool_policy = ToolPolicy::Required;
     profile.output_policy = OutputPolicy::Plain;
@@ -513,7 +553,9 @@ fn build_summary_request(
             },
             budget: ContextBudgetReport {
                 selected_messages: u32::try_from(sources.len())
-                    .map_err(|_| CompanionMemoryInferenceError::ContextTooLarge)?,
+                    .map_err(|_| CompanionMemoryInferenceError::ContextTooLarge {
+                        reason: "source message count does not fit in u32",
+                    })?,
                 omitted_messages: 0,
                 input_bytes,
                 estimated_input_tokens: input_bytes.saturating_add(3) / 4,
@@ -537,7 +579,9 @@ fn build_summary_request(
     };
     request
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("summary request failed validation: {error}"),
+        })?;
     Ok(request)
 }
 
@@ -547,9 +591,16 @@ fn summary_from_outcome(
 ) -> Result<String, CompanionMemoryInferenceError> {
     outcome
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
+        .map_err(|error| CompanionMemoryInferenceError::NoToolCalls {
+            reason: format!("summary outcome failed validation: {error}"),
+        })?;
     if outcome.candidates.len() != 1 {
-        return Err(CompanionMemoryInferenceError::MultipleCandidates);
+        return Err(CompanionMemoryInferenceError::MultipleCandidates {
+            reason: format!(
+                "summary outcome has {} candidates instead of one",
+                outcome.candidates.len()
+            ),
+        });
     }
     if matches!(outcome.finish_reason, FinishReason::Cancelled) {
         return Err(CompanionMemoryInferenceError::Cancelled);
@@ -572,7 +623,9 @@ fn summary_from_outcome(
                     }
         }
     } else if !candidate.tool_calls.is_empty() {
-        return Err(CompanionMemoryInferenceError::NoToolCalls);
+        return Err(CompanionMemoryInferenceError::NoToolCalls {
+            reason: "summary candidate has tool calls where plain text was required".to_owned(),
+        });
     }
     let text = candidate
         .parts
@@ -582,14 +635,16 @@ fn summary_from_outcome(
             _ => None,
         })
         .collect::<String>();
-    validate_summary_text(&text).map_err(|_| CompanionMemoryInferenceError::NoToolCalls)
+    validate_summary_text(&text).map_err(|reason| CompanionMemoryInferenceError::NoToolCalls {
+        reason: reason.to_owned(),
+    })
 }
 
-fn validate_summary_text(summary: &str) -> Result<String, ()> {
+fn validate_summary_text(summary: &str) -> Result<String, &'static str> {
     let normalized =
         lettuce_memory::collapse_whitespace(&lettuce_memory::normalize_llm_output_text(summary));
     if normalized.is_empty() || normalized.len() > 6_000 {
-        return Err(());
+        return Err("summary text is empty or longer than 6000 bytes");
     }
     let lower = normalized.to_ascii_lowercase();
     let refusal_prefixes = [
@@ -613,7 +668,7 @@ fn validate_summary_text(summary: &str) -> Result<String, ()> {
         || lower.contains("write_summary")
         || lower.contains("create_memory(")
     {
-        return Err(());
+        return Err("summary text is a refusal or mentions a memory tool");
     }
     Ok(normalized)
 }

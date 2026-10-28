@@ -56,9 +56,12 @@ where
     let mut cleared = 0;
     for blob in cache.cached_blobs()? {
         let released = media.release_blob(blob.blob_id, |_| {
-            cache
-                .release(blob.blob_id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)
+            cache.release(blob.blob_id, now).map_err(|error| {
+                tracing::warn!(%error, "cached speech blob release failed");
+                MediaStoreError::CatalogFailure {
+                    reason: "cached speech blob release failed",
+                }
+            })
         });
         match released {
             Ok(Some(_)) => cleared += 1,

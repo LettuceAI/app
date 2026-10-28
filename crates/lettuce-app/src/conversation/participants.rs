@@ -63,7 +63,9 @@ fn group_profile(
     conversation: &Conversation,
 ) -> Result<Option<GroupProfile>, ConversationEditError> {
     Ok(live_sources::live_group(database, conversation)
-        .map_err(|_| ConversationEditError::Source)?
+        .map_err(|error| ConversationEditError::Source {
+            reason: error.to_string(),
+        })?
         .and_then(|group| group.profile))
 }
 
@@ -126,7 +128,9 @@ fn add_group_member_at(
             ),
             None => {
                 let character = CharacterRepository::get(database, character_id)
-                    .map_err(|_| ConversationEditError::Source)?
+                    .map_err(|error| ConversationEditError::Source {
+                        reason: error.to_string(),
+                    })?
                     .filter(|details| details.character.status == LifecycleStatus::Active)
                     .ok_or(ConversationEditError::InvalidInput {
                         field: "character_id",
@@ -140,7 +144,9 @@ fn add_group_member_at(
                     character.revision,
                     documents::character_body(&character),
                 )
-                .map_err(|_| ConversationEditError::Snapshot)?;
+                .map_err(|error| ConversationEditError::Snapshot {
+                    reason: error.to_string(),
+                })?;
                 let muted = profile
                     .as_ref()
                     .and_then(|profile| {
@@ -186,8 +192,11 @@ fn add_group_member_at(
             member,
             override_members,
         };
-        let prepared = PreparedParticipantAdd::new(command, drafts)
-            .map_err(|_| ConversationEditError::Snapshot)?;
+        let prepared = PreparedParticipantAdd::new(command, drafts).map_err(|error| {
+            ConversationEditError::Snapshot {
+                reason: error.to_string(),
+            }
+        })?;
         match ConversationRepository::add_participant(database, prepared, now) {
             Ok(added) => return Ok(added.value),
             Err(ConversationRepositoryError::StaleRevision { .. })
@@ -389,11 +398,15 @@ pub(crate) fn conversation_model(
         field: "model_profile_id",
     };
     let profile = ModelProfileRepository::get(database, model_profile_id)
-        .map_err(|_| ConversationEditError::Source)?
+        .map_err(|error| ConversationEditError::Source {
+            reason: error.to_string(),
+        })?
         .filter(|profile| profile.kind == ModelKind::Chat)
         .ok_or(invalid.clone())?;
     let account = ProviderAccountRepository::get(database, profile.provider_account_id)
-        .map_err(|_| ConversationEditError::Source)?
+        .map_err(|error| ConversationEditError::Source {
+            reason: error.to_string(),
+        })?
         .filter(|account| account.enabled)
         .ok_or(invalid)?;
     let draft = documents::draft(
@@ -410,10 +423,14 @@ pub(crate) fn conversation_model(
         profile.revision,
         documents::model_body(&profile, &account),
     )
-    .map_err(|_| ConversationEditError::Snapshot)?;
+    .map_err(|error| ConversationEditError::Snapshot {
+        reason: error.to_string(),
+    })?;
     let snapshot = planner::model_snapshot(&profile, &account, &draft);
     ConversationRepository::artifact_store(database)
         .attach_snapshot(conversation_id, draft)
-        .map_err(|_| ConversationEditError::Snapshot)?;
+        .map_err(|error| ConversationEditError::Snapshot {
+            reason: error.to_string(),
+        })?;
     Ok(snapshot)
 }

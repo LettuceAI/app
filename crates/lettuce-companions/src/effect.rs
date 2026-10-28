@@ -111,7 +111,9 @@ impl CompanionTurnEffectSeed {
                 .chain(&self.signal_changes.removed)
                 .any(|signal| signal.trim().is_empty() || signal.len() > MAX_SIGNAL_BYTES)
         {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
+            return Err(CompanionTurnEffectRepositoryError::Invalid {
+                reason: "a signal is blank or longer than the limit".to_owned(),
+            });
         }
         let mut signals = std::collections::HashSet::new();
         if !self
@@ -121,7 +123,9 @@ impl CompanionTurnEffectSeed {
             .chain(&self.signal_changes.removed)
             .all(|signal| signals.insert(signal))
         {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
+            return Err(CompanionTurnEffectRepositoryError::Invalid {
+                reason: "signal changes repeat a signal".to_owned(),
+            });
         }
         Ok(())
     }
@@ -189,7 +193,9 @@ impl CompanionTurnEffectOutcome {
         if summary.is_some_and(|value| value.len() > MAX_SUMMARY_BYTES)
             || matches!(self, Self::Failed { summary } if summary.trim().is_empty())
         {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
+            return Err(CompanionTurnEffectRepositoryError::Invalid {
+                reason: "the summary is too long or a failed effect has a blank summary".to_owned(),
+            });
         }
         if let Self::Ready {
             memory_changes,
@@ -210,7 +216,7 @@ impl CompanionTurnEffectOutcome {
                 || !memories.into_iter().all(|id| unique_memories.insert(id))
                 || source_window.message_ids.len() > 2
             {
-                return Err(CompanionTurnEffectRepositoryError::Invalid);
+                return Err(CompanionTurnEffectRepositoryError::Invalid { reason: "the memory changes exceed the limit, repeat a memory or the source window has more than two messages".to_owned() });
             }
         }
         Ok(())
@@ -221,9 +227,9 @@ impl CompanionTurnEffectOutcome {
 pub enum CompanionTurnEffectRepositoryError {
     NotFound,
     Conflict,
-    Invalid,
-    Corrupt,
-    Failure,
+    Invalid { reason: String },
+    Corrupt { reason: String },
+    Failure { reason: String },
 }
 
 pub trait CompanionTurnEffectRepository: Send + Sync {
@@ -231,14 +237,18 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         &self,
         _conversation_id: ConversationId,
     ) -> Result<ConversationBranchId, CompanionTurnEffectRepositoryError> {
-        Err(CompanionTurnEffectRepositoryError::Invalid)
+        Err(CompanionTurnEffectRepositoryError::Invalid {
+            reason: "this repository cannot look up the active branch".to_owned(),
+        })
     }
 
     fn branch_for_effect(
         &self,
         _effect_id: CompanionEffectId,
     ) -> Result<ConversationBranchId, CompanionTurnEffectRepositoryError> {
-        Err(CompanionTurnEffectRepositoryError::Invalid)
+        Err(CompanionTurnEffectRepositoryError::Invalid {
+            reason: "this repository cannot look up the branch of an effect".to_owned(),
+        })
     }
 
     fn get_for_message(
@@ -259,7 +269,9 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         &self,
         _conversation_id: ConversationId,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
-        Err(CompanionTurnEffectRepositoryError::Invalid)
+        Err(CompanionTurnEffectRepositoryError::Invalid {
+            reason: "this repository cannot list effects of a conversation".to_owned(),
+        })
     }
 
     fn list_processing_for_conversation(
@@ -267,7 +279,9 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         _conversation_id: ConversationId,
         _limit: u16,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
-        Err(CompanionTurnEffectRepositoryError::Invalid)
+        Err(CompanionTurnEffectRepositoryError::Invalid {
+            reason: "this repository cannot list processing effects".to_owned(),
+        })
     }
 
     fn settle(
@@ -293,7 +307,9 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         &self,
         _effect: &CompanionTurnEffect,
     ) -> Result<u32, CompanionTurnEffectRepositoryError> {
-        Err(CompanionTurnEffectRepositoryError::Invalid)
+        Err(CompanionTurnEffectRepositoryError::Invalid {
+            reason: "this repository cannot count failed memory cycles".to_owned(),
+        })
     }
 
     /// Makes the conversation's failed effects processing again for a
@@ -303,7 +319,9 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         _conversation_id: ConversationId,
         _now: TimestampMillis,
     ) -> Result<u32, CompanionTurnEffectRepositoryError> {
-        Err(CompanionTurnEffectRepositoryError::Invalid)
+        Err(CompanionTurnEffectRepositoryError::Invalid {
+            reason: "this repository cannot reopen failed effects".to_owned(),
+        })
     }
 }
 

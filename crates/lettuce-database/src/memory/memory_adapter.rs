@@ -23,8 +23,8 @@ const SELECT_ITEM: &str = "
      WHERE space_id = ?1
      ORDER BY ordinal";
 
-fn storage(_: impl std::fmt::Debug) -> MemoryRepositoryError {
-    MemoryRepositoryError::Failure("sqlite memory operation failed".to_owned())
+fn storage(error: impl std::fmt::Debug) -> MemoryRepositoryError {
+    MemoryRepositoryError::Failure(format!("sqlite memory operation failed: {error:?}"))
 }
 
 fn category_name(value: Option<MemoryCategory>) -> Option<&'static str> {
@@ -284,7 +284,9 @@ pub(crate) fn space_conversations_in(
 }
 
 fn space_storage_error<E>(_: E) -> lettuce_conversations::ConversationRepositoryError {
-    lettuce_conversations::ConversationRepositoryError::Storage
+    lettuce_conversations::ConversationRepositoryError::Storage {
+        reason: "space storage error: stored data failed a consistency check".to_owned(),
+    }
 }
 
 /// Creates a conversation's memory space with its restored id, revision and
@@ -330,7 +332,11 @@ pub(crate) fn create_conversation_space_in(
             "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
             [space_id.to_string()],
         )
-        .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+        .map_err(
+            |error| lettuce_conversations::ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            },
+        )?;
     transaction
         .execute(
             "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id)
@@ -341,7 +347,11 @@ pub(crate) fn create_conversation_space_in(
                 branch_id.to_string()
             ],
         )
-        .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+        .map_err(
+            |error| lettuce_conversations::ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            },
+        )?;
     Ok(space_id)
 }
 
@@ -1022,7 +1032,9 @@ impl MemoryRepository for Database {
         snapshot.validate()?;
         if snapshot.revision != Revision::INITIAL {
             return Err(MemoryRepositoryError::Invalid(
-                lettuce_memory::MemoryValidationError::InvalidInitialRevision,
+                lettuce_memory::MemoryValidationError::InvalidInitialRevision {
+                    reason: "new memory space snapshot is not at the initial revision",
+                },
             ));
         }
         let mut connection = self.connection().map_err(storage)?;

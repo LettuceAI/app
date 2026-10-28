@@ -42,8 +42,8 @@ impl From<lettuce_database::ApiOperationError> for Failure {
     fn from(failure: lettuce_database::ApiOperationError) -> Self {
         Self(error(match failure {
             lettuce_database::ApiOperationError::Conflict => ApiErrorCode::Conflict,
-            lettuce_database::ApiOperationError::InvalidData => ApiErrorCode::InvalidInput,
-            lettuce_database::ApiOperationError::Storage => ApiErrorCode::Unavailable,
+            lettuce_database::ApiOperationError::InvalidData { .. } => ApiErrorCode::InvalidInput,
+            lettuce_database::ApiOperationError::Storage { .. } => ApiErrorCode::Unavailable,
         }, dto::BackupFailureReason::Storage))
     }
 }
@@ -117,8 +117,8 @@ pub(super) fn inspect(files: &dyn super::FileAccess, uri: &str) -> Result<dto::B
         })?;
         input.seek(SeekFrom::Start(0)).map_err(|_| file_error(super::FileAccessError::Io))?;
         let header = match lettuce_transfer::detect_backup_format(&prefix).map_err(|_| malformed())? {
-            lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|failure| if failure == lettuce_transfer::BackupEnvelopeError::Io { file_error(super::FileAccessError::Io) } else { malformed() })?,
-            lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|failure| if failure == lettuce_transfer::LegacyBackupInventoryError::Io { file_error(super::FileAccessError::Io) } else { malformed() })?,
+            lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|failure| if matches!(failure, lettuce_transfer::BackupEnvelopeError::Io { .. }) { file_error(super::FileAccessError::Io) } else { malformed() })?,
+            lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|failure| if matches!(failure, lettuce_transfer::LegacyBackupInventoryError::Io { .. }) { file_error(super::FileAccessError::Io) } else { malformed() })?,
         };
         Ok(dto::BackupHeaderView {
             version: header.version,

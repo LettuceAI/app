@@ -58,12 +58,12 @@ pub enum LorebookKeywordRunRepositoryError {
     NotFound,
     #[error("lorebook keyword generation run conflicts with durable state")]
     Conflict,
-    #[error("lorebook keyword generation run is invalid")]
-    Invalid,
-    #[error("lorebook keyword generation run storage failed")]
-    Failure,
-    #[error("lorebook keyword generation run storage is corrupt")]
-    Corrupt,
+    #[error("lorebook keyword generation run is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("lorebook keyword generation run storage failed: {reason}")]
+    Failure { reason: &'static str },
+    #[error("lorebook keyword generation run storage is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
 }
 
 pub trait LorebookKeywordRunRepository: Send + Sync {
@@ -149,7 +149,11 @@ impl LorebookKeywordAttemptCheckpoint {
         let expected = match self.ordinal {
             0 => LorebookKeywordAttemptKind::Native,
             1 => LorebookKeywordAttemptKind::StructuredFallback,
-            _ => return Err(LorebookKeywordRunRepositoryError::Invalid),
+            _ => {
+                return Err(LorebookKeywordRunRepositoryError::Invalid {
+                    reason: "attempt ordinal is neither the native nor the fallback attempt",
+                });
+            }
         };
         if self.attempt_kind != expected
             || self.completed_at.get() < 0
@@ -165,7 +169,9 @@ impl LorebookKeywordAttemptCheckpoint {
                 ))
             || matches!(&self.decision, LorebookKeywordAttemptDecision::Result(result) if !keywords_are_normalized(&result.keywords))
         {
-            return Err(LorebookKeywordRunRepositoryError::Invalid);
+            return Err(LorebookKeywordRunRepositoryError::Invalid {
+                reason: "attempt calls, kind or decision are inconsistent",
+            });
         }
         Ok(())
     }
@@ -175,7 +181,9 @@ pub fn validate_lorebook_keyword_attempts(
     attempts: &[LorebookKeywordAttemptCheckpoint],
 ) -> Result<(), LorebookKeywordRunRepositoryError> {
     if attempts.len() > 2 {
-        return Err(LorebookKeywordRunRepositoryError::Invalid);
+        return Err(LorebookKeywordRunRepositoryError::Invalid {
+            reason: "run has more than 2 attempts",
+        });
     }
     for (ordinal, attempt) in attempts.iter().enumerate() {
         attempt.validate()?;
@@ -186,7 +194,9 @@ pub fn validate_lorebook_keyword_attempts(
                     LorebookKeywordAttemptDecision::StructuredFallback
                 ))
         {
-            return Err(LorebookKeywordRunRepositoryError::Invalid);
+            return Err(LorebookKeywordRunRepositoryError::Invalid {
+                reason: "attempt ordinal does not match its position or follows a non-fallback attempt",
+            });
         }
     }
     Ok(())
@@ -229,7 +239,9 @@ impl LorebookKeywordGenerationRun {
             || values.direction_prompt != values.direction_prompt.trim()
             || serde_json::to_vec(&self.profile).is_err()
         {
-            return Err(LorebookKeywordRunRepositoryError::Invalid);
+            return Err(LorebookKeywordRunRepositoryError::Invalid {
+                reason: "run snapshot fields are blank, untrimmed or out of range",
+            });
         }
         Ok(())
     }
@@ -237,8 +249,8 @@ impl LorebookKeywordGenerationRun {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LorebookKeywordGenerationError {
-    #[error("lorebook keyword fallback is invalid")]
-    InvalidFallback,
+    #[error("lorebook keyword fallback is invalid: {reason}")]
+    InvalidFallback { reason: String },
     #[error("lorebook keyword fallback returned an undeclared operation")]
     UndeclaredFallbackOperation,
 }
@@ -327,14 +339,18 @@ fn normalize_keywords(value: Option<&Value>) -> Vec<String> {
 fn parse_json_fallback(raw: &str) -> Result<LorebookKeywordDraft, LorebookKeywordGenerationError> {
     let normalized = normalize_fallback_text(raw);
     let value: Value = serde_json::from_str(json_snippet(&normalized).unwrap_or(&normalized))
-        .map_err(|_| LorebookKeywordGenerationError::InvalidFallback)?;
+        .map_err(|error| LorebookKeywordGenerationError::InvalidFallback {
+            reason: format!("fallback reply is not valid json: {error}"),
+        })?;
     let node = value
         .get("result")
         .or_else(|| value.get("response"))
         .unwrap_or(&value);
     let object = node
         .as_object()
-        .ok_or(LorebookKeywordGenerationError::InvalidFallback)?;
+        .ok_or(LorebookKeywordGenerationError::InvalidFallback {
+            reason: "fallback json is not an object".to_owned(),
+        })?;
     let name = object
         .get("name")
         .or_else(|| object.get("tool"))
@@ -342,7 +358,9 @@ fn parse_json_fallback(raw: &str) -> Result<LorebookKeywordDraft, LorebookKeywor
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or(LorebookKeywordGenerationError::InvalidFallback)?;
+        .ok_or(LorebookKeywordGenerationError::InvalidFallback {
+            reason: "fallback json has no non-empty operation name".to_owned(),
+        })?;
     if name != LOREBOOK_KEYWORD_WRITE_TOOL_NAME {
         return Err(LorebookKeywordGenerationError::UndeclaredFallbackOperation);
     }
@@ -398,13 +416,19 @@ fn parse_xml_fallback(raw: &str) -> Result<LorebookKeywordDraft, LorebookKeyword
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => return Err(LorebookKeywordGenerationError::InvalidFallback),
+            Err(error) => {
+                return Err(LorebookKeywordGenerationError::InvalidFallback {
+                    reason: format!("xml event stream could not be read: {error}"),
+                });
+            }
             _ => {}
         }
         buffer.clear();
     }
     if operation.as_deref() != Some(LOREBOOK_KEYWORD_WRITE_TOOL_NAME) {
-        return Err(LorebookKeywordGenerationError::InvalidFallback);
+        return Err(LorebookKeywordGenerationError::InvalidFallback {
+            reason: "fallback operation is not the keyword write tool".to_owned(),
+        });
     }
     Ok(LorebookKeywordDraft {
         keywords: normalize_keywords(Some(&json!(keywords))),
@@ -467,16 +491,20 @@ fn json_snippet(raw: &str) -> Option<&str> {
 fn xml_text(raw: &[u8]) -> Result<String, LorebookKeywordGenerationError> {
     unescape(&String::from_utf8_lossy(raw))
         .map(|value| value.into_owned())
-        .map_err(|_| LorebookKeywordGenerationError::InvalidFallback)
+        .map_err(|error| LorebookKeywordGenerationError::InvalidFallback {
+            reason: format!("xml text could not be unescaped: {error}"),
+        })
 }
 
 fn xml_reference(reference: BytesRef<'_>) -> Result<String, LorebookKeywordGenerationError> {
     if let Ok(Some(character)) = reference.resolve_char_ref() {
         return Ok(character.to_string());
     }
-    let content = reference
-        .xml_content()
-        .map_err(|_| LorebookKeywordGenerationError::InvalidFallback)?;
+    let content = reference.xml_content().map_err(|error| {
+        LorebookKeywordGenerationError::InvalidFallback {
+            reason: format!("xml reference could not be resolved: {error}"),
+        }
+    })?;
     Ok(resolve_xml_entity(&content).map_or_else(|| format!("&{content};"), ToOwned::to_owned))
 }
 

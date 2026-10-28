@@ -55,8 +55,8 @@ pub struct PlaygroundHistoryEntry {
 pub enum PlaygroundHistoryError {
     #[error("playground history entry not found")]
     NotFound,
-    #[error("playground history is unavailable")]
-    Storage,
+    #[error("playground history is unavailable: {reason}")]
+    Storage { reason: &'static str },
 }
 
 /// The clamped page size for a requested limit.

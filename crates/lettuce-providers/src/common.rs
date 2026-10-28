@@ -311,12 +311,15 @@ fn bounded_diagnostic(value: &str, max_bytes: usize) -> Option<String> {
 
 impl From<JsonClientError> for AdapterError {
     fn from(error: JsonClientError) -> Self {
+        tracing::warn!(%error, "provider network operation failed");
         match error {
-            JsonClientError::InvalidUrl | JsonClientError::InvalidRequest => Self::Rejected,
+            JsonClientError::InvalidUrl { .. } | JsonClientError::InvalidRequest { .. } => {
+                Self::Rejected
+            }
             JsonClientError::RequestTooLarge => Self::Rejected,
             JsonClientError::ResponseTooLarge
-            | JsonClientError::Transport
-            | JsonClientError::ClientConfiguration => Self::Transport,
+            | JsonClientError::Transport { .. }
+            | JsonClientError::ClientConfiguration { .. } => Self::Transport,
         }
     }
 }
@@ -324,7 +327,8 @@ impl From<JsonClientError> for AdapterError {
 impl From<AdapterError> for PortError {
     fn from(error: AdapterError) -> Self {
         match error {
-            AdapterError::MalformedResponse | AdapterError::EmptyResponse => PortError::Empty,
+            AdapterError::MalformedResponse => PortError::InvalidResponse,
+            AdapterError::EmptyResponse => PortError::Empty,
             AdapterError::Rejected | AdapterError::CredentialRejected => PortError::Rejected,
             AdapterError::SecretUnavailable | AdapterError::Transport => PortError::Unavailable,
             AdapterError::Cancelled => PortError::Cancelled,
@@ -808,51 +812,39 @@ pub(crate) fn synthesized_call_id(position: usize) -> String {
     format!("tool_call_{}", position + 1)
 }
 
-/// Tool call arguments from their raw text: `<parameter=name>value</parameter>`
-/// strings become an object, JSON objects are kept with their raw text, a
-/// JSON string holding an object is unwrapped, and blank or non-object
-/// arguments become an empty object.
-pub(crate) fn lenient_tool_arguments(raw: &str) -> (serde_json::Value, Option<String>) {
-    if let Some(parsed) = parameter_tag_arguments(raw) {
-        return (parsed, None);
-    }
-    match serde_json::from_str::<serde_json::Value>(raw) {
-        Ok(value @ serde_json::Value::Object(_)) => (value, Some(raw.to_owned())),
-        Ok(serde_json::Value::String(inner)) => {
-            match serde_json::from_str::<serde_json::Value>(&inner) {
-                Ok(value @ serde_json::Value::Object(_)) => (value, None),
-                _ => {
-                    if !inner.trim().is_empty() {
-                        tracing::warn!("provider tool call arguments are not a JSON object");
-                    }
-                    (serde_json::Value::Object(serde_json::Map::new()), None)
-                }
-            }
-        }
-        _ => {
-            if !raw.trim().is_empty() && raw.trim() != "null" {
-                tracing::warn!("provider tool call arguments are not a JSON object");
-            }
-            (serde_json::Value::Object(serde_json::Map::new()), None)
-        }
-    }
-}
-
-/// Arguments that arrived already decoded; `null` or a missing value is an
-/// empty object and a string is parsed like a raw argument string.
-pub(crate) fn lenient_tool_argument_value(
+/// OpenAI-compatible tool arguments must be complete. Keep the legacy
+/// double-encoded JSON and parameter-tag forms, but never turn malformed
+/// nonempty arguments into `{}` (which could turn a broken `done` into success).
+pub(crate) fn checked_tool_argument_value(
     value: Option<serde_json::Value>,
-) -> (serde_json::Value, Option<String>) {
+) -> Result<(serde_json::Value, Option<String>), AdapterError> {
+    use serde_json::Value;
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return Ok((serde_json::json!({}), None));
+    };
     match value {
-        Some(serde_json::Value::String(raw)) => lenient_tool_arguments(&raw),
-        Some(value @ serde_json::Value::Object(_)) => (value, None),
-        Some(serde_json::Value::Null) | None => {
-            (serde_json::Value::Object(serde_json::Map::new()), None)
+        value @ Value::Object(_) => Ok((value, None)),
+        Value::String(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() || trimmed == "null" {
+                return Ok((serde_json::json!({}), None));
+            }
+            if trimmed.starts_with("<parameter") && trimmed.ends_with("</parameter>")
+                && trimmed.matches("<parameter").count() == trimmed.matches("</parameter>").count()
+                && let Some(arguments) = parameter_tag_arguments(trimmed)
+            {
+                return Ok((arguments, None));
+            }
+            match serde_json::from_str::<Value>(&raw) {
+                Ok(value @ Value::Object(_)) => Ok((value, Some(raw))),
+                Ok(Value::String(inner)) => match serde_json::from_str::<Value>(&inner) {
+                    Ok(value @ Value::Object(_)) => Ok((value, None)),
+                    _ => Err(AdapterError::MalformedResponse),
+                },
+                _ => Err(AdapterError::MalformedResponse),
+            }
         }
-        Some(_) => {
-            tracing::warn!("provider tool call arguments are not a JSON object");
-            (serde_json::Value::Object(serde_json::Map::new()), None)
-        }
+        _ => Err(AdapterError::MalformedResponse),
     }
 }
 
@@ -865,9 +857,12 @@ fn parameter_tag_arguments(raw: &str) -> Option<serde_json::Value> {
     let mut cursor = 0_usize;
     while let Some(start_rel) = trimmed[cursor..].find("<parameter") {
         let start = cursor + start_rel;
+        if !trimmed[cursor..start].trim().is_empty() {
+            return None;
+        }
         let after_start = &trimmed[start + "<parameter".len()..];
         let Some(name_end) = after_start.find('>') else {
-            break;
+            return None;
         };
         let name = after_start[..name_end]
             .trim()
@@ -877,11 +872,11 @@ fn parameter_tag_arguments(raw: &str) -> Option<serde_json::Value> {
             .trim_matches('"')
             .trim_matches('\'');
         if name.is_empty() {
-            break;
+            return None;
         }
         let content_start = start + "<parameter".len() + name_end + 1;
         let Some(end_rel) = trimmed[content_start..].find("</parameter>") else {
-            break;
+            return None;
         };
         let content_end = content_start + end_rel;
         map.insert(
@@ -890,7 +885,8 @@ fn parameter_tag_arguments(raw: &str) -> Option<serde_json::Value> {
         );
         cursor = content_end + "</parameter>".len();
     }
-    (!map.is_empty()).then_some(serde_json::Value::Object(map))
+    (!map.is_empty() && trimmed[cursor..].trim().is_empty())
+        .then_some(serde_json::Value::Object(map))
 }
 
 fn coerce_parameter_value(raw: &str) -> serde_json::Value {
@@ -1059,17 +1055,26 @@ mod tests {
     }
 
     #[test]
-    fn lenient_arguments_unwrap_double_encoded_objects() {
-        assert_eq!(
-            lenient_tool_arguments(r#""{\"a\":1}""#).0,
-            serde_json::json!({"a": 1})
-        );
-        assert_eq!(
-            lenient_tool_arguments(r#"{"a":1}"#),
-            (serde_json::json!({"a": 1}), Some(r#"{"a":1}"#.to_owned()))
-        );
-        assert_eq!(lenient_tool_arguments("not json").0, serde_json::json!({}));
+    fn malformed_responses_remain_distinct_from_empty_responses_and_rejections() {
+        assert_eq!(PortError::from(AdapterError::MalformedResponse), PortError::InvalidResponse);
+        assert_eq!(PortError::from(AdapterError::EmptyResponse), PortError::Empty);
+        assert_eq!(PortError::from(AdapterError::Rejected), PortError::Rejected);
     }
+
+    #[test]
+    fn checked_arguments_keep_supported_forms_without_repairing_incomplete_objects() {
+        for raw in [r#"{"text":"tea"}"#, r#""{\"text\":\"tea\"}""#, "<parameter=text>tea</parameter>"] {
+            let (arguments, _) = checked_tool_argument_value(Some(serde_json::Value::String(raw.into()))).expect("supported argument form");
+            assert_eq!(arguments, serde_json::json!({"text":"tea"}));
+        }
+        for raw in ["{", "not JSON", "[]", "true", "<parameter=text>tea</parameter><parameter=id>partial"] {
+            assert_eq!(checked_tool_argument_value(Some(serde_json::Value::String(raw.into()))).unwrap_err(), AdapterError::MalformedResponse);
+        }
+        for value in [None, Some(serde_json::Value::Null), Some(serde_json::json!("")), Some(serde_json::json!({}))] {
+            assert_eq!(checked_tool_argument_value(value).unwrap().0, serde_json::json!({}));
+        }
+    }
+
 }
 
 #[cfg(test)]

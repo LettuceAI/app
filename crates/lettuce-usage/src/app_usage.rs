@@ -37,6 +37,6 @@ pub trait AppUsageRepository: Send + Sync {
 pub enum AppUsageError {
     #[error("app usage day is invalid")]
     InvalidDay,
-    #[error("app usage storage failed")]
-    Storage,
+    #[error("app usage storage failed: {reason}")]
+    Storage { reason: &'static str },
 }

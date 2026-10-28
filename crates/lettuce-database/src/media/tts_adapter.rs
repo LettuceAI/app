@@ -14,12 +14,18 @@ use crate::{Database, decode_versioned, encode_versioned};
 const AUDIO_PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
 const DISCOVERED_VOICE_LABELS_FORMAT_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> TtsConfigurationRepositoryError {
-    TtsConfigurationRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> TtsConfigurationRepositoryError {
+    tracing::warn!(?error, "tts adapter storage step failed");
+    TtsConfigurationRepositoryError::Storage {
+        reason: "tts adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> TtsConfigurationRepositoryError {
-    TtsConfigurationRepositoryError::InvalidData
+fn corrupt(error: impl std::fmt::Debug) -> TtsConfigurationRepositoryError {
+    tracing::warn!(?error, "tts adapter storage step failed");
+    TtsConfigurationRepositoryError::InvalidData {
+        reason: "tts adapter: a storage step failed",
+    }
 }
 
 fn kind_name(kind: AudioProviderKind) -> &'static str {
@@ -107,7 +113,9 @@ pub(crate) fn insert_audio_provider(
     provider: &AudioProvider,
 ) -> Result<(), TtsConfigurationRepositoryError> {
     if provider.revision != Revision::INITIAL {
-        return Err(TtsConfigurationRepositoryError::InvalidData);
+        return Err(TtsConfigurationRepositoryError::InvalidData {
+            reason: "insert audio provider: a value failed validation",
+        });
     }
     insert_audio_provider_row(connection, provider)
 }
@@ -156,7 +164,9 @@ pub(crate) fn insert_user_voice(
     voice: &UserVoice,
 ) -> Result<(), TtsConfigurationRepositoryError> {
     if voice.revision != Revision::INITIAL {
-        return Err(TtsConfigurationRepositoryError::InvalidData);
+        return Err(TtsConfigurationRepositoryError::InvalidData {
+            reason: "insert user voice: a value failed validation",
+        });
     }
     insert_user_voice_row(connection, voice)
 }
@@ -231,7 +241,9 @@ impl TtsConfigurationRepository for Database {
             .map_err(storage)?;
         let changed = if let Some(expected) = expected_revision {
             if provider.revision != expected {
-                return Err(TtsConfigurationRepositoryError::InvalidData);
+                return Err(TtsConfigurationRepositoryError::InvalidData {
+                    reason: "upsert audio provider: a value failed validation",
+                });
             }
             let next = expected.next().map_err(storage)?;
             transaction
@@ -380,7 +392,9 @@ impl TtsConfigurationRepository for Database {
         }
         let changed = if let Some(expected) = expected_revision {
             if voice.revision != expected {
-                return Err(TtsConfigurationRepositoryError::InvalidData);
+                return Err(TtsConfigurationRepositoryError::InvalidData {
+                    reason: "upsert user voice: a value failed validation",
+                });
             }
             let next = expected.next().map_err(storage)?;
             connection
@@ -461,26 +475,44 @@ impl DiscoveredVoiceRepository for Database {
         voices: Vec<DiscoveredVoice>,
     ) -> Result<Vec<DiscoveredVoice>, VoiceDiscoveryRepositoryError> {
         for (ordinal, voice) in voices.iter().enumerate() {
-            voice
-                .validate()
-                .map_err(|_| VoiceDiscoveryRepositoryError::InvalidData)?;
+            voice.validate().map_err(|error| {
+                tracing::warn!(%error, "replace discovered voices failed");
+                VoiceDiscoveryRepositoryError::InvalidData {
+                    reason: "replace discovered voices: a value could not be read or converted",
+                }
+            })?;
             if voice.provider_id != provider_id || voice.ordinal as usize != ordinal {
-                return Err(VoiceDiscoveryRepositoryError::InvalidData);
+                return Err(VoiceDiscoveryRepositoryError::InvalidData {
+                    reason: "replace discovered voices: a value failed validation",
+                });
             }
         }
-        let mut connection = self
-            .connection()
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "replace discovered voices failed");
+            VoiceDiscoveryRepositoryError::Storage {
+                reason: "replace discovered voices: a storage step failed",
+            }
+        })?;
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "replace discovered voices failed");
+                VoiceDiscoveryRepositoryError::Storage {
+                    reason: "replace discovered voices: a storage step failed",
+                }
+            })?;
         let exists = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
                 [provider_id.to_string()],
                 |row| row.get::<_, bool>(0),
             )
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "replace discovered voices failed");
+                VoiceDiscoveryRepositoryError::Storage {
+                    reason: "replace discovered voices: a storage step failed",
+                }
+            })?;
         if !exists {
             return Err(VoiceDiscoveryRepositoryError::ProviderMissing);
         }
@@ -489,10 +521,20 @@ impl DiscoveredVoiceRepository for Database {
                 "DELETE FROM discovered_tts_voices WHERE provider_id=?1",
                 [provider_id.to_string()],
             )
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "replace discovered voices failed");
+                VoiceDiscoveryRepositoryError::Storage {
+                    reason: "replace discovered voices: a storage step failed",
+                }
+            })?;
         for voice in &voices {
             let labels = encode_versioned(&voice.labels, DISCOVERED_VOICE_LABELS_FORMAT_VERSION)
-                .map_err(|_| VoiceDiscoveryRepositoryError::InvalidData)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "replace discovered voices failed");
+                    VoiceDiscoveryRepositoryError::InvalidData {
+                        reason: "replace discovered voices: a value could not be read or converted",
+                    }
+                })?;
             transaction
                 .execute(
                     "INSERT INTO discovered_tts_voices (
@@ -508,11 +550,19 @@ impl DiscoveredVoiceRepository for Database {
                         voice.cached_at.get(),
                     ],
                 )
-                .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "replace discovered voices failed");
+                    VoiceDiscoveryRepositoryError::Storage {
+                        reason: "replace discovered voices: a storage step failed",
+                    }
+                })?;
         }
-        transaction
-            .commit()
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        transaction.commit().map_err(|error| {
+            tracing::warn!(%error, "replace discovered voices failed");
+            VoiceDiscoveryRepositoryError::Storage {
+                reason: "replace discovered voices: a storage step failed",
+            }
+        })?;
         Ok(voices)
     }
 
@@ -520,15 +570,23 @@ impl DiscoveredVoiceRepository for Database {
         &self,
         provider_id: AudioProviderId,
     ) -> Result<Vec<DiscoveredVoice>, VoiceDiscoveryRepositoryError> {
-        let connection = self
-            .connection()
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        let connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "list discovered voices failed");
+            VoiceDiscoveryRepositoryError::Storage {
+                reason: "list discovered voices: a storage step failed",
+            }
+        })?;
         let mut statement = connection
             .prepare(
                 "SELECT provider_id, ordinal, voice_id, name, preview_url, labels_json, cached_at
                  FROM discovered_tts_voices WHERE provider_id=?1 ORDER BY ordinal",
             )
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "list discovered voices failed");
+                VoiceDiscoveryRepositoryError::Storage {
+                    reason: "list discovered voices: a storage step failed",
+                }
+            })?;
         statement
             .query_map([provider_id.to_string()], |row| {
                 let labels = decode_versioned::<BTreeMap<String, String>>(
@@ -552,9 +610,19 @@ impl DiscoveredVoiceRepository for Database {
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
                 Ok(voice)
             })
-            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "list discovered voices failed");
+                VoiceDiscoveryRepositoryError::Storage {
+                    reason: "list discovered voices: a storage step failed",
+                }
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|_| VoiceDiscoveryRepositoryError::InvalidData)
+            .map_err(|error| {
+                tracing::warn!(%error, "list discovered voices failed");
+                VoiceDiscoveryRepositoryError::InvalidData {
+                    reason: "list discovered voices: a value could not be read or converted",
+                }
+            })
     }
 }
 
@@ -688,10 +756,10 @@ mod tests {
         );
         let mut invalid = voices;
         invalid[0].ordinal = 1;
-        assert_eq!(
+        assert!(matches!(
             database.replace_discovered_voices(provider.id, invalid),
-            Err(VoiceDiscoveryRepositoryError::InvalidData)
-        );
+            Err(VoiceDiscoveryRepositoryError::InvalidData { .. })
+        ));
         assert_eq!(
             database
                 .list_discovered_voices(provider.id)
@@ -725,9 +793,9 @@ mod tests {
                 [provider.id.to_string()],
             )
             .expect("corrupt provider kind");
-        assert_eq!(
+        assert!(matches!(
             database.get_audio_provider(provider.id),
-            Err(TtsConfigurationRepositoryError::InvalidData)
-        );
+            Err(TtsConfigurationRepositoryError::InvalidData { .. })
+        ));
     }
 }

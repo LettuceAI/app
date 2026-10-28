@@ -272,10 +272,10 @@ pub struct LegacyBackupMediaCoverage {
 pub enum LegacyBackupCompatibilityError {
     #[error("legacy backup inventory contains duplicate document or media identities")]
     DuplicateInventory,
-    #[error("legacy backup inventory size cannot be represented")]
-    LimitExceeded,
-    #[error("legacy backup metadata document is malformed")]
-    InvalidMeta,
+    #[error("legacy backup inventory size cannot be represented: {reason}")]
+    LimitExceeded { reason: &'static str },
+    #[error("legacy backup metadata document is malformed: {reason}")]
+    InvalidMeta { reason: String },
     #[error("legacy backup compatibility seal is invalid")]
     InvalidSeal,
     #[error(transparent)]
@@ -379,8 +379,11 @@ fn validate_meta(
         });
         return Ok(notices);
     };
-    let rows: Vec<MetaEntry> = serde_json::from_slice(&document.bytes)
-        .map_err(|_| LegacyBackupCompatibilityError::InvalidMeta)?;
+    let rows: Vec<MetaEntry> = serde_json::from_slice(&document.bytes).map_err(|error| {
+        LegacyBackupCompatibilityError::InvalidMeta {
+            reason: format!("meta document is not a json array of entries: {error}"),
+        }
+    })?;
     let mut keys = BTreeSet::new();
     for (index, row) in rows.into_iter().enumerate() {
         if row.key.is_empty()
@@ -391,7 +394,9 @@ fn validate_meta(
                 .is_some_and(|value| value.len() > META_TEXT_LIMIT)
             || !keys.insert(row.key)
         {
-            return Err(LegacyBackupCompatibilityError::InvalidMeta);
+            return Err(LegacyBackupCompatibilityError::InvalidMeta {
+                reason: "meta entry has an oversized value or a duplicated key".to_owned(),
+            });
         }
         for field in row.extra.keys() {
             notices.push(LegacyBackupConversionNotice {
@@ -431,7 +436,9 @@ fn build_coverage(
                 byte_count: document
                     .map(|document| u64::try_from(document.bytes.len()))
                     .transpose()
-                    .map_err(|_| LegacyBackupCompatibilityError::LimitExceeded)?
+                    .map_err(|_| LegacyBackupCompatibilityError::LimitExceeded {
+                        reason: "document byte count exceeds the u64 range",
+                    })?
                     .unwrap_or(0),
                 content_hash: document.map(|document| hash_bytes(&document.bytes)),
             })
@@ -453,9 +460,11 @@ fn build_coverage(
             return Err(LegacyBackupCompatibilityError::DuplicateInventory);
         }
         let byte_count = item.byte_len;
-        media_byte_count = media_byte_count
-            .checked_add(byte_count)
-            .ok_or(LegacyBackupCompatibilityError::LimitExceeded)?;
+        media_byte_count = media_byte_count.checked_add(byte_count).ok_or(
+            LegacyBackupCompatibilityError::LimitExceeded {
+                reason: "media byte count overflowed",
+            },
+        )?;
         media.push(LegacyBackupMediaCoverage {
             root: item.root,
             relative_segments: item.relative_segments.clone(),
@@ -467,12 +476,20 @@ fn build_coverage(
         (left.root, &left.relative_segments).cmp(&(right.root, &right.relative_segments))
     });
 
-    let present_document_count = u64::try_from(seen_documents.len())
-        .map_err(|_| LegacyBackupCompatibilityError::LimitExceeded)?;
-    let document_count = u64::try_from(DOCUMENT_KINDS.len())
-        .map_err(|_| LegacyBackupCompatibilityError::LimitExceeded)?;
+    let present_document_count = u64::try_from(seen_documents.len()).map_err(|_| {
+        LegacyBackupCompatibilityError::LimitExceeded {
+            reason: "present document count exceeds the u64 range",
+        }
+    })?;
+    let document_count = u64::try_from(DOCUMENT_KINDS.len()).map_err(|_| {
+        LegacyBackupCompatibilityError::LimitExceeded {
+            reason: "document kind count exceeds the u64 range",
+        }
+    })?;
     let media_object_count =
-        u64::try_from(media.len()).map_err(|_| LegacyBackupCompatibilityError::LimitExceeded)?;
+        u64::try_from(media.len()).map_err(|_| LegacyBackupCompatibilityError::LimitExceeded {
+            reason: "media object count exceeds the u64 range",
+        })?;
     Ok(LegacyBackupCompatibilityCoverage {
         documents,
         media,
@@ -523,8 +540,11 @@ fn fingerprint(
         add_bytes(&mut hasher, media_root_name(item.root).as_bytes());
         add_u64(
             &mut hasher,
-            u64::try_from(item.relative_segments.len())
-                .map_err(|_| LegacyBackupCompatibilityError::LimitExceeded)?,
+            u64::try_from(item.relative_segments.len()).map_err(|_| {
+                LegacyBackupCompatibilityError::LimitExceeded {
+                    reason: "relative segment count exceeds the u64 range",
+                }
+            })?,
         );
         for segment in &item.relative_segments {
             add_bytes(&mut hasher, segment.as_bytes());
@@ -772,7 +792,7 @@ mod tests {
         });
         assert!(matches!(
             plan_legacy_backup_compatibility(duplicate),
-            Err(LegacyBackupCompatibilityError::InvalidMeta)
+            Err(LegacyBackupCompatibilityError::InvalidMeta { .. })
         ));
     }
 }

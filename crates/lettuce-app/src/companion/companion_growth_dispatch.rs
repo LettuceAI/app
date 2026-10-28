@@ -48,8 +48,8 @@ pub enum CompanionGrowthDispatchError {
     Jobs(#[from] StoreError),
     #[error("companion growth run operation failed: {0}")]
     Run(#[from] CompanionGrowthRunRepositoryError),
-    #[error("companion growth claimed work is inconsistent")]
-    InvalidWork,
+    #[error("companion growth claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -80,16 +80,22 @@ impl<R: CompanionGrowthRunRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(CompanionGrowthDispatchError::InvalidWork)?;
+            .ok_or(CompanionGrowthDispatchError::InvalidWork {
+                reason: "job of the run is missing from the store",
+            })?;
         if job.kind != JobKind::CompanionGrowth {
-            return Err(CompanionGrowthDispatchError::InvalidWork);
+            return Err(CompanionGrowthDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self.jobs.claim(job_id, worker_id, at, lease_for, allowed)? else {
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Character(run.character_id) {
-            return Err(CompanionGrowthDispatchError::InvalidWork);
+            return Err(CompanionGrowthDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -123,7 +129,9 @@ impl<R: CompanionGrowthRunRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.kind != JobKind::CompanionGrowth
             || work.job.state != JobState::Running
         {
-            return Err(CompanionGrowthDispatchError::InvalidWork);
+            return Err(CompanionGrowthDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         match result {
@@ -132,7 +140,9 @@ impl<R: CompanionGrowthRunRepository + ?Sized, J: JobStore + ?Sized>
                     receipt.owner != work.run.soul_owner()
                         || receipt.operation_id != work.run.operation_id
                 }) {
-                    return Err(CompanionGrowthDispatchError::InvalidWork);
+                    return Err(CompanionGrowthDispatchError::InvalidWork {
+                        reason: "result receipt differs from the run owner or operation",
+                    });
                 }
                 self.jobs.append_and_transition(JobMutation::Progress {
                     claim: work.claim.claim.clone(),
@@ -183,6 +193,7 @@ impl<R: CompanionGrowthRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(CompanionGrowthSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "companion growth job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -200,27 +211,29 @@ fn retryable(error: &CompanionGrowthExecutionError) -> bool {
         CompanionGrowthExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        CompanionGrowthExecutionError::ReplayCleanup
-        | CompanionGrowthExecutionError::Run(CompanionGrowthRunRepositoryError::Failure)
-        | CompanionGrowthExecutionError::Soul(SoulRepositoryError::Failure) => true,
+        CompanionGrowthExecutionError::ReplayCleanup { .. }
+        | CompanionGrowthExecutionError::Run(CompanionGrowthRunRepositoryError::Failure {
+            ..
+        })
+        | CompanionGrowthExecutionError::Soul(SoulRepositoryError::Failure { .. }) => true,
         _ => false,
     }
 }
 
 fn job_error(error: &CompanionGrowthExecutionError) -> JobError {
     let (code, message) = match error {
-        CompanionGrowthExecutionError::InvalidOwnership
-        | CompanionGrowthExecutionError::InvalidPrompt
-        | CompanionGrowthExecutionError::ContextTooLarge => {
+        CompanionGrowthExecutionError::InvalidOwnership { .. }
+        | CompanionGrowthExecutionError::InvalidPrompt { .. }
+        | CompanionGrowthExecutionError::ContextTooLarge { .. } => {
             (JobErrorCode::InvalidInput, "companion-growth-invalid-input")
         }
         CompanionGrowthExecutionError::Inference(_)
-        | CompanionGrowthExecutionError::InvalidResponse => (
+        | CompanionGrowthExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "companion-growth-provider-rejected",
         ),
         CompanionGrowthExecutionError::Prompt(_)
-        | CompanionGrowthExecutionError::ReplayCleanup
+        | CompanionGrowthExecutionError::ReplayCleanup { .. }
         | CompanionGrowthExecutionError::Run(_)
         | CompanionGrowthExecutionError::Soul(_) => (
             JobErrorCode::StorageFailure,
@@ -247,9 +260,15 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(retryable(&CompanionGrowthExecutionError::Run(
-            CompanionGrowthRunRepositoryError::Failure
+            CompanionGrowthRunRepositoryError::Failure {
+                reason: "simulated failure".to_owned()
+            }
         )));
-        assert!(!retryable(&CompanionGrowthExecutionError::InvalidResponse));
+        assert!(!retryable(
+            &CompanionGrowthExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
+        ));
         assert!(!retryable(&CompanionGrowthExecutionError::Soul(
             SoulRepositoryError::Conflict
         )));

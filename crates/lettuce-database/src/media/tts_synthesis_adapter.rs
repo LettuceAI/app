@@ -12,12 +12,18 @@ use crate::{Database, decode_versioned, encode_versioned};
 const REQUEST_FORMAT_VERSION: u32 = 1;
 const RESULT_FORMAT_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> SynthesisRepositoryError {
-    SynthesisRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> SynthesisRepositoryError {
+    tracing::warn!(?error, "tts synthesis adapter storage step failed");
+    SynthesisRepositoryError::Storage {
+        reason: "tts synthesis adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> SynthesisRepositoryError {
-    SynthesisRepositoryError::InvalidData
+fn corrupt(error: impl std::fmt::Debug) -> SynthesisRepositoryError {
+    tracing::warn!(?error, "tts synthesis adapter storage step failed");
+    SynthesisRepositoryError::InvalidData {
+        reason: "tts synthesis adapter: a storage step failed",
+    }
 }
 
 fn load_in(
@@ -82,7 +88,9 @@ fn load_in(
             _ => true,
         }
     {
-        return Err(SynthesisRepositoryError::InvalidData);
+        return Err(SynthesisRepositoryError::InvalidData {
+            reason: "load in: a value failed validation",
+        });
     }
     Ok(Some(record))
 }
@@ -156,8 +164,11 @@ pub(crate) fn list_in(
     job_ids
         .iter()
         .map(|job_id| {
-            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?
-                .ok_or(SynthesisRepositoryError::Storage)
+            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?.ok_or(
+                SynthesisRepositoryError::Storage {
+                    reason: "list in: a required value is missing",
+                },
+            )
         })
         .collect()
 }
@@ -176,7 +187,9 @@ pub(crate) fn insert_restored_in(
         return Err(SynthesisRepositoryError::Conflict);
     }
     if load_in(transaction, record.job_id)?.as_ref() != Some(record) {
-        return Err(SynthesisRepositoryError::InvalidData);
+        return Err(SynthesisRepositoryError::InvalidData {
+            reason: "insert restored in: a value failed validation",
+        });
     }
     Ok(())
 }
@@ -205,7 +218,9 @@ impl SynthesisRepository for Database {
     fn admit(&self, record: SynthesisRecord) -> Result<SynthesisRecord, SynthesisRepositoryError> {
         record.validate().map_err(corrupt)?;
         if !matches!(record.state, SynthesisState::Pending) {
-            return Err(SynthesisRepositoryError::InvalidData);
+            return Err(SynthesisRepositoryError::InvalidData {
+                reason: "admit: a value failed validation",
+            });
         }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -213,7 +228,9 @@ impl SynthesisRepository for Database {
             .map_err(storage)?;
         let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
-            load_in(&transaction, record.job_id)?.ok_or(SynthesisRepositoryError::Storage)?;
+            load_in(&transaction, record.job_id)?.ok_or(SynthesisRepositoryError::Storage {
+                reason: "admit: a required value is missing",
+            })?;
         if inserted == 0 && !same_request(&stored.request, &record.request) {
             return Err(SynthesisRepositoryError::Conflict);
         }
@@ -252,7 +269,9 @@ impl SynthesisRepository for Database {
         if settle_row(&transaction, job_id, &result)? != 1 {
             return Err(SynthesisRepositoryError::Conflict);
         }
-        let stored = load_in(&transaction, job_id)?.ok_or(SynthesisRepositoryError::Storage)?;
+        let stored = load_in(&transaction, job_id)?.ok_or(SynthesisRepositoryError::Storage {
+            reason: "settle: a required value is missing",
+        })?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }

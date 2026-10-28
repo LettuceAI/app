@@ -180,8 +180,8 @@ pub enum ConversationGenerationCancellationError {
     Runtime(#[from] InferenceRuntimeError),
     #[error("job is not a conversation generation")]
     WrongJobKind,
-    #[error("job does not own a valid conversation generation attempt")]
-    InvalidWork,
+    #[error("job does not own a valid conversation generation attempt: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
@@ -206,7 +206,9 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
             ..
         }) = events.first().map(|event| &event.event)
         else {
-            return Err(ConversationGenerationCancellationError::InvalidWork);
+            return Err(ConversationGenerationCancellationError::InvalidWork {
+                reason: "job has no generation turn input",
+            });
         };
         let turn = ConversationReader::get_turn(self.conversations, *turn_id)?;
         let attempt = turn
@@ -214,7 +216,9 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
             .iter()
             .find(|attempt| attempt.job_id == Some(job_id))
             .cloned()
-            .ok_or(ConversationGenerationCancellationError::InvalidWork)?;
+            .ok_or(ConversationGenerationCancellationError::InvalidWork {
+                reason: "the turn has no attempt of this job",
+            })?;
         if job.state.is_terminal() {
             return Ok(ConversationGenerationCancellationOutcome::AlreadyTerminal(
                 job,
@@ -230,10 +234,11 @@ impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
             }) {
             Ok(requested) => requested,
             Err(StoreError::AlreadyTerminal) => {
-                let job = self
-                    .jobs
-                    .get(job_id)?
-                    .ok_or(ConversationGenerationCancellationError::InvalidWork)?;
+                let job = self.jobs.get(job_id)?.ok_or(
+                    ConversationGenerationCancellationError::InvalidWork {
+                        reason: "the terminal job is missing from the store",
+                    },
+                )?;
                 return Ok(ConversationGenerationCancellationOutcome::AlreadyTerminal(
                     job,
                 ));
@@ -403,10 +408,10 @@ pub enum ConversationGenerationTerminalFailure {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversationGenerationRunError {
-    #[error("conversation generation claimed work is inconsistent")]
-    InvalidWork,
-    #[error("conversation generation input is invalid")]
-    InvalidInput,
+    #[error("conversation generation claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
+    #[error("conversation generation input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
     #[error("conversation generation input preparation failed: {code:?}")]
     PreparationFailed { code: GenerationFailureCode },
     #[error("conversation generation was cancelled")]
@@ -459,7 +464,9 @@ impl ConversationGenerationRunError {
     pub fn terminal_failure(&self) -> Option<ConversationGenerationTerminalFailure> {
         use ConversationGenerationTerminalFailure as Terminal;
         match self {
-            Self::InvalidWork | Self::InvalidInput | Self::Validation(_) => Some(Terminal::Invalid),
+            Self::InvalidWork { .. } | Self::InvalidInput { .. } | Self::Validation(_) => {
+                Some(Terminal::Invalid)
+            }
             Self::PreparationFailed { code } => Some(Terminal::Failed(*code)),
             Self::Cancelled { .. } => Some(Terminal::Cancelled),
             Self::Pending { .. } => Some(Terminal::Interrupted),
@@ -487,7 +494,7 @@ fn repository_terminal(
 ) -> Option<ConversationGenerationTerminalFailure> {
     match error {
         ConversationRepositoryError::StaleRevision { .. }
-        | ConversationRepositoryError::Storage
+        | ConversationRepositoryError::Storage { .. }
         | ConversationRepositoryError::ArtifactReference(_) => None,
         ConversationRepositoryError::NotFound
         | ConversationRepositoryError::Conflict
@@ -496,7 +503,7 @@ fn repository_terminal(
         | ConversationRepositoryError::Busy
         | ConversationRepositoryError::Dependency
         | ConversationRepositoryError::Invalid(_)
-        | ConversationRepositoryError::Unsupported => {
+        | ConversationRepositoryError::Unsupported { .. } => {
             Some(ConversationGenerationTerminalFailure::Invalid)
         }
     }
@@ -527,6 +534,7 @@ fn provider_terminal(error: &PortError) -> ConversationGenerationTerminalFailure
             Terminal::Failed(GenerationFailureCode::ProviderRejected)
         }
         PortError::Empty => Terminal::Failed(GenerationFailureCode::EmptyOutput),
+        PortError::InvalidResponse => Terminal::Failed(GenerationFailureCode::Internal),
     }
 }
 
@@ -574,12 +582,16 @@ impl<
     ) -> Result<Option<ConversationGenerationRunResult>, ConversationGenerationRunError> {
         let job_id = work.handle.id();
         if work.claim.claim.job_id != job_id || work.job.id != job_id {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "claim or job id differs from the handle job",
+            });
         }
         let turn = self.repository.get_turn(work.turn_id)?;
         let attempt = attempt_of(&turn, work.attempt_id)?;
         if turn.conversation_id != work.conversation_id || attempt.job_id != Some(job_id) {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "turn belongs to another conversation or the attempt belongs to another job",
+            });
         }
         match attempt.status {
             GenerationAttemptStatus::Succeeded => self.replay_succeeded(turn, attempt).map(Some),
@@ -612,7 +624,9 @@ impl<
             || attempt.job_id != Some(job_id)
             || attempt.status != GenerationAttemptStatus::Succeeded
         {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "turn conversation, attempt job or attempt status does not allow a replay",
+            });
         }
         self.replay_succeeded(turn, attempt)
     }
@@ -625,13 +639,17 @@ impl<
     ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
         let job_id = work.handle.id();
         if work.claim.claim.job_id != job_id || work.job.id != job_id {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "claim or job id differs from the handle job",
+            });
         }
         let conversation_id = work.conversation_id;
         let mut turn = self.repository.get_turn(work.turn_id)?;
         let attempt = attempt_of(&turn, work.attempt_id)?;
         if turn.conversation_id != conversation_id || attempt.job_id != Some(job_id) {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "turn belongs to another conversation or the attempt belongs to another job",
+            });
         }
         match attempt.status {
             GenerationAttemptStatus::Succeeded => return self.replay_succeeded(turn, attempt),
@@ -748,7 +766,9 @@ impl<
             turn.status,
             GenerationTurnStatus::Running | GenerationTurnStatus::CancellationRequested
         ) {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "turn is neither running nor cancellation requested",
+            });
         }
         let attempt = attempt_of(&turn, work.attempt_id)?;
         let request = InferenceRequest {
@@ -782,9 +802,11 @@ impl<
             Ok(outcome) => outcome,
             Err(error) => return Err(initial_error(error, evidence)),
         };
-        let settled_at = record
-            .and_then(|record| record.settled_at)
-            .ok_or(ConversationRepositoryError::Storage)?;
+        let settled_at = record.and_then(|record| record.settled_at).ok_or_else(|| {
+            ConversationRepositoryError::Storage {
+                reason: "settled generation record has no settled time".to_owned(),
+            }
+        })?;
         if outcome.candidates.len() != 1 {
             return Err(ConversationGenerationRunError::Provider {
                 error: PortError::Rejected,
@@ -870,7 +892,9 @@ impl<
                         .get_candidate(prior_candidate_id)?
                         .ordinal
                         .checked_add(1)
-                        .ok_or(ConversationGenerationRunError::InvalidInput)?,
+                        .ok_or(ConversationGenerationRunError::InvalidInput {
+                            reason: "candidate ordinal overflowed",
+                        })?,
                 };
                 let attempt = attempt_of(&turn, work.attempt_id)?;
                 let finalized = self
@@ -956,7 +980,9 @@ impl<
                         && stored.status == attempt.status
                 })
             {
-                return Err(ConversationGenerationRunError::InvalidWork);
+                return Err(ConversationGenerationRunError::InvalidWork {
+                    reason: "stored attempt differs from the settled attempt in job or status",
+                });
             }
         }
         let usage_event_id = UsagePort::record(
@@ -1017,14 +1043,20 @@ impl<
         let records = self
             .repository
             .job_usage(work.handle.id())
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         if attempt.job_id != Some(work.handle.id()) {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "attempt belongs to another job",
+            });
         }
         if records.iter().any(|record| {
             record.job_id != work.handle.id() || record.logical_attempt_id != attempt.id
         }) {
-            return Err(ConversationGenerationRunError::InvalidWork);
+            return Err(ConversationGenerationRunError::InvalidWork {
+                reason: "a usage record belongs to another job or attempt",
+            });
         }
         if records.iter().any(|record| {
             matches!(
@@ -1071,17 +1103,24 @@ impl<
         turn: GenerationTurn,
         attempt: GenerationAttempt,
     ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
-        let candidate_id = turn
-            .selected_candidate_id
-            .ok_or(ConversationRepositoryError::Storage)?;
+        let candidate_id =
+            turn.selected_candidate_id
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "generation turn has no selected candidate".to_owned(),
+                })?;
         let candidate = self.repository.get_candidate(candidate_id)?;
         if candidate.turn_id != turn.id || candidate.attempt_id != attempt.id {
-            return Err(ConversationRepositoryError::Storage.into());
+            return Err(ConversationRepositoryError::Storage {
+                reason: "selected candidate does not belong to the turn and attempt".to_owned(),
+            }
+            .into());
         }
         Ok(ConversationGenerationRunResult {
-            usage_event_id: attempt
-                .usage_event_id
-                .ok_or(ConversationRepositoryError::Storage)?,
+            usage_event_id: attempt.usage_event_id.ok_or_else(|| {
+                ConversationRepositoryError::Storage {
+                    reason: "generation attempt has no usage event".to_owned(),
+                }
+            })?,
             turn,
             candidate,
             outcomes: Vec::new(),
@@ -1103,7 +1142,9 @@ impl<
             .latest_checkpoint_sequence(turn.id, work.attempt_id)?
             .unwrap_or(0)
             .checked_add(1)
-            .ok_or(ConversationRepositoryError::Storage)?;
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "checkpoint sequence overflowed".to_owned(),
+            })?;
         Ok(self
             .repository
             .append_event(
@@ -1132,7 +1173,9 @@ fn attempt_of(
         .iter()
         .find(|attempt| attempt.id == attempt_id)
         .cloned()
-        .ok_or(ConversationGenerationRunError::InvalidWork)
+        .ok_or(ConversationGenerationRunError::InvalidWork {
+            reason: "the turn has no such attempt",
+        })
 }
 
 fn initial_error(
@@ -1149,9 +1192,9 @@ fn initial_error(
         ConversationInitialInferenceError::Inference(error) => {
             ConversationGenerationRunError::Provider { error, evidence }
         }
-        ConversationInitialInferenceError::InvalidOwnership
-        | ConversationInitialInferenceError::InvalidModel => {
-            ConversationGenerationRunError::InvalidWork
+        ConversationInitialInferenceError::InvalidOwnership { reason }
+        | ConversationInitialInferenceError::InvalidModel { reason } => {
+            ConversationGenerationRunError::InvalidWork { reason }
         }
         ConversationInitialInferenceError::Validation(error) => {
             ConversationGenerationRunError::Validation(error)
@@ -1199,8 +1242,8 @@ pub enum ConversationGenerationDispatchError {
     Repository(#[from] ConversationRepositoryError),
     #[error("conversation generation usage ledger operation failed: {0}")]
     Usage(#[from] UsageLedgerError),
-    #[error("conversation generation claimed work is inconsistent")]
-    InvalidWork,
+    #[error("conversation generation claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -1234,25 +1277,35 @@ impl<
         let aggregate = ConversationReader::get(self.conversations, conversation_id)?;
         let turn = self.conversations.get_turn(turn_id)?;
         if turn.conversation_id != conversation_id {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "the turn belongs to another conversation",
+            });
         }
         let attempt = turn
             .attempts
             .iter()
             .find(|attempt| attempt.id == attempt_id)
             .cloned()
-            .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                reason: "the turn has no such attempt",
+            })?;
         let key = attempt_job_idempotency_key(turn_id, attempt_id);
         if attempt.job_idempotency_key != key {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "attempt job idempotency key differs from the derived key",
+            });
         }
         if let Some(job_id) = attempt.job_id {
-            let job = self
-                .jobs
-                .get(job_id)?
-                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            let job =
+                self.jobs
+                    .get(job_id)?
+                    .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                        reason: "the attempt job is missing from the store",
+                    })?;
             if job.kind != JobKind::ConversationGeneration {
-                return Err(ConversationGenerationDispatchError::InvalidWork);
+                return Err(ConversationGenerationDispatchError::InvalidWork {
+                    reason: "job is not a conversation generation job",
+                });
             }
             return Ok(ConversationGenerationAdmission {
                 job,
@@ -1264,7 +1317,9 @@ impl<
             attempt.status,
             GenerationAttemptStatus::Created | GenerationAttemptStatus::Preparing
         ) {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "attempt is neither created nor preparing",
+            });
         }
         let created =
             self.jobs
@@ -1345,16 +1400,24 @@ impl<
             .attempts
             .iter()
             .find(|attempt| attempt.id == attempt_id)
-            .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                reason: "the turn has no such attempt",
+            })?;
         let job_id = attempt
             .job_id
-            .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
-        let job = self
-            .jobs
-            .get(job_id)?
-            .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                reason: "the turn has no such attempt",
+            })?;
+        let job =
+            self.jobs
+                .get(job_id)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                    reason: "the attempt job is missing from the store",
+                })?;
         if job.kind != JobKind::ConversationGeneration {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "job is not a conversation generation job",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -1364,17 +1427,21 @@ impl<
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::GenerationTurn(turn_id) {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "claim input differs from the turn",
+            });
         }
         let handle = JobHandle::with_cancellation(job_id, context.cancellation);
         if let Err(error) = self.jobs.append_and_transition(JobMutation::Start {
             claim: claim.claim.clone(),
             at,
         }) {
-            let job = self
-                .jobs
-                .get(job_id)?
-                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            let job =
+                self.jobs
+                    .get(job_id)?
+                    .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                        reason: "the attempt job is missing from the store",
+                    })?;
             if error == StoreError::IllegalTransition
                 && handle.cancellation_token().is_cancelled()
                 && job.state == JobState::CancellationRequested
@@ -1423,14 +1490,18 @@ impl<
             )
             || work.claim.input_ref != OutcomeRef::GenerationTurn(work.turn_id)
         {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "claimed work does not match its job state or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         let error = match result {
             Ok(result) => {
                 if result.turn.id != work.turn_id || result.candidate.attempt_id != work.attempt_id
                 {
-                    return Err(ConversationGenerationDispatchError::InvalidWork);
+                    return Err(ConversationGenerationDispatchError::InvalidWork {
+                        reason: "result turn or candidate attempt differs from the claimed work",
+                    });
                 }
                 let stopped = self
                     .jobs
@@ -1501,6 +1572,7 @@ impl<
                 Ok(ConversationGenerationSettledWork::Cancelled { error, job })
             }
             Some(ConversationGenerationTerminalFailure::Failed(code)) => {
+                tracing::warn!(%job_id, %error, "conversation generation failed");
                 if self
                     .turn_side(self.fail_turn(
                         &work.target(),
@@ -1553,6 +1625,7 @@ impl<
                 })
             }
             Some(ConversationGenerationTerminalFailure::Invalid) => {
+                tracing::warn!(%job_id, %error, "conversation generation input was invalid");
                 let settled = match self.current(&work.target()) {
                     Ok((_, turn, _)) if turn.status == GenerationTurnStatus::Created => {
                         self.cancel_turn(&work.target(), error.evidence(), at)
@@ -1569,7 +1642,7 @@ impl<
                 match settled {
                     Ok(())
                     | Err(
-                        ConversationGenerationDispatchError::InvalidWork
+                        ConversationGenerationDispatchError::InvalidWork { .. }
                         | ConversationGenerationDispatchError::Repository(_)
                         | ConversationGenerationDispatchError::Usage(_),
                     ) => {}
@@ -1634,11 +1707,15 @@ impl<
             .iter()
             .find(|attempt| attempt.id == work.attempt_id)
             .cloned()
-            .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                reason: "the turn has no such attempt",
+            })?;
         if turn.conversation_id != work.conversation_id
             || (work.bound && attempt.job_id != Some(work.job_id))
         {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "turn belongs to another conversation or the attempt belongs to another job",
+            });
         }
         Ok((aggregate.conversation.revision, turn, attempt))
     }
@@ -1673,7 +1750,9 @@ impl<
                             || record.provider_account_revision != first.provider_account_revision
                     })
                 {
-                    return Err(ConversationGenerationDispatchError::InvalidWork);
+                    return Err(ConversationGenerationDispatchError::InvalidWork {
+                        reason: "usage records differ in provider account",
+                    });
                 }
                 let usage = if records.iter().any(|record| {
                     matches!(
@@ -1707,8 +1786,11 @@ impl<
                             _ => None,
                         })
                         .collect::<Vec<_>>();
-                    aggregate_usage(&usages)
-                        .ok_or(ConversationGenerationDispatchError::InvalidWork)?
+                    aggregate_usage(&usages).ok_or(
+                        ConversationGenerationDispatchError::InvalidWork {
+                            reason: "usage records could not be aggregated",
+                        },
+                    )?
                 };
                 (
                     usage,
@@ -2007,7 +2089,9 @@ impl<
             .as_ref()
             .is_some_and(|job| job.kind != JobKind::ConversationGeneration)
         {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "job is not a conversation generation job",
+            });
         }
         let job = job
             .map(|job| self.cancel_job_after_restart(job, now))
@@ -2135,7 +2219,9 @@ impl<
             return Ok(());
         }
         if is_terminal_attempt(attempt.status) {
-            return Err(ConversationGenerationDispatchError::InvalidWork);
+            return Err(ConversationGenerationDispatchError::InvalidWork {
+                reason: "attempt already ended",
+            });
         }
         if !tools_settled {
             let executions = self.conversations.list_tool_executions(
@@ -2169,7 +2255,9 @@ impl<
                     .iter()
                     .all(|execution| execution.status == ToolExecutionStatus::Interrupted)
                 {
-                    return Err(ConversationGenerationDispatchError::InvalidWork);
+                    return Err(ConversationGenerationDispatchError::InvalidWork {
+                        reason: "active tool executions are not all interrupted",
+                    });
                 }
             }
         }
@@ -2234,7 +2322,9 @@ impl<
                 .iter()
                 .find(|candidate| candidate.parent_attempt_id == Some(work.attempt_id))
                 .map(|candidate| candidate.id)
-                .ok_or(ConversationGenerationDispatchError::InvalidWork)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork {
+                    reason: "no child attempt follows the interrupted attempt",
+                })?
         };
         let admission = self.admit(work.conversation_id, work.turn_id, child_attempt_id, at)?;
         Ok((child_attempt_id, admission.job))
@@ -2247,8 +2337,14 @@ pub(crate) fn attempt_job_spec(
     turn_id: GenerationTurnId,
     attempt_id: GenerationAttemptId,
 ) -> Result<JobSpec, ConversationGenerationDispatchError> {
-    let subject = JobSubject::new(SubjectKind::Conversation, conversation_id.to_string())
-        .map_err(|_| ConversationGenerationDispatchError::InvalidWork)?;
+    let subject = JobSubject::new(SubjectKind::Conversation, conversation_id.to_string()).map_err(
+        |error| {
+            tracing::warn!(%error, "conversation generation job subject is invalid");
+            ConversationGenerationDispatchError::InvalidWork {
+                reason: "the conversation id is not a valid job subject",
+            }
+        },
+    )?;
     Ok(JobSpec::new(
         JobKind::ConversationGeneration,
         subject,
@@ -2368,7 +2464,9 @@ fn validate_finalization_identity(
         || model.provider_protocol != chat.provider_protocol
         || model.external_model_id != chat.external_model_id
     {
-        return Err(ConversationGenerationRunError::InvalidWork);
+        return Err(ConversationGenerationRunError::InvalidWork {
+            reason: "the resolved model differs from the live chat profile",
+        });
     }
     Ok(())
 }

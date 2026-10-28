@@ -31,22 +31,22 @@ pub struct StagedLorebookWriterExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookWriterExecutionError {
-    #[error("staged lorebook writer execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("staged lorebook writer prompt is invalid")]
-    InvalidPrompt,
+    #[error("staged lorebook writer execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("staged lorebook writer prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("staged lorebook writer inference was cancelled")]
     Cancelled,
-    #[error("staged lorebook writer inference returned an invalid response")]
-    InvalidResponse,
-    #[error("staged lorebook writer request is too large")]
-    ContextTooLarge,
+    #[error("staged lorebook writer inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
+    #[error("staged lorebook writer request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("staged lorebook writer prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("staged lorebook writer provider failed: {0}")]
     Inference(PortError),
-    #[error("staged lorebook writer replay cleanup failed")]
-    ReplayCleanup,
+    #[error("staged lorebook writer replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("staged lorebook writer run persistence failed: {0}")]
     Run(StagedLorebookWriterRunRepositoryError),
     #[error("staged lorebook project persistence failed: {0}")]
@@ -103,7 +103,9 @@ where
             .load_staged_lorebook_writer_run(request_id)
             .map_err(StagedLorebookWriterExecutionError::Run)?;
         if run.job_id != handle.id() {
-            return Err(StagedLorebookWriterExecutionError::InvalidOwnership);
+            return Err(StagedLorebookWriterExecutionError::InvalidOwnership {
+                reason: "run belongs to another job",
+            });
         }
         let project = self
             .projects
@@ -131,7 +133,11 @@ where
                     self.runs,
                     crate::BuiltInPromptId::LorebookRuntime,
                 )
-                .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)?,
+                .map_err(|error| {
+                    StagedLorebookWriterExecutionError::InvalidPrompt {
+                        reason: error.to_string(),
+                    }
+                })?,
                 handle,
                 stream_sink,
             )?,
@@ -149,8 +155,11 @@ where
         if handle.cancellation_token().is_cancelled()
             || matches!(outcome.finish_reason, FinishReason::Cancelled)
         {
-            cleanup_outcome_replays(self.runs, &outcome)
-                .map_err(|_| StagedLorebookWriterExecutionError::ReplayCleanup)?;
+            cleanup_outcome_replays(self.runs, &outcome).map_err(|error| {
+                StagedLorebookWriterExecutionError::ReplayCleanup {
+                    reason: error.to_string(),
+                }
+            })?;
             return Err(StagedLorebookWriterExecutionError::Cancelled);
         }
         let valid = outcome.validate().is_ok()
@@ -188,8 +197,11 @@ where
             provider_request_id: outcome.provider_request_id.clone(),
             completed_at: now,
         };
-        cleanup_outcome_replays(self.runs, &outcome)
-            .map_err(|_| StagedLorebookWriterExecutionError::ReplayCleanup)?;
+        cleanup_outcome_replays(self.runs, &outcome).map_err(|error| {
+            StagedLorebookWriterExecutionError::ReplayCleanup {
+                reason: error.to_string(),
+            }
+        })?;
         if self
             .projects
             .load_staged_lorebook(run.project_request_id)
@@ -214,7 +226,9 @@ where
             stored
                 .attempt
                 .clone()
-                .ok_or(StagedLorebookWriterExecutionError::InvalidResponse)?,
+                .ok_or(StagedLorebookWriterExecutionError::InvalidResponse {
+                    reason: "stored run has no attempt".to_owned(),
+                })?,
             false,
         )
     }
@@ -227,7 +241,9 @@ fn settle<P: StagedLorebookRepository + ?Sized>(
     replayed: bool,
 ) -> Result<StagedLorebookWriterExecutionResult, StagedLorebookWriterExecutionError> {
     let StagedLorebookWriterDecision::Draft(mut draft) = attempt.decision else {
-        return Err(StagedLorebookWriterExecutionError::InvalidResponse);
+        return Err(StagedLorebookWriterExecutionError::InvalidResponse {
+            reason: "stored attempt decision holds no draft".to_owned(),
+        });
     };
     let project = if let Some(refinement) = &run.refinement {
         draft.revisions = refinement.base_draft.revisions.clone();
@@ -270,7 +286,9 @@ fn validate_ownership(
                 PromptPurpose::LorebookGeneratorWriter
             }
     {
-        return Err(StagedLorebookWriterExecutionError::InvalidOwnership);
+        return Err(StagedLorebookWriterExecutionError::InvalidOwnership {
+            reason: "run belongs to another job, or the prompt differs from the run snapshot or is not an active prompt of the right purpose",
+        });
     }
     Ok(())
 }
@@ -306,7 +324,9 @@ fn build_request(
     };
     request
         .validate()
-        .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)?;
+        .map_err(|error| StagedLorebookWriterExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     Ok(request)
 }
 
@@ -379,7 +399,9 @@ fn render_context(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)?;
+        .map_err(|error| StagedLorebookWriterExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     if prompt.condense {
         condense_prompt_messages(&mut messages);
     }
@@ -389,7 +411,9 @@ fn render_context(
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)
+                .map_err(|error| StagedLorebookWriterExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
@@ -405,7 +429,9 @@ fn render_context(
                     },
                     [],
                 )
-                .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)?,
+                .map_err(|error| StagedLorebookWriterExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })?,
         }],
     });
     let input_bytes = messages
@@ -417,7 +443,9 @@ fn render_context(
         })
         .try_fold(0usize, usize::checked_add)
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(StagedLorebookWriterExecutionError::ContextTooLarge)?;
+        .ok_or(StagedLorebookWriterExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
     Ok(ProviderNeutralContext {
         messages,
         attributions: ContextAttributions {

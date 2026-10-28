@@ -54,16 +54,16 @@ fn character_bundles_and_persona_default_roll_back_on_a_late_receipt_failure() {
                 if case == 0 {
                     scope
                         .import_character_file(&import)
-                        .map_err(|_| ApiOperationError::Storage)?;
+                        .map_err(|error| { tracing::warn!(%error, "character bundles and persona default roll back on a late receipt failure failed"); ApiOperationError::Storage { reason: "injected failure" } })?;
                 } else {
                     scope
                         .import_persona_file(&persona)
-                        .map_err(|_| ApiOperationError::Storage)?;
+                        .map_err(|error| { tracing::warn!(%error, "character bundles and persona default roll back on a late receipt failure failed"); ApiOperationError::Storage { reason: "injected failure" } })?;
                 }
                 Ok("result".into())
             },
         );
-        assert_eq!(result, Err(ApiOperationError::Storage));
+        assert!(matches!(result, Err(ApiOperationError::Storage { .. })));
         assert_eq!(
             database.read_provider_backup_graph().expect("after"),
             before
@@ -78,7 +78,7 @@ fn character_bundles_and_persona_default_roll_back_on_a_late_receipt_failure() {
         .commit_api_operation("import_commit", "0", "digest", now, |scope| {
             scope
                 .import_character_file(&import)
-                .map_err(|_| ApiOperationError::Storage)?;
+                .map_err(|error| { tracing::warn!(%error, "character bundles and persona default roll back on a late receipt failure failed"); ApiOperationError::Storage { reason: "injected failure" } })?;
             Ok::<_, ApiOperationError>("character".to_owned())
         })
         .expect("retry");

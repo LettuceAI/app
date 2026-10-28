@@ -13,7 +13,7 @@ fn media_error(asset_id: Option<String>, error: MediaStoreError) -> ApiError {
         MediaStoreError::NotReady => dto::MediaFailureReason::NotReady,
         MediaStoreError::AssetBlobKindMismatch
         | MediaStoreError::ObjectMetadataMismatch
-        | MediaStoreError::RepositoryData => dto::MediaFailureReason::InvalidMetadata,
+        | MediaStoreError::RepositoryData { .. } => dto::MediaFailureReason::InvalidMetadata,
         _ => dto::MediaFailureReason::Storage,
     };
     let mut error = error.into_api_error();
@@ -83,8 +83,8 @@ fn library_error(asset_id: String, error: MediaLibraryError) -> ApiError {
         MediaLibraryError::InUse(_) => ApiErrorCode::InUse,
         MediaLibraryError::Conflict => ApiErrorCode::Conflict,
         MediaLibraryError::InvalidCursor => ApiErrorCode::InvalidInput,
-        MediaLibraryError::InvalidData => ApiErrorCode::Malformed,
-        MediaLibraryError::Storage => ApiErrorCode::Unavailable,
+        MediaLibraryError::InvalidData { .. } => ApiErrorCode::Malformed,
+        MediaLibraryError::Storage { .. } => ApiErrorCode::Unavailable,
     };
     let message = error.to_string();
     let details = match error {
@@ -99,7 +99,7 @@ fn library_error(asset_id: String, error: MediaLibraryError) -> ApiError {
             asset_id: Some(asset_id),
             reason: match error {
                 MediaLibraryError::NotFound => dto::MediaFailureReason::AssetMissing,
-                MediaLibraryError::InvalidData => dto::MediaFailureReason::InvalidMetadata,
+                MediaLibraryError::InvalidData { .. } => dto::MediaFailureReason::InvalidMetadata,
                 _ => dto::MediaFailureReason::Storage,
             },
         },
@@ -182,7 +182,10 @@ pub(super) async fn media_library_remove_with_checkpoint(
                                         .backend()
                                         .database()
                                         .media_object_retained(&object.content_hash)
-                                        .map_err(|_| MediaLibraryError::Storage)?
+                                        .map_err(|error| {
+                                            tracing::warn!(%error, "media object retention check failed");
+                                            MediaLibraryError::Storage { reason: "media object retention check failed" }
+                                        })?
                                 {
                                     continue;
                                 }
@@ -192,7 +195,7 @@ pub(super) async fn media_library_remove_with_checkpoint(
                         })
                         .map_err(|error| {
                             database_error = Some(error);
-                            MediaStoreError::CatalogFailure
+                            MediaStoreError::CatalogFailure { reason: "media garbage listing failed" }
                         })
                 })
                 .map_err(|error| {
@@ -222,7 +225,7 @@ pub(super) async fn media_library_remove_with_checkpoint(
                         crate::api::app::storage::file_error(error, None)
                     }
                     crate::HardDeleteError::Purge(_) => {
-                        library_error(request.asset_id.clone(), MediaLibraryError::Storage)
+                        library_error(request.asset_id.clone(), MediaLibraryError::Storage { reason: "hard delete purge failed" })
                     }
                 },
             )?;
@@ -297,7 +300,7 @@ pub async fn media_library_list(
                     _ => {
                         return Err(library_error(
                             entry.asset.id.to_string(),
-                            MediaLibraryError::InvalidData,
+                            MediaLibraryError::InvalidData { reason: "media kind is neither image nor audio" },
                         ));
                     }
                 };

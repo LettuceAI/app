@@ -47,8 +47,8 @@ fn admission_error(error: ImageGenerationError) -> ApiError {
                 ImageRequestValidationError::Count => "count",
                 ImageRequestValidationError::TooManyInputImages => "input_images",
                 ImageRequestValidationError::Field(field) => field,
-                ImageRequestValidationError::Settings => "settings",
-                ImageRequestValidationError::Record => "request",
+                ImageRequestValidationError::Settings { .. } => "settings",
+                ImageRequestValidationError::Record { .. } => "request",
             };
             invalid_field(field, error.to_string())
         }
@@ -312,7 +312,7 @@ fn history_error(error: PlaygroundHistoryError) -> ApiError {
         PlaygroundHistoryError::NotFound => {
             api_error(ApiErrorCode::NotFound, "the playground entry was not found")
         }
-        PlaygroundHistoryError::Storage => internal(error),
+        PlaygroundHistoryError::Storage { .. } => internal(error),
     }
 }
 

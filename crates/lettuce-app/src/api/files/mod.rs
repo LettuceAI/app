@@ -366,7 +366,7 @@ pub async fn assets_ingest(
                 .map_err(|error| match error {
                     lettuce_media::MediaStoreError::UnsupportedFormat
                     | lettuce_media::MediaStoreError::KindMismatch
-                    | lettuce_media::MediaStoreError::InvalidHeader
+                    | lettuce_media::MediaStoreError::InvalidHeader { .. }
                     | lettuce_media::MediaStoreError::EmptyInput
                     | lettuce_media::MediaStoreError::InputTooLarge
                     | lettuce_media::MediaStoreError::PixelLimitExceeded

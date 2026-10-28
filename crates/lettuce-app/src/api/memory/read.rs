@@ -103,6 +103,7 @@ pub(crate) fn failure(job: &JobSnapshot) -> Option<dto::MemoryFailureCode> {
         "memory-settings-invalid" => F::SettingsInvalid,
         "companion-memory-provider-unavailable" => F::ProviderUnavailable,
         "companion-memory-provider-rejected" => F::ProviderRejected,
+        "companion-memory-invalid-response" => F::InvalidResponse,
         "companion-memory-empty-response" => F::EmptyResponse,
         "companion-memory-round-limit" => F::RoundLimit,
         "companion-memory-tool-failed" => F::ToolFailed,
@@ -262,4 +263,28 @@ pub async fn memory_get(
             })
         })
         .await
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+    use lettuce_jobs::{JobError, JobErrorCode, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+    use lettuce_types::{ConversationId, RequestId};
+
+    #[test]
+    fn invalid_response_and_provider_rejection_have_distinct_api_codes() {
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let mut job = JobStore::create_or_get(&database, JobSpec::new(
+            JobKind::MemoryExtraction,
+            JobSubject::new(SubjectKind::Conversation, ConversationId::new().to_string()).expect("subject"),
+            OutcomeRef::Request(RequestId::new()),
+        ).with_resources(vec![lettuce_jobs::ResourceClass::Cpu])).expect("job").job;
+        for (label, expected) in [
+            ("companion-memory-invalid-response", dto::MemoryFailureCode::InvalidResponse),
+            ("companion-memory-provider-rejected", dto::MemoryFailureCode::ProviderRejected),
+        ] {
+            job.error = Some(JobError::new(JobErrorCode::WorkerFailed, false, label).expect("error"));
+            assert_eq!(failure(&job), Some(expected));
+        }
+    }
 }

@@ -849,6 +849,7 @@ impl LlamaEngine {
                 )));
             }
             tracing::warn!(
+                reason = "gpu offload is not active in this build",
                 requested,
                 "requested llama GPU layers but this build has no active GPU offload; using CPU layers only"
             );
@@ -960,6 +961,8 @@ impl LlamaEngine {
                                         );
                                     } else if smart_gpu_layer_fallback_activated {
                                         tracing::warn!(
+                                            reason =
+                                                "earlier load failures backed off the candidate",
                                             candidate,
                                             "smart GPU offload backed off after earlier load failures"
                                         );

@@ -12,12 +12,16 @@ use crate::{Database, decode_versioned, encode_versioned};
 const RUN_FORMAT_VERSION: u32 = 1;
 const ROUNDS_FORMAT_VERSION: u32 = 1;
 
-fn failure(_: impl std::fmt::Debug) -> CompanionSoulWriterRunRepositoryError {
-    CompanionSoulWriterRunRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> CompanionSoulWriterRunRepositoryError {
+    CompanionSoulWriterRunRepositoryError::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> CompanionSoulWriterRunRepositoryError {
-    CompanionSoulWriterRunRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> CompanionSoulWriterRunRepositoryError {
+    CompanionSoulWriterRunRepositoryError::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 pub(crate) fn load_in(
@@ -56,7 +60,9 @@ pub(crate) fn load_in(
         .ok()
         .filter(|revision| *revision > 0)
         .map(Revision::new)
-        .ok_or(CompanionSoulWriterRunRepositoryError::Corrupt)?;
+        .ok_or_else(|| CompanionSoulWriterRunRepositoryError::Corrupt {
+            reason: "load in: a required value is missing".to_owned(),
+        })?;
     if run.request_id != request_id
         || run.job_id != JobId::from_str(&job_id).map_err(corrupt)?
         || run.prompt_id != PromptDocumentId::from_str(&prompt_id).map_err(corrupt)?
@@ -64,11 +70,15 @@ pub(crate) fn load_in(
         || run.created_at != TimestampMillis::new(created_at)
         || !run.rounds.is_empty()
     {
-        return Err(CompanionSoulWriterRunRepositoryError::Corrupt);
+        return Err(CompanionSoulWriterRunRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check".to_owned(),
+        });
     }
     run.rounds = rounds;
     run.validate()
-        .map_err(|_| CompanionSoulWriterRunRepositoryError::Corrupt)?;
+        .map_err(|error| CompanionSoulWriterRunRepositoryError::Corrupt {
+            reason: error.to_string(),
+        })?;
     Ok(Some(run))
 }
 
@@ -200,7 +210,9 @@ pub(crate) fn admit_run_in(
 ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
     run.validate()?;
     if !run.rounds.is_empty() {
-        return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+        return Err(CompanionSoulWriterRunRepositoryError::Invalid {
+            reason: "admit run in: a value failed validation",
+        });
     }
     let run_json = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
     let rounds_json = encode_versioned(&run.rounds, ROUNDS_FORMAT_VERSION).map_err(failure)?;
@@ -221,8 +233,11 @@ pub(crate) fn admit_run_in(
             ],
         )
         .map_err(failure)?;
-    let stored =
-        load_in(tx, run.request_id)?.ok_or(CompanionSoulWriterRunRepositoryError::Failure)?;
+    let stored = load_in(tx, run.request_id)?.ok_or_else(|| {
+        CompanionSoulWriterRunRepositoryError::Failure {
+            reason: "admit run in: a required value is missing".to_owned(),
+        }
+    })?;
     if inserted == 0 && stored != run {
         return Err(CompanionSoulWriterRunRepositoryError::Conflict);
     }

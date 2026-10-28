@@ -28,12 +28,19 @@ impl Drop for DeleteGuard<'_> {
 impl ApiOperationTransaction<'_, '_> {
     pub fn clear_usage_before(&self, before: TimestampMillis) -> Result<u64, ApiOperationError> {
         if self.command != "usage_clear_before" {
-            return Err(ApiOperationError::InvalidData);
+            return Err(ApiOperationError::InvalidData {
+                reason: "clear usage before: a value failed validation",
+            });
         }
         let connection = self.transaction;
         self.usage_delete_allowed.store(true, Ordering::Release);
         let _guard = DeleteGuard(self.usage_delete_allowed);
-        let error = |_| ApiOperationError::Storage;
+        let error = |error| {
+            tracing::warn!(%error, "clear usage before failed");
+            ApiOperationError::Storage {
+                reason: "clear usage before: a storage step failed",
+            }
+        };
         connection.execute_batch("CREATE TEMP TABLE usage_clear_events(id TEXT PRIMARY KEY); CREATE TEMP TABLE usage_clear_dispatches(id TEXT PRIMARY KEY);").map_err(error)?;
         connection.execute("INSERT INTO usage_clear_events SELECT event.id FROM usage_events event
             WHERE event.recorded_at < ?1
@@ -50,26 +57,49 @@ impl ApiOperationTransaction<'_, '_> {
             insert_tombstone_in(
                 connection,
                 &lettuce_usage::UsageTombstone::Conversation {
-                    event_id: id.parse().map_err(|_| ApiOperationError::InvalidData)?,
-                    conversation_id: conversation
-                        .parse()
-                        .map_err(|_| ApiOperationError::InvalidData)?,
-                    turn_id: turn.parse().map_err(|_| ApiOperationError::InvalidData)?,
-                    attempt_id: attempt
-                        .parse()
-                        .map_err(|_| ApiOperationError::InvalidData)?,
-                    job_id: job
-                        .map(|id| id.parse())
-                        .transpose()
-                        .map_err(|_| ApiOperationError::InvalidData)?,
+                    event_id: id.parse().map_err(|error| {
+                        tracing::warn!(%error, "clear usage before failed");
+                        ApiOperationError::InvalidData {
+                            reason: "clear usage before: a value could not be read or converted",
+                        }
+                    })?,
+                    conversation_id: conversation.parse().map_err(|error| {
+                        tracing::warn!(%error, "clear usage before failed");
+                        ApiOperationError::InvalidData {
+                            reason: "clear usage before: a value could not be read or converted",
+                        }
+                    })?,
+                    turn_id: turn.parse().map_err(|error| {
+                        tracing::warn!(%error, "clear usage before failed");
+                        ApiOperationError::InvalidData {
+                            reason: "clear usage before: a value could not be read or converted",
+                        }
+                    })?,
+                    attempt_id: attempt.parse().map_err(|error| {
+                        tracing::warn!(%error, "clear usage before failed");
+                        ApiOperationError::InvalidData {
+                            reason: "clear usage before: a value could not be read or converted",
+                        }
+                    })?,
+                    job_id: job.map(|id| id.parse()).transpose().map_err(|error| {
+                        tracing::warn!(%error, "clear usage before failed");
+                        ApiOperationError::InvalidData {
+                            reason: "clear usage before: a value could not be read or converted",
+                        }
+                    })?,
                 },
             )?;
         }
         let dispatches = connection.prepare("SELECT record_json FROM job_inference_usage WHERE id IN (SELECT id FROM usage_clear_dispatches)")
             .map_err(error)?.query_map([], |row| row.get::<_, String>(0)).map_err(error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(error)?;
         for bytes in dispatches {
-            let record: lettuce_usage::JobInferenceUsage =
-                crate::decode_versioned(&bytes, 1).map_err(|_| ApiOperationError::InvalidData)?;
+            let record: lettuce_usage::JobInferenceUsage = crate::decode_versioned(&bytes, 1)
+                .map_err(|error| {
+                    tracing::warn!(?error, "clear usage before failed");
+                    ApiOperationError::InvalidData {
+                        reason: "clear usage before: a value could not be read or converted",
+                    }
+                })?;
             insert_tombstone_in(
                 connection,
                 &lettuce_usage::UsageTombstone::Dispatch {
@@ -127,7 +157,12 @@ pub(crate) fn insert_tombstone_in(
 ) -> Result<(), ApiOperationError> {
     use rusqlite::OptionalExtension;
     let (ledger, key) = proof.key();
-    let bytes = crate::encode_versioned(proof, 1).map_err(|_| ApiOperationError::InvalidData)?;
+    let bytes = crate::encode_versioned(proof, 1).map_err(|error| {
+        tracing::warn!(%error, "insert tombstone in failed");
+        ApiOperationError::InvalidData {
+            reason: "insert tombstone in: a value could not be read or converted",
+        }
+    })?;
     let existing: Option<String> = connection
         .query_row(
             "SELECT proof_json FROM usage_tombstones WHERE ledger=?1 AND event_key=?2",
@@ -135,10 +170,20 @@ pub(crate) fn insert_tombstone_in(
             |row| row.get(0),
         )
         .optional()
-        .map_err(|_| ApiOperationError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "insert tombstone in failed");
+            ApiOperationError::Storage {
+                reason: "insert tombstone in: a storage step failed",
+            }
+        })?;
     if let Some(existing) = existing {
-        let existing: lettuce_usage::UsageTombstone =
-            crate::decode_versioned(&existing, 1).map_err(|_| ApiOperationError::InvalidData)?;
+        let existing: lettuce_usage::UsageTombstone = crate::decode_versioned(&existing, 1)
+            .map_err(|error| {
+                tracing::warn!(?error, "insert tombstone in failed");
+                ApiOperationError::InvalidData {
+                    reason: "insert tombstone in: a value could not be read or converted",
+                }
+            })?;
         return if existing == *proof {
             Ok(())
         } else {
@@ -150,7 +195,12 @@ pub(crate) fn insert_tombstone_in(
             "INSERT INTO usage_tombstones VALUES (?1,?2,?3)",
             rusqlite::params![ledger, key, bytes],
         )
-        .map_err(|_| ApiOperationError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "insert tombstone in failed");
+            ApiOperationError::Storage {
+                reason: "insert tombstone in: a storage step failed",
+            }
+        })?;
     Ok(())
 }
 
@@ -166,10 +216,15 @@ pub(crate) fn dispatch_tombstone_in(
             |row| row.get(0),
         )
         .optional()
-        .map_err(|_| ApiOperationError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "dispatch tombstone in failed");
+            ApiOperationError::Storage {
+                reason: "dispatch tombstone in: a storage step failed",
+            }
+        })?;
     bytes.map(|bytes| {
-        let proof: lettuce_usage::UsageTombstone = crate::decode_versioned(&bytes, 1).map_err(|_| ApiOperationError::InvalidData)?;
-        if !matches!(&proof, lettuce_usage::UsageTombstone::Dispatch { event_id, .. } if *event_id == id) { return Err(ApiOperationError::InvalidData); }
+        let proof: lettuce_usage::UsageTombstone = crate::decode_versioned(&bytes, 1).map_err(|error| { tracing::warn!(?error, "dispatch tombstone in failed"); ApiOperationError::InvalidData { reason: "dispatch tombstone in: a value could not be read or converted" } })?;
+        if !matches!(&proof, lettuce_usage::UsageTombstone::Dispatch { event_id, .. } if *event_id == id) { return Err(ApiOperationError::InvalidData { reason: "dispatch tombstone in: a value failed validation" }); }
         Ok(proof)
     }).transpose()
 }
@@ -181,7 +236,12 @@ pub(crate) fn tombstones_in(
         .prepare(
             "SELECT ledger,event_key,proof_json FROM usage_tombstones ORDER BY ledger,event_key",
         )
-        .map_err(|_| ApiOperationError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "tombstones in failed");
+            ApiOperationError::Storage {
+                reason: "tombstones in: a storage step failed",
+            }
+        })?
         .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -189,16 +249,33 @@ pub(crate) fn tombstones_in(
                 row.get::<_, String>(2)?,
             ))
         })
-        .map_err(|_| ApiOperationError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "tombstones in failed");
+            ApiOperationError::Storage {
+                reason: "tombstones in: a storage step failed",
+            }
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|_| ApiOperationError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "tombstones in failed");
+            ApiOperationError::Storage {
+                reason: "tombstones in: a storage step failed",
+            }
+        })?;
     values
         .into_iter()
         .map(|(ledger, key, bytes)| {
             let proof: lettuce_usage::UsageTombstone =
-                crate::decode_versioned(&bytes, 1).map_err(|_| ApiOperationError::InvalidData)?;
+                crate::decode_versioned(&bytes, 1).map_err(|error| {
+                    tracing::warn!(?error, "tombstones in failed");
+                    ApiOperationError::InvalidData {
+                        reason: "tombstones in: a value could not be read or converted",
+                    }
+                })?;
             if proof.key() != (ledger.as_str(), key) {
-                return Err(ApiOperationError::InvalidData);
+                return Err(ApiOperationError::InvalidData {
+                    reason: "tombstones in: a value failed validation",
+                });
             }
             Ok(proof)
         })
@@ -350,10 +427,12 @@ mod tests {
             TimestampMillis::new(100),
             |transaction| {
                 assert_eq!(transaction.clear_usage_before(TimestampMillis::new(11))?, 1);
-                Err(ApiOperationError::Storage)
+                Err(ApiOperationError::Storage {
+                    reason: "injected failure",
+                })
             },
         );
-        assert_eq!(outcome, Err(ApiOperationError::Storage));
+        assert!(matches!(outcome, Err(ApiOperationError::Storage { .. })));
         assert_eq!(
             database
                 .job_usage(record.job_id)
@@ -533,7 +612,7 @@ mod tests {
             TimestampMillis::new(100),
             |transaction| transaction.clear_usage_before(TimestampMillis::new(11)),
         );
-        assert_eq!(result, Err(ApiOperationError::InvalidData));
+        assert!(matches!(result, Err(ApiOperationError::InvalidData { .. })));
     }
     #[test]
     fn clear_preserves_dispatches_claimed_by_another_worker_during_cancel() {

@@ -77,13 +77,15 @@ pub enum SceneFollowUpError {
     WrongState(SceneFollowUpState),
     #[error(transparent)]
     Image(#[from] SceneImageError),
-    #[error("scene follow-up storage failed")]
-    Storage,
+    #[error("scene follow-up storage failed: {reason}")]
+    Storage { reason: String },
 }
 
 impl From<lettuce_conversations::SceneFollowUpError> for SceneFollowUpError {
-    fn from(_: lettuce_conversations::SceneFollowUpError) -> Self {
-        Self::Storage
+    fn from(error: lettuce_conversations::SceneFollowUpError) -> Self {
+        Self::Storage {
+            reason: error.to_string(),
+        }
     }
 }
 
@@ -196,7 +198,9 @@ where
         now: TimestampMillis,
     ) -> Result<JobSnapshot, SceneFollowUpError> {
         let Some(request_id) = follow_up.request_id else {
-            return Err(SceneFollowUpError::Storage);
+            return Err(SceneFollowUpError::Storage {
+                reason: "the follow-up has no generation request".to_owned(),
+            });
         };
         let built = scene_generation_request(
             self.repository,
@@ -218,8 +222,10 @@ where
                     crate::ImageGenerationError::Models(_)
                     | crate::ImageGenerationError::Repository(_)
                     | crate::ImageGenerationError::Jobs(_)
-                    | crate::ImageGenerationError::Usage
-                    | crate::ImageGenerationError::LoraLibrary(_) => SceneFollowUpError::Storage,
+                    | crate::ImageGenerationError::Usage { .. }
+                    | crate::ImageGenerationError::LoraLibrary(_) => SceneFollowUpError::Storage {
+                        reason: error.to_string(),
+                    },
                     _ => SceneFollowUpError::Image(SceneImageError::Generation(error.to_string())),
                 })
         });
@@ -411,7 +417,9 @@ where
                     }
                     Some(job) if job.state.is_terminal() => {
                         let record = ImageGenerationRepository::get(self.repository, job.id)
-                            .map_err(|_| SceneFollowUpError::Storage)?;
+                            .map_err(|error| SceneFollowUpError::Storage {
+                                reason: error.to_string(),
+                            })?;
                         self.settle(&record, true, now)?;
                         Ok(true)
                     }
@@ -434,10 +442,12 @@ where
                     }
                     if matches!(
                         error,
-                        SceneFollowUpError::Storage
+                        SceneFollowUpError::Storage { .. }
                             | SceneFollowUpError::Image(
-                                SceneImageError::Storage
-                                    | SceneImageError::Model(ImageFeatureModelError::Storage)
+                                SceneImageError::Storage { .. }
+                                    | SceneImageError::Model(
+                                        ImageFeatureModelError::Storage { .. }
+                                    )
                             )
                     ) {
                         failure.get_or_insert(error);
@@ -467,7 +477,9 @@ pub fn job_of_scene_image_request<R: JobStore + ?Sized>(
     request_id: RequestId,
 ) -> Result<Option<JobSnapshot>, SceneFollowUpError> {
     let subject =
-        SubjectId::new(request_id.to_string()).map_err(|_| SceneFollowUpError::Storage)?;
+        SubjectId::new(request_id.to_string()).map_err(|error| SceneFollowUpError::Storage {
+            reason: error.to_string(),
+        })?;
     Ok(JobStore::list(
         repository,
         JobQuery {
@@ -480,7 +492,9 @@ pub fn job_of_scene_image_request<R: JobStore + ?Sized>(
             },
         },
     )
-    .map_err(|_| SceneFollowUpError::Storage)?
+    .map_err(|error| SceneFollowUpError::Storage {
+        reason: error.to_string(),
+    })?
     .items
     .into_iter()
     .next())
@@ -536,8 +550,10 @@ fn complete_one<R: SceneFollowUpSources + ?Sized>(
     };
     let record = match ImageGenerationRepository::get(repository, job.id) {
         Ok(record) => record,
-        Err(lettuce_image_generation::ImageGenerationRepositoryError::Storage) => {
-            return Err(SceneFollowUpError::Storage);
+        Err(lettuce_image_generation::ImageGenerationRepositoryError::Storage { reason }) => {
+            return Err(SceneFollowUpError::Storage {
+                reason: reason.to_owned(),
+            });
         }
         Err(_) => return failed(labels::SCENE_IMAGE_INTERRUPTED),
     };
@@ -565,7 +581,9 @@ fn complete_one<R: SceneFollowUpSources + ?Sized>(
                 repository,
                 follow_up.conversation_id,
             )
-            .map_err(|_| SceneFollowUpError::Storage)?
+            .map_err(|error| SceneFollowUpError::Storage {
+                reason: error.to_string(),
+            })?
             .is_some()
             {
                 Ok(false)

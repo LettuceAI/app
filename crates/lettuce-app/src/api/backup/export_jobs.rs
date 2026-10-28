@@ -146,7 +146,7 @@ fn published(context: &ApiContext, detail: &Detail) -> Result<Option<BackupIndex
         let mut input = context.files().open(&uri).map_err(file_error)?;
         let (metadata, bytes) = match lettuce_transfer::read_backup_header_bytes(&mut input) {
             Ok(header) => header,
-            Err(lettuce_transfer::BackupEnvelopeError::Io) => return Err(file_error(crate::api::FileAccessError::Io)),
+            Err(lettuce_transfer::BackupEnvelopeError::Io { .. }) => return Err(file_error(crate::api::FileAccessError::Io)),
             Err(_) => continue,
         };
         if &bytes != expected_header { continue; }
@@ -186,8 +186,8 @@ impl ClaimedJob for Work {
             let media = lettuce_media::LocalSyncMediaStore::open(root.join("platform-v2/media-blobs"), lettuce_database::Database::open(&files.active).map_err(|_| unavailable())?, lettuce_database::Database::open(&files.active).map_err(|_| unavailable())?).map_err(|_| unavailable())?;
             let mut export = context.backend().provider_backup(context.secret_store().as_ref(), &media).export_to_controlled(writer, self.detail.header.app_version.clone(), TimestampMillis::new(self.detail.header.created_at), &self.password, &|| if self.cancellation.is_cancelled() { Err(crate::ProviderBackupError::Cancelled) } else { Ok(()) }).await.map_err(|failure| match failure {
                 crate::ProviderBackupError::Cancelled => error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled),
-                crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::Io) | crate::ProviderBackupError::Media(_) | crate::ProviderBackupError::Artifact(_) => file_error(crate::api::FileAccessError::Io),
-                crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::LimitExceeded) | crate::ProviderBackupError::Graph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded) => error(ApiErrorCode::InvalidInput, dto::BackupFailureReason::LimitExceeded),
+                crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::Io { .. }) | crate::ProviderBackupError::Media(_) | crate::ProviderBackupError::Artifact(_) => file_error(crate::api::FileAccessError::Io),
+                crate::ProviderBackupError::Envelope(lettuce_transfer::BackupEnvelopeError::LimitExceeded { .. }) | crate::ProviderBackupError::Graph(lettuce_transfer::ProviderBackupGraphError::LimitExceeded { .. }) => error(ApiErrorCode::InvalidInput, dto::BackupFailureReason::LimitExceeded),
                 _ => unavailable(),
             })?;
             export.output.flush().map_err(|_| file_error(crate::api::FileAccessError::Io))?;

@@ -780,7 +780,7 @@ fn a_writer_remaining_open_after_restore_cannot_lose_its_new_media_to_active_swe
         ),
     );
     assert!(
-        matches!(late, Err(lettuce_media::MediaStoreError::CatalogFailure)),
+        matches!(late, Err(lettuce_media::MediaStoreError::CatalogFailure { .. })),
         "kept database refuses new writes: {late:?}"
     );
     let active = harness(&root);

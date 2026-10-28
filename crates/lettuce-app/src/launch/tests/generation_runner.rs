@@ -54,7 +54,7 @@ impl crate::ReplyMediaStore for NoReplyMedia {
         _origin: crate::ReplyImageOrigin,
         _bytes: &[u8],
     ) -> Result<lettuce_types::AssetId, lettuce_media::MediaStoreError> {
-        Err(lettuce_media::MediaStoreError::CatalogFailure)
+        Err(lettuce_media::MediaStoreError::CatalogFailure { reason: "simulated failure" })
     }
 
     fn discard_reply_image(
@@ -4955,7 +4955,7 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
     assert!(matches!(
         error,
         crate::CompanionMemoryJobRunError::RuntimeInputs(
-            crate::CompanionMemoryRuntimeInputError::MissingModel
+            crate::CompanionMemoryRuntimeInputError::MissingModel { .. }
         )
     ));
     assert_eq!(job.state, JobState::Failed);
@@ -7405,7 +7405,7 @@ async fn invalid_input_settlement_fails_the_job_and_closes_the_turn() {
     let settled = ConversationGenerationDispatchCoordinator::new(&database, &database)
         .settle(
             work,
-            Err(ConversationGenerationRunError::InvalidInput),
+            Err(ConversationGenerationRunError::InvalidInput { reason: "simulated failure" }),
             CancellationReason::User,
             TimestampMillis::new(1_021),
         )
@@ -7446,16 +7446,16 @@ async fn identity_and_input_guards_reject_before_any_mutation() {
         runner
             .run(&foreign, input(&scenario), TimestampMillis::new(1_020),)
             .await,
-        Err(ConversationGenerationRunError::InvalidWork)
+        Err(ConversationGenerationRunError::InvalidWork { .. })
     ));
     assert!(matches!(
         dispatcher.settle(
             foreign,
-            Err(ConversationGenerationRunError::InvalidWork),
+            Err(ConversationGenerationRunError::InvalidWork { reason: "simulated failure" }),
             CancellationReason::User,
             TimestampMillis::new(1_021),
         ),
-        Err(ConversationGenerationDispatchError::InvalidWork)
+        Err(ConversationGenerationDispatchError::InvalidWork { .. })
     ));
     let turn = ConversationReader::get_turn(&database, scenario.turn_id).expect("turn");
     assert_eq!(turn.status, GenerationTurnStatus::Created);
@@ -7475,7 +7475,7 @@ async fn identity_and_input_guards_reject_before_any_mutation() {
             LEASE,
             &ResourceAvailability::all(),
         ),
-        Err(ConversationGenerationDispatchError::InvalidWork)
+        Err(ConversationGenerationDispatchError::InvalidWork { .. })
     ));
 }
 

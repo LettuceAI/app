@@ -33,8 +33,8 @@ pub struct LorebookKeywordAdmission {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LorebookKeywordAdmissionError {
-    #[error("lorebook keyword generation input is invalid")]
-    InvalidInput,
+    #[error("lorebook keyword generation input is invalid: {reason}")]
+    InvalidInput { reason: String },
     #[error("lorebook keyword generation run persistence failed: {0}")]
     Run(#[from] LorebookKeywordRunRepositoryError),
     #[error("lorebook keyword generation job persistence failed: {0}")]
@@ -80,10 +80,14 @@ impl<
             self.repository,
             crate::BuiltInPromptId::LorebookRuntime,
         )
-        .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?;
+        .map_err(|error| LorebookKeywordAdmissionError::InvalidInput {
+            reason: error.to_string(),
+        })?;
         let fragment = |key: &str| {
             text.render_with(key, [])
-                .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)
+                .map_err(|error| LorebookKeywordAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                })
         };
         let none = fragment("lorebook_none")?;
         let prompt_values = LorebookKeywordPromptValues {
@@ -102,10 +106,11 @@ impl<
                     if run != expected {
                         return Err(LorebookKeywordRunRepositoryError::Conflict.into());
                     }
-                    let job = self
-                        .jobs
-                        .get(run.job_id)?
-                        .ok_or(LorebookKeywordAdmissionError::InvalidInput)?;
+                    let job = self.jobs.get(run.job_id)?.ok_or(
+                        LorebookKeywordAdmissionError::InvalidInput {
+                            reason: "job of the run is missing from the store".to_owned(),
+                        },
+                    )?;
                     validate_job(&run, &job)?;
                     return Ok(LorebookKeywordAdmission {
                         run,
@@ -120,13 +125,18 @@ impl<
         let model_profile_id = request.profile.chat_profile.model_profile_id;
         let spec = JobSpec::new(
             JobKind::CreationRun,
-            JobSubject::new(SubjectKind::ModelProfile, model_profile_id.to_string())
-                .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?,
+            JobSubject::new(SubjectKind::ModelProfile, model_profile_id.to_string()).map_err(
+                |error| LorebookKeywordAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                },
+            )?,
             OutcomeRef::Request(request.request_id),
         )
         .with_idempotency_key(
             IdempotencyKey::new(format!("lorebook-keyword-generator-{}", request.request_id))
-                .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?,
+                .map_err(|error| LorebookKeywordAdmissionError::InvalidInput {
+                    reason: error.to_string(),
+                })?,
         )
         .with_resources(vec![
             ResourceClass::Network,
@@ -146,7 +156,9 @@ impl<
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
         )?;
         let lettuce_database::LorebookJobInput::Keyword(run) = input else {
-            return Err(LorebookKeywordAdmissionError::InvalidInput);
+            return Err(LorebookKeywordAdmissionError::InvalidInput {
+                reason: "stored job input is not a keyword run".to_owned(),
+            });
         };
         let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
@@ -181,7 +193,9 @@ fn validate_request(
             .get(Modality::Text)
             != CapabilityStatus::Supported
     {
-        return Err(LorebookKeywordAdmissionError::InvalidInput);
+        return Err(LorebookKeywordAdmissionError::InvalidInput {
+            reason: "the model lacks text input or text output".to_owned(),
+        });
     }
     Ok(())
 }
@@ -236,7 +250,9 @@ fn validate_job(
         || job.subject.kind != SubjectKind::ModelProfile
         || job.subject.id.as_str() != run.profile.chat_profile.model_profile_id.to_string()
     {
-        return Err(LorebookKeywordAdmissionError::InvalidInput);
+        return Err(LorebookKeywordAdmissionError::InvalidInput {
+            reason: "job differs from the run in id, kind, state or subject".to_owned(),
+        });
     }
     Ok(())
 }

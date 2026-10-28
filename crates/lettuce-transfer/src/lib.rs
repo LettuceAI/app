@@ -162,7 +162,9 @@ impl AsrLearningDocument {
 
     pub fn validate(&self) -> Result<(), lettuce_speech::AsrLearningError> {
         if !self.within_bounds() {
-            return Err(lettuce_speech::AsrLearningError::InvalidData);
+            return Err(lettuce_speech::AsrLearningError::InvalidData {
+                reason: "backup exceeds its record bounds",
+            });
         }
         let vocabulary_ids = self
             .vocabulary
@@ -195,7 +197,9 @@ impl AsrLearningDocument {
             || voice_ids.len() != self.voice_examples.len()
             || audio_asset_ids.len() != self.audio_assets.len()
         {
-            return Err(lettuce_speech::AsrLearningError::InvalidData);
+            return Err(lettuce_speech::AsrLearningError::InvalidData {
+                reason: "backup contains duplicate learning identities",
+            });
         }
         for term in &self.vocabulary {
             term.validate()?;
@@ -215,7 +219,9 @@ impl AsrLearningDocument {
                     .correction_id
                     .is_some_and(|id| !correction_ids.contains(&id))
             {
-                return Err(lettuce_speech::AsrLearningError::InvalidData);
+                return Err(lettuce_speech::AsrLearningError::InvalidData {
+                    reason: "example references an unknown correction",
+                });
             }
         }
         let referenced_audio_ids = self
@@ -238,7 +244,9 @@ impl AsrLearningDocument {
                     || asset.provenance.validate().is_err()
             })
         {
-            return Err(lettuce_speech::AsrLearningError::InvalidData);
+            return Err(lettuce_speech::AsrLearningError::InvalidData {
+                reason: "audio asset record is inconsistent",
+            });
         }
         Ok(())
     }

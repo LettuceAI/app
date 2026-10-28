@@ -295,8 +295,8 @@ pub async fn usage_clear_before(
                 .map_err(|error| ApiError {
                     code: match error {
                         ApiOperationError::Conflict => ApiErrorCode::Conflict,
-                        ApiOperationError::InvalidData => ApiErrorCode::InvalidInput,
-                        ApiOperationError::Storage => ApiErrorCode::Unavailable,
+                        ApiOperationError::InvalidData { .. } => ApiErrorCode::InvalidInput,
+                        ApiOperationError::Storage { .. } => ApiErrorCode::Unavailable,
                     },
                     message: error.to_string(),
                     details: Some(dto::ApiErrorDetails::UsageStorage),

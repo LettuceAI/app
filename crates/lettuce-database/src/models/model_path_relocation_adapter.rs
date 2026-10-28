@@ -15,7 +15,7 @@ impl ModelPathRelocation for Database {
     ) -> Result<u32, ModelRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(model_error)?;
         let changed = relocate_in(&transaction, relocate, now)?;
         transaction.commit().map_err(model_error)?;
@@ -30,13 +30,15 @@ impl ModelPathRelocation for Database {
     ) -> Result<u32, ModelRepositoryError> {
         device
             .validate()
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(model_error)?;
         let changed = relocate_in(&transaction, relocate, now)?;
-        let mut current = crate::read_device_settings(&transaction).map_err(|_| ModelRepositoryError::Storage)?;
+        let mut current = crate::read_device_settings(&transaction).map_err(|error| ModelRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         current.llm_models_dir = device.llm_models_dir;
         for root in [
             &mut current.retained_model_roots.whisper,
@@ -83,11 +85,11 @@ fn relocate_in(
         }
         validate_profile(&profile)?;
         let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let next = profile
             .revision
             .next()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         transaction
             .execute(
                 "UPDATE model_profiles SET external_model_id=?2, config_json=?3, revision=?4, \
@@ -107,10 +109,14 @@ fn relocate_in(
     changed +=
         crate::media::whisper_model_adapter::relocate_whisper_models_in(transaction, relocate)
             .map_err(|error| match error {
-                lettuce_model_hub::WhisperModelRepositoryError::InvalidData => {
-                    ModelRepositoryError::InvalidData
+                lettuce_model_hub::WhisperModelRepositoryError::InvalidData { .. } => {
+                    ModelRepositoryError::InvalidData {
+                        reason: "relocate in: a value failed validation".to_owned(),
+                    }
                 }
-                _ => ModelRepositoryError::Storage,
+                _ => ModelRepositoryError::Storage {
+                    reason: "relocate in: a stored value is not recognised".to_owned(),
+                },
             })?;
     Ok(changed)
 }

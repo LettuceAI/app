@@ -45,7 +45,9 @@ impl CreationTarget {
             Self::NewCharacter | Self::NewPersona | Self::NewLorebook => None,
         };
         if revision.is_some_and(|revision| revision.get() == 0) {
-            return Err(super::CreationProposalError::InvalidTarget);
+            return Err(super::CreationProposalError::InvalidTarget {
+                reason: "existing target has a revision of zero",
+            });
         }
         Ok(())
     }
@@ -138,11 +140,15 @@ impl CreationDraft {
             }
         }
         if serde_json::to_vec(self)
-            .map_err(|_| super::CreationProposalError::DraftTooLarge)?
+            .map_err(|_| super::CreationProposalError::DraftTooLarge {
+                reason: "draft could not be serialized to measure its size",
+            })?
             .len()
             > MAX_CREATION_DRAFT_BYTES
         {
-            return Err(super::CreationProposalError::DraftTooLarge);
+            return Err(super::CreationProposalError::DraftTooLarge {
+                reason: "draft exceeds the byte limit",
+            });
         }
         Ok(())
     }
@@ -161,10 +167,14 @@ fn ensure_unique<T: Ord>(
 
 pub(crate) fn validate_required(value: &str) -> Result<(), super::CreationProposalError> {
     if value.trim().is_empty() {
-        return Err(super::CreationProposalError::BlankText);
+        return Err(super::CreationProposalError::BlankText {
+            reason: "required text is blank",
+        });
     }
     if value.len() > MAX_CREATION_TEXT_BYTES {
-        return Err(super::CreationProposalError::DraftTooLarge);
+        return Err(super::CreationProposalError::DraftTooLarge {
+            reason: "text exceeds the byte limit",
+        });
     }
     Ok(())
 }
@@ -192,7 +202,9 @@ impl NewCreationWorkflow {
         self.target.validate()?;
         self.initial_draft.validate()?;
         if self.target.kind() != self.initial_draft.kind() {
-            return Err(super::CreationProposalError::InvalidTarget);
+            return Err(super::CreationProposalError::InvalidTarget {
+                reason: "target kind does not match the initial draft kind",
+            });
         }
         Ok(())
     }
@@ -222,10 +234,14 @@ pub struct NewCreationTurn {
 impl NewCreationTurn {
     pub fn validate(&self) -> Result<(), super::CreationProposalError> {
         if self.user_message.trim().is_empty() {
-            return Err(super::CreationProposalError::BlankText);
+            return Err(super::CreationProposalError::BlankText {
+                reason: "user message is blank",
+            });
         }
         if self.user_message.len() > MAX_CREATION_USER_MESSAGE_BYTES {
-            return Err(super::CreationProposalError::DraftTooLarge);
+            return Err(super::CreationProposalError::DraftTooLarge {
+                reason: "user message exceeds the byte limit",
+            });
         }
         Ok(())
     }

@@ -42,36 +42,44 @@ impl KokoroVoiceBlend {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum KokoroVoiceError {
-    #[error("Kokoro voice blend is invalid")]
-    InvalidBlend,
-    #[error("Kokoro voice data is invalid")]
-    InvalidVoiceData,
-    #[error("Kokoro voice material is missing")]
-    MissingVoice,
+    #[error("Kokoro voice blend is invalid: {reason}")]
+    InvalidBlend { reason: &'static str },
+    #[error("Kokoro voice data is invalid: {reason}")]
+    InvalidVoiceData { reason: &'static str },
+    #[error("Kokoro voice material is missing: {reason}")]
+    MissingVoice { reason: &'static str },
 }
 
 pub fn normalize_kokoro_voice_blend(
     specs: &[KokoroVoiceBlendSpec],
 ) -> Result<Vec<KokoroVoiceBlendSpec>, KokoroVoiceError> {
     if specs.is_empty() || specs.len() > MAX_BLEND_ENTRIES {
-        return Err(KokoroVoiceError::InvalidBlend);
+        return Err(KokoroVoiceError::InvalidBlend {
+            reason: "blend has no entries or too many entries",
+        });
     }
     let mut merged: Vec<KokoroVoiceBlendSpec> = Vec::new();
     for spec in specs {
         let voice_id = spec.voice_id.trim();
         if !spec.weight.is_finite() {
-            return Err(KokoroVoiceError::InvalidBlend);
+            return Err(KokoroVoiceError::InvalidBlend {
+                reason: "blend weight is not finite",
+            });
         }
         if voice_id.is_empty() || spec.weight <= 0.0 {
             continue;
         }
         if !lettuce_model_hub::is_valid_kokoro_voice_id(voice_id) {
-            return Err(KokoroVoiceError::InvalidBlend);
+            return Err(KokoroVoiceError::InvalidBlend {
+                reason: "blend voice id is invalid",
+            });
         }
         if let Some(existing) = merged.iter_mut().find(|entry| entry.voice_id == voice_id) {
             existing.weight += spec.weight;
             if !existing.weight.is_finite() {
-                return Err(KokoroVoiceError::InvalidBlend);
+                return Err(KokoroVoiceError::InvalidBlend {
+                    reason: "merged blend weight is not finite",
+                });
             }
         } else {
             merged.push(KokoroVoiceBlendSpec {
@@ -81,14 +89,18 @@ pub fn normalize_kokoro_voice_blend(
         }
     }
     if merged.is_empty() {
-        return Err(KokoroVoiceError::InvalidBlend);
+        return Err(KokoroVoiceError::InvalidBlend {
+            reason: "blend has no usable entries",
+        });
     }
     let total = merged.iter().try_fold(0.0_f32, |total, spec| {
         let total = total + spec.weight;
         total.is_finite().then_some(total)
     });
     let Some(total) = total.filter(|total| *total > 0.0) else {
-        return Err(KokoroVoiceError::InvalidBlend);
+        return Err(KokoroVoiceError::InvalidBlend {
+            reason: "blend total weight is not a positive finite number",
+        });
     };
     for spec in &mut merged {
         spec.weight /= total;
@@ -106,9 +118,13 @@ pub fn blend_kokoro_voices(
         let mut matches = materials
             .iter()
             .filter(|material| material.voice_id == spec.voice_id);
-        let material = matches.next().ok_or(KokoroVoiceError::MissingVoice)?;
+        let material = matches.next().ok_or(KokoroVoiceError::MissingVoice {
+            reason: "blend voice has no loaded material",
+        })?;
         if matches.next().is_some() {
-            return Err(KokoroVoiceError::InvalidVoiceData);
+            return Err(KokoroVoiceError::InvalidVoiceData {
+                reason: "blend voice has duplicate material",
+            });
         }
         loaded.push(load_voice(material.bytes)?);
     }
@@ -122,7 +138,9 @@ pub fn blend_kokoro_voices(
         .iter()
         .map(Vec::len)
         .max()
-        .ok_or(KokoroVoiceError::MissingVoice)?;
+        .ok_or(KokoroVoiceError::MissingVoice {
+            reason: "no voice material has any rows",
+        })?;
     let mut styles = Vec::with_capacity(max_rows);
     for row_index in 0..max_rows {
         let mut blended = [0.0_f32; KOKORO_STYLE_DIMENSIONS];
@@ -131,7 +149,9 @@ pub fn blend_kokoro_voices(
             for (target, value) in blended.iter_mut().zip(source) {
                 *target += value * spec.weight;
                 if !target.is_finite() {
-                    return Err(KokoroVoiceError::InvalidVoiceData);
+                    return Err(KokoroVoiceError::InvalidVoiceData {
+                        reason: "blended style value is not finite",
+                    });
                 }
             }
         }
@@ -147,7 +167,9 @@ fn load_voice(
     bytes: &[u8],
 ) -> Result<Vec<[f32; KOKORO_STYLE_DIMENSIONS]>, KokoroVoiceError> {
     if bytes.is_empty() || !bytes.len().is_multiple_of(STYLE_ROW_BYTES) {
-        return Err(KokoroVoiceError::InvalidVoiceData);
+        return Err(KokoroVoiceError::InvalidVoiceData {
+            reason: "voice data is empty or not a whole number of style rows",
+        });
     }
     let mut styles = Vec::with_capacity(bytes.len() / STYLE_ROW_BYTES);
     for row in bytes.as_chunks::<STYLE_ROW_BYTES>().0 {
@@ -155,7 +177,9 @@ fn load_voice(
         for (slot, encoded) in style.iter_mut().zip(row.as_chunks::<4>().0) {
             *slot = f32::from_le_bytes(*encoded);
             if !slot.is_finite() {
-                return Err(KokoroVoiceError::InvalidVoiceData);
+                return Err(KokoroVoiceError::InvalidVoiceData {
+                    reason: "voice style value is not finite",
+                });
             }
         }
         styles.push(style);
@@ -222,14 +246,14 @@ mod tests {
 
     #[test]
     fn rejects_nonfinite_weights_samples_and_overflow() {
-        assert_eq!(
+        assert!(matches!(
             normalize_kokoro_voice_blend(&[KokoroVoiceBlendSpec {
                 voice_id: "af_heart".to_owned(),
                 weight: f32::NAN,
             }]),
-            Err(KokoroVoiceError::InvalidBlend)
-        );
-        assert_eq!(
+            Err(KokoroVoiceError::InvalidBlend { .. })
+        ));
+        assert!(matches!(
             normalize_kokoro_voice_blend(&[
                 KokoroVoiceBlendSpec {
                     voice_id: "af_heart".to_owned(),
@@ -240,10 +264,10 @@ mod tests {
                     weight: f32::MAX,
                 },
             ]),
-            Err(KokoroVoiceError::InvalidBlend)
-        );
+            Err(KokoroVoiceError::InvalidBlend { .. })
+        ));
         let invalid = voice_rows(&[f32::INFINITY]);
-        assert_eq!(
+        assert!(matches!(
             blend_kokoro_voices(
                 &[KokoroVoiceBlendSpec {
                     voice_id: "af_heart".to_owned(),
@@ -254,7 +278,7 @@ mod tests {
                     bytes: &invalid,
                 }],
             ),
-            Err(KokoroVoiceError::InvalidVoiceData)
-        );
+            Err(KokoroVoiceError::InvalidVoiceData { .. })
+        ));
     }
 }

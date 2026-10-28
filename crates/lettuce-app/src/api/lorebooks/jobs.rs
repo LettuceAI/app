@@ -50,7 +50,7 @@ pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
                     lettuce_creation::StagedLorebookRepositoryError::Conflict => {
                         ApiErrorCode::Conflict
                     }
-                    lettuce_creation::StagedLorebookRepositoryError::Invalid => {
+                    lettuce_creation::StagedLorebookRepositoryError::Invalid { .. } => {
                         ApiErrorCode::InvalidInput
                     }
                     _ => ApiErrorCode::Internal,
@@ -61,14 +61,14 @@ pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
         if let Some(error) = cause.downcast_ref::<crate::LorebookEntryPreparationError>()
             && matches!(
                 error,
-                crate::LorebookEntryPreparationError::InvalidInput
-                    | crate::LorebookEntryPreparationError::SourceUnavailable
+                crate::LorebookEntryPreparationError::InvalidInput { .. }
+                    | crate::LorebookEntryPreparationError::SourceUnavailable { .. }
             )
         {
             return api_error(
                 if matches!(
                     error,
-                    crate::LorebookEntryPreparationError::SourceUnavailable
+                    crate::LorebookEntryPreparationError::SourceUnavailable { .. }
                 ) {
                     ApiErrorCode::Unavailable
                 } else {
@@ -80,20 +80,26 @@ pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
         let invalid = cause
             .downcast_ref::<crate::StagedLorebookAdmissionError>()
             .is_some_and(|error| {
-                matches!(error, crate::StagedLorebookAdmissionError::InvalidInput)
+                matches!(
+                    error,
+                    crate::StagedLorebookAdmissionError::InvalidInput { .. }
+                )
             })
             || cause
                 .downcast_ref::<crate::StagedLorebookWriterAdmissionError>()
                 .is_some_and(|error| {
                     matches!(
                         error,
-                        crate::StagedLorebookWriterAdmissionError::InvalidInput
+                        crate::StagedLorebookWriterAdmissionError::InvalidInput { .. }
                     )
                 })
             || cause
                 .downcast_ref::<crate::LorebookKeywordAdmissionError>()
                 .is_some_and(|error| {
-                    matches!(error, crate::LorebookKeywordAdmissionError::InvalidInput)
+                    matches!(
+                        error,
+                        crate::LorebookKeywordAdmissionError::InvalidInput { .. }
+                    )
                 });
         if invalid {
             return api_error(ApiErrorCode::InvalidInput, error.to_string());

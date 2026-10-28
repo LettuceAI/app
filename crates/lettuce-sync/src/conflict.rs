@@ -43,14 +43,14 @@ pub enum ConflictRepositoryError {
     NotFound,
     #[error("sync conflict input is stale or conflicts with an earlier decision")]
     Conflict,
-    #[error("sync conflict evidence is corrupt")]
-    Corrupt,
-    #[error("the selected conflict candidate cannot be restored")]
-    Unsupported,
-    #[error("a required conflict reference is unavailable")]
-    Unavailable,
-    #[error("sync conflict storage failed")]
-    Storage,
+    #[error("sync conflict evidence is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
+    #[error("the selected conflict candidate cannot be restored: {reason}")]
+    Unsupported { reason: &'static str },
+    #[error("a required conflict reference is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("sync conflict storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait SyncConflictRepository: Send + Sync {

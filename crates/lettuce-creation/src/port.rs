@@ -158,8 +158,8 @@ pub enum CreationRepositoryError {
     NotFound,
     #[error("creation operation conflicts with durable state")]
     Conflict,
-    #[error("creation record is invalid")]
-    Invalid,
-    #[error("creation storage failed")]
-    Storage,
+    #[error("creation record is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("creation storage failed: {reason}")]
+    Storage { reason: &'static str },
 }

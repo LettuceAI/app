@@ -93,7 +93,9 @@ impl<
         let run = self.repository.load_dynamic_memory_run(run_id)?;
         let attempt = self.repository.load_dynamic_memory_attempt(attempt_id)?;
         if attempt.run_id != run.id || attempt.job_id != handle.id() {
-            return Err(CompanionMemoryRoundExecutionError::InvalidOwnership);
+            return Err(CompanionMemoryRoundExecutionError::InvalidOwnership {
+                reason: "attempt belongs to another run or job",
+            });
         }
         if let Some(settlement) = self.repository.load_dynamic_memory_round_settlement(
             run_id,
@@ -113,22 +115,26 @@ impl<
         let rounds = self
             .repository
             .list_dynamic_memory_inference_rounds(run_id, attempt_id)?;
-        let round = rounds
-            .get(usize::from(round_ordinal))
-            .cloned()
-            .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+        let round = rounds.get(usize::from(round_ordinal)).cloned().ok_or(
+            CompanionMemoryRoundExecutionError::InvalidOwnership {
+                reason: "settled round ordinal is not in the stored rounds",
+            },
+        )?;
         if attempt.status != DynamicMemoryAttemptStatus::Processing
             || round.run_id != run.id
             || round.attempt_id != attempt.id
             || round.ordinal != round_ordinal
             || round.calls.is_empty()
         {
-            return Err(CompanionMemoryRoundExecutionError::InvalidOwnership);
+            return Err(CompanionMemoryRoundExecutionError::InvalidOwnership {
+                reason: "stored round does not match the attempt, run, ordinal or has no calls",
+            });
         }
-        let snapshot = self
-            .repository
-            .get(run.space_id)?
-            .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+        let snapshot = self.repository.get(run.space_id)?.ok_or(
+            CompanionMemoryRoundExecutionError::InvalidOwnership {
+                reason: "memory space of the run does not exist",
+            },
+        )?;
         let prepared = DynamicMemoryCreatePreparer::new(self.engine, self.repository)
             .prepare_background_calls(
                 run.space_id,
@@ -170,7 +176,9 @@ impl<
             let settlement = self
                 .repository
                 .load_dynamic_memory_round_settlement(run_id, attempt_id, earlier.ordinal)?
-                .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+                .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership {
+                    reason: "an earlier round has no settlement",
+                })?;
             hard_deletes_used += MemoryCycleBudget::count_hard_deletes(&settlement.results);
         }
         let budget = MemoryCycleBudget::new(
@@ -191,10 +199,11 @@ impl<
             },
             now,
         )?;
-        let stored = self
-            .repository
-            .get(run.space_id)?
-            .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+        let stored = self.repository.get(run.space_id)?.ok_or(
+            CompanionMemoryRoundExecutionError::InvalidOwnership {
+                reason: "memory space of the run is gone after the round commit",
+            },
+        )?;
         let projection_repairs_pending =
             persist_created_projections(self.repository, &stored, &reduction, &prepared);
         Ok(CompanionMemoryRoundExecutionResult {
@@ -232,13 +241,17 @@ fn prepare_background_calls(
         .map(|prepared| (prepared.execution_id, prepared.preparation.clone()))
         .collect::<HashMap<_, _>>();
     if preparations.len() != prepared_creates.len() {
-        return Err(CompanionMemoryRoundExecutionError::InvalidPreparation);
+        return Err(CompanionMemoryRoundExecutionError::InvalidPreparation {
+            reason: "prepared creates repeat an execution id",
+        });
     }
     let mut ids = HashSet::with_capacity(round.calls.len());
     let mut results = Vec::with_capacity(round.calls.len());
     for call in &round.calls {
         if !ids.insert(call.id) {
-            return Err(CompanionMemoryRoundExecutionError::InvalidOwnership);
+            return Err(CompanionMemoryRoundExecutionError::InvalidOwnership {
+                reason: "round repeats a tool call id",
+            });
         }
         let mut arguments =
             MemoryToolArguments::parse_or_skip(&call.call.name, &call.call.arguments);
@@ -260,14 +273,18 @@ fn prepare_background_calls(
                     *source_message_id = Some(
                         sources
                             .last()
-                            .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?
+                            .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership {
+                                reason: "run has no source messages to attribute a memory to",
+                            })?
                             .message_id,
                     );
                 }
                 let source = sources
                     .iter()
                     .find(|source| Some(source.message_id) == *source_message_id)
-                    .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+                    .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership {
+                        reason: "created memory source message is not in the run sources",
+                    })?;
                 source_role = Some(source.role);
                 observed_at = Some(source.effective_time);
             } else {
@@ -275,11 +292,11 @@ fn prepare_background_calls(
             }
         }
         let create = if matches!(arguments, MemoryToolArguments::CreateMemory { .. }) {
-            Some(
-                preparations
-                    .remove(&call.id)
-                    .ok_or(CompanionMemoryRoundExecutionError::InvalidPreparation)?,
-            )
+            Some(preparations.remove(&call.id).ok_or(
+                CompanionMemoryRoundExecutionError::InvalidPreparation {
+                    reason: "create call has no prepared create",
+                },
+            )?)
         } else {
             None
         };
@@ -292,17 +309,19 @@ fn prepare_background_calls(
         });
     }
     if !preparations.is_empty() {
-        return Err(CompanionMemoryRoundExecutionError::InvalidPreparation);
+        return Err(CompanionMemoryRoundExecutionError::InvalidPreparation {
+            reason: "prepared creates are left over after matching the round calls",
+        });
     }
     Ok(results)
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryRoundExecutionError {
-    #[error("background memory round ownership is invalid")]
-    InvalidOwnership,
-    #[error("background memory create preparation is invalid")]
-    InvalidPreparation,
+    #[error("background memory round ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("background memory create preparation is invalid: {reason}")]
+    InvalidPreparation { reason: &'static str },
     #[error("background memory round was cancelled")]
     Cancelled,
     #[error("background memory run persistence failed: {0}")]

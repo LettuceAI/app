@@ -43,7 +43,7 @@ pub(super) fn ingest_picked_audio(context: &ApiContext, uri: &str) -> Result<Ass
         .map_err(|error| match error {
             lettuce_media::MediaStoreError::UnsupportedFormat
             | lettuce_media::MediaStoreError::KindMismatch
-            | lettuce_media::MediaStoreError::InvalidHeader
+            | lettuce_media::MediaStoreError::InvalidHeader { .. }
             | lettuce_media::MediaStoreError::EmptyInput
             | lettuce_media::MediaStoreError::InputTooLarge => {
                 invalid_field("source", error.to_string())
@@ -216,7 +216,12 @@ pub(crate) fn collect_recordings(context: &ApiContext) -> Result<(), ApiError> {
                     .backend()
                     .database()
                     .collect_media_garbage(context.now())
-                    .map_err(|_| lettuce_media::MediaStoreError::CatalogFailure)
+                    .map_err(|error| {
+                        tracing::warn!(%error, "media garbage collection failed");
+                        lettuce_media::MediaStoreError::CatalogFailure {
+                            reason: "media garbage collection failed",
+                        }
+                    })
             })
             .map_err(IntoApiError::into_api_error)?;
     }

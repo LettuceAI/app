@@ -18,17 +18,21 @@ impl From<ApiOperationError> for ModelRepositoryError {
     fn from(error: ApiOperationError) -> Self {
         match error {
             ApiOperationError::Conflict => Self::StaleRevision,
-            ApiOperationError::InvalidData => Self::InvalidData,
-            ApiOperationError::Storage => Self::Storage,
+            ApiOperationError::InvalidData { reason } => Self::InvalidData {
+                reason: reason.to_owned(),
+            },
+            ApiOperationError::Storage { reason } => Self::Storage {
+                reason: reason.to_owned(),
+            },
         }
     }
 }
 
 impl Database {
     pub fn stage_provider_secret(&self, record: &SecretRecord) -> Result<(), ModelRepositoryError> {
-        self.connection().map_err(|_| ModelRepositoryError::Storage)?.execute(
+        self.connection().map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?.execute(
             "INSERT OR IGNORE INTO provider_secret_gc(reference,purpose_json,state) VALUES (?1,?2,'staged')",
-            params![record.reference.to_string(), serde_json::to_string(&record.purpose).map_err(|_| ModelRepositoryError::InvalidData)?],
+            params![record.reference.to_string(), serde_json::to_string(&record.purpose).map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?],
         ).map_err(crate::model_error)?;
         Ok(())
     }
@@ -36,7 +40,9 @@ impl Database {
     pub fn provider_secret_cleanup(&self) -> Result<Vec<SecretRecord>, ModelRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let rows = connection.prepare("SELECT reference,purpose_json FROM provider_secret_gc WHERE state != 'live' ORDER BY reference").map_err(crate::model_error)?
             .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).map_err(crate::model_error)?
             .collect::<rusqlite::Result<Vec<_>>>().map_err(crate::model_error)?;
@@ -56,8 +62,11 @@ impl Database {
             .map(|(reference, purpose)| {
                 Ok(SecretRecord::new(
                     crate::secret_ref_from_text(reference).map_err(crate::model_error)?,
-                    serde_json::from_str(&purpose)
-                        .map_err(|_| ModelRepositoryError::InvalidData)?,
+                    serde_json::from_str(&purpose).map_err(|error| {
+                        ModelRepositoryError::InvalidData {
+                            reason: error.to_string(),
+                        }
+                    })?,
                 ))
             })
             .filter_map(|record| match record {
@@ -71,7 +80,7 @@ impl Database {
         &self,
         record: &SecretRecord,
     ) -> Result<bool, ModelRepositoryError> {
-        self.connection().map_err(|_| ModelRepositoryError::Storage)?.query_row("SELECT EXISTS(SELECT 1 FROM provider_secret_gc WHERE reference=?1 AND state='retired')", [record.reference.to_string()], |row| row.get(0)).map_err(crate::model_error)
+        self.connection().map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?.query_row("SELECT EXISTS(SELECT 1 FROM provider_secret_gc WHERE reference=?1 AND state='retired')", [record.reference.to_string()], |row| row.get(0)).map_err(crate::model_error)
     }
 
     pub fn provider_secret_cleanup_done(
@@ -79,7 +88,9 @@ impl Database {
         record: &SecretRecord,
     ) -> Result<(), ModelRepositoryError> {
         self.connection()
-            .map_err(|_| ModelRepositoryError::Storage)?
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?
             .execute(
                 "DELETE FROM provider_secret_gc WHERE reference=?1 AND state != 'live'",
                 [record.reference.to_string()],
@@ -93,7 +104,9 @@ impl Database {
     ) -> Result<(Vec<TrustedCertificate>, Revision), ModelRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let (settings, revision) = device_in(&connection)?;
         Ok((settings.trusted_certificates, revision))
     }
@@ -133,7 +146,7 @@ pub fn account_secret_records(account: &ProviderAccount) -> Vec<SecretRecord> {
 
 fn retire(connection: &Connection, account: &ProviderAccount) -> Result<(), ModelRepositoryError> {
     for record in account_secret_records(account) {
-        connection.execute("INSERT INTO provider_secret_gc(reference,purpose_json,state) VALUES (?1,?2,'retired') ON CONFLICT(reference) DO UPDATE SET state='retired'", params![record.reference.to_string(), serde_json::to_string(&record.purpose).map_err(|_| ModelRepositoryError::InvalidData)?]).map_err(crate::model_error)?;
+        connection.execute("INSERT INTO provider_secret_gc(reference,purpose_json,state) VALUES (?1,?2,'retired') ON CONFLICT(reference) DO UPDATE SET state='retired'", params![record.reference.to_string(), serde_json::to_string(&record.purpose).map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?]).map_err(crate::model_error)?;
     }
     Ok(())
 }
@@ -151,7 +164,12 @@ impl ApiOperationTransaction<'_, '_> {
                 if stored.revision == expected
                     && stored.secret_owner_id == account.secret_owner_id =>
             {
-                account.revision = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
+                account.revision =
+                    expected
+                        .next()
+                        .map_err(|error| ModelRepositoryError::Storage {
+                            reason: error.to_string(),
+                        })?;
                 account.created_at = stored.created_at;
                 retire(self.transaction, stored)?;
             }
@@ -232,7 +250,11 @@ impl ApiOperationTransaction<'_, '_> {
         write_certificates_in(self.transaction, &settings, revision)?;
         Ok((
             settings.trusted_certificates,
-            revision.next().map_err(|_| ModelRepositoryError::Storage)?,
+            revision
+                .next()
+                .map_err(|error| ModelRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?,
         ))
     }
 
@@ -256,7 +278,11 @@ impl ApiOperationTransaction<'_, '_> {
         write_certificates_in(self.transaction, &settings, revision)?;
         Ok((
             settings.trusted_certificates,
-            revision.next().map_err(|_| ModelRepositoryError::Storage)?,
+            revision
+                .next()
+                .map_err(|error| ModelRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?,
         ))
     }
 }
@@ -272,7 +298,11 @@ fn device_in(connection: &Connection) -> Result<(DeviceSettings, Revision), Mode
         .map_err(crate::model_error)?
         .map(|(settings, revision)| {
             Ok((
-                serde_json::from_str(&settings).map_err(|_| ModelRepositoryError::InvalidData)?,
+                serde_json::from_str(&settings).map_err(|error| {
+                    ModelRepositoryError::InvalidData {
+                        reason: error.to_string(),
+                    }
+                })?,
                 crate::to_revision(revision).map_err(crate::model_error)?,
             ))
         })
@@ -342,7 +372,9 @@ impl Database {
     pub fn model_usage(&self, id: ModelProfileId) -> Result<ModelUsageRecord, ModelRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let id = id.to_string();
         let exists: bool = connection
             .query_row(
@@ -396,7 +428,9 @@ impl Database {
     ) -> Result<(Vec<TrustedCertificate>, Revision), ModelRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(crate::model_error)?;
@@ -419,9 +453,14 @@ fn write_certificates_in(
 ) -> Result<(), ModelRepositoryError> {
     settings
         .validate()
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
-    let encoded = serde_json::to_string(settings).map_err(|_| ModelRepositoryError::InvalidData)?;
-    let changed = connection.execute("INSERT INTO device_settings(id,settings_json,updated_at,revision) VALUES (1,?1,?2,?3) ON CONFLICT(id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at,revision=excluded.revision WHERE device_settings.revision=?4", params![encoded, crate::now().map_err(crate::model_error)?.get(), crate::to_i64(expected.next().map_err(|_| ModelRepositoryError::Storage)?.get()).map_err(crate::model_error)?, crate::to_i64(expected.get()).map_err(crate::model_error)?]).map_err(crate::model_error)?;
+        .map_err(|error| ModelRepositoryError::InvalidData {
+            reason: error.to_string(),
+        })?;
+    let encoded =
+        serde_json::to_string(settings).map_err(|error| ModelRepositoryError::InvalidData {
+            reason: error.to_string(),
+        })?;
+    let changed = connection.execute("INSERT INTO device_settings(id,settings_json,updated_at,revision) VALUES (1,?1,?2,?3) ON CONFLICT(id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at,revision=excluded.revision WHERE device_settings.revision=?4", params![encoded, crate::now().map_err(crate::model_error)?.get(), crate::to_i64(expected.next().map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?.get()).map_err(crate::model_error)?, crate::to_i64(expected.get()).map_err(crate::model_error)?]).map_err(crate::model_error)?;
     if changed != 1 {
         return Err(ModelRepositoryError::StaleRevision);
     }

@@ -110,8 +110,8 @@ pub enum ConversationGenerationWorkerOutcome {
 pub enum ConversationGenerationWorkerError {
     #[error("conversation generation worker storage failed: {0}")]
     Store(#[from] lettuce_jobs::StoreError),
-    #[error("conversation generation worker found invalid durable work")]
-    InvalidWork,
+    #[error("conversation generation worker found invalid durable work: {reason}")]
+    InvalidWork { reason: &'static str },
     #[error("conversation generation execution failed: {0}")]
     Execution(#[from] ConversationGenerationExecutionError),
 }
@@ -360,7 +360,12 @@ where
             Err(ConversationRepositoryError::NotFound) => {
                 return Ok(QueuedResolution::Unresolvable(None));
             }
-            Err(_) => return Err(ConversationGenerationWorkerError::InvalidWork),
+            Err(error) => {
+                tracing::warn!(%error, "queued conversation generation turn could not be read");
+                return Err(ConversationGenerationWorkerError::InvalidWork {
+                    reason: "the queued generation turn could not be read",
+                });
+            }
         };
         let Some(attempt) = turn
             .attempts
@@ -469,7 +474,7 @@ where
         if _registration.is_some() {
             admission.job = lettuce_jobs::JobStore::get(self.repository, admission.job.id)
                 .map_err(ConversationGenerationDispatchError::Jobs)?
-                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+                .ok_or(ConversationGenerationDispatchError::InvalidWork { reason: "the admission job is missing from the store" })?;
             if admission.job.state == lettuce_jobs::JobState::Succeeded {
                 let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
                     .with_reply_media(self.reply_media)
@@ -502,7 +507,7 @@ where
         else {
             admission.job = lettuce_jobs::JobStore::get(self.repository, admission.job.id)
                 .map_err(ConversationGenerationDispatchError::Jobs)?
-                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+                .ok_or(ConversationGenerationDispatchError::InvalidWork { reason: "the admission job is missing from the store" })?;
             if admission.job.state.is_terminal() {
                 return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
             }
@@ -1067,9 +1072,12 @@ where
                 self.repository,
                 global_settings.pure_mode,
             )
-            .map_err(|_| {
+            .map_err(|error| {
+                tracing::warn!(?error, "content rules text could not be loaded");
                 ConversationGenerationInputError::Context(
-                    ContextAssemblyError::RuntimeTextUnavailable,
+                    ContextAssemblyError::RuntimeTextUnavailable {
+                        reason: "content rules text could not be loaded",
+                    },
                 )
             })?,
             ..Default::default()
@@ -1112,7 +1120,9 @@ where
         assembler
             .captured_preview()
             .ok_or(ConversationGenerationInputError::Context(
-                ContextAssemblyError::PromptRender,
+                ContextAssemblyError::PromptRender {
+                    reason: "prompt preview was not captured",
+                },
             ))
     }
 
@@ -1188,14 +1198,20 @@ where
             self.repository,
             crate::BuiltInPromptId::GroupSpeakerSelection,
         )
-        .map_err(|_| {
-            ConversationGenerationInputError::Context(ContextAssemblyError::RuntimeTextUnavailable)
+        .map_err(|error| {
+            tracing::warn!(?error, "group speaker selection prompt text could not be loaded");
+            ConversationGenerationInputError::Context(ContextAssemblyError::RuntimeTextUnavailable {
+                reason: "group speaker selection prompt text could not be loaded",
+            })
         })?;
         speaker_selection_prompt(&text, &profiles, &policy, &available)
             .map(Some)
-            .map_err(|_| {
+            .map_err(|error| {
+                tracing::warn!(?error, "group speaker selection prompt could not be built");
                 ConversationGenerationInputError::Context(
-                    ContextAssemblyError::RuntimeTextUnavailable,
+                    ContextAssemblyError::RuntimeTextUnavailable {
+                        reason: "group speaker selection prompt could not be built",
+                    },
                 )
             })
     }
@@ -1215,9 +1231,11 @@ where
                 continue;
             };
             let character =
-                CharacterRepository::get(self.repository, character_id).map_err(|_| {
+                CharacterRepository::get(self.repository, character_id).map_err(|error| {
                     ConversationGenerationInputError::Repository(
-                        ConversationRepositoryError::Storage,
+                        ConversationRepositoryError::Storage {
+                            reason: error.to_string(),
+                        },
                     )
                 })?;
             if let Some(details) = character {
@@ -1372,8 +1390,10 @@ where
             .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
         let decision_model = self
             .live_model_snapshot(conversation.id, &model, &account, true)
-            .map_err(|_| {
-                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage)
+            .map_err(|error| {
+                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })
             })?;
         let selection_model = Some(&decision_model);
         let admission = self
@@ -1419,15 +1439,19 @@ where
                     Some(admission.record.usage_event_id),
                 )?
             }
-            Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence) => {
+            Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence { reason }) => {
                 return Err(ConversationGenerationInputError::Repository(
-                    ConversationRepositoryError::Storage,
+                    ConversationRepositoryError::Storage {
+                        reason,
+                    },
                 ));
             }
         };
         if let Ok(outcome) = outcome {
-            crate::cleanup_outcome_replays(self.repository, &outcome).map_err(|_| {
-                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage)
+            crate::cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })
             })?;
         }
         decision.usage_event_id = Some(admission.record.usage_event_id);
@@ -1868,8 +1892,11 @@ where
             self.repository,
             global_settings.pure_mode,
         )
-        .map_err(|_| {
-            ConversationGenerationInputError::Context(ContextAssemblyError::RuntimeTextUnavailable)
+        .map_err(|error| {
+            tracing::warn!(?error, "content rules text could not be loaded");
+            ConversationGenerationInputError::Context(ContextAssemblyError::RuntimeTextUnavailable {
+                reason: "content rules text could not be loaded",
+            })
         })?;
         crate::companion::companion_clock::fill_time_values(&mut prompt_values, reference_now);
         let context = ConversationContextAssembler::new(self.repository)
@@ -2371,7 +2398,9 @@ where
                 .map_err(ConversationGenerationInputError::Repository)?;
             if page.branch_path != complete.branch_path {
                 return Err(ConversationGenerationInputError::Context(
-                    ContextAssemblyError::SizeLimit,
+                    ContextAssemblyError::SizeLimit {
+                        reason: "timeline pages changed branch path while paging",
+                    },
                 ));
             }
             complete.items.extend(page.items);
@@ -2509,8 +2538,10 @@ impl ConversationGenerationInputError {
     fn into_run_error(self) -> ConversationGenerationRunError {
         match self {
             Self::Repository(error) => ConversationGenerationRunError::Repository(error),
-            Self::ModelRepository(ModelRepositoryError::Storage) => {
-                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+            Self::ModelRepository(ModelRepositoryError::Storage { reason }) => {
+                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage {
+                    reason,
+                })
             }
             Self::Context(error) => {
                 tracing::warn!(?error, "conversation context preparation failed");
@@ -2518,8 +2549,10 @@ impl ConversationGenerationInputError {
                     code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
                 }
             }
-            Self::Settings(lettuce_settings::GlobalSettingsStoreError::Storage) => {
-                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+            Self::Settings(lettuce_settings::GlobalSettingsStoreError::Storage { reason }) => {
+                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage {
+                    reason,
+                })
             }
             Self::Settings(error) => {
                 tracing::warn!(?error, "conversation settings could not be read");
@@ -2563,7 +2596,7 @@ impl ConversationGenerationInputError {
                 evidence: crate::GenerationUsageEvidence::Dispatch(usage_event_id),
             },
             Self::MemoryInputUnavailable | Self::InvalidTurn => {
-                ConversationGenerationRunError::InvalidInput
+                ConversationGenerationRunError::InvalidInput { reason: "the memory input is unavailable or the turn is invalid" }
             }
         }
     }
@@ -3257,7 +3290,9 @@ fn usage_memory_snapshot(
     for item in items.iter().filter(|item| item.superseded_by.is_none()) {
         memory_tokens = match (memory_tokens, item.token_count) {
             (Some(total), Some(count)) => Some(total.checked_add(u64::from(count)).ok_or(
-                ConversationGenerationInputError::Context(ContextAssemblyError::SizeLimit),
+                ConversationGenerationInputError::Context(ContextAssemblyError::SizeLimit {
+                    reason: "memory token total overflowed",
+                }),
             )?),
             _ => None,
         };

@@ -155,10 +155,24 @@ impl DeviceSettings {
             path.as_deref()
                 .is_none_or(|path| text(path, MAX_PATH_BYTES))
         });
-        if certificates && folder && dictation && retained && self.embedding.max_tokens != Some(0) {
-            Ok(())
+        let reason = if !certificates {
+            Some("a trusted certificate is invalid or repeated")
+        } else if !folder {
+            Some("language model folder path is blank or too long")
+        } else if !dictation {
+            Some("dictation model id is blank or too long")
+        } else if !retained {
+            Some("a retained model root path is blank or too long")
+        } else if self.embedding.max_tokens == Some(0) {
+            Some("embedding max tokens is zero")
         } else {
-            Err(GlobalSettingsStoreError::InvalidData)
+            None
+        };
+        match reason {
+            None => Ok(()),
+            Some(reason) => Err(GlobalSettingsStoreError::InvalidData {
+                reason: reason.to_owned(),
+            }),
         }
     }
 
@@ -186,7 +200,7 @@ mod tests {
     fn oversized_certificate_pem_is_rejected() {
         let mut settings = DeviceSettings::default();
         settings.trusted_certificates.push(certificate(&format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----", "A".repeat(1024*1024))));
-        assert_eq!(settings.validate(), Err(GlobalSettingsStoreError::InvalidData));
+        assert!(matches!(settings.validate(), Err(GlobalSettingsStoreError::InvalidData { .. })));
     }
 
     fn certificate(pem: &str) -> TrustedCertificate {

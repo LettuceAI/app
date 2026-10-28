@@ -62,14 +62,22 @@ impl DynamicMemoryBackup {
         memory: &crate::MemoryBackup,
     ) -> Result<(), DynamicMemoryBackupError> {
         if self.version != DYNAMIC_MEMORY_BACKUP_VERSION {
-            return Err(DynamicMemoryBackupError::InvalidData);
+            return Err(DynamicMemoryBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.pending_approvals
             .sort_by_key(|approval| (approval.conversation_id, approval.branch_id));
         for entry in &mut self.runs {
             entry.changed_item_ids.sort();
-            if entry.changed_item_ids.windows(2).any(|pair| pair[0] == pair[1]) {
-                return Err(DynamicMemoryBackupError::InvalidData);
+            if entry
+                .changed_item_ids
+                .windows(2)
+                .any(|pair| pair[0] == pair[1])
+            {
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "run lists a changed item id twice",
+                });
             }
         }
         self.runs.sort_by_key(|entry| entry.run.id);
@@ -159,7 +167,9 @@ impl DynamicMemoryBackup {
                 || approval.prompted_message_count == 0
                 || approval.pending == approval.skipped
             {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "approval is duplicated, has no prompted messages or has a pending state equal to skipped",
+                });
             }
         }
         let mut owed_keys = BTreeSet::new();
@@ -176,7 +186,9 @@ impl DynamicMemoryBackup {
                 })
                 || !messages.contains_key(&owed.pending.after_message_id)
             {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "owed run references a message from another conversation or an unknown message",
+                });
             }
         }
         let mut run_ids = BTreeSet::new();
@@ -204,7 +216,9 @@ impl DynamicMemoryBackup {
                     )
                 })
             {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "run references unknown jobs or spaces",
+                });
             }
             entry
                 .attempts
@@ -219,7 +233,9 @@ impl DynamicMemoryBackup {
         let mut reverted = BTreeSet::new();
         for record in &self.cycle_reverts {
             let Some(run) = by_run.get(&record.run_id) else {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "cycle revert references an unknown run",
+                });
             };
             if record.validate().is_err()
                 || !reverted.insert(record.run_id)
@@ -235,7 +251,9 @@ impl DynamicMemoryBackup {
                         .is_none_or(|prior| prior.space_id != run.space_id)
                 })
             {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "cycle revert does not match the run space",
+                });
             }
         }
         Ok(())
@@ -247,7 +265,9 @@ fn validate_run(
     job_ids: &BTreeSet<lettuce_types::JobId>,
 ) -> Result<(), DynamicMemoryBackupError> {
     if entry.attempts.is_empty() {
-        return Err(DynamicMemoryBackupError::InvalidData);
+        return Err(DynamicMemoryBackupError::InvalidData {
+            reason: "run has no attempts",
+        });
     }
     let mut attempts = BTreeMap::new();
     for (ordinal, entry_attempt) in entry.attempts.iter().enumerate() {
@@ -260,10 +280,14 @@ fn validate_run(
                 .insert(attempt.id, attempt.retry_parent_id)
                 .is_some()
         {
-            return Err(DynamicMemoryBackupError::InvalidData);
+            return Err(DynamicMemoryBackupError::InvalidData {
+                reason: "attempt id is duplicated or its retry parent is unknown",
+            });
         }
         if ordinal > 0 && attempt.retry_parent_id != Some(entry.attempts[ordinal - 1].attempt.id) {
-            return Err(DynamicMemoryBackupError::InvalidData);
+            return Err(DynamicMemoryBackupError::InvalidData {
+                reason: "attempt retry parent is not the previous attempt",
+            });
         }
         for (round_ordinal, backup_round) in entry_attempt.rounds.iter().enumerate() {
             let round = &backup_round.round;
@@ -274,7 +298,9 @@ fn validate_run(
                 || backup_round.settlement.is_some()
                     != backup_round.settlement_change_digest.is_some()
             {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "round ordinal or settlement digest presence is inconsistent",
+                });
             }
             if let Some(settlement) = &backup_round.settlement
                 && (settlement.run_id != entry.run.id
@@ -287,14 +313,15 @@ fn validate_run(
                         .iter()
                         .zip(&round.calls)
                         .any(|(result, call)| result.execution_id != call.id)
-                    || !valid_digest(
-                        backup_round
-                            .settlement_change_digest
-                            .as_deref()
-                            .ok_or(DynamicMemoryBackupError::InvalidData)?,
-                    ))
+                    || !valid_digest(backup_round.settlement_change_digest.as_deref().ok_or(
+                        DynamicMemoryBackupError::InvalidData {
+                            reason: "settled round has no settlement change digest",
+                        },
+                    )?))
             {
-                return Err(DynamicMemoryBackupError::InvalidData);
+                return Err(DynamicMemoryBackupError::InvalidData {
+                    reason: "settlement change digest is invalid",
+                });
             }
         }
     }
@@ -307,7 +334,9 @@ fn validate_run(
             || checkpoint.resulting_memory_revision.get()
                 != checkpoint.expected_memory_revision.get().saturating_add(1))
     {
-        return Err(DynamicMemoryBackupError::InvalidData);
+        return Err(DynamicMemoryBackupError::InvalidData {
+            reason: "checkpoint does not match its attempt or memory revision",
+        });
     }
     Ok(())
 }
@@ -321,6 +350,6 @@ fn valid_digest(value: &str) -> bool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DynamicMemoryBackupError {
-    #[error("dynamic-memory backup contains invalid data")]
-    InvalidData,
+    #[error("dynamic-memory backup contains invalid data: {reason}")]
+    InvalidData { reason: &'static str },
 }

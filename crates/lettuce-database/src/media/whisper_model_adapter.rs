@@ -10,12 +10,18 @@ use crate::{Database, decode_versioned, encode_versioned};
 
 const WHISPER_MANIFEST_FORMAT_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> WhisperModelRepositoryError {
-    WhisperModelRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> WhisperModelRepositoryError {
+    tracing::warn!(?error, "whisper model adapter storage step failed");
+    WhisperModelRepositoryError::Storage {
+        reason: "whisper model adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> WhisperModelRepositoryError {
-    WhisperModelRepositoryError::InvalidData
+fn corrupt(error: impl std::fmt::Debug) -> WhisperModelRepositoryError {
+    tracing::warn!(?error, "whisper model adapter storage step failed");
+    WhisperModelRepositoryError::InvalidData {
+        reason: "whisper model adapter: a storage step failed",
+    }
 }
 
 fn load_all_in(
@@ -75,7 +81,9 @@ fn load_all_in(
                 || manifest.quantized != row.6
                 || manifest.admitted_at != TimestampMillis::new(row.7)
             {
-                return Err(WhisperModelRepositoryError::InvalidData);
+                return Err(WhisperModelRepositoryError::InvalidData {
+                    reason: "load all in: a value failed validation",
+                });
             }
             Ok(manifest)
         })
@@ -90,11 +98,14 @@ pub(crate) fn relocate_whisper_models_in(
 ) -> Result<u32, WhisperModelRepositoryError> {
     let mut changed = 0;
     for mut manifest in load_all_in(transaction, None)? {
-        let old_path = manifest
-            .model
-            .path
-            .to_str()
-            .ok_or(WhisperModelRepositoryError::InvalidData)?;
+        let old_path =
+            manifest
+                .model
+                .path
+                .to_str()
+                .ok_or(WhisperModelRepositoryError::InvalidData {
+                    reason: "relocate whisper models in: a required value is missing",
+                })?;
         let Some(new_path) = relocate(old_path) else {
             continue;
         };
@@ -122,11 +133,14 @@ impl WhisperModelRepository for Database {
         manifest.verify_contents().map_err(corrupt)?;
         let payload =
             encode_versioned(&manifest, WHISPER_MANIFEST_FORMAT_VERSION).map_err(storage)?;
-        let path = manifest
-            .model
-            .path
-            .to_str()
-            .ok_or(WhisperModelRepositoryError::InvalidData)?;
+        let path =
+            manifest
+                .model
+                .path
+                .to_str()
+                .ok_or(WhisperModelRepositoryError::InvalidData {
+                    reason: "admit whisper model: a required value is missing",
+                })?;
         let byte_size = i64::try_from(manifest.model.byte_size).map_err(corrupt)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -154,7 +168,9 @@ impl WhisperModelRepository for Database {
         let stored = load_all_in(&transaction, Some(&manifest.model_id))?
             .into_iter()
             .next()
-            .ok_or(WhisperModelRepositoryError::Storage)?;
+            .ok_or(WhisperModelRepositoryError::Storage {
+                reason: "admit whisper model: a required value is missing",
+            })?;
         if inserted == 0 && stored != manifest {
             return Err(WhisperModelRepositoryError::Conflict);
         }

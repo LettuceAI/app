@@ -191,34 +191,51 @@ pub struct KeyVerification {
 /// secrets are never carried.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ProviderRequestError {
-    #[error("provider does not support this operation")]
-    Unsupported,
-    #[error("request was rejected before or by the provider")]
-    Rejected,
+    #[error("provider does not support this operation: {reason}")]
+    Unsupported { reason: &'static str },
+    #[error("request was rejected before or by the provider: {reason}")]
+    Rejected { reason: &'static str },
     #[error("provider rejected the credential")]
     CredentialRejected,
-    #[error("provider or secret store is unavailable")]
-    Unavailable,
-    #[error("provider response was malformed")]
-    Malformed,
+    #[error("provider or secret store is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("provider response was malformed: {reason}")]
+    Malformed { reason: &'static str },
 }
 
 impl From<crate::common::AdapterError> for ProviderRequestError {
     fn from(error: crate::common::AdapterError) -> Self {
         use crate::common::AdapterError;
         match error {
-            AdapterError::Rejected => Self::Rejected,
+            AdapterError::Rejected => Self::Rejected {
+                reason: "the adapter refused the request before sending it",
+            },
             AdapterError::CredentialRejected => Self::CredentialRejected,
-            AdapterError::SecretUnavailable | AdapterError::Transport | AdapterError::Cancelled => {
-                Self::Unavailable
-            }
-            AdapterError::MalformedResponse | AdapterError::EmptyResponse => Self::Malformed,
+            AdapterError::SecretUnavailable => Self::Unavailable {
+                reason: "the secret store could not supply the credential",
+            },
+            AdapterError::Transport => Self::Unavailable {
+                reason: "the request could not reach the provider",
+            },
+            AdapterError::Cancelled => Self::Unavailable {
+                reason: "the request was cancelled",
+            },
+            AdapterError::MalformedResponse => Self::Malformed {
+                reason: "the response could not be parsed",
+            },
+            AdapterError::EmptyResponse => Self::Malformed {
+                reason: "the response was empty",
+            },
             AdapterError::Provider(failure) => match failure.kind {
                 lettuce_conversations::ProviderFailureKind::CredentialRejected => {
                     Self::CredentialRejected
                 }
-                lettuce_conversations::ProviderFailureKind::RequestRejected => Self::Rejected,
-                lettuce_conversations::ProviderFailureKind::Unavailable => Self::Unavailable,
+                lettuce_conversations::ProviderFailureKind::RequestRejected => Self::Rejected {
+                    reason: "the provider rejected the request",
+                },
+                lettuce_conversations::ProviderFailureKind::Unavailable => Self::Unavailable {
+                    reason: "the provider is unavailable or rate limiting",
+                },
             },
         }
     }

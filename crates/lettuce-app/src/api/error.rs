@@ -128,9 +128,9 @@ impl IntoApiError for ConversationRepositoryError {
             | Self::JobAlreadyAttached
             | Self::JobInUse
             | Self::Dependency => ApiErrorCode::Conflict,
-            Self::Invalid(error) => return error.clone().into_api_error(),
-            Self::Unsupported => ApiErrorCode::Unsupported,
-            Self::ArtifactReference(_) | Self::Storage => ApiErrorCode::Internal,
+            Self::Invalid(error) => return (*error).into_api_error(),
+            Self::Unsupported { .. } => ApiErrorCode::Unsupported,
+            Self::ArtifactReference(_) | Self::Storage { .. } => ApiErrorCode::Internal,
         };
         api_error(code, self.to_string())
     }
@@ -147,7 +147,7 @@ impl IntoApiError for lettuce_characters::RepositoryError {
             | Self::AlreadyActive
             | Self::HasDependencies => ApiErrorCode::Conflict,
             Self::Invalid(_) => ApiErrorCode::InvalidInput,
-            Self::Storage => ApiErrorCode::Internal,
+            Self::Storage { .. } => ApiErrorCode::Internal,
         };
         api_error(code, self.to_string())
     }
@@ -254,7 +254,7 @@ impl IntoApiError for ConversationGenerationDispatchError {
         match self {
             Self::Jobs(error) => error.into_api_error(),
             Self::Repository(error) => error.into_api_error(),
-            Self::Usage(_) | Self::InvalidWork => {
+            Self::Usage(_) | Self::InvalidWork { .. } => {
                 api_error(ApiErrorCode::Internal, self.to_string())
             }
         }
@@ -267,7 +267,7 @@ impl IntoApiError for ConversationGenerationCancellationError {
             Self::Store(error) => error.into_api_error(),
             Self::Conversation(error) => error.into_api_error(),
             Self::WrongJobKind => api_error(ApiErrorCode::InvalidInput, self.to_string()),
-            Self::Usage(_) | Self::Runtime(_) | Self::InvalidWork => {
+            Self::Usage(_) | Self::Runtime(_) | Self::InvalidWork { .. } => {
                 api_error(ApiErrorCode::Internal, self.to_string())
             }
         }
@@ -278,7 +278,7 @@ impl IntoApiError for ConversationGenerationWorkerError {
     fn into_api_error(self) -> ApiError {
         match self {
             Self::Store(error) => error.into_api_error(),
-            Self::InvalidWork | Self::Execution(_) => {
+            Self::InvalidWork { .. } | Self::Execution(_) => {
                 api_error(ApiErrorCode::Internal, self.to_string())
             }
         }
@@ -358,7 +358,7 @@ impl IntoApiError for lettuce_database::SourceDeleteError {
                 message,
                 details: Some(ApiErrorDetails::PromptProtected),
             },
-            Self::Storage => api_error(ApiErrorCode::Internal, message),
+            Self::Storage { .. } => api_error(ApiErrorCode::Internal, message),
         }
     }
 }

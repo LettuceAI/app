@@ -261,7 +261,9 @@ fn validate_and_parse_creation_tool_calls(
     let request = creation_tool_request(base.draft.kind());
     request
         .validate()
-        .map_err(|_| CreationToolContractError::InvalidContract)?;
+        .map_err(|_| CreationToolContractError::InvalidContract {
+            reason: "tool request failed validation",
+        })?;
     if calls.is_empty() || calls.len() > crate::proposal::MAX_CREATION_OPERATIONS {
         return Err(CreationToolContractError::InvalidCallCount);
     }
@@ -271,7 +273,9 @@ fn validate_and_parse_creation_tool_calls(
         admitted
             .call
             .validate()
-            .map_err(|_| CreationToolContractError::MalformedCall)?;
+            .map_err(|_| CreationToolContractError::MalformedCall {
+                reason: "tool call failed validation",
+            })?;
         if let Some(provider_id) = &admitted.call.provider_call_id
             && !provider_ids.insert(provider_id.as_str())
         {
@@ -482,12 +486,12 @@ fn derived_id(proposal_id: CreationProposalId, ordinal: usize, kind: &str) -> Uu
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CreationToolContractError {
-    #[error("creation tool contract is invalid")]
-    InvalidContract,
+    #[error("creation tool contract is invalid: {reason}")]
+    InvalidContract { reason: &'static str },
     #[error("creation tool call count is invalid")]
     InvalidCallCount,
-    #[error("creation tool call is malformed")]
-    MalformedCall,
+    #[error("creation tool call is malformed: {reason}")]
+    MalformedCall { reason: &'static str },
     #[error("creation tool is not declared")]
     UnsupportedTool,
     #[error("creation tool definition version does not match")]

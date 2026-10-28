@@ -270,12 +270,12 @@ pub enum SecretValueError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SecretBackendError {
-    #[error("secret backend is unavailable")]
-    Unavailable,
+    #[error("secret backend is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
     #[error("secret backend access was denied")]
     AccessDenied,
-    #[error("secret backend data is corrupt")]
-    Corrupt,
+    #[error("secret backend data is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -392,10 +392,11 @@ impl InMemorySecretStore {
         reference: &SecretRef,
         reason: Option<SecretAvailability>,
     ) -> Result<(), SecretStoreError> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let mut entries = self.entries.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret entries lock is poisoned",
+            })
+        })?;
         entries
             .get_mut(reference)
             .ok_or(SecretStoreError::Missing)?
@@ -409,10 +410,11 @@ impl InMemorySecretStore {
         reference: &SecretRef,
         set_at: Option<TimestampMillis>,
     ) -> Result<(), SecretStoreError> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let mut entries = self.entries.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret entries lock is poisoned",
+            })
+        })?;
         entries
             .get_mut(reference)
             .ok_or(SecretStoreError::Missing)?
@@ -458,10 +460,11 @@ impl SecretStore for InMemorySecretStore {
         value: SecretValue,
         expected_generation: Option<u64>,
     ) -> Result<SecretStatus, SecretStoreError> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let mut entries = self.entries.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret entries lock is poisoned",
+            })
+        })?;
         let generation = if let Some(existing) = entries.get(&record.reference) {
             Self::ensure_purpose(existing, &record.purpose)?;
             if expected_generation != Some(existing.generation) {
@@ -493,17 +496,22 @@ impl SecretStore for InMemorySecretStore {
         reference: &SecretRef,
         purpose: &SecretPurpose,
     ) -> Result<SecretValue, SecretStoreError> {
-        let entries = self
-            .entries
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let entries = self.entries.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret entries lock is poisoned",
+            })
+        })?;
         let entry = entries.get(reference).ok_or(SecretStoreError::Missing)?;
         Self::ensure_purpose(entry, purpose)?;
         if let Some(reason) = entry.unavailable {
             return Err(SecretStoreError::Unavailable(reason));
         }
-        SecretValue::new(entry.value.as_str())
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))
+        SecretValue::new(entry.value.as_str()).map_err(|error| {
+            tracing::warn!(%error, "a stored secret value is invalid");
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored secret value is invalid",
+            })
+        })
     }
 
     async fn status(
@@ -511,10 +519,11 @@ impl SecretStore for InMemorySecretStore {
         reference: &SecretRef,
         purpose: &SecretPurpose,
     ) -> Result<SecretStatus, SecretStoreError> {
-        let entries = self
-            .entries
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let entries = self.entries.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret entries lock is poisoned",
+            })
+        })?;
         let Some(entry) = entries.get(reference) else {
             return Ok(SecretStatus {
                 reference: *reference,
@@ -534,10 +543,11 @@ impl SecretStore for InMemorySecretStore {
         purpose: &SecretPurpose,
         expected_generation: Option<u64>,
     ) -> Result<SecretStatus, SecretStoreError> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let mut entries = self.entries.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret entries lock is poisoned",
+            })
+        })?;
         let Some(entry) = entries.get(reference) else {
             return Ok(SecretStatus {
                 reference: *reference,

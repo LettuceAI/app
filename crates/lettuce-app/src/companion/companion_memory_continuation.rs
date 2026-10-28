@@ -94,27 +94,44 @@ impl<
         let rounds = self
             .repository
             .list_dynamic_memory_inference_rounds(run_id, attempt_id)?;
-        let settled_round = rounds
-            .get(usize::from(settled_round_ordinal))
-            .ok_or(CompanionMemoryContinuationError::InvalidOwnership)?;
+        let settled_round = rounds.get(usize::from(settled_round_ordinal)).ok_or(
+            CompanionMemoryContinuationError::InvalidOwnership {
+                reason: "settled round ordinal is not in the stored rounds",
+            },
+        )?;
         if settled_round.ordinal != settled_round_ordinal {
-            return Err(CompanionMemoryContinuationError::InvalidOwnership);
+            return Err(CompanionMemoryContinuationError::InvalidOwnership {
+                reason: "stored round ordinal differs from the settled round ordinal",
+            });
         }
         let settlement = self
             .repository
             .load_dynamic_memory_round_settlement(run_id, attempt_id, settled_round_ordinal)?
             .ok_or(CompanionMemoryContinuationError::UnsettledRound)?;
-        if settlement.run_id != run.id
-            || settlement.attempt_id != attempt.id
-            || settlement.round_ordinal != settled_round.ordinal
-            || settlement.results.len() != settled_round.calls.len()
-            || settled_round
-                .calls
-                .iter()
-                .zip(&settlement.results)
-                .any(|(call, result)| call.id != result.execution_id)
+        if settlement.run_id != run.id || settlement.attempt_id != attempt.id {
+            return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                reason: "settlement belongs to another run or attempt",
+            });
+        }
+        if settlement.round_ordinal != settled_round.ordinal {
+            return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                reason: "settlement round ordinal differs from the settled round",
+            });
+        }
+        if settlement.results.len() != settled_round.calls.len() {
+            return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                reason: "settlement result count differs from the round call count",
+            });
+        }
+        if settled_round
+            .calls
+            .iter()
+            .zip(&settlement.results)
+            .any(|(call, result)| call.id != result.execution_id)
         {
-            return Err(CompanionMemoryContinuationError::InvalidSettlement);
+            return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                reason: "settlement results are not in the round call order",
+            });
         }
         if let Some(summary) = done_summary(settled_round, &settlement.results)? {
             return Ok(CompanionMemoryContinuationResult::Done { summary });
@@ -144,7 +161,9 @@ impl<
             self.repository,
             crate::BuiltInPromptId::MemoryRuntime,
         )
-        .map_err(|_| CompanionMemoryContinuationError::RuntimeText)?;
+        .map_err(|error| CompanionMemoryContinuationError::RuntimeText {
+            reason: error.to_string(),
+        })?;
         let context = context_after_settlement(&text, settled_round, &settlement.results)?;
         if handle.cancellation_token().is_cancelled() {
             self.cancel(&attempt, now)?;
@@ -164,7 +183,9 @@ impl<
         };
         request
             .validate()
-            .map_err(|_| CompanionMemoryContinuationError::InvalidRequest)?;
+            .map_err(|error| CompanionMemoryContinuationError::InvalidRequest {
+                reason: format!("continuation request failed validation: {error}"),
+            })?;
         let outcome = match run_memory_request_with_fallback(
             self.repository,
             self.inference,
@@ -187,8 +208,11 @@ impl<
             Err(error) => return Err(CompanionMemoryContinuationError::InvalidOutcome(error)),
         };
         if handle.cancellation_token().is_cancelled() {
-            cleanup_outcome_replays(self.repository, &outcome)
-                .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
+            cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                CompanionMemoryContinuationError::ReplayCleanup {
+                    reason: error.to_string(),
+                }
+            })?;
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryContinuationError::Cancelled);
         }
@@ -202,24 +226,34 @@ impl<
         ) {
             Ok(round) => round,
             Err(crate::CompanionMemoryInferenceError::Cancelled) => {
-                cleanup_outcome_replays(self.repository, &outcome)
-                    .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
+                cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                    CompanionMemoryContinuationError::ReplayCleanup {
+                        reason: error.to_string(),
+                    }
+                })?;
                 self.cancel(&attempt, now)?;
                 return Err(CompanionMemoryContinuationError::Cancelled);
             }
-            Err(crate::CompanionMemoryInferenceError::NoToolCalls) => {
-                cleanup_outcome_replays(self.repository, &outcome)
-                    .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
+            Err(crate::CompanionMemoryInferenceError::NoToolCalls { reason }) => {
+                cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                    CompanionMemoryContinuationError::ReplayCleanup {
+                        reason: error.to_string(),
+                    }
+                })?;
                 tracing::warn!(
                     run_id = %run.id,
                     round = next_ordinal,
+                    %reason,
                     "recursive memory round returned no tool calls; ending the cycle"
                 );
                 return Ok(CompanionMemoryContinuationResult::Done { summary: None });
             }
             Err(error) => {
-                cleanup_outcome_replays(self.repository, &outcome)
-                    .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
+                cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                    CompanionMemoryContinuationError::ReplayCleanup {
+                        reason: error.to_string(),
+                    }
+                })?;
                 return Err(CompanionMemoryContinuationError::InvalidOutcome(error));
             }
         };
@@ -239,8 +273,11 @@ impl<
         ) {
             Ok(round) => round,
             Err(error) => {
-                cleanup_outcome_replays(self.repository, &outcome)
-                    .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
+                cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                    CompanionMemoryContinuationError::ReplayCleanup {
+                        reason: error.to_string(),
+                    }
+                })?;
                 return Err(CompanionMemoryContinuationError::Run(error));
             }
         };
@@ -271,11 +308,20 @@ fn validate_owner(
     attempt: &DynamicMemoryAttempt,
     handle: &JobHandle,
 ) -> Result<(), CompanionMemoryContinuationError> {
-    if attempt.run_id != run.id
-        || attempt.job_id != handle.id()
-        || attempt.status != DynamicMemoryAttemptStatus::Processing
-    {
-        return Err(CompanionMemoryContinuationError::InvalidOwnership);
+    if attempt.run_id != run.id {
+        return Err(CompanionMemoryContinuationError::InvalidOwnership {
+            reason: "attempt belongs to another run",
+        });
+    }
+    if attempt.job_id != handle.id() {
+        return Err(CompanionMemoryContinuationError::InvalidOwnership {
+            reason: "attempt belongs to another job",
+        });
+    }
+    if attempt.status != DynamicMemoryAttemptStatus::Processing {
+        return Err(CompanionMemoryContinuationError::InvalidOwnership {
+            reason: "attempt is not processing",
+        });
     }
     Ok(())
 }
@@ -285,15 +331,29 @@ fn context_after_settlement(
     round: &DynamicMemoryInferenceRound,
     results: &[lettuce_memory::MemoryToolResult],
 ) -> Result<lettuce_conversations::ProviderNeutralContext, CompanionMemoryContinuationError> {
-    round
-        .request_context
-        .validate()
-        .map_err(|_| CompanionMemoryContinuationError::InvalidRequest)?;
+    round.request_context.validate().map_err(|error| {
+        CompanionMemoryContinuationError::InvalidRequest {
+            reason: format!("settled round request context failed validation: {error}"),
+        }
+    })?;
     let mut calls = Vec::with_capacity(round.calls.len());
+    // Unsigned providers replay visible assistant text with its tool calls.
+    // Signed providers retain the original content in their replay artifact.
+    if round.provider_replay.is_none() {
+        for part in &round.parts {
+            if let lettuce_conversations::MessagePart::Text { text } = part
+                && !text.trim().is_empty()
+            {
+                calls.push(ProviderContextPart::Text { text: text.clone() });
+            }
+        }
+    }
     let mut outputs = Vec::with_capacity(round.calls.len());
     for (call, result) in round.calls.iter().zip(results) {
         if call.id != result.execution_id {
-            return Err(CompanionMemoryContinuationError::InvalidSettlement);
+            return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                reason: "tool result does not belong to the round call",
+            });
         }
         calls.push(ProviderContextPart::ToolCall(TranscriptToolCall {
             execution_id: call.id,
@@ -310,11 +370,15 @@ fn context_after_settlement(
             output: crate::memory::memory_tool_result::legacy_memory_tool_output(
                 text, &call.call, result,
             )
-            .map_err(|_| CompanionMemoryContinuationError::RuntimeText)?,
+            .map_err(|error| CompanionMemoryContinuationError::RuntimeText {
+                reason: error.to_string(),
+            })?,
         }));
     }
-    if calls.len() != results.len() {
-        return Err(CompanionMemoryContinuationError::InvalidSettlement);
+    if round.calls.len() != results.len() {
+        return Err(CompanionMemoryContinuationError::InvalidSettlement {
+            reason: "round has more tool results than calls",
+        });
     }
     let mut context = round.request_context.clone();
     context.messages.push(ProviderNeutralMessage {
@@ -327,7 +391,9 @@ fn context_after_settlement(
     });
     context
         .validate()
-        .map_err(|_| CompanionMemoryContinuationError::InvalidRequest)?;
+        .map_err(|error| CompanionMemoryContinuationError::InvalidRequest {
+            reason: format!("context after settlement failed validation: {error}"),
+        })?;
     Ok(context)
 }
 
@@ -345,11 +411,17 @@ fn done_summary(
                 summary: done_summary,
             } => {
                 if summary.replace(done_summary.clone()).is_some() {
-                    return Err(CompanionMemoryContinuationError::InvalidSettlement);
+                    return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                        reason: "round settled more than one done call",
+                    });
                 }
             }
             MemoryToolOutcome::StoppedAfterDone if summary.is_some() => {}
-            _ => return Err(CompanionMemoryContinuationError::InvalidSettlement),
+            _ => {
+                return Err(CompanionMemoryContinuationError::InvalidSettlement {
+                    reason: "done call settled with an outcome other than done",
+                });
+            }
         }
     }
     Ok(summary)
@@ -357,16 +429,16 @@ fn done_summary(
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryContinuationError {
-    #[error("background memory continuation ownership is invalid")]
-    InvalidOwnership,
-    #[error("background memory continuation request is invalid")]
-    InvalidRequest,
+    #[error("background memory continuation ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("background memory continuation request is invalid: {reason}")]
+    InvalidRequest { reason: String },
     #[error("background memory round is not settled")]
     UnsettledRound,
-    #[error("background memory settlement is invalid")]
-    InvalidSettlement,
-    #[error("background memory continuation runtime text is unavailable")]
-    RuntimeText,
+    #[error("background memory settlement is invalid: {reason}")]
+    InvalidSettlement { reason: &'static str },
+    #[error("background memory continuation runtime text is unavailable: {reason}")]
+    RuntimeText { reason: String },
     #[error("background memory continuation reached its round limit")]
     RoundLimit,
     #[error("background memory continuation reached its call limit")]
@@ -377,8 +449,8 @@ pub enum CompanionMemoryContinuationError {
     Inference(PortError),
     #[error("background memory continuation outcome is invalid: {0}")]
     InvalidOutcome(crate::CompanionMemoryInferenceError),
-    #[error("background memory continuation replay cleanup failed")]
-    ReplayCleanup,
+    #[error("background memory continuation replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("background memory continuation persistence failed: {0}")]
     Run(#[from] DynamicMemoryRunRepositoryError),
 }
@@ -491,6 +563,22 @@ mod tests {
                         "arguments": {"id": target.to_string()},
                     })
         ));
+    }
+
+    #[test]
+    fn continuation_preserves_visible_text_with_tool_calls_and_omits_reasoning() {
+        let (mut round, results) = round_and_results("done", json!({}), MemoryToolOutcome::Done { summary: None });
+        round.parts = vec![
+            lettuce_conversations::MessagePart::ReasoningSummary { text: "Internal reasoning.".into() },
+            lettuce_conversations::MessagePart::Text { text: "Saving the memories.".into() },
+            lettuce_conversations::MessagePart::Text { text: "\n".into() },
+        ];
+        let text = crate::generation::runtime_text::RuntimeText::from_seed(crate::BuiltInPromptId::MemoryRuntime);
+        let context = context_after_settlement(&text, &round, &results).expect("mixed content continuation");
+        assert!(matches!(&context.messages[1].parts[..],
+            [ProviderContextPart::Text { text }, ProviderContextPart::ToolCall(_)]
+                if text == "Saving the memories."));
+        assert!(matches!(&context.messages[2].parts[..], [ProviderContextPart::ToolResult(_)]));
     }
 
     #[test]

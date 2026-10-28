@@ -24,14 +24,14 @@ pub struct PinnedArtifact {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum PinnedArtifactError {
-    #[error("artifact description is invalid")]
-    InvalidArtifact,
+    #[error("artifact description is invalid: {reason}")]
+    InvalidArtifact { reason: &'static str },
     #[error("artifact storage failed: {0}")]
     Platform(lettuce_platform::PlatformError),
-    #[error("artifact bytes failed verification")]
-    Mismatch,
-    #[error("artifact is unreadable")]
-    Unreadable,
+    #[error("artifact bytes failed verification: {reason}")]
+    Mismatch { reason: &'static str },
+    #[error("artifact is unreadable: {reason}")]
+    Unreadable { reason: &'static str },
     #[error("this file is already being downloaded")]
     Busy,
 }
@@ -100,10 +100,16 @@ impl PinnedArtifact {
                         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
             })
         {
-            return Err(PinnedArtifactError::InvalidArtifact);
+            return Err(PinnedArtifactError::InvalidArtifact {
+                reason: "artifact repository, size, digest or path fields are invalid",
+            });
         }
-        ObjectKey::from_segments(&self.local_segments)
-            .map_err(|_| PinnedArtifactError::InvalidArtifact)
+        ObjectKey::from_segments(&self.local_segments).map_err(|error| {
+            tracing::warn!(%error, "artifact local path segments are invalid");
+            PinnedArtifactError::InvalidArtifact {
+                reason: "artifact local path segments are invalid",
+            }
+        })
     }
 
     fn partial_key(&self) -> Result<ObjectKey, PinnedArtifactError> {
@@ -204,7 +210,9 @@ impl PinnedArtifactStore {
                     _claim: claim,
                 }))
             }
-            InstallPreparation::Installed(_) => Err(PinnedArtifactError::Mismatch),
+            InstallPreparation::Installed(_) => Err(PinnedArtifactError::Mismatch {
+                reason: "a different file is already installed at the target",
+            }),
         }
     }
 
@@ -225,8 +233,12 @@ impl PinnedArtifactStore {
 
     /// Removes an installed file; `false` when it was already gone.
     pub fn remove(&self, local_segments: &[String]) -> Result<bool, PinnedArtifactError> {
-        let target = ObjectKey::from_segments(local_segments)
-            .map_err(|_| PinnedArtifactError::InvalidArtifact)?;
+        let target = ObjectKey::from_segments(local_segments).map_err(|error| {
+            tracing::warn!(%error, "artifact local path segments are invalid");
+            PinnedArtifactError::InvalidArtifact {
+                reason: "artifact local path segments are invalid",
+            }
+        })?;
         let Some(file) = self
             .inner
             .inspect(&target)
@@ -272,7 +284,9 @@ impl PinnedDownload {
     /// verification discards the partial bytes so a retry starts over.
     pub fn finish(mut self) -> Result<PathBuf, PinnedArtifactError> {
         if self.inner.offset() != self.artifact.byte_size {
-            return Err(PinnedArtifactError::Mismatch);
+            return Err(PinnedArtifactError::Mismatch {
+                reason: "downloaded bytes do not match the pinned size",
+            });
         }
         self.inner.sync().map_err(PinnedArtifactError::Platform)?;
         self.inner.rewind().map_err(PinnedArtifactError::Platform)?;
@@ -289,29 +303,50 @@ impl PinnedDownload {
 /// Checks a downloaded file against the git blob id its repository lists,
 /// for files published without an LFS SHA-256.
 pub fn verify_git_blob(path: &Path, expected: &str) -> Result<(), PinnedArtifactError> {
-    let mut file = std::fs::File::open(path).map_err(|_| PinnedArtifactError::Unreadable)?;
+    let mut file = std::fs::File::open(path).map_err(|error| {
+        tracing::warn!(%error, "opening the file for git blob verification failed");
+        PinnedArtifactError::Unreadable {
+            reason: "opening the file for git blob verification failed",
+        }
+    })?;
     let length = file
         .metadata()
-        .map_err(|_| PinnedArtifactError::Unreadable)?
+        .map_err(|error| {
+            tracing::warn!(%error, "reading the file metadata failed");
+            PinnedArtifactError::Unreadable {
+                reason: "reading the file metadata failed",
+            }
+        })?
         .len();
     let mut hasher = sha1_smol::Sha1::new();
     hasher.update(format!("blob {length}\0").as_bytes());
     let mut total = 0_u64;
     let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| PinnedArtifactError::Unreadable)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the file for git blob verification failed");
+            PinnedArtifactError::Unreadable {
+                reason: "reading the file for git blob verification failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         total = total
-            .checked_add(u64::try_from(read).map_err(|_| PinnedArtifactError::Mismatch)?)
-            .ok_or(PinnedArtifactError::Mismatch)?;
+            .checked_add(
+                u64::try_from(read).map_err(|_| PinnedArtifactError::Mismatch {
+                    reason: "file read length exceeds the u64 range",
+                })?,
+            )
+            .ok_or(PinnedArtifactError::Mismatch {
+                reason: "file byte count overflowed",
+            })?;
         hasher.update(&buffer[..read]);
     }
     if total != length || !hasher.digest().to_string().eq_ignore_ascii_case(expected) {
-        return Err(PinnedArtifactError::Mismatch);
+        return Err(PinnedArtifactError::Mismatch {
+            reason: "file size or git blob id does not match the pin",
+        });
     }
     Ok(())
 }
@@ -321,7 +356,12 @@ pub fn verify_pinned_artifact_file(
     artifact: &PinnedArtifact,
 ) -> Result<(), PinnedArtifactError> {
     artifact.validate()?;
-    let mut file = std::fs::File::open(path).map_err(|_| PinnedArtifactError::Unreadable)?;
+    let mut file = std::fs::File::open(path).map_err(|error| {
+        tracing::warn!(%error, "opening the artifact for verification failed");
+        PinnedArtifactError::Unreadable {
+            reason: "opening the artifact for verification failed",
+        }
+    })?;
     verify(&mut file, artifact)
 }
 
@@ -330,17 +370,28 @@ fn verify(file: &mut impl Read, artifact: &PinnedArtifact) -> Result<(), PinnedA
     let mut total = 0_u64;
     let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| PinnedArtifactError::Unreadable)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the artifact for verification failed");
+            PinnedArtifactError::Unreadable {
+                reason: "reading the artifact for verification failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         total = total
-            .checked_add(u64::try_from(read).map_err(|_| PinnedArtifactError::Mismatch)?)
-            .ok_or(PinnedArtifactError::Mismatch)?;
+            .checked_add(
+                u64::try_from(read).map_err(|_| PinnedArtifactError::Mismatch {
+                    reason: "artifact read length exceeds the u64 range",
+                })?,
+            )
+            .ok_or(PinnedArtifactError::Mismatch {
+                reason: "artifact byte count overflowed",
+            })?;
         if total > artifact.byte_size {
-            return Err(PinnedArtifactError::Mismatch);
+            return Err(PinnedArtifactError::Mismatch {
+                reason: "artifact is larger than the pinned size",
+            });
         }
         if artifact.sha256.is_some() {
             hasher.update(&buffer[..read]);
@@ -352,7 +403,9 @@ fn verify(file: &mut impl Read, artifact: &PinnedArtifact) -> Result<(), PinnedA
             .as_deref()
             .is_some_and(|sha256| format!("{:x}", hasher.finalize()) != sha256)
     {
-        return Err(PinnedArtifactError::Mismatch);
+        return Err(PinnedArtifactError::Mismatch {
+            reason: "artifact size or sha256 does not match the pin",
+        });
     }
     Ok(())
 }
@@ -388,10 +441,10 @@ mod tests {
             verify_git_blob(&path, "CE013625030BA8DBA906F756967F9E9CA394464A"),
             Ok(())
         );
-        assert_eq!(
+        assert!(matches!(
             verify_git_blob(&path, "0000000000000000000000000000000000000000"),
-            Err(PinnedArtifactError::Mismatch)
-        );
+            Err(PinnedArtifactError::Mismatch { .. })
+        ));
         std::fs::remove_file(path).expect("cleanup");
     }
 
@@ -463,7 +516,10 @@ mod tests {
             panic!("expected a download");
         };
         wrong.append(b"wrong bytes, equal size!").expect("append");
-        assert_eq!(wrong.finish(), Err(PinnedArtifactError::Mismatch));
+        assert!(matches!(
+            wrong.finish(),
+            Err(PinnedArtifactError::Mismatch { .. })
+        ));
         assert!(matches!(
             store.prepare(expected),
             Ok(PinnedArtifactPreparation::Download(download)) if download.offset() == 0
@@ -542,10 +598,10 @@ mod tests {
                 ..unhashed.clone()
             },
         ] {
-            assert_eq!(
+            assert!(matches!(
                 store.prepare(invalid).err(),
-                Some(PinnedArtifactError::InvalidArtifact)
-            );
+                Some(PinnedArtifactError::InvalidArtifact { .. })
+            ));
         }
         std::fs::remove_dir_all(root).ok();
     }

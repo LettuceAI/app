@@ -34,26 +34,28 @@ pub struct CompanionMemoryFirstRoundResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryInferenceError {
-    #[error("background memory ownership is invalid")]
-    InvalidOwnership,
-    #[error("background memory prompt is invalid")]
-    InvalidPrompt,
-    #[error("background memory source content is invalid")]
-    InvalidSource,
-    #[error("background memory request is too large")]
-    ContextTooLarge,
+    #[error("background memory ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("background memory prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
+    #[error("background memory source content is invalid: {reason}")]
+    InvalidSource { reason: &'static str },
+    #[error("background memory request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("background memory contains an unknown token count")]
     UnknownTokenCount,
     #[error("background memory inference was cancelled")]
     Cancelled,
-    #[error("background memory inference returned multiple candidates")]
-    MultipleCandidates,
-    #[error("background memory inference returned no tool calls")]
-    NoToolCalls,
-    #[error("background memory inference returned invalid content with tool calls")]
-    MixedToolAndContent,
-    #[error("background memory inference returned inconsistent protected replay material")]
-    InvalidSignedReplay,
+    #[error("background memory inference returned multiple candidates: {reason}")]
+    MultipleCandidates { reason: String },
+    #[error("background memory inference returned no tool calls: {reason}")]
+    NoToolCalls { reason: String },
+    #[error("background memory response could not be processed: {reason}")]
+    InvalidResponse { reason: String },
+    #[error(
+        "background memory inference returned inconsistent protected replay material: {reason}"
+    )]
+    InvalidSignedReplay { reason: &'static str },
     #[error("background memory conversation read failed: {0}")]
     Conversation(ConversationRepositoryError),
     #[error("background memory read failed: {0}")]
@@ -64,8 +66,8 @@ pub enum CompanionMemoryInferenceError {
     Prompt(PromptRenderError),
     #[error("background memory provider failed: {0}")]
     Inference(PortError),
-    #[error("background memory provider replay cleanup failed")]
-    ReplayCleanup,
+    #[error("background memory provider replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
 }
 
 #[derive(Debug)]
@@ -123,8 +125,15 @@ impl<
             .list_dynamic_memory_inference_rounds(run.id, attempt.id)
             .map_err(CompanionMemoryInferenceError::Run)?;
         if let Some(first) = rounds.first() {
-            if first.run_id != run.id || first.attempt_id != attempt.id || first.ordinal != 0 {
-                return Err(CompanionMemoryInferenceError::InvalidOwnership);
+            if first.run_id != run.id || first.attempt_id != attempt.id {
+                return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                    reason: "stored first round belongs to another run or attempt",
+                });
+            }
+            if first.ordinal != 0 {
+                return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                    reason: "stored first round is not ordinal zero",
+                });
             }
             return Ok(CompanionMemoryFirstRoundResult {
                 round: first.clone(),
@@ -144,16 +153,22 @@ impl<
             .repository
             .get(run.space_id)
             .map_err(CompanionMemoryInferenceError::Memory)?
-            .ok_or(CompanionMemoryInferenceError::InvalidOwnership)?;
+            .ok_or(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "memory space of the run does not exist",
+            })?;
         if memory.id != run.space_id {
-            return Err(CompanionMemoryInferenceError::InvalidOwnership);
+            return Err(CompanionMemoryInferenceError::InvalidOwnership {
+                reason: "memory space id differs from the run space",
+            });
         }
         let sources = materialize_sources(self.conversations, &run)?;
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.repository,
             crate::BuiltInPromptId::MemoryRuntime,
         )
-        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("memory runtime prompt text could not be loaded: {error}"),
+        })?;
         let request = build_first_request(
             &run,
             &attempt,
@@ -305,9 +320,12 @@ where
             Err(JobInferenceError::Provider(PortError::Cancelled)) => {
                 return Err(CompanionMemoryInferenceError::Cancelled);
             }
-            Err(JobInferenceError::Evidence) => {
+            Err(JobInferenceError::Evidence { reason }) => {
+                tracing::warn!(%reason, "dynamic-memory inference usage evidence failed");
                 return Err(CompanionMemoryInferenceError::Run(
-                    DynamicMemoryRunRepositoryError::Storage,
+                    DynamicMemoryRunRepositoryError::Storage {
+                        reason: "inference usage evidence could not be recorded",
+                    },
                 ));
             }
             Err(JobInferenceError::Provider(_)) => None,
@@ -325,11 +343,13 @@ where
     .and_then(|text| text.render_with(kind.prompt_key(format), []));
     let fallback_prompt = match fallback_prompt {
         Ok(prompt) => prompt,
-        Err(_) => {
+        Err(error) => {
             if let Some(primary) = &primary {
                 cleanup_outcome_replays(repository, primary)?;
             }
-            return Err(CompanionMemoryInferenceError::InvalidPrompt);
+            return Err(CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("fallback prompt could not be rendered: {error}"),
+            });
         }
     };
     let mut fallback = request;
@@ -342,32 +362,38 @@ where
             text: fallback_prompt,
         }],
     });
-    if fallback.validate().is_err() {
+    if let Err(error) = fallback.validate() {
         if let Some(primary) = &primary {
             cleanup_outcome_replays(repository, primary)?;
         }
-        return Err(CompanionMemoryInferenceError::InvalidPrompt);
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("fallback request failed validation: {error}"),
+        });
     }
-    let mut outcome =
-        match run_job_inference(repository, inference, handle.id(), fallback, now).await {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                if let Some(primary) = &primary {
-                    cleanup_outcome_replays(repository, primary)?;
-                }
-                return Err(match error {
-                    JobInferenceError::Provider(PortError::Cancelled) => {
-                        CompanionMemoryInferenceError::Cancelled
-                    }
-                    JobInferenceError::Provider(error) => {
-                        CompanionMemoryInferenceError::Inference(error)
-                    }
-                    JobInferenceError::Evidence => {
-                        CompanionMemoryInferenceError::Run(DynamicMemoryRunRepositoryError::Storage)
-                    }
-                });
+    let mut outcome = match run_job_inference(repository, inference, handle.id(), fallback, now)
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            if let Some(primary) = &primary {
+                cleanup_outcome_replays(repository, primary)?;
             }
-        };
+            return Err(match error {
+                JobInferenceError::Provider(PortError::Cancelled) => {
+                    CompanionMemoryInferenceError::Cancelled
+                }
+                JobInferenceError::Provider(error) => {
+                    CompanionMemoryInferenceError::Inference(error)
+                }
+                JobInferenceError::Evidence { reason } => {
+                    tracing::warn!(%reason, "dynamic-memory fallback usage evidence failed");
+                    CompanionMemoryInferenceError::Run(DynamicMemoryRunRepositoryError::Storage {
+                        reason: "fallback inference usage evidence could not be recorded",
+                    })
+                }
+            });
+        }
+    };
     let parsed = parse_fallback_outcome(&mut outcome, format, kind);
     if let Err(error) = parsed {
         if let Some(primary) = &primary {
@@ -435,11 +461,23 @@ fn parse_fallback_outcome(
     format: DynamicMemoryStructuredFallbackFormat,
     kind: MemoryFallbackKind,
 ) -> Result<(), CompanionMemoryInferenceError> {
+    match outcome.finish_reason {
+        FinishReason::Cancelled => return Err(CompanionMemoryInferenceError::Cancelled),
+        FinishReason::Error => return Err(CompanionMemoryInferenceError::InvalidResponse {
+            reason: "fallback returned an error completion".to_owned(),
+        }),
+        FinishReason::Stop | FinishReason::Length => {}
+    }
     outcome
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidResponse {
+            reason: format!("fallback outcome failed validation: {error}"),
+        })?;
     if outcome.candidates.len() != 1 || !outcome.candidates[0].tool_calls.is_empty() {
-        return Err(CompanionMemoryInferenceError::NoToolCalls);
+        return Err(CompanionMemoryInferenceError::InvalidResponse {
+            reason: "fallback outcome does not have exactly one candidate without tool calls"
+                .to_owned(),
+        });
     }
     let text = outcome.candidates[0]
         .parts
@@ -450,14 +488,20 @@ fn parse_fallback_outcome(
         })
         .collect::<String>();
     if text.is_empty() {
-        return Err(CompanionMemoryInferenceError::NoToolCalls);
+        return Err(CompanionMemoryInferenceError::NoToolCalls {
+            reason: "fallback candidate has no text".to_owned(),
+        });
     }
     let mut calls = match kind {
         MemoryFallbackKind::Operations => parse_memory_operations_from_text(&text, format)
-            .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?,
+            .map_err(|error| CompanionMemoryInferenceError::InvalidResponse {
+                reason: format!("fallback operations could not be parsed: {error}"),
+            })?,
         MemoryFallbackKind::Repairs => {
             lettuce_memory::parse_memory_repairs_from_text(&text, format)
-                .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?
+                .map_err(|error| CompanionMemoryInferenceError::InvalidResponse {
+                    reason: format!("fallback repairs could not be parsed: {error}"),
+                })?
                 .into_iter()
                 .enumerate()
                 .map(
@@ -477,7 +521,9 @@ fn parse_fallback_outcome(
     };
     if kind == MemoryFallbackKind::Repairs {
         if calls.is_empty() {
-            return Err(CompanionMemoryInferenceError::NoToolCalls);
+            return Err(CompanionMemoryInferenceError::InvalidResponse {
+                reason: "fallback repairs text contained no repairs".to_owned(),
+            });
         }
     } else if calls.is_empty() {
         calls.push(lettuce_conversations::ProposedToolCall {
@@ -505,11 +551,20 @@ fn validate_ownership(
     attempt: &DynamicMemoryAttempt,
     handle: &JobHandle,
 ) -> Result<(), CompanionMemoryInferenceError> {
-    if attempt.run_id != run.id
-        || attempt.job_id != handle.id()
-        || attempt.status != DynamicMemoryAttemptStatus::Processing
-    {
-        return Err(CompanionMemoryInferenceError::InvalidOwnership);
+    if attempt.run_id != run.id {
+        return Err(CompanionMemoryInferenceError::InvalidOwnership {
+            reason: "attempt belongs to another run",
+        });
+    }
+    if attempt.job_id != handle.id() {
+        return Err(CompanionMemoryInferenceError::InvalidOwnership {
+            reason: "attempt belongs to another job",
+        });
+    }
+    if attempt.status != DynamicMemoryAttemptStatus::Processing {
+        return Err(CompanionMemoryInferenceError::InvalidOwnership {
+            reason: "attempt is not processing",
+        });
     }
     Ok(())
 }
@@ -535,7 +590,9 @@ pub(crate) fn materialize_sources<C: ConversationReader + ?Sized>(
                         .get_message_revision(id)
                         .map_err(CompanionMemoryInferenceError::Conversation)?;
                     if revision.message_id != source.message_id {
-                        return Err(CompanionMemoryInferenceError::InvalidSource);
+                        return Err(CompanionMemoryInferenceError::InvalidSource {
+                            reason: "source revision belongs to a different message",
+                        });
                     }
                     revision.parts
                 }
@@ -543,10 +600,15 @@ pub(crate) fn materialize_sources<C: ConversationReader + ?Sized>(
                     let candidate = conversations
                         .get_candidate(id)
                         .map_err(CompanionMemoryInferenceError::Conversation)?;
-                    if candidate.message_id != source.message_id
-                        || source.role != MessageRole::Assistant
-                    {
-                        return Err(CompanionMemoryInferenceError::InvalidSource);
+                    if candidate.message_id != source.message_id {
+                        return Err(CompanionMemoryInferenceError::InvalidSource {
+                            reason: "source candidate belongs to a different message",
+                        });
+                    }
+                    if source.role != MessageRole::Assistant {
+                        return Err(CompanionMemoryInferenceError::InvalidSource {
+                            reason: "source candidate is not an assistant message",
+                        });
                     }
                     candidate.parts
                 }
@@ -585,16 +647,31 @@ fn build_first_request(
     stream_sink: Option<RequestId>,
     now: TimestampMillis,
 ) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
-    if prompt.status != LifecycleStatus::Active
-        || prompt.purpose != PromptPurpose::DynamicMemoryManager
-        || memory.id != run.space_id
-        || sources.len() != run.source_messages.len()
-    {
-        return Err(CompanionMemoryInferenceError::InvalidPrompt);
+    if prompt.status != LifecycleStatus::Active {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "memory manager prompt is not active".to_owned(),
+        });
+    }
+    if prompt.purpose != PromptPurpose::DynamicMemoryManager {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "prompt purpose is not dynamic memory manager".to_owned(),
+        });
+    }
+    if memory.id != run.space_id {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "memory snapshot belongs to another space than the run".to_owned(),
+        });
+    }
+    if sources.len() != run.source_messages.len() {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "materialized sources differ from the run source messages".to_owned(),
+        });
     }
     policy
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("memory policy failed validation: {error}"),
+        })?;
     let current_tokens =
         memory
             .items
@@ -606,13 +683,17 @@ fn build_first_request(
                     .ok_or(CompanionMemoryInferenceError::UnknownTokenCount)?;
                 total
                     .checked_add(count)
-                    .ok_or(CompanionMemoryInferenceError::ContextTooLarge)
+                    .ok_or(CompanionMemoryInferenceError::ContextTooLarge {
+                        reason: "memory token total overflowed",
+                    })
             })?;
     if sources
         .iter()
         .any(|source| !matches!(source.role, MessageRole::User | MessageRole::Assistant))
     {
-        return Err(CompanionMemoryInferenceError::InvalidSource);
+        return Err(CompanionMemoryInferenceError::InvalidSource {
+            reason: "a source message has a role other than user or assistant",
+        });
     }
     let transcript = sources
         .iter()
@@ -646,7 +727,9 @@ fn build_first_request(
             crate::memory::memory_tool_result::memory_id_line(text, item.short_id, &item.text)
         })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("memory id line could not be rendered: {error}"),
+        })?;
     let mut values = PromptRenderValues::default();
     values
         .purpose_values
@@ -701,8 +784,11 @@ fn build_first_request(
     )
     .map_err(CompanionMemoryInferenceError::Prompt)?;
     let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
-        text.render_with(key, variables)
-            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)
+        text.render_with(key, variables).map_err(|error| {
+            CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("memory prompt fragment {key} could not be rendered: {error}"),
+            }
+        })
     };
     let runtime_input = fragment(
         "memory_runtime_input",
@@ -747,7 +833,9 @@ fn build_first_request(
             _ => None,
         })
         .and_then(|size| u32::try_from(size).ok())
-        .ok_or(CompanionMemoryInferenceError::ContextTooLarge)?;
+        .ok_or(CompanionMemoryInferenceError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
     let selected_entry_ids = rendered
         .relative
         .iter()
@@ -775,8 +863,11 @@ fn build_first_request(
                 ..Default::default()
             },
             budget: ContextBudgetReport {
-                selected_messages: u32::try_from(sources.len())
-                    .map_err(|_| CompanionMemoryInferenceError::ContextTooLarge)?,
+                selected_messages: u32::try_from(sources.len()).map_err(|_| {
+                    CompanionMemoryInferenceError::ContextTooLarge {
+                        reason: "source message count does not fit in u32",
+                    }
+                })?,
                 omitted_messages: 0,
                 input_bytes,
                 estimated_input_tokens: input_bytes.saturating_add(3) / 4,
@@ -791,7 +882,9 @@ fn build_first_request(
     };
     request
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("inference request failed validation: {error}"),
+        })?;
     Ok(request)
 }
 
@@ -807,7 +900,9 @@ pub(crate) fn rendered_message(
     entry: &lettuce_context::RenderedPromptMessage,
 ) -> Result<ProviderNeutralMessage, CompanionMemoryInferenceError> {
     if entry.payload.is_some() {
-        return Err(CompanionMemoryInferenceError::InvalidPrompt);
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "rendered prompt message carries a payload".to_owned(),
+        });
     }
     Ok(ProviderNeutralMessage {
         role: match entry.role {
@@ -847,9 +942,16 @@ pub(crate) fn plan_memory_round(
 ) -> Result<NewDynamicMemoryInferenceRound, CompanionMemoryInferenceError> {
     outcome
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidResponse {
+            reason: format!("outcome failed validation: {error}"),
+        })?;
     if outcome.candidates.len() != 1 {
-        return Err(CompanionMemoryInferenceError::MultipleCandidates);
+        return Err(CompanionMemoryInferenceError::MultipleCandidates {
+            reason: format!(
+                "outcome has {} candidates instead of one",
+                outcome.candidates.len()
+            ),
+        });
     }
     let candidate = &outcome.candidates[0];
     let finish_reason = match outcome.finish_reason {
@@ -857,29 +959,35 @@ pub(crate) fn plan_memory_round(
         FinishReason::Length => DynamicMemoryRoundFinishReason::Length,
         FinishReason::Cancelled => return Err(CompanionMemoryInferenceError::Cancelled),
         FinishReason::Error => {
-            return Err(CompanionMemoryInferenceError::Inference(
-                PortError::Rejected,
-            ));
+            return Err(CompanionMemoryInferenceError::InvalidResponse {
+                reason: "provider returned an error completion".to_owned(),
+            });
         }
     };
     if candidate.tool_calls.is_empty() {
-        return Err(CompanionMemoryInferenceError::NoToolCalls);
+        return Err(CompanionMemoryInferenceError::NoToolCalls {
+            reason: "candidate has no tool calls".to_owned(),
+        });
     }
-    if !candidate.parts.is_empty()
-        && (candidate.provider_replay.is_none()
-            || candidate
-                .parts
-                .iter()
-                .any(|part| !matches!(part, MessagePart::ReasoningSummary { .. })))
+    // Text and reasoning commonly accompany native tool calls, including
+    // OpenRouter replies without protected provider replay. Keep those parts
+    // as evidence; replay consistency is checked separately below.
+    if candidate.parts.iter().any(|part| {
+        !matches!(part, MessagePart::Text { .. } | MessagePart::ReasoningSummary { .. })
+    })
     {
-        return Err(CompanionMemoryInferenceError::MixedToolAndContent);
+        return Err(CompanionMemoryInferenceError::InvalidResponse {
+            reason: "candidate has unsupported parts next to tool calls".to_owned(),
+        });
     }
     if candidate
         .tool_calls
         .iter()
         .any(|call| call.provider_replay.as_ref() != candidate.provider_replay.as_ref())
     {
-        return Err(CompanionMemoryInferenceError::InvalidSignedReplay);
+        return Err(CompanionMemoryInferenceError::InvalidSignedReplay {
+            reason: "a tool call carries a different provider replay than the candidate",
+        });
     }
     let calls = candidate
         .tool_calls
@@ -912,7 +1020,9 @@ pub(crate) fn plan_memory_round(
     };
     round
         .validate()
-        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
+        .map_err(|error| CompanionMemoryInferenceError::InvalidResponse {
+            reason: format!("planned round failed validation: {error}"),
+        })?;
     Ok(round)
 }
 
@@ -936,7 +1046,9 @@ pub(crate) fn cleanup_outcome_replays<R: ProviderReplayArtifactPort + ?Sized>(
     for id in ids {
         repository
             .cleanup_orphan_provider_replay(id)
-            .map_err(|_| CompanionMemoryInferenceError::ReplayCleanup)?;
+            .map_err(|error| CompanionMemoryInferenceError::ReplayCleanup {
+                reason: error.to_string(),
+            })?;
     }
     Ok(())
 }
@@ -1705,7 +1817,7 @@ mod tests {
                 &empty,
                 TimestampMillis::new(2)
             ),
-            Err(CompanionMemoryInferenceError::NoToolCalls)
+            Err(CompanionMemoryInferenceError::InvalidResponse { .. })
         ));
 
         let outcome = InferenceOutcome {
@@ -1752,5 +1864,98 @@ mod tests {
         assert_eq!(round.calls.len(), 1);
         assert_eq!(round.calls[0].call, outcome.candidates[0].tool_calls[0]);
         assert_eq!(round.provider_request_id.as_deref(), Some("request-1"));
+    }
+
+    #[test]
+    fn memory_round_accepts_tool_calls_with_text_reasoning_and_whitespace() {
+        let (run, _) = run_and_attempt(JobId::new());
+        for parts in [
+            vec![],
+            vec![MessagePart::ReasoningSummary { text: "Reviewing memories.".into() }],
+            vec![MessagePart::Text { text: "I will save this.".into() }],
+            vec![MessagePart::Text { text: "\n ".into() }],
+            vec![
+                MessagePart::ReasoningSummary { text: "Reviewing memories.".into() },
+                MessagePart::Text { text: "I will save this.".into() },
+            ],
+        ] {
+            let mut outcome = text_outcome("", None);
+            outcome.candidates[0].parts = parts.clone();
+            outcome.candidates[0].tool_calls.push(ProposedToolCall {
+                provider_call_id: Some("call-memory".into()),
+                name: "create_memory".into(),
+                arguments: serde_json::json!({"text":"Prefers tea.","category":"preference"}),
+                raw_arguments: None,
+                provider_replay: None,
+            });
+            for ordinal in [0, 1] {
+                let round = plan_memory_round(
+                    &run, ordinal, DynamicMemoryRoundKind::Manager,
+                    fallback_request().context, &outcome, TimestampMillis::new(2),
+                ).expect("text and reasoning do not invalidate native tool calls");
+                assert_eq!(round.parts, parts);
+                assert_eq!(round.calls[0].call, outcome.candidates[0].tool_calls[0]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_fallback_is_an_invalid_response_not_an_empty_response() {
+        for (format, text) in [
+            (DynamicMemoryStructuredFallbackFormat::Json, r#"{"operations":[null]}"#),
+            (DynamicMemoryStructuredFallbackFormat::Xml, "<memory_ops><done />"),
+        ] {
+            let scripted = ScriptedInference {
+                outcomes: Mutex::new(VecDeque::from([
+                    Ok(text_outcome("plain prose", None)),
+                    Ok(text_outcome(text, None)),
+                ])),
+                requests: Mutex::new(Vec::new()),
+            };
+            let (database, job_id) = usage_fixture();
+            let error = run_memory_request_with_fallback(
+                &database, &scripted, &JobHandle::new(job_id), fallback_request(),
+                format, MemoryFallbackKind::Operations, TimestampMillis::new(1),
+            ).await.expect_err("malformed output must not settle as done");
+            assert!(matches!(error, CompanionMemoryInferenceError::InvalidResponse { .. }));
+            assert_eq!(crate::CompanionMemoryTerminalFailure::from_inference_error(&error),
+                crate::CompanionMemoryTerminalFailure::InvalidResponse);
+        }
+    }
+
+    #[test]
+    fn cancelled_fallback_cannot_be_converted_to_a_successful_done() {
+        let mut outcome = text_outcome("<memory_ops />", None);
+        outcome.finish_reason = FinishReason::Cancelled;
+        assert!(matches!(parse_fallback_outcome(
+            &mut outcome, DynamicMemoryStructuredFallbackFormat::Xml, MemoryFallbackKind::Operations,
+        ), Err(CompanionMemoryInferenceError::Cancelled)));
+        assert!(outcome.candidates[0].tool_calls.is_empty());
+    }
+
+    #[test]
+    fn mixed_content_cannot_bypass_protected_replay_consistency() {
+        let (run, _) = run_and_attempt(JobId::new());
+        let replay = lettuce_conversations::ReplayArtifactRef {
+            artifact_id: lettuce_types::ReplayArtifactId::new(),
+            digest: lettuce_types::ContentHash::parse("ab".repeat(32)).expect("digest"),
+            schema_version: 1,
+            byte_size: 10,
+            retention: lettuce_conversations::ReplayRetention::Conversation,
+            codec: lettuce_conversations::ReplayCodec::Json,
+        };
+        let mut outcome = text_outcome("Saving this.", None);
+        outcome.candidates[0].provider_replay = Some(replay.clone());
+        outcome.candidates[0].tool_calls.push(ProposedToolCall {
+            provider_call_id: Some("call-signed".into()), name: "done".into(),
+            arguments: serde_json::json!({}), raw_arguments: None, provider_replay: Some(replay),
+        });
+        let plan = |outcome: &InferenceOutcome| plan_memory_round(
+            &run, 0, DynamicMemoryRoundKind::Manager, fallback_request().context,
+            outcome, TimestampMillis::new(2),
+        );
+        assert!(plan(&outcome).is_ok(), "consistent signed replay with text");
+        outcome.candidates[0].tool_calls[0].provider_replay = None;
+        assert!(matches!(plan(&outcome), Err(CompanionMemoryInferenceError::InvalidSignedReplay { .. })));
     }
 }

@@ -100,7 +100,7 @@ fn malformed_reset_seed_rolls_back_all_provider_rows() {
     };
     assert!(matches!(
         Database::create_reset_database(&path, &seed),
-        Err(ResetDatabaseError::InvalidData)
+        Err(ResetDatabaseError::InvalidData { .. })
     ));
     let recovered = Database::open(&path).expect("open abandoned target");
     let count: i64 = recovered

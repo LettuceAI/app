@@ -51,10 +51,10 @@ pub enum ConversationRepositoryError {
     Invalid(#[from] ValidationError),
     #[error("a conversation artifact reference could not be verified")]
     ArtifactReference(#[source] crate::ArtifactError),
-    #[error("the conversation operation is unsupported")]
-    Unsupported,
-    #[error("conversation storage is unavailable")]
-    Storage,
+    #[error("the conversation operation is unsupported: {reason}")]
+    Unsupported { reason: &'static str },
+    #[error("conversation storage is unavailable: {reason}")]
+    Storage { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

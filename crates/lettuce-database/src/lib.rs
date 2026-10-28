@@ -593,7 +593,7 @@ impl lettuce_models::GlobalModelSettingsRepository for Database {
         &self,
     ) -> Result<(lettuce_models::ModelSettingsLayer, Revision), ModelRepositoryError> {
         self.connection()
-            .map_err(|_| ModelRepositoryError::Storage)?
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?
             .query_row(
                 "SELECT model_settings_json, revision FROM app_settings WHERE id = 1",
                 [],
@@ -605,8 +605,12 @@ impl lettuce_models::GlobalModelSettingsRepository for Database {
                 },
             )
             .map_err(|error| match error {
-                rusqlite::Error::InvalidQuery => ModelRepositoryError::InvalidData,
-                _ => ModelRepositoryError::Storage,
+                rusqlite::Error::InvalidQuery => ModelRepositoryError::InvalidData {
+                    reason: "global model settings: a stored value is not recognised".to_owned(),
+                },
+                _ => ModelRepositoryError::Storage {
+                    reason: "global model settings: a stored value is not recognised".to_owned(),
+                },
             })
     }
 
@@ -618,25 +622,29 @@ impl lettuce_models::GlobalModelSettingsRepository for Database {
     ) -> Result<Revision, ModelRepositoryError> {
         settings
             .validate()
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let payload = encode_global_model_settings(&settings)
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let next = expected_revision
             .next()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let changed = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?
             .execute(
                 "UPDATE app_settings SET model_settings_json=?1, revision=?2, updated_at=?3 WHERE id=1 AND revision=?4",
                 params![
                     payload,
-                    i64::try_from(next.get()).map_err(|_| ModelRepositoryError::Storage)?,
+                    i64::try_from(next.get()).map_err(|error| ModelRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     at.get(),
-                    i64::try_from(expected_revision.get()).map_err(|_| ModelRepositoryError::Storage)?
+                    i64::try_from(expected_revision.get()).map_err(|error| ModelRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?
                 ],
             )
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         if changed != 1 {
             return Err(ModelRepositoryError::StaleRevision);
         }
@@ -792,23 +800,37 @@ pub(crate) fn replace_device_settings_in(
 }
 
 pub(crate) fn read_device_settings(connection: &Connection) -> Result<DeviceSettings, GlobalSettingsStoreError> {
-    let settings: Option<String> = connection.query_row("SELECT settings_json FROM device_settings WHERE id = 1", [], |row| row.get(0)).optional().map_err(|_| GlobalSettingsStoreError::Storage)?;
-    settings.map_or_else(|| Ok(DeviceSettings::default()), |settings| serde_json::from_str(&settings).map_err(|_| GlobalSettingsStoreError::InvalidData))
+    let settings: Option<String> = connection.query_row("SELECT settings_json FROM device_settings WHERE id = 1", [], |row| row.get(0)).optional().map_err(|error| GlobalSettingsStoreError::Storage {
+        reason: error.to_string(),
+    })?;
+    settings.map_or_else(|| Ok(DeviceSettings::default()), |settings| serde_json::from_str(&settings).map_err(|error| GlobalSettingsStoreError::InvalidData {
+        reason: error.to_string(),
+    }))
 }
 
 impl DeviceSettingsStore for Database {
     fn update_device_settings(&self, update: &dyn Fn(&mut DeviceSettings)) -> Result<(), GlobalSettingsStoreError> {
-        let mut connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
-        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let mut connection = self.connection().map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?;
         let mut settings = read_device_settings(&transaction)?;
         update(&mut settings);
         settings.validate()?;
-        replace_device_settings_in(&transaction, &settings).map_err(|_| GlobalSettingsStoreError::Storage)?;
-        transaction.commit().map_err(|_| GlobalSettingsStoreError::Storage)
+        replace_device_settings_in(&transaction, &settings).map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?;
+        transaction.commit().map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })
     }
 
     fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError> {
-        let connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let connection = self.connection().map_err(|error| GlobalSettingsStoreError::Storage {
+            reason: error.to_string(),
+        })?;
         read_device_settings(&connection)
     }
 }
@@ -819,16 +841,18 @@ impl DeviceUiStateStore for Database {
     ) -> Result<serde_json::Map<String, serde_json::Value>, GlobalSettingsStoreError> {
         let connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let state: Option<String> = connection
             .query_row("SELECT state_json FROM device_ui_state WHERE id = 1", [], |row| {
                 row.get(0)
             })
             .optional()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         state.map_or_else(
             || Ok(serde_json::Map::new()),
-            |state| serde_json::from_str(&state).map_err(|_| GlobalSettingsStoreError::InvalidData),
+            |state| serde_json::from_str(&state).map_err(|error| GlobalSettingsStoreError::InvalidData {
+                reason: error.to_string(),
+            }),
         )
     }
 
@@ -838,14 +862,18 @@ impl DeviceUiStateStore for Database {
     ) -> Result<(), GlobalSettingsStoreError> {
         let connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         write_device_ui_state(&connection, &state).map_err(|error| match error {
             rusqlite::Error::SqliteFailure(failure, _)
                 if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
             {
-                GlobalSettingsStoreError::InvalidData
+                GlobalSettingsStoreError::InvalidData {
+                    reason: "save device ui state: a value failed validation".to_owned(),
+                }
             }
-            _ => GlobalSettingsStoreError::Storage,
+            _ => GlobalSettingsStoreError::Storage {
+                reason: "save device ui state: a stored value is not recognised".to_owned(),
+            },
         })
     }
 }
@@ -853,7 +881,7 @@ impl DeviceUiStateStore for Database {
 impl GlobalSettingsStore for Database {
     fn load(&self) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
         self.connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?
             .query_row(
                 "SELECT default_model_profile_id, dynamic_memory_model_profile_id, group_speaker_model_profile_id, default_prompt_document_id, format_version, payload_json, revision, created_at, updated_at \
                  FROM app_settings WHERE id = 1",
@@ -890,8 +918,12 @@ impl GlobalSettingsStore for Database {
                 },
             )
             .map_err(|error| match error {
-                rusqlite::Error::InvalidQuery => GlobalSettingsStoreError::InvalidData,
-                _ => GlobalSettingsStoreError::Storage,
+                rusqlite::Error::InvalidQuery => GlobalSettingsStoreError::InvalidData {
+                    reason: "load: a stored value is not recognised".to_owned(),
+                },
+                _ => GlobalSettingsStoreError::Storage {
+                    reason: "load: a stored value is not recognised".to_owned(),
+                },
             })
     }
 
@@ -902,16 +934,20 @@ impl GlobalSettingsStore for Database {
         expected_revision: Revision,
     ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
         if !settings.within_bounds() {
-            return Err(GlobalSettingsStoreError::InvalidData);
+            return Err(GlobalSettingsStoreError::InvalidData {
+                reason: "save: a value failed validation".to_owned(),
+            });
         }
         let payload =
-            serde_json::to_string(&settings).map_err(|_| GlobalSettingsStoreError::InvalidData)?;
+            serde_json::to_string(&settings).map_err(|error| GlobalSettingsStoreError::InvalidData {
+                reason: error.to_string(),
+            })?;
         let next = expected_revision
             .next()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?;
         let changed = connection
             .execute(
                 "UPDATE app_settings SET default_model_profile_id=?1, payload_json=?2, \
@@ -919,10 +955,16 @@ impl GlobalSettingsStore for Database {
                 params![
                     default_model_profile_id.map(|id| id.to_string()),
                     payload,
-                    to_i64(next.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,
-                    now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
+                    to_i64(next.get()).map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?,
+                    now().map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?.get(),
                     to_i64(expected_revision.get())
-                        .map_err(|_| GlobalSettingsStoreError::Storage)?
+                        .map_err(|error| GlobalSettingsStoreError::Storage {
+                            reason: error.to_string(),
+                        })?
                 ],
             )
             .map_err(|error| match error {
@@ -931,7 +973,9 @@ impl GlobalSettingsStore for Database {
                 {
                     GlobalSettingsStoreError::ModelProfileMissing
                 }
-                _ => GlobalSettingsStoreError::Storage,
+                _ => GlobalSettingsStoreError::Storage {
+                    reason: "save: a stored value is not recognised".to_owned(),
+                },
             })?;
         drop(connection);
         if changed == 0 {
@@ -954,13 +998,17 @@ impl GlobalSettingsStore for Database {
         }
         let changed = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?
             .execute(
                 "UPDATE app_settings SET dynamic_memory_model_profile_id=?1, revision=revision+1, updated_at=?2 WHERE id=1 AND revision=?3",
                 params![
                     model_profile_id.map(|id| id.to_string()),
-                    now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
-                    to_i64(expected_revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,
+                    now().map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?.get(),
+                    to_i64(expected_revision.get()).map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?,
                 ],
             )
             .map_err(|error| match error {
@@ -969,7 +1017,9 @@ impl GlobalSettingsStore for Database {
                 {
                     GlobalSettingsStoreError::ModelProfileMissing
                 }
-                _ => GlobalSettingsStoreError::Storage,
+                _ => GlobalSettingsStoreError::Storage {
+                    reason: "set dynamic memory model profile: a stored value is not recognised".to_owned(),
+                },
             })?;
         if changed == 0 {
             return Err(GlobalSettingsStoreError::StaleRevision);
@@ -991,13 +1041,17 @@ impl GlobalSettingsStore for Database {
         }
         let changed = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?
             .execute(
                 "UPDATE app_settings SET group_speaker_model_profile_id=?1, revision=revision+1, updated_at=?2 WHERE id=1 AND revision=?3",
                 params![
                     model_profile_id.map(|id| id.to_string()),
-                    now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
-                    to_i64(expected_revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,
+                    now().map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?.get(),
+                    to_i64(expected_revision.get()).map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?,
                 ],
             )
             .map_err(|error| match error {
@@ -1006,7 +1060,9 @@ impl GlobalSettingsStore for Database {
                 {
                     GlobalSettingsStoreError::ModelProfileMissing
                 }
-                _ => GlobalSettingsStoreError::Storage,
+                _ => GlobalSettingsStoreError::Storage {
+                    reason: "set group speaker model profile: a stored value is not recognised".to_owned(),
+                },
             })?;
         if changed == 0 {
             return Err(GlobalSettingsStoreError::StaleRevision);
@@ -1032,22 +1088,30 @@ impl Database {
         }
         let changed = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map_err(|error| GlobalSettingsStoreError::Storage { reason: error.to_string() })?
             .execute(
                 "UPDATE app_settings SET default_prompt_document_id=?1, revision=revision+1, updated_at=?2 WHERE id=1 AND revision=?3",
                 params![
                     prompt_id.map(|id| id.to_string()),
-                    now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
-                    to_i64(expected_revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,
+                    now().map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?.get(),
+                    to_i64(expected_revision.get()).map_err(|error| GlobalSettingsStoreError::Storage {
+                        reason: error.to_string(),
+                    })?,
                 ],
             )
             .map_err(|error| match error {
                 rusqlite::Error::SqliteFailure(code, _)
                     if code.code == rusqlite::ErrorCode::ConstraintViolation =>
                 {
-                    GlobalSettingsStoreError::InvalidData
+                    GlobalSettingsStoreError::InvalidData {
+                        reason: "set default prompt document: a value failed validation".to_owned(),
+                    }
                 }
-                _ => GlobalSettingsStoreError::Storage,
+                _ => GlobalSettingsStoreError::Storage {
+                    reason: "set default prompt document: a stored value is not recognised".to_owned(),
+                },
             })?;
         if changed == 0 {
             return Err(GlobalSettingsStoreError::StaleRevision);
@@ -1140,7 +1204,9 @@ fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<ProviderAccount> {
 
 fn model_error(error: rusqlite::Error) -> ModelRepositoryError {
     match error {
-        rusqlite::Error::InvalidQuery => ModelRepositoryError::InvalidData,
+        rusqlite::Error::InvalidQuery => ModelRepositoryError::InvalidData {
+            reason: "model error: a stored value is not recognised".to_owned(),
+        },
         rusqlite::Error::SqliteFailure(code, _) if code.extended_code == 787 => {
             ModelRepositoryError::AccountMissing
         }
@@ -1150,9 +1216,13 @@ fn model_error(error: rusqlite::Error) -> ModelRepositoryError {
         rusqlite::Error::SqliteFailure(code, _)
             if code.code == rusqlite::ErrorCode::ConstraintViolation =>
         {
-            ModelRepositoryError::InvalidData
+            ModelRepositoryError::InvalidData {
+                reason: "model error: a value failed validation".to_owned(),
+            }
         }
-        _ => ModelRepositoryError::Storage,
+        _ => ModelRepositoryError::Storage {
+            reason: "model error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
@@ -1161,7 +1231,9 @@ fn validate_account(account: &ProviderAccount) -> Result<(), ModelRepositoryErro
         || account.label.trim().is_empty()
         || account.revision.get() == 0
     {
-        return Err(ModelRepositoryError::InvalidData);
+        return Err(ModelRepositoryError::InvalidData {
+            reason: "validate account: a value failed validation".to_owned(),
+        });
     }
     Ok(())
 }
@@ -1173,7 +1245,9 @@ fn validate_profile(profile: &ModelProfile) -> Result<(), ModelRepositoryError> 
         || profile.config.validate_parameters().is_err()
         || profile.config.capabilities.validate().is_err()
     {
-        return Err(ModelRepositoryError::InvalidData);
+        return Err(ModelRepositoryError::InvalidData {
+            reason: "validate profile: a value failed validation".to_owned(),
+        });
     }
     Ok(())
 }
@@ -1190,7 +1264,9 @@ fn fail_delete_at(
     checkpoint: DeleteFailurePoint,
 ) -> Result<(), ModelRepositoryError> {
     if failure_point == checkpoint {
-        return Err(ModelRepositoryError::Storage);
+        return Err(ModelRepositoryError::Storage {
+            reason: "fail delete at: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(())
 }
@@ -1203,12 +1279,12 @@ impl ProviderAccountRepository for Database {
     ) -> Result<ProviderAccount, ModelRepositoryError> {
         validate_account(&account)?;
         let headers = serde_json::to_string(&account.secret_headers)
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let config = encode_versioned(&account.config, PROVIDER_CONFIG_FORMAT_VERSION)
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let changed = if let Some(expected) = expected_revision {
             let stored = connection
                 .query_row(
@@ -1227,9 +1303,13 @@ impl ProviderAccountRepository for Database {
             if secret_owner_id_from_text(stored_owner).map_err(model_error)?
                 != account.secret_owner_id
             {
-                return Err(ModelRepositoryError::InvalidData);
+                return Err(ModelRepositoryError::InvalidData {
+                    reason: "upsert: a value failed validation".to_owned(),
+                });
             }
-            let next = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
+            let next = expected.next().map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
             connection.execute(
                 "UPDATE provider_accounts SET provider_kind=?2, protocol=?3, label=?4, endpoint=?5, \
                  enabled=?6, api_key_secret_ref=?7, secret_headers_json=?8, config_json=?9, \
@@ -1263,7 +1343,7 @@ impl ProviderAccountRepository for Database {
 
     fn get(&self, id: ProviderAccountId) -> Result<Option<ProviderAccount>, ModelRepositoryError> {
         self.connection()
-            .map_err(|_| ModelRepositoryError::Storage)?
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?
             .query_row(
                 "SELECT id, provider_kind, protocol, label, endpoint, enabled, api_key_secret_ref, \
                  secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
@@ -1279,7 +1359,7 @@ impl ProviderAccountRepository for Database {
     fn delete(&self, id: ProviderAccountId) -> Result<(), ModelRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let dependencies = connection
             .prepare("SELECT id FROM model_profiles WHERE provider_account_id=?1 ORDER BY id")
             .and_then(|mut statement| {
@@ -1316,7 +1396,7 @@ impl Database {
     ) -> Result<(), ModelRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(model_error)?;
@@ -1359,12 +1439,14 @@ impl ModelProfileRepository for Database {
     ) -> Result<ModelProfile, ModelRepositoryError> {
         validate_profile(&profile)?;
         let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
-            .map_err(|_| ModelRepositoryError::InvalidData)?;
+            .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let changed = if let Some(expected) = expected_revision {
-            let next = expected.next().map_err(|_| ModelRepositoryError::Storage)?;
+            let next = expected.next().map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
             connection.execute(
                 "UPDATE model_profiles SET provider_account_id=?2, external_model_id=?3, display_name=?4, \
                  kind=?5, config_json=?6, revision=?7, updated_at=?8 WHERE id=?1 AND revision=?9",
@@ -1391,7 +1473,9 @@ impl ModelProfileRepository for Database {
     }
 
     fn get(&self, id: ModelProfileId) -> Result<Option<ModelProfile>, ModelRepositoryError> {
-        self.connection().map_err(|_| ModelRepositoryError::Storage)?
+        self.connection().map_err(|error| ModelRepositoryError::Storage {
+            reason: error.to_string(),
+        })?
             .query_row("SELECT id, provider_account_id, external_model_id, display_name, kind, config_json, \
                         revision, created_at, updated_at FROM model_profiles WHERE id=?1",
                        [id.to_string()], model_from_row).optional().map_err(model_error)
@@ -1410,7 +1494,7 @@ impl Database {
     ) -> Result<(), ModelRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage { reason: error.to_string() })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(model_error)?;
@@ -1443,9 +1527,9 @@ pub(crate) fn insert_provider_account_row(
 ) -> Result<usize, ModelRepositoryError> {
     validate_account(account)?;
     let headers = serde_json::to_string(&account.secret_headers)
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
+        .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
     let config = encode_versioned(&account.config, PROVIDER_CONFIG_FORMAT_VERSION)
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
+        .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
     connection.execute(
         "INSERT INTO provider_accounts (id, provider_kind, protocol, label, endpoint, enabled, \
          api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
@@ -1465,7 +1549,7 @@ pub(crate) fn insert_model_profile_row(
 ) -> Result<usize, ModelRepositoryError> {
     validate_profile(profile)?;
     let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
+        .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
     connection.execute(
         "INSERT INTO model_profiles (id, provider_account_id, external_model_id, display_name, kind, \
          config_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
@@ -1490,7 +1574,9 @@ pub(crate) fn sync_ids(connection: &Connection, table: &str) -> rusqlite::Result
 
 impl lettuce_models::ModelCatalog for Database {
     fn provider_accounts(&self) -> Result<Vec<ProviderAccount>, ModelRepositoryError> {
-        let connection = self.connection().map_err(|_| ModelRepositoryError::Storage)?;
+        let connection = self.connection().map_err(|error| ModelRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let mut statement = connection
             .prepare(&format!(
                 "SELECT {PROVIDER_ACCOUNT_COLUMNS} FROM provider_accounts ORDER BY created_at, id"
@@ -1503,7 +1589,9 @@ impl lettuce_models::ModelCatalog for Database {
     }
 
     fn model_profiles(&self) -> Result<Vec<ModelProfile>, ModelRepositoryError> {
-        let connection = self.connection().map_err(|_| ModelRepositoryError::Storage)?;
+        let connection = self.connection().map_err(|error| ModelRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let mut statement = connection
             .prepare(&format!(
                 "SELECT {MODEL_PROFILE_COLUMNS} FROM model_profiles ORDER BY created_at, id"
@@ -1541,12 +1629,14 @@ pub(crate) fn sync_upsert_provider_account(
         return Ok(());
     };
     if stored.secret_owner_id != account.secret_owner_id {
-        return Err(ModelRepositoryError::InvalidData);
+        return Err(ModelRepositoryError::InvalidData {
+            reason: "sync upsert provider account: a value failed validation".to_owned(),
+        });
     }
     let headers = serde_json::to_string(&account.secret_headers)
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
+        .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
     let config = encode_versioned(&account.config, PROVIDER_CONFIG_FORMAT_VERSION)
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
+        .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
     connection.execute(
         "UPDATE provider_accounts SET provider_kind=?2, protocol=?3, label=?4, endpoint=?5, \
          enabled=?6, api_key_secret_ref=?7, secret_headers_json=?8, config_json=?9, revision=?10, \
@@ -1701,7 +1791,7 @@ pub(crate) fn sync_upsert_model_profile(
         profile
     };
     let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
-        .map_err(|_| ModelRepositoryError::InvalidData)?;
+        .map_err(|error| ModelRepositoryError::InvalidData { reason: error.to_string() })?;
     connection.execute(
         "UPDATE model_profiles SET provider_account_id=?2, external_model_id=?3, display_name=?4, \
          kind=?5, config_json=?6, revision=?7, created_at=?8, updated_at=?9 WHERE id=?1",
@@ -1721,7 +1811,9 @@ pub(crate) fn sync_delete_model_profile(
     id: &str,
     now: TimestampMillis,
 ) -> Result<bool, ModelRepositoryError> {
-    let id = id.parse().map_err(|_| ModelRepositoryError::InvalidData)?;
+    let id = id.parse().map_err(|error| ModelRepositoryError::InvalidData {
+        reason: format!("{error}"),
+    })?;
     connection.execute_batch("SAVEPOINT sync_model_delete").map_err(model_error)?;
     match models::provider_control_adapter::delete_model_in(connection, id, now) {
         Ok(_) => {
@@ -1774,7 +1866,12 @@ pub(crate) fn insert_media_asset_row(
 ) -> Result<(), MediaAssetRepositoryError> {
     let (retention, expires_at) = retention_values(asset.retention);
     let provenance = serde_json::to_string(&asset.provenance)
-        .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "insert media asset row failed");
+            MediaAssetRepositoryError::InvalidData {
+                reason: "insert media asset row: a value could not be read or converted",
+            }
+        })?;
     connection
         .execute(
             "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
@@ -1848,8 +1945,12 @@ pub(crate) fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
 }
 fn media_error(error: rusqlite::Error) -> MediaBlobRepositoryError {
     match error {
-        rusqlite::Error::InvalidQuery => MediaBlobRepositoryError::InvalidData,
-        _ => MediaBlobRepositoryError::Storage,
+        rusqlite::Error::InvalidQuery => MediaBlobRepositoryError::InvalidData {
+            reason: "media error: a stored value is not recognised",
+        },
+        _ => MediaBlobRepositoryError::Storage {
+            reason: "media error: a stored value is not recognised",
+        },
     }
 }
 
@@ -1858,10 +1959,17 @@ pub(crate) fn register_media_blob_in(
     blob: MediaBlob,
 ) -> Result<MediaBlob, MediaBlobRepositoryError> {
     if blob.state != BlobState::Staged {
-        return Err(MediaBlobRepositoryError::InvalidState);
+        return Err(MediaBlobRepositoryError::InvalidState {
+            reason: "register media blob in: a value failed validation",
+        });
     }
     blob.validate()
-        .map_err(|_| MediaBlobRepositoryError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "register media blob in failed");
+            MediaBlobRepositoryError::InvalidData {
+                reason: "register media blob in: a value could not be read or converted",
+            }
+        })?;
     let by_id = connection
         .query_row(
             &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
@@ -1889,17 +1997,23 @@ pub(crate) fn register_media_blob_in(
             || existing.duration_ms != blob.duration_ms
             || existing.validation_version != blob.validation_version
         {
-            return Err(MediaBlobRepositoryError::InvalidData);
+            return Err(MediaBlobRepositoryError::InvalidData {
+                reason: "register media blob in: a value failed validation",
+            });
         }
         if let Some(existing_by_id) = by_id
             && existing_by_id.content_hash != existing.content_hash {
-                return Err(MediaBlobRepositoryError::InvalidData);
+                return Err(MediaBlobRepositoryError::InvalidData {
+                    reason: "register media blob in: a value failed validation",
+                });
             }
         return Ok(existing);
     }
 
     if by_id.is_some() {
-        return Err(MediaBlobRepositoryError::InvalidData);
+        return Err(MediaBlobRepositoryError::InvalidData {
+            reason: "register media blob in: a value failed validation",
+        });
     }
 
     insert_media_blob_row(connection, &blob)?;
@@ -1917,7 +2031,12 @@ impl MediaBlobRepository for Database {
     fn register(&self, blob: MediaBlob) -> Result<MediaBlob, MediaBlobRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| MediaBlobRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "register failed");
+                MediaBlobRepositoryError::Storage {
+                    reason: "register: a storage step failed",
+                }
+            })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(media_error)?;
@@ -1932,7 +2051,12 @@ impl MediaBlobRepository for Database {
     ) -> Result<MediaBlob, MediaBlobRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| MediaBlobRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "finalize staged to ready failed");
+                MediaBlobRepositoryError::Storage {
+                    reason: "finalize staged to ready: a storage step failed",
+                }
+            })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(media_error)?;
@@ -1949,7 +2073,9 @@ impl MediaBlobRepository for Database {
             return Ok(current);
         }
         if current.state != BlobState::Staged {
-            return Err(MediaBlobRepositoryError::InvalidState);
+            return Err(MediaBlobRepositoryError::InvalidState {
+                reason: "finalize staged to ready: a value failed validation",
+            });
         }
         transaction
             .execute(
@@ -1974,7 +2100,12 @@ impl MediaBlobRepository for Database {
     ) -> Result<MediaBlob, MediaBlobRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| MediaBlobRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "restore missing to ready failed");
+                MediaBlobRepositoryError::Storage {
+                    reason: "restore missing to ready: a storage step failed",
+                }
+            })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(media_error)?;
@@ -1990,7 +2121,9 @@ impl MediaBlobRepository for Database {
         match current.state {
             BlobState::Ready => return Ok(current),
             BlobState::Missing => {}
-            _ => return Err(MediaBlobRepositoryError::InvalidState),
+            _ => return Err(MediaBlobRepositoryError::InvalidState {
+                reason: "restore missing to ready: a stored value is not recognised",
+            }),
         }
         transaction
             .execute(
@@ -2010,7 +2143,12 @@ impl MediaBlobRepository for Database {
     }
     fn get(&self, id: MediaBlobId) -> Result<Option<MediaBlob>, MediaBlobRepositoryError> {
         self.connection()
-            .map_err(|_| MediaBlobRepositoryError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get failed");
+                MediaBlobRepositoryError::Storage {
+                    reason: "get: a storage step failed",
+                }
+            })?
             .query_row(
                 &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
                 [id.to_string()],
@@ -2024,7 +2162,12 @@ impl MediaBlobRepository for Database {
         hash: &ContentHash,
     ) -> Result<Option<MediaBlob>, MediaBlobRepositoryError> {
         self.connection()
-            .map_err(|_| MediaBlobRepositoryError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "find by hash failed");
+                MediaBlobRepositoryError::Storage {
+                    reason: "find by hash: a storage step failed",
+                }
+            })?
             .query_row(
                 &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE content_hash=?1"),
                 [hash.as_str()],
@@ -2159,8 +2302,12 @@ fn asset_from_row(row: &Row<'_>) -> rusqlite::Result<MediaAsset> {
 
 fn asset_error(error: rusqlite::Error) -> MediaAssetRepositoryError {
     match error {
-        rusqlite::Error::InvalidQuery => MediaAssetRepositoryError::InvalidData,
-        _ => MediaAssetRepositoryError::Storage,
+        rusqlite::Error::InvalidQuery => MediaAssetRepositoryError::InvalidData {
+            reason: "asset error: a stored value is not recognised",
+        },
+        _ => MediaAssetRepositoryError::Storage {
+            reason: "asset error: a stored value is not recognised",
+        },
     }
 }
 
@@ -2199,7 +2346,12 @@ fn encode_library_cursor(asset: &MediaAsset) -> Result<String, MediaAssetReposit
     };
     serde_json::to_vec(&cursor)
         .map(|value| hex_encode(&value))
-        .map_err(|_| MediaAssetRepositoryError::InvalidData)
+        .map_err(|error| {
+            tracing::warn!(%error, "encode library cursor failed");
+            MediaAssetRepositoryError::InvalidData {
+                reason: "encode library cursor: a value could not be read or converted",
+            }
+        })
 }
 
 fn decode_library_cursor(
@@ -2208,16 +2360,33 @@ fn decode_library_cursor(
     let Some(value) = value else {
         return Ok(None);
     };
-    let bytes = hex_decode(value).map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+    let bytes = hex_decode(value).map_err(|error| {
+        tracing::warn!(?error, "decode library cursor failed");
+        MediaAssetRepositoryError::InvalidData {
+            reason: "decode library cursor: a value could not be read or converted",
+        }
+    })?;
     let cursor: LibraryCursor =
-        serde_json::from_slice(&bytes).map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        serde_json::from_slice(&bytes).map_err(|error| {
+            tracing::warn!(%error, "decode library cursor failed");
+            MediaAssetRepositoryError::InvalidData {
+                reason: "decode library cursor: a value could not be read or converted",
+            }
+        })?;
     if cursor.format_version != ASSET_CURSOR_FORMAT_VERSION {
-        return Err(MediaAssetRepositoryError::InvalidData);
+        return Err(MediaAssetRepositoryError::InvalidData {
+            reason: "decode library cursor: a value failed validation",
+        });
     }
     let id = cursor
         .id
         .parse()
-        .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "decode library cursor failed");
+            MediaAssetRepositoryError::InvalidData {
+                reason: "decode library cursor: a value could not be read or converted",
+            }
+        })?;
     Ok(Some((cursor.updated_at, id)))
 }
 
@@ -2255,7 +2424,12 @@ pub(crate) fn create_media_asset_in(
 ) -> Result<MediaAsset, MediaAssetRepositoryError> {
     asset
         .validate()
-        .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "create media asset in failed");
+            MediaAssetRepositoryError::InvalidData {
+                reason: "create media asset in: a value could not be read or converted",
+            }
+        })?;
     let blob = connection
         .query_row(
             &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
@@ -2271,7 +2445,9 @@ pub(crate) fn create_media_asset_in(
         return Err(MediaAssetRepositoryError::BlobNotReady);
     }
     if blob.kind != asset.kind.blob_kind() {
-        return Err(MediaAssetRepositoryError::InvalidData);
+        return Err(MediaAssetRepositoryError::InvalidData {
+            reason: "create media asset in: a value failed validation",
+        });
     }
     if load_asset_with_blob(connection, asset.id)
         .map_err(asset_error)?
@@ -2282,7 +2458,9 @@ pub(crate) fn create_media_asset_in(
     insert_media_asset_row(connection, &asset)?;
     let stored = load_asset_with_blob(connection, asset.id)
         .map_err(asset_error)?
-        .ok_or(MediaAssetRepositoryError::InvalidData)?;
+        .ok_or(MediaAssetRepositoryError::InvalidData {
+            reason: "create media asset in: a required value is missing",
+        })?;
     Ok(stored)
 }
 
@@ -2290,7 +2468,12 @@ impl MediaAssetRepository for Database {
     fn create(&self, asset: MediaAsset) -> Result<MediaAsset, MediaAssetRepositoryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| MediaAssetRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "create failed");
+                MediaAssetRepositoryError::Storage {
+                    reason: "create: a storage step failed",
+                }
+            })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(asset_error)?;
@@ -2301,7 +2484,12 @@ impl MediaAssetRepository for Database {
 
     fn get(&self, id: AssetId) -> Result<Option<MediaAsset>, MediaAssetRepositoryError> {
         self.connection()
-            .map_err(|_| MediaAssetRepositoryError::Storage)
+            .map_err(|error| {
+                tracing::warn!(%error, "get failed");
+                MediaAssetRepositoryError::Storage {
+                    reason: "get: a storage step failed",
+                }
+            })
             .and_then(|connection| load_asset_with_blob(&connection, id).map_err(asset_error))
     }
 
@@ -2315,7 +2503,12 @@ impl MediaAssetRepository for Database {
         let (retention, expires_at) = retention_values(retention_value);
         let mut connection = self
             .connection()
-            .map_err(|_| MediaAssetRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "update retention failed");
+                MediaAssetRepositoryError::Storage {
+                    reason: "update retention: a storage step failed",
+                }
+            })?;
         let transaction = connection.transaction().map_err(asset_error)?;
         let current = load_asset_with_blob(&transaction, id)
             .map_err(asset_error)?
@@ -2325,7 +2518,12 @@ impl MediaAssetRepository for Database {
         }
         let next_revision = current
             .next_revision()
-            .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "update retention failed");
+                MediaAssetRepositoryError::InvalidData {
+                    reason: "update retention: a value could not be read or converted",
+                }
+            })?;
         let changed = transaction
             .execute(
                 "UPDATE media_assets SET retention=?2, expires_at=?3, revision=?4, updated_at=?5 WHERE id=?1 AND revision=?6",
@@ -2344,7 +2542,9 @@ impl MediaAssetRepository for Database {
         }
         let stored = load_asset_with_blob(&transaction, id)
             .map_err(asset_error)?
-            .ok_or(MediaAssetRepositoryError::InvalidData)?;
+            .ok_or(MediaAssetRepositoryError::InvalidData {
+                reason: "update retention: a required value is missing",
+            })?;
         transaction.commit().map_err(asset_error)?;
         Ok(stored)
     }
@@ -2357,7 +2557,12 @@ impl MediaAssetRepository for Database {
         let limit = usize::from(request.limit.get()).max(1);
         let connection = self
             .connection()
-            .map_err(|_| MediaAssetRepositoryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "list library failed");
+                MediaAssetRepositoryError::Storage {
+                    reason: "list library: a storage step failed",
+                }
+            })?;
         let mut ids = Vec::with_capacity(limit + 1);
         let mut statement = connection
             .prepare(
@@ -2381,7 +2586,12 @@ impl MediaAssetRepository for Database {
             ids.push(
                 row.map_err(asset_error)?
                     .parse()
-                    .map_err(|_| MediaAssetRepositoryError::InvalidData)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "list library failed");
+                        MediaAssetRepositoryError::InvalidData {
+                            reason: "list library: a value could not be read or converted",
+                        }
+                    })?,
             );
         }
         drop(statement);
@@ -2394,9 +2604,13 @@ impl MediaAssetRepository for Database {
         for id in ids {
             let asset = load_asset_with_blob(&connection, id)
                 .map_err(asset_error)?
-                .ok_or(MediaAssetRepositoryError::InvalidData)?;
+                .ok_or(MediaAssetRepositoryError::InvalidData {
+                    reason: "list library: a required value is missing",
+                })?;
             if asset.retention != RetentionClass::Library {
-                return Err(MediaAssetRepositoryError::InvalidData);
+                return Err(MediaAssetRepositoryError::InvalidData {
+                    reason: "list library: a value failed validation",
+                });
             }
             items.push(asset);
         }
@@ -2414,7 +2628,12 @@ impl MediaSyncRepository for Database {
         &self,
         after: Option<AssetId>,
     ) -> Result<Vec<lettuce_sync::CanonicalMediaAsset>, MediaSyncError> {
-        let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
+        let connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "pending media failed");
+            MediaSyncError::Storage {
+                reason: "pending media: a storage step failed",
+            }
+        })?;
         let mut statement = connection
             .prepare(
                 "SELECT change.payload_bytes
@@ -2425,7 +2644,12 @@ impl MediaSyncRepository for Database {
                    AND (?3 IS NULL OR deferred.entity_id > ?3)
                  ORDER BY deferred.entity_id LIMIT ?4",
             )
-            .map_err(|_| MediaSyncError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "pending media failed");
+                MediaSyncError::Storage {
+                    reason: "pending media: a storage step failed",
+                }
+            })?;
         let rows = statement
             .query_map(
                 params![
@@ -2433,24 +2657,51 @@ impl MediaSyncRepository for Database {
                     i64::from(lettuce_sync::MEDIA_ASSET_SYNC_VERSION),
                     after.map(|id| id.to_string()),
                     i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS)
-                        .map_err(|_| MediaSyncError::Storage)?
+                        .map_err(|error| {
+                            tracing::warn!(%error, "pending media failed");
+                            MediaSyncError::Storage {
+                                reason: "pending media: a storage step failed",
+                            }
+                        })?
                 ],
                 |row| row.get::<_, Vec<u8>>(0),
             )
-            .map_err(|_| MediaSyncError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "pending media failed");
+                MediaSyncError::Storage {
+                    reason: "pending media: a storage step failed",
+                }
+            })?;
         let mut assets = Vec::new();
         for row in rows {
             let asset: lettuce_sync::CanonicalMediaAsset = serde_json::from_slice(
-                &row.map_err(|_| MediaSyncError::Storage)?,
+                &row.map_err(|error| {
+                    tracing::warn!(%error, "pending media failed");
+                    MediaSyncError::Storage {
+                        reason: "pending media: a storage step failed",
+                    }
+                })?,
             )
-            .map_err(|_| MediaSyncError::Storage)?;
-            asset.validate().map_err(|_| MediaSyncError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "pending media failed");
+                MediaSyncError::Storage {
+                    reason: "pending media: a storage step failed",
+                }
+            })?;
+            asset.validate().map_err(|error| {
+                tracing::warn!(%error, "pending media failed");
+                MediaSyncError::Storage {
+                    reason: "pending media: a storage step failed",
+                }
+            })?;
             assets.push(asset);
         }
         assets.sort_by_key(|value| value.asset.id);
         for pair in assets.windows(2) {
             if pair[0].asset.id == pair[1].asset.id && pair[0] != pair[1] {
-                return Err(MediaSyncError::Storage);
+                return Err(MediaSyncError::Storage {
+                    reason: "pending media: stored data failed a consistency check",
+                });
             }
         }
         assets.dedup_by_key(|value| value.asset.id);
@@ -2458,13 +2709,33 @@ impl MediaSyncRepository for Database {
     }
 
     fn retry_deferred_changes(&self, now: TimestampMillis) -> Result<usize, MediaSyncError> {
-        let mut connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "retry deferred changes failed");
+            MediaSyncError::Storage {
+                reason: "retry deferred changes: a storage step failed",
+            }
+        })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| MediaSyncError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "retry deferred changes failed");
+                MediaSyncError::Storage {
+                    reason: "retry deferred changes: a storage step failed",
+                }
+            })?;
         let settled = crate::sync::sync_adapter::retry_deferred_changes_in(&transaction, now)
-            .map_err(|_| MediaSyncError::Storage)?;
-        transaction.commit().map_err(|_| MediaSyncError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "retry deferred changes failed");
+                MediaSyncError::Storage {
+                    reason: "retry deferred changes: a storage step failed",
+                }
+            })?;
+        transaction.commit().map_err(|error| {
+            tracing::warn!(%error, "retry deferred changes failed");
+            MediaSyncError::Storage {
+                reason: "retry deferred changes: a storage step failed",
+            }
+        })?;
         Ok(settled)
     }
 }
@@ -3902,10 +4173,7 @@ mod tests {
         );
         let mut invalid = saved.clone();
         invalid.config.feature_parameters.lorebook_generator.parameters.top_p = Set(2.0);
-        assert_eq!(
-            ModelProfileRepository::upsert(&database, invalid, Some(saved.revision)),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ModelProfileRepository::upsert(&database, invalid, Some(saved.revision)), Err(ModelRepositoryError::InvalidData { .. })));
         assert_eq!(
             ModelProfileRepository::get(&database, saved.id).expect("unchanged"),
             Some(saved)
@@ -4109,10 +4377,7 @@ mod tests {
         let mut changed_owner = updated.clone();
         changed_owner.secret_owner_id = SecretOwnerId::new();
         changed_owner.label = "Must not write".into();
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, changed_owner, Some(updated.revision)),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, changed_owner, Some(updated.revision)), Err(ModelRepositoryError::InvalidData { .. })));
         assert_eq!(
             ProviderAccountRepository::get(&database, updated.id)
                 .expect("read account")
@@ -4214,10 +4479,7 @@ mod tests {
                 )
                 .expect("corrupt provider config");
             drop(connection);
-            assert_eq!(
-                ProviderAccountRepository::get(&database, account.id),
-                Err(ModelRepositoryError::InvalidData)
-            );
+            assert!(matches!(ProviderAccountRepository::get(&database, account.id), Err(ModelRepositoryError::InvalidData { .. })));
         }
     }
 
@@ -4298,10 +4560,7 @@ mod tests {
             auth: CustomAuth::None,
             ..Default::default()
         });
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, no_endpoint, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, no_endpoint, None), Err(ModelRepositoryError::InvalidData { .. })));
 
         let mut duplicate_names = provider();
         duplicate_names.secret_headers = vec![
@@ -4314,10 +4573,7 @@ mod tests {
                 secret_ref: SecretRef::new(),
             },
         ];
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, duplicate_names, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, duplicate_names, None), Err(ModelRepositoryError::InvalidData { .. })));
 
         let mut duplicate_refs = provider();
         let duplicate_ref = SecretRef::new();
@@ -4331,30 +4587,21 @@ mod tests {
                 secret_ref: duplicate_ref,
             },
         ];
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, duplicate_refs, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, duplicate_refs, None), Err(ModelRepositoryError::InvalidData { .. })));
 
         let mut reserved = provider();
         reserved.secret_headers = vec![SecretHeader {
             name: HeaderName::new("Content-Length").expect("header name"),
             secret_ref: SecretRef::new(),
         }];
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, reserved, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, reserved, None), Err(ModelRepositoryError::InvalidData { .. })));
 
         let mut api_key_collision = provider();
         api_key_collision.secret_headers = vec![SecretHeader {
             name: HeaderName::new("X-Collision").expect("header name"),
             secret_ref: api_key_collision.api_key_ref.expect("api key ref"),
         }];
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, api_key_collision, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, api_key_collision, None), Err(ModelRepositoryError::InvalidData { .. })));
 
         let corrupt = provider();
         let stored = ProviderAccountRepository::upsert(&database, corrupt, None)
@@ -4370,10 +4617,7 @@ mod tests {
             )
             .expect("corrupt query name");
         drop(connection);
-        assert_eq!(
-            ProviderAccountRepository::get(&database, stored.id),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::get(&database, stored.id), Err(ModelRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -4389,10 +4633,7 @@ mod tests {
             )
             .expect("corrupt provider owner");
         drop(connection);
-        assert_eq!(
-            ProviderAccountRepository::get(&database, account.id),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::get(&database, account.id), Err(ModelRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -4408,10 +4649,7 @@ mod tests {
             )
             .expect("corrupt provider endpoint");
         drop(connection);
-        assert_eq!(
-            ProviderAccountRepository::get(&database, account.id),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::get(&database, account.id), Err(ModelRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -4437,10 +4675,7 @@ mod tests {
                 )
                 .expect("corrupt model config");
             drop(connection);
-            assert_eq!(
-                ModelProfileRepository::get(&database, model.id),
-                Err(ModelRepositoryError::InvalidData)
-            );
+            assert!(matches!(ModelProfileRepository::get(&database, model.id), Err(ModelRepositoryError::InvalidData { .. })));
         }
     }
 
@@ -4477,10 +4712,7 @@ mod tests {
                 )
                 .expect("corrupt global settings");
             drop(connection);
-            assert_eq!(
-                GlobalSettingsStore::load(&database),
-                Err(GlobalSettingsStoreError::InvalidData)
-            );
+            assert!(matches!(GlobalSettingsStore::load(&database), Err(GlobalSettingsStoreError::InvalidData { .. })));
         }
     }
 
@@ -4604,10 +4836,7 @@ mod tests {
         for depth in [0, 21] {
             let mut settings = initial.settings.clone();
             settings.lorebook_scan_depth = depth;
-            assert_eq!(
-                GlobalSettingsStore::save(&database, settings, None, initial.revision),
-                Err(GlobalSettingsStoreError::InvalidData)
-            );
+            assert!(matches!(GlobalSettingsStore::save(&database, settings, None, initial.revision), Err(GlobalSettingsStoreError::InvalidData { .. })));
         }
         let mut settings = initial.settings;
         settings.lorebook_scan_depth = 20;
@@ -4665,16 +4894,10 @@ mod tests {
 
         let mut invalid = provider();
         invalid.provider_kind = "  ".into();
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, invalid, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, invalid, None), Err(ModelRepositoryError::InvalidData { .. })));
         let mut invalid = provider();
         invalid.provider_kind = "x".repeat(129);
-        assert_eq!(
-            ProviderAccountRepository::upsert(&database, invalid, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ProviderAccountRepository::upsert(&database, invalid, None), Err(ModelRepositoryError::InvalidData { .. })));
         for endpoint in [
             "https://user:password@example.invalid",
             "https://example.invalid/api?token=canary-secret-value",
@@ -4683,18 +4906,13 @@ mod tests {
         ] {
             let mut invalid = provider();
             invalid.endpoint = Some(endpoint.into());
-            assert_eq!(
-                ProviderAccountRepository::upsert(&database, invalid, None),
-                Err(ModelRepositoryError::InvalidData),
+            assert!(matches!(ProviderAccountRepository::upsert(&database, invalid, None), Err(ModelRepositoryError::InvalidData { .. })),
                 "endpoint should be rejected: {endpoint}"
             );
         }
         let mut invalid_profile = profile(missing);
         invalid_profile.config.capabilities.format_version = 0;
-        assert_eq!(
-            ModelProfileRepository::upsert(&database, invalid_profile, None),
-            Err(ModelRepositoryError::InvalidData)
-        );
+        assert!(matches!(ModelProfileRepository::upsert(&database, invalid_profile, None), Err(ModelRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -4748,11 +4966,8 @@ mod tests {
         .expect("select default");
         let settings_before = GlobalSettingsStore::load(&database).expect("load settings");
 
-        assert_eq!(
-            database
-                .delete_with_profiles_inner(account.id, DeleteFailurePoint::AfterProfilesDelete,),
-            Err(ModelRepositoryError::Storage)
-        );
+        assert!(matches!(database
+                .delete_with_profiles_inner(account.id, DeleteFailurePoint::AfterProfilesDelete,), Err(ModelRepositoryError::Storage { .. })));
         assert_eq!(
             ProviderAccountRepository::get(&database, account.id),
             Ok(Some(account))
@@ -4781,13 +4996,10 @@ mod tests {
         .expect("select default");
         let settings_before = GlobalSettingsStore::load(&database).expect("load settings");
 
-        assert_eq!(
-            database.delete_and_clear_default_inner(
+        assert!(matches!(database.delete_and_clear_default_inner(
                 profile.id,
                 DeleteFailurePoint::AfterProfileDelete,
-            ),
-            Err(ModelRepositoryError::Storage)
-        );
+            ), Err(ModelRepositoryError::Storage { .. })));
         assert_eq!(
             ProviderAccountRepository::get(&database, account.id),
             Ok(Some(account))
@@ -4851,10 +5063,7 @@ mod tests {
             created_at: TimestampMillis::new(31),
             updated_at: TimestampMillis::new(31),
         };
-        assert_eq!(
-            MediaBlobRepository::register(&database, collision),
-            Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
-        );
+        assert!(matches!(MediaBlobRepository::register(&database, collision), Err(lettuce_media::MediaBlobRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -4862,10 +5071,7 @@ mod tests {
         let database = Database::open_in_memory().expect("open database");
         let mut ready = media_blob('0', MediaKind::Image);
         ready.state = BlobState::Ready;
-        assert_eq!(
-            MediaBlobRepository::register(&database, ready),
-            Err(lettuce_media::MediaBlobRepositoryError::InvalidState)
-        );
+        assert!(matches!(MediaBlobRepository::register(&database, ready), Err(lettuce_media::MediaBlobRepositoryError::InvalidState { .. })));
         let invalids = [
             {
                 let mut blob = media_blob('a', MediaKind::Image);
@@ -4894,10 +5100,7 @@ mod tests {
             },
         ];
         for blob in invalids {
-            assert_eq!(
-                MediaBlobRepository::register(&database, blob),
-                Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
-            );
+            assert!(matches!(MediaBlobRepository::register(&database, blob), Err(lettuce_media::MediaBlobRepositoryError::InvalidData { .. })));
         }
 
         let first = MediaBlobRepository::register(&database, media_blob('f', MediaKind::Image))
@@ -4929,18 +5132,12 @@ mod tests {
         version.validation_version = 2;
         conflicts.push(version);
         for conflict in conflicts {
-            assert_eq!(
-                MediaBlobRepository::register(&database, conflict),
-                Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
-            );
+            assert!(matches!(MediaBlobRepository::register(&database, conflict), Err(lettuce_media::MediaBlobRepositoryError::InvalidData { .. })));
         }
 
         let mut same_id_different_hash = first.clone();
         same_id_different_hash.content_hash = ContentHash::parse("0".repeat(64)).expect("hash");
-        assert_eq!(
-            MediaBlobRepository::register(&database, same_id_different_hash),
-            Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
-        );
+        assert!(matches!(MediaBlobRepository::register(&database, same_id_different_hash), Err(lettuce_media::MediaBlobRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -4976,10 +5173,7 @@ mod tests {
             Err(MediaAssetRepositoryError::BlobMissing)
         );
         let wrong_kind = media_asset(AssetId::new(), blob.id, AssetKind::MessageAudio);
-        assert_eq!(
-            MediaAssetRepository::create(&database, wrong_kind),
-            Err(MediaAssetRepositoryError::InvalidData)
-        );
+        assert!(matches!(MediaAssetRepository::create(&database, wrong_kind), Err(MediaAssetRepositoryError::InvalidData { .. })));
     }
 
     #[test]
@@ -5128,8 +5322,7 @@ mod tests {
                 )
                 .expect("install failure trigger");
         }
-        assert_eq!(
-            MediaAssetRepository::update_retention(
+        assert!(matches!(MediaAssetRepository::update_retention(
                 &database,
                 asset.id,
                 asset.revision,
@@ -5137,9 +5330,7 @@ mod tests {
                     expires_at: TimestampMillis::new(99),
                 },
                 TimestampMillis::new(40),
-            ),
-            Err(MediaAssetRepositoryError::Storage)
-        );
+            ), Err(MediaAssetRepositoryError::Storage { .. })));
         assert_eq!(
             MediaAssetRepository::get(&database, asset.id),
             Ok(Some(asset))
@@ -5206,16 +5397,13 @@ mod tests {
             serde_json::json!({"format_version": 1, "updated_at": 100, "id": ids[0].to_string(), "extra": true}),
         ] {
             let cursor = hex_encode(&serde_json::to_vec(&document).expect("cursor json"));
-            assert_eq!(
-                MediaAssetRepository::list_library(
+            assert!(matches!(MediaAssetRepository::list_library(
                     &database,
                     PageRequest {
                         cursor: Some(cursor),
                         limit: PageLimit::new(2),
                     },
-                ),
-                Err(MediaAssetRepositoryError::InvalidData)
-            );
+                ), Err(MediaAssetRepositoryError::InvalidData { .. })));
         }
     }
 
@@ -5241,10 +5429,7 @@ mod tests {
                 )
                 .expect("corrupt provenance");
             drop(connection);
-            assert_eq!(
-                MediaAssetRepository::get(&database, asset.id),
-                Err(MediaAssetRepositoryError::InvalidData)
-            );
+            assert!(matches!(MediaAssetRepository::get(&database, asset.id), Err(MediaAssetRepositoryError::InvalidData { .. })));
         }
     }
 
@@ -5735,7 +5920,10 @@ mod tests {
             conflict_outcomes
                 .iter()
                 .filter(|result| {
-                    **result == Err(lettuce_media::MediaBlobRepositoryError::InvalidData)
+                    matches!(
+                        **result,
+                        Err(lettuce_media::MediaBlobRepositoryError::InvalidData { .. })
+                    )
                 })
                 .count(),
             1

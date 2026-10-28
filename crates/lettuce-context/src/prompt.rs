@@ -466,7 +466,10 @@ impl PromptSnapshot {
             }
             entry.validate()?;
         }
-        let encoded = serde_json::to_vec(self).map_err(|_| PromptValidationError::Serialization)?;
+        let encoded =
+            serde_json::to_vec(self).map_err(|error| PromptValidationError::Serialization {
+                reason: error.to_string(),
+            })?;
         if encoded.len() > MAX_AUTHORED_BYTES {
             return Err(PromptValidationError::AuthoredPayloadTooLarge);
         }
@@ -541,8 +544,8 @@ pub enum PromptValidationError {
     InvalidTimestampOrder,
     #[error("built-in prompt seed version must be non-zero")]
     ZeroSeedVersion,
-    #[error("prompt could not be serialized for validation")]
-    Serialization,
+    #[error("prompt could not be serialized for validation: {reason}")]
+    Serialization { reason: String },
 }
 
 pub(crate) fn validate_label(
@@ -701,7 +704,10 @@ impl PromptDocument {
             }
             _ => {}
         }
-        let encoded = serde_json::to_vec(self).map_err(|_| PromptValidationError::Serialization)?;
+        let encoded =
+            serde_json::to_vec(self).map_err(|error| PromptValidationError::Serialization {
+                reason: error.to_string(),
+            })?;
         if encoded.len() > MAX_AUTHORED_BYTES {
             return Err(PromptValidationError::AuthoredPayloadTooLarge);
         }
@@ -2106,7 +2112,9 @@ impl BuiltInPromptSeed {
             protected: self.protected,
             entries: &self.entries,
         })
-        .map_err(|_| PromptValidationError::Serialization)?;
+        .map_err(|error| PromptValidationError::Serialization {
+            reason: error.to_string(),
+        })?;
         Ok(
             ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
                 .expect("blake3 always produces a 64-character hexadecimal digest"),

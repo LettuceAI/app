@@ -11,7 +11,7 @@ export const memoryRunModes: readonly MemoryRunMode[] = ["auto", "ask_first", "m
 
 export const memoryFailureCodes: readonly MemoryFailureCode[] = [
   "embedding_unavailable", "model_missing", "model_invalid", "prompt_missing", "settings_invalid", "provider_unavailable",
-  "provider_rejected", "empty_response", "timed_out", "round_limit", "tool_failed", "storage_failure", "lease_lost", "internal",
+  "provider_rejected", "invalid_response", "empty_response", "timed_out", "round_limit", "tool_failed", "storage_failure", "lease_lost", "internal",
 ];
 
 export const memoryGateReasons: readonly MemoryGateReason[] = ["not_dynamic", "disabled", "nothing_to_summarise", "cycle_running"];

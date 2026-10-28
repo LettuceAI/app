@@ -28,22 +28,22 @@ pub struct CompanionGrowthExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionGrowthExecutionError {
-    #[error("companion growth execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("companion growth prompt is invalid")]
-    InvalidPrompt,
+    #[error("companion growth execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("companion growth prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("companion growth inference was cancelled")]
     Cancelled,
-    #[error("companion growth inference returned an invalid response")]
-    InvalidResponse,
-    #[error("companion growth request is too large")]
-    ContextTooLarge,
+    #[error("companion growth inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
+    #[error("companion growth request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("companion growth prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("companion growth provider failed: {0}")]
     Inference(PortError),
-    #[error("companion growth replay cleanup failed")]
-    ReplayCleanup,
+    #[error("companion growth replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("companion growth run persistence failed: {0}")]
     Run(CompanionGrowthRunRepositoryError),
     #[error("companion growth policy rejected proposals: {0:?}")]
@@ -87,7 +87,9 @@ impl<
         now: TimestampMillis,
     ) -> Result<CompanionGrowthExecutionResult, CompanionGrowthExecutionError> {
         if handle.id() != job_id {
-            return Err(CompanionGrowthExecutionError::InvalidOwnership);
+            return Err(CompanionGrowthExecutionError::InvalidOwnership {
+                reason: "handle belongs to another job",
+            });
         }
         let mut run = self
             .repository
@@ -102,7 +104,9 @@ impl<
                 self.repository,
                 crate::BuiltInPromptId::CompanionRuntime,
             )
-            .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)?;
+            .map_err(|error| CompanionGrowthExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            })?;
             let request = build_request(&run, prompt, &text, handle, stream_sink)?;
             let outcome = crate::jobs::job_inference_usage::run_job_inference(
                 self.repository,
@@ -121,13 +125,17 @@ impl<
                 cleanup(self.repository, &outcome)?;
                 return Err(CompanionGrowthExecutionError::Cancelled);
             }
-            if outcome.validate().is_err() {
+            if let Err(error) = outcome.validate() {
                 cleanup(self.repository, &outcome)?;
-                return Err(CompanionGrowthExecutionError::InvalidResponse);
+                return Err(CompanionGrowthExecutionError::InvalidResponse {
+                    reason: format!("outcome failed validation: {error}"),
+                });
             }
             if outcome.candidates.len() != 1 {
                 cleanup(self.repository, &outcome)?;
-                return Err(CompanionGrowthExecutionError::InvalidResponse);
+                return Err(CompanionGrowthExecutionError::InvalidResponse {
+                    reason: "outcome has more or fewer than one candidate".to_owned(),
+                });
             }
             if matches!(outcome.finish_reason, FinishReason::Cancelled) {
                 cleanup(self.repository, &outcome)?;
@@ -135,7 +143,9 @@ impl<
             }
             if matches!(outcome.finish_reason, FinishReason::Error) {
                 cleanup(self.repository, &outcome)?;
-                return Err(CompanionGrowthExecutionError::InvalidResponse);
+                return Err(CompanionGrowthExecutionError::InvalidResponse {
+                    reason: "provider finished with an error".to_owned(),
+                });
             }
             let candidate = &outcome.candidates[0];
             let fallback = candidate
@@ -173,10 +183,11 @@ impl<
             };
             cleanup(self.repository, &outcome)?;
         }
-        let checkpoint = run
-            .proposal_checkpoint
-            .as_ref()
-            .ok_or(CompanionGrowthExecutionError::InvalidOwnership)?;
+        let checkpoint = run.proposal_checkpoint.as_ref().ok_or(
+            CompanionGrowthExecutionError::InvalidOwnership {
+                reason: "run has no proposal checkpoint",
+            },
+        )?;
         if checkpoint.proposals.is_empty() {
             return Ok(CompanionGrowthExecutionResult {
                 receipt: None,
@@ -246,7 +257,9 @@ fn build_request(
     if prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::CompanionGrowthcycle
     {
-        return Err(CompanionGrowthExecutionError::InvalidPrompt);
+        return Err(CompanionGrowthExecutionError::InvalidPrompt {
+            reason: "prompt is inactive or has the wrong purpose".to_owned(),
+        });
     }
     let growth = crate::companion::companion_prompt_text::render_growth_values(
         text,
@@ -257,7 +270,9 @@ fn build_request(
             run.created_at,
         ),
     )
-    .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)?;
+    .map_err(|error| CompanionGrowthExecutionError::InvalidPrompt {
+        reason: error.to_string(),
+    })?;
     let mut values = PromptRenderValues {
         character_name: run.companion_name.clone(),
         ..PromptRenderValues::default()
@@ -302,19 +317,25 @@ fn build_request(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)?;
+        .map_err(|error| CompanionGrowthExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     let in_chat = rendered
         .in_chat
         .iter()
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)
+                .map_err(|error| CompanionGrowthExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
     if messages.is_empty() {
-        return Err(CompanionGrowthExecutionError::InvalidPrompt);
+        return Err(CompanionGrowthExecutionError::InvalidPrompt {
+            reason: "rendered prompt has no messages".to_owned(),
+        });
     }
     let input_bytes = messages
         .iter()
@@ -326,7 +347,9 @@ fn build_request(
             _ => None,
         })
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(CompanionGrowthExecutionError::ContextTooLarge)?;
+        .ok_or(CompanionGrowthExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
     let mut profile = run.profile.clone();
     profile.tool_policy = ToolPolicy::Required;
     profile.output_policy = OutputPolicy::Plain;
@@ -361,8 +384,11 @@ fn build_request(
                 ..Default::default()
             },
             budget: ContextBudgetReport {
-                selected_messages: u32::try_from(run.fresh_memories.len())
-                    .map_err(|_| CompanionGrowthExecutionError::ContextTooLarge)?,
+                selected_messages: u32::try_from(run.fresh_memories.len()).map_err(|_| {
+                    CompanionGrowthExecutionError::ContextTooLarge {
+                        reason: "selected message count does not fit in u32",
+                    }
+                })?,
                 omitted_messages: 0,
                 input_bytes,
                 estimated_input_tokens: input_bytes.saturating_add(3) / 4,
@@ -379,7 +405,9 @@ fn build_request(
     };
     request
         .validate()
-        .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)?;
+        .map_err(|error| CompanionGrowthExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     Ok(request)
 }
 
@@ -387,6 +415,9 @@ fn cleanup<R: ProviderReplayArtifactPort + ?Sized>(
     repository: &R,
     outcome: &lettuce_conversations::InferenceOutcome,
 ) -> Result<(), CompanionGrowthExecutionError> {
-    cleanup_outcome_replays(repository, outcome)
-        .map_err(|_| CompanionGrowthExecutionError::ReplayCleanup)
+    cleanup_outcome_replays(repository, outcome).map_err(|error| {
+        CompanionGrowthExecutionError::ReplayCleanup {
+            reason: error.to_string(),
+        }
+    })
 }

@@ -35,11 +35,20 @@ pub struct DynamicMemorySummaryWindow {
 
 impl DynamicMemorySummaryWindow {
     fn validate(self, source_message_count: usize) -> Result<(), DynamicMemoryRunError> {
-        if self.message_interval == 0
-            || self.end <= self.start
-            || self.end - self.start != u64::try_from(source_message_count).unwrap_or(u64::MAX)
-        {
-            return Err(DynamicMemoryRunError::InvalidRun);
+        if self.message_interval == 0 {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "summary window message interval is zero",
+            });
+        }
+        if self.end <= self.start {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "summary window end is not after its start",
+            });
+        }
+        if self.end - self.start != u64::try_from(source_message_count).unwrap_or(u64::MAX) {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "summary window length differs from the source message count",
+            });
         }
         Ok(())
     }
@@ -119,41 +128,71 @@ pub struct DynamicMemoryRun {
 impl DynamicMemoryRun {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
         self.summary_window.validate(self.source_messages.len())?;
-        if self.source_messages.is_empty()
-            || self
-                .source_messages
-                .iter()
-                .map(|source| source.message_id)
-                .collect::<HashSet<_>>()
-                .len()
-                != self.source_messages.len()
-            || self.source_messages.iter().any(|source| {
-                !matches!(
-                    source.role,
-                    lettuce_conversations::MessageRole::User
-                        | lettuce_conversations::MessageRole::Assistant
-                )
-            })
-            || self.profile.tool_policy != ToolPolicy::Required
-            || ![false, true].into_iter().any(|group| {
-                dynamic_memory_tool_shape(&self.tool_request)
-                    == dynamic_memory_tool_shape(&dynamic_memory_tool_request_for_run(
-                        DynamicMemoryToolOptions {
-                            group,
-                            supersession_enabled: self.supersession_enabled,
-                            require_source_message_id: self.time_awareness_enabled,
-                        },
-                        &|key| key.to_owned(),
-                    ))
-            })
-            || self.starting_memory.id != self.space_id
-            || self.starting_memory.validate().is_err()
-        {
-            return Err(DynamicMemoryRunError::InvalidRun);
+        if self.source_messages.is_empty() {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "run has no source messages",
+            });
         }
-        self.tool_request
-            .validate()
-            .map_err(|_| DynamicMemoryRunError::InvalidRun)
+        if self
+            .source_messages
+            .iter()
+            .map(|source| source.message_id)
+            .collect::<HashSet<_>>()
+            .len()
+            != self.source_messages.len()
+        {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "run lists a source message twice",
+            });
+        }
+        if self.source_messages.iter().any(|source| {
+            !matches!(
+                source.role,
+                lettuce_conversations::MessageRole::User
+                    | lettuce_conversations::MessageRole::Assistant
+            )
+        }) {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "a source message is neither user nor assistant",
+            });
+        }
+        if self.profile.tool_policy != ToolPolicy::Required {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "inference profile does not require tool calls",
+            });
+        }
+        if ![false, true].into_iter().any(|group| {
+            dynamic_memory_tool_shape(&self.tool_request)
+                == dynamic_memory_tool_shape(&dynamic_memory_tool_request_for_run(
+                    DynamicMemoryToolOptions {
+                        group,
+                        supersession_enabled: self.supersession_enabled,
+                        require_source_message_id: self.time_awareness_enabled,
+                    },
+                    &|key| key.to_owned(),
+                ))
+        }) {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "tool request does not match the dynamic-memory tool contract",
+            });
+        }
+        if self.starting_memory.id != self.space_id {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "starting memory belongs to another memory space",
+            });
+        }
+        if let Err(error) = self.starting_memory.validate() {
+            tracing::warn!(%error, "dynamic-memory run starting memory failed validation");
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "starting memory snapshot failed validation",
+            });
+        }
+        self.tool_request.validate().map_err(|error| {
+            tracing::warn!(%error, "dynamic-memory run tool request failed validation");
+            DynamicMemoryRunError::InvalidRun {
+                reason: "tool request failed validation",
+            }
+        })
     }
 }
 
@@ -188,18 +227,31 @@ impl NewDynamicMemoryRunAttempt {
         let Some(change) = &self.cycle_start_change else {
             return Ok(());
         };
-        change
-            .validate()
-            .map_err(|_| DynamicMemoryRunError::InvalidRun)?;
-        if change.space_id != self.space_id
-            || change
-                .expected_revision
-                .next()
-                .ok()
-                .is_none_or(|next| next != self.starting_memory.revision)
-            || change.items != self.starting_memory.items
+        change.validate().map_err(|error| {
+            tracing::warn!(%error, "dynamic-memory cycle start change failed validation");
+            DynamicMemoryRunError::InvalidRun {
+                reason: "cycle start change failed validation",
+            }
+        })?;
+        if change.space_id != self.space_id {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "cycle start change belongs to another memory space",
+            });
+        }
+        if change
+            .expected_revision
+            .next()
+            .ok()
+            .is_none_or(|next| next != self.starting_memory.revision)
         {
-            return Err(DynamicMemoryRunError::InvalidRun);
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "cycle start change does not lead to the starting revision",
+            });
+        }
+        if change.items != self.starting_memory.items {
+            return Err(DynamicMemoryRunError::InvalidRun {
+                reason: "cycle start change items differ from the starting memory",
+            });
         }
         Ok(())
     }
@@ -248,46 +300,83 @@ pub struct DynamicMemoryAttempt {
 
 impl DynamicMemoryAttempt {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
-        if self.job_attempt == Some(0)
-            || (self.ordinal == 0) != self.retry_parent_id.is_none()
-            || self.revision.get() == 0
-            || self.updated_at < self.created_at
-        {
-            return Err(DynamicMemoryRunError::InvalidAttempt);
+        if self.job_attempt == Some(0) {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "job attempt is zero",
+            });
+        }
+        if (self.ordinal == 0) != self.retry_parent_id.is_none() {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "retry parent does not match the attempt ordinal",
+            });
+        }
+        if self.revision.get() == 0 {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "attempt revision is zero",
+            });
+        }
+        if self.updated_at < self.created_at {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "attempt was updated before it was created",
+            });
         }
         match self.status {
             DynamicMemoryAttemptStatus::Created
                 if self.started_at.is_some() || self.finished_at.is_some() =>
             {
-                return Err(DynamicMemoryRunError::InvalidAttempt);
+                return Err(DynamicMemoryRunError::InvalidAttempt {
+                    reason: "created attempt has a start or finish time",
+                });
             }
             DynamicMemoryAttemptStatus::Processing
                 if self.started_at.is_none() || self.finished_at.is_some() =>
             {
-                return Err(DynamicMemoryRunError::InvalidAttempt);
+                return Err(DynamicMemoryRunError::InvalidAttempt {
+                    reason: "processing attempt lacks a start time or has a finish time",
+                });
             }
             DynamicMemoryAttemptStatus::Succeeded
             | DynamicMemoryAttemptStatus::Failed
             | DynamicMemoryAttemptStatus::Interrupted
                 if self.started_at.is_none() || self.finished_at.is_none() =>
             {
-                return Err(DynamicMemoryRunError::InvalidAttempt);
+                return Err(DynamicMemoryRunError::InvalidAttempt {
+                    reason: "finished attempt lacks a start or finish time",
+                });
             }
             DynamicMemoryAttemptStatus::Cancelled if self.finished_at.is_none() => {
-                return Err(DynamicMemoryRunError::InvalidAttempt);
+                return Err(DynamicMemoryRunError::InvalidAttempt {
+                    reason: "cancelled attempt has no finish time",
+                });
             }
             _ => {}
         }
-        if self.failure.is_some() != matches!(self.status, DynamicMemoryAttemptStatus::Failed)
-            || self
-                .started_at
-                .is_some_and(|started| started < self.created_at || started > self.updated_at)
-            || self
-                .finished_at
-                .is_some_and(|finished| finished < self.created_at || finished > self.updated_at)
-            || matches!((self.started_at, self.finished_at), (Some(started), Some(finished)) if started > finished)
+        if self.failure.is_some() != matches!(self.status, DynamicMemoryAttemptStatus::Failed) {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "failure code is set only on failed attempts",
+            });
+        }
+        if self
+            .started_at
+            .is_some_and(|started| started < self.created_at || started > self.updated_at)
         {
-            return Err(DynamicMemoryRunError::InvalidAttempt);
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "start time is outside the creation and update times",
+            });
+        }
+        if self
+            .finished_at
+            .is_some_and(|finished| finished < self.created_at || finished > self.updated_at)
+        {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "finish time is outside the creation and update times",
+            });
+        }
+        if matches!((self.started_at, self.finished_at), (Some(started), Some(finished)) if started > finished)
+        {
+            return Err(DynamicMemoryRunError::InvalidAttempt {
+                reason: "attempt finished before it started",
+            });
         }
         Ok(())
     }
@@ -298,19 +387,30 @@ impl DynamicMemoryAttempt {
         failure: Option<DynamicMemoryAttemptFailureCode>,
         at: TimestampMillis,
     ) -> Result<Self, DynamicMemoryRunError> {
-        if !self.status.can_transition_to(next)
-            || at < self.updated_at
-            || failure.is_some() != matches!(next, DynamicMemoryAttemptStatus::Failed)
-        {
-            return Err(DynamicMemoryRunError::InvalidTransition);
+        if !self.status.can_transition_to(next) {
+            return Err(DynamicMemoryRunError::InvalidTransition {
+                reason: "status cannot move to the requested status",
+            });
+        }
+        if at < self.updated_at {
+            return Err(DynamicMemoryRunError::InvalidTransition {
+                reason: "transition time is before the last update",
+            });
+        }
+        if failure.is_some() != matches!(next, DynamicMemoryAttemptStatus::Failed) {
+            return Err(DynamicMemoryRunError::InvalidTransition {
+                reason: "failure code is set only when moving to failed",
+            });
         }
         let mut updated = self.clone();
         updated.status = next;
         updated.failure = failure;
-        updated.revision = self
-            .revision
-            .next()
-            .map_err(|_| DynamicMemoryRunError::InvalidAttempt)?;
+        updated.revision = self.revision.next().map_err(|error| {
+            tracing::warn!(%error, "dynamic-memory attempt revision overflowed");
+            DynamicMemoryRunError::InvalidAttempt {
+                reason: "attempt revision cannot advance",
+            }
+        })?;
         updated.updated_at = at;
         if next == DynamicMemoryAttemptStatus::Processing {
             updated.started_at = Some(at);
@@ -362,53 +462,98 @@ pub struct NewDynamicMemoryInferenceRound {
 
 impl NewDynamicMemoryInferenceRound {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
-        self.request_context
-            .validate()
-            .map_err(|_| DynamicMemoryRunError::InvalidRound)?;
-        if self.ordinal >= MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS
-            || (self.parts.is_empty() && self.calls.is_empty())
-            || self
-                .provider_request_id
-                .as_ref()
-                .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
+        self.request_context.validate().map_err(|error| {
+            tracing::warn!(%error, "dynamic-memory round request context failed validation");
+            DynamicMemoryRunError::InvalidRound {
+                reason: "request context failed validation",
+            }
+        })?;
+        if self.ordinal >= MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS {
+            return Err(DynamicMemoryRunError::InvalidRound {
+                reason: "round ordinal is at or above the round limit",
+            });
+        }
+        if self.parts.is_empty() && self.calls.is_empty() {
+            return Err(DynamicMemoryRunError::InvalidRound {
+                reason: "round has neither parts nor tool calls",
+            });
+        }
+        if self
+            .provider_request_id
+            .as_ref()
+            .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
         {
-            return Err(DynamicMemoryRunError::InvalidRound);
+            return Err(DynamicMemoryRunError::InvalidRound {
+                reason: "provider request id is empty or too long",
+            });
         }
         for part in &self.parts {
-            part.validate()
-                .map_err(|_| DynamicMemoryRunError::InvalidRound)?;
+            part.validate().map_err(|error| {
+                tracing::warn!(%error, "dynamic-memory round part failed validation");
+                DynamicMemoryRunError::InvalidRound {
+                    reason: "a round part failed validation",
+                }
+            })?;
             if !matches!(
                 part,
                 MessagePart::Text { .. } | MessagePart::ReasoningSummary { .. }
             ) {
-                return Err(DynamicMemoryRunError::InvalidRound);
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "a round part is neither text nor a reasoning summary",
+                });
             }
         }
         if let Some(replay) = &self.provider_replay {
-            replay
-                .validate()
-                .map_err(|_| DynamicMemoryRunError::InvalidRound)?;
+            replay.validate().map_err(|error| {
+                tracing::warn!(%error, "dynamic-memory round provider replay failed validation");
+                DynamicMemoryRunError::InvalidRound {
+                    reason: "provider replay failed validation",
+                }
+            })?;
             if replay.retention != ReplayRetention::Conversation {
-                return Err(DynamicMemoryRunError::InvalidRound);
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "provider replay is not retained with the conversation",
+                });
             }
         }
         let mut ids = HashSet::new();
         let mut provider_ids = HashSet::new();
         for call in &self.calls {
-            call.call
-                .validate()
-                .map_err(|_| DynamicMemoryRunError::InvalidCall)?;
-            if call.definition_version == 0
-                || !ids.insert(call.id)
-                || call
-                    .call
-                    .provider_call_id
-                    .as_deref()
-                    .is_some_and(|id| !provider_ids.insert(id))
-                || call.call.provider_replay.as_ref() != self.provider_replay.as_ref()
-                || call.definition_version != 1
+            call.call.validate().map_err(|error| {
+                tracing::warn!(%error, "dynamic-memory round tool call failed validation");
+                DynamicMemoryRunError::InvalidCall {
+                    reason: "tool call failed validation",
+                }
+            })?;
+            if call.definition_version == 0 {
+                return Err(DynamicMemoryRunError::InvalidCall {
+                    reason: "tool definition version is zero",
+                });
+            }
+            if !ids.insert(call.id) {
+                return Err(DynamicMemoryRunError::InvalidCall {
+                    reason: "tool execution id is repeated in the round",
+                });
+            }
+            if call
+                .call
+                .provider_call_id
+                .as_deref()
+                .is_some_and(|id| !provider_ids.insert(id))
             {
-                return Err(DynamicMemoryRunError::InvalidCall);
+                return Err(DynamicMemoryRunError::InvalidCall {
+                    reason: "provider call id is repeated in the round",
+                });
+            }
+            if call.call.provider_replay.as_ref() != self.provider_replay.as_ref() {
+                return Err(DynamicMemoryRunError::InvalidCall {
+                    reason: "tool call replay differs from the round replay",
+                });
+            }
+            if call.definition_version != 1 {
+                return Err(DynamicMemoryRunError::InvalidCall {
+                    reason: "tool definition version is not supported",
+                });
             }
         }
         Ok(())
@@ -460,22 +605,46 @@ impl DynamicMemoryInferenceRound {
             .checked_add(self.calls.len())
             .is_none_or(|count| count > MAX_DYNAMIC_MEMORY_ATTEMPT_TOOL_CALLS)
         {
-            return Err(DynamicMemoryRunError::InvalidRound);
+            return Err(DynamicMemoryRunError::InvalidRound {
+                reason: "round tool calls exceed the attempt tool call limit",
+            });
         }
         for (offset, call) in self.calls.iter().enumerate() {
             let expected = self
                 .first_call_ordinal
-                .checked_add(
-                    u16::try_from(offset).map_err(|_| DynamicMemoryRunError::InvalidRound)?,
-                )
-                .ok_or(DynamicMemoryRunError::InvalidRound)?;
-            if call.run_id != self.run_id
-                || call.attempt_id != self.attempt_id
-                || call.round_ordinal != self.ordinal
-                || call.ordinal != expected
-                || call.admitted_at != self.admitted_at
-            {
-                return Err(DynamicMemoryRunError::InvalidRound);
+                .checked_add(u16::try_from(offset).map_err(|error| {
+                    tracing::warn!(%error, "dynamic-memory tool call offset exceeds u16");
+                    DynamicMemoryRunError::InvalidRound {
+                        reason: "tool call offset does not fit the ordinal range",
+                    }
+                })?)
+                .ok_or(DynamicMemoryRunError::InvalidRound {
+                    reason: "tool call ordinal overflows",
+                })?;
+            if call.run_id != self.run_id {
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "tool call belongs to another run",
+                });
+            }
+            if call.attempt_id != self.attempt_id {
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "tool call belongs to another attempt",
+                });
+            }
+            if call.round_ordinal != self.ordinal {
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "tool call belongs to another round",
+                });
+            }
+            if call.ordinal != expected {
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "tool call ordinal is not sequential",
+                });
+            }
+            if call.admitted_at != self.admitted_at {
+                return Err(DynamicMemoryRunError::InvalidRound {
+                    reason: "tool call admission time differs from the round",
+                });
             }
         }
         Ok(())
@@ -497,26 +666,44 @@ pub struct DynamicMemoryToolCallEvidence {
 
 impl DynamicMemoryToolCallEvidence {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
-        self.call
-            .validate()
-            .map_err(|_| DynamicMemoryRunError::InvalidCall)?;
+        self.call.validate().map_err(|error| {
+            tracing::warn!(%error, "dynamic-memory tool call evidence failed validation");
+            DynamicMemoryRunError::InvalidCall {
+                reason: "tool call failed validation",
+            }
+        })?;
         if self.definition_version == 0 {
-            return Err(DynamicMemoryRunError::InvalidCall);
+            return Err(DynamicMemoryRunError::InvalidCall {
+                reason: "tool definition version is zero",
+            });
         }
         Ok(())
     }
 }
 
+impl DynamicMemoryRunError {
+    #[must_use]
+    pub const fn reason(&self) -> &'static str {
+        match self {
+            Self::InvalidRun { reason }
+            | Self::InvalidAttempt { reason }
+            | Self::InvalidTransition { reason }
+            | Self::InvalidRound { reason }
+            | Self::InvalidCall { reason } => reason,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DynamicMemoryRunError {
-    #[error("dynamic-memory run is invalid")]
-    InvalidRun,
-    #[error("dynamic-memory attempt is invalid")]
-    InvalidAttempt,
-    #[error("dynamic-memory attempt transition is invalid")]
-    InvalidTransition,
-    #[error("dynamic-memory inference round is invalid")]
-    InvalidRound,
-    #[error("dynamic-memory tool call is invalid")]
-    InvalidCall,
+    #[error("dynamic-memory run is invalid: {reason}")]
+    InvalidRun { reason: &'static str },
+    #[error("dynamic-memory attempt is invalid: {reason}")]
+    InvalidAttempt { reason: &'static str },
+    #[error("dynamic-memory attempt transition is invalid: {reason}")]
+    InvalidTransition { reason: &'static str },
+    #[error("dynamic-memory inference round is invalid: {reason}")]
+    InvalidRound { reason: &'static str },
+    #[error("dynamic-memory tool call is invalid: {reason}")]
+    InvalidCall { reason: &'static str },
 }

@@ -70,8 +70,8 @@ pub enum SpeechTranscriptionError {
     Repository(#[from] TranscriptionRepositoryError),
     #[error("transcription job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("transcription job and request are inconsistent")]
-    InvalidWork,
+    #[error("transcription job and request are inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -94,10 +94,17 @@ pub(crate) fn transcription_job_spec(
     request: &TranscriptionRequest,
 ) -> Result<lettuce_jobs::NewJob, SpeechTranscriptionError> {
     request.validate()?;
-    let subject = JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string())
-        .map_err(|_| SpeechTranscriptionError::InvalidWork)?;
-    let key = IdempotencyKey::new(format!("speech-transcribe-{}", request.id))
-        .map_err(|_| SpeechTranscriptionError::InvalidWork)?;
+    let subject =
+        JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string()).map_err(|_| {
+            SpeechTranscriptionError::InvalidWork {
+                reason: "the install asset id is not a valid job subject",
+            }
+        })?;
+    let key = IdempotencyKey::new(format!("speech-transcribe-{}", request.id)).map_err(|_| {
+        SpeechTranscriptionError::InvalidWork {
+            reason: "the install asset id is not a valid job subject",
+        }
+    })?;
     let mut resources = vec![
         ResourceClass::DiskRead,
         ResourceClass::ModelLoad,
@@ -152,7 +159,9 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(SpeechTranscriptionError::InvalidWork)?;
+            .ok_or(SpeechTranscriptionError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job_record(&job, &record)?;
         if job.state == JobState::Succeeded {
             return Ok(None);
@@ -162,7 +171,9 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(record.request.id) {
-            return Err(SpeechTranscriptionError::InvalidWork);
+            return Err(SpeechTranscriptionError::InvalidWork {
+                reason: "claim input differs from the request",
+            });
         }
         let handle = JobHandle::new(job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -191,7 +202,9 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(SpeechTranscriptionError::InvalidWork)?;
+            .ok_or(SpeechTranscriptionError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job_record(&job, &record)?;
         match (&record.state, job.state) {
             (TranscriptionState::Succeeded { .. }, JobState::Succeeded) => {
@@ -253,7 +266,9 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(SpeechTranscriptionError::InvalidWork);
+            return Err(SpeechTranscriptionError::InvalidWork {
+                reason: "claimed work does not match its running job, claim or handle",
+            });
         }
         if let TranscriptionState::Succeeded { .. } = work.record.state {
             return self.finish_success(work, true, time());
@@ -309,12 +324,11 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<TranscriptionResult, SpeechTranscriptionError> {
         let token = work.handle.cancellation_token();
         check_cancelled(&token)?;
-        let decoded = audio.decode(
-            work.record
-                .request
-                .audio_asset_id
-                .ok_or(SpeechTranscriptionError::InvalidWork)?,
-        )?;
+        let decoded = audio.decode(work.record.request.audio_asset_id.ok_or(
+            SpeechTranscriptionError::InvalidWork {
+                reason: "the transcription request has no audio asset",
+            },
+        )?)?;
         let samples = decoded.mono_16khz()?;
         check_cancelled(&token)?;
         let vocabulary_prompt = library.build_prompt(
@@ -363,7 +377,9 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         now: TimestampMillis,
     ) -> Result<SpeechTranscriptionRunResult, SpeechTranscriptionError> {
         if !matches!(work.record.state, TranscriptionState::Succeeded { .. }) {
-            return Err(SpeechTranscriptionError::InvalidWork);
+            return Err(SpeechTranscriptionError::InvalidWork {
+                reason: "job already succeeded but the record did not",
+            });
         }
         let at = now.max(work.job.updated_at);
         self.jobs.append_and_transition(JobMutation::Progress {
@@ -413,6 +429,7 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
                 })?;
             return Ok(SpeechTranscriptionRunResult::RetryScheduled { error, job });
         }
+        tracing::warn!(job_id = %work.job.id, %error, "speech transcription job failed");
         let job = self.jobs.append_and_transition(JobMutation::Fail {
             claim: work.claim.claim,
             error: JobError::new(code, false, message)
@@ -433,7 +450,9 @@ fn validate_job_record(
         || job.subject.kind != SubjectKind::SpeechRequest
         || job.subject.id.as_str() != record.request.id.to_string()
     {
-        return Err(SpeechTranscriptionError::InvalidWork);
+        return Err(SpeechTranscriptionError::InvalidWork {
+            reason: "job differs from the record in id, kind or subject",
+        });
     }
     if job.state == JobState::Succeeded
         && (!matches!(record.state, TranscriptionState::Succeeded { .. })
@@ -442,7 +461,9 @@ fn validate_job_record(
                     result_ref: OutcomeRef::Request(record.request.id),
                 }))
     {
-        return Err(SpeechTranscriptionError::InvalidWork);
+        return Err(SpeechTranscriptionError::InvalidWork {
+            reason: "job outcome differs from the record request",
+        });
     }
     Ok(())
 }
@@ -461,19 +482,19 @@ fn classify_error(error: &SpeechTranscriptionError) -> SpeechJobError {
     match error {
         SpeechTranscriptionError::Invalid(_)
         | SpeechTranscriptionError::Audio(
-            AsrAudioError::Unavailable
-            | AsrAudioError::InvalidAudio
-            | AsrAudioError::UnsupportedFormat
+            AsrAudioError::Unavailable { .. }
+            | AsrAudioError::InvalidAudio { .. }
+            | AsrAudioError::UnsupportedFormat { .. }
             | AsrAudioError::TooLarge,
         )
-        | SpeechTranscriptionError::Library(AsrLibraryError::InvalidData)
-        | SpeechTranscriptionError::Runtime(AsrRuntimeError::Rejected)
-        | SpeechTranscriptionError::InvalidWork => (
+        | SpeechTranscriptionError::Library(AsrLibraryError::InvalidData { .. })
+        | SpeechTranscriptionError::Runtime(AsrRuntimeError::Rejected { .. })
+        | SpeechTranscriptionError::InvalidWork { .. } => (
             JobErrorCode::InvalidInput,
             false,
             "speech transcription input is invalid",
         ),
-        SpeechTranscriptionError::Runtime(AsrRuntimeError::ModelUnavailable) => (
+        SpeechTranscriptionError::Runtime(AsrRuntimeError::ModelUnavailable { .. }) => (
             JobErrorCode::CapabilityUnavailable,
             false,
             SPEECH_MODEL_REQUIRED_WHISPER,
@@ -790,7 +811,9 @@ mod tests {
                 &Library,
                 &Runtime {
                     calls: Arc::new(Mutex::new(0)),
-                    outcome: Err(AsrRuntimeError::Unavailable),
+                    outcome: Err(AsrRuntimeError::Unavailable {
+                        reason: "simulated failure",
+                    }),
                 },
                 CancellationReason::User,
                 TimestampMillis::new(4_000),

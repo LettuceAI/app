@@ -23,23 +23,39 @@ fn lorebook_error(
             StagedLorebookRepositoryError::NotFound
         }
         LorebookRepositoryError::Conflict => StagedLorebookRepositoryError::Conflict,
-        LorebookRepositoryError::Invalid(_) => StagedLorebookRepositoryError::Invalid,
-        LorebookRepositoryError::Failure(_) => StagedLorebookRepositoryError::Failure,
+        LorebookRepositoryError::Invalid(_) => StagedLorebookRepositoryError::Invalid {
+            reason: "lorebook error: a stored value is not recognised".to_owned(),
+        },
+        LorebookRepositoryError::Failure(_) => StagedLorebookRepositoryError::Failure {
+            reason: "lorebook error: a stored value is not recognised",
+        },
     }
 }
 
-fn failure(_: impl std::fmt::Debug) -> StagedLorebookRepositoryError {
-    StagedLorebookRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> StagedLorebookRepositoryError {
+    tracing::warn!(?error, "staged lorebook adapter storage step failed");
+    StagedLorebookRepositoryError::Failure {
+        reason: "staged lorebook adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> StagedLorebookRepositoryError {
-    StagedLorebookRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> StagedLorebookRepositoryError {
+    tracing::warn!(?error, "staged lorebook adapter storage step failed");
+    StagedLorebookRepositoryError::Corrupt {
+        reason: "staged lorebook adapter: a storage step failed",
+    }
 }
 
-fn parse_id<T: FromStr>(value: &str) -> Result<T, StagedLorebookRepositoryError> {
-    value
-        .parse()
-        .map_err(|_| StagedLorebookRepositoryError::Corrupt)
+fn parse_id<T: FromStr>(value: &str) -> Result<T, StagedLorebookRepositoryError>
+where
+    T::Err: std::fmt::Debug,
+{
+    value.parse().map_err(|error| {
+        tracing::warn!(?error, "parse id failed");
+        StagedLorebookRepositoryError::Corrupt {
+            reason: "parse id: a storage step failed",
+        }
+    })
 }
 
 fn stage(value: StagedLorebookStage) -> &'static str {
@@ -121,7 +137,9 @@ pub(crate) fn load_in(
         .collect::<Vec<_>>();
     expected_sources.sort();
     if stored_sources != expected_sources {
-        return Err(StagedLorebookRepositoryError::Corrupt);
+        return Err(StagedLorebookRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check",
+        });
     }
     let prompt_revision = positive_revision(prompt_revision)?;
     let revision = positive_revision(revision)?;
@@ -138,7 +156,9 @@ pub(crate) fn load_in(
         || run.project.updated_at != TimestampMillis::new(updated_at)
         || run.validate().is_err()
     {
-        return Err(StagedLorebookRepositoryError::Corrupt);
+        return Err(StagedLorebookRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check",
+        });
     }
     Ok(Some(run))
 }
@@ -148,7 +168,9 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookRepositoryErr
         .ok()
         .filter(|value| *value > 0)
         .map(Revision::new)
-        .ok_or(StagedLorebookRepositoryError::Corrupt)
+        .ok_or(StagedLorebookRepositoryError::Corrupt {
+            reason: "positive revision: a required value is missing",
+        })
 }
 
 /// Writes a backed-up staged lorebook project with its source documents.
@@ -275,7 +297,9 @@ impl StagedLorebookRepository for Database {
         if run.project.stage != StagedLorebookStage::Created
             || run.project.revision != Revision::new(1)
         {
-            return Err(StagedLorebookRepositoryError::Invalid);
+            return Err(StagedLorebookRepositoryError::Invalid {
+                reason: "admit staged lorebook: a value failed validation".to_owned(),
+            });
         }
         let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
         let mut connection = self.connection().map_err(failure)?;
@@ -316,7 +340,9 @@ impl StagedLorebookRepository for Database {
                         |row| row.get::<_, bool>(0),
                     ).map_err(failure)?;
                     if !valid {
-                        return Err(StagedLorebookRepositoryError::Invalid);
+                        return Err(StagedLorebookRepositoryError::Invalid {
+                            reason: "admit staged lorebook: a value failed validation".to_owned(),
+                        });
                     }
                     transaction.execute(
                         "INSERT INTO creation_staged_lorebook_sources (project_id, source_id, asset_id) VALUES (?1, ?2, ?3)",
@@ -325,8 +351,11 @@ impl StagedLorebookRepository for Database {
                 }
             }
         }
-        let stored =
-            load_in(&transaction, run.request_id)?.ok_or(StagedLorebookRepositoryError::Failure)?;
+        let stored = load_in(&transaction, run.request_id)?.ok_or(
+            StagedLorebookRepositoryError::Failure {
+                reason: "admit staged lorebook: a required value is missing",
+            },
+        )?;
         if inserted == 0 && stored != run {
             return Err(StagedLorebookRepositoryError::Conflict);
         }
@@ -928,7 +957,9 @@ pub(crate) fn retry_staged_lorebook_planner_in(
     let job_id = crate::job_adapter::retry_staged_planner_job(transaction, run.job_id, retry_id)
         .map_err(|error| match error {
             lettuce_jobs::StoreError::IllegalTransition => StagedLorebookRepositoryError::Conflict,
-            _ => StagedLorebookRepositoryError::Failure,
+            _ => StagedLorebookRepositoryError::Failure {
+                reason: "retry staged lorebook planner in: a stored value is not recognised",
+            },
         })?;
     run.planner_retries
         .push(lettuce_creation::StagedLorebookPlannerRetry {
@@ -939,9 +970,12 @@ pub(crate) fn retry_staged_lorebook_planner_in(
             admitted_at: now,
         });
     run.job_id = job_id;
-    run.project.revision = expected_revision
-        .next()
-        .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+    run.project.revision =
+        expected_revision
+            .next()
+            .map_err(|error| StagedLorebookRepositoryError::Invalid {
+                reason: error.to_string(),
+            })?;
     run.project.updated_at = now;
     run.validate()?;
     let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
@@ -961,7 +995,9 @@ pub(crate) fn edit_staged_lorebook_outline_in(
 ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
     for (ordinal, plan) in outline.iter_mut().enumerate() {
         plan.ordinal =
-            u32::try_from(ordinal).map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+            u32::try_from(ordinal).map_err(|error| StagedLorebookRepositoryError::Invalid {
+                reason: error.to_string(),
+            })?;
     }
     let mut run =
         load_in(transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
@@ -1083,7 +1119,9 @@ pub(crate) fn commit_staged_lorebook_in(
                     .as_deref()
                     .map(str::trim)
                     .filter(|name| !name.is_empty()))
-                .ok_or(StagedLorebookRepositoryError::Invalid)?;
+                .ok_or_else(|| StagedLorebookRepositoryError::Invalid {
+                    reason: "commit staged lorebook in: a required value is missing".to_owned(),
+                })?;
             LorebookDetails {
                 book: Lorebook {
                     id: *id,
@@ -1111,9 +1149,11 @@ pub(crate) fn commit_staged_lorebook_in(
             {
                 return Err(StagedLorebookRepositoryError::Conflict);
             }
-            current.book.revision = expected_revision
-                .next()
-                .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+            current.book.revision = expected_revision.next().map_err(|error| {
+                StagedLorebookRepositoryError::Invalid {
+                    reason: error.to_string(),
+                }
+            })?;
             current.book.updated_at = request.now;
             current
         }
@@ -1134,8 +1174,11 @@ pub(crate) fn commit_staged_lorebook_in(
             match_mode: KeywordMatchMode::Literal,
             content: draft.content.clone(),
             priority: 0,
-            ordinal: u32::try_from(details.entries.len())
-                .map_err(|_| StagedLorebookRepositoryError::Invalid)?,
+            ordinal: u32::try_from(details.entries.len()).map_err(|error| {
+                StagedLorebookRepositoryError::Invalid {
+                    reason: error.to_string(),
+                }
+            })?,
             revision: Revision::INITIAL,
             created_at: request.now,
             updated_at: request.now,
@@ -1169,10 +1212,11 @@ pub(crate) fn commit_staged_lorebook_in(
         .map_err(failure)?;
     run.project.commit_receipt = Some(receipt.clone());
     run.project.stage = StagedLorebookStage::Committed;
-    run.project.revision = request
-        .expected_project_revision
-        .next()
-        .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+    run.project.revision = request.expected_project_revision.next().map_err(|error| {
+        StagedLorebookRepositoryError::Invalid {
+            reason: error.to_string(),
+        }
+    })?;
     run.project.updated_at = request.now;
     run.validate()?;
     let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
@@ -1468,7 +1512,9 @@ pub(crate) fn pending_project_in(
             )
             || project.validate().is_err()
         {
-            return Err(StagedLorebookRepositoryError::Corrupt);
+            return Err(StagedLorebookRepositoryError::Corrupt {
+                reason: "pending project in: stored data failed a consistency check",
+            });
         }
         Ok(project)
     })
@@ -1481,12 +1527,16 @@ pub(crate) fn insert_pending_project_in(
 ) -> Result<(), StagedLorebookRepositoryError> {
     project
         .validate()
-        .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+        .map_err(|error| StagedLorebookRepositoryError::Invalid {
+            reason: error.to_string(),
+        })?;
     if !matches!(
         project.stage,
         StagedLorebookStage::Created | StagedLorebookStage::Cancelled
     ) {
-        return Err(StagedLorebookRepositoryError::Invalid);
+        return Err(StagedLorebookRepositoryError::Invalid {
+            reason: "insert pending project in: a value failed validation".to_owned(),
+        });
     }
     transaction.execute("INSERT INTO creation_staged_lorebook_projects(project_id,revision,project_json) VALUES (?1,?2,?3)", params![project.id.to_string(), i64::try_from(project.revision.get()).map_err(failure)?, encode_versioned(project, 1).map_err(failure)?]).map_err(failure)?;
     for source in &project.excerpts {
@@ -1509,8 +1559,11 @@ pub(crate) fn pending_projects_in(
         .map_err(failure)?;
     ids.into_iter()
         .map(|id| {
-            pending_project_in(connection, id.parse().map_err(failure)?)?
-                .ok_or(StagedLorebookRepositoryError::Corrupt)
+            pending_project_in(connection, id.parse().map_err(failure)?)?.ok_or(
+                StagedLorebookRepositoryError::Corrupt {
+                    reason: "pending projects in: a required value is missing",
+                },
+            )
         })
         .collect()
 }
@@ -1535,7 +1588,9 @@ impl Database {
             Some(cursor) => cursor
                 .split_once(':')
                 .and_then(|(updated, id)| Some((updated.parse::<i64>().ok()?, id.to_owned())))
-                .ok_or(StagedLorebookRepositoryError::Invalid)?,
+                .ok_or_else(|| StagedLorebookRepositoryError::Invalid {
+                    reason: "lorebook project page: a required value is missing".to_owned(),
+                })?,
             None => (i64::MAX, String::new()),
         };
         let mut rows = connection

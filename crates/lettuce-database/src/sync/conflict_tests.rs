@@ -302,7 +302,7 @@ fn deleted_current_is_acknowledged_and_other_cannot_recreate_the_character() {
     assert_eq!(conflicts.len(), 1);
     let conflict = &conflicts[0];
     assert_eq!(conflict.current.value, SyncConflictValue::Deleted);
-    assert_eq!(
+    assert!(matches!(
         target.resolve_sync_conflict(
             conflict.id,
             conflict.current.change_id,
@@ -310,8 +310,8 @@ fn deleted_current_is_acknowledged_and_other_cannot_recreate_the_character() {
             OperationId::new(),
             TimestampMillis::new(6)
         ),
-        Err(ConflictRepositoryError::Unsupported)
-    );
+        Err(ConflictRepositoryError::Unsupported { .. })
+    ));
     let operation = OperationId::new();
     let resolution = target
         .resolve_sync_conflict(
@@ -391,11 +391,14 @@ fn resolution_receipt_failure_rolls_back_entity_journal_and_inbox() {
                     TimestampMillis::new(6),
                 )
                 .map(|change| change.id().as_uuid().to_string())
-                .map_err(|_| crate::ApiOperationError::Storage)
+                .map_err(|error| { tracing::warn!(%error, "resolution receipt failure rolls back entity journal and inbox failed"); crate::ApiOperationError::Storage { reason: "injected failure" } })
             },
         )
     };
-    assert_eq!(resolve(), Err(crate::ApiOperationError::Storage));
+    assert!(matches!(
+        resolve(),
+        Err(crate::ApiOperationError::Storage { .. })
+    ));
     assert!(
         target
             .local_change_for_operation(operation)
@@ -578,7 +581,7 @@ fn legacy_inbox_has_three_values_and_dismiss_only_changes_the_marker() {
             TimestampMillis::new(11),
             |tx| {
                 tx.dismiss_legacy_conflict(run_id, "legacy-conflict", TimestampMillis::new(11))
-                    .map_err(|_| crate::ApiOperationError::Storage)
+                    .map_err(|error| { tracing::warn!(%error, "legacy inbox has three values and dismiss only changes the marker failed"); crate::ApiOperationError::Storage { reason: "injected failure" } })
             },
         )
         .expect("dismiss");
@@ -765,11 +768,14 @@ fn fork_acknowledgment_is_atomic_with_its_receipt_and_keeps_the_branch() {
             TimestampMillis::new(2),
             |tx| {
                 tx.resolve_conversation_fork(conversation, branch, TimestampMillis::new(2))
-                    .map_err(|_| crate::ApiOperationError::Storage)
+                    .map_err(|error| { tracing::warn!(%error, "fork acknowledgment is atomic with its receipt and keeps the branch failed"); crate::ApiOperationError::Storage { reason: "injected failure" } })
             },
         )
     };
-    assert_eq!(acknowledge(), Err(crate::ApiOperationError::Storage));
+    assert!(matches!(
+        acknowledge(),
+        Err(crate::ApiOperationError::Storage { .. })
+    ));
     assert_eq!(
         lettuce_sync::ConversationForkRepository::unresolved_conversation_forks(&database)
             .expect("notice retained")

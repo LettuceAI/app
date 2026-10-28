@@ -54,7 +54,9 @@ impl MediaBlob {
             || self.mime_type.chars().any(char::is_control)
             || !self.mime_type.is_ascii()
         {
-            return Err(MediaBlobValidationError::InvalidMimeType);
+            return Err(MediaBlobValidationError::InvalidMimeType {
+                reason: "mime type is blank, untrimmed, too long, non-ascii or has control characters",
+            });
         }
         if i64::try_from(self.byte_size).is_err() {
             return Err(MediaBlobValidationError::OutOfRange("byte_size"));
@@ -82,8 +84,8 @@ impl MediaBlob {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MediaBlobValidationError {
-    #[error("media blob MIME type is blank, unsafe, or too long")]
-    InvalidMimeType,
+    #[error("media blob MIME type is blank, unsafe, or too long: {reason}")]
+    InvalidMimeType { reason: &'static str },
     #[error("media blob {0} is outside SQLite's signed 64-bit range")]
     OutOfRange(&'static str),
     #[error("media blob {field} must be positive")]
@@ -98,12 +100,12 @@ pub enum MediaBlobValidationError {
 pub enum MediaBlobRepositoryError {
     #[error("media blob was not found")]
     NotFound,
-    #[error("stored media metadata are invalid")]
-    InvalidData,
-    #[error("media blob is not in a finalizable state")]
-    InvalidState,
-    #[error("media storage failed")]
-    Storage,
+    #[error("stored media metadata are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("media blob is not in a finalizable state: {reason}")]
+    InvalidState { reason: &'static str },
+    #[error("media storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait MediaBlobRepository: Send + Sync {
@@ -187,38 +189,38 @@ mod tests {
     fn mime_version_and_sqlite_ranges_are_checked() {
         let mut invalid = blob(MediaKind::Image);
         invalid.mime_type = "   ".into();
-        assert_eq!(
+        assert!(matches!(
             invalid.validate(),
-            Err(MediaBlobValidationError::InvalidMimeType)
-        );
+            Err(MediaBlobValidationError::InvalidMimeType { .. })
+        ));
 
         let mut parameterized = blob(MediaKind::Audio);
         parameterized.mime_type = "audio/webm; codecs=opus".into();
         assert!(parameterized.validate().is_ok());
         parameterized.mime_type = " audio/webm".into();
-        assert_eq!(
+        assert!(matches!(
             parameterized.validate(),
-            Err(MediaBlobValidationError::InvalidMimeType)
-        );
+            Err(MediaBlobValidationError::InvalidMimeType { .. })
+        ));
         parameterized.mime_type = "audio/webm ".into();
-        assert_eq!(
+        assert!(matches!(
             parameterized.validate(),
-            Err(MediaBlobValidationError::InvalidMimeType)
-        );
+            Err(MediaBlobValidationError::InvalidMimeType { .. })
+        ));
 
         invalid = blob(MediaKind::Image);
         invalid.mime_type = "image/\u{7f}png".into();
-        assert_eq!(
+        assert!(matches!(
             invalid.validate(),
-            Err(MediaBlobValidationError::InvalidMimeType)
-        );
+            Err(MediaBlobValidationError::InvalidMimeType { .. })
+        ));
 
         invalid = blob(MediaKind::Image);
         invalid.mime_type = "x".repeat(MAX_MIME_TYPE_SCALARS + 1);
-        assert_eq!(
+        assert!(matches!(
             invalid.validate(),
-            Err(MediaBlobValidationError::InvalidMimeType)
-        );
+            Err(MediaBlobValidationError::InvalidMimeType { .. })
+        ));
 
         invalid = blob(MediaKind::Image);
         invalid.validation_version = 0;

@@ -105,7 +105,9 @@ fn preflight_media(
                 )
                 .map_err(conversation_vertical_slice::db)?;
             if !exists {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage {
+                    reason: "preflight media: stored data failed a consistency check".to_owned(),
+                });
             }
         }
     }
@@ -181,7 +183,10 @@ fn persist_initial_timeline(
 ) -> Result<Option<lettuce_types::MessageId>, ConversationRepositoryError> {
     let mut parent = None;
     for (index, entry) in plan.initial_timeline.entries.iter().enumerate() {
-        let ordinal = i64::try_from(index + 1).map_err(|_| ConversationRepositoryError::Storage)?;
+        let ordinal =
+            i64::try_from(index + 1).map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         let parts_json = conversation_vertical_slice::encode(&entry.parts)?;
         transaction
             .execute(
@@ -248,7 +253,7 @@ fn persist_initial_timeline(
                         plan.conversation_id.to_string(),
                         entry.revision_id.to_string(),
                         i64::try_from(part_ordinal)
-                            .map_err(|_| ConversationRepositoryError::Storage)?,
+                            .map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?,
                         asset_id.to_string(),
                         media_role_name(*role),
                         now.get(),
@@ -275,8 +280,11 @@ fn persist_initial_timeline(
         .execute(
             "UPDATE conversations SET next_timeline_ordinal = ?1 WHERE id = ?2",
             params![
-                i64::try_from(plan.initial_timeline.entries.len() + 1)
-                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                i64::try_from(plan.initial_timeline.entries.len() + 1).map_err(|error| {
+                    ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }
+                })?,
                 plan.conversation_id.to_string(),
             ],
         )
@@ -305,14 +313,20 @@ fn persist_operation_and_outbox(
         OperationKind::Create,
     )?;
     if sequence != 1 {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "persist operation and outbox: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     let event = ConversationOutboxEvent::ConversationCreated {
         conversation_id: plan.conversation_id,
         root_branch_id,
         head_message_id,
-        initial_message_count: u16::try_from(plan.initial_timeline.entries.len())
-            .map_err(|_| ConversationRepositoryError::Storage)?,
+        initial_message_count: u16::try_from(plan.initial_timeline.entries.len()).map_err(
+            |error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            },
+        )?,
         at: now,
     };
     let outbox = ConversationOutboxRecord {
@@ -379,7 +393,9 @@ fn hydrate_and_validate(
                     && item.initial_origin.as_ref() == Some(&expected.origin)
             });
     if !timeline_matches {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate and validate: stored data failed a consistency check".to_owned(),
+        });
     }
     operation.clone().replay_or_conflict(
         plan.conversation_id,
@@ -394,7 +410,9 @@ fn hydrate_and_validate(
         || outbox.conversation_revision != Revision::INITIAL
         || outbox.at != operation.created_at
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "hydrate and validate: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(aggregate)
 }
@@ -423,7 +441,9 @@ fn read_creation_outbox(
         operation_id,
     )?;
     let [record] = records.as_slice() else {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "read creation outbox: stored data failed a consistency check".to_owned(),
+        });
     };
     Ok(record.clone())
 }
@@ -452,9 +472,12 @@ where
         &lettuce_conversations::CreateConversationPlan,
     ) -> Result<(), ConversationRepositoryError>,
 {
-    let mut connection = database
-        .connection()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+    let mut connection =
+        database
+            .connection()
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(conversation_vertical_slice::db)?;
@@ -499,7 +522,9 @@ where
             at,
         } = &outbox.event
         else {
-            return Err(ConversationRepositoryError::Storage);
+            return Err(ConversationRepositoryError::Storage {
+                reason: "create on transaction: stored data failed a consistency check".to_owned(),
+            });
         };
         if *conversation_id != plan_id
                 || outbox.operation_record_id != operation.id
@@ -517,7 +542,7 @@ where
                         .map_err(conversation_vertical_slice::db)?
                         as usize
             {
-                return Err(ConversationRepositoryError::Storage);
+                return Err(ConversationRepositoryError::Storage { reason: "create on transaction: stored data failed a consistency check".to_owned() });
             }
         conversation_query::validate_outbox_event_timestamp(&outbox)?;
         conversation_query::validate_outbox_event(transaction, &outbox)?;
@@ -907,11 +932,14 @@ mod tests {
                     MemoryBinding::PerConversation,
                     |_, _| Ok(()),
                 )
-                .map_err(|_| crate::ApiOperationError::Storage)?;
-                Err::<ConversationId, crate::ApiOperationError>(crate::ApiOperationError::Storage)
+                .map_err(|error| { tracing::warn!(%error, "creation and outer api receipt roll back and replay together failed"); crate::ApiOperationError::Storage { reason: "injected failure" } })?;
+                Err::<ConversationId, crate::ApiOperationError>(crate::ApiOperationError::Storage { reason: "injected failure" })
             },
         );
-        assert_eq!(failed, Err(crate::ApiOperationError::Storage));
+        assert!(matches!(
+            failed,
+            Err(crate::ApiOperationError::Storage { .. })
+        ));
         assert!(
             database
                 .lookup_api_operation("copy_test", "failed")
@@ -948,7 +976,7 @@ mod tests {
                         MemoryBinding::PerConversation,
                         |_, _| Ok(()),
                     )
-                    .map_err(|_| crate::ApiOperationError::Storage)?;
+                    .map_err(|error| { tracing::warn!(%error, "creation and outer api receipt roll back and replay together failed"); crate::ApiOperationError::Storage { reason: "injected failure" } })?;
                     Ok::<_, crate::ApiOperationError>(result.value.conversation.id)
                 },
             )
@@ -1149,7 +1177,10 @@ mod tests {
             prepared(conversation_id, CharacterId::new()),
             TimestampMillis::new(10),
         );
-        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+        assert!(matches!(
+            result,
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         let connection = database.connection().expect("connection");
         for table in [
             "conversations",
@@ -1182,9 +1213,16 @@ mod tests {
             prepared(conversation_id, CharacterId::new()),
             TimestampMillis::new(10),
             MemoryBinding::PerConversation,
-            |_, _| Err(ConversationRepositoryError::Storage),
+            |_, _| {
+                Err(ConversationRepositoryError::Storage {
+                    reason: "injected failure".to_owned(),
+                })
+            },
         );
-        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+        assert!(matches!(
+            result,
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
 
         let connection = database.connection().expect("connection");
         for table in [
@@ -1314,10 +1352,10 @@ mod tests {
             },
         ];
         let launch = PreparedConversationLaunch::new(plan, drafts).expect("media launch");
-        assert_eq!(
+        assert!(matches!(
             ConversationCreator::create(&database, launch, TimestampMillis::new(10)),
-            Err(ConversationRepositoryError::Storage)
-        );
+            Err(ConversationRepositoryError::Storage { .. })
+        ));
         let connection = database.connection().expect("connection");
         for table in [
             "conversations",
@@ -1411,7 +1449,7 @@ mod tests {
                 conversation_id,
                 &lettuce_types::PageRequest::default()
             ),
-            Err(ConversationRepositoryError::Storage)
+            Err(ConversationRepositoryError::Storage { .. })
         ));
     }
 }

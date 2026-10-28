@@ -724,7 +724,7 @@ impl lettuce_settings::SecretStore for PausedSecrets {
     ) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
         if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(lettuce_settings::SecretStoreError::Backend(
-                lettuce_settings::SecretBackendError::Unavailable,
+                lettuce_settings::SecretBackendError::Unavailable { reason: "simulated failure" },
             ));
         }
         let result = self.store.put(record, value, expected).await;
@@ -753,7 +753,7 @@ impl lettuce_settings::SecretStore for PausedSecrets {
         expected: Option<u64>,
     ) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
         if self.fail_delete.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(lettuce_settings::SecretStoreError::Backend(lettuce_settings::SecretBackendError::Unavailable));
+            return Err(lettuce_settings::SecretStoreError::Backend(lettuce_settings::SecretBackendError::Unavailable { reason: "simulated failure" }));
         }
         self.store.delete(reference, purpose, expected).await
     }
@@ -990,7 +990,7 @@ impl lettuce_settings::DeviceSettingsStore for CertificateRaceSettings<'_> {
             scope.import_certificate(lettuce_settings::TrustedCertificate {
                 id: uuid::Uuid::new_v4(), name: "root.pem".into(), imported_at: 1,
                 pem: include_str!("../../../tests/fixtures/provider-test-cert.pem").into(),
-            }).map_err(|_| lettuce_models::ModelRepositoryError::Storage)
+            }).map_err(|_| lettuce_models::ModelRepositoryError::Storage { reason: "simulated failure".to_owned() })
         }).expect("concurrent certificate commit");
         Ok(stale)
     }

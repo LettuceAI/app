@@ -44,7 +44,9 @@ impl JobInferenceUsage {
                 || snapshot.error_message.is_some()
                 || snapshot.provider_response_id.is_some()
         }) {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "admission snapshot carries completion fields",
+            });
         }
         if let Some(result) = &self.result {
             self.validate_result_snapshot(result)?;
@@ -62,7 +64,9 @@ impl JobInferenceUsage {
                 JobInferenceUsageResult::Response { snapshot: None, .. }
             )
         {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "admitted snapshot is missing from the response result",
+            });
         }
         let snapshot = match result {
             JobInferenceUsageResult::Response {
@@ -74,7 +78,9 @@ impl JobInferenceUsage {
                     .as_ref()
                     .is_some_and(|snapshot| &snapshot.provider_response_id != provider_response_id)
                 {
-                    return Err(UsageLedgerError::Invalid);
+                    return Err(UsageLedgerError::Invalid {
+                        reason: "snapshot response id does not match the result response id",
+                    });
                 }
                 snapshot.as_deref()
             }
@@ -92,7 +98,9 @@ impl JobInferenceUsage {
                             .as_ref()
                             .is_none_or(|message| message.trim().is_empty()))
                 {
-                    return Err(UsageLedgerError::Invalid);
+                    return Err(UsageLedgerError::Invalid {
+                        reason: "failure snapshot does not match the failed or aborted result",
+                    });
                 }
                 Some(snapshot.as_ref())
             }
@@ -106,7 +114,9 @@ impl JobInferenceUsage {
             immutable.error_message = None;
             immutable.provider_response_id = None;
             if &immutable != admitted {
-                return Err(UsageLedgerError::Invalid);
+                return Err(UsageLedgerError::Invalid {
+                    reason: "completion snapshot changes the admitted evidence",
+                });
             }
         }
         Ok(())
@@ -145,7 +155,10 @@ mod tests {
                 provider_response_id: None,
             }),
         };
-        assert_eq!(record.validate_snapshot(), Err(UsageLedgerError::Invalid));
+        assert!(matches!(
+            record.validate_snapshot(),
+            Err(UsageLedgerError::Invalid { .. })
+        ));
         record.snapshot = None;
         assert_eq!(record.validate_snapshot(), Ok(()));
     }

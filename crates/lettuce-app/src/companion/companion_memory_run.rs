@@ -32,16 +32,16 @@ pub struct CompanionPostTurnMemoryRunDispatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionPostTurnMemoryRunError {
-    #[error("post-turn memory admission is invalid")]
-    InvalidAdmission,
+    #[error("post-turn memory admission is invalid: {reason}")]
+    InvalidAdmission { reason: String },
     #[error("post-turn memory source timeline failed: {0}")]
     Conversation(ConversationRepositoryError),
     #[error("post-turn memory space failed: {0}")]
     Memory(MemoryRepositoryError),
     #[error("post-turn memory run failed: {0}")]
     Run(DynamicMemoryRunRepositoryError),
-    #[error("post-turn memory runtime prompt text is unavailable")]
-    RuntimeText,
+    #[error("post-turn memory runtime prompt text is unavailable: {reason}")]
+    RuntimeText { reason: String },
 }
 
 #[derive(Debug)]
@@ -87,14 +87,18 @@ impl<
             .selected_model_profile_id
             .is_some_and(|id| id != profile.chat_profile.model_profile_id)
         {
-            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                reason: "batch selects a different model than the resolved profile".to_owned(),
+            });
         }
         let conversation_id = admission.batch.conversation_id;
         let snapshot = self
             .repository
             .get_for_branch(conversation_id, admission.batch.branch_id)
             .map_err(CompanionPostTurnMemoryRunError::Memory)?
-            .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+            .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                reason: "the conversation has no memory space for the branch".to_owned(),
+            })?;
         let expected_messages = expected_effect_messages(admission)?;
         let run_id = stable_run_id(admission);
 
@@ -110,7 +114,7 @@ impl<
                     || run.summary_window.message_interval
                         != admission.batch.summary_message_interval
                 {
-                    return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+                    return Err(CompanionPostTurnMemoryRunError::InvalidAdmission { reason: "stored run differs from the admission in conversation, branch, sources or summary interval".to_owned() });
                 }
                 if run.profile != profile
                     || run.time_awareness_enabled != time_awareness_enabled
@@ -128,7 +132,9 @@ impl<
                     .map_err(CompanionPostTurnMemoryRunError::Run)?;
                 if latest.job_id == handle.id() && latest.job_attempt == job_attempt {
                     if latest.status != DynamicMemoryAttemptStatus::Processing {
-                        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+                        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                            reason: "latest attempt of this job is not processing".to_owned(),
+                        });
                     }
                     return Ok(CompanionPostTurnMemoryRunDispatch {
                         run,
@@ -137,12 +143,15 @@ impl<
                     });
                 }
                 if latest.status != DynamicMemoryAttemptStatus::Processing {
-                    return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+                    return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                        reason: "latest attempt of an earlier job is not processing".to_owned(),
+                    });
                 }
-                let child_ordinal = latest
-                    .ordinal
-                    .checked_add(1)
-                    .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+                let child_ordinal = latest.ordinal.checked_add(1).ok_or(
+                    CompanionPostTurnMemoryRunError::InvalidAdmission {
+                        reason: "attempt ordinal overflowed".to_owned(),
+                    },
+                )?;
                 let child_id = stable_attempt_id(run_id, child_ordinal, handle.id());
                 let recovered = self
                     .repository
@@ -195,7 +204,9 @@ impl<
                 let attempt_id = stable_attempt_id(run_id, 0, handle.id());
                 let start = lettuce_memory::MemoryToolReducer
                     .start_cycle(&snapshot, policy)
-                    .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+                    .map_err(|error| CompanionPostTurnMemoryRunError::InvalidAdmission {
+                        reason: format!("the cycle-start memory pass failed: {error}"),
+                    })?;
                 if start.restored_pinned > 0 || start.decayed > 0 {
                     tracing::info!(
                         conversation_id = %conversation_id,
@@ -209,10 +220,13 @@ impl<
                     Some(change) => (
                         lettuce_memory::MemorySpaceSnapshot {
                             id: snapshot.id,
-                            revision: change
-                                .expected_revision
-                                .next()
-                                .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+                            revision: change.expected_revision.next().map_err(|_| {
+                                CompanionPostTurnMemoryRunError::InvalidAdmission {
+                                    reason:
+                                        "memory revision overflowed after the cycle start change"
+                                            .to_owned(),
+                                }
+                            })?,
                             items: change.items.clone(),
                         },
                         Some(change),
@@ -270,30 +284,47 @@ fn summary_window(
     source_message_count: usize,
 ) -> Result<DynamicMemorySummaryWindow, CompanionPostTurnMemoryRunError> {
     if message_interval == 0 || source_message_count == 0 {
-        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+            reason: "summary window needs a non-zero interval and at least one source message"
+                .to_owned(),
+        });
     }
-    let source_message_count = u64::try_from(source_message_count)
-        .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+    let source_message_count = u64::try_from(source_message_count).map_err(|_| {
+        CompanionPostTurnMemoryRunError::InvalidAdmission {
+            reason: "source message count does not fit in u64".to_owned(),
+        }
+    })?;
     let (start, end) = match selection {
         crate::CompanionMemoryWindowSelection::Automatic => {
             if unsummarized_message_count == 0 || source_message_count > unsummarized_message_count
             {
-                return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+                return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                    reason:
+                        "automatic window has no unsummarized messages or fewer than the sources"
+                            .to_owned(),
+                });
             }
             (
                 cursor,
-                cursor
-                    .checked_add(source_message_count)
-                    .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+                cursor.checked_add(source_message_count).ok_or(
+                    CompanionPostTurnMemoryRunError::InvalidAdmission {
+                        reason: "automatic window end overflowed".to_owned(),
+                    },
+                )?,
             )
         }
         crate::CompanionMemoryWindowSelection::Recent => {
-            let end = cursor
-                .checked_add(unsummarized_message_count)
-                .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+            let end = cursor.checked_add(unsummarized_message_count).ok_or(
+                CompanionPostTurnMemoryRunError::InvalidAdmission {
+                    reason: "recent window end overflowed".to_owned(),
+                },
+            )?;
             (
-                end.checked_sub(source_message_count)
-                    .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+                end.checked_sub(source_message_count).ok_or(
+                    CompanionPostTurnMemoryRunError::InvalidAdmission {
+                        reason: "recent window starts before the first message".to_owned(),
+                    },
+                )?,
                 end,
             )
         }
@@ -310,25 +341,57 @@ fn validate_job(
     handle: &JobHandle,
 ) -> Result<(), CompanionPostTurnMemoryRunError> {
     let conversation_id = admission.batch.conversation_id;
-    if admission.batch.source_messages().is_none()
-        || (admission.batch.update_dynamic_memory_model_on_success
-            && admission.batch.selected_model_profile_id.is_none())
-        || admission.job.id != handle.id()
-        || admission.job.kind != JobKind::MemoryExtraction
-        || admission.job.subject.kind != SubjectKind::Conversation
-        || admission.job.subject.id.as_str() != conversation_id.to_string()
-        || admission.job.idempotency_key.as_ref() != Some(&admission.batch.idempotency_key)
-        || admission.job.state.is_terminal()
-        || admission.batch.effects().iter().any(|effect| {
-            effect.conversation_id != conversation_id
-                || effect.status == CompanionTurnEffectStatus::Invalidated
-                || (admission.batch.settle_effects()
-                    && (effect.status != CompanionTurnEffectStatus::Processing
-                        || effect.source_window.is_some()
-                        || effect.summary.is_some()))
-        })
+    let invalid = |reason: &str| CompanionPostTurnMemoryRunError::InvalidAdmission {
+        reason: reason.to_owned(),
+    };
+    if admission.batch.source_messages().is_none() {
+        return Err(invalid("batch has no source messages"));
+    }
+    if admission.batch.update_dynamic_memory_model_on_success
+        && admission.batch.selected_model_profile_id.is_none()
     {
-        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+        return Err(invalid(
+            "batch updates the model on success but names no selected model",
+        ));
+    }
+    if admission.job.id != handle.id() {
+        return Err(invalid("admission job differs from the claimed job"));
+    }
+    if admission.job.kind != JobKind::MemoryExtraction {
+        return Err(invalid("admission job is not a memory extraction job"));
+    }
+    if admission.job.subject.kind != SubjectKind::Conversation {
+        return Err(invalid("admission job subject is not a conversation"));
+    }
+    if admission.job.subject.id.as_str() != conversation_id.to_string() {
+        return Err(invalid(
+            "admission job subject differs from the batch conversation",
+        ));
+    }
+    if admission.job.idempotency_key.as_ref() != Some(&admission.batch.idempotency_key) {
+        return Err(invalid(
+            "admission job idempotency key differs from the batch",
+        ));
+    }
+    if admission.job.state.is_terminal() {
+        return Err(invalid("admission job already ended"));
+    }
+    if let Some(reason) = admission.batch.effects().iter().find_map(|effect| {
+        if effect.conversation_id != conversation_id {
+            Some("an effect belongs to another conversation")
+        } else if effect.status == CompanionTurnEffectStatus::Invalidated {
+            Some("an effect was invalidated")
+        } else if admission.batch.settle_effects()
+            && (effect.status != CompanionTurnEffectStatus::Processing
+                || effect.source_window.is_some()
+                || effect.summary.is_some())
+        {
+            Some("an effect to settle is not a fresh processing effect")
+        } else {
+            None
+        }
+    }) {
+        return Err(invalid(reason));
     }
     Ok(())
 }
@@ -339,7 +402,9 @@ fn expected_effect_messages(
     admission
         .batch
         .source_messages()
-        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)
+        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission {
+            reason: "batch has no source messages".to_owned(),
+        })
 }
 
 /// A key-labelled memory tool contract for tests that do not read the catalog.
@@ -369,13 +434,17 @@ pub(crate) fn memory_tool_request<
         repository,
         crate::BuiltInPromptId::MemoryRuntime,
     )
-    .map_err(|_| CompanionPostTurnMemoryRunError::RuntimeText)?;
+    .map_err(|error| CompanionPostTurnMemoryRunError::RuntimeText {
+        reason: error.to_string(),
+    })?;
     let texts = lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
         .iter()
         .map(|key| {
             text.render_with(key, [])
                 .map(|value| (*key, value))
-                .map_err(|_| CompanionPostTurnMemoryRunError::RuntimeText)
+                .map_err(|error| CompanionPostTurnMemoryRunError::RuntimeText {
+                    reason: format!("memory tool text {key} could not be rendered: {error}"),
+                })
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
     Ok(lettuce_memory::dynamic_memory_tool_request_for_run(
@@ -430,10 +499,14 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
             break;
         }
         let Some(next) = page.next_cursor else {
-            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                reason: "timeline ended before every source message was found".to_owned(),
+            });
         };
         if !seen_cursors.insert(next.clone()) {
-            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                reason: "timeline cursor repeated".to_owned(),
+            });
         }
         cursor = Some(next);
     }
@@ -444,9 +517,13 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
             let (role, visibility, render_source, effective_time) = found
                 .get(&message_id)
                 .copied()
-                .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+                .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                    reason: "source message is not on the branch timeline".to_owned(),
+                })?;
             if role != expected_role || visibility != MessageVisibility::Visible {
-                return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+                return Err(CompanionPostTurnMemoryRunError::InvalidAdmission {
+                    reason: "source message has another role or is not visible".to_owned(),
+                });
             }
             Ok(DynamicMemorySourceMessage {
                 message_id,
@@ -1119,7 +1196,7 @@ pub(crate) mod tests {
                 end: 10,
             }
         );
-        assert_eq!(
+        assert!(matches!(
             summary_window(
                 10,
                 4,
@@ -1127,8 +1204,8 @@ pub(crate) mod tests {
                 0,
                 4
             ),
-            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
-        );
+            Err(CompanionPostTurnMemoryRunError::InvalidAdmission { .. })
+        ));
     }
 
     #[test]
@@ -1336,7 +1413,7 @@ pub(crate) mod tests {
         );
         let mut changed_interval = first_admission.clone();
         changed_interval.batch.summary_message_interval = 21;
-        assert_eq!(
+        assert!(matches!(
             coordinator.admit_or_recover(
                 &changed_interval,
                 resolved_profile.clone(),
@@ -1348,8 +1425,8 @@ pub(crate) mod tests {
                 None,
                 TimestampMillis::new(11),
             ),
-            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
-        );
+            Err(CompanionPostTurnMemoryRunError::InvalidAdmission { .. })
+        ));
         assert_eq!(
             coordinator
                 .admit_or_recover(
@@ -1387,7 +1464,7 @@ pub(crate) mod tests {
         mismatched_effects[1].assistant_message_id = MessageId::new();
         let mismatched_admission =
             admission(&first_store, conversation_id, branch_id, mismatched_effects);
-        assert_eq!(
+        assert!(matches!(
             coordinator.admit_or_recover(
                 &mismatched_admission,
                 resolved_profile.clone(),
@@ -1399,8 +1476,8 @@ pub(crate) mod tests {
                 None,
                 TimestampMillis::new(11),
             ),
-            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
-        );
+            Err(CompanionPostTurnMemoryRunError::InvalidAdmission { .. })
+        ));
 
         let restarted_store = InMemoryJobStore::new();
         let restarted_admission = admission(&restarted_store, conversation_id, branch_id, effects);

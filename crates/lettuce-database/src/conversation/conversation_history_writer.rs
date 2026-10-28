@@ -267,7 +267,9 @@ pub(crate) fn insert_historical_conversation(
             .timeline_ordinal
             .checked_add(1)
             .and_then(|value| i64::try_from(value).ok())
-            .ok_or(ConversationRepositoryError::Storage)
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "insert historical conversation: a required value is missing".to_owned(),
+            })
     })?;
     transaction
         .execute(
@@ -332,7 +334,10 @@ pub(crate) fn insert_historical_conversation(
         .branches
         .sort_by_key(|branch| (branch.created_at, branch.id));
     if stored != expected {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "insert historical conversation: stored data failed a consistency check"
+                .to_owned(),
+        });
     }
     Ok(stored)
 }
@@ -352,7 +357,9 @@ pub(crate) fn insert_memory_state(
         && let Some(summary) = &space.summary
     {
         crate::memory::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
     }
     if space.conversation_id == conversation_id
         && let Some(branch_id) = space.branch_id
@@ -685,7 +692,9 @@ pub(crate) fn insert_copied_scene_source(
     super::conversation_artifact_adapter::verify_snapshot_in_transaction(transaction, reference)
         .map_err(|error| match error {
             lettuce_conversations::ArtifactError::NotFound => ConversationRepositoryError::NotFound,
-            _ => ConversationRepositoryError::Storage,
+            _ => ConversationRepositoryError::Storage {
+                reason: "insert copied scene source: a stored value is not recognised".to_owned(),
+            },
         })?;
     transaction.execute("INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING", params![backup.message.conversation_id.to_string(), reference.artifact_id.to_string()]).map_err(kernel::map_constraint)?;
     transaction.execute("INSERT INTO conversation_message_scene_sources (conversation_id, message_id, snapshot_artifact_id) VALUES (?1, ?2, ?3)", params![backup.message.conversation_id.to_string(), backup.message.id.to_string(), reference.artifact_id.to_string()]).map_err(kernel::map_constraint)?;
@@ -798,7 +807,9 @@ pub(crate) fn media_parts(
                             conversation_creator::media_role_name(*role),
                         )
                     })
-                    .map_err(|_| ConversationRepositoryError::Storage),
+                    .map_err(|error| ConversationRepositoryError::Storage {
+                        reason: error.to_string(),
+                    }),
             ),
             _ => None,
         })
@@ -1185,7 +1196,7 @@ pub(crate) fn settle_turn(
                     turn.id.to_string(),
                     lorebook.lorebook_id.to_string(),
                     slice::sql_revision(lorebook.revision)?,
-                    i64::try_from(ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    i64::try_from(ordinal).map_err(|error| ConversationRepositoryError::Storage { reason: error.to_string() })?,
                     slice::encode(&lorebook.activated_entry_ids)?,
                     lorebook.name,
                 ],
@@ -1296,7 +1307,9 @@ fn settle_attempt(
             &turn.conversation_id.to_string(),
             event,
         )
-        .map_err(|_| ConversationRepositoryError::Storage)?;
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
     }
     transaction
         .execute(
@@ -1388,7 +1401,9 @@ pub(crate) fn insert_creation_record(
     let sequence =
         kernel::next_outbox_sequence(transaction, conversation.id, OperationKind::Create)?;
     if sequence != 1 {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "insert creation record: stored data failed a consistency check".to_owned(),
+        });
     }
     let outbox = ConversationOutboxRecord {
         format_version: 1,

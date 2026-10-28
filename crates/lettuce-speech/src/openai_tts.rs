@@ -42,19 +42,30 @@ impl AudioProviderVerifier for OpenAiCompatibleTtsRuntime {
         provider: &AudioProvider,
         credential: Option<&SecretValue>,
     ) -> Result<bool, AudioProviderVerificationError> {
-        provider
-            .validate()
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            AudioProviderVerificationError::InvalidInput {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         let AudioProviderConfig::OpenAiCompatible { base_url, .. } = &provider.config else {
-            return Err(AudioProviderVerificationError::InvalidInput);
+            return Err(AudioProviderVerificationError::InvalidInput {
+                reason: "provider config is not the openai compatible kind",
+            });
         };
         let endpoint = base_url
             .as_deref()
-            .ok_or(AudioProviderVerificationError::InvalidInput)?;
-        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput)?;
+            .ok_or(AudioProviderVerificationError::InvalidInput {
+                reason: "openai compatible provider has no base url",
+            })?;
+        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput {
+            reason: "api key is missing",
+        })?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
-            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+            .map_err(|_| AudioProviderVerificationError::InvalidInput {
+                reason: "api key is not a valid header value",
+            })?;
         let response = self
             .network
             .get_json(
@@ -79,17 +90,28 @@ impl TtsRuntime for OpenAiCompatibleTtsRuntime {
         credential: Option<&SecretValue>,
         cancellation: &CancellationToken,
     ) -> Result<RuntimeSynthesis, TtsRuntimeError> {
-        request.validate().map_err(|_| TtsRuntimeError::Rejected)?;
+        request.validate().map_err(|error| {
+            tracing::warn!(%error, "request failed validation");
+            TtsRuntimeError::Rejected {
+                reason: "request failed validation",
+            }
+        })?;
         let AudioProviderConfig::OpenAiCompatible {
             base_url,
             request_path,
         } = &request.provider.config
         else {
-            return Err(TtsRuntimeError::Rejected);
+            return Err(TtsRuntimeError::Rejected {
+                reason: "request provider config is not the openai compatible kind",
+            });
         };
-        let endpoint = base_url.as_deref().ok_or(TtsRuntimeError::Rejected)?;
+        let endpoint = base_url.as_deref().ok_or(TtsRuntimeError::Rejected {
+            reason: "openai compatible provider has no base url",
+        })?;
         let path = normalized_path(request_path.as_deref());
-        let credential = credential.ok_or(TtsRuntimeError::Rejected)?;
+        let credential = credential.ok_or(TtsRuntimeError::Rejected {
+            reason: "api key is missing",
+        })?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
             .map_err(map_secret_value)
@@ -105,7 +127,12 @@ impl TtsRuntime for OpenAiCompatibleTtsRuntime {
             instructions,
             response_format: "mp3",
         })
-        .map_err(|_| TtsRuntimeError::Rejected)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "request body could not be serialized");
+            TtsRuntimeError::Rejected {
+                reason: "request body could not be serialized",
+            }
+        })?;
         if cancellation.is_cancelled() {
             return Err(TtsRuntimeError::Cancelled);
         }
@@ -126,7 +153,9 @@ impl TtsRuntime for OpenAiCompatibleTtsRuntime {
                 408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
                     status: response.status,
                 },
-                _ => TtsRuntimeError::Rejected,
+                _ => TtsRuntimeError::Rejected {
+                    reason: "provider returned a non-retryable http status",
+                },
             });
         }
         let declared_mime_type = response
@@ -158,29 +187,35 @@ fn normalized_path(path: Option<&str>) -> String {
 
 fn map_network(error: JsonClientError) -> TtsRuntimeError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
-        JsonClientError::Transport => TtsRuntimeError::NetworkUnavailable,
-        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable,
+        | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } => TtsRuntimeError::NetworkUnavailable { reason },
+        JsonClientError::ClientConfiguration { reason } => TtsRuntimeError::Unavailable { reason },
     }
 }
 
 fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
     match error {
-        JsonClientError::InvalidUrl
-        | JsonClientError::InvalidRequest
+        JsonClientError::InvalidUrl { .. }
+        | JsonClientError::InvalidRequest { .. }
         | JsonClientError::RequestTooLarge
-        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            AudioProviderVerificationError::Unavailable
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput {
+            reason: "request url, body or response size was rejected by the http client",
+        },
+        JsonClientError::Transport { reason } | JsonClientError::ClientConfiguration { reason } => {
+            AudioProviderVerificationError::Unavailable { reason }
         }
     }
 }
 
 fn map_secret_value(_: SecretValueError) -> TtsRuntimeError {
-    TtsRuntimeError::Rejected
+    TtsRuntimeError::Rejected {
+        reason: "secret value is not usable",
+    }
 }
 
 #[cfg(test)]
@@ -319,7 +354,7 @@ mod tests {
             runtime
                 .synthesize(&request, Some(&credential), &CancellationToken::new())
                 .await,
-            Err(TtsRuntimeError::Rejected)
+            Err(TtsRuntimeError::Rejected { .. })
         ));
         let cancellation = CancellationToken::new();
         cancellation.cancel();

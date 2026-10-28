@@ -110,14 +110,18 @@ fn usage_error(error: NanoGptUsageError) -> ApiError {
             None,
             None,
         ),
-        NanoGptUsageError::CredentialsUnavailable => (
+        NanoGptUsageError::CredentialsUnavailable { .. } => (
             Reason::CredentialsUnavailable,
             ApiErrorCode::Unavailable,
             None,
             None,
         ),
-        NanoGptUsageError::Transport => (Reason::Transport, ApiErrorCode::Unavailable, None, None),
-        NanoGptUsageError::Malformed => (Reason::Malformed, ApiErrorCode::Malformed, None, None),
+        NanoGptUsageError::Transport { .. } => {
+            (Reason::Transport, ApiErrorCode::Unavailable, None, None)
+        }
+        NanoGptUsageError::Malformed { .. } => {
+            (Reason::Malformed, ApiErrorCode::Malformed, None, None)
+        }
         NanoGptUsageError::ProviderRejected { status, message } => (
             Reason::ProviderRejected,
             ApiErrorCode::Unavailable,

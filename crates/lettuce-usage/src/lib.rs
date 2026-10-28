@@ -64,10 +64,10 @@ pub trait UsageLedger: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum UsageLedgerError {
-    #[error("usage event is invalid")]
-    Invalid,
+    #[error("usage event is invalid: {reason}")]
+    Invalid { reason: &'static str },
     #[error("usage event conflicts with immutable evidence")]
     Conflict,
-    #[error("usage ledger storage failed")]
-    Storage,
+    #[error("usage ledger storage failed: {reason}")]
+    Storage { reason: &'static str },
 }

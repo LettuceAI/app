@@ -14,12 +14,16 @@ use crate::{Database, decode_versioned, encode_versioned};
 const RUN_FORMAT_VERSION: u32 = 1;
 const PROPOSAL_FORMAT_VERSION: u32 = 1;
 
-fn failure(_: impl std::fmt::Debug) -> CompanionConsolidationRunRepositoryError {
-    CompanionConsolidationRunRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> CompanionConsolidationRunRepositoryError {
+    CompanionConsolidationRunRepositoryError::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> CompanionConsolidationRunRepositoryError {
-    CompanionConsolidationRunRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> CompanionConsolidationRunRepositoryError {
+    CompanionConsolidationRunRepositoryError::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 pub(crate) fn load_in(
@@ -69,7 +73,9 @@ pub(crate) fn load_in(
         .ok()
         .filter(|revision| *revision > 0)
         .map(Revision::new)
-        .ok_or(CompanionConsolidationRunRepositoryError::Corrupt)?;
+        .ok_or_else(|| CompanionConsolidationRunRepositoryError::Corrupt {
+            reason: "load in: a required value is missing".to_owned(),
+        })?;
     if run.job_id != job_id
         || run.growth_job_id != JobId::from_str(&row.0).map_err(corrupt)?
         || run.conversation_id != ConversationId::from_str(&row.1).map_err(corrupt)?
@@ -80,11 +86,15 @@ pub(crate) fn load_in(
         || checkpoint.as_ref().map(|value| value.reduced_at.get()) != row.8
         || run.proposal_checkpoint.is_some()
     {
-        return Err(CompanionConsolidationRunRepositoryError::Corrupt);
+        return Err(CompanionConsolidationRunRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check".to_owned(),
+        });
     }
     run.proposal_checkpoint = checkpoint;
     run.validate()
-        .map_err(|_| CompanionConsolidationRunRepositoryError::Corrupt)?;
+        .map_err(|error| CompanionConsolidationRunRepositoryError::Corrupt {
+            reason: error.to_string(),
+        })?;
     Ok(Some(run))
 }
 
@@ -129,7 +139,9 @@ impl CompanionConsolidationRunRepository for Database {
     ) -> Result<CompanionConsolidationRun, CompanionConsolidationRunRepositoryError> {
         run.validate()?;
         if run.proposal_checkpoint.is_some() {
-            return Err(CompanionConsolidationRunRepositoryError::Invalid);
+            return Err(CompanionConsolidationRunRepositoryError::Invalid {
+                reason: "admit companion consolidation run: a value failed validation",
+            });
         }
         let payload = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
         let mut connection = self.connection().map_err(failure)?;
@@ -154,8 +166,11 @@ impl CompanionConsolidationRunRepository for Database {
                 ],
             )
             .map_err(failure)?;
-        let stored =
-            load_in(&tx, run.job_id)?.ok_or(CompanionConsolidationRunRepositoryError::Failure)?;
+        let stored = load_in(&tx, run.job_id)?.ok_or_else(|| {
+            CompanionConsolidationRunRepositoryError::Failure {
+                reason: "admit companion consolidation run: a required value is missing".to_owned(),
+            }
+        })?;
         if inserted == 0 {
             let mut immutable = stored.clone();
             immutable.proposal_checkpoint = None;
@@ -199,7 +214,12 @@ impl CompanionConsolidationRunRepository for Database {
             .map_err(corrupt)?
             .ok_or(CompanionConsolidationRunRepositoryError::NotFound)
             .and_then(|id| JobId::from_str(&id).map_err(corrupt))?;
-        let run = load_in(&tx, job_id)?.ok_or(CompanionConsolidationRunRepositoryError::Corrupt)?;
+        let run = load_in(&tx, job_id)?.ok_or_else(|| {
+            CompanionConsolidationRunRepositoryError::Corrupt {
+                reason: "load companion consolidation run for growth: a required value is missing"
+                    .to_owned(),
+            }
+        })?;
         tx.commit().map_err(failure)?;
         Ok(run)
     }
@@ -235,8 +255,12 @@ impl CompanionConsolidationRunRepository for Database {
         if updated != 1 {
             return Err(CompanionConsolidationRunRepositoryError::Conflict);
         }
-        let stored =
-            load_in(&tx, job_id)?.ok_or(CompanionConsolidationRunRepositoryError::Failure)?;
+        let stored = load_in(&tx, job_id)?.ok_or_else(|| {
+            CompanionConsolidationRunRepositoryError::Failure {
+                reason: "commit companion consolidation proposal: a required value is missing"
+                    .to_owned(),
+            }
+        })?;
         tx.commit().map_err(failure)?;
         Ok(stored)
     }

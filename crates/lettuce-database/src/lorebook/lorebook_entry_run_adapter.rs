@@ -15,18 +15,30 @@ use crate::{Database, decode_versioned, encode_versioned};
 const RUN_FORMAT_VERSION: u32 = 1;
 const ATTEMPTS_FORMAT_VERSION: u32 = 1;
 
-fn failure(_: impl std::fmt::Debug) -> LorebookEntryRunRepositoryError {
-    LorebookEntryRunRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> LorebookEntryRunRepositoryError {
+    tracing::warn!(?error, "lorebook entry run adapter storage step failed");
+    LorebookEntryRunRepositoryError::Failure {
+        reason: "lorebook entry run adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> LorebookEntryRunRepositoryError {
-    LorebookEntryRunRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> LorebookEntryRunRepositoryError {
+    tracing::warn!(?error, "lorebook entry run adapter storage step failed");
+    LorebookEntryRunRepositoryError::Corrupt {
+        reason: "lorebook entry run adapter: a storage step failed",
+    }
 }
 
-fn parse_id<T: FromStr>(value: &str) -> Result<T, LorebookEntryRunRepositoryError> {
-    value
-        .parse()
-        .map_err(|_| LorebookEntryRunRepositoryError::Corrupt)
+fn parse_id<T: FromStr>(value: &str) -> Result<T, LorebookEntryRunRepositoryError>
+where
+    T::Err: std::fmt::Debug,
+{
+    value.parse().map_err(|error| {
+        tracing::warn!(?error, "parse id failed");
+        LorebookEntryRunRepositoryError::Corrupt {
+            reason: "parse id: a storage step failed",
+        }
+    })
 }
 
 pub(crate) fn load_in(
@@ -77,7 +89,9 @@ pub(crate) fn load_in(
         .ok()
         .filter(|revision| *revision > 0)
         .map(Revision::new)
-        .ok_or(LorebookEntryRunRepositoryError::Corrupt)?;
+        .ok_or(LorebookEntryRunRepositoryError::Corrupt {
+            reason: "load in: a required value is missing",
+        })?;
     if run.request_id != request_id
         || run.job_id != parse_id::<JobId>(&job_id)?
         || run.conversation_id != parse_id::<ConversationId>(&conversation_id)?
@@ -95,7 +109,9 @@ pub(crate) fn load_in(
         || run.created_at != TimestampMillis::new(created_at)
         || run.validate().is_err()
     {
-        return Err(LorebookEntryRunRepositoryError::Corrupt);
+        return Err(LorebookEntryRunRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check",
+        });
     }
     Ok(Some(run))
 }
@@ -118,8 +134,12 @@ pub(crate) fn load_attempts_in(
     let attempts =
         decode_versioned::<Vec<LorebookEntryAttemptCheckpoint>>(&encoded, ATTEMPTS_FORMAT_VERSION)
             .map_err(corrupt)?;
-    validate_lorebook_entry_attempts(&attempts)
-        .map_err(|_| LorebookEntryRunRepositoryError::Corrupt)?;
+    validate_lorebook_entry_attempts(&attempts).map_err(|error| {
+        tracing::warn!(%error, "load attempts in failed");
+        LorebookEntryRunRepositoryError::Corrupt {
+            reason: "load attempts in: a storage step failed",
+        }
+    })?;
     Ok(Some(attempts))
 }
 
@@ -196,8 +216,11 @@ impl LorebookEntryRunRepository for Database {
                 ],
             )
             .map_err(failure)?;
-        let stored = load_in(&transaction, run.request_id)?
-            .ok_or(LorebookEntryRunRepositoryError::Failure)?;
+        let stored = load_in(&transaction, run.request_id)?.ok_or(
+            LorebookEntryRunRepositoryError::Failure {
+                reason: "admit lorebook entry run: a required value is missing",
+            },
+        )?;
         if inserted == 0 && stored != run {
             return Err(LorebookEntryRunRepositoryError::Conflict);
         }

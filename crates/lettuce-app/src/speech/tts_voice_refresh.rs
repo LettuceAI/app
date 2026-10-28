@@ -55,11 +55,17 @@ where
         match &provider.config {
             AudioProviderConfig::OpenAiCompatible { .. } => return Ok(Vec::new()),
             AudioProviderConfig::Elevenlabs => {}
-            _ => return Err(TtsVoiceRefreshError::InvalidInput),
+            _ => {
+                return Err(TtsVoiceRefreshError::InvalidInput {
+                    reason: "the provider kind has no refreshable voices",
+                });
+            }
         }
         let reference = provider
             .api_key_ref
-            .ok_or(TtsVoiceRefreshError::InvalidInput)?;
+            .ok_or(TtsVoiceRefreshError::InvalidInput {
+                reason: "the provider has no API key reference",
+            })?;
         let credential = self
             .secrets
             .load(
@@ -113,7 +119,9 @@ where
         }
         let reference = provider
             .api_key_ref
-            .ok_or(TtsVoiceRefreshError::InvalidInput)?;
+            .ok_or(TtsVoiceRefreshError::InvalidInput {
+                reason: "the provider has no API key reference",
+            })?;
         let credential = self
             .secrets
             .load(
@@ -138,8 +146,8 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsVoiceRefreshError {
-    #[error("voice refresh input is invalid")]
-    InvalidInput,
+    #[error("voice refresh input is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
     #[error("TTS configuration persistence failed: {0}")]
     Configuration(TtsConfigurationRepositoryError),
     #[error("TTS secret access failed: {0}")]
@@ -220,13 +228,17 @@ mod tests {
                 .refresh(
                     provider.id,
                     &Discovery {
-                        outcome: Err(VoiceDiscoveryError::Unavailable),
+                        outcome: Err(VoiceDiscoveryError::Unavailable {
+                            reason: "simulated failure"
+                        }),
                     },
                     TimestampMillis::new(3),
                 )
                 .await,
             Err(TtsVoiceRefreshError::Discovery(
-                VoiceDiscoveryError::Unavailable
+                VoiceDiscoveryError::Unavailable {
+                    reason: "simulated failure"
+                }
             ))
         );
         assert_eq!(
@@ -298,7 +310,9 @@ mod tests {
                 .refresh(
                     provider.id,
                     &Discovery {
-                        outcome: Err(VoiceDiscoveryError::Unavailable),
+                        outcome: Err(VoiceDiscoveryError::Unavailable {
+                            reason: "simulated failure",
+                        }),
                     },
                     TimestampMillis::new(2),
                 )

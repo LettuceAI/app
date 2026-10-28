@@ -15,7 +15,9 @@ impl ModelLookup for Database {
     ) -> Result<Option<ProviderAccount>, ModelRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         connection
             .query_row(
                 &format!(
@@ -36,7 +38,9 @@ impl ModelLookup for Database {
     ) -> Result<Option<ModelProfile>, ModelRepositoryError> {
         let connection = self
             .connection()
-            .map_err(|_| ModelRepositoryError::Storage)?;
+            .map_err(|error| ModelRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         connection
             .query_row(
                 &format!(

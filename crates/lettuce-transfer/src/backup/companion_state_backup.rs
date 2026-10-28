@@ -93,7 +93,9 @@ impl CompanionStateBackup {
         history: &crate::ConversationHistoryBackup,
     ) -> Result<(), CompanionStateBackupError> {
         if self.version != COMPANION_STATE_BACKUP_VERSION {
-            return Err(CompanionStateBackupError::InvalidData);
+            return Err(CompanionStateBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.relationships
             .sort_by_key(|value| (value.character_id, value.persona_id));
@@ -134,7 +136,9 @@ impl CompanionStateBackup {
                 || !valid_relationship(&relationship.state)
                 || relationships.insert(key, relationship).is_some()
             {
-                return Err(CompanionStateBackupError::InvalidData);
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "relationship references an unknown character or persona, has an invalid state or timestamps, or is duplicated",
+                });
             }
         }
         let mut sessions = BTreeMap::new();
@@ -142,10 +146,14 @@ impl CompanionStateBackup {
             let owner = session.owner;
             let relationship = relationships
                 .get(&(owner.character_id, owner.persona_id))
-                .ok_or(CompanionStateBackupError::InvalidData)?;
-            let kind = conversations
-                .get(&owner.conversation_id)
-                .ok_or(CompanionStateBackupError::InvalidData)?;
+                .ok_or(CompanionStateBackupError::InvalidData {
+                    reason: "session has no relationship for its owner",
+                })?;
+            let kind = conversations.get(&owner.conversation_id).ok_or(
+                CompanionStateBackupError::InvalidData {
+                    reason: "session conversation is not in the history backup",
+                },
+            )?;
             let private_relationship = if let Some(values) = &session.private_relationships {
                 let mut keys = BTreeSet::new();
                 if values.is_empty()
@@ -160,13 +168,17 @@ impl CompanionStateBackup {
                             || !valid_relationship(&value.state)
                     })
                 {
-                    return Err(CompanionStateBackupError::InvalidData);
+                    return Err(CompanionStateBackupError::InvalidData {
+                        reason: "private relationship entries are empty, duplicated or invalid",
+                    });
                 }
                 Some(
                     values
                         .iter()
                         .find(|value| value.persona_id == owner.persona_id)
-                        .ok_or(CompanionStateBackupError::InvalidData)?,
+                        .ok_or(CompanionStateBackupError::InvalidData {
+                            reason: "session has no private relationship for its persona",
+                        })?,
                 )
             } else {
                 None
@@ -184,18 +196,24 @@ impl CompanionStateBackup {
                 || validate_runtime_state(&runtime).is_err()
                 || sessions.insert(owner.conversation_id, owner).is_some()
             {
-                return Err(CompanionStateBackupError::InvalidData);
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "session state, revision or timestamps are invalid or its conversation is duplicated",
+                });
             }
         }
         if self.episodes.len() != self.sessions.len() {
-            return Err(CompanionStateBackupError::InvalidData);
+            return Err(CompanionStateBackupError::InvalidData {
+                reason: "episode count does not match the session count",
+            });
         }
         let mut episode_keys = BTreeSet::new();
         let mut episode_conversations = BTreeSet::new();
         for episode in &self.episodes {
-            let owner = sessions
-                .get(&episode.conversation_id)
-                .ok_or(CompanionStateBackupError::InvalidData)?;
+            let owner = sessions.get(&episode.conversation_id).ok_or(
+                CompanionStateBackupError::InvalidData {
+                    reason: "episode conversation has no session",
+                },
+            )?;
             if owner.character_id != episode.character_id
                 || owner.persona_id != episode.persona_id
                 || episode.episode_index == 0
@@ -213,7 +231,9 @@ impl CompanionStateBackup {
                 ))
                 || !episode_conversations.insert(episode.conversation_id)
             {
-                return Err(CompanionStateBackupError::InvalidData);
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "episode does not match its session or is duplicated or out of order",
+                });
             }
         }
         let mut receipt_ids = BTreeSet::new();
@@ -221,18 +241,22 @@ impl CompanionStateBackup {
             let receipt = &value.receipt;
             if sessions.get(&receipt.owner.conversation_id) != Some(&receipt.owner)
                 || receipt.resulting_session_revision
-                    != receipt
-                        .expected_session_revision
-                        .next()
-                        .map_err(|_| CompanionStateBackupError::InvalidData)?
+                    != receipt.expected_session_revision.next().map_err(|_| {
+                        CompanionStateBackupError::InvalidData {
+                            reason: "session revision overflowed",
+                        }
+                    })?
                 || receipt.resulting_relationship_revision
-                    != receipt
-                        .expected_relationship_revision
-                        .next()
-                        .map_err(|_| CompanionStateBackupError::InvalidData)?
+                    != receipt.expected_relationship_revision.next().map_err(|_| {
+                        CompanionStateBackupError::InvalidData {
+                            reason: "relationship revision overflowed",
+                        }
+                    })?
                 || !receipt_ids.insert(receipt.operation_id)
             {
-                return Err(CompanionStateBackupError::InvalidData);
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "receipt revisions do not match or the operation id is duplicated",
+                });
             }
         }
         self.souls
@@ -263,7 +287,9 @@ impl CompanionStateBackup {
                         || !soul_receipt_ids.insert(receipt.operation_id)
                 })
             {
-                return Err(CompanionStateBackupError::InvalidData);
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "soul state, revision, timestamps or receipts are invalid or duplicated",
+                });
             }
         }
         self.scheduled_notes.sort_by_key(|note| note.id);
@@ -273,7 +299,9 @@ impl CompanionStateBackup {
                 || note.validate().is_err()
                 || !note_ids.insert(note.id)
             {
-                return Err(CompanionStateBackupError::InvalidData);
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "soul note references an unknown character or is invalid or duplicated",
+                });
             }
         }
         self.growth_runs.sort_by_key(|run| run.job_id);
@@ -292,7 +320,9 @@ impl CompanionStateBackup {
             .iter()
             .any(|run| run.validate().is_err())
         {
-            return Err(CompanionStateBackupError::InvalidData);
+            return Err(CompanionStateBackupError::InvalidData {
+                reason: "soul writer run is invalid",
+            });
         }
         Ok(())
     }
@@ -325,6 +355,6 @@ fn conversation_matches_owner(kind: &ConversationKind, owner: CompanionStateOwne
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionStateBackupError {
-    #[error("companion state backup is invalid")]
-    InvalidData,
+    #[error("companion state backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

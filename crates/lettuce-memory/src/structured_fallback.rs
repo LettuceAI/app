@@ -94,7 +94,12 @@ fn json_snippet(raw: &str) -> Option<&str> {
 fn parse_json(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError> {
     let normalized = normalize(raw);
     let value: Value = serde_json::from_str(json_snippet(&normalized).unwrap_or(&normalized))
-        .map_err(|_| StructuredFallbackError::InvalidJson)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "fallback operations response is not valid JSON");
+            StructuredFallbackError::InvalidJson {
+                reason: "response is not parseable JSON",
+            }
+        })?;
     let operations = match &value {
         Value::Array(items) => items,
         Value::Object(map) => map
@@ -102,14 +107,22 @@ fn parse_json(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackErro
             .or_else(|| map.get("toolCalls"))
             .or_else(|| map.get("calls"))
             .and_then(Value::as_array)
-            .ok_or(StructuredFallbackError::InvalidJson)?,
-        _ => return Err(StructuredFallbackError::InvalidJson),
+            .ok_or(StructuredFallbackError::InvalidJson {
+                reason: "JSON object has no operations array",
+            })?,
+        _ => {
+            return Err(StructuredFallbackError::InvalidJson {
+                reason: "JSON value is neither an array nor an object",
+            });
+        }
     };
     operations
         .iter()
         .enumerate()
-        .filter_map(|(index, item)| item.as_object().map(|item| (index, item)))
         .map(|(index, item)| {
+            let item = item.as_object().ok_or(StructuredFallbackError::InvalidJson {
+                reason: "operation is not an object",
+            })?;
             let name = item
                 .get("name")
                 .or_else(|| item.get("tool"))
@@ -120,6 +133,11 @@ fn parse_json(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackErro
                 .filter(|name| !name.is_empty())
                 .ok_or(StructuredFallbackError::MissingOperationName)?;
             let arguments = match item.get("arguments") {
+                Some(Value::String(raw)) => serde_json::from_str(raw).map_err(|_| {
+                    StructuredFallbackError::InvalidJson {
+                        reason: "operation arguments are not valid JSON",
+                    }
+                })?,
                 Some(value) => value.clone(),
                 None => Value::Object(
                     item.iter()
@@ -130,13 +148,17 @@ fn parse_json(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackErro
                         .collect(),
                 ),
             };
-            Ok(ProposedToolCall {
+            let call = ProposedToolCall {
                 provider_call_id: Some(format!("json_op_{}", index + 1)),
                 name: name.to_owned(),
                 arguments,
                 raw_arguments: None,
                 provider_replay: None,
-            })
+            };
+            call.validate().map_err(|_| StructuredFallbackError::InvalidJson {
+                reason: "operation name or arguments are invalid",
+            })?;
+            Ok(call)
         })
         .collect()
 }
@@ -223,9 +245,12 @@ fn decode_reference(reference: BytesRef<'_>) -> Result<String, StructuredFallbac
     if let Ok(Some(character)) = reference.resolve_char_ref() {
         return Ok(character.to_string());
     }
-    let content = reference
-        .xml_content()
-        .map_err(|_| StructuredFallbackError::InvalidXml)?;
+    let content = reference.xml_content().map_err(|error| {
+        tracing::warn!(%error, "fallback xml entity reference could not be read");
+        StructuredFallbackError::InvalidXml {
+            reason: "entity reference could not be read",
+        }
+    })?;
     Ok(resolve_xml_entity(&content).map_or_else(|| format!("&{content};"), str::to_owned))
 }
 
@@ -256,6 +281,8 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
     reader.config_mut().trim_text(false);
     let mut buffer = Vec::new();
     let mut root_seen = false;
+    let mut root_closed = false;
+    let mut open_tags = Vec::new();
     let mut current_name = None;
     let mut current_arguments = Map::new();
     let mut current_field = None;
@@ -264,6 +291,12 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Start(event)) => {
                 let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if root_closed {
+                    return Err(StructuredFallbackError::InvalidXml {
+                        reason: "element follows the operations root",
+                    });
+                }
+                open_tags.push(tag.clone());
                 if !root_seen && ROOT_TAGS.contains(&tag.as_str()) {
                     root_seen = true;
                 } else if root_seen && current_name.is_none() {
@@ -271,6 +304,10 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
                     if OPERATION_TAGS.contains(&name.as_str()) {
                         current_arguments = operation_arguments(&event);
                         current_name = Some(name);
+                    } else {
+                        return Err(StructuredFallbackError::InvalidXml {
+                            reason: "unrecognized operation",
+                        });
                     }
                 } else if current_name.is_some() {
                     current_field = Some(tag);
@@ -278,21 +315,39 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
             }
             Ok(Event::Empty(event)) => {
                 let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if root_closed {
+                    return Err(StructuredFallbackError::InvalidXml {
+                        reason: "element follows the operations root",
+                    });
+                }
                 if !root_seen && ROOT_TAGS.contains(&tag.as_str()) {
                     root_seen = true;
+                    root_closed = true;
                 } else if root_seen && current_name.is_none() {
                     let name = operation_name(&event);
                     if OPERATION_TAGS.contains(&name.as_str()) {
                         push_xml_call(&mut calls, name, operation_arguments(&event));
+                    } else {
+                        return Err(StructuredFallbackError::InvalidXml {
+                            reason: "unrecognized operation",
+                        });
                     }
                 }
             }
             Ok(Event::Text(event)) => {
                 if let Some(field) = current_field.as_deref() {
                     let encoded = String::from_utf8_lossy(event.as_ref());
-                    let text =
-                        unescape(&encoded).map_err(|_| StructuredFallbackError::InvalidXml)?;
+                    let text = unescape(&encoded).map_err(|error| {
+                        tracing::warn!(%error, "fallback xml text could not be unescaped");
+                        StructuredFallbackError::InvalidXml {
+                            reason: "text could not be unescaped",
+                        }
+                    })?;
                     append(&mut current_arguments, field, &text);
+                } else if root_seen && !root_closed && !event.as_ref().iter().all(u8::is_ascii_whitespace) {
+                    return Err(StructuredFallbackError::InvalidXml {
+                        reason: "operations contain text outside an argument field",
+                    });
                 }
             }
             Ok(Event::CData(event)) => {
@@ -302,15 +357,24 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
                         field,
                         &String::from_utf8_lossy(event.as_ref()),
                     );
+                } else if root_seen && !root_closed {
+                    return Err(StructuredFallbackError::InvalidXml {
+                        reason: "operations contain CDATA outside an argument field",
+                    });
                 }
             }
             Ok(Event::GeneralRef(event)) => {
                 if let Some(field) = current_field.as_deref() {
                     append(&mut current_arguments, field, &decode_reference(event)?);
+                } else if root_seen && !root_closed {
+                    return Err(StructuredFallbackError::InvalidXml {
+                        reason: "operations contain a reference outside an argument field",
+                    });
                 }
             }
             Ok(Event::End(event)) => {
                 let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                open_tags.pop();
                 if current_field.as_deref() == Some(tag.as_str()) {
                     current_field = None;
                 } else if current_name.as_deref() == Some(tag.as_str())
@@ -321,16 +385,30 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
                         current_name.take().unwrap_or_default(),
                         std::mem::take(&mut current_arguments),
                     );
+                } else if ROOT_TAGS.contains(&tag.as_str()) {
+                    root_closed = true;
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => return Err(StructuredFallbackError::InvalidXml),
+            Err(error) => {
+                tracing::warn!(%error, "fallback xml reader failed");
+                return Err(StructuredFallbackError::InvalidXml {
+                    reason: "xml reader failed",
+                });
+            }
             _ => {}
         }
         buffer.clear();
     }
     if !root_seen {
-        return Err(StructuredFallbackError::InvalidXml);
+        return Err(StructuredFallbackError::InvalidXml {
+            reason: "xml has no root element",
+        });
+    }
+    if !root_closed || !open_tags.is_empty() || current_name.is_some() || current_field.is_some() {
+        return Err(StructuredFallbackError::InvalidXml {
+            reason: "xml operations are incomplete",
+        });
     }
     Ok(calls)
 }
@@ -354,7 +432,12 @@ fn parse_repairs_json(
 ) -> Result<Vec<(String, crate::MemoryCategory)>, StructuredFallbackError> {
     let normalized = normalize(raw);
     let value: Value = serde_json::from_str(json_snippet(&normalized).unwrap_or(&normalized))
-        .map_err(|_| StructuredFallbackError::InvalidJson)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "fallback repairs response is not valid JSON");
+            StructuredFallbackError::InvalidJson {
+                reason: "response is not parseable JSON",
+            }
+        })?;
     let items = match &value {
         Value::Array(items) => items,
         Value::Object(map) => map
@@ -362,8 +445,14 @@ fn parse_repairs_json(
             .or_else(|| map.get("repairs"))
             .or_else(|| map.get("results"))
             .and_then(Value::as_array)
-            .ok_or(StructuredFallbackError::InvalidJson)?,
-        _ => return Err(StructuredFallbackError::InvalidJson),
+            .ok_or(StructuredFallbackError::InvalidJson {
+                reason: "JSON object has no repairs array",
+            })?,
+        _ => {
+            return Err(StructuredFallbackError::InvalidJson {
+                reason: "JSON value is neither an array nor an object",
+            });
+        }
     };
     Ok(items
         .iter()
@@ -408,8 +497,12 @@ fn parse_repairs_xml(
                 if let (Some(field), Some(arguments)) = (current_field.as_deref(), current.as_mut())
                 {
                     let encoded = String::from_utf8_lossy(event.as_ref());
-                    let text =
-                        unescape(&encoded).map_err(|_| StructuredFallbackError::InvalidXml)?;
+                    let text = unescape(&encoded).map_err(|error| {
+                        tracing::warn!(%error, "fallback xml text could not be unescaped");
+                        StructuredFallbackError::InvalidXml {
+                            reason: "text could not be unescaped",
+                        }
+                    })?;
                     append(arguments, field, &text);
                 }
             }
@@ -436,13 +529,20 @@ fn parse_repairs_xml(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => return Err(StructuredFallbackError::InvalidXml),
+            Err(error) => {
+                tracing::warn!(%error, "fallback xml reader failed");
+                return Err(StructuredFallbackError::InvalidXml {
+                    reason: "xml reader failed",
+                });
+            }
             _ => {}
         }
         buffer.clear();
     }
     if !root_seen {
-        return Err(StructuredFallbackError::InvalidXml);
+        return Err(StructuredFallbackError::InvalidXml {
+            reason: "xml has no root element",
+        });
     }
     Ok(repairs)
 }
@@ -467,12 +567,12 @@ fn repair_entry(text: &str, category: &str) -> Option<(String, crate::MemoryCate
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum StructuredFallbackError {
-    #[error("fallback response did not contain valid JSON operations")]
-    InvalidJson,
+    #[error("fallback response did not contain valid JSON operations: {reason}")]
+    InvalidJson { reason: &'static str },
     #[error("fallback JSON operation is missing a name")]
     MissingOperationName,
-    #[error("fallback response did not contain valid XML operations")]
-    InvalidXml,
+    #[error("fallback response did not contain valid XML operations: {reason}")]
+    InvalidXml { reason: &'static str },
 }
 
 #[cfg(test)]
@@ -480,6 +580,44 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn json_operations_require_object_entries_and_object_arguments() {
+        for raw in [
+            r#"{"operations":[null]}"#,
+            r#"{"operations":[false,{"name":"done","arguments":{}}]}"#,
+            r#"{"operations":[{"name":"done","arguments":[]}] }"#,
+            r#"{"operations":[{"name":"done","arguments":"{"}]}"#,
+        ] {
+            assert!(parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Json).is_err(), "{raw}");
+        }
+        let calls = parse_memory_operations_from_text(
+            r#"{"operations":[{"name":"done","arguments":"{\"summary\":\"Complete\"}"}]}"#,
+            DynamicMemoryStructuredFallbackFormat::Json,
+        ).expect("JSON-encoded arguments");
+        assert_eq!(calls[0].arguments, json!({"summary":"Complete"}));
+        assert!(parse_memory_operations_from_text(r#"{"operations":[]}"#, DynamicMemoryStructuredFallbackFormat::Json).unwrap().is_empty());
+    }
+
+    #[test]
+    fn xml_operations_must_close_and_cannot_hide_unknown_operations() {
+        for raw in [
+            "<memory_ops>",
+            "<memory_ops><done />",
+            "<memory_ops><create_memory><text>Partial</text>",
+            "<memory_ops><unknown /></memory_ops>",
+            "<memory_ops><unknown></unknown></memory_ops>",
+            "<memory_ops /><done />",
+            "<memory_ops>not an operation</memory_ops>",
+            "<memory_ops><![CDATA[not an operation]]></memory_ops>",
+            "<memory_ops>&amp;</memory_ops>",
+        ] {
+            assert!(parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml).is_err(), "{raw}");
+        }
+        for raw in ["<memory_ops />", "<memory_ops></memory_ops>"] {
+            assert!(parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml).unwrap().is_empty());
+        }
+    }
 
     #[test]
     fn parses_legacy_xml_wrapper_text_and_entities() {
@@ -550,9 +688,9 @@ mod tests {
                 crate::MemoryCategory::Preference
             )]
         );
-        assert_eq!(
+        assert!(matches!(
             parse_memory_repairs_from_text("not xml", DynamicMemoryStructuredFallbackFormat::Xml),
-            Err(StructuredFallbackError::InvalidXml)
-        );
+            Err(StructuredFallbackError::InvalidXml { .. })
+        ));
     }
 }

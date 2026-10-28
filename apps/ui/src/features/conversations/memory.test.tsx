@@ -373,6 +373,14 @@ describe("memory status card", () => {
     expect(called("memoryRetry")[0]?.request).toMatchObject({ conversation_id: "c1", model_profile_id: null });
   });
 
+  it("explains an invalid model response without blaming provider rejection", async () => {
+    const { called } = await open({ world: { status: { ...idleStatus, failure: "invalid_response" } } });
+    expect(await screen.findByText("The model's memory response could not be processed. Try the cycle again.")).toBeTruthy();
+    expect(screen.queryByText("The provider rejected the request.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(called("memoryRetry")).toHaveLength(1));
+  });
+
   it("sends the picked model when retrying with another one", async () => {
     const { called } = await open({
       world: { status: { ...idleStatus, failure: "timed_out" } },

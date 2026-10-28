@@ -56,28 +56,40 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
     ) -> Result<Vec<RemoteModel>, ProviderRequestError> {
         let kind = account.provider_kind.as_str();
         if !provider_descriptor(kind).is_some_and(|descriptor| descriptor.lists_models) {
-            return Err(ProviderRequestError::Unsupported);
+            return Err(ProviderRequestError::Unsupported {
+                reason: "the provider kind does not list models",
+            });
         }
         let store = &*self.secret_store;
         let result = match account.protocol {
             ProviderProtocol::OpenAiCompatible => {
-                let provider = provider_for(kind).ok_or(ProviderRequestError::Unsupported)?;
+                let provider = provider_for(kind).ok_or(ProviderRequestError::Unsupported {
+                    reason: "no OpenAI-compatible provider is registered for the kind",
+                })?;
                 providers::openai_compatible::list_models(provider, store, &self.network, account).await
             }
             ProviderProtocol::Anthropic => {
                 let provider =
-                    anthropic_provider_for(kind).ok_or(ProviderRequestError::Unsupported)?;
+                    anthropic_provider_for(kind).ok_or(ProviderRequestError::Unsupported {
+                        reason: "no Anthropic provider is registered for the kind",
+                    })?;
                 providers::anthropic_messages::list_models(provider, store, &self.network, account).await
             }
             ProviderProtocol::Gemini => {
                 let provider =
-                    gemini_provider_for(kind).ok_or(ProviderRequestError::Unsupported)?;
+                    gemini_provider_for(kind).ok_or(ProviderRequestError::Unsupported {
+                        reason: "no Gemini provider is registered for the kind",
+                    })?;
                 providers::gemini_generate::list_models(provider, store, &self.network, account).await
             }
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
                 providers::ollama::list_models(store, &self.network, account).await
             }
-            _ => return Err(ProviderRequestError::Unsupported),
+            _ => {
+                return Err(ProviderRequestError::Unsupported {
+                    reason: "the protocol has no model listing",
+                });
+            }
         };
         result.map_err(Into::into)
     }
@@ -3076,18 +3088,20 @@ mod integration_tests {
             ("zai", ProviderProtocol::OpenAiCompatible),
             ("gemini-agent-platform-express", ProviderProtocol::Gemini),
         ] {
-            assert_eq!(
-                providers
-                    .list_models(&account(
-                        kind,
-                        protocol,
-                        Some("http://127.0.0.1:1".to_owned()),
-                        ProviderConfig::Standard,
-                        Some(key_ref),
-                        owner,
-                    ))
-                    .await,
-                Err(ProviderRequestError::Unsupported),
+            assert!(
+                matches!(
+                    providers
+                        .list_models(&account(
+                            kind,
+                            protocol,
+                            Some("http://127.0.0.1:1".to_owned()),
+                            ProviderConfig::Standard,
+                            Some(key_ref),
+                            owner,
+                        ))
+                        .await,
+                    Err(ProviderRequestError::Unsupported { .. })
+                ),
                 "model listing is explicitly unsupported for {kind}"
             );
         }
@@ -3120,10 +3134,10 @@ mod integration_tests {
             None,
             owner,
         );
-        assert_eq!(
+        assert!(matches!(
             providers.list_models(&custom_without_listing).await,
-            Err(ProviderRequestError::Rejected)
-        );
+            Err(ProviderRequestError::Rejected { .. })
+        ));
     }
 
     #[tokio::test]

@@ -10,12 +10,16 @@ use uuid::Uuid;
 
 use crate::Database;
 
-fn failure(_: impl std::fmt::Debug) -> CompanionScheduledNoteError {
-    CompanionScheduledNoteError::Failure
+fn failure(error: impl std::fmt::Debug) -> CompanionScheduledNoteError {
+    CompanionScheduledNoteError::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> CompanionScheduledNoteError {
-    CompanionScheduledNoteError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> CompanionScheduledNoteError {
+    CompanionScheduledNoteError::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 fn recurrence_name(recurrence: ScheduledNoteRecurrence) -> &'static str {
@@ -37,7 +41,9 @@ fn recurrence_from_name(
         "weekly" => Ok(ScheduledNoteRecurrence::Weekly),
         "monthly" => Ok(ScheduledNoteRecurrence::Monthly),
         "yearly" => Ok(ScheduledNoteRecurrence::Yearly),
-        _ => Err(CompanionScheduledNoteError::Corrupt),
+        _ => Err(CompanionScheduledNoteError::Corrupt {
+            reason: "recurrence from name: stored data failed a consistency check".to_owned(),
+        }),
     }
 }
 
@@ -61,13 +67,15 @@ pub(crate) fn from_row(
         enabled: match row.get::<_, i64>(8).map_err(corrupt)? {
             0 => false,
             1 => true,
-            _ => return Err(CompanionScheduledNoteError::Corrupt),
+            _ => return Err(CompanionScheduledNoteError::Corrupt {
+                reason: "from row: a stored value is not recognised".to_owned(),
+            }),
         },
         created_at: TimestampMillis::new(row.get(9).map_err(corrupt)?),
         updated_at: TimestampMillis::new(row.get(10).map_err(corrupt)?),
     };
     note.validate()
-        .map_err(|_| CompanionScheduledNoteError::Corrupt)?;
+        .map_err(|error| CompanionScheduledNoteError::Corrupt { reason: error.to_string() })?;
     Ok(note)
 }
 
@@ -96,7 +104,9 @@ pub(crate) fn insert_note_in(
         .recurrence_window_ms
         .map(i64::try_from)
         .transpose()
-        .map_err(|_| CompanionScheduledNoteError::Invalid)?;
+        .map_err(|error| { tracing::warn!(%error, "insert note in failed"); CompanionScheduledNoteError::Invalid {
+            reason: "insert note in: a value could not be read or converted",
+        } })?;
     ensure_companion(tx, note.character_id)?;
     tx.execute(
         "INSERT INTO companion_scheduled_notes (
@@ -143,7 +153,9 @@ pub(crate) fn insert_restored_note_in(
             note.recurrence_window_ms
                 .map(i64::try_from)
                 .transpose()
-                .map_err(|_| CompanionScheduledNoteError::Invalid)?,
+                .map_err(|error| { tracing::warn!(%error, "insert restored note in failed"); CompanionScheduledNoteError::Invalid {
+                    reason: "insert restored note in: a value could not be read or converted",
+                } })?,
             i64::from(note.enabled),
             note.created_at.get(),
             note.updated_at.get(),
@@ -237,7 +249,9 @@ pub(crate) fn upsert_in(
 ) -> Result<CompanionScheduledNote, CompanionScheduledNoteError> {
     let note = note.normalize()?;
     let window = note.recurrence_window_ms.map(i64::try_from).transpose()
-        .map_err(|_| CompanionScheduledNoteError::Invalid)?;
+        .map_err(|error| { tracing::warn!(%error, "upsert in failed"); CompanionScheduledNoteError::Invalid {
+            reason: "upsert in: a value could not be read or converted",
+        } })?;
     ensure_companion(tx, note.character_id)?;
     tx.execute(
         "INSERT INTO companion_scheduled_notes (
@@ -269,7 +283,9 @@ pub(crate) fn upsert_in(
         ],
     )
     .map_err(failure)?;
-    let stored = load_in(tx, note.id)?.ok_or(CompanionScheduledNoteError::Failure)?;
+    let stored = load_in(tx, note.id)?.ok_or_else(|| CompanionScheduledNoteError::Failure {
+        reason: "upsert in: a required value is missing".to_owned(),
+    })?;
     Ok(stored)
 }
 

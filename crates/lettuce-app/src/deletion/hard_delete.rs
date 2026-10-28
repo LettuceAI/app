@@ -143,7 +143,9 @@ where
                 })
                 .map_err(|error| {
                     purge_error = Some(error);
-                    MediaStoreError::CatalogFailure
+                    MediaStoreError::CatalogFailure {
+                        reason: "media object listing failed",
+                    }
                 })
         })
         .map_err(|error| {
@@ -181,7 +183,9 @@ where
             }
             database.media_object_retained(hash).map_err(|error| {
                 purge_error = Some(error);
-                MediaStoreError::CatalogFailure
+                MediaStoreError::CatalogFailure {
+                    reason: "media object retention check failed",
+                }
             })
         })
         .map_err(|error| {

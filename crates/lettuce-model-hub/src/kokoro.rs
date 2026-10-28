@@ -219,22 +219,31 @@ pub const fn kokoro_platform_allows_variant(variant: KokoroModelVariant) -> bool
 
 fn inspect_artifact(file: &mut InstalledFile) -> Result<InstalledModelArtifact, KokoroAssetError> {
     if file.is_empty() || file.len() > MAX_KOKORO_ARTIFACT_BYTES {
-        return Err(KokoroAssetError::InvalidArtifact);
+        return Err(KokoroAssetError::InvalidArtifact {
+            reason: "artifact is empty or exceeds the size limit",
+        });
     }
     file.rewind().map_err(KokoroAssetError::Platform)?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| KokoroAssetError::UnreadableArtifact)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the kokoro artifact failed");
+            KokoroAssetError::UnreadableArtifact {
+                reason: "reading the kokoro artifact failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         hasher.update(&buffer[..read]);
     }
-    let blake3 = ContentHash::parse(hasher.finalize().to_hex().to_string())
-        .map_err(|_| KokoroAssetError::InvalidArtifact)?;
+    let blake3 = ContentHash::parse(hasher.finalize().to_hex().to_string()).map_err(|error| {
+        tracing::warn!(%error, "artifact digest is not a valid content hash");
+        KokoroAssetError::InvalidArtifact {
+            reason: "artifact digest is not a valid content hash",
+        }
+    })?;
     Ok(InstalledModelArtifact {
         path: file.native_path().to_path_buf(),
         byte_size: file.len(),
@@ -248,10 +257,10 @@ pub enum KokoroAssetError {
     UnsupportedVariant,
     #[error("Kokoro managed asset access failed: {0}")]
     Platform(PlatformError),
-    #[error("Kokoro artifact is invalid")]
-    InvalidArtifact,
-    #[error("Kokoro artifact is unreadable")]
-    UnreadableArtifact,
+    #[error("Kokoro artifact is invalid: {reason}")]
+    InvalidArtifact { reason: &'static str },
+    #[error("Kokoro artifact is unreadable: {reason}")]
+    UnreadableArtifact { reason: &'static str },
     #[error("Kokoro assets changed during inspection")]
     ChangedDuringInspection,
 }
@@ -381,10 +390,10 @@ mod tests {
         assert!(missing.installed_voices.is_empty());
 
         std::fs::write(root.join("model_quantized.onnx"), []).expect("empty model");
-        assert_eq!(
+        assert!(matches!(
             store.inspect(KokoroModelVariant::Int8, None),
-            Err(KokoroAssetError::InvalidArtifact)
-        );
+            Err(KokoroAssetError::InvalidArtifact { .. })
+        ));
 
         #[cfg(unix)]
         {

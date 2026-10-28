@@ -211,6 +211,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
             tracing::warn!(
                 provider = "gemini",
                 cache_result = "resource_not_found",
+                reason = "the cached resource no longer exists",
                 "cached Gemini resource disappeared; retrying the full streaming request"
             );
             response = crate::streaming::streaming::await_cancelable(
@@ -270,6 +271,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         tracing::warn!(
             provider = "gemini",
             cache_result = "resource_not_found",
+            reason = "the cached resource no longer exists",
             "cached Gemini resource disappeared; retrying the full request"
         );
         response = crate::streaming::streaming::await_cancelable(

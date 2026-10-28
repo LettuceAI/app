@@ -61,7 +61,9 @@ impl SyncTransferLimits {
             || max_batch_payload_bytes == 0
             || max_batch_payload_bytes > MAX_INCOMING_PAYLOAD_BYTES
         {
-            return Err(SyncSessionError::InvalidTransferLimits);
+            return Err(SyncSessionError::InvalidTransferLimits {
+                reason: "a transfer limit is zero or above its maximum",
+            });
         }
         Ok(Self {
             max_changes_per_batch,
@@ -248,7 +250,9 @@ impl SyncChangeBatch {
                 .is_none_or(|bytes| changes.len() > 1 && bytes > limits.max_batch_payload_bytes)
             || canonical_batch_hash(&changes) != batch_hash
         {
-            return Err(SyncSessionError::InvalidChangeBatch);
+            return Err(SyncSessionError::InvalidChangeBatch {
+                reason: "batch is empty, over its count or payload limits, or its hash does not match",
+            });
         }
         Ok(Self {
             batch_id,
@@ -296,10 +300,10 @@ pub enum SyncSessionError {
     InvalidAppVersion,
     #[error("sync device name is empty, unbounded, or contains control characters")]
     InvalidDeviceName,
-    #[error("sync transfer limits are invalid")]
-    InvalidTransferLimits,
-    #[error("sync change batch is empty, unbounded, or has an invalid hash")]
-    InvalidChangeBatch,
+    #[error("sync transfer limits are invalid: {reason}")]
+    InvalidTransferLimits { reason: &'static str },
+    #[error("sync change batch is empty, unbounded, or has an invalid hash: {reason}")]
+    InvalidChangeBatch { reason: &'static str },
     #[error("authenticated peer identity does not match the sync hello")]
     AuthenticatedIdentityMismatch,
     #[error("both sync peers use the same device identity")]
@@ -568,14 +572,14 @@ mod tests {
             ),
             Err(SyncSessionError::InvalidDeviceName)
         );
-        assert_eq!(
+        assert!(matches!(
             SyncTransferLimits::new(
                 MAX_INCOMING_CHANGES + 1,
                 MAX_CANONICAL_PAYLOAD_BYTES,
                 MAX_INCOMING_PAYLOAD_BYTES
             ),
-            Err(SyncSessionError::InvalidTransferLimits)
-        );
+            Err(SyncSessionError::InvalidTransferLimits { .. })
+        ));
     }
 
     #[test]
@@ -649,29 +653,29 @@ mod tests {
         .expect("batch");
         assert_eq!(batch.batch_id(), batch_id);
         assert_eq!(batch.changes(), std::slice::from_ref(&change));
-        assert_eq!(
+        assert!(matches!(
             SyncChangeBatch::from_parts(
                 batch_id,
                 ContentHash::parse("11".repeat(32)).expect("wrong hash"),
                 vec![change.clone()],
                 SyncTransferLimits::default()
             ),
-            Err(SyncSessionError::InvalidChangeBatch)
-        );
-        assert_eq!(
+            Err(SyncSessionError::InvalidChangeBatch { .. })
+        ));
+        assert!(matches!(
             SyncChangeBatch::new(
                 batch_id,
                 vec![change.clone()],
                 SyncTransferLimits::new(1, 1, 1).expect("small limits")
             ),
-            Err(SyncSessionError::InvalidChangeBatch)
-        );
+            Err(SyncSessionError::InvalidChangeBatch { .. })
+        ));
         let bytes = change.payload().expect("payload").bytes().len();
         let alone = SyncTransferLimits::new(2, bytes, 1).expect("small batch budget");
         assert!(SyncChangeBatch::new(batch_id, vec![change.clone()], alone).is_ok());
-        assert_eq!(
+        assert!(matches!(
             SyncChangeBatch::new(batch_id, vec![change.clone(), change], alone),
-            Err(SyncSessionError::InvalidChangeBatch)
-        );
+            Err(SyncSessionError::InvalidChangeBatch { .. })
+        ));
     }
 }

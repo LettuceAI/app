@@ -43,8 +43,8 @@ pub enum KokoroPinError {
     Network(lettuce_network::JsonClientError),
     #[error("Kokoro model lookup returned status {0}")]
     Response(u16),
-    #[error("the Kokoro repository pin is invalid")]
-    InvalidData,
+    #[error("the Kokoro repository pin is invalid: {reason}")]
+    InvalidData { reason: String },
 }
 
 /// Resolves Kokoro's current commit and integrity facts at request time.
@@ -76,8 +76,11 @@ pub async fn pin_kokoro_model(
         .filter(|file| file.is_hugging_face())
         .map(|file| file.remote_path.as_str())
         .collect::<Vec<_>>();
-    let pin = pinned_files(crate::KOKORO_REPOSITORY, &response.body, &paths)
-        .map_err(|_| KokoroPinError::InvalidData)?;
+    let pin = pinned_files(crate::KOKORO_REPOSITORY, &response.body, &paths).map_err(|error| {
+        KokoroPinError::InvalidData {
+            reason: format!("repository listing does not pin the expected kokoro files: {error}"),
+        }
+    })?;
     model.source_revision = pin.revision;
     for artifact in model
         .artifacts
@@ -88,7 +91,9 @@ pub async fn pin_kokoro_model(
             .files
             .iter()
             .find(|file| file.path == artifact.remote_path)
-            .ok_or(KokoroPinError::InvalidData)?;
+            .ok_or(KokoroPinError::InvalidData {
+                reason: "pinned listing has no entry for a kokoro artifact".to_owned(),
+            })?;
         artifact.local_segments = [
             vec!["revisions".to_owned(), model.source_revision.clone()],
             artifact.local_segments.clone(),
@@ -99,7 +104,9 @@ pub async fn pin_kokoro_model(
             hash.clone()
         } else {
             if artifact.role == crate::KokoroArtifactRole::Model || file.size > 1024 * 1024 {
-                return Err(KokoroPinError::InvalidData);
+                return Err(KokoroPinError::InvalidData {
+                    reason: "file without a digest is a model or larger than 1 MiB".to_owned(),
+                });
             }
             let request = HfRequest::new(format!(
                 "/{}/resolve/{}/{}",
@@ -125,12 +132,19 @@ pub async fn pin_kokoro_model(
             if u64::try_from(response.body.len()).ok() != Some(file.size)
                 || file.git_blob_id.as_deref() != Some(blob.digest().to_string().as_str())
             {
-                return Err(KokoroPinError::InvalidData);
+                return Err(KokoroPinError::InvalidData {
+                    reason: "downloaded body does not match the pinned size or git blob id"
+                        .to_owned(),
+                });
             }
             format!("{:x}", Sha256::digest(&response.body))
         };
     }
-    model.validate().map_err(|_| KokoroPinError::InvalidData)?;
+    model
+        .validate()
+        .map_err(|error| KokoroPinError::InvalidData {
+            reason: format!("pinned kokoro model failed validation: {error}"),
+        })?;
     Ok(model)
 }
 
@@ -1861,7 +1875,7 @@ mod kokoro_pin_tests {
     #[tokio::test]
     async fn kokoro_refuses_plain_metadata_that_does_not_match_the_pinned_git_blob() {
         let (endpoint, server) = fixture(true).await;
-        assert_eq!(
+        assert!(matches!(
             pin_kokoro_model(
                 &lettuce_network::JsonClient::new().expect("client"),
                 &endpoint,
@@ -1869,8 +1883,8 @@ mod kokoro_pin_tests {
             )
             .await
             .expect_err("mismatch"),
-            KokoroPinError::InvalidData
-        );
+            KokoroPinError::InvalidData { .. }
+        ));
         server.await.expect("server");
     }
 }

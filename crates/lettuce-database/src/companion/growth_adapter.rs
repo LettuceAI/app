@@ -15,12 +15,16 @@ use crate::{Database, decode_versioned, encode_versioned};
 const GROWTH_RUN_FORMAT_VERSION: u32 = 1;
 const GROWTH_PROPOSAL_FORMAT_VERSION: u32 = 1;
 
-fn failure(_: impl std::fmt::Debug) -> CompanionGrowthRunRepositoryError {
-    CompanionGrowthRunRepositoryError::Failure
+fn failure(error: impl std::fmt::Debug) -> CompanionGrowthRunRepositoryError {
+    CompanionGrowthRunRepositoryError::Failure {
+        reason: format!("{error:?}"),
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> CompanionGrowthRunRepositoryError {
-    CompanionGrowthRunRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> CompanionGrowthRunRepositoryError {
+    CompanionGrowthRunRepositoryError::Corrupt {
+        reason: format!("{error:?}"),
+    }
 }
 
 pub(crate) fn load_in(
@@ -71,7 +75,9 @@ pub(crate) fn load_in(
         .ok()
         .filter(|revision| *revision > 0)
         .map(Revision::new)
-        .ok_or(CompanionGrowthRunRepositoryError::Corrupt)?;
+        .ok_or_else(|| CompanionGrowthRunRepositoryError::Corrupt {
+            reason: "load in: a required value is missing".to_owned(),
+        })?;
     if run.job_id != job_id
         || run.conversation_id != ConversationId::from_str(&row.0).map_err(corrupt)?
         || run.character_id != CharacterId::from_str(&row.1).map_err(corrupt)?
@@ -83,11 +89,15 @@ pub(crate) fn load_in(
         || checkpoint.as_ref().map(|value| value.reduced_at.get()) != row.9
         || run.proposal_checkpoint.is_some()
     {
-        return Err(CompanionGrowthRunRepositoryError::Corrupt);
+        return Err(CompanionGrowthRunRepositoryError::Corrupt {
+            reason: "load in: stored data failed a consistency check".to_owned(),
+        });
     }
     run.proposal_checkpoint = checkpoint;
     run.validate()
-        .map_err(|_| CompanionGrowthRunRepositoryError::Corrupt)?;
+        .map_err(|error| CompanionGrowthRunRepositoryError::Corrupt {
+            reason: error.to_string(),
+        })?;
     Ok(Some(run))
 }
 
@@ -137,7 +147,9 @@ impl CompanionGrowthRunRepository for Database {
     ) -> Result<CompanionGrowthRun, CompanionGrowthRunRepositoryError> {
         run.validate()?;
         if run.proposal_checkpoint.is_some() {
-            return Err(CompanionGrowthRunRepositoryError::Invalid);
+            return Err(CompanionGrowthRunRepositoryError::Invalid {
+                reason: "admit companion growth run: a value failed validation",
+            });
         }
         let payload = encode_versioned(&run, GROWTH_RUN_FORMAT_VERSION).map_err(failure)?;
         let mut connection = self.connection().map_err(failure)?;
@@ -163,7 +175,11 @@ impl CompanionGrowthRunRepository for Database {
                 ],
             )
             .map_err(failure)?;
-        let stored = load_in(&tx, run.job_id)?.ok_or(CompanionGrowthRunRepositoryError::Failure)?;
+        let stored = load_in(&tx, run.job_id)?.ok_or_else(|| {
+            CompanionGrowthRunRepositoryError::Failure {
+                reason: "admit companion growth run: a required value is missing".to_owned(),
+            }
+        })?;
         if inserted == 0 {
             let mut immutable = stored.clone();
             immutable.proposal_checkpoint = None;
@@ -219,7 +235,10 @@ impl CompanionGrowthRunRepository for Database {
         if updated != 1 {
             return Err(CompanionGrowthRunRepositoryError::Conflict);
         }
-        let stored = load_in(&tx, job_id)?.ok_or(CompanionGrowthRunRepositoryError::Failure)?;
+        let stored =
+            load_in(&tx, job_id)?.ok_or_else(|| CompanionGrowthRunRepositoryError::Failure {
+                reason: "commit companion growth proposals: a required value is missing".to_owned(),
+            })?;
         tx.commit().map_err(failure)?;
         Ok(stored)
     }

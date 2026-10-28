@@ -829,14 +829,18 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
 }
 
 /// A buffered tool call: calls without a function name are skipped, a
-/// missing id is synthesized and the arguments are parsed leniently.
+/// missing id is synthesized and complete legacy argument forms are accepted.
 fn parse_tool_call(
     position: usize,
     id: Option<String>,
     name: String,
     arguments: Option<serde_json::Value>,
 ) -> Result<ProposedToolCall, AdapterError> {
-    let (arguments, raw_arguments) = crate::common::lenient_tool_argument_value(arguments);
+    let (arguments, raw_arguments) = crate::common::checked_tool_argument_value(arguments)
+        .map_err(|error| {
+            tracing::warn!(reason = "invalid_tool_arguments", "provider tool arguments are incomplete or not an object");
+            error
+        })?;
     let call = ProposedToolCall {
         provider_call_id: Some(
             id.filter(|id| !id.is_empty())
@@ -1826,6 +1830,19 @@ mod tests {
             rendered,
             vec![("system", "a\n\n\n\nb"), ("user", "c"), ("assistant", "d")]
         );
+    }
+
+    #[test]
+    fn buffered_tool_response_preserves_mixed_content_and_rejects_truncated_arguments() {
+        let outcome = parse_response(response(
+            r#"{"choices":[{"message":{"content":"Saving this.","reasoning":"Check lasting facts.","tool_calls":[{"id":"a","function":{"name":"done","arguments":{"summary":"Complete"}}}]},"finish_reason":"tool_calls"}]}"#,
+        )).expect("mixed tool response");
+        assert_eq!(outcome.candidates[0].parts.len(), 2);
+        assert_eq!(outcome.candidates[0].tool_calls[0].arguments, serde_json::json!({"summary":"Complete"}));
+        assert!(outcome.candidates[0].provider_replay.is_none());
+        assert_eq!(parse_response(response(
+            r#"{"choices":[{"message":{"tool_calls":[{"function":{"name":"done","arguments":"{\"summary\":"}}]},"finish_reason":"tool_calls"}]}"#,
+        )).unwrap_err(), AdapterError::MalformedResponse);
     }
 
     #[test]

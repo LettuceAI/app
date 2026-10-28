@@ -2589,6 +2589,8 @@ pub enum PortError {
     Rejected,
     #[error("conversation dependency returned no result")]
     Empty,
+    #[error("provider response could not be processed")]
+    InvalidResponse,
     #[error("conversation operation was cancelled")]
     Cancelled,
     #[error("provider request failed")]
@@ -2610,20 +2612,20 @@ pub enum ContextAssemblyError {
     SnapshotUnavailable { kind: SnapshotDocumentKind },
     #[error("snapshot is invalid ({kind:?})")]
     SnapshotInvalid { kind: SnapshotDocumentKind },
-    #[error("prompt rendering failed")]
-    PromptRender,
-    #[error("lorebook activation failed")]
-    LorebookActivation,
+    #[error("prompt rendering failed: {reason}")]
+    PromptRender { reason: &'static str },
+    #[error("lorebook activation failed: {reason}")]
+    LorebookActivation { reason: &'static str },
     #[error("conversation speaker is missing")]
     MissingSpeaker,
-    #[error("conversation timeline is invalid")]
-    InvalidTimeline,
-    #[error("context part is unsupported")]
-    UnsupportedPart,
-    #[error("context exceeds its size limit")]
-    SizeLimit,
-    #[error("built-in runtime prompt text is unavailable")]
-    RuntimeTextUnavailable,
+    #[error("conversation timeline is invalid: {reason}")]
+    InvalidTimeline { reason: &'static str },
+    #[error("context part is unsupported: {reason}")]
+    UnsupportedPart { reason: &'static str },
+    #[error("context exceeds its size limit: {reason}")]
+    SizeLimit { reason: &'static str },
+    #[error("built-in runtime prompt text is unavailable: {reason}")]
+    RuntimeTextUnavailable { reason: &'static str },
 }
 
 #[async_trait]
@@ -2841,13 +2843,25 @@ mod tests {
             ContextAssemblyError::SnapshotInvalid {
                 kind: SnapshotDocumentKind::Lorebook,
             },
-            ContextAssemblyError::PromptRender,
-            ContextAssemblyError::LorebookActivation,
+            ContextAssemblyError::PromptRender {
+                reason: "test reason",
+            },
+            ContextAssemblyError::LorebookActivation {
+                reason: "test reason",
+            },
             ContextAssemblyError::MissingSpeaker,
-            ContextAssemblyError::InvalidTimeline,
-            ContextAssemblyError::UnsupportedPart,
-            ContextAssemblyError::SizeLimit,
-            ContextAssemblyError::RuntimeTextUnavailable,
+            ContextAssemblyError::InvalidTimeline {
+                reason: "test reason",
+            },
+            ContextAssemblyError::UnsupportedPart {
+                reason: "test reason",
+            },
+            ContextAssemblyError::SizeLimit {
+                reason: "test reason",
+            },
+            ContextAssemblyError::RuntimeTextUnavailable {
+                reason: "test reason",
+            },
         ];
         for error in errors {
             assert!(!format!("{error:?}").contains("secret"));

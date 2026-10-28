@@ -140,11 +140,15 @@ impl LorebookEntryGenerationRun {
             || has_duplicates(&self.selected_message_ids)
             || has_duplicates(&self.selected_memory_ids)
         {
-            return Err(LorebookEntryRunRepositoryError::Invalid);
+            return Err(LorebookEntryRunRepositoryError::Invalid {
+                reason: "run snapshot fields are blank, mismatched, duplicated or out of range",
+            });
         }
         match self.source {
             LorebookEntrySource::Messages if self.selected_message_ids.is_empty() => {
-                Err(LorebookEntryRunRepositoryError::Invalid)
+                Err(LorebookEntryRunRepositoryError::Invalid {
+                    reason: "message source has no selected messages",
+                })
             }
             LorebookEntrySource::Memory
                 if self.selected_memory_ids.is_empty()
@@ -152,7 +156,9 @@ impl LorebookEntryGenerationRun {
                         || values.memory_summary.trim().is_empty()
                         || values.memory_summary.trim() == values.none_marker.trim()) =>
             {
-                Err(LorebookEntryRunRepositoryError::Invalid)
+                Err(LorebookEntryRunRepositoryError::Invalid {
+                    reason: "memory source has no selected memories and no usable memory summary",
+                })
             }
             LorebookEntrySource::Mixed
                 if self.selected_message_ids.is_empty()
@@ -161,7 +167,9 @@ impl LorebookEntryGenerationRun {
                         || values.memory_summary.trim().is_empty()
                         || values.memory_summary.trim() == values.none_marker.trim()) =>
             {
-                Err(LorebookEntryRunRepositoryError::Invalid)
+                Err(LorebookEntryRunRepositoryError::Invalid {
+                    reason: "mixed source has no selected messages or memories and no usable memory summary",
+                })
             }
             _ => Ok(()),
         }
@@ -179,12 +187,12 @@ pub enum LorebookEntryRunRepositoryError {
     NotFound,
     #[error("lorebook entry generation run conflicts with durable state")]
     Conflict,
-    #[error("lorebook entry generation run is invalid")]
-    Invalid,
-    #[error("lorebook entry generation run storage failed")]
-    Failure,
-    #[error("lorebook entry generation run storage is corrupt")]
-    Corrupt,
+    #[error("lorebook entry generation run is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("lorebook entry generation run storage failed: {reason}")]
+    Failure { reason: &'static str },
+    #[error("lorebook entry generation run storage is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
 }
 
 pub trait LorebookEntryRunRepository: Send + Sync {
@@ -225,7 +233,11 @@ impl LorebookEntryAttemptCheckpoint {
         let expected_kind = match self.ordinal {
             0 => LorebookEntryAttemptKind::Native,
             1 => LorebookEntryAttemptKind::StructuredFallback,
-            _ => return Err(LorebookEntryRunRepositoryError::Invalid),
+            _ => {
+                return Err(LorebookEntryRunRepositoryError::Invalid {
+                    reason: "attempt ordinal is neither the native nor the fallback attempt",
+                });
+            }
         };
         if self.attempt_kind != expected_kind
             || self.completed_at.get() < 0
@@ -241,7 +253,9 @@ impl LorebookEntryAttemptCheckpoint {
                 ))
             || !attempt_decision_is_normalized(&self.decision)
         {
-            return Err(LorebookEntryRunRepositoryError::Invalid);
+            return Err(LorebookEntryRunRepositoryError::Invalid {
+                reason: "attempt calls, kind or decision are inconsistent",
+            });
         }
         Ok(())
     }
@@ -280,12 +294,16 @@ pub fn validate_lorebook_entry_attempts(
     attempts: &[LorebookEntryAttemptCheckpoint],
 ) -> Result<(), LorebookEntryRunRepositoryError> {
     if attempts.len() > 2 {
-        return Err(LorebookEntryRunRepositoryError::Invalid);
+        return Err(LorebookEntryRunRepositoryError::Invalid {
+            reason: "run has more than 2 attempts",
+        });
     }
     for (index, attempt) in attempts.iter().enumerate() {
         attempt.validate()?;
         if usize::from(attempt.ordinal) != index {
-            return Err(LorebookEntryRunRepositoryError::Invalid);
+            return Err(LorebookEntryRunRepositoryError::Invalid {
+                reason: "attempt ordinal does not match its position",
+            });
         }
     }
     if attempts.len() == 2
@@ -294,7 +312,9 @@ pub fn validate_lorebook_entry_attempts(
             LorebookEntryAttemptDecision::StructuredFallback
         )
     {
-        return Err(LorebookEntryRunRepositoryError::Invalid);
+        return Err(LorebookEntryRunRepositoryError::Invalid {
+            reason: "a second attempt exists without a structured fallback decision on the first",
+        });
     }
     Ok(())
 }
@@ -323,8 +343,8 @@ pub enum LorebookEntryGenerationError {
     MissingTitle,
     #[error("write_lorebook_entry is missing non-empty content")]
     MissingContent,
-    #[error("lorebook entry fallback is invalid")]
-    InvalidFallback,
+    #[error("lorebook entry fallback is invalid: {reason}")]
+    InvalidFallback { reason: String },
     #[error("lorebook entry fallback returned an undeclared operation")]
     UndeclaredFallbackOperation,
 }
@@ -573,14 +593,18 @@ fn parse_json_fallback(
 ) -> Result<LorebookEntryGenerationResult, LorebookEntryGenerationError> {
     let normalized = normalize_fallback_text(raw);
     let value: Value = serde_json::from_str(json_snippet(&normalized).unwrap_or(&normalized))
-        .map_err(|_| LorebookEntryGenerationError::InvalidFallback)?;
+        .map_err(|error| LorebookEntryGenerationError::InvalidFallback {
+            reason: format!("fallback reply is not valid json: {error}"),
+        })?;
     let node = value
         .get("result")
         .or_else(|| value.get("response"))
         .unwrap_or(&value);
     let object = node
         .as_object()
-        .ok_or(LorebookEntryGenerationError::InvalidFallback)?;
+        .ok_or(LorebookEntryGenerationError::InvalidFallback {
+            reason: "fallback json is not an object".to_owned(),
+        })?;
     let name = object
         .get("name")
         .or_else(|| object.get("tool"))
@@ -588,7 +612,9 @@ fn parse_json_fallback(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or(LorebookEntryGenerationError::InvalidFallback)?;
+        .ok_or(LorebookEntryGenerationError::InvalidFallback {
+            reason: "fallback json has no non-empty operation name".to_owned(),
+        })?;
     let arguments = object
         .get("arguments")
         .cloned()
@@ -625,16 +651,21 @@ pub(crate) fn xml_attribute(element: &BytesStart<'_>, key: &[u8]) -> Option<Stri
 fn xml_text(raw: &[u8]) -> Result<String, LorebookEntryGenerationError> {
     unescape(&String::from_utf8_lossy(raw))
         .map(|value| value.into_owned())
-        .map_err(|_| LorebookEntryGenerationError::InvalidFallback)
+        .map_err(|error| LorebookEntryGenerationError::InvalidFallback {
+            reason: format!("xml text could not be unescaped: {error}"),
+        })
 }
 
 fn xml_reference(reference: BytesRef<'_>) -> Result<String, LorebookEntryGenerationError> {
     if let Ok(Some(character)) = reference.resolve_char_ref() {
         return Ok(character.to_string());
     }
-    let content = reference
-        .xml_content()
-        .map_err(|_| LorebookEntryGenerationError::InvalidFallback)?;
+    let content =
+        reference
+            .xml_content()
+            .map_err(|error| LorebookEntryGenerationError::InvalidFallback {
+                reason: format!("xml reference could not be resolved: {error}"),
+            })?;
     Ok(resolve_xml_entity(&content).map_or_else(|| format!("&{content};"), ToOwned::to_owned))
 }
 
@@ -728,7 +759,11 @@ fn parse_xml_fallback(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(_) => return Err(LorebookEntryGenerationError::InvalidFallback),
+            Err(error) => {
+                return Err(LorebookEntryGenerationError::InvalidFallback {
+                    reason: format!("xml event stream could not be read: {error}"),
+                });
+            }
             _ => {}
         }
         buffer.clear();
@@ -748,7 +783,9 @@ fn parse_xml_fallback(
                 reason.trim().to_owned()
             },
         }),
-        _ => Err(LorebookEntryGenerationError::InvalidFallback),
+        _ => Err(LorebookEntryGenerationError::InvalidFallback {
+            reason: "fallback operation is missing or not a lorebook entry tool".to_owned(),
+        }),
     }
 }
 

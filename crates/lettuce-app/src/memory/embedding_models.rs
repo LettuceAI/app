@@ -181,8 +181,16 @@ pub fn finish_embedding_install(
         if let Err(error) = verification {
             discard(&path);
             return Err(EmbeddingInstallError::Artifact(match error {
-                PinnedArtifactError::Unreadable => ModelArtifactError::Unreadable,
-                _ => ModelArtifactError::Mismatch,
+                PinnedArtifactError::Unreadable { reason } => ModelArtifactError::Unreadable {
+                    reason: reason.to_owned(),
+                },
+                PinnedArtifactError::Mismatch { reason } => ModelArtifactError::Mismatch { reason },
+                error => {
+                    tracing::warn!(%error, "pinned embedding artifact verification failed");
+                    ModelArtifactError::Mismatch {
+                        reason: "artifact verification failed",
+                    }
+                }
             })
             .into());
         }
@@ -195,7 +203,9 @@ pub fn finish_embedding_install(
             EmbeddingArtifactRole::Model => model = Some(artifact),
             EmbeddingArtifactRole::Tokenizer => tokenizer = Some(artifact),
             EmbeddingArtifactRole::Calibration => {
-                let bytes = std::fs::read(&path).map_err(|_| EmbeddingInstallError::Storage)?;
+                let bytes = std::fs::read(&path).map_err(|error| EmbeddingInstallError::Storage {
+                    reason: error.to_string(),
+                })?;
                 if SimilarityCalibration::from_json(&bytes).is_err() {
                     discard(&path);
                     return Err(EmbeddingModelError::InvalidCalibration);

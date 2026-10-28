@@ -107,7 +107,9 @@ impl RemoteKokoroVoice {
             || !self.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
             || self.sha256 != self.sha256.to_ascii_lowercase()
         {
-            return Err(KokoroInstallError::InvalidManifest);
+            return Err(KokoroInstallError::InvalidManifest {
+                reason: "voice revision, size or sha256 is invalid",
+            });
         }
         Ok(())
     }
@@ -204,15 +206,25 @@ impl KokoroVoiceInstallStore {
                 return Ok(None);
             };
             let capacity =
-                usize::try_from(remote.byte_size).map_err(|_| KokoroInstallError::Mismatch)?;
+                usize::try_from(remote.byte_size).map_err(|_| KokoroInstallError::Mismatch {
+                    reason: "voice size exceeds the platform size",
+                })?;
             if file.len() != remote.byte_size {
-                return Err(KokoroInstallError::Mismatch);
+                return Err(KokoroInstallError::Mismatch {
+                    reason: "voice file size does not match the pinned size",
+                });
             }
             let mut bytes = Vec::with_capacity(capacity);
-            file.read_to_end(&mut bytes)
-                .map_err(|_| KokoroInstallError::Unreadable)?;
+            file.read_to_end(&mut bytes).map_err(|error| {
+                tracing::warn!(%error, "reading the voice file failed");
+                KokoroInstallError::Unreadable {
+                    reason: "reading the voice file failed",
+                }
+            })?;
             if bytes.len() != capacity {
-                return Err(KokoroInstallError::Mismatch);
+                return Err(KokoroInstallError::Mismatch {
+                    reason: "voice length changed while reading",
+                });
             }
             materialized.push(MaterializedKokoroVoice {
                 id: remote.id.clone(),
@@ -271,7 +283,9 @@ impl KokoroVoiceInstallStore {
         let had_installed = installed.is_some();
         let had_manifest = manifest.is_some();
         if had_manifest && read_manifest(&self.inner, &remote.id)?.as_ref() != Some(remote) {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "recorded voice manifest does not match the remote voice",
+            });
         }
         if let Some(mut file) = installed {
             verify_voice(&mut file, remote)?;
@@ -315,7 +329,9 @@ impl KokoroVoiceDownloadSession {
 
     pub fn finish(mut self) -> Result<InstalledKokoroVoice, KokoroInstallError> {
         if self.inner.offset() != self.remote.byte_size {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "downloaded bytes do not match the pinned size",
+            });
         }
         self.inner.sync().map_err(KokoroInstallError::Platform)?;
         self.inner.rewind().map_err(KokoroInstallError::Platform)?;
@@ -380,12 +396,20 @@ fn write_manifest(
         version: KOKORO_VOICE_MANIFEST_VERSION,
         voice: remote.clone(),
     })
-    .map_err(|_| KokoroInstallError::InvalidManifest)?;
+    .map_err(|error| {
+        tracing::warn!(%error, "voice manifest could not be serialized");
+        KokoroInstallError::InvalidManifest {
+            reason: "voice manifest could not be serialized",
+        }
+    })?;
     if bytes.is_empty()
-        || u64::try_from(bytes.len()).map_err(|_| KokoroInstallError::InvalidManifest)?
-            > MAX_KOKORO_VOICE_MANIFEST_BYTES
+        || u64::try_from(bytes.len()).map_err(|_| KokoroInstallError::InvalidManifest {
+            reason: "voice manifest length exceeds the u64 range",
+        })? > MAX_KOKORO_VOICE_MANIFEST_BYTES
     {
-        return Err(KokoroInstallError::InvalidManifest);
+        return Err(KokoroInstallError::InvalidManifest {
+            reason: "voice manifest is empty or exceeds the size limit",
+        });
     }
     let partial_name = format!("{}.manifest.part", voice_identity(remote).to_hex());
     let partial = ObjectKey::from_segments(["downloads", partial_name.as_str()])
@@ -420,7 +444,12 @@ fn write_manifest(
         &path,
         path.with_file_name(format!("{}.manifest.json", remote.id)),
     )
-    .map_err(|_| KokoroInstallError::Unreadable)?;
+    .map_err(|error| {
+        tracing::warn!(%error, "renaming the voice manifest failed");
+        KokoroInstallError::Unreadable {
+            reason: "renaming the voice manifest failed",
+        }
+    })?;
     Ok(())
 }
 
@@ -441,11 +470,17 @@ fn read_manifest(
     if file.is_empty() || file.len() > MAX_KOKORO_VOICE_MANIFEST_BYTES {
         return Ok(None);
     }
-    let mut bytes = Vec::with_capacity(
-        usize::try_from(file.len()).map_err(|_| KokoroInstallError::InvalidManifest)?,
-    );
-    file.read_to_end(&mut bytes)
-        .map_err(|_| KokoroInstallError::Unreadable)?;
+    let mut bytes = Vec::with_capacity(usize::try_from(file.len()).map_err(|_| {
+        KokoroInstallError::InvalidManifest {
+            reason: "voice manifest length exceeds the platform size",
+        }
+    })?);
+    file.read_to_end(&mut bytes).map_err(|error| {
+        tracing::warn!(%error, "reading the voice manifest failed");
+        KokoroInstallError::Unreadable {
+            reason: "reading the voice manifest failed",
+        }
+    })?;
     let Ok(manifest) = serde_json::from_slice::<InstalledKokoroVoiceManifest>(&bytes) else {
         return Ok(None);
     };
@@ -462,9 +497,16 @@ fn verify_manifest_bytes(file: &mut impl Read, expected: &[u8]) -> Result<(), Ko
     let mut bytes = Vec::new();
     file.take(MAX_KOKORO_VOICE_MANIFEST_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| KokoroInstallError::Unreadable)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "reading the voice manifest for verification failed");
+            KokoroInstallError::Unreadable {
+                reason: "reading the voice manifest for verification failed",
+            }
+        })?;
     if bytes != expected {
-        return Err(KokoroInstallError::Mismatch);
+        return Err(KokoroInstallError::Mismatch {
+            reason: "voice manifest bytes differ from the expected manifest",
+        });
     }
     Ok(())
 }
@@ -485,34 +527,52 @@ fn verify_voice_with(
     let mut total = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| KokoroInstallError::Unreadable)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the voice file for verification failed");
+            KokoroInstallError::Unreadable {
+                reason: "reading the voice file for verification failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         total = total
-            .checked_add(u64::try_from(read).map_err(|_| KokoroInstallError::Mismatch)?)
-            .ok_or(KokoroInstallError::Mismatch)?;
+            .checked_add(
+                u64::try_from(read).map_err(|_| KokoroInstallError::Mismatch {
+                    reason: "voice read length exceeds the u64 range",
+                })?,
+            )
+            .ok_or(KokoroInstallError::Mismatch {
+                reason: "voice byte count overflowed",
+            })?;
         if total > remote.byte_size {
-            return Err(KokoroInstallError::Mismatch);
+            return Err(KokoroInstallError::Mismatch {
+                reason: "voice is larger than the pinned size",
+            });
         }
         hash.update(&buffer[..read]);
         consume(&buffer[..read]);
     }
     if total != remote.byte_size || format!("{:x}", hash.finalize()) != remote.sha256 {
-        return Err(KokoroInstallError::Mismatch);
+        return Err(KokoroInstallError::Mismatch {
+            reason: "voice size or sha256 does not match the pin",
+        });
     }
     Ok(())
 }
 
 fn map_artifact_error(error: ModelArtifactError) -> KokoroInstallError {
+    tracing::warn!(%error, "installed voice artifact check failed");
     match error {
-        ModelArtifactError::Missing | ModelArtifactError::Unreadable => {
-            KokoroInstallError::Unreadable
+        ModelArtifactError::Missing { .. } | ModelArtifactError::Unreadable { .. } => {
+            KokoroInstallError::Unreadable {
+                reason: "installed voice is missing or unreadable",
+            }
         }
-        ModelArtifactError::InvalidManifest | ModelArtifactError::Mismatch => {
-            KokoroInstallError::InvalidArtifact
+        ModelArtifactError::InvalidManifest { .. } | ModelArtifactError::Mismatch { .. } => {
+            KokoroInstallError::InvalidArtifact {
+                reason: "installed voice manifest or bytes are invalid",
+            }
         }
     }
 }

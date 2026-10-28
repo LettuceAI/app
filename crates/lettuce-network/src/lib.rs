@@ -147,10 +147,15 @@ impl JsonResponseStream {
                     io_kind = ?io_kind,
                     io_code = ?io_code,
                     cause_depth,
+                    reason = "chunk_read_failed",
                     "HTTP response stream read failed",
                 );
-                self.terminal = Some(Err(JsonClientError::Transport));
-                return Err(JsonClientError::Transport);
+                self.terminal = Some(Err(JsonClientError::Transport {
+                    reason: "response stream read failed",
+                }));
+                return Err(JsonClientError::Transport {
+                    reason: "response stream read failed",
+                });
             }
             Err(_) => {
                 tracing::warn!(
@@ -160,8 +165,12 @@ impl JsonResponseStream {
                     reason = "idle_timeout",
                     "HTTP response stream read failed",
                 );
-                self.terminal = Some(Err(JsonClientError::Transport));
-                return Err(JsonClientError::Transport);
+                self.terminal = Some(Err(JsonClientError::Transport {
+                    reason: "response stream read failed",
+                }));
+                return Err(JsonClientError::Transport {
+                    reason: "response stream read failed",
+                });
             }
         };
         let Some(chunk) = chunk else {
@@ -232,28 +241,28 @@ impl fmt::Debug for JsonResponse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum JsonClientError {
-    #[error("HTTP client configuration failed")]
-    ClientConfiguration,
-    #[error("request URL is invalid")]
-    InvalidUrl,
-    #[error("request is invalid")]
-    InvalidRequest,
+    #[error("HTTP client configuration failed: {reason}")]
+    ClientConfiguration { reason: &'static str },
+    #[error("request URL is invalid: {reason}")]
+    InvalidUrl { reason: &'static str },
+    #[error("request is invalid: {reason}")]
+    InvalidRequest { reason: &'static str },
     #[error("request body is too large")]
     RequestTooLarge,
     #[error("response body is too large")]
     ResponseTooLarge,
-    #[error("HTTP transport failed")]
-    Transport,
+    #[error("HTTP transport failed: {reason}")]
+    Transport { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ArtifactDownloadError {
-    #[error("artifact request is invalid")]
-    InvalidRequest,
-    #[error("artifact response is invalid")]
-    InvalidResponse,
-    #[error("artifact transport failed")]
-    Transport,
+    #[error("artifact request is invalid: {reason}")]
+    InvalidRequest { reason: &'static str },
+    #[error("artifact response is invalid: {reason}")]
+    InvalidResponse { reason: &'static str },
+    #[error("artifact transport failed: {reason}")]
+    Transport { reason: &'static str },
     /// No response or no bytes arrived within the stall timeout.
     #[error("artifact download stalled and timed out")]
     TimedOut,
@@ -317,7 +326,12 @@ impl ArtifactDownloadClient {
                 attempt.follow()
             }
         });
-        let roots = trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)?;
+        let roots = trusted_roots(policy).map_err(|error| {
+            tracing::warn!(%error, "trusted root certificates could not be loaded");
+            ArtifactDownloadError::Transport {
+                reason: "trusted root certificates could not be loaded",
+            }
+        })?;
         let mut builder = reqwest::Client::builder()
             .redirect(redirect)
             .referer(false)
@@ -325,9 +339,12 @@ impl ArtifactDownloadClient {
         for root in roots {
             builder = builder.add_root_certificate(root);
         }
-        let client = builder
-            .build()
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+        let client = builder.build().map_err(|error| {
+            tracing::warn!(%error, "artifact http client could not be built");
+            ArtifactDownloadError::Transport {
+                reason: "artifact http client could not be built",
+            }
+        })?;
         Ok(Self {
             client,
             hugging_face_token: None,
@@ -341,7 +358,12 @@ impl ArtifactDownloadClient {
         max_bytes: u64,
         deadline: Duration,
     ) -> Result<Vec<u8>, ArtifactDownloadError> {
-        let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        let url = Url::parse(url).map_err(|error| {
+            tracing::warn!(%error, "artifact url could not be parsed");
+            ArtifactDownloadError::InvalidRequest {
+                reason: "artifact url could not be parsed",
+            }
+        })?;
         if !matches!(url.scheme(), "http" | "https")
             || url.host_str().is_none()
             || !url.username().is_empty()
@@ -349,7 +371,9 @@ impl ArtifactDownloadClient {
             || url.fragment().is_some()
             || max_bytes == 0
         {
-            return Err(ArtifactDownloadError::InvalidRequest);
+            return Err(ArtifactDownloadError::InvalidRequest {
+                reason: "artifact url is not http or https, lacks a host, has credentials or a fragment, or the size limit is zero",
+            });
         }
         let deadline = tokio::time::Instant::now() + deadline;
         let mut builder = reqwest::Client::builder()
@@ -366,19 +390,33 @@ impl ArtifactDownloadClient {
             }))
             .referer(false)
             .connect_timeout(ARTIFACT_CONNECT_TIMEOUT);
-        for root in trusted_roots(policy).map_err(|_| ArtifactDownloadError::Transport)? {
+        for root in trusted_roots(policy).map_err(|error| {
+            tracing::warn!(%error, "trusted root certificates could not be loaded");
+            ArtifactDownloadError::Transport {
+                reason: "trusted root certificates could not be loaded",
+            }
+        })? {
             builder = builder.add_root_certificate(root);
         }
-        let client = builder
-            .build()
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+        let client = builder.build().map_err(|error| {
+            tracing::warn!(%error, "artifact http client could not be built");
+            ArtifactDownloadError::Transport {
+                reason: "artifact http client could not be built",
+            }
+        })?;
         let mut response = tokio::time::timeout_at(
             deadline.min(tokio::time::Instant::now() + ARTIFACT_IDLE_TIMEOUT),
             client.get(url).send(),
         )
         .await
         .map_err(|_| ArtifactDownloadError::TimedOut)?
-        .map_err(|_| ArtifactDownloadError::Transport)?;
+        .map_err(|error| {
+            let error = error.without_url();
+            tracing::warn!(%error, "artifact request could not be sent");
+            ArtifactDownloadError::Transport {
+                reason: "artifact request could not be sent",
+            }
+        })?;
         if response.status() != reqwest::StatusCode::OK {
             return Err(ArtifactDownloadError::Refused {
                 status: response.status().as_u16(),
@@ -389,7 +427,9 @@ impl ArtifactDownloadClient {
             .content_length()
             .is_some_and(|size| size > max_bytes)
         {
-            return Err(ArtifactDownloadError::InvalidResponse);
+            return Err(ArtifactDownloadError::InvalidResponse {
+                reason: "declared artifact size exceeds the limit",
+            });
         }
         let mut bytes = Vec::new();
         while let Some(chunk) = tokio::time::timeout_at(
@@ -398,10 +438,17 @@ impl ArtifactDownloadClient {
         )
         .await
         .map_err(|_| ArtifactDownloadError::TimedOut)?
-        .map_err(|_| ArtifactDownloadError::Transport)?
-        {
+        .map_err(|error| {
+            let error = error.without_url();
+            tracing::warn!(%error, "artifact body stream read failed");
+            ArtifactDownloadError::Transport {
+                reason: "artifact body stream read failed",
+            }
+        })? {
             if (bytes.len() as u64).saturating_add(chunk.len() as u64) > max_bytes {
-                return Err(ArtifactDownloadError::InvalidResponse);
+                return Err(ArtifactDownloadError::InvalidResponse {
+                    reason: "artifact body exceeds the size limit",
+                });
             }
             bytes.extend_from_slice(&chunk);
         }
@@ -437,14 +484,19 @@ impl ArtifactDownloadClient {
     /// The size of an HTTPS artifact, from a one-byte ranged request; a
     /// refusal carries the HTTP status.
     pub async fn probe_https_size(&self, url: &str) -> Result<u64, ArtifactProbeError> {
-        let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        let url = Url::parse(url).map_err(|error| {
+            tracing::warn!(%error, "artifact probe url could not be parsed");
+            ArtifactDownloadError::InvalidRequest {
+                reason: "artifact probe url could not be parsed",
+            }
+        })?;
         if url.scheme() != "https"
             || url.host_str().is_none_or(str::is_empty)
             || !url.username().is_empty()
             || url.password().is_some()
             || url.fragment().is_some()
         {
-            return Err(ArtifactDownloadError::InvalidRequest.into());
+            return Err(ArtifactDownloadError::InvalidRequest { reason: "artifact probe url is not http or https, lacks a host, has credentials or a fragment" }.into());
         }
         let token = self.civitai_token_for(&url);
         let mut request = self.client.get(url).header(header::RANGE, "bytes=0-0");
@@ -454,7 +506,13 @@ impl ArtifactDownloadClient {
         let response = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, request.send())
             .await
             .map_err(|_| ArtifactDownloadError::TimedOut)?
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+            .map_err(|error| {
+                let error = error.without_url();
+                tracing::warn!(%error, "artifact probe request could not be sent");
+                ArtifactDownloadError::Transport {
+                    reason: "artifact probe request could not be sent",
+                }
+            })?;
         match response.status().as_u16() {
             206 => response
                 .headers()
@@ -463,11 +521,21 @@ impl ArtifactDownloadClient {
                 .and_then(|value| value.rsplit_once('/'))
                 .and_then(|(_, total)| total.parse::<u64>().ok())
                 .filter(|total| *total > 0)
-                .ok_or(ArtifactDownloadError::InvalidResponse.into()),
+                .ok_or(
+                    ArtifactDownloadError::InvalidResponse {
+                        reason: "content range total is missing or not a positive number",
+                    }
+                    .into(),
+                ),
             200 => response
                 .content_length()
                 .filter(|length| *length > 0)
-                .ok_or(ArtifactDownloadError::InvalidResponse.into()),
+                .ok_or(
+                    ArtifactDownloadError::InvalidResponse {
+                        reason: "content length is missing or zero",
+                    }
+                    .into(),
+                ),
             status => Err(ArtifactProbeError::Refused(status)),
         }
     }
@@ -475,7 +543,9 @@ impl ArtifactDownloadClient {
     fn bearer(token: &SecretValue) -> Result<header::HeaderValue, ArtifactDownloadError> {
         let mut value = token
             .with(|token| header::HeaderValue::from_str(&format!("Bearer {token}")))
-            .map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+            .map_err(|_| ArtifactDownloadError::InvalidRequest {
+                reason: "bearer token is not a valid header value",
+            })?;
         value.set_sensitive(true);
         Ok(value)
     }
@@ -489,7 +559,9 @@ impl ArtifactDownloadClient {
         expected_size: u64,
     ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
         if expected_size == 0 || offset > expected_size {
-            return Err(ArtifactDownloadError::InvalidRequest);
+            return Err(ArtifactDownloadError::InvalidRequest {
+                reason: "expected size is zero or the offset is past the expected size",
+            });
         }
         let url = https_url(url)?;
         let token = self
@@ -539,11 +611,17 @@ impl ArtifactDownloadClient {
         let end = offset
             .checked_add(length)
             .and_then(|end| end.checked_sub(1))
-            .ok_or(ArtifactDownloadError::InvalidRequest)?;
+            .ok_or(ArtifactDownloadError::InvalidRequest {
+                reason: "range end overflows",
+            })?;
         if length == 0 {
-            return Err(ArtifactDownloadError::InvalidRequest);
+            return Err(ArtifactDownloadError::InvalidRequest {
+                reason: "range length is zero",
+            });
         }
-        let limit = usize::try_from(length).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        let limit = usize::try_from(length).map_err(|_| ArtifactDownloadError::InvalidRequest {
+            reason: "range length exceeds the platform size",
+        })?;
         let token =
             token.filter(|_| https_url(endpoint).is_ok_and(|origin| same_origin(&url, &origin)));
         let mut request = self
@@ -557,48 +635,81 @@ impl ArtifactDownloadClient {
         let mut response = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, request.send())
             .await
             .map_err(|_| ArtifactDownloadError::TimedOut)?
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+            .map_err(|error| {
+                let error = error.without_url();
+                tracing::warn!(%error, "range request could not be sent");
+                ArtifactDownloadError::Transport {
+                    reason: "range request could not be sent",
+                }
+            })?;
         if !response.status().is_success() {
-            return Err(ArtifactDownloadError::InvalidResponse);
+            return Err(ArtifactDownloadError::InvalidResponse {
+                reason: "range request did not return a success status",
+            });
         }
         if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
             let raw = response
                 .headers()
                 .get(header::CONTENT_RANGE)
                 .and_then(|value| value.to_str().ok())
-                .ok_or(ArtifactDownloadError::InvalidResponse)?;
+                .ok_or(ArtifactDownloadError::InvalidResponse {
+                    reason: "content range header is missing or not text",
+                })?;
             let (extent, total) = raw
                 .strip_prefix("bytes ")
                 .and_then(|raw| raw.split_once('/'))
-                .ok_or(ArtifactDownloadError::InvalidResponse)?;
-            let (start, last) = extent
-                .split_once('-')
-                .ok_or(ArtifactDownloadError::InvalidResponse)?;
-            let start = start
-                .parse::<u64>()
-                .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+                .ok_or(ArtifactDownloadError::InvalidResponse {
+                    reason: "content range header is not in bytes start-end/total form",
+                })?;
+            let (start, last) =
+                extent
+                    .split_once('-')
+                    .ok_or(ArtifactDownloadError::InvalidResponse {
+                        reason: "content range extent has no start-end separator",
+                    })?;
+            let start =
+                start
+                    .parse::<u64>()
+                    .map_err(|_| ArtifactDownloadError::InvalidResponse {
+                        reason: "content range start is not a number",
+                    })?;
             let last = last
                 .parse::<u64>()
-                .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
-            let total = total
-                .parse::<u64>()
-                .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+                .map_err(|_| ArtifactDownloadError::InvalidResponse {
+                    reason: "content range end is not a number",
+                })?;
+            let total =
+                total
+                    .parse::<u64>()
+                    .map_err(|_| ArtifactDownloadError::InvalidResponse {
+                        reason: "content range total is not a number",
+                    })?;
             if start != offset
                 || last != end.min(total.saturating_sub(1))
                 || last < start
                 || expected_size.is_some_and(|expected| expected != total)
             {
-                return Err(ArtifactDownloadError::InvalidResponse);
+                return Err(ArtifactDownloadError::InvalidResponse {
+                    reason: "content range does not match the requested offset or expected size",
+                });
             }
         } else if offset != 0 {
-            return Err(ArtifactDownloadError::InvalidResponse);
+            return Err(ArtifactDownloadError::InvalidResponse {
+                reason: "server ignored the resume offset",
+            });
         }
         let mut bytes = Vec::with_capacity(limit.min(1 << 20));
         while bytes.len() < limit {
             let chunk = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, response.chunk())
                 .await
                 .map_err(|_| ArtifactDownloadError::TimedOut)?
-                .map_err(|_| ArtifactDownloadError::Transport)?;
+                .map_err(|error| {
+                    let error = error.without_url();
+                    tracing::warn!(%error, "range body read failed");
+                    ArtifactDownloadError::Transport {
+                        reason: "range body read failed",
+                    }
+                })?;
             let Some(chunk) = chunk else {
                 break;
             };
@@ -616,7 +727,12 @@ impl ArtifactDownloadClient {
         offset: u64,
         expected_size: u64,
     ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
-        let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        let url = Url::parse(url).map_err(|error| {
+            tracing::warn!(%error, "artifact url could not be parsed");
+            ArtifactDownloadError::InvalidRequest {
+                reason: "artifact url could not be parsed",
+            }
+        })?;
         if url.scheme() != "https"
             || url.host_str().is_none_or(str::is_empty)
             || !url.username().is_empty()
@@ -625,7 +741,9 @@ impl ArtifactDownloadClient {
             || expected_size == 0
             || offset > expected_size
         {
-            return Err(ArtifactDownloadError::InvalidRequest);
+            return Err(ArtifactDownloadError::InvalidRequest {
+                reason: "artifact url is not https, lacks a host, has credentials or a fragment, or the size or offset is out of range",
+            });
         }
         let token = self.civitai_token_for(&url);
         self.open(url, offset, expected_size, token.as_deref())
@@ -649,7 +767,13 @@ impl ArtifactDownloadClient {
         let response = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, request.send())
             .await
             .map_err(|_| ArtifactDownloadError::TimedOut)?
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+            .map_err(|error| {
+                let error = error.without_url();
+                tracing::warn!(%error, "artifact request could not be sent");
+                ArtifactDownloadError::Transport {
+                    reason: "artifact request could not be sent",
+                }
+            })?;
         let status = response.status().as_u16();
         let start = if status == 206 {
             parse_content_range(response.headers(), expected_size)?
@@ -661,14 +785,19 @@ impl ArtifactDownloadClient {
                 signed_in: token.is_some(),
             });
         };
-        let remaining = expected_size
-            .checked_sub(start)
-            .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        let remaining =
+            expected_size
+                .checked_sub(start)
+                .ok_or(ArtifactDownloadError::InvalidResponse {
+                    reason: "resume offset is past the expected size",
+                })?;
         if response
             .content_length()
             .is_some_and(|length| length > remaining)
         {
-            return Err(ArtifactDownloadError::InvalidResponse);
+            return Err(ArtifactDownloadError::InvalidResponse {
+                reason: "declared content length exceeds the remaining size",
+            });
         }
         Ok(ArtifactDownloadStream {
             response,
@@ -689,18 +818,30 @@ impl ArtifactDownloadStream {
         let chunk = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, self.response.chunk())
             .await
             .map_err(|_| ArtifactDownloadError::TimedOut)?
-            .map_err(|_| ArtifactDownloadError::Transport)?;
+            .map_err(|error| {
+                let error = error.without_url();
+                tracing::warn!(%error, "artifact body chunk read failed");
+                ArtifactDownloadError::Transport {
+                    reason: "artifact body chunk read failed",
+                }
+            })?;
         let Some(chunk) = chunk else {
             return Ok(None);
         };
         self.received = self
             .received
-            .checked_add(
-                u64::try_from(chunk.len()).map_err(|_| ArtifactDownloadError::InvalidResponse)?,
-            )
-            .ok_or(ArtifactDownloadError::InvalidResponse)?;
+            .checked_add(u64::try_from(chunk.len()).map_err(|_| {
+                ArtifactDownloadError::InvalidResponse {
+                    reason: "chunk length exceeds the u64 range",
+                }
+            })?)
+            .ok_or(ArtifactDownloadError::InvalidResponse {
+                reason: "received byte count overflowed",
+            })?;
         if self.start.saturating_add(self.received) > self.expected_size {
-            return Err(ArtifactDownloadError::InvalidResponse);
+            return Err(ArtifactDownloadError::InvalidResponse {
+                reason: "received bytes exceed the expected size",
+            });
         }
         Ok(Some(chunk.to_vec()))
     }
@@ -716,7 +857,9 @@ fn https_url(value: &str) -> Result<Url, ArtifactDownloadError> {
                 && url.password().is_none()
                 && url.fragment().is_none()
         })
-        .ok_or(ArtifactDownloadError::InvalidRequest)
+        .ok_or(ArtifactDownloadError::InvalidRequest {
+            reason: "url is not https, lacks a host, or has credentials or a fragment",
+        })
 }
 
 fn same_origin(left: &Url, right: &Url) -> bool {
@@ -732,27 +875,43 @@ fn parse_content_range(
     let value = headers
         .get(header::CONTENT_RANGE)
         .and_then(|value| value.to_str().ok())
-        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        .ok_or(ArtifactDownloadError::InvalidResponse {
+            reason: "content range header is missing or not text",
+        })?;
     let range = value
         .strip_prefix("bytes ")
-        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        .ok_or(ArtifactDownloadError::InvalidResponse {
+            reason: "content range header does not start with bytes",
+        })?;
     let (bounds, total) = range
         .split_once('/')
-        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        .ok_or(ArtifactDownloadError::InvalidResponse {
+            reason: "content range has no total separator",
+        })?;
     let (start, end) = bounds
         .split_once('-')
-        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        .ok_or(ArtifactDownloadError::InvalidResponse {
+            reason: "content range bounds have no start-end separator",
+        })?;
     let start = start
         .parse::<u64>()
-        .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+        .map_err(|_| ArtifactDownloadError::InvalidResponse {
+            reason: "content range start is not a number",
+        })?;
     let end = end
         .parse::<u64>()
-        .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+        .map_err(|_| ArtifactDownloadError::InvalidResponse {
+            reason: "content range end is not a number",
+        })?;
     let total = total
         .parse::<u64>()
-        .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+        .map_err(|_| ArtifactDownloadError::InvalidResponse {
+            reason: "content range total is not a number",
+        })?;
     if total != expected_size || start > end || end >= total {
-        return Err(ArtifactDownloadError::InvalidResponse);
+        return Err(ArtifactDownloadError::InvalidResponse {
+            reason: "content range does not match the expected size",
+        });
     }
     Ok(start)
 }
@@ -879,7 +1038,9 @@ impl JsonClient {
         *self
             .tls
             .write()
-            .map_err(|_| JsonClientError::ClientConfiguration)? = clients;
+            .map_err(|_| JsonClientError::ClientConfiguration {
+                reason: "http client lock is poisoned",
+            })? = clients;
         Ok(())
     }
 
@@ -896,7 +1057,9 @@ impl JsonClient {
         let clients = self
             .tls
             .read()
-            .map_err(|_| JsonClientError::ClientConfiguration)?;
+            .map_err(|_| JsonClientError::ClientConfiguration {
+                reason: "http client lock is poisoned",
+            })?;
         Ok(if policy.timeout == RequestTimeout::GenerationOnce {
             if policy.allow_invalid_tls {
                 clients.insecure_once.clone()
@@ -1140,7 +1303,9 @@ impl JsonClient {
     ) -> Result<JsonResponse, JsonClientError> {
         let mut attempt = 0_u32;
         loop {
-            let current = request.try_clone().ok_or(JsonClientError::InvalidRequest)?;
+            let current = request.try_clone().ok_or(JsonClientError::InvalidRequest {
+                reason: "request body cannot be cloned for a retry",
+            })?;
             match current.send().await {
                 Ok(response) => {
                     let delay = (attempt < max_retries)
@@ -1161,7 +1326,10 @@ impl JsonClient {
                         attempt += 1;
                         sleep(backoff_delay(attempt)).await;
                     } else {
-                        return Err(JsonClientError::Transport);
+                        tracing::warn!(error = %error.without_url(), "request failed after the retry budget");
+                        return Err(JsonClientError::Transport {
+                            reason: "request failed after the retry budget",
+                        });
                     }
                 }
             }
@@ -1176,7 +1344,9 @@ impl JsonClient {
     ) -> Result<JsonResponseStream, JsonClientError> {
         let mut attempt = 0_u32;
         loop {
-            let current = request.try_clone().ok_or(JsonClientError::InvalidRequest)?;
+            let current = request.try_clone().ok_or(JsonClientError::InvalidRequest {
+                reason: "request body cannot be cloned for a retry",
+            })?;
             match current.send().await {
                 Ok(response) => {
                     let delay = (attempt < max_retries)
@@ -1198,7 +1368,10 @@ impl JsonClient {
                         attempt += 1;
                         sleep(backoff_delay(attempt)).await;
                     } else {
-                        return Err(JsonClientError::Transport);
+                        tracing::warn!(error = %error.without_url(), "request failed after the retry budget");
+                        return Err(JsonClientError::Transport {
+                            reason: "request failed after the retry budget",
+                        });
                     }
                 }
             }
@@ -1322,9 +1495,12 @@ impl BulkHttpClient {
         Ok(BulkTlsClients {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
-            fetch: fetch
-                .build()
-                .map_err(|_| JsonClientError::ClientConfiguration)?,
+            fetch: fetch.build().map_err(|error| {
+                tracing::warn!(%error, "fetch http client could not be built");
+                JsonClientError::ClientConfiguration {
+                    reason: "fetch http client could not be built",
+                }
+            })?,
         })
     }
 
@@ -1333,7 +1509,9 @@ impl BulkHttpClient {
         *self
             .tls
             .write()
-            .map_err(|_| JsonClientError::ClientConfiguration)? = clients;
+            .map_err(|_| JsonClientError::ClientConfiguration {
+                reason: "http client lock is poisoned",
+            })? = clients;
         Ok(())
     }
 
@@ -1341,7 +1519,9 @@ impl BulkHttpClient {
         let clients = self
             .tls
             .read()
-            .map_err(|_| JsonClientError::ClientConfiguration)?;
+            .map_err(|_| JsonClientError::ClientConfiguration {
+                reason: "http client lock is poisoned",
+            })?;
         Ok(if allow_invalid_tls {
             clients.insecure.clone()
         } else {
@@ -1353,7 +1533,9 @@ impl BulkHttpClient {
         Ok(self
             .tls
             .read()
-            .map_err(|_| JsonClientError::ClientConfiguration)?
+            .map_err(|_| JsonClientError::ClientConfiguration {
+                reason: "http client lock is poisoned",
+            })?
             .fetch
             .clone())
     }
@@ -1387,10 +1569,13 @@ impl BulkHttpClient {
         let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
-        let response = request
-            .send()
-            .await
-            .map_err(|_| JsonClientError::Transport)?;
+        let response = request.send().await.map_err(|error| {
+            let error = error.without_url();
+            tracing::warn!(%error, "get request could not be sent");
+            JsonClientError::Transport {
+                reason: "get request could not be sent",
+            }
+        })?;
         read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
     }
 
@@ -1429,10 +1614,13 @@ impl BulkHttpClient {
         let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
-        let response = request
-            .send()
-            .await
-            .map_err(|_| JsonClientError::Transport)?;
+        let response = request.send().await.map_err(|error| {
+            let error = error.without_url();
+            tracing::warn!(%error, "post request could not be sent");
+            JsonClientError::Transport {
+                reason: "post request could not be sent",
+            }
+        })?;
         read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
     }
 }
@@ -1479,7 +1667,12 @@ impl BulkHttpClient {
                     reqwest::multipart::Part::bytes(bytes)
                         .file_name(filename)
                         .mime_str(&mime_type)
-                        .map_err(|_| JsonClientError::InvalidRequest)?,
+                        .map_err(|error| {
+                            tracing::warn!(%error, "multipart mime type is invalid");
+                            JsonClientError::InvalidRequest {
+                                reason: "multipart mime type is invalid",
+                            }
+                        })?,
                 ),
             };
         }
@@ -1491,26 +1684,42 @@ impl BulkHttpClient {
         let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
-        let response = request
-            .send()
-            .await
-            .map_err(|_| JsonClientError::Transport)?;
+        let response = request.send().await.map_err(|error| {
+            let error = error.without_url();
+            tracing::warn!(%error, "multipart request could not be sent");
+            JsonClientError::Transport {
+                reason: "multipart request could not be sent",
+            }
+        })?;
         read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
     }
 
     /// Fetches an image a provider linked to with a plain client; only
     /// HTTP(S) URLs are followed.
     pub async fn fetch_url(&self, url: &str) -> Result<JsonResponse, JsonClientError> {
-        let parsed = Url::parse(url).map_err(|_| JsonClientError::InvalidUrl)?;
+        let parsed = Url::parse(url).map_err(|error| {
+            tracing::warn!(%error, "request url could not be parsed");
+            JsonClientError::InvalidUrl {
+                reason: "request url could not be parsed",
+            }
+        })?;
         if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(JsonClientError::InvalidUrl);
+            return Err(JsonClientError::InvalidUrl {
+                reason: "request url is not http or https",
+            });
         }
         let response = self
             .fetch_client()?
             .get(parsed)
             .send()
             .await
-            .map_err(|_| JsonClientError::Transport)?;
+            .map_err(|error| {
+                let error = error.without_url();
+                tracing::warn!(%error, "fetch request could not be sent");
+                JsonClientError::Transport {
+                    reason: "fetch request could not be sent",
+                }
+            })?;
         read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
     }
 }
@@ -1543,7 +1752,9 @@ fn apply_secret_headers(
         let header_value = secret_header
             .value
             .with(header::HeaderValue::from_str)
-            .map_err(|_| JsonClientError::InvalidRequest)?;
+            .map_err(|_| JsonClientError::InvalidRequest {
+                reason: "secret header value is not a valid header value",
+            })?;
         request = sensitive_header(request, header_name, header_value);
     }
     Ok(request)
@@ -1557,18 +1768,27 @@ pub fn validate_tls_policy(policy: &TlsPolicy) -> Result<(), JsonClientError> {
 }
 
 fn parse_trusted_roots(pem: &str) -> Result<Vec<reqwest::Certificate>, JsonClientError> {
-    let roots = reqwest::Certificate::from_pem_bundle(pem.as_bytes())
-        .map_err(|_| JsonClientError::ClientConfiguration)?;
+    let roots = reqwest::Certificate::from_pem_bundle(pem.as_bytes()).map_err(|error| {
+        tracing::warn!(%error, "trusted root pem bundle could not be parsed");
+        JsonClientError::ClientConfiguration {
+            reason: "trusted root pem bundle could not be parsed",
+        }
+    })?;
     if roots.is_empty() {
-        return Err(JsonClientError::ClientConfiguration);
+        return Err(JsonClientError::ClientConfiguration {
+            reason: "trusted root pem bundle has no certificates",
+        });
     }
     let mut builder = reqwest::Client::builder();
     for root in &roots {
         builder = builder.add_root_certificate(root.clone());
     }
-    builder
-        .build()
-        .map_err(|_| JsonClientError::ClientConfiguration)?;
+    builder.build().map_err(|error| {
+        tracing::warn!(%error, "http client with trusted roots could not be built");
+        JsonClientError::ClientConfiguration {
+            reason: "http client with trusted roots could not be built",
+        }
+    })?;
     Ok(roots)
 }
 
@@ -1577,7 +1797,7 @@ fn trusted_roots(policy: &TlsPolicy) -> Result<Vec<reqwest::Certificate>, JsonCl
     for pem in &policy.trusted_roots_pem {
         match parse_trusted_roots(pem) {
             Ok(bundle) => roots.extend(bundle),
-            Err(_) => tracing::warn!("invalid stored trusted certificate skipped"),
+            Err(error) => tracing::warn!(%error, "invalid stored trusted certificate skipped"),
         }
     }
     Ok(roots)
@@ -1611,9 +1831,12 @@ fn build_client_with_redirects(
     for root in roots {
         builder = builder.add_root_certificate(root.clone());
     }
-    builder
-        .build()
-        .map_err(|_| JsonClientError::ClientConfiguration)
+    builder.build().map_err(|error| {
+        tracing::warn!(%error, "http client could not be built");
+        JsonClientError::ClientConfiguration {
+            reason: "http client could not be built",
+        }
+    })
 }
 
 /// Redirects are followed up to ten times, but only on the host the request
@@ -1674,14 +1897,18 @@ fn apply_auth(
         JsonAuth::Bearer(value) => {
             let header_value = value
                 .with(|secret| header::HeaderValue::from_str(&format!("Bearer {secret}")))
-                .map_err(|_| JsonClientError::InvalidRequest)?;
+                .map_err(|_| JsonClientError::InvalidRequest {
+                    reason: "bearer secret is not a valid header value",
+                })?;
             sensitive_header(request, header::AUTHORIZATION, header_value)
         }
         JsonAuth::Header { name, value } => {
             let header_name = to_header_name(&name)?;
-            let header_value = value
-                .with(header::HeaderValue::from_str)
-                .map_err(|_| JsonClientError::InvalidRequest)?;
+            let header_value = value.with(header::HeaderValue::from_str).map_err(|_| {
+                JsonClientError::InvalidRequest {
+                    reason: "secret header value is not a valid header value",
+                }
+            })?;
             sensitive_header(request, header_name, header_value)
         }
         JsonAuth::Query { name, value } => {
@@ -1689,7 +1916,9 @@ fn apply_auth(
                 || name.len() > 128
                 || name.chars().any(|character| character.is_control())
             {
-                return Err(JsonClientError::InvalidRequest);
+                return Err(JsonClientError::InvalidRequest {
+                    reason: "query auth name is empty, too long or has control characters",
+                });
             }
             value.with(|secret| request.query(&[(name.as_str(), secret)]))
         }
@@ -1715,11 +1944,13 @@ async fn read_response_limited(
     }
     let mut body = Vec::new();
     let mut response = response;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| JsonClientError::Transport)?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|error| {
+        let error = error.without_url();
+        tracing::warn!(%error, "response body chunk read failed");
+        JsonClientError::Transport {
+            reason: "response body chunk read failed",
+        }
+    })? {
         if body.len().saturating_add(chunk.len()) > max_bytes {
             return Err(JsonClientError::ResponseTooLarge);
         }
@@ -1767,7 +1998,10 @@ fn resolve_header_collection(
     let mut secrets: Vec<JsonSecretHeader> = Vec::with_capacity(secret_headers.len());
     for header in secret_headers {
         if is_transport_reserved_header(header.name.as_str()) {
-            tracing::warn!("ignoring an account header the HTTP client owns");
+            tracing::warn!(
+                reason = "header is owned by the http client",
+                "ignoring an account header"
+            );
             continue;
         }
         secrets.retain(|existing| {
@@ -1787,7 +2021,9 @@ fn resolve_header_collection(
         JsonAuth::Bearer(_) => Some("authorization".to_owned()),
         JsonAuth::Header { name, .. } => {
             if is_transport_reserved_header(name.as_str()) {
-                return Err(JsonClientError::InvalidRequest);
+                return Err(JsonClientError::InvalidRequest {
+                    reason: "auth header name is reserved by the transport",
+                });
             }
             Some(name.as_str().to_ascii_lowercase())
         }
@@ -1804,7 +2040,9 @@ fn resolve_header_collection(
         if is_transport_reserved_header(name.as_str())
             || header::HeaderValue::from_str(header.value).is_err()
         {
-            return Err(JsonClientError::InvalidRequest);
+            return Err(JsonClientError::InvalidRequest {
+                reason: "static header name is reserved or its value is not a valid header value",
+            });
         }
         if account_header(header.name)
             || auth_name
@@ -1826,15 +2064,20 @@ fn apply_static_headers(
     for header in static_headers {
         request = request.header(
             header_name_from_static(header.name)?,
-            header::HeaderValue::from_str(header.value)
-                .map_err(|_| JsonClientError::InvalidRequest)?,
+            header::HeaderValue::from_str(header.value).map_err(|_| {
+                JsonClientError::InvalidRequest {
+                    reason: "static header value is not a valid header value",
+                }
+            })?,
         );
     }
     Ok(request)
 }
 
 fn header_name_from_static(name: &'static str) -> Result<header::HeaderName, JsonClientError> {
-    name.parse().map_err(|_| JsonClientError::InvalidRequest)
+    name.parse().map_err(|_| JsonClientError::InvalidRequest {
+        reason: "static header name is not a valid header name",
+    })
 }
 
 fn sensitive_header(
@@ -1849,7 +2092,9 @@ fn sensitive_header(
 fn to_header_name(name: &HeaderName) -> Result<header::HeaderName, JsonClientError> {
     name.as_str()
         .parse()
-        .map_err(|_| JsonClientError::InvalidRequest)
+        .map_err(|_| JsonClientError::InvalidRequest {
+            reason: "header name is not a valid header name",
+        })
 }
 
 fn is_transport_reserved_header(name: &str) -> bool {
@@ -1871,7 +2116,9 @@ fn is_transport_reserved_header(name: &str) -> bool {
 
 fn validate_query(query: &[JsonQueryParameter<'_>]) -> Result<(), JsonClientError> {
     if query.len() > 16 {
-        return Err(JsonClientError::InvalidRequest);
+        return Err(JsonClientError::InvalidRequest {
+            reason: "query has more than 16 parameters",
+        });
     }
     let mut names = HashSet::with_capacity(query.len());
     for entry in query {
@@ -1882,7 +2129,9 @@ fn validate_query(query: &[JsonQueryParameter<'_>]) -> Result<(), JsonClientErro
             || entry.value.chars().any(char::is_control)
             || !names.insert(entry.name)
         {
-            return Err(JsonClientError::InvalidRequest);
+            return Err(JsonClientError::InvalidRequest {
+                reason: "query parameter name or value is empty, oversized, has control characters or is duplicated",
+            });
         }
     }
     Ok(())
@@ -1898,7 +2147,9 @@ fn build_url(endpoint: &str, path: &str) -> Result<Url, JsonClientError> {
             .chars()
             .any(|character| character.is_control() || character.is_whitespace())
     {
-        return Err(JsonClientError::InvalidUrl);
+        return Err(JsonClientError::InvalidUrl {
+            reason: "fixed query contains a fragment, control characters or whitespace",
+        });
     }
     if endpoint.trim() != endpoint
         || endpoint.is_empty()
@@ -1917,31 +2168,48 @@ fn build_url(endpoint: &str, path: &str) -> Result<Url, JsonClientError> {
             .chars()
             .any(|character| character.is_control() || character.is_whitespace())
     {
-        return Err(JsonClientError::InvalidUrl);
+        return Err(JsonClientError::InvalidUrl {
+            reason: "endpoint or path is empty, oversized, untrimmed, malformed or has control characters",
+        });
     }
     let authority_start = endpoint.find("://").map_or(0, |index| index + 3);
     let raw_path_start = endpoint[authority_start..]
         .find('/')
         .map_or(endpoint.len(), |offset| authority_start + offset);
     if !safe_path(&endpoint[raw_path_start..]) {
-        return Err(JsonClientError::InvalidUrl);
+        return Err(JsonClientError::InvalidUrl {
+            reason: "endpoint path is not safe",
+        });
     }
-    let mut url = Url::parse(endpoint).map_err(|_| JsonClientError::InvalidUrl)?;
+    let mut url = Url::parse(endpoint).map_err(|error| {
+        tracing::warn!(%error, "endpoint could not be parsed as a url");
+        JsonClientError::InvalidUrl {
+            reason: "endpoint could not be parsed as a url",
+        }
+    })?;
     let scheme = url.scheme();
     if scheme != "http" && scheme != "https" {
-        return Err(JsonClientError::InvalidUrl);
+        return Err(JsonClientError::InvalidUrl {
+            reason: "endpoint scheme is not http or https",
+        });
     }
-    url.host_str().ok_or(JsonClientError::InvalidUrl)?;
+    url.host_str().ok_or(JsonClientError::InvalidUrl {
+        reason: "endpoint has no host",
+    })?;
     if !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
         || endpoint_authority_contains_userinfo(endpoint)
     {
-        return Err(JsonClientError::InvalidUrl);
+        return Err(JsonClientError::InvalidUrl {
+            reason: "endpoint has credentials, a fragment or a query",
+        });
     }
     if !safe_path(url.path()) || !safe_path(path) {
-        return Err(JsonClientError::InvalidUrl);
+        return Err(JsonClientError::InvalidUrl {
+            reason: "endpoint or request path is not safe",
+        });
     }
     let base_path = url.path().trim_end_matches('/');
     let chat_path = path.trim_start_matches('/');
@@ -2128,7 +2396,7 @@ mod tests {
             "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 32-63/9999999999999\r\nContent-Length: 32\r\n\r\n01234567890123456789012345678901",
         ] {
             let (endpoint, _) = test_server(response).await;
-            assert_eq!(
+            assert!(matches!(
                 client
                     .read_hugging_face_range_url(
                         Url::parse(&endpoint).expect("url"),
@@ -2138,8 +2406,8 @@ mod tests {
                         None
                     )
                     .await,
-                Err(ArtifactDownloadError::InvalidResponse)
-            );
+                Err(ArtifactDownloadError::InvalidResponse { .. })
+            ));
         }
         let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nContent-Length: 1099511627776\r\n\r\n01234567890123456789012345678901").await;
         let prefix = client
@@ -2202,9 +2470,15 @@ mod tests {
             stream.next_chunk().await.expect("first byte"),
             Some(b"x".to_vec())
         );
-        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        assert!(matches!(
+            stream.next_chunk().await,
+            Err(JsonClientError::Transport { .. })
+        ));
         assert_eq!(stream.received_bytes, 1);
-        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        assert!(matches!(
+            stream.next_chunk().await,
+            Err(JsonClientError::Transport { .. })
+        ));
         server.await.expect("server");
     }
 
@@ -2236,8 +2510,14 @@ mod tests {
             .await
             .expect("headers");
         let mut stream = response_stream(response, Duration::ZERO, 1024);
-        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
-        assert_eq!(stream.next_chunk().await, Err(JsonClientError::Transport));
+        assert!(matches!(
+            stream.next_chunk().await,
+            Err(JsonClientError::Transport { .. })
+        ));
+        assert!(matches!(
+            stream.next_chunk().await,
+            Err(JsonClientError::Transport { .. })
+        ));
         assert_eq!(stream.received_bytes, 0);
         let _ = release.send(());
         server.await.expect("server");
@@ -2657,7 +2937,10 @@ mod tests {
             )
             .await
             .expect_err("avatar limit");
-            assert_eq!(error, ArtifactDownloadError::InvalidResponse);
+            assert!(matches!(
+                error,
+                ArtifactDownloadError::InvalidResponse { .. }
+            ));
         }
         let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nok\r\n0\r\n\r\n").await;
         let client = ArtifactDownloadClient::new().expect("client");
@@ -2672,13 +2955,13 @@ mod tests {
             .expect("unknown size"),
             b"ok"
         );
-        assert_eq!(
+        assert!(matches!(
             client
                 .open_https(&endpoint, 0, 2)
                 .await
                 .expect_err("strict artifact"),
-            ArtifactDownloadError::InvalidRequest
-        );
+            ArtifactDownloadError::InvalidRequest { .. }
+        ));
     }
 
     #[tokio::test]
@@ -2763,14 +3046,14 @@ mod tests {
                 .as_str(),
             "http://192.168.1.20:1234/v1/chat/completions"
         );
-        assert_eq!(
+        assert!(matches!(
             build_url("https://user:pass@example.com", "/chat"),
-            Err(JsonClientError::InvalidUrl)
-        );
-        assert_eq!(
+            Err(JsonClientError::InvalidUrl { .. })
+        ));
+        assert!(matches!(
             build_url("https://example.com", "/chat%2F..%2Fadmin"),
-            Err(JsonClientError::InvalidUrl)
-        );
+            Err(JsonClientError::InvalidUrl { .. })
+        ));
         assert_eq!(
             build_url("http://localhost", "/chat")
                 .expect("loopback")
@@ -2789,14 +3072,14 @@ mod tests {
                 .path(),
             "/v1/chat"
         );
-        assert_eq!(
+        assert!(matches!(
             build_url("https://example.com/v1", "/../chat"),
-            Err(JsonClientError::InvalidUrl)
-        );
-        assert_eq!(
+            Err(JsonClientError::InvalidUrl { .. })
+        ));
+        assert!(matches!(
             build_url("https://example.com/v1/../", "/chat"),
-            Err(JsonClientError::InvalidUrl)
-        );
+            Err(JsonClientError::InvalidUrl { .. })
+        ));
     }
 
     #[test]
@@ -2824,18 +3107,18 @@ mod tests {
             header::HeaderValue::from_static("bytes 5-9/10"),
         );
         assert_eq!(parse_content_range(&headers, 10), Ok(5));
-        assert_eq!(
+        assert!(matches!(
             parse_content_range(&headers, 11),
-            Err(ArtifactDownloadError::InvalidResponse)
-        );
+            Err(ArtifactDownloadError::InvalidResponse { .. })
+        ));
         headers.insert(
             header::CONTENT_RANGE,
             header::HeaderValue::from_static("bytes 9-5/10"),
         );
-        assert_eq!(
+        assert!(matches!(
             parse_content_range(&headers, 10),
-            Err(ArtifactDownloadError::InvalidResponse)
-        );
+            Err(ArtifactDownloadError::InvalidResponse { .. })
+        ));
     }
 
     #[tokio::test]
@@ -2902,6 +3185,6 @@ mod tests {
             )
             .await
             .expect_err("transport header as auth");
-        assert_eq!(error, JsonClientError::InvalidRequest);
+        assert!(matches!(error, JsonClientError::InvalidRequest { .. }));
     }
 }

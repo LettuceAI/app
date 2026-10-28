@@ -494,8 +494,8 @@ pub enum SoulRepositoryError {
     Conflict,
     Invalid(SoulPolicyError),
     OperationMismatch,
-    Corrupt,
-    Failure,
+    Corrupt { reason: String },
+    Failure { reason: String },
 }
 
 pub trait SoulRepository: Send + Sync {

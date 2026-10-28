@@ -32,12 +32,18 @@ pub struct LegacySyncConflict {
     pub fields: Vec<LegacyConflictField>,
 }
 
-fn storage(_: impl std::fmt::Debug) -> ConflictRepositoryError {
-    ConflictRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> ConflictRepositoryError {
+    tracing::warn!(?error, "legacy conflict adapter storage step failed");
+    ConflictRepositoryError::Storage {
+        reason: "legacy conflict adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> ConflictRepositoryError {
-    ConflictRepositoryError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> ConflictRepositoryError {
+    tracing::warn!(?error, "legacy conflict adapter storage step failed");
+    ConflictRepositoryError::Corrupt {
+        reason: "legacy conflict adapter: a storage step failed",
+    }
 }
 
 fn fields(table: &str) -> Option<(&'static str, &'static [&'static str])> {
@@ -78,7 +84,9 @@ fn snapshot(row: &Value, key: &str) -> Result<LegacyConflictSnapshot, ConflictRe
         .and_then(|value| value.get("hex"))
         .and_then(Value::as_str)
         .and_then(decode_legacy_conflict_snapshot)
-        .ok_or(ConflictRepositoryError::Corrupt)
+        .ok_or(ConflictRepositoryError::Corrupt {
+            reason: "snapshot: a required value is missing",
+        })
 }
 
 fn current_fields(
@@ -168,12 +176,16 @@ fn current_fields(
                     parent.parse().map_err(corrupt)?,
                 )
                 .map_err(storage)?
-                .ok_or(ConflictRepositoryError::Corrupt)?;
+                .ok_or(ConflictRepositoryError::Corrupt {
+                    reason: "current fields: a required value is missing",
+                })?;
                 let entry = details
                     .entries
                     .into_iter()
                     .find(|entry| entry.id.to_string() == id)
-                    .ok_or(ConflictRepositoryError::Corrupt)?;
+                    .ok_or(ConflictRepositoryError::Corrupt {
+                        reason: "current fields: a required value is missing",
+                    })?;
                 values.insert("title".into(), entry.title.into());
                 values.insert("content".into(), entry.content.into());
                 values.insert(
@@ -204,7 +216,11 @@ fn current_fields(
                 );
             }
         }
-        _ => return Err(ConflictRepositoryError::Corrupt),
+        _ => {
+            return Err(ConflictRepositoryError::Corrupt {
+                reason: "current fields: a stored value is not recognised",
+            });
+        }
     }
     let mut mapped = values
         .into_iter()
@@ -229,20 +245,24 @@ impl Database {
         let mut conflicts = Vec::new();
         for (run, source_key, json) in rows {
             let row: Value = serde_json::from_str(&json).map_err(corrupt)?;
-            let status = row
-                .get("status")
-                .and_then(Value::as_str)
-                .ok_or(ConflictRepositoryError::Corrupt)?;
+            let status = row.get("status").and_then(Value::as_str).ok_or(
+                ConflictRepositoryError::Corrupt {
+                    reason: "unresolved legacy conflicts: a required value is missing",
+                },
+            )?;
             if status == "resolved" {
                 continue;
             }
             if status != "unresolved" {
-                return Err(ConflictRepositoryError::Corrupt);
+                return Err(ConflictRepositoryError::Corrupt {
+                    reason: "unresolved legacy conflicts: stored data failed a consistency check",
+                });
             }
-            let table = row
-                .get("table_name")
-                .and_then(Value::as_str)
-                .ok_or(ConflictRepositoryError::Corrupt)?;
+            let table = row.get("table_name").and_then(Value::as_str).ok_or(
+                ConflictRepositoryError::Corrupt {
+                    reason: "unresolved legacy conflicts: a required value is missing",
+                },
+            )?;
             let Some((kind, keys)) = fields(table) else {
                 continue;
             };
@@ -254,11 +274,15 @@ impl Database {
             let local = snapshot(&row, "local_row")?;
             let incoming = snapshot(&row, "incoming_row")?;
             if local.primary_key != incoming.primary_key || local.primary_key.len() != 1 {
-                return Err(ConflictRepositoryError::Corrupt);
+                return Err(ConflictRepositoryError::Corrupt {
+                    reason: "unresolved legacy conflicts: stored data failed a consistency check",
+                });
             }
             let source = local.primary_key[0]
                 .as_str()
-                .ok_or(ConflictRepositoryError::Corrupt)?;
+                .ok_or(ConflictRepositoryError::Corrupt {
+                    reason: "unresolved legacy conflicts: a required value is missing",
+                })?;
             let current = current_fields(&connection, &run, kind, source)?;
             let local = local.values.unwrap_or_default();
             let incoming = incoming.values.unwrap_or_default();
@@ -291,9 +315,11 @@ impl Database {
                 entity_kind: kind.into(),
                 entity_id: source.into(),
                 detected_at: TimestampMillis::new(
-                    row.get("detected_at")
-                        .and_then(Value::as_i64)
-                        .ok_or(ConflictRepositoryError::Corrupt)?,
+                    row.get("detected_at").and_then(Value::as_i64).ok_or(
+                        ConflictRepositoryError::Corrupt {
+                            reason: "unresolved legacy conflicts: a required value is missing",
+                        },
+                    )?,
                 ),
                 fields: diff,
             });

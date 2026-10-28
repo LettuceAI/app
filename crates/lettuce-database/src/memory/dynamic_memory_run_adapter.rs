@@ -6,11 +6,12 @@ use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
     DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
     DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRun,
-    DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
-    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat,
-    DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, DynamicMemorySummaryWindow,
-    DynamicMemoryToolCallEvidence, MemoryRepositoryError, MemorySummary, MemoryToolResult,
-    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    DynamicMemoryRunAttemptAdmission, DynamicMemoryRunError, DynamicMemoryRunRepository,
+    DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
+    DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCheckpoint,
+    DynamicMemorySummaryCommit, DynamicMemorySummaryWindow, DynamicMemoryToolCallEvidence,
+    MemoryRepositoryError, MemorySummary, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -22,8 +23,33 @@ use crate::{
 
 const JSON_VERSION: u32 = 1;
 
-fn storage(_: impl std::fmt::Debug) -> DynamicMemoryRunRepositoryError {
-    DynamicMemoryRunRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> DynamicMemoryRunRepositoryError {
+    storage_because("a sqlite statement or value conversion failed")(error)
+}
+
+fn storage_because<E: std::fmt::Debug>(
+    reason: &'static str,
+) -> impl FnOnce(E) -> DynamicMemoryRunRepositoryError {
+    move |error| {
+        tracing::warn!(?error, reason, "dynamic-memory run storage failed");
+        DynamicMemoryRunRepositoryError::Storage { reason }
+    }
+}
+
+fn invalid<E: std::fmt::Display>(
+    reason: &'static str,
+) -> impl FnOnce(E) -> DynamicMemoryRunRepositoryError {
+    move |error| {
+        tracing::warn!(%error, reason, "dynamic-memory run record is invalid");
+        DynamicMemoryRunRepositoryError::Invalid { reason }
+    }
+}
+
+fn invalid_run(error: DynamicMemoryRunError) -> DynamicMemoryRunRepositoryError {
+    tracing::warn!(%error, "dynamic-memory run record is invalid");
+    DynamicMemoryRunRepositoryError::Invalid {
+        reason: error.reason(),
+    }
 }
 
 fn parse_id<T: FromStr>(value: String) -> rusqlite::Result<T> {
@@ -39,7 +65,12 @@ fn revision(value: i64) -> rusqlite::Result<Revision> {
 }
 
 fn sql_u64(value: u64) -> Result<i64, DynamicMemoryRunRepositoryError> {
-    i64::try_from(value).map_err(|_| DynamicMemoryRunRepositoryError::Storage)
+    i64::try_from(value).map_err(|error| {
+        tracing::warn!(%error, "a value does not fit a sqlite integer");
+        DynamicMemoryRunRepositoryError::Storage {
+            reason: "value does not fit a sqlite integer",
+        }
+    })
 }
 
 fn optional_count(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<u64>> {
@@ -179,8 +210,7 @@ pub(crate) fn load_run_in(
         .map_err(storage)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(storage)?;
-    run.validate()
-        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+    run.validate().map_err(invalid_run)?;
     Ok(run)
 }
 
@@ -234,9 +264,7 @@ pub(crate) fn load_attempt_in(
         .optional()
         .map_err(storage)?
         .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
-    attempt
-        .validate()
-        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+    attempt.validate().map_err(invalid_run)?;
     Ok(attempt)
 }
 
@@ -284,7 +312,7 @@ fn publish_summary_checkpoint_in(
         lettuce_memory::MemoryRepositoryError::NotFound => {
             DynamicMemoryRunRepositoryError::NotFound
         }
-        _ => DynamicMemoryRunRepositoryError::Storage,
+        error => storage_because("memory space read failed")(error),
     })
 }
 
@@ -364,7 +392,9 @@ pub(crate) fn load_summary_checkpoint_in(
     if run.space_id != space_id
         || resulting_memory_revision.get() != expected_memory_revision.get().saturating_add(1)
     {
-        return Err(DynamicMemoryRunRepositoryError::Invalid);
+        return Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "settlement does not match the run space or the next revision",
+        });
     }
     let usage = match (input_tokens, output_tokens) {
         (Some(input), Some(output)) => Some(InferenceUsage {
@@ -380,7 +410,11 @@ pub(crate) fn load_summary_checkpoint_in(
             output_tokens: u64::try_from(output).map_err(storage)?,
         }),
         (None, None) => None,
-        _ => return Err(DynamicMemoryRunRepositoryError::Invalid),
+        _ => {
+            return Err(DynamicMemoryRunRepositoryError::Invalid {
+                reason: "stored usage has only one of input and output tokens",
+            });
+        }
     };
     let summary = MemorySummary {
         origin: lettuce_memory::MemoryOrigin::Model,
@@ -399,10 +433,10 @@ pub(crate) fn load_summary_checkpoint_in(
     };
     summary
         .validate()
-        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        .map_err(invalid("generated summary failed validation"))?;
     request_context
         .validate()
-        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        .map_err(invalid("request context failed validation"))?;
     Ok(Some(DynamicMemorySummaryCheckpoint {
         run_id,
         attempt_id,
@@ -462,8 +496,7 @@ fn list_calls_in(
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(storage)?;
     for call in &calls {
-        call.validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        call.validate().map_err(invalid_run)?;
     }
     Ok(calls)
 }
@@ -574,9 +607,7 @@ pub(crate) fn list_rounds_in(
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(storage)?;
     for round in &rounds {
-        round
-            .validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        round.validate().map_err(invalid_run)?;
     }
     Ok(rounds)
 }
@@ -888,7 +919,11 @@ pub(crate) fn insert_restored_run_in(
                     match source.role {
                         lettuce_conversations::MessageRole::User => "user",
                         lettuce_conversations::MessageRole::Assistant => "assistant",
-                        _ => return Err(DynamicMemoryRunRepositoryError::Invalid),
+                        _ => {
+    return Err(DynamicMemoryRunRepositoryError::Invalid {
+        reason: "source message role is neither user nor assistant",
+    });
+}
                     },
                     revision_id,
                     candidate_id,
@@ -983,7 +1018,9 @@ pub(crate) fn insert_restored_run_in(
                 .map_err(storage)?;
         }
         if revision != exported {
-            return Err(DynamicMemoryRunRepositoryError::Invalid);
+            return Err(DynamicMemoryRunRepositoryError::Invalid {
+                reason: "attempt revision after the update differs from the exported revision",
+            });
         }
     }
     if let Some(checkpoint) = &backup.summary_checkpoint {
@@ -1003,7 +1040,9 @@ pub(crate) fn insert_restored_run_in(
                     sql_u64(checkpoint.expected_memory_revision.get())?,
                     sql_u64(checkpoint.resulting_memory_revision.get())?,
                     checkpoint.summary.text,
-                    checkpoint.summary.token_count.map(i64::from).ok_or(DynamicMemoryRunRepositoryError::Invalid)?,
+                    checkpoint.summary.token_count.map(i64::from).ok_or(DynamicMemoryRunRepositoryError::Invalid {
+    reason: "summary checkpoint has no token count",
+})?,
                     encode_versioned(&checkpoint.request_context, JSON_VERSION).map_err(storage)?,
                     usage.map(|usage| sql_u64(usage.input_tokens)).transpose()?,
                     usage.map(|usage| sql_u64(usage.output_tokens)).transpose()?,
@@ -1120,9 +1159,7 @@ impl DynamicMemoryRunRepository for Database {
         &self,
         mut input: NewDynamicMemoryRunAttempt,
     ) -> Result<DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepositoryError> {
-        input
-            .validate_cycle_start()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        input.validate_cycle_start().map_err(invalid_run)?;
         let cycle_start_change = input.cycle_start_change.take();
         let requested_run = DynamicMemoryRun {
             id: input.run_id,
@@ -1139,9 +1176,7 @@ impl DynamicMemoryRunRepository for Database {
             tool_request: input.tool_request,
             created_at: input.now,
         };
-        requested_run
-            .validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        requested_run.validate().map_err(invalid_run)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1183,22 +1218,30 @@ impl DynamicMemoryRunRepository for Database {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
         let cycle_before = memory_adapter::get_in(&transaction, requested_run.space_id)
-            .map_err(|_| DynamicMemoryRunRepositoryError::Storage)?
+            .map_err(storage_because(
+                "reading the memory space before the cycle start failed",
+            ))?
             .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
         if let Some(change) = &cycle_start_change {
             memory_adapter::compare_and_apply_in(&transaction, change).map_err(
                 |error| match error {
                     MemoryRepositoryError::Conflict => DynamicMemoryRunRepositoryError::Conflict,
                     MemoryRepositoryError::NotFound => DynamicMemoryRunRepositoryError::NotFound,
-                    MemoryRepositoryError::Invalid(_) => DynamicMemoryRunRepositoryError::Invalid,
+                    MemoryRepositoryError::Invalid(_) => DynamicMemoryRunRepositoryError::Invalid {
+                        reason: "cycle start memory change was rejected as invalid",
+                    },
                     MemoryRepositoryError::AlreadyExists | MemoryRepositoryError::Failure(_) => {
-                        DynamicMemoryRunRepositoryError::Storage
+                        DynamicMemoryRunRepositoryError::Storage {
+                            reason: "cycle start memory change could not be stored",
+                        }
                     }
                 },
             )?;
         }
         if memory_adapter::get_in(&transaction, requested_run.space_id)
-            .map_err(|_| DynamicMemoryRunRepositoryError::Storage)?
+            .map_err(storage_because(
+                "reading the memory space after the cycle start failed",
+            ))?
             .as_ref()
             != Some(&requested_run.starting_memory)
         {
@@ -1231,7 +1274,7 @@ impl DynamicMemoryRunRepository for Database {
                 Some(rusqlite::ErrorCode::ConstraintViolation) => {
                     DynamicMemoryRunRepositoryError::Conflict
                 }
-                _ => DynamicMemoryRunRepositoryError::Storage,
+                _ => storage_because("sqlite write failed")(error)
             })?;
         record_changed_items_in(&transaction, requested_run.id, &cycle_before, &requested_run.starting_memory)?;
         for (ordinal, source) in requested_run.source_messages.iter().enumerate() {
@@ -1263,7 +1306,7 @@ impl DynamicMemoryRunRepository for Database {
                     Some(rusqlite::ErrorCode::ConstraintViolation) => {
                         DynamicMemoryRunRepositoryError::Conflict
                     }
-                    _ => DynamicMemoryRunRepositoryError::Storage,
+                    _ => storage_because("sqlite write failed")(error)
                 })?;
         }
         transaction
@@ -1384,7 +1427,9 @@ impl DynamicMemoryRunRepository for Database {
         input: NewDynamicMemoryAttemptRecovery,
     ) -> Result<DynamicMemoryAttemptRecovery, DynamicMemoryRunRepositoryError> {
         if input.parent_attempt_id == input.child_attempt_id {
-            return Err(DynamicMemoryRunRepositoryError::Invalid);
+            return Err(DynamicMemoryRunRepositoryError::Invalid {
+                reason: "recovery parent and child attempt ids are the same",
+            });
         }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -1408,10 +1453,11 @@ impl DynamicMemoryRunRepository for Database {
         let parent_rounds = list_rounds_in(&transaction, input.run_id, parent.id)?;
         match load_attempt_in(&transaction, input.child_attempt_id) {
             Ok(child) => {
-                let expected_ordinal = parent
-                    .ordinal
-                    .checked_add(1)
-                    .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+                let expected_ordinal = parent.ordinal.checked_add(1).ok_or(
+                    DynamicMemoryRunRepositoryError::Storage {
+                        reason: "parent attempt ordinal overflows",
+                    },
+                )?;
                 let mut expected_rounds = parent_rounds.clone();
                 for round in &mut expected_rounds {
                     round.attempt_id = child.id;
@@ -1469,10 +1515,13 @@ impl DynamicMemoryRunRepository for Database {
         {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
-        let child_ordinal = parent
-            .ordinal
-            .checked_add(1)
-            .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+        let child_ordinal =
+            parent
+                .ordinal
+                .checked_add(1)
+                .ok_or(DynamicMemoryRunRepositoryError::Storage {
+                    reason: "parent attempt ordinal overflows",
+                })?;
         let actual_next: i64 = transaction
             .query_row(
                 "SELECT coalesce(max(ordinal) + 1, 0) FROM dynamic_memory_run_attempts \
@@ -1523,7 +1572,7 @@ impl DynamicMemoryRunRepository for Database {
                 Some(rusqlite::ErrorCode::ConstraintViolation) => {
                     DynamicMemoryRunRepositoryError::Conflict
                 }
-                _ => DynamicMemoryRunRepositoryError::Storage,
+                _ => storage_because("sqlite write failed")(error),
             })?;
         for mut round in parent_rounds {
             let settlement = load_background_settlement_in(
@@ -1560,11 +1609,11 @@ impl DynamicMemoryRunRepository for Database {
         expected_next_call_ordinal: u16,
         round: NewDynamicMemoryInferenceRound,
     ) -> Result<DynamicMemoryInferenceRound, DynamicMemoryRunRepositoryError> {
-        round
-            .validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        round.validate().map_err(invalid_run)?;
         if round.ordinal != expected_round_ordinal {
-            return Err(DynamicMemoryRunRepositoryError::Invalid);
+            return Err(DynamicMemoryRunRepositoryError::Invalid {
+                reason: "round ordinal differs from the expected round ordinal",
+            });
         }
         let requested = DynamicMemoryInferenceRound {
             run_id,
@@ -1590,7 +1639,9 @@ impl DynamicMemoryRunRepository for Database {
                         round_ordinal: expected_round_ordinal,
                         ordinal: expected_next_call_ordinal
                             .checked_add(u16::try_from(offset).map_err(storage)?)
-                            .ok_or(DynamicMemoryRunRepositoryError::Invalid)?,
+                            .ok_or(DynamicMemoryRunRepositoryError::Invalid {
+                                reason: "tool call ordinal overflows",
+                            })?,
                         definition_version: call.definition_version,
                         call: call.call,
                         admitted_at: round.admitted_at,
@@ -1599,9 +1650,7 @@ impl DynamicMemoryRunRepository for Database {
                 .collect::<Result<Vec<_>, DynamicMemoryRunRepositoryError>>()?,
             admitted_at: round.admitted_at,
         };
-        requested
-            .validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        requested.validate().map_err(invalid_run)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1629,7 +1678,9 @@ impl DynamicMemoryRunRepository for Database {
         let stored = list_rounds_in(&transaction, run_id, attempt_id)?
             .last()
             .cloned()
-            .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+            .ok_or(DynamicMemoryRunRepositoryError::Storage {
+                reason: "admitted round is missing after insert",
+            })?;
         if stored != requested {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
@@ -1701,7 +1752,9 @@ impl DynamicMemoryRunRepository for Database {
                     || change.validate().is_err()
             })
         {
-            return Err(DynamicMemoryRunRepositoryError::Invalid);
+            return Err(DynamicMemoryRunRepositoryError::Invalid {
+                reason: "background round has no results or an inconsistent memory change",
+            });
         }
         let digest = background_change_digest(&commit.change)?;
         let mut connection = self.connection().map_err(storage)?;
@@ -1801,7 +1854,9 @@ impl DynamicMemoryRunRepository for Database {
             commit.round_ordinal,
         )?
         .map(|(settlement, _)| settlement)
-        .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+        .ok_or(DynamicMemoryRunRepositoryError::Storage {
+            reason: "background round settlement is missing after commit",
+        })?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -1822,13 +1877,15 @@ impl DynamicMemoryRunRepository for Database {
         commit
             .request_context
             .validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+            .map_err(invalid("request context failed validation"))?;
         if commit
             .provider_request_id
             .as_ref()
             .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
         {
-            return Err(DynamicMemoryRunRepositoryError::Invalid);
+            return Err(DynamicMemoryRunRepositoryError::Invalid {
+                reason: "provider request id is empty or too long",
+            });
         }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -1883,7 +1940,7 @@ impl DynamicMemoryRunRepository for Database {
         };
         summary
             .validate()
-            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+            .map_err(invalid("generated summary failed validation"))?;
         let applied = memory_adapter::advance_revision_in(
             &transaction,
             run.space_id,
@@ -1896,7 +1953,7 @@ impl DynamicMemoryRunRepository for Database {
             lettuce_memory::MemoryRepositoryError::NotFound => {
                 DynamicMemoryRunRepositoryError::NotFound
             }
-            _ => DynamicMemoryRunRepositoryError::Storage,
+            error => storage_because("memory space revision advance failed")(error),
         })?;
         let (input_tokens, output_tokens) = commit
             .usage
@@ -1924,7 +1981,9 @@ impl DynamicMemoryRunRepository for Database {
                     sql_u64(commit.expected_memory_revision.get())?,
                     sql_u64(applied.revision.get())?,
                     summary.text,
-                    summary.token_count.map(i64::from).ok_or(DynamicMemoryRunRepositoryError::Invalid)?,
+                    summary.token_count.map(i64::from).ok_or(DynamicMemoryRunRepositoryError::Invalid {
+    reason: "summary has no token count",
+})?,
                     encode_versioned(&commit.request_context, JSON_VERSION).map_err(storage)?,
                     input_tokens,
                     output_tokens,
@@ -1951,8 +2010,11 @@ impl DynamicMemoryRunRepository for Database {
                 ],
             )
             .map_err(storage)?;
-        let stored = load_summary_checkpoint_in(&transaction, run.id)?
-            .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+        let stored = load_summary_checkpoint_in(&transaction, run.id)?.ok_or(
+            DynamicMemoryRunRepositoryError::Storage {
+                reason: "summary checkpoint is missing after insert",
+            },
+        )?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -4091,7 +4153,7 @@ pub(crate) mod tests {
         let mut stale = change.clone();
         stale.expected_revision = Revision::new(7);
         let stale_run = DynamicMemoryRunId::new();
-        assert_eq!(
+        assert!(matches!(
             database
                 .admit_dynamic_memory_run_attempt(admission(
                     stale_run,
@@ -4099,8 +4161,8 @@ pub(crate) mod tests {
                     Some(stale),
                 ))
                 .err(),
-            Some(DynamicMemoryRunRepositoryError::Invalid)
-        );
+            Some(DynamicMemoryRunRepositoryError::Invalid { .. })
+        ));
         assert_eq!(
             database.get(space_id).expect("memory").expect("space"),
             before

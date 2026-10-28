@@ -32,22 +32,22 @@ pub struct LorebookKeywordExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LorebookKeywordExecutionError {
-    #[error("lorebook keyword generation execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("lorebook keyword generation prompt is invalid")]
-    InvalidPrompt,
+    #[error("lorebook keyword generation execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("lorebook keyword generation prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("lorebook keyword generation inference was cancelled")]
     Cancelled,
-    #[error("lorebook keyword generation inference returned an invalid response")]
-    InvalidResponse,
-    #[error("lorebook keyword generation request is too large")]
-    ContextTooLarge,
+    #[error("lorebook keyword generation inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
+    #[error("lorebook keyword generation request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("lorebook keyword generation prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("lorebook keyword generation provider failed: {0}")]
     Inference(PortError),
-    #[error("lorebook keyword generation replay cleanup failed")]
-    ReplayCleanup,
+    #[error("lorebook keyword generation replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("lorebook keyword generation run persistence failed: {0}")]
     Run(LorebookKeywordRunRepositoryError),
 }
@@ -102,7 +102,9 @@ where
                 self.repository,
                 crate::BuiltInPromptId::LorebookRuntime,
             )
-            .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)
+            .map_err(|error| LorebookKeywordExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            })
         };
         let mut attempts = self
             .repository
@@ -147,7 +149,8 @@ where
                 Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(
                     PortError::Cancelled,
                 )) => return Err(LorebookKeywordExecutionError::Cancelled),
-                Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence) => {
+                Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence { reason }) => {
+                    tracing::warn!(%reason, "lorebook inference usage evidence failed");
                     return Err(LorebookKeywordExecutionError::Inference(
                         PortError::Unavailable,
                     ));
@@ -179,7 +182,9 @@ where
             attempts.last().map(|attempt| &attempt.decision),
             Some(LorebookKeywordAttemptDecision::StructuredFallback)
         ) {
-            return Err(LorebookKeywordExecutionError::InvalidResponse);
+            return Err(LorebookKeywordExecutionError::InvalidResponse {
+                reason: "the last attempt is not a structured fallback attempt".to_owned(),
+            });
         }
         tracing::warn!(
             request_id = %request_id,
@@ -221,7 +226,11 @@ where
                 self.job_attempt,
             )
             .map_err(LorebookKeywordExecutionError::Run)?;
-        completed_result(&attempts, replayed)?.ok_or(LorebookKeywordExecutionError::InvalidResponse)
+        completed_result(&attempts, replayed)?.ok_or(
+            LorebookKeywordExecutionError::InvalidResponse {
+                reason: "the committed attempts hold no completed result".to_owned(),
+            },
+        )
     }
 }
 
@@ -236,7 +245,9 @@ fn validate_ownership(
         || prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::LorebookKeywordGenerator
     {
-        return Err(LorebookKeywordExecutionError::InvalidOwnership);
+        return Err(LorebookKeywordExecutionError::InvalidOwnership {
+            reason: "run belongs to another job, or the prompt differs from the run snapshot or is not an active prompt of the right purpose",
+        });
     }
     Ok(())
 }
@@ -374,13 +385,18 @@ fn completed_result(
         LorebookKeywordAttemptDecision::Result(result) => {
             Ok(Some(LorebookKeywordExecutionResult {
                 result: result.clone(),
-                attempts: u8::try_from(attempts.len())
-                    .map_err(|_| LorebookKeywordExecutionError::InvalidResponse)?,
+                attempts: u8::try_from(attempts.len()).map_err(|error| {
+                    LorebookKeywordExecutionError::InvalidResponse {
+                        reason: error.to_string(),
+                    }
+                })?,
                 replayed,
             }))
         }
         LorebookKeywordAttemptDecision::Invalid => {
-            Err(LorebookKeywordExecutionError::InvalidResponse)
+            Err(LorebookKeywordExecutionError::InvalidResponse {
+                reason: "stored attempt decision is invalid".to_owned(),
+            })
         }
         LorebookKeywordAttemptDecision::StructuredFallback => Ok(None),
     }
@@ -396,7 +412,9 @@ fn build_request(
 ) -> Result<InferenceRequest, LorebookKeywordExecutionError> {
     let fragment = |key: &str| {
         text.render_with(key, [])
-            .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)
+            .map_err(|error| LorebookKeywordExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            })
     };
     let tool_texts = lettuce_creation::LOREBOOK_KEYWORD_TOOL_TEXT_KEYS
         .iter()
@@ -448,7 +466,9 @@ fn build_request(
     };
     request
         .validate()
-        .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)?;
+        .map_err(|error| LorebookKeywordExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     Ok(request)
 }
 
@@ -514,7 +534,9 @@ fn render_context(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)?;
+        .map_err(|error| LorebookKeywordExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        })?;
     if prompt.condense {
         condense_prompt_messages(&mut messages);
     }
@@ -524,7 +546,9 @@ fn render_context(
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)
+                .map_err(|error| LorebookKeywordExecutionError::InvalidPrompt {
+                    reason: error.to_string(),
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
@@ -575,13 +599,18 @@ fn text_bytes(messages: &[ProviderNeutralMessage]) -> Result<u32, LorebookKeywor
         })
         .try_fold(0usize, usize::checked_add)
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(LorebookKeywordExecutionError::ContextTooLarge)
+        .ok_or(LorebookKeywordExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })
 }
 
 fn cleanup<R: ProviderReplayArtifactPort + ?Sized>(
     repository: &R,
     outcome: &InferenceOutcome,
 ) -> Result<(), LorebookKeywordExecutionError> {
-    cleanup_outcome_replays(repository, outcome)
-        .map_err(|_| LorebookKeywordExecutionError::ReplayCleanup)
+    cleanup_outcome_replays(repository, outcome).map_err(|error| {
+        LorebookKeywordExecutionError::ReplayCleanup {
+            reason: error.to_string(),
+        }
+    })
 }

@@ -29,22 +29,22 @@ pub struct CompanionConsolidationExecutionResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionConsolidationExecutionError {
-    #[error("companion consolidation execution ownership is invalid")]
-    InvalidOwnership,
-    #[error("companion consolidation prompt is invalid")]
-    InvalidPrompt,
+    #[error("companion consolidation execution ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("companion consolidation prompt is invalid: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("companion consolidation inference was cancelled")]
     Cancelled,
-    #[error("companion consolidation inference returned an invalid response")]
-    InvalidResponse,
-    #[error("companion consolidation request is too large")]
-    ContextTooLarge,
+    #[error("companion consolidation inference returned an invalid response: {reason}")]
+    InvalidResponse { reason: String },
+    #[error("companion consolidation request is too large: {reason}")]
+    ContextTooLarge { reason: &'static str },
     #[error("companion consolidation prompt rendering failed: {0}")]
     Prompt(#[from] PromptRenderError),
     #[error("companion consolidation provider failed: {0}")]
     Inference(PortError),
-    #[error("companion consolidation replay cleanup failed")]
-    ReplayCleanup,
+    #[error("companion consolidation replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("companion consolidation run persistence failed: {0}")]
     Run(CompanionConsolidationRunRepositoryError),
     #[error("companion consolidation policy rejected proposals: {0:?}")]
@@ -88,7 +88,9 @@ impl<
         now: TimestampMillis,
     ) -> Result<CompanionConsolidationExecutionResult, CompanionConsolidationExecutionError> {
         if handle.id() != job_id {
-            return Err(CompanionConsolidationExecutionError::InvalidOwnership);
+            return Err(CompanionConsolidationExecutionError::InvalidOwnership {
+                reason: "handle belongs to another job",
+            });
         }
         let mut run = self
             .repository
@@ -110,7 +112,11 @@ impl<
                         self.repository,
                         crate::BuiltInPromptId::CompanionRuntime,
                     )
-                    .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)?,
+                    .map_err(|error| {
+                        CompanionConsolidationExecutionError::InvalidPrompt {
+                            reason: error.to_string(),
+                        }
+                    })?,
                     handle,
                     stream_sink,
                 )?,
@@ -128,12 +134,23 @@ impl<
                 cleanup(self.repository, &outcome)?;
                 return Err(CompanionConsolidationExecutionError::Cancelled);
             }
-            if outcome.validate().is_err()
-                || outcome.candidates.len() != 1
-                || matches!(outcome.finish_reason, FinishReason::Error)
-            {
+            if let Err(error) = outcome.validate() {
                 cleanup(self.repository, &outcome)?;
-                return Err(CompanionConsolidationExecutionError::InvalidResponse);
+                return Err(CompanionConsolidationExecutionError::InvalidResponse {
+                    reason: format!("outcome failed validation: {error}"),
+                });
+            }
+            if outcome.candidates.len() != 1 {
+                cleanup(self.repository, &outcome)?;
+                return Err(CompanionConsolidationExecutionError::InvalidResponse {
+                    reason: "outcome has more or fewer than one candidate".to_owned(),
+                });
+            }
+            if matches!(outcome.finish_reason, FinishReason::Error) {
+                cleanup(self.repository, &outcome)?;
+                return Err(CompanionConsolidationExecutionError::InvalidResponse {
+                    reason: "provider finished with an error".to_owned(),
+                });
             }
             let candidate = &outcome.candidates[0];
             let fallback = candidate
@@ -164,10 +181,11 @@ impl<
             };
             cleanup(self.repository, &outcome)?;
         }
-        let checkpoint = run
-            .proposal_checkpoint
-            .as_ref()
-            .ok_or(CompanionConsolidationExecutionError::InvalidOwnership)?;
+        let checkpoint = run.proposal_checkpoint.as_ref().ok_or(
+            CompanionConsolidationExecutionError::InvalidOwnership {
+                reason: "run has no proposal checkpoint",
+            },
+        )?;
         if checkpoint.proposal.core_adjustments.is_empty()
             && checkpoint.proposal.retire_ids.is_empty()
         {
@@ -258,13 +276,19 @@ fn build_request(
     if prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::CompanionConsolidation
     {
-        return Err(CompanionConsolidationExecutionError::InvalidPrompt);
+        return Err(CompanionConsolidationExecutionError::InvalidPrompt {
+            reason: "prompt is inactive or has the wrong purpose".to_owned(),
+        });
     }
     let consolidation = crate::companion::companion_prompt_text::render_consolidation_values(
         text,
         &consolidation_prompt_facts(&run.authored_soul, &run.soul, run.created_at),
     )
-    .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)?;
+    .map_err(
+        |error| CompanionConsolidationExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        },
+    )?;
     let mut values = PromptRenderValues {
         character_name: run.companion_name.clone(),
         ..PromptRenderValues::default()
@@ -303,19 +327,29 @@ fn build_request(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)?;
+        .map_err(
+            |error| CompanionConsolidationExecutionError::InvalidPrompt {
+                reason: error.to_string(),
+            },
+        )?;
     let in_chat = rendered
         .in_chat
         .iter()
         .map(|entry| {
             rendered_message(entry)
                 .map(|message| (entry.depth, message))
-                .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)
+                .map_err(
+                    |error| CompanionConsolidationExecutionError::InvalidPrompt {
+                        reason: error.to_string(),
+                    },
+                )
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
     if messages.is_empty() {
-        return Err(CompanionConsolidationExecutionError::InvalidPrompt);
+        return Err(CompanionConsolidationExecutionError::InvalidPrompt {
+            reason: "rendered prompt has no messages".to_owned(),
+        });
     }
     let input_bytes = messages
         .iter()
@@ -327,7 +361,9 @@ fn build_request(
             _ => None,
         })
         .and_then(|value| u32::try_from(value).ok())
-        .ok_or(CompanionConsolidationExecutionError::ContextTooLarge)?;
+        .ok_or(CompanionConsolidationExecutionError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
     let mut profile = run.profile.clone();
     profile.tool_policy = ToolPolicy::Required;
     profile.output_policy = OutputPolicy::Plain;
@@ -362,8 +398,11 @@ fn build_request(
                 ..Default::default()
             },
             budget: ContextBudgetReport {
-                selected_messages: u32::try_from(run.soul.facts.len())
-                    .map_err(|_| CompanionConsolidationExecutionError::ContextTooLarge)?,
+                selected_messages: u32::try_from(run.soul.facts.len()).map_err(|_| {
+                    CompanionConsolidationExecutionError::ContextTooLarge {
+                        reason: "selected message count does not fit in u32",
+                    }
+                })?,
                 omitted_messages: 0,
                 input_bytes,
                 estimated_input_tokens: input_bytes.saturating_add(3) / 4,
@@ -378,9 +417,11 @@ fn build_request(
         })),
         prompt_cache_key: None,
     };
-    request
-        .validate()
-        .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)?;
+    request.validate().map_err(
+        |error| CompanionConsolidationExecutionError::InvalidPrompt {
+            reason: error.to_string(),
+        },
+    )?;
     Ok(request)
 }
 
@@ -388,6 +429,9 @@ fn cleanup<R: ProviderReplayArtifactPort + ?Sized>(
     repository: &R,
     outcome: &lettuce_conversations::InferenceOutcome,
 ) -> Result<(), CompanionConsolidationExecutionError> {
-    cleanup_outcome_replays(repository, outcome)
-        .map_err(|_| CompanionConsolidationExecutionError::ReplayCleanup)
+    cleanup_outcome_replays(repository, outcome).map_err(|error| {
+        CompanionConsolidationExecutionError::ReplayCleanup {
+            reason: error.to_string(),
+        }
+    })
 }

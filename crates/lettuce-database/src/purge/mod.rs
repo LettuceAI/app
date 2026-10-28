@@ -22,8 +22,8 @@ pub enum PurgeError {
     Integrity,
     #[error("the deletion request conflicts with current state")]
     Conflict,
-    #[error("purge storage failed")]
-    Storage,
+    #[error("purge storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -70,8 +70,11 @@ impl PurgeKind {
     }
 }
 
-fn storage(_: impl std::fmt::Debug) -> PurgeError {
-    PurgeError::Storage
+fn storage(error: impl std::fmt::Debug) -> PurgeError {
+    tracing::warn!(?error, "purge storage step failed");
+    PurgeError::Storage {
+        reason: "a purge storage step failed",
+    }
 }
 
 const TERMINAL_TURN: &str = "('succeeded', 'failed', 'cancelled', 'interrupted')";
@@ -329,9 +332,12 @@ impl<'c> Purge<'c> {
             "entity_kind = 'conversation' AND entity_id = ?1",
             one,
         )?;
-        self.receipt
-            .conversations
-            .push(id.parse().map_err(|_| PurgeError::Storage)?);
+        self.receipt.conversations.push(id.parse().map_err(|error| {
+            tracing::warn!(%error, "conversation failed");
+            PurgeError::Storage {
+                reason: "conversation: a storage step failed",
+            }
+        })?);
         Ok(())
     }
 
@@ -572,9 +578,12 @@ impl<'c> Purge<'c> {
             "entity_kind = 'character' AND entity_id = ?1",
             one,
         )?;
-        self.receipt
-            .characters
-            .push(id.parse().map_err(|_| PurgeError::Storage)?);
+        self.receipt.characters.push(id.parse().map_err(|error| {
+            tracing::warn!(%error, "character failed");
+            PurgeError::Storage {
+                reason: "character: a storage step failed",
+            }
+        })?);
         Ok(())
     }
 
@@ -611,7 +620,9 @@ impl<'c> Purge<'c> {
                     |row| row.get(0),
                 )
                 .map_err(storage)?;
-            let offset = largest.checked_add(1).ok_or(PurgeError::Storage)?;
+            let offset = largest.checked_add(1).ok_or(PurgeError::Storage {
+                reason: "leave groups: a required value is missing",
+            })?;
             self.connection
                 .execute(
                     "UPDATE group_members SET ordinal = ordinal + ?2 WHERE group_id = ?1",
@@ -717,7 +728,12 @@ impl<'c> Purge<'c> {
                 .optional()
                 .map_err(storage)?;
             if let Some(parent) = dangling {
-                tracing::error!(table, parent, "a purge would leave a dangling reference");
+                tracing::error!(
+                    table,
+                    parent,
+                    reason = "a row still references a purged parent",
+                    "a purge would leave a dangling reference"
+                );
                 return Err(PurgeError::Integrity);
             }
         }
@@ -875,8 +891,13 @@ fn purge_on(
     let result = purge_transaction(connection, now, work);
     if !restore_foreign_keys(connection) {
         foreign_keys_lost.store(true, Ordering::SeqCst);
-        tracing::error!("foreign key enforcement could not be restored after a purge");
-        return Err(PurgeError::Storage);
+        tracing::error!(
+            reason = "restoring the foreign_keys pragma failed",
+            "foreign key enforcement could not be restored after a purge"
+        );
+        return Err(PurgeError::Storage {
+            reason: "foreign key enforcement could not be restored after the purge",
+        });
     }
     result
 }
@@ -1003,7 +1024,9 @@ pub(crate) fn run_queued_purges_on(
                     .map_err(storage)?;
             }
             Err(_) if foreign_keys_lost.load(Ordering::SeqCst) => {
-                return Err(PurgeError::Storage);
+                return Err(PurgeError::Storage {
+                    reason: "run queued purges on: stored data failed a consistency check",
+                });
             }
             Err(PurgeError::Busy) => {}
             Err(error) => {
@@ -1279,12 +1302,16 @@ impl Database {
                     entity: PurgeNoticeEntity::ALL
                         .into_iter()
                         .find(|value| value.name() == entity)
-                        .ok_or(PurgeError::Storage)?,
+                        .ok_or(PurgeError::Storage {
+                            reason: "purge notices: a required value is missing",
+                        })?,
                     entity_id,
                     reason: PurgeNoticeReason::ALL
                         .into_iter()
                         .find(|value| value.name() == reason)
-                        .ok_or(PurgeError::Storage)?,
+                        .ok_or(PurgeError::Storage {
+                            reason: "purge notices: a required value is missing",
+                        })?,
                     recorded_at: TimestampMillis::new(recorded_at),
                 })
             })

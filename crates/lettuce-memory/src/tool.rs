@@ -886,7 +886,10 @@ impl MemoryToolReducer {
                 policy.decay_rate.ratio() / (1.0 + f64::from(item.access_count).sqrt());
             let next = (item.importance.ratio() - adaptive_rate).max(0.0);
             item.importance =
-                Score::from_ratio(next).map_err(|_| MemoryToolError::InvalidField("importance"))?;
+                Score::from_ratio(next).map_err(|error| MemoryToolError::InvalidField {
+                    field: "importance",
+                    reason: error.to_string(),
+                })?;
             decayed += 1;
             if item.importance < policy.cold_threshold {
                 item.is_cold = true;
@@ -1226,7 +1229,9 @@ fn enforce_hot_budget(
         .iter()
         .filter(|item| !item.is_cold)
         .try_fold(0u32, |total, item| {
-            let count = item.token_count.ok_or(MemoryToolError::UnknownTokenCount)?;
+            let count = item.token_count.ok_or(MemoryToolError::UnknownTokenCount {
+                reason: "a hot memory has no token count",
+            })?;
             Ok::<_, MemoryToolError>(total.saturating_add(count))
         })?;
     if current <= budget {
@@ -1246,11 +1251,11 @@ fn enforce_hot_budget(
             break;
         }
         items[index].is_cold = true;
-        current = current.saturating_sub(
-            items[index]
-                .token_count
-                .ok_or(MemoryToolError::UnknownTokenCount)?,
-        );
+        current = current.saturating_sub(items[index].token_count.ok_or(
+            MemoryToolError::UnknownTokenCount {
+                reason: "a demotion candidate has no token count",
+            },
+        )?);
         demoted.push(id);
     }
     Ok(demoted)
@@ -1313,12 +1318,12 @@ pub enum MemoryToolError {
     UnknownField,
     #[error("tool argument is missing: {0}")]
     MissingField(&'static str),
-    #[error("tool argument is invalid: {0}")]
-    InvalidField(&'static str),
+    #[error("tool argument is invalid: {field}: {reason}")]
+    InvalidField { field: &'static str, reason: String },
     #[error("memory category is invalid")]
     InvalidCategory,
-    #[error("memory token count is unknown")]
-    UnknownTokenCount,
+    #[error("memory token count is unknown: {reason}")]
+    UnknownTokenCount { reason: &'static str },
     #[error("memory text was not kept: {0:?}")]
     Text(crate::MemoryTextProblem),
     #[error("done summary is too large")]
@@ -1420,7 +1425,7 @@ mod tests {
         let mut items = vec![memory.clone()];
         assert!(matches!(
             super::enforce_hot_budget(&mut items, 0),
-            Err(MemoryToolError::UnknownTokenCount)
+            Err(MemoryToolError::UnknownTokenCount { .. })
         ));
         assert_eq!(items, vec![memory]);
     }

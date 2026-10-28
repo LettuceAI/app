@@ -31,9 +31,12 @@ pub struct VoiceDesignRequest {
 
 impl VoiceDesignRequest {
     pub fn validate(&self) -> Result<(), VoiceDesignValidationError> {
-        self.provider
-            .validate()
-            .map_err(|_| VoiceDesignValidationError::InvalidRequest)?;
+        self.provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            VoiceDesignValidationError::InvalidRequest {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         if !matches!(self.provider.config, AudioProviderConfig::Elevenlabs)
             || self.provider.api_key_ref.is_none()
             || !valid_trimmed_scalars(&self.text_sample, MIN_SAMPLE_SCALARS, MAX_SAMPLE_SCALARS)
@@ -47,7 +50,9 @@ impl VoiceDesignRequest {
                 .num_previews
                 .is_some_and(|count| count == 0 || count > MAX_PREVIEWS)
         {
-            return Err(VoiceDesignValidationError::InvalidRequest);
+            return Err(VoiceDesignValidationError::InvalidRequest {
+                reason: "request fields, expiry or preview count are out of range",
+            });
         }
         if let Some(model_id) = &self.model_id
             && !matches!(
@@ -55,7 +60,9 @@ impl VoiceDesignRequest {
                 "eleven_multilingual_ttv_v2" | "eleven_ttv_v3"
             )
         {
-            return Err(VoiceDesignValidationError::InvalidRequest);
+            return Err(VoiceDesignValidationError::InvalidRequest {
+                reason: "model id is not a supported voice design model",
+            });
         }
         Ok(())
     }
@@ -89,7 +96,9 @@ impl RuntimeVoiceDesignPreview {
             || self.duration_secs <= 0.0
             || self.declared_mime_type != "audio/mpeg"
         {
-            return Err(VoiceDesignValidationError::InvalidResult);
+            return Err(VoiceDesignValidationError::InvalidResult {
+                reason: "preview audio is empty, oversized, not finite in duration or not audio/mpeg",
+            });
         }
         Ok(())
     }
@@ -119,9 +128,12 @@ pub struct VoiceCreationRequest {
 
 impl VoiceCreationRequest {
     pub fn validate(&self) -> Result<(), VoiceDesignValidationError> {
-        self.provider
-            .validate()
-            .map_err(|_| VoiceDesignValidationError::InvalidRequest)?;
+        self.provider.validate().map_err(|error| {
+            tracing::warn!(%error, "provider configuration is invalid");
+            VoiceDesignValidationError::InvalidRequest {
+                reason: "provider configuration is invalid",
+            }
+        })?;
         if !matches!(self.provider.config, AudioProviderConfig::Elevenlabs)
             || self.provider.api_key_ref.is_none()
             || !valid_trimmed_scalars(&self.voice_name, 1, 256)
@@ -132,7 +144,9 @@ impl VoiceCreationRequest {
                 MAX_DESCRIPTION_SCALARS,
             )
         {
-            return Err(VoiceDesignValidationError::InvalidRequest);
+            return Err(VoiceDesignValidationError::InvalidRequest {
+                reason: "request is missing an api key or has an invalid voice name, id or description",
+            });
         }
         Ok(())
     }
@@ -147,7 +161,9 @@ pub struct CreatedVoice {
 impl CreatedVoice {
     pub fn validate(&self) -> Result<(), VoiceDesignValidationError> {
         if !valid_identifier(&self.voice_id) {
-            return Err(VoiceDesignValidationError::InvalidResult);
+            return Err(VoiceDesignValidationError::InvalidResult {
+                reason: "voice id is invalid",
+            });
         }
         Ok(())
     }
@@ -167,7 +183,9 @@ impl VoiceDesignPreview {
             || self.mime_type != "audio/mpeg"
             || self.completed_at < request.created_at
         {
-            return Err(VoiceDesignValidationError::InvalidResult);
+            return Err(VoiceDesignValidationError::InvalidResult {
+                reason: "preview does not match the request or has an invalid size, duration, mime type or time",
+            });
         }
         Ok(())
     }
@@ -248,24 +266,24 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum VoiceDesignValidationError {
-    #[error("voice design request is invalid")]
-    InvalidRequest,
-    #[error("voice design result is invalid")]
-    InvalidResult,
+    #[error("voice design request is invalid: {reason}")]
+    InvalidRequest { reason: &'static str },
+    #[error("voice design result is invalid: {reason}")]
+    InvalidResult { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum VoiceDesignRuntimeError {
-    #[error("voice creation outcome is unknown")]
-    OutcomeUnknown,
+    #[error("voice creation outcome is unknown: {reason}")]
+    OutcomeUnknown { reason: &'static str },
     #[error("voice creation provider returned HTTP {status}")]
     ProviderRejected { status: u16 },
     #[error("voice design was cancelled")]
     Cancelled,
-    #[error("voice design runtime is unavailable")]
-    Unavailable,
-    #[error("voice design runtime rejected the request")]
-    Rejected,
+    #[error("voice design runtime is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("voice design runtime rejected the request: {reason}")]
+    Rejected { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -318,22 +336,22 @@ mod tests {
         let mut request = request();
         assert_eq!(request.validate(), Ok(()));
         request.text_sample = "short".into();
-        assert_eq!(
+        assert!(matches!(
             request.validate(),
-            Err(VoiceDesignValidationError::InvalidRequest)
-        );
+            Err(VoiceDesignValidationError::InvalidRequest { .. })
+        ));
         request = self::request();
         request.voice_description = "too short".into();
-        assert_eq!(
+        assert!(matches!(
             request.validate(),
-            Err(VoiceDesignValidationError::InvalidRequest)
-        );
+            Err(VoiceDesignValidationError::InvalidRequest { .. })
+        ));
         request = self::request();
         request.num_previews = Some(4);
-        assert_eq!(
+        assert!(matches!(
             request.validate(),
-            Err(VoiceDesignValidationError::InvalidRequest)
-        );
+            Err(VoiceDesignValidationError::InvalidRequest { .. })
+        ));
 
         let creation = VoiceCreationRequest {
             provider: self::request().provider,

@@ -459,7 +459,7 @@ impl LegacyImportRepository for Database {
                 lettuce_transfer::CharacterPlanError::MissingReference => {
                     LegacyImportRepositoryError::Conflict
                 }
-                lettuce_transfer::CharacterPlanError::InvalidInput => {
+                lettuce_transfer::CharacterPlanError::InvalidInput { .. } => {
                     LegacyImportRepositoryError::InvalidInput
                 }
             })?;
@@ -816,7 +816,7 @@ impl LegacyImportRepository for Database {
                 lettuce_transfer::CharacterPlanError::MissingReference => {
                     LegacyImportRepositoryError::Conflict
                 }
-                lettuce_transfer::CharacterPlanError::InvalidInput => {
+                lettuce_transfer::CharacterPlanError::InvalidInput { .. } => {
                     LegacyImportRepositoryError::InvalidInput
                 }
             })?;
@@ -2485,7 +2485,7 @@ fn audio_insert_error(
         | lettuce_speech::TtsConfigurationRepositoryError::ProviderMissing => {
             LegacyImportRepositoryError::Conflict
         }
-        lettuce_speech::TtsConfigurationRepositoryError::InvalidData => {
+        lettuce_speech::TtsConfigurationRepositoryError::InvalidData { .. } => {
             LegacyImportRepositoryError::InvalidInput
         }
         _ => LegacyImportRepositoryError::Storage,

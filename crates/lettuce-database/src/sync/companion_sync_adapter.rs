@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{companion::soul_adapter, conversation::state_adapter, memory::scheduled_note_adapter};
 
-fn storage(_: impl std::fmt::Debug) -> ConversationRepositoryError {
-    ConversationRepositoryError::Storage
+fn storage(error: impl std::fmt::Debug) -> ConversationRepositoryError {
+    ConversationRepositoryError::Storage {
+        reason: format!("{error:?}"),
+    }
 }
 
 fn exists(
@@ -105,7 +107,9 @@ pub(crate) fn sync_replace_soul(
                     lettuce_conversations::ValidationError::InvalidValue { field: "sync.soul" },
                 )
             }
-            _ => ConversationRepositoryError::Storage,
+            _ => ConversationRepositoryError::Storage {
+                reason: "sync replace soul: a stored value is not recognised".to_owned(),
+            },
         },
     )?;
     transaction
@@ -136,9 +140,11 @@ pub(crate) fn sync_load_relationship(
     transaction: &Transaction<'_>,
     id: &str,
 ) -> Result<Option<SyncCompanionRelationship>, ConversationRepositoryError> {
-    let (character, key) = id
-        .split_once(':')
-        .ok_or(ConversationRepositoryError::Storage)?;
+    let (character, key) =
+        id.split_once(':')
+            .ok_or_else(|| ConversationRepositoryError::Storage {
+                reason: "sync load relationship: a required value is missing".to_owned(),
+            })?;
     transaction
         .query_row(
             "SELECT persona_id, closeness, trust, affection, tension, stability, interaction_count, last_interaction_at

@@ -40,7 +40,9 @@ impl DiscoveredVoiceDraft {
             validate_text(url, MAX_URL_BYTES, false)?;
         }
         if self.labels.len() > MAX_LABELS {
-            return Err(VoiceDiscoveryError::InvalidData);
+            return Err(VoiceDiscoveryError::InvalidData {
+                reason: "voice has too many labels",
+            });
         }
         for (key, value) in &self.labels {
             validate_text(key, MAX_LABEL_KEY_BYTES, false)?;
@@ -74,11 +76,15 @@ pub fn materialize_discovered_voices(
         .map(|(ordinal, draft)| {
             draft.validate()?;
             if !ids.insert(draft.voice_id.clone()) {
-                return Err(VoiceDiscoveryError::InvalidData);
+                return Err(VoiceDiscoveryError::InvalidData {
+                    reason: "discovered voice ids repeat",
+                });
             }
             Ok(DiscoveredVoice {
                 provider_id,
-                ordinal: u32::try_from(ordinal).map_err(|_| VoiceDiscoveryError::InvalidData)?,
+                ordinal: u32::try_from(ordinal).map_err(|_| VoiceDiscoveryError::InvalidData {
+                    reason: "voice ordinal exceeds the u32 range",
+                })?,
                 voice_id: draft.voice_id,
                 name: draft.name,
                 preview_url: draft.preview_url,
@@ -124,20 +130,20 @@ pub trait DiscoveredVoiceRepository: Send + Sync {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum VoiceDiscoveryError {
-    #[error("voice discovery input or response is invalid")]
-    InvalidData,
-    #[error("voice discovery is temporarily unavailable")]
-    Unavailable,
+    #[error("voice discovery input or response is invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("voice discovery is temporarily unavailable: {reason}")]
+    Unavailable { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum VoiceDiscoveryRepositoryError {
     #[error("TTS provider does not exist")]
     ProviderMissing,
-    #[error("discovered voice data is invalid")]
-    InvalidData,
-    #[error("discovered voice storage failed")]
-    Storage,
+    #[error("discovered voice data is invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("discovered voice storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 fn validate_text(
@@ -146,7 +152,9 @@ fn validate_text(
     allow_empty: bool,
 ) -> Result<(), VoiceDiscoveryError> {
     if value.len() > max_bytes || value.contains('\0') || (!allow_empty && value.is_empty()) {
-        return Err(VoiceDiscoveryError::InvalidData);
+        return Err(VoiceDiscoveryError::InvalidData {
+            reason: "text is oversized, contains a nul or is empty",
+        });
     }
     Ok(())
 }

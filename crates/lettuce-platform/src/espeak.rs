@@ -16,14 +16,14 @@ pub struct EspeakNgProcess {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum EspeakNgError {
-    #[error("eSpeak NG configuration is invalid")]
-    InvalidConfiguration,
-    #[error("eSpeak NG is unavailable")]
-    Unavailable,
-    #[error("eSpeak NG execution failed")]
-    Execution,
-    #[error("eSpeak NG output is invalid")]
-    InvalidOutput,
+    #[error("eSpeak NG configuration is invalid: {reason}")]
+    InvalidConfiguration { reason: &'static str },
+    #[error("eSpeak NG is unavailable: {reason}")]
+    Unavailable { reason: &'static str },
+    #[error("eSpeak NG execution failed: {reason}")]
+    Execution { reason: &'static str },
+    #[error("eSpeak NG output is invalid: {reason}")]
+    InvalidOutput { reason: &'static str },
 }
 
 pub trait EspeakPhonemizer: Send + Sync {
@@ -45,7 +45,9 @@ impl EspeakNgProcess {
     ) -> Result<Self, EspeakNgError> {
         let executable = executable.as_ref();
         if !executable.is_absolute() || !executable.is_file() {
-            return Err(EspeakNgError::InvalidConfiguration);
+            return Err(EspeakNgError::InvalidConfiguration {
+                reason: "executable path is not an absolute file",
+            });
         }
         let data_directory = data_directory
             .map(|path| path.as_ref().to_path_buf())
@@ -81,13 +83,21 @@ impl EspeakNgProcess {
             .spawn()
             .map_err(|error| {
                 if error.kind() == std::io::ErrorKind::NotFound {
-                    EspeakNgError::Unavailable
+                    EspeakNgError::Unavailable {
+                        reason: "espeak executable was not found",
+                    }
                 } else {
-                    EspeakNgError::Execution
+                    EspeakNgError::Execution {
+                        reason: "spawning the espeak process failed",
+                    }
                 }
             })?;
-        let stdout = child.stdout.take().ok_or(EspeakNgError::Execution)?;
-        let stderr = child.stderr.take().ok_or(EspeakNgError::Execution)?;
+        let stdout = child.stdout.take().ok_or(EspeakNgError::Execution {
+            reason: "espeak stdout pipe is unavailable",
+        })?;
+        let stderr = child.stderr.take().ok_or(EspeakNgError::Execution {
+            reason: "espeak stderr pipe is unavailable",
+        })?;
         let stdout_reader = thread::spawn(move || read_bounded(stdout, MAX_ESPEAK_OUTPUT_BYTES));
         let stderr_reader = thread::spawn(move || read_bounded(stderr, MAX_ESPEAK_OUTPUT_BYTES));
         let mut payload = input.as_bytes().to_vec();
@@ -97,7 +107,9 @@ impl EspeakNgProcess {
         if child
             .stdin
             .take()
-            .ok_or(EspeakNgError::Execution)?
+            .ok_or(EspeakNgError::Execution {
+                reason: "espeak stdin pipe is unavailable",
+            })?
             .write_all(&payload)
             .is_err()
         {
@@ -105,24 +117,42 @@ impl EspeakNgProcess {
             let _ = child.wait();
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
-            return Err(EspeakNgError::Execution);
+            return Err(EspeakNgError::Execution {
+                reason: "writing the input to espeak stdin failed",
+            });
         }
-        let status = child.wait().map_err(|_| EspeakNgError::Execution)?;
+        let status = child.wait().map_err(|_| EspeakNgError::Execution {
+            reason: "waiting for the espeak process failed",
+        })?;
         let (stdout, stdout_exceeded) = stdout_reader
             .join()
-            .map_err(|_| EspeakNgError::Execution)?
-            .map_err(|_| EspeakNgError::Execution)?;
+            .map_err(|_| EspeakNgError::Execution {
+                reason: "espeak stdout reader thread panicked",
+            })?
+            .map_err(|_| EspeakNgError::Execution {
+                reason: "reading espeak stdout failed",
+            })?;
         let (_, stderr_exceeded) = stderr_reader
             .join()
-            .map_err(|_| EspeakNgError::Execution)?
-            .map_err(|_| EspeakNgError::Execution)?;
+            .map_err(|_| EspeakNgError::Execution {
+                reason: "espeak stderr reader thread panicked",
+            })?
+            .map_err(|_| EspeakNgError::Execution {
+                reason: "reading espeak stderr failed",
+            })?;
         if !status.success() || stderr_exceeded {
-            return Err(EspeakNgError::Execution);
+            return Err(EspeakNgError::Execution {
+                reason: "espeak exited with a failure status or wrote too much to stderr",
+            });
         }
         if stdout_exceeded {
-            return Err(EspeakNgError::InvalidOutput);
+            return Err(EspeakNgError::InvalidOutput {
+                reason: "espeak output exceeds the byte limit",
+            });
         }
-        String::from_utf8(stdout).map_err(|_| EspeakNgError::InvalidOutput)
+        String::from_utf8(stdout).map_err(|_| EspeakNgError::InvalidOutput {
+            reason: "espeak output is not valid utf-8",
+        })
     }
 }
 
@@ -157,7 +187,9 @@ trait OptionalDirectory {
 impl OptionalDirectory for Option<PathBuf> {
     fn transpose_directory(self) -> Result<Option<PathBuf>, EspeakNgError> {
         if self.as_ref().is_some_and(|path| !path.is_dir()) {
-            return Err(EspeakNgError::InvalidConfiguration);
+            return Err(EspeakNgError::InvalidConfiguration {
+                reason: "data directory is not a directory",
+            });
         }
         Ok(self)
     }
@@ -165,7 +197,9 @@ impl OptionalDirectory for Option<PathBuf> {
 
 pub(crate) fn validate_request(input: &str, language: &str) -> Result<(), EspeakNgError> {
     if input.len() > MAX_ESPEAK_INPUT_BYTES || input.contains('\0') || !valid_language(language) {
-        return Err(EspeakNgError::InvalidConfiguration);
+        return Err(EspeakNgError::InvalidConfiguration {
+            reason: "input is too long or contains a nul, or the language is not valid",
+        });
     }
     Ok(())
 }
@@ -188,12 +222,12 @@ mod tests {
     fn rejects_unmanaged_paths_and_unsafe_language_values() {
         assert!(matches!(
             EspeakNgProcess::with_managed_paths("relative/espeak-ng", None::<&Path>),
-            Err(EspeakNgError::InvalidConfiguration)
+            Err(EspeakNgError::InvalidConfiguration { .. })
         ));
-        assert_eq!(
+        assert!(matches!(
             EspeakPhonemizer::phonemize(&EspeakNgProcess::from_path(), "hello", "en-US\0--help"),
-            Err(EspeakNgError::InvalidConfiguration)
-        );
+            Err(EspeakNgError::InvalidConfiguration { .. })
+        ));
     }
 
     #[test]

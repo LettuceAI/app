@@ -71,7 +71,11 @@ impl ConversationRuntimeBackup {
                         &mut snapshots,
                         &model.snapshot_ref,
                     )
-                    .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+                    .map_err(|_| {
+                        ConversationRuntimeBackupError::InvalidData {
+                            reason: "model snapshot reference conflicts with another snapshot",
+                        }
+                    })?;
                 }
                 for attempt in &value.attempts {
                     if let Some(model) = attempt
@@ -84,7 +88,11 @@ impl ConversationRuntimeBackup {
                             &mut snapshots,
                             &model.snapshot_ref,
                         )
-                        .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+                        .map_err(|_| {
+                            ConversationRuntimeBackupError::InvalidData {
+                                reason: "model snapshot reference conflicts with another snapshot",
+                            }
+                        })?;
                     }
                     if let Some(lettuce_conversations::InitialInferenceResult::Response(outcome)) =
                         attempt
@@ -104,7 +112,11 @@ impl ConversationRuntimeBackup {
                                 &mut replays,
                                 reference,
                             )
-                            .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+                            .map_err(|_| {
+                                ConversationRuntimeBackupError::InvalidData {
+                                    reason: "replay reference conflicts with another replay",
+                                }
+                            })?;
                         }
                     }
                     for tool in &attempt.tools {
@@ -113,7 +125,11 @@ impl ConversationRuntimeBackup {
                                 &mut replays,
                                 reference,
                             )
-                            .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+                            .map_err(|_| {
+                                ConversationRuntimeBackupError::InvalidData {
+                                    reason: "replay reference conflicts with another replay",
+                                }
+                            })?;
                         }
                     }
                 }
@@ -131,7 +147,9 @@ impl ConversationRuntimeBackup {
         history: &crate::ConversationHistoryBackup,
     ) -> Result<(), ConversationRuntimeBackupError> {
         if self.version != CONVERSATION_RUNTIME_BACKUP_VERSION {
-            return Err(ConversationRuntimeBackupError::InvalidData);
+            return Err(ConversationRuntimeBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         let history_by_id = history
             .conversations
@@ -141,11 +159,15 @@ impl ConversationRuntimeBackup {
         self.conversations
             .sort_by_key(|value| value.conversation_id);
         if self.conversations.len() != history_by_id.len() {
-            return Err(ConversationRuntimeBackupError::InvalidData);
+            return Err(ConversationRuntimeBackupError::InvalidData {
+                reason: "runtime conversation count does not match the history conversation count",
+            });
         }
-        let artifact_descriptors = history
-            .artifact_descriptors()
-            .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+        let artifact_descriptors = history.artifact_descriptors().map_err(|_| {
+            ConversationRuntimeBackupError::InvalidData {
+                reason: "history artifact descriptors are invalid",
+            }
+        })?;
         let runtime_descriptors = self.artifact_descriptors()?;
         let replay_ids = artifact_descriptors
             .into_iter()
@@ -161,11 +183,15 @@ impl ConversationRuntimeBackup {
         let mut job_ids = BTreeSet::new();
         let mut tool_ids = BTreeSet::new();
         for runtime in &mut self.conversations {
-            let history = history_by_id
-                .get(&runtime.conversation_id)
-                .ok_or(ConversationRuntimeBackupError::InvalidData)?;
+            let history = history_by_id.get(&runtime.conversation_id).ok_or(
+                ConversationRuntimeBackupError::InvalidData {
+                    reason: "runtime conversation is not in the history backup",
+                },
+            )?;
             if !conversation_ids.insert(runtime.conversation_id) {
-                return Err(ConversationRuntimeBackupError::InvalidData);
+                return Err(ConversationRuntimeBackupError::InvalidData {
+                    reason: "runtime conversation is duplicated",
+                });
             }
             runtime
                 .turns
@@ -218,7 +244,9 @@ impl ConversationRuntimeBackup {
                             .is_none_or(|(turn_id, _)| *turn_id != value.turn.id)
                     })
                 {
-                    return Err(ConversationRuntimeBackupError::InvalidData);
+                    return Err(ConversationRuntimeBackupError::InvalidData {
+                        reason: "turn references messages that do not belong to it",
+                    });
                 }
                 validate_turn_message_links(&value.turn, &message_ids, &candidate_ids)?;
                 value.attempts.sort_by_key(|attempt| {
@@ -230,7 +258,9 @@ impl ConversationRuntimeBackup {
                         .unwrap_or(usize::MAX)
                 });
                 if value.attempts.len() != value.turn.attempts.len() {
-                    return Err(ConversationRuntimeBackupError::InvalidData);
+                    return Err(ConversationRuntimeBackupError::InvalidData {
+                        reason: "turn attempt count does not match its attempts",
+                    });
                 }
                 for (attempt, runtime) in value.turn.attempts.iter().zip(&mut value.attempts) {
                     if runtime.attempt_id != attempt.id
@@ -248,7 +278,9 @@ impl ConversationRuntimeBackup {
                                 })
                         })
                     {
-                        return Err(ConversationRuntimeBackupError::InvalidData);
+                        return Err(ConversationRuntimeBackupError::InvalidData {
+                            reason: "attempt references a turn or attempt that does not match",
+                        });
                     }
                     validate_attempt_runtime(
                         runtime,
@@ -289,7 +321,9 @@ fn validate_turn_message_links(
         } => messages.contains(&message_id) && candidates.contains(&prior_candidate_id),
     };
     if !input_valid || !target_valid {
-        return Err(ConversationRuntimeBackupError::InvalidData);
+        return Err(ConversationRuntimeBackupError::InvalidData {
+            reason: "turn input or target message links are invalid",
+        });
     }
     Ok(())
 }
@@ -311,7 +345,9 @@ fn validate_attempt_runtime(
             || checkpoint.envelope.job_id != job_id
             || checkpoint.envelope.validate_after(previous).is_err()
         {
-            return Err(ConversationRuntimeBackupError::InvalidData);
+            return Err(ConversationRuntimeBackupError::InvalidData {
+                reason: "checkpoint envelope does not match its attempt or job or is not a valid successor",
+            });
         }
         previous = Some(&checkpoint.envelope);
     }
@@ -336,7 +372,9 @@ fn validate_attempt_runtime(
                 .settled_at
                 .is_some_and(|settled| settled < record.admitted_at))
     {
-        return Err(ConversationRuntimeBackupError::InvalidData);
+        return Err(ConversationRuntimeBackupError::InvalidData {
+            reason: "settlement record has inconsistent identity or timestamps",
+        });
     }
     if let Some(record) = &runtime.speaker_inference
         && (record.binding.conversation_id != turn.conversation_id
@@ -352,7 +390,9 @@ fn validate_attempt_runtime(
                 .as_ref()
                 .is_some_and(|decision| decision.validate_for_persistence().is_err()))
     {
-        return Err(ConversationRuntimeBackupError::InvalidData);
+        return Err(ConversationRuntimeBackupError::InvalidData {
+            reason: "settlement decision is invalid for persistence",
+        });
     }
     runtime.tools.sort_by_key(|tool| (tool.ordinal, tool.id));
     for (ordinal, tool) in runtime.tools.iter().enumerate() {
@@ -367,7 +407,9 @@ fn validate_attempt_runtime(
                 .as_ref()
                 .is_some_and(|reference| !replay_ids.contains(&reference.artifact_id))
         {
-            return Err(ConversationRuntimeBackupError::InvalidData);
+            return Err(ConversationRuntimeBackupError::InvalidData {
+                reason: "provider replay reference is not in the replay set",
+            });
         }
     }
     Ok(())
@@ -377,6 +419,6 @@ fn validate_attempt_runtime(
 pub enum ConversationRuntimeBackupError {
     #[error("conversation runtime backup exceeds its limit")]
     LimitExceeded,
-    #[error("conversation runtime backup is invalid")]
-    InvalidData,
+    #[error("conversation runtime backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

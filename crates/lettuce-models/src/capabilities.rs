@@ -131,20 +131,38 @@ impl ModelCapabilities {
         if self.format_version != MODEL_CAPABILITIES_FORMAT_VERSION {
             return Err(CapabilityValidationError::UnsupportedFormatVersion);
         }
-        if ((self.evidence.source == CapabilityEvidenceSource::Unspecified)
-            != (self.evidence.source_version == 0))
-            || self.context_length == Some(0)
-            || self.max_visible_output_tokens == Some(0)
-            || self.max_total_completion_tokens == Some(0)
-            || matches!(
-                (
-                    self.max_visible_output_tokens,
-                    self.max_total_completion_tokens
-                ),
-                (Some(visible), Some(total)) if total < visible
-            )
+        if (self.evidence.source == CapabilityEvidenceSource::Unspecified)
+            != (self.evidence.source_version == 0)
         {
-            return Err(CapabilityValidationError::InvalidEvidenceOrLimit);
+            return Err(CapabilityValidationError::InvalidEvidenceOrLimit {
+                reason: "evidence source and source version disagree about being unspecified",
+            });
+        }
+        if self.context_length == Some(0) {
+            return Err(CapabilityValidationError::InvalidEvidenceOrLimit {
+                reason: "context length is zero",
+            });
+        }
+        if self.max_visible_output_tokens == Some(0) {
+            return Err(CapabilityValidationError::InvalidEvidenceOrLimit {
+                reason: "visible output limit is zero",
+            });
+        }
+        if self.max_total_completion_tokens == Some(0) {
+            return Err(CapabilityValidationError::InvalidEvidenceOrLimit {
+                reason: "total completion limit is zero",
+            });
+        }
+        if matches!(
+            (
+                self.max_visible_output_tokens,
+                self.max_total_completion_tokens
+            ),
+            (Some(visible), Some(total)) if total < visible
+        ) {
+            return Err(CapabilityValidationError::InvalidEvidenceOrLimit {
+                reason: "total completion limit is below the visible output limit",
+            });
         }
         Ok(())
     }
@@ -165,8 +183,8 @@ pub struct ParameterSupport {
 pub enum CapabilityValidationError {
     #[error("capability document format version is unsupported")]
     UnsupportedFormatVersion,
-    #[error("capability document contains invalid evidence or limits")]
-    InvalidEvidenceOrLimit,
+    #[error("capability document contains invalid evidence or limits: {reason}")]
+    InvalidEvidenceOrLimit { reason: &'static str },
 }
 
 #[cfg(test)]
@@ -188,17 +206,17 @@ mod tests {
     fn evidence_and_output_limits_are_coherent() {
         let mut capabilities = ModelCapabilities::default();
         capabilities.evidence.source_version = 1;
-        assert_eq!(
+        assert!(matches!(
             capabilities.validate(),
-            Err(CapabilityValidationError::InvalidEvidenceOrLimit)
-        );
+            Err(CapabilityValidationError::InvalidEvidenceOrLimit { .. })
+        ));
 
         capabilities.evidence.source = CapabilityEvidenceSource::Catalog;
         capabilities.max_visible_output_tokens = Some(2_000);
         capabilities.max_total_completion_tokens = Some(1_000);
-        assert_eq!(
+        assert!(matches!(
             capabilities.validate(),
-            Err(CapabilityValidationError::InvalidEvidenceOrLimit)
-        );
+            Err(CapabilityValidationError::InvalidEvidenceOrLimit { .. })
+        ));
     }
 }

@@ -9,12 +9,18 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::Database;
 
-fn storage(_: impl std::fmt::Debug) -> SyncSecretError {
-    SyncSecretError::Storage
+fn storage(error: impl std::fmt::Debug) -> SyncSecretError {
+    tracing::warn!(?error, "secret sync adapter storage step failed");
+    SyncSecretError::Storage {
+        reason: "secret sync adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> SyncSecretError {
-    SyncSecretError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> SyncSecretError {
+    tracing::warn!(?error, "secret sync adapter storage step failed");
+    SyncSecretError::Corrupt {
+        reason: "secret sync adapter: a storage step failed",
+    }
 }
 
 fn uuid(value: &str) -> Result<uuid::Uuid, SyncSecretError> {
@@ -44,7 +50,10 @@ impl SyncSecretRepository for Database {
             .map_err(storage)?;
         for (api_key, owner, headers, config) in accounts {
             let Ok(owner) = uuid(&owner).map(SecretOwnerId::from_uuid) else {
-                tracing::warn!("a provider account's secret owner cannot be read");
+                tracing::warn!(
+                    reason = "the stored owner id is not a valid uuid",
+                    "a provider account's secret owner cannot be read"
+                );
                 continue;
             };
             if let Some(Ok(reference)) = api_key.as_deref().map(uuid) {
@@ -55,7 +64,10 @@ impl SyncSecretRepository for Database {
             }
             let headers = serde_json::from_str::<Vec<lettuce_models::SecretHeader>>(&headers)
                 .unwrap_or_else(|_| {
-                    tracing::warn!("a provider account's secret headers cannot be read");
+                    tracing::warn!(
+                        reason = "the stored secret headers are not valid JSON",
+                        "a provider account's secret headers cannot be read"
+                    );
                     Vec::new()
                 });
             for header in headers {
@@ -93,7 +105,10 @@ impl SyncSecretRepository for Database {
             .map_err(storage)?;
         for (reference, owner) in audio {
             let (Ok(reference), Ok(owner)) = (uuid(&reference), uuid(&owner)) else {
-                tracing::warn!("an audio provider's secret reference cannot be read");
+                tracing::warn!(
+                    reason = "a stored reference or owner id is not a valid uuid",
+                    "an audio provider's secret reference cannot be read"
+                );
                 continue;
             };
             records.push(SecretRecord::new(

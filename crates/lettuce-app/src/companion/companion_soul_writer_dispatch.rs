@@ -47,8 +47,8 @@ pub enum CompanionSoulWriterDispatchError {
     Jobs(#[from] StoreError),
     #[error("companion Soul-writer run operation failed: {0}")]
     Run(#[from] CompanionSoulWriterRunRepositoryError),
-    #[error("companion Soul-writer claimed work is inconsistent")]
-    InvalidWork,
+    #[error("companion Soul-writer claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -76,12 +76,16 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
         allowed: &ResourceAvailability,
     ) -> Result<Option<CompanionSoulWriterClaimedWork>, CompanionSoulWriterDispatchError> {
         let run = self.runs.load_companion_soul_writer_run(request_id)?;
-        let job = self
-            .jobs
-            .get(run.job_id)?
-            .ok_or(CompanionSoulWriterDispatchError::InvalidWork)?;
+        let job =
+            self.jobs
+                .get(run.job_id)?
+                .ok_or(CompanionSoulWriterDispatchError::InvalidWork {
+                    reason: "job of the run is missing from the store",
+                })?;
         if job.kind != JobKind::CompanionSoulWriter {
-            return Err(CompanionSoulWriterDispatchError::InvalidWork);
+            return Err(CompanionSoulWriterDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -91,7 +95,9 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(request_id) {
-            return Err(CompanionSoulWriterDispatchError::InvalidWork);
+            return Err(CompanionSoulWriterDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(run.job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -126,7 +132,9 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.state != JobState::Running
             || work.claim.input_ref != OutcomeRef::Request(work.run.request_id)
         {
-            return Err(CompanionSoulWriterDispatchError::InvalidWork);
+            return Err(CompanionSoulWriterDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         match result {
@@ -180,6 +188,7 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(CompanionSoulWriterSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "companion Soul-writer job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -197,30 +206,30 @@ fn retryable(error: &CompanionSoulWriterExecutionError) -> bool {
         CompanionSoulWriterExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        CompanionSoulWriterExecutionError::ReplayCleanup
-        | CompanionSoulWriterExecutionError::Run(CompanionSoulWriterRunRepositoryError::Failure) => {
-            true
-        }
+        CompanionSoulWriterExecutionError::ReplayCleanup { .. }
+        | CompanionSoulWriterExecutionError::Run(
+            CompanionSoulWriterRunRepositoryError::Failure { .. },
+        ) => true,
         _ => false,
     }
 }
 
 fn job_error(error: &CompanionSoulWriterExecutionError) -> JobError {
     let (code, message) = match error {
-        CompanionSoulWriterExecutionError::InvalidOwnership
-        | CompanionSoulWriterExecutionError::InvalidPrompt
-        | CompanionSoulWriterExecutionError::ContextTooLarge => (
+        CompanionSoulWriterExecutionError::InvalidOwnership { .. }
+        | CompanionSoulWriterExecutionError::InvalidPrompt { .. }
+        | CompanionSoulWriterExecutionError::ContextTooLarge { .. } => (
             JobErrorCode::InvalidInput,
             "companion-soul-writer-invalid-input",
         ),
         CompanionSoulWriterExecutionError::Inference(_)
-        | CompanionSoulWriterExecutionError::InvalidResponse
+        | CompanionSoulWriterExecutionError::InvalidResponse { .. }
         | CompanionSoulWriterExecutionError::RoundLimit => (
             JobErrorCode::WorkerFailed,
             "companion-soul-writer-provider-rejected",
         ),
         CompanionSoulWriterExecutionError::Prompt(_)
-        | CompanionSoulWriterExecutionError::ReplayCleanup
+        | CompanionSoulWriterExecutionError::ReplayCleanup { .. }
         | CompanionSoulWriterExecutionError::Run(_) => (
             JobErrorCode::StorageFailure,
             "companion-soul-writer-storage-failed",
@@ -242,11 +251,15 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(retryable(&CompanionSoulWriterExecutionError::Run(
-            CompanionSoulWriterRunRepositoryError::Failure
+            CompanionSoulWriterRunRepositoryError::Failure {
+                reason: "simulated failure".to_owned()
+            }
         )));
         assert!(!retryable(&CompanionSoulWriterExecutionError::RoundLimit));
         assert!(!retryable(
-            &CompanionSoulWriterExecutionError::InvalidResponse
+            &CompanionSoulWriterExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
         ));
     }
 }

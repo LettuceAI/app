@@ -27,10 +27,17 @@ where
         + lettuce_settings::GlobalSettingsStore,
 {
     let settings = lettuce_settings::GlobalSettingsStore::load(sources)
-        .map_err(|_| ConversationRepositoryError::Storage)?
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?
         .settings;
     crate::generation::live_sources::live_memory_is_dynamic(sources, conversation, &settings)
-        .map_err(|_| ConversationRepositoryError::Storage.into())
+        .map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            }
+            .into()
+        })
 }
 
 #[derive(Debug)]

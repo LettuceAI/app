@@ -98,7 +98,10 @@ fn a_database_that_lost_foreign_key_enforcement_refuses_every_use() {
     database
         .foreign_keys_lost
         .store(true, std::sync::atomic::Ordering::SeqCst);
-    assert_eq!(database.purge_notices(), Err(PurgeError::Storage));
+    assert!(matches!(
+        database.purge_notices(),
+        Err(PurgeError::Storage { .. })
+    ));
     assert!(matches!(
         database.connection(),
         Err(crate::DatabaseError::ForeignKeysLost)
@@ -130,7 +133,7 @@ fn persona_purge_retains_helper_receipts_and_rolls_back_late_failure() {
             TimestampMillis::new(2),
         )
     };
-    assert_eq!(delete(), Err(PurgeError::Storage));
+    assert!(matches!(delete(), Err(PurgeError::Storage { .. })));
     {
         let connection = database.connection().expect("lock");
         assert_eq!(

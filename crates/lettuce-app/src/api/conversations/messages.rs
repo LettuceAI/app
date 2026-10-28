@@ -372,7 +372,7 @@ pub async fn message_delete(
                 context.now(),
             )
             .map_err(|error| match error {
-                ConversationRepositoryError::Unsupported => api_error(
+                ConversationRepositoryError::Unsupported { .. } => api_error(
                     ApiErrorCode::Unsupported,
                     "the first message is shown by another branch and cannot be deleted from this one",
                 ),

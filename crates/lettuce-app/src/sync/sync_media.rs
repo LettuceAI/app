@@ -142,16 +142,22 @@ where
                         .map_err(SyncMediaExchangeError::Catalog)?;
                     let next = offset
                         .checked_add(u64::try_from(chunk.bytes.len()).map_err(|_| {
-                            SyncMediaExchangeError::Catalog(MediaSyncError::InvalidChunk)
+                            SyncMediaExchangeError::Catalog(MediaSyncError::InvalidChunk {
+                                reason: "chunk length does not fit in u64",
+                            })
                         })?)
                         .ok_or(SyncMediaExchangeError::Catalog(
-                            MediaSyncError::InvalidChunk,
+                            MediaSyncError::InvalidChunk {
+                                reason: "chunk offset overflowed",
+                            },
                         ))?;
                     if next > asset.blob.byte_size
                         || chunk.complete != (next == asset.blob.byte_size)
                     {
                         return Err(SyncMediaExchangeError::Catalog(
-                            MediaSyncError::InvalidChunk,
+                            MediaSyncError::InvalidChunk {
+                                reason: "chunk ends past the asset size or completes early",
+                            },
                         ));
                     }
                     offset = self

@@ -279,21 +279,21 @@ fn capture_error(error: crate::UsageCostCaptureError) -> JobError {
             "usage-account-missing",
         ),
         UsageCostCaptureError::Account(_)
-        | UsageCostCaptureError::Ledger(UsageLedgerError::Storage) => {
+        | UsageCostCaptureError::Ledger(UsageLedgerError::Storage { .. }) => {
             (JobErrorCode::StorageFailure, true, "usage-cost-storage")
         }
         UsageCostCaptureError::Ledger(UsageLedgerError::Conflict) => {
             (JobErrorCode::IntegrityFailure, false, "usage-cost-conflict")
         }
-        UsageCostCaptureError::Ledger(UsageLedgerError::Invalid) => {
+        UsageCostCaptureError::Ledger(UsageLedgerError::Invalid { .. }) => {
             (JobErrorCode::IntegrityFailure, false, "usage-cost-invalid")
         }
-        UsageCostCaptureError::Provider(ProviderRequestError::Unavailable) => (
+        UsageCostCaptureError::Provider(ProviderRequestError::Unavailable { .. }) => (
             JobErrorCode::ResourceUnavailable,
             true,
             "usage-billing-unavailable",
         ),
-        UsageCostCaptureError::Provider(ProviderRequestError::Malformed) => (
+        UsageCostCaptureError::Provider(ProviderRequestError::Malformed { .. }) => (
             JobErrorCode::IntegrityFailure,
             false,
             "usage-billing-malformed",
@@ -303,10 +303,10 @@ fn capture_error(error: crate::UsageCostCaptureError) -> JobError {
             true,
             "usage-billing-credentials",
         ),
-        UsageCostCaptureError::Provider(ProviderRequestError::Rejected) => {
+        UsageCostCaptureError::Provider(ProviderRequestError::Rejected { .. }) => {
             (JobErrorCode::InvalidInput, false, "usage-billing-rejected")
         }
-        UsageCostCaptureError::Provider(ProviderRequestError::Unsupported) => (
+        UsageCostCaptureError::Provider(ProviderRequestError::Unsupported { .. }) => (
             JobErrorCode::CapabilityUnavailable,
             false,
             "usage-billing-unsupported",

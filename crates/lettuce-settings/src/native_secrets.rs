@@ -92,15 +92,30 @@ impl NativeSecretStore {
             return Ok(None);
         };
         if bytes.len() > MAX_ENVELOPE_BYTES {
-            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt));
+            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored envelope exceeds the size limit",
+            }));
         }
-        let envelope: SecretEnvelope = serde_json::from_slice(&bytes)
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
-        if envelope.version != ENVELOPE_VERSION
-            || envelope.generation == 0
-            || SecretValue::new(envelope.value.as_str()).is_err()
-        {
-            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt));
+        let envelope: SecretEnvelope = serde_json::from_slice(&bytes).map_err(|error| {
+            tracing::warn!(%error, "a stored secret envelope could not be decoded");
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored envelope is not valid JSON",
+            })
+        })?;
+        if envelope.version != ENVELOPE_VERSION {
+            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored envelope version is not supported",
+            }));
+        }
+        if envelope.generation == 0 {
+            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored envelope generation is zero",
+            }));
+        }
+        if SecretValue::new(envelope.value.as_str()).is_err() {
+            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored envelope holds an invalid secret value",
+            }));
         }
         Ok(Some(envelope))
     }
@@ -140,10 +155,11 @@ impl SecretStore for NativeSecretStore {
         value: SecretValue,
         expected_generation: Option<u64>,
     ) -> Result<SecretStatus, SecretStoreError> {
-        let _guard = self
-            .mutation_lock
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let _guard = self.mutation_lock.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret mutation lock is poisoned",
+            })
+        })?;
         let generation = match self.load_envelope(&record.reference)? {
             Some(existing) => {
                 if existing.purpose != record.purpose {
@@ -176,9 +192,16 @@ impl SecretStore for NativeSecretStore {
                 })
             })
             .map(Zeroizing::new)
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+            .map_err(|error| {
+                tracing::warn!(%error, "a secret envelope could not be serialized");
+                SecretStoreError::Backend(SecretBackendError::Corrupt {
+                    reason: "envelope could not be serialized",
+                })
+            })?;
         if encoded.len() > MAX_ENVELOPE_BYTES {
-            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt));
+            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "envelope exceeds the size limit",
+            }));
         }
         self.backend
             .store(&record.reference.to_string(), &encoded)
@@ -203,8 +226,12 @@ impl SecretStore for NativeSecretStore {
         if &envelope.purpose != purpose {
             return Err(SecretStoreError::PurposeMismatch);
         }
-        SecretValue::new(envelope.value.as_str())
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))
+        SecretValue::new(envelope.value.as_str()).map_err(|error| {
+            tracing::warn!(%error, "a stored secret value is invalid");
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "stored secret value is invalid",
+            })
+        })
     }
 
     async fn status(
@@ -233,10 +260,11 @@ impl SecretStore for NativeSecretStore {
         purpose: &SecretPurpose,
         expected_generation: Option<u64>,
     ) -> Result<SecretStatus, SecretStoreError> {
-        let _guard = self
-            .mutation_lock
-            .lock()
-            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let _guard = self.mutation_lock.lock().map_err(|_| {
+            SecretStoreError::Backend(SecretBackendError::Corrupt {
+                reason: "secret mutation lock is poisoned",
+            })
+        })?;
         let Some(envelope) = self.load_envelope(reference)? else {
             return Ok(Self::missing_status(*reference, purpose.clone()));
         };
@@ -316,13 +344,13 @@ impl CredentialBackend for VaultBackend {
 
 fn vault_error(error: PassphraseVaultError) -> CredentialBackendError {
     match error {
-        PassphraseVaultError::Io | PassphraseVaultError::Missing => {
+        PassphraseVaultError::Io { .. } | PassphraseVaultError::Missing => {
             CredentialBackendError::Unavailable
         }
-        PassphraseVaultError::WrongPassphrase | PassphraseVaultError::InvalidPassphrase => {
+        PassphraseVaultError::WrongPassphrase | PassphraseVaultError::InvalidPassphrase { .. } => {
             CredentialBackendError::AccessDenied
         }
-        PassphraseVaultError::AlreadyExists | PassphraseVaultError::Corrupt => {
+        PassphraseVaultError::AlreadyExists | PassphraseVaultError::Corrupt { .. } => {
             CredentialBackendError::Corrupt
         }
     }
@@ -445,7 +473,9 @@ fn backend_error(error: CredentialBackendError) -> SecretStoreError {
         CredentialBackendError::AccessDenied => {
             SecretStoreError::Backend(SecretBackendError::AccessDenied)
         }
-        CredentialBackendError::Corrupt => SecretStoreError::Backend(SecretBackendError::Corrupt),
+        CredentialBackendError::Corrupt => SecretStoreError::Backend(SecretBackendError::Corrupt {
+            reason: "credential backend reported corrupt data",
+        }),
     }
 }
 
@@ -659,10 +689,12 @@ mod tests {
         assert!(!format!("{store:?}").contains("redaction-canary"));
 
         backend.inject(reference, b"not-an-envelope".to_vec());
-        assert_eq!(
+        assert!(matches!(
             store.status(&reference, &purpose).await,
-            Err(SecretStoreError::Backend(SecretBackendError::Corrupt))
-        );
+            Err(SecretStoreError::Backend(
+                SecretBackendError::Corrupt { .. }
+            ))
+        ));
         backend.fail_once(CredentialBackendError::AccessDenied);
         assert_eq!(
             store.status(&SecretRef::new(), &purpose).await,

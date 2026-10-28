@@ -29,7 +29,9 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
 
 fn model_path(model: &str) -> Result<String, ProviderRequestError> {
     let Some((author, slug)) = model.split_once('/') else {
-        return Err(ProviderRequestError::Rejected);
+        return Err(ProviderRequestError::Rejected {
+            reason: "model reference is not author/slug",
+        });
     };
     if [author, slug].iter().any(|part| {
         part.is_empty()
@@ -37,7 +39,9 @@ fn model_path(model: &str) -> Result<String, ProviderRequestError> {
             || part.contains(['/', '\\', '?', '#', '%'])
             || part.chars().any(|c| c.is_control() || c.is_whitespace())
     }) {
-        return Err(ProviderRequestError::Rejected);
+        return Err(ProviderRequestError::Rejected {
+            reason: "model reference has an empty or unsafe path part",
+        });
     }
     Ok(format!("/v1/models/{model}/endpoints"))
 }
@@ -58,9 +62,16 @@ async fn public_endpoints(
             RequestPolicy::BROWSE,
         )
         .await
-        .map_err(|_| ProviderRequestError::Unavailable)?;
+        .map_err(|error| {
+            tracing::warn!(?error, "OpenRouter public endpoint request failed");
+            ProviderRequestError::Unavailable {
+                reason: "the public endpoint request failed",
+            }
+        })?;
     if !(200..300).contains(&response.status) {
-        return Err(ProviderRequestError::Unavailable);
+        return Err(ProviderRequestError::Unavailable {
+            reason: "the public endpoint answered a non-success status",
+        });
     }
     parse_public_endpoints(&response.body)
 }
@@ -94,8 +105,12 @@ struct Pricing {
 fn parse_public_endpoints(
     body: &[u8],
 ) -> Result<Vec<OpenRouterPublicEndpoint>, ProviderRequestError> {
-    let envelope: Envelope =
-        serde_json::from_slice(body).map_err(|_| ProviderRequestError::Malformed)?;
+    let envelope: Envelope = serde_json::from_slice(body).map_err(|error| {
+        tracing::warn!(%error, "OpenRouter public endpoint response is not valid JSON");
+        ProviderRequestError::Malformed {
+            reason: "the public endpoint response is not the expected JSON",
+        }
+    })?;
     Ok(envelope
         .data
         .endpoints
@@ -145,7 +160,10 @@ mod tests {
             "author/%2f",
             "author/model#fragment",
         ] {
-            assert_eq!(model_path(model), Err(ProviderRequestError::Rejected));
+            assert!(matches!(
+                model_path(model),
+                Err(ProviderRequestError::Rejected { .. })
+            ));
         }
     }
 }

@@ -12,8 +12,13 @@ impl UsageCostTargetReader for crate::Database {
             UsageCostScope::Recalculate => (None, false),
             UsageCostScope::Automatic { job_id } => (job_id.map(|id| id.to_string()), true),
         };
-        let connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
-        let mut statement = connection.prepare("SELECT u.id,u.job_id,u.admitted_at,u.record_json,u.result_json,j.kind,j.state,a.provider_kind FROM job_inference_usage u LEFT JOIN jobs j ON j.id=u.job_id LEFT JOIN provider_accounts a ON a.id=json_extract(u.record_json,'$.value.provider_account_id') WHERE u.result_json IS NOT NULL AND (?1 IS NULL OR u.job_id=?1) AND NOT EXISTS (SELECT 1 FROM job_usage_costs c WHERE c.event_id=u.id) AND (?2=0 OR NOT EXISTS (SELECT 1 FROM job_operations o WHERE o.operation_key=?3 || u.id)) ORDER BY u.admitted_at,u.id").map_err(|_| UsageLedgerError::Storage)?;
+        let connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "missing cost targets failed");
+            UsageLedgerError::Storage {
+                reason: "missing cost targets: a storage step failed",
+            }
+        })?;
+        let mut statement = connection.prepare("SELECT u.id,u.job_id,u.admitted_at,u.record_json,u.result_json,j.kind,j.state,a.provider_kind FROM job_inference_usage u LEFT JOIN jobs j ON j.id=u.job_id LEFT JOIN provider_accounts a ON a.id=json_extract(u.record_json,'$.value.provider_account_id') WHERE u.result_json IS NOT NULL AND (?1 IS NULL OR u.job_id=?1) AND NOT EXISTS (SELECT 1 FROM job_usage_costs c WHERE c.event_id=u.id) AND (?2=0 OR NOT EXISTS (SELECT 1 FROM job_operations o WHERE o.operation_key=?3 || u.id)) ORDER BY u.admitted_at,u.id").map_err(|error| { tracing::warn!(%error, "missing cost targets failed"); UsageLedgerError::Storage { reason: "missing cost targets: a storage step failed" } })?;
         let mut targets = Vec::new();
         let rows = statement
             .query_map(
@@ -31,11 +36,21 @@ impl UsageCostTargetReader for crate::Database {
                     ))
                 },
             )
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "missing cost targets failed");
+                UsageLedgerError::Storage {
+                    reason: "missing cost targets: a storage step failed",
+                }
+            })?;
         let mut unreadable = Vec::new();
         for row in rows {
             let (id, owner, at, record, result, kind, state, account_kind) =
-                row.map_err(|_| UsageLedgerError::Storage)?;
+                row.map_err(|error| {
+                    tracing::warn!(%error, "missing cost targets failed");
+                    UsageLedgerError::Storage {
+                        reason: "missing cost targets: a storage step failed",
+                    }
+                })?;
             let decoded = (|| {
                 let mut event: JobInferenceUsage = crate::decode_versioned(&record, 1).ok()?;
                 if event.id.to_string() != id
@@ -107,7 +122,9 @@ impl UsageCostTargetReader for crate::Database {
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()
                 .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
-                .ok_or(UsageLedgerError::Storage)?;
+                .ok_or(UsageLedgerError::Storage {
+                    reason: "missing cost targets: a required value is missing",
+                })?;
             for id in unreadable {
                 crate::Database::record_open_notice(
                     &connection,
@@ -116,17 +133,32 @@ impl UsageCostTargetReader for crate::Database {
                     crate::PurgeNoticeReason::UsageRecordUnreadable,
                     lettuce_types::TimestampMillis::new(now),
                 )
-                .map_err(|_| UsageLedgerError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "missing cost targets failed");
+                    UsageLedgerError::Storage {
+                        reason: "missing cost targets: a storage step failed",
+                    }
+                })?;
             }
         }
         Ok(targets)
     }
 
     fn cleared_cost_target(&self, target: &UsageCostTarget) -> Result<bool, UsageLedgerError> {
-        let connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
-        match crate::usage_clear::dispatch_tombstone_in(&connection, target.event_id)
-            .map_err(|_| UsageLedgerError::Storage)?
-        {
+        let connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "cleared cost target failed");
+            UsageLedgerError::Storage {
+                reason: "cleared cost target: a storage step failed",
+            }
+        })?;
+        match crate::usage_clear::dispatch_tombstone_in(&connection, target.event_id).map_err(
+            |error| {
+                tracing::warn!(%error, "cleared cost target failed");
+                UsageLedgerError::Storage {
+                    reason: "cleared cost target: a storage step failed",
+                }
+            },
+        )? {
             None => Ok(false),
             Some(UsageTombstone::Dispatch {
                 event_id,
@@ -138,7 +170,9 @@ impl UsageCostTargetReader for crate::Database {
             {
                 Ok(true)
             }
-            Some(_) => Err(UsageLedgerError::Invalid),
+            Some(_) => Err(UsageLedgerError::Invalid {
+                reason: "cleared cost target: a value failed validation",
+            }),
         }
     }
 }

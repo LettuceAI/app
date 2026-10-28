@@ -343,10 +343,10 @@ pub enum SyncChangeError {
     InvalidUpdate,
     #[error("delete changes require a base revision and no payload")]
     InvalidDelete,
-    #[error("failed to construct a canonical content hash")]
-    InvalidHash,
-    #[error("canonical payload could not be encoded")]
-    PayloadEncoding,
+    #[error("failed to construct a canonical content hash: {reason}")]
+    InvalidHash { reason: String },
+    #[error("canonical payload could not be encoded: {reason}")]
+    PayloadEncoding { reason: String },
 }
 
 fn validate_change_contract(
@@ -430,13 +430,19 @@ fn change_fingerprint(
             hasher.update(&[0]);
         }
     }
-    ContentHash::parse(hasher.finalize().to_hex().to_string())
-        .map_err(|_| SyncChangeError::InvalidHash)
+    ContentHash::parse(hasher.finalize().to_hex().to_string()).map_err(|error| {
+        SyncChangeError::InvalidHash {
+            reason: format!("change fingerprint is not a valid content hash: {error}"),
+        }
+    })
 }
 
 fn content_hash(bytes: &[u8]) -> Result<ContentHash, SyncChangeError> {
-    ContentHash::parse(blake3::hash(bytes).to_hex().to_string())
-        .map_err(|_| SyncChangeError::InvalidHash)
+    ContentHash::parse(blake3::hash(bytes).to_hex().to_string()).map_err(|error| {
+        SyncChangeError::InvalidHash {
+            reason: format!("blake3 digest is not a valid content hash: {error}"),
+        }
+    })
 }
 
 fn hash_optional(hasher: &mut blake3::Hasher, bytes: Option<&[u8]>) {

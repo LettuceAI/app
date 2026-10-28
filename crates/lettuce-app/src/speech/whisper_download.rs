@@ -68,7 +68,12 @@ impl WhisperDownloadSource for HuggingFaceWhisperDownloadSource {
             &model.source_revision,
             &model.filename,
         )
-        .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
+        .map_err(|error| {
+            tracing::warn!(%error, "pinned download url could not be built");
+            map_source_error(ArtifactDownloadError::InvalidRequest {
+                reason: "pinned download url could not be built",
+            })
+        })?;
         self.client
             .open_hugging_face(&url, offset, model.byte_size)
             .await
@@ -139,8 +144,8 @@ pub enum WhisperDownloadError {
     Source(#[from] WhisperDownloadSourceError),
     #[error("Whisper download job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("Whisper download work is inconsistent")]
-    InvalidWork,
+    #[error("Whisper download work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
     #[error("Whisper download was cancelled")]
     Cancelled,
 }
@@ -175,8 +180,12 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<WhisperDownloadAdmission, WhisperDownloadError> {
         model.validate()?;
         let asset_id = download_asset_id(&model);
-        let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
-            .map_err(|_| WhisperDownloadError::InvalidWork)?;
+        let subject =
+            JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string()).map_err(|_| {
+                WhisperDownloadError::InvalidWork {
+                    reason: "the install asset id is not a valid job subject",
+                }
+            })?;
         let mut key = format!("whisper-install-{asset_id}");
         for _ in 0..64 {
             let admitted = self.jobs.create_or_get(
@@ -185,9 +194,11 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
                     subject.clone(),
                     OutcomeRef::ArtifactInstallation(asset_id),
                 )
-                .with_idempotency_key(
-                    IdempotencyKey::new(key).map_err(|_| WhisperDownloadError::InvalidWork)?,
-                )
+                .with_idempotency_key(IdempotencyKey::new(key).map_err(|_| {
+                    WhisperDownloadError::InvalidWork {
+                        reason: "the install key is not a valid idempotency key",
+                    }
+                })?)
                 .with_priority(JobPriority::Interactive)
                 .with_resources(vec![
                     ResourceClass::Network,
@@ -210,7 +221,9 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
             }
             key = format!("whisper-install-{asset_id}-after-{}", admitted.job.id);
         }
-        Err(WhisperDownloadError::InvalidWork)
+        Err(WhisperDownloadError::InvalidWork {
+            reason: "no free idempotency key was found for the install",
+        })
     }
 
     pub fn claim(
@@ -226,7 +239,9 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(WhisperDownloadError::InvalidWork)?;
+            .ok_or(WhisperDownloadError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job(&job, &model)?;
         if job.state == JobState::Succeeded {
             return Ok(None);
@@ -261,15 +276,18 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(WhisperDownloadError::InvalidWork)?;
+            .ok_or(WhisperDownloadError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job(&job, model)?;
         if job.state != JobState::Succeeded {
             return Ok(None);
         }
-        let manifest = self
-            .repository
-            .get_whisper_model(&model.model_id)?
-            .ok_or(WhisperDownloadError::InvalidWork)?;
+        let manifest = self.repository.get_whisper_model(&model.model_id)?.ok_or(
+            WhisperDownloadError::InvalidWork {
+                reason: "the whisper model is not in the catalog",
+            },
+        )?;
         Ok(Some(WhisperDownloadSuccess {
             manifest,
             job,
@@ -289,7 +307,9 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(WhisperDownloadError::InvalidWork);
+            return Err(WhisperDownloadError::InvalidWork {
+                reason: "claimed work does not match its running job, claim or handle",
+            });
         }
         let outcome = self.execute(&work, source, now).await;
         match outcome {
@@ -403,8 +423,11 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
             claim: work.claim.claim.clone(),
             progress: ProgressSnapshot {
                 bytes: Some(
-                    BytesProgress::new(completed, Some(work.model.byte_size))
-                        .map_err(|_| WhisperDownloadError::InvalidWork)?,
+                    BytesProgress::new(completed, Some(work.model.byte_size)).map_err(|_| {
+                        WhisperDownloadError::InvalidWork {
+                            reason: "the completed bytes exceed the total bytes",
+                        }
+                    })?,
                 ),
                 ..ProgressSnapshot::default()
             },
@@ -518,7 +541,9 @@ fn validate_job(job: &JobSnapshot, model: &RemoteWhisperModel) -> Result<(), Whi
                     result_ref: OutcomeRef::ArtifactInstallation(asset_id),
                 }))
     {
-        return Err(WhisperDownloadError::InvalidWork);
+        return Err(WhisperDownloadError::InvalidWork {
+            reason: "the job did not succeed for this asset",
+        });
     }
     Ok(())
 }
@@ -533,10 +558,11 @@ fn download_asset_id(model: &RemoteWhisperModel) -> AssetId {
 
 fn map_source_error(error: ArtifactDownloadError) -> WhisperDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+        ArtifactDownloadError::Transport { .. } | ArtifactDownloadError::TimedOut => {
             WhisperDownloadSourceError::Transport
         }
-        ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
+        ArtifactDownloadError::InvalidRequest { .. }
+        | ArtifactDownloadError::InvalidResponse { .. } => {
             WhisperDownloadSourceError::InvalidResponse
         }
         ArtifactDownloadError::Refused { status, signed_in } => {
@@ -552,8 +578,8 @@ fn classify_error(error: &WhisperDownloadError) -> (JobErrorCode, bool, &'static
             true,
             "download unavailable",
         ),
-        WhisperDownloadError::Model(WhisperModelError::Unreadable)
-        | WhisperDownloadError::Repository(WhisperModelRepositoryError::Storage) => (
+        WhisperDownloadError::Model(WhisperModelError::Unreadable { .. })
+        | WhisperDownloadError::Repository(WhisperModelRepositoryError::Storage { .. }) => (
             JobErrorCode::StorageFailure,
             true,
             "download storage unavailable",
@@ -565,7 +591,7 @@ fn classify_error(error: &WhisperDownloadError) -> (JobErrorCode, bool, &'static
                 "download integrity failed",
             ))
         }
-        WhisperDownloadError::Model(WhisperModelError::Mismatch)
+        WhisperDownloadError::Model(WhisperModelError::Mismatch { .. })
         | WhisperDownloadError::Source(WhisperDownloadSourceError::InvalidResponse) => (
             JobErrorCode::IntegrityFailure,
             false,

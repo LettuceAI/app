@@ -10,8 +10,8 @@ use crate::{GeneratedImage, ImageInput, ImageOutputPolicy, ProviderImage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ImageMediaError {
-    #[error("an input image is unavailable")]
-    InputUnavailable,
+    #[error("an input image is unavailable: {reason}")]
+    InputUnavailable { reason: &'static str },
     #[error("an input asset is not an image")]
     InputNotImage,
     #[error("image output was rejected: {0}")]
@@ -42,17 +42,22 @@ where
     AR: MediaAssetRepository,
 {
     fn load_input(&self, asset_id: AssetId) -> Result<ImageInput, ImageMediaError> {
-        let mut opened = self
-            .open_ready(asset_id)
-            .map_err(|_| ImageMediaError::InputUnavailable)?;
+        let mut opened = self.open_ready(asset_id).map_err(|error| {
+            tracing::warn!(%error, "input image asset could not be opened as a ready blob");
+            ImageMediaError::InputUnavailable {
+                reason: "input image asset could not be opened as a ready blob",
+            }
+        })?;
         if opened.blob.kind != MediaKind::Image {
             return Err(ImageMediaError::InputNotImage);
         }
         let mut bytes = Vec::new();
-        opened
-            .reader
-            .read_to_end(&mut bytes)
-            .map_err(|_| ImageMediaError::InputUnavailable)?;
+        opened.reader.read_to_end(&mut bytes).map_err(|error| {
+            tracing::warn!(%error, "reading the input image failed");
+            ImageMediaError::InputUnavailable {
+                reason: "reading the input image failed",
+            }
+        })?;
         Ok(ImageInput {
             mime_type: opened.blob.mime_type,
             bytes,

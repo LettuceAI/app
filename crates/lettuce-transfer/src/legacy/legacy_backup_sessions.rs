@@ -104,8 +104,8 @@ pub struct LegacyBackupMessageUsage {
 pub enum LegacyBackupSessionError {
     #[error("legacy backup direct session document is malformed")]
     Malformed { field: String },
-    #[error("legacy backup direct session document exceeds its record limit")]
-    LimitExceeded,
+    #[error("legacy backup direct session document exceeds its record limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("legacy backup direct session graph contains an orphaned link")]
     Orphan { field: String },
 }
@@ -531,7 +531,9 @@ fn map_messages(
         }
         messages.push(LegacyBackupDirectMessage {
             source_id: row.id,
-            ordinal: u64::try_from(index).map_err(|_| LegacyBackupSessionError::LimitExceeded)?,
+            ordinal: u64::try_from(index).map_err(|_| LegacyBackupSessionError::LimitExceeded {
+                reason: "message ordinal exceeds the u64 range",
+            })?,
             role: row.role,
             content: row.content,
             created_at,
@@ -592,8 +594,11 @@ fn map_variants(
             }
             Ok(LegacyBackupDirectMessageVariant {
                 source_id: row.id,
-                ordinal: u64::try_from(index)
-                    .map_err(|_| LegacyBackupSessionError::LimitExceeded)?,
+                ordinal: u64::try_from(index).map_err(|_| {
+                    LegacyBackupSessionError::LimitExceeded {
+                        reason: "variant ordinal exceeds the u64 range",
+                    }
+                })?,
                 content: row.content,
                 created_at: timestamp(row.created_at, &format!("{path}.created_at"))?,
                 usage: usage(
@@ -917,7 +922,9 @@ enum JsonShape {
 
 fn validate_json(raw: &str, shape: JsonShape, field: &str) -> Result<(), LegacyBackupSessionError> {
     if raw.len() > JSON_LIMIT {
-        return Err(LegacyBackupSessionError::LimitExceeded);
+        return Err(LegacyBackupSessionError::LimitExceeded {
+            reason: "json document exceeds the size limit",
+        });
     }
     let value: Value = serde_json::from_str(raw).map_err(|_| malformed(field))?;
     if !matches!(
@@ -964,7 +971,9 @@ fn optional_string_array(
 ) -> Result<Option<Vec<String>>, LegacyBackupSessionError> {
     raw.map(|raw| {
         if raw.len() > JSON_LIMIT {
-            return Err(LegacyBackupSessionError::LimitExceeded);
+            return Err(LegacyBackupSessionError::LimitExceeded {
+                reason: "string array json exceeds the size limit",
+            });
         }
         let values: Vec<String> = serde_json::from_str(raw).map_err(|_| malformed(field))?;
         if values.iter().any(|value| value.trim().is_empty())

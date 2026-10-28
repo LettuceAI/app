@@ -51,7 +51,9 @@ impl Score {
 
     pub fn from_ratio(value: f64) -> Result<Self, MemoryValidationError> {
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-            return Err(MemoryValidationError::InvalidScore);
+            return Err(MemoryValidationError::InvalidScore {
+                reason: "ratio is not a finite value between zero and one",
+            });
         }
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         Ok(Self((value * 10_000.0).round() as u16))
@@ -131,7 +133,9 @@ impl TryFrom<u32> for MemoryShortId {
     type Error = MemoryValidationError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or(MemoryValidationError::InvalidShortId)
+        Self::new(value).ok_or(MemoryValidationError::InvalidShortId {
+            reason: "short id is not a six digit number",
+        })
     }
 }
 
@@ -271,20 +275,29 @@ impl MemoryItem {
             }
             Some(_) => false,
         };
-        if !valid_observation
-            || (self.source_role.is_some() && self.source_message_id.is_none())
-            || self.source_role.is_some_and(|role| {
-                !matches!(
-                    role,
-                    lettuce_conversations::MessageRole::User
-                        | lettuce_conversations::MessageRole::Assistant
-                )
-            })
-            || self.superseded_by.is_some() != self.superseded_at.is_some()
-            || self.superseded_by == Some(self.id)
-            || self.supersedes.contains(&self.id)
-        {
-            return Err(MemoryValidationError::InvalidTemporalAttribution);
+        let reason = if !valid_observation {
+            Some("observed time does not match its precision")
+        } else if self.source_role.is_some() && self.source_message_id.is_none() {
+            Some("source role is set without a source message")
+        } else if self.source_role.is_some_and(|role| {
+            !matches!(
+                role,
+                lettuce_conversations::MessageRole::User
+                    | lettuce_conversations::MessageRole::Assistant
+            )
+        }) {
+            Some("source role is neither user nor assistant")
+        } else if self.superseded_by.is_some() != self.superseded_at.is_some() {
+            Some("superseded by and superseded at are not set together")
+        } else if self.superseded_by == Some(self.id) {
+            Some("memory supersedes itself")
+        } else if self.supersedes.contains(&self.id) {
+            Some("memory lists itself as superseded")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Err(MemoryValidationError::InvalidTemporalAttribution { reason });
         }
         Ok(())
     }
@@ -301,7 +314,9 @@ pub struct MemorySpaceSnapshot {
 impl MemorySpaceSnapshot {
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
         if self.revision.get() == 0 {
-            return Err(MemoryValidationError::InvalidRevision);
+            return Err(MemoryValidationError::InvalidRevision {
+                reason: "space revision is zero",
+            });
         }
         let mut ids = HashSet::with_capacity(self.items.len());
         let mut short_ids = HashSet::with_capacity(self.items.len());
@@ -344,16 +359,28 @@ impl MemorySummary {
         if self.origin == MemoryOrigin::User {
             if self.window_start != 0 || self.window_end != 0 || !self.source_message_ids.is_empty()
             {
-                return Err(MemoryValidationError::InvalidSummaryWindow);
+                return Err(MemoryValidationError::InvalidSummaryWindow {
+                    reason: "user summary has a window or source messages",
+                });
             }
             return Ok(());
         }
-        if self.source_message_ids.is_empty()
-            || self.window_end <= self.window_start
-            || self.window_end - self.window_start
-                != u64::try_from(self.source_message_ids.len()).unwrap_or(u64::MAX)
+        if self.source_message_ids.is_empty() {
+            return Err(MemoryValidationError::InvalidSummaryWindow {
+                reason: "generated summary has no source messages",
+            });
+        }
+        if self.window_end <= self.window_start {
+            return Err(MemoryValidationError::InvalidSummaryWindow {
+                reason: "window end is not after window start",
+            });
+        }
+        if self.window_end - self.window_start
+            != u64::try_from(self.source_message_ids.len()).unwrap_or(u64::MAX)
         {
-            return Err(MemoryValidationError::InvalidSummaryWindow);
+            return Err(MemoryValidationError::InvalidSummaryWindow {
+                reason: "window length differs from the source message count",
+            });
         }
         let mut ids = HashSet::with_capacity(self.source_message_ids.len());
         if self.source_message_ids.iter().any(|id| !ids.insert(*id)) {
@@ -377,7 +404,9 @@ pub struct MemoryPolicy {
 impl MemoryPolicy {
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
         if self.max_entries == 0 || self.max_entries > MAX_MEMORY_ITEMS {
-            return Err(MemoryValidationError::InvalidMaxEntries);
+            return Err(MemoryValidationError::InvalidMaxEntries {
+                reason: "max entries is zero or above the memory item limit",
+            });
         }
         Ok(())
     }
@@ -389,34 +418,34 @@ pub enum MemoryValidationError {
     EmptyText,
     #[error("memory text is too large")]
     TextTooLarge,
-    #[error("memory score is outside zero through one")]
-    InvalidScore,
+    #[error("memory score is outside zero through one: {reason}")]
+    InvalidScore { reason: &'static str },
     #[error("pinned memory cannot be cold")]
     PinnedCold,
-    #[error("memory temporal attribution is inconsistent")]
-    InvalidTemporalAttribution,
+    #[error("memory temporal attribution is inconsistent: {reason}")]
+    InvalidTemporalAttribution { reason: &'static str },
     #[error("memory space contains duplicate item ids")]
     DuplicateItemId,
     #[error("memory space contains duplicate short ids")]
     DuplicateShortId,
-    #[error("memory short id is outside six digits")]
-    InvalidShortId,
-    #[error("memory space revision must be positive")]
-    InvalidRevision,
+    #[error("memory short id is outside six digits: {reason}")]
+    InvalidShortId { reason: &'static str },
+    #[error("memory space revision is invalid: {reason}")]
+    InvalidRevision { reason: &'static str },
     #[error("memory summary is empty")]
     EmptySummary,
     #[error("memory summary is too large")]
     SummaryTooLarge,
-    #[error("memory summary window is invalid")]
-    InvalidSummaryWindow,
+    #[error("memory summary window is invalid: {reason}")]
+    InvalidSummaryWindow { reason: &'static str },
     #[error("memory summary contains a duplicate source message")]
     DuplicateSummarySourceMessage,
-    #[error("memory space identity does not match")]
-    InvalidSpaceId,
-    #[error("memory policy max entries is invalid")]
-    InvalidMaxEntries,
-    #[error("new memory space must start at revision one")]
-    InvalidInitialRevision,
+    #[error("memory space identity does not match: {reason}")]
+    InvalidSpaceId { reason: &'static str },
+    #[error("memory policy max entries is invalid: {reason}")]
+    InvalidMaxEntries { reason: &'static str },
+    #[error("new memory space must start at revision one: {reason}")]
+    InvalidInitialRevision { reason: &'static str },
 }
 
 pub(crate) fn validate_memory_text(value: &str) -> Result<&str, MemoryValidationError> {
@@ -457,10 +486,10 @@ mod tests {
             Err(error) => panic!("score conversion failed: {error}"),
         };
         assert_eq!(score.basis_points(), 7_000);
-        assert_eq!(
+        assert!(matches!(
             Score::from_ratio(1.1),
-            Err(MemoryValidationError::InvalidScore)
-        );
+            Err(MemoryValidationError::InvalidScore { .. })
+        ));
     }
 
     #[test]
@@ -470,10 +499,10 @@ mod tests {
             revision: Revision::new(0),
             items: vec![],
         };
-        assert_eq!(
+        assert!(matches!(
             snapshot.validate(),
-            Err(MemoryValidationError::InvalidRevision)
-        );
+            Err(MemoryValidationError::InvalidRevision { .. })
+        ));
     }
 
     #[test]
@@ -621,9 +650,9 @@ mod tests {
             source_message_ids: vec![MessageId::new(), MessageId::new()],
             updated_at: TimestampMillis::new(1),
         };
-        assert_eq!(
+        assert!(matches!(
             summary.validate(),
-            Err(MemoryValidationError::InvalidSummaryWindow)
-        );
+            Err(MemoryValidationError::InvalidSummaryWindow { .. })
+        ));
     }
 }

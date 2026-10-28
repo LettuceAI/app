@@ -47,8 +47,8 @@ pub enum LorebookKeywordDispatchError {
     Jobs(#[from] StoreError),
     #[error("lorebook keyword generation run operation failed: {0}")]
     Run(#[from] LorebookKeywordRunRepositoryError),
-    #[error("lorebook keyword generation claimed work is inconsistent")]
-    InvalidWork,
+    #[error("lorebook keyword generation claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -79,9 +79,13 @@ impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
         let job = self
             .jobs
             .get(run.job_id)?
-            .ok_or(LorebookKeywordDispatchError::InvalidWork)?;
+            .ok_or(LorebookKeywordDispatchError::InvalidWork {
+                reason: "job of the run is missing from the store",
+            })?;
         if job.kind != JobKind::CreationRun {
-            return Err(LorebookKeywordDispatchError::InvalidWork);
+            return Err(LorebookKeywordDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -91,7 +95,9 @@ impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(request_id) {
-            return Err(LorebookKeywordDispatchError::InvalidWork);
+            return Err(LorebookKeywordDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(run.job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -126,7 +132,9 @@ impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.state != JobState::Running
             || work.claim.input_ref != OutcomeRef::Request(work.run.request_id)
         {
-            return Err(LorebookKeywordDispatchError::InvalidWork);
+            return Err(LorebookKeywordDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         match result {
@@ -180,6 +188,7 @@ impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(LorebookKeywordSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "lorebook keyword job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -197,26 +206,28 @@ fn retryable(error: &LorebookKeywordExecutionError) -> bool {
         LorebookKeywordExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        LorebookKeywordExecutionError::ReplayCleanup
-        | LorebookKeywordExecutionError::Run(LorebookKeywordRunRepositoryError::Failure) => true,
+        LorebookKeywordExecutionError::ReplayCleanup { .. }
+        | LorebookKeywordExecutionError::Run(LorebookKeywordRunRepositoryError::Failure {
+            ..
+        }) => true,
         _ => false,
     }
 }
 
 fn job_error(error: &LorebookKeywordExecutionError) -> JobError {
     let (code, message) = match error {
-        LorebookKeywordExecutionError::InvalidOwnership
-        | LorebookKeywordExecutionError::InvalidPrompt
-        | LorebookKeywordExecutionError::ContextTooLarge => {
+        LorebookKeywordExecutionError::InvalidOwnership { .. }
+        | LorebookKeywordExecutionError::InvalidPrompt { .. }
+        | LorebookKeywordExecutionError::ContextTooLarge { .. } => {
             (JobErrorCode::InvalidInput, "lorebook-keyword-invalid-input")
         }
         LorebookKeywordExecutionError::Inference(_)
-        | LorebookKeywordExecutionError::InvalidResponse => (
+        | LorebookKeywordExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "lorebook-keyword-provider-rejected",
         ),
         LorebookKeywordExecutionError::Prompt(_)
-        | LorebookKeywordExecutionError::ReplayCleanup
+        | LorebookKeywordExecutionError::ReplayCleanup { .. }
         | LorebookKeywordExecutionError::Run(_) => (
             JobErrorCode::StorageFailure,
             "lorebook-keyword-storage-failed",
@@ -238,8 +249,14 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(retryable(&LorebookKeywordExecutionError::Run(
-            LorebookKeywordRunRepositoryError::Failure
+            LorebookKeywordRunRepositoryError::Failure {
+                reason: "simulated failure"
+            }
         )));
-        assert!(!retryable(&LorebookKeywordExecutionError::InvalidResponse));
+        assert!(!retryable(
+            &LorebookKeywordExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
+        ));
     }
 }

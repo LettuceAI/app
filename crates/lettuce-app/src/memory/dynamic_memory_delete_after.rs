@@ -500,10 +500,12 @@ fn failure_of(error: &DynamicMemoryDeleteAfterError) -> lettuce_memory::OwedRewi
             OwedRewindFailure::Conflict
         }
         DynamicMemoryDeleteAfterError::InvalidResult => OwedRewindFailure::Inconsistent,
-        DynamicMemoryDeleteAfterError::Rewind(DynamicMemorySuffixRewindError::Storage)
-        | DynamicMemoryDeleteAfterError::Conversation(ConversationRepositoryError::Storage) => {
-            OwedRewindFailure::Storage
-        }
+        DynamicMemoryDeleteAfterError::Rewind(DynamicMemorySuffixRewindError::Storage {
+            ..
+        })
+        | DynamicMemoryDeleteAfterError::Conversation(ConversationRepositoryError::Storage {
+            ..
+        }) => OwedRewindFailure::Storage,
         _ => OwedRewindFailure::Other,
     }
 }

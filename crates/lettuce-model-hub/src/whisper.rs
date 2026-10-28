@@ -79,7 +79,9 @@ impl RemoteWhisperModel {
             || self.recommended_for_mobile != is_recommended_for_mobile(&self.model_id)
             || self.recommended_for_desktop != is_recommended_for_desktop(&self.model_id)
         {
-            return Err(WhisperModelError::InvalidManifest);
+            return Err(WhisperModelError::InvalidManifest {
+                reason: "manifest fields are invalid or inconsistent with the model id",
+            });
         }
         Ok(())
     }
@@ -134,7 +136,9 @@ impl WhisperInstallStore {
         {
             InstallPreparation::Installed(mut installed) => {
                 if installed.len() != remote.byte_size {
-                    return Err(WhisperModelError::Mismatch);
+                    return Err(WhisperModelError::Mismatch {
+                        reason: "installed file size does not match the pinned size",
+                    });
                 }
                 installed.rewind().map_err(map_platform_error)?;
                 verify_sha256(&mut installed, remote.byte_size, &remote.sha256)?;
@@ -208,7 +212,9 @@ impl WhisperDownloadSession {
 
     pub fn finish(mut self) -> Result<InstalledWhisperManifest, WhisperModelError> {
         if self.inner.offset() != self.remote.byte_size {
-            return Err(WhisperModelError::Mismatch);
+            return Err(WhisperModelError::Mismatch {
+                reason: "downloaded bytes do not match the pinned size",
+            });
         }
         self.inner.sync().map_err(map_platform_error)?;
         self.inner.rewind().map_err(map_platform_error)?;
@@ -255,22 +261,35 @@ fn verify_sha256(
     let mut total = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| WhisperModelError::Unreadable)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the model for hashing failed");
+            WhisperModelError::Unreadable {
+                reason: "reading the model for hashing failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         total = total
-            .checked_add(u64::try_from(read).map_err(|_| WhisperModelError::Mismatch)?)
-            .ok_or(WhisperModelError::Mismatch)?;
+            .checked_add(
+                u64::try_from(read).map_err(|_| WhisperModelError::Mismatch {
+                    reason: "model read length exceeds the u64 range",
+                })?,
+            )
+            .ok_or(WhisperModelError::Mismatch {
+                reason: "model byte count overflowed",
+            })?;
         if total > expected_size {
-            return Err(WhisperModelError::Mismatch);
+            return Err(WhisperModelError::Mismatch {
+                reason: "model is larger than the expected size",
+            });
         }
         hasher.update(&buffer[..read]);
     }
     if total != expected_size || format!("{:x}", hasher.finalize()) != expected_sha256 {
-        return Err(WhisperModelError::Mismatch);
+        return Err(WhisperModelError::Mismatch {
+            reason: "model size or sha256 does not match the pin",
+        });
     }
     Ok(())
 }
@@ -301,8 +320,12 @@ fn map_platform_error(error: lettuce_platform::PlatformError) -> WhisperModelErr
         lettuce_platform::PlatformError::Denied | lettuce_platform::PlatformError::InvalidKey => {
             WhisperModelError::OutsideSource
         }
-        lettuce_platform::PlatformError::LimitExceeded => WhisperModelError::Mismatch,
-        _ => WhisperModelError::Unreadable,
+        lettuce_platform::PlatformError::LimitExceeded => WhisperModelError::Mismatch {
+            reason: "platform storage limit was exceeded",
+        },
+        _ => WhisperModelError::Unreadable {
+            reason: "platform storage access failed",
+        },
     }
 }
 
@@ -327,11 +350,20 @@ impl InstalledWhisperManifest {
         let filename = model_path
             .file_name()
             .and_then(|value| value.to_str())
-            .ok_or(WhisperModelError::InvalidManifest)?;
+            .ok_or(WhisperModelError::InvalidManifest {
+                reason: "model file name is not valid unicode",
+            })?;
         let model_id = model_id_from_filename(filename)?;
-        let metadata = std::fs::metadata(model_path).map_err(|_| WhisperModelError::Unreadable)?;
+        let metadata = std::fs::metadata(model_path).map_err(|error| {
+            tracing::warn!(%error, "reading the legacy model metadata failed");
+            WhisperModelError::Unreadable {
+                reason: "reading the legacy model metadata failed",
+            }
+        })?;
         if metadata.len() == 0 || metadata.len() > MAX_WHISPER_MODEL_BYTES {
-            return Err(WhisperModelError::InvalidManifest);
+            return Err(WhisperModelError::InvalidManifest {
+                reason: "legacy model is empty or exceeds the size limit",
+            });
         }
         let hash = hash_file(model_path, metadata.len())?;
         Ok(Self {
@@ -355,7 +387,9 @@ impl InstalledWhisperManifest {
         let metadata =
             std::fs::metadata(&self.model.path).map_err(|_| WhisperModelError::Missing)?;
         if !metadata.is_file() || metadata.len() != self.model.byte_size {
-            return Err(WhisperModelError::Mismatch);
+            return Err(WhisperModelError::Mismatch {
+                reason: "model file is not a regular file of the recorded size",
+            });
         }
         Ok(self.artifacts())
     }
@@ -364,7 +398,9 @@ impl InstalledWhisperManifest {
     pub fn verify_contents(&self) -> Result<VerifiedWhisperArtifacts, WhisperModelError> {
         let artifacts = self.verify()?;
         if hash_file(&self.model.path, self.model.byte_size)? != self.model.blake3 {
-            return Err(WhisperModelError::Mismatch);
+            return Err(WhisperModelError::Mismatch {
+                reason: "model blake3 does not match the recorded hash",
+            });
         }
         Ok(artifacts)
     }
@@ -390,19 +426,25 @@ impl InstalledWhisperManifest {
             || self.model.byte_size == 0
             || self.model.byte_size > MAX_WHISPER_MODEL_BYTES
         {
-            return Err(WhisperModelError::InvalidManifest);
+            return Err(WhisperModelError::InvalidManifest {
+                reason: "source revision or model size is invalid",
+            });
         }
         let filename = self
             .model
             .path
             .file_name()
             .and_then(|value| value.to_str())
-            .ok_or(WhisperModelError::InvalidManifest)?;
+            .ok_or(WhisperModelError::InvalidManifest {
+                reason: "model file name is not valid unicode",
+            })?;
         if model_id_from_filename(filename)? != self.model_id
             || self.english_only != self.model_id.contains(".en")
             || self.quantized != self.model_id.contains("-q")
         {
-            return Err(WhisperModelError::InvalidManifest);
+            return Err(WhisperModelError::InvalidManifest {
+                reason: "model file name does not match the model id or its flags",
+            });
         }
         Ok(())
     }
@@ -455,31 +497,60 @@ pub fn inspect_legacy_whisper_models(
     admitted_at: TimestampMillis,
 ) -> Result<Vec<InstalledWhisperManifest>, WhisperModelError> {
     let mut manifests = Vec::new();
-    let folders =
-        std::fs::read_dir(legacy_models_root).map_err(|_| WhisperModelError::Unreadable)?;
+    let folders = std::fs::read_dir(legacy_models_root).map_err(|error| {
+        tracing::warn!(%error, "listing the legacy models folder failed");
+        WhisperModelError::Unreadable {
+            reason: "listing the legacy models folder failed",
+        }
+    })?;
     for (folder_index, folder) in folders.enumerate() {
         if folder_index >= 256 {
-            return Err(WhisperModelError::LimitExceeded);
+            return Err(WhisperModelError::LimitExceeded {
+                reason: "legacy models folder has too many entries",
+            });
         }
-        let folder = folder.map_err(|_| WhisperModelError::Unreadable)?;
-        let metadata = folder
-            .file_type()
-            .map_err(|_| WhisperModelError::Unreadable)?;
+        let folder = folder.map_err(|error| {
+            tracing::warn!(%error, "reading a legacy models folder entry failed");
+            WhisperModelError::Unreadable {
+                reason: "reading a legacy models folder entry failed",
+            }
+        })?;
+        let metadata = folder.file_type().map_err(|error| {
+            tracing::warn!(%error, "reading a legacy folder entry type failed");
+            WhisperModelError::Unreadable {
+                reason: "reading a legacy folder entry type failed",
+            }
+        })?;
         if metadata.is_symlink() {
             return Err(WhisperModelError::Symlink);
         }
         if !metadata.is_dir() {
             continue;
         }
-        let files = std::fs::read_dir(folder.path()).map_err(|_| WhisperModelError::Unreadable)?;
+        let files = std::fs::read_dir(folder.path()).map_err(|error| {
+            tracing::warn!(%error, "listing a legacy model folder failed");
+            WhisperModelError::Unreadable {
+                reason: "listing a legacy model folder failed",
+            }
+        })?;
         for (file_index, file) in files.enumerate() {
             if file_index >= 16 || manifests.len() >= 256 {
-                return Err(WhisperModelError::LimitExceeded);
+                return Err(WhisperModelError::LimitExceeded {
+                    reason: "legacy model folder has too many files",
+                });
             }
-            let file = file.map_err(|_| WhisperModelError::Unreadable)?;
-            let metadata = file
-                .file_type()
-                .map_err(|_| WhisperModelError::Unreadable)?;
+            let file = file.map_err(|error| {
+                tracing::warn!(%error, "reading a legacy model file entry failed");
+                WhisperModelError::Unreadable {
+                    reason: "reading a legacy model file entry failed",
+                }
+            })?;
+            let metadata = file.file_type().map_err(|error| {
+                tracing::warn!(%error, "reading a legacy file entry type failed");
+                WhisperModelError::Unreadable {
+                    reason: "reading a legacy file entry type failed",
+                }
+            })?;
             if metadata.is_symlink() {
                 return Err(WhisperModelError::Symlink);
             }
@@ -507,20 +578,20 @@ pub fn inspect_legacy_whisper_models(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum WhisperModelError {
-    #[error("Whisper model manifest is invalid")]
-    InvalidManifest,
+    #[error("Whisper model manifest is invalid: {reason}")]
+    InvalidManifest { reason: &'static str },
     #[error("Whisper model is outside the admitted source root")]
     OutsideSource,
     #[error("Whisper model source contains a symbolic link")]
     Symlink,
     #[error("Whisper model is missing")]
     Missing,
-    #[error("Whisper model cannot be read")]
-    Unreadable,
-    #[error("Whisper model does not match its manifest")]
-    Mismatch,
-    #[error("Whisper model discovery exceeds its bounded inventory")]
-    LimitExceeded,
+    #[error("Whisper model cannot be read: {reason}")]
+    Unreadable { reason: &'static str },
+    #[error("Whisper model does not match its manifest: {reason}")]
+    Mismatch { reason: &'static str },
+    #[error("Whisper model discovery exceeds its bounded inventory: {reason}")]
+    LimitExceeded { reason: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -529,10 +600,10 @@ pub enum WhisperModelRepositoryError {
     NotFound,
     #[error("Whisper model conflicts with durable state")]
     Conflict,
-    #[error("Whisper model data are invalid")]
-    InvalidData,
-    #[error("Whisper model storage failed")]
-    Storage,
+    #[error("Whisper model data are invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("Whisper model storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 fn validate_confined_regular_file(root: &Path, path: &Path) -> Result<(), WhisperModelError> {
@@ -550,7 +621,12 @@ fn validate_confined_regular_file(root: &Path, path: &Path) -> Result<(), Whispe
         return Err(WhisperModelError::OutsideSource);
     }
     if std::fs::symlink_metadata(root)
-        .map_err(|_| WhisperModelError::Unreadable)?
+        .map_err(|error| {
+            tracing::warn!(%error, "reading the source root metadata failed");
+            WhisperModelError::Unreadable {
+                reason: "reading the source root metadata failed",
+            }
+        })?
         .file_type()
         .is_symlink()
     {
@@ -562,17 +638,28 @@ fn validate_confined_regular_file(root: &Path, path: &Path) -> Result<(), Whispe
             return Err(WhisperModelError::OutsideSource);
         };
         current.push(component);
-        let metadata =
-            std::fs::symlink_metadata(&current).map_err(|_| WhisperModelError::Unreadable)?;
+        let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
+            tracing::warn!(%error, "reading a source path component metadata failed");
+            WhisperModelError::Unreadable {
+                reason: "reading a source path component metadata failed",
+            }
+        })?;
         if metadata.file_type().is_symlink() {
             return Err(WhisperModelError::Symlink);
         }
     }
     if !std::fs::metadata(path)
-        .map_err(|_| WhisperModelError::Unreadable)?
+        .map_err(|error| {
+            tracing::warn!(%error, "reading the model metadata failed");
+            WhisperModelError::Unreadable {
+                reason: "reading the model metadata failed",
+            }
+        })?
         .is_file()
     {
-        return Err(WhisperModelError::InvalidManifest);
+        return Err(WhisperModelError::InvalidManifest {
+            reason: "model path is not a regular file",
+        });
     }
     Ok(())
 }
@@ -586,12 +673,16 @@ fn model_id_from_filename(filename: &str) -> Result<String, WhisperModelError> {
         || lower.contains("encoder")
         || lower.contains(".mlmodelc")
     {
-        return Err(WhisperModelError::InvalidManifest);
+        return Err(WhisperModelError::InvalidManifest {
+            reason: "file name is not a ggml model file",
+        });
     }
     let model_id = filename
         .strip_prefix("ggml-")
         .and_then(|value| value.strip_suffix(".bin"))
-        .ok_or(WhisperModelError::InvalidManifest)?
+        .ok_or(WhisperModelError::InvalidManifest {
+            reason: "file name is not in the ggml-name.bin form",
+        })?
         .to_owned();
     validate_model_id(&model_id)?;
     Ok(model_id)
@@ -605,7 +696,9 @@ fn validate_model_id(model_id: &str) -> Result<(), WhisperModelError> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
     {
-        return Err(WhisperModelError::InvalidManifest);
+        return Err(WhisperModelError::InvalidManifest {
+            reason: "model id is blank, too long or has unsupported characters",
+        });
     }
     Ok(())
 }
@@ -656,30 +749,52 @@ fn is_recommended_for_desktop(model_id: &str) -> bool {
 }
 
 fn hash_file(path: &Path, expected_size: u64) -> Result<ContentHash, WhisperModelError> {
-    let mut file = File::open(path).map_err(|_| WhisperModelError::Unreadable)?;
+    let mut file = File::open(path).map_err(|error| {
+        tracing::warn!(%error, "opening the model for hashing failed");
+        WhisperModelError::Unreadable {
+            reason: "opening the model for hashing failed",
+        }
+    })?;
     let mut hasher = blake3::Hasher::new();
     let mut total = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|_| WhisperModelError::Unreadable)?;
+        let read = file.read(&mut buffer).map_err(|error| {
+            tracing::warn!(%error, "reading the model for hashing failed");
+            WhisperModelError::Unreadable {
+                reason: "reading the model for hashing failed",
+            }
+        })?;
         if read == 0 {
             break;
         }
         total = total
-            .checked_add(u64::try_from(read).map_err(|_| WhisperModelError::Unreadable)?)
-            .ok_or(WhisperModelError::InvalidManifest)?;
+            .checked_add(
+                u64::try_from(read).map_err(|_| WhisperModelError::Unreadable {
+                    reason: "model read length exceeds the u64 range",
+                })?,
+            )
+            .ok_or(WhisperModelError::InvalidManifest {
+                reason: "model byte count overflowed",
+            })?;
         if total > expected_size || total > MAX_WHISPER_MODEL_BYTES {
-            return Err(WhisperModelError::Mismatch);
+            return Err(WhisperModelError::Mismatch {
+                reason: "model is larger than the expected or maximum size",
+            });
         }
         hasher.update(&buffer[..read]);
     }
     if total != expected_size {
-        return Err(WhisperModelError::Mismatch);
+        return Err(WhisperModelError::Mismatch {
+            reason: "model size does not match the expected size",
+        });
     }
-    ContentHash::parse(hasher.finalize().to_hex().to_string())
-        .map_err(|_| WhisperModelError::InvalidManifest)
+    ContentHash::parse(hasher.finalize().to_hex().to_string()).map_err(|error| {
+        tracing::warn!(%error, "model digest is not a valid content hash");
+        WhisperModelError::InvalidManifest {
+            reason: "model digest is not a valid content hash",
+        }
+    })
 }
 
 #[cfg(test)]
@@ -766,7 +881,10 @@ mod tests {
             panic!("expected download");
         };
         download.append(b"bad").expect("download bytes");
-        assert_eq!(download.finish(), Err(WhisperModelError::Mismatch));
+        assert!(matches!(
+            download.finish(),
+            Err(WhisperModelError::Mismatch { .. })
+        ));
         assert!(!root.join("base/ggml-base.bin").exists());
         assert_eq!(
             std::fs::read_dir(root.join("downloads"))
@@ -805,10 +923,16 @@ mod tests {
             InstalledWhisperManifest::inspect_legacy(&root, &path, TimestampMillis::new(10))
                 .expect("manifest");
         std::fs::write(&path, b"changed").expect("tamper model");
-        assert_eq!(manifest.verify(), Err(WhisperModelError::Mismatch));
+        assert!(matches!(
+            manifest.verify(),
+            Err(WhisperModelError::Mismatch { .. })
+        ));
         std::fs::write(&path, b"altered!").expect("same-size tamper");
         assert!(manifest.verify().is_ok());
-        assert_eq!(manifest.verify_contents(), Err(WhisperModelError::Mismatch));
+        assert!(matches!(
+            manifest.verify_contents(),
+            Err(WhisperModelError::Mismatch { .. })
+        ));
         assert_eq!(
             InstalledWhisperManifest::inspect_legacy(
                 &root,

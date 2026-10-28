@@ -35,8 +35,8 @@ pub struct UpdateUserVoiceRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsConfigurationCoordinatorError {
-    #[error("TTS configuration is invalid")]
-    InvalidInput,
+    #[error("TTS configuration is invalid: {reason}")]
+    InvalidInput { reason: &'static str },
     #[error("TTS configuration persistence failed: {0}")]
     Repository(TtsConfigurationRepositoryError),
     #[error("TTS secret operation failed: {0}")]
@@ -182,9 +182,12 @@ where
             .ok_or(TtsConfigurationCoordinatorError::Repository(
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
-        let reference = provider
-            .api_key_ref
-            .ok_or(TtsConfigurationCoordinatorError::InvalidInput)?;
+        let reference =
+            provider
+                .api_key_ref
+                .ok_or(TtsConfigurationCoordinatorError::InvalidInput {
+                    reason: "the provider has no API key reference",
+                })?;
         self.secret_store
             .put(
                 SecretRecord::new(reference, audio_purpose(provider.secret_owner_id)),
@@ -209,7 +212,9 @@ where
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
         if provider.revision != expected_revision {
-            return Err(TtsConfigurationCoordinatorError::InvalidInput);
+            return Err(TtsConfigurationCoordinatorError::InvalidInput {
+                reason: "the provider revision differs from the expected revision",
+            });
         }
         let cleanup = if let Some(reference) = provider.api_key_ref {
             let purpose = audio_purpose(provider.secret_owner_id);
@@ -240,7 +245,9 @@ where
             .map_err(TtsConfigurationCoordinatorError::Repository)?;
         if removed != provider {
             return Err(TtsConfigurationCoordinatorError::Repository(
-                TtsConfigurationRepositoryError::InvalidData,
+                TtsConfigurationRepositoryError::InvalidData {
+                    reason: "removed provider differs from the requested provider",
+                },
             ));
         }
         if let Some(cleanup) = cleanup
@@ -334,7 +341,9 @@ where
             .await?;
         match status.state {
             SecretState::Present => Err(SecretStoreError::Backend(
-                lettuce_settings::SecretBackendError::Corrupt,
+                lettuce_settings::SecretBackendError::Corrupt {
+                    reason: "secret is still present after cleanup",
+                },
             )),
             SecretState::Missing => Ok(()),
             SecretState::Unavailable { reason } => Err(SecretStoreError::Unavailable(reason)),
@@ -361,7 +370,9 @@ pub(crate) fn validate_secret_choice(
     if valid {
         Ok(())
     } else {
-        Err(TtsConfigurationCoordinatorError::InvalidInput)
+        Err(TtsConfigurationCoordinatorError::InvalidInput {
+            reason: "the provider config and API key presence do not match",
+        })
     }
 }
 
@@ -422,7 +433,9 @@ mod tests {
         ) -> Result<SecretStatus, SecretStoreError> {
             if self.fail_next_delete.swap(false, Ordering::SeqCst) {
                 return Err(SecretStoreError::Backend(
-                    lettuce_settings::SecretBackendError::Unavailable,
+                    lettuce_settings::SecretBackendError::Unavailable {
+                        reason: "simulated failure",
+                    },
                 ));
             }
             self.inner
@@ -568,7 +581,7 @@ mod tests {
         let database = Database::open_in_memory().expect("database");
         let secrets = InMemorySecretStore::new();
         let coordinator = TtsConfigurationCoordinator::new(&database, &secrets);
-        assert_eq!(
+        assert!(matches!(
             coordinator
                 .create_audio_provider(
                     "Local".into(),
@@ -579,8 +592,8 @@ mod tests {
                     TimestampMillis::new(1),
                 )
                 .await,
-            Err(TtsConfigurationCoordinatorError::InvalidInput)
-        );
+            Err(TtsConfigurationCoordinatorError::InvalidInput { .. })
+        ));
         assert!(
             coordinator
                 .list_audio_providers()
@@ -614,7 +627,9 @@ mod tests {
         };
         assert_eq!(
             source,
-            SecretStoreError::Backend(lettuce_settings::SecretBackendError::Unavailable)
+            SecretStoreError::Backend(lettuce_settings::SecretBackendError::Unavailable {
+                reason: "simulated failure"
+            })
         );
         assert_eq!(
             database.get_audio_provider(provider.id).expect("provider"),

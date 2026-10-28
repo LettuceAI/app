@@ -256,7 +256,7 @@ impl From<MemoryCycleRevertError> for RevertFailure {
                 api_error(ApiErrorCode::Conflict, error.to_string())
             }
             MemoryCycleRevertError::Running => api_error(ApiErrorCode::Busy, error.to_string()),
-            MemoryCycleRevertError::NothingToRevert | MemoryCycleRevertError::Invalid => {
+            MemoryCycleRevertError::NothingToRevert | MemoryCycleRevertError::Invalid { .. } => {
                 api_error(ApiErrorCode::InvalidInput, error.to_string())
             }
             MemoryCycleRevertError::Dependent { later_run_id } => ApiError {
@@ -273,7 +273,7 @@ impl From<MemoryCycleRevertError> for RevertFailure {
                     memory_id: memory_id.to_string(),
                 }),
             },
-            MemoryCycleRevertError::Storage => api_error(ApiErrorCode::Internal, error.to_string()),
+            MemoryCycleRevertError::Storage { .. } => api_error(ApiErrorCode::Internal, error.to_string()),
         })
     }
 }

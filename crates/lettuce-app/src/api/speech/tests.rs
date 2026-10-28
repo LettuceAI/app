@@ -408,11 +408,11 @@ async fn a_missing_whisper_model_fails_terminally_with_a_typed_failure() {
 async fn a_transient_provider_failure_retries_with_backoff_and_stops_at_the_cap() {
     for (runtime_error, cause) in [
         (
-            TtsRuntimeError::Unavailable,
+            TtsRuntimeError::Unavailable { reason: "simulated failure" },
             dto::SpeechTransientFailure::Unavailable,
         ),
         (
-            TtsRuntimeError::NetworkUnavailable,
+            TtsRuntimeError::NetworkUnavailable { reason: "simulated failure" },
             dto::SpeechTransientFailure::NetworkUnavailable,
         ),
         (
@@ -1010,7 +1010,7 @@ async fn the_default_speech_host_has_no_microphone_and_no_runtime() {
 async fn local_runtime_unavailability_and_missing_credentials_are_terminal() {
     for local in [true, false] {
         let env = env(
-            TtsMode::Fail(TtsRuntimeError::Unavailable),
+            TtsMode::Fail(TtsRuntimeError::Unavailable { reason: "simulated failure" }),
             AsrMode::Text("unused"),
             None,
         );
@@ -3398,7 +3398,7 @@ async fn failed_transcription_retains_retry_audio_until_expiry() {
     use lettuce_speech::TranscriptionRepository;
     let env = env(
         TtsMode::Speak,
-        AsrMode::Fail(AsrRuntimeError::Rejected),
+        AsrMode::Fail(AsrRuntimeError::Rejected { reason: "simulated failure" }),
         None,
     );
     let (id, input) = temporary_transcription(&env).await;

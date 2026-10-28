@@ -54,7 +54,9 @@ impl CompanionEffectBackup {
         manual_edits: &[lettuce_memory::MemoryManualEditRecord],
     ) -> Result<(), CompanionEffectBackupError> {
         if self.version != COMPANION_EFFECT_BACKUP_VERSION {
-            return Err(CompanionEffectBackupError::InvalidData);
+            return Err(CompanionEffectBackupError::InvalidData {
+                reason: "backup version is not the supported version",
+            });
         }
         self.effects
             .sort_by_key(|effect| (effect.conversation_id, effect.created_at, effect.id));
@@ -112,7 +114,9 @@ impl CompanionEffectBackup {
                         })
                 })
             {
-                return Err(CompanionEffectBackupError::InvalidData);
+                return Err(CompanionEffectBackupError::InvalidData {
+                    reason: "effect references a missing message, has out of order timestamps, an invalid seed or terminal state, or a mismatched source window",
+                });
             }
         }
         let mut rewind_ids = BTreeSet::new();
@@ -127,19 +131,21 @@ impl CompanionEffectBackup {
                 || match rewind.invalid_run_id {
                     Some(_) => {
                         rewind.resulting_memory_revision
-                            != rewind
-                                .source_memory_revision
-                                .next()
-                                .map_err(|_| CompanionEffectBackupError::InvalidData)?
+                            != rewind.source_memory_revision.next().map_err(|_| {
+                                CompanionEffectBackupError::InvalidData {
+                                    reason: "memory revision overflowed",
+                                }
+                            })?
                     }
                     None => {
                         let manual_undo=manual_edits.iter().any(|record| record.undone_at==Some(rewind.applied_at) && record.history.edit.conversation_id==rewind.conversation_id && record.history.space_id==rewind.space_id && record.history.anchor_message_id.is_some_and(|id| history.conversations.iter().filter(|conversation| conversation.aggregate.conversation.id==rewind.conversation_id).flat_map(|conversation| &conversation.messages).any(|message| message.message.id==id && message.message.branch_id==record.history.edit.branch_id && message.message.visibility==lettuce_conversations::MessageVisibility::Tombstoned)));
                         rewind.resulting_memory_revision
                             != if manual_undo {
-                                rewind
-                                    .source_memory_revision
-                                    .next()
-                                    .map_err(|_| CompanionEffectBackupError::InvalidData)?
+                                rewind.source_memory_revision.next().map_err(|_| {
+                                    CompanionEffectBackupError::InvalidData {
+                                        reason: "memory revision overflowed",
+                                    }
+                                })?
                             } else {
                                 rewind.source_memory_revision
                             }
@@ -164,14 +170,18 @@ impl CompanionEffectBackup {
                         || !invalidated.insert(*id)
                 })
             {
-                return Err(CompanionEffectBackupError::InvalidData);
+                return Err(CompanionEffectBackupError::InvalidData {
+                    reason: "rewind references an unknown or duplicate effect or an effect updated after the rewind",
+                });
             }
         }
         if self.effects.iter().any(|effect| {
             (effect.status == CompanionTurnEffectStatus::Invalidated)
                 != invalidated.contains(&effect.id)
         }) {
-            return Err(CompanionEffectBackupError::InvalidData);
+            return Err(CompanionEffectBackupError::InvalidData {
+                reason: "invalidated status does not match the rewind effect list",
+            });
         }
         Ok(())
     }
@@ -198,9 +208,14 @@ fn rewind_digest(
         format_version: 1,
         value: &value,
     })
-    .map_err(|_| CompanionEffectBackupError::InvalidData)?;
-    ContentHash::parse(blake3::hash(&encoded).to_hex().to_string())
-        .map_err(|_| CompanionEffectBackupError::InvalidData)
+    .map_err(|_| CompanionEffectBackupError::InvalidData {
+        reason: "rewind digest input could not be encoded",
+    })?;
+    ContentHash::parse(blake3::hash(&encoded).to_hex().to_string()).map_err(|_| {
+        CompanionEffectBackupError::InvalidData {
+            reason: "rewind digest is not a valid content hash",
+        }
+    })
 }
 
 fn valid_effect_terminal(effect: &CompanionTurnEffect) -> bool {
@@ -246,6 +261,6 @@ fn valid_failed_effect(effect: &CompanionTurnEffect) -> bool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionEffectBackupError {
-    #[error("companion effect backup is invalid")]
-    InvalidData,
+    #[error("companion effect backup is invalid: {reason}")]
+    InvalidData { reason: &'static str },
 }

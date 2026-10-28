@@ -69,12 +69,12 @@ pub struct UsageReportRow {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum UsageReportError {
-    #[error("usage report storage failed")]
-    Storage,
-    #[error("usage report evidence is invalid")]
-    InvalidData,
-    #[error("usage report exceeds numeric range")]
-    Overflow,
+    #[error("usage report storage failed: {reason}")]
+    Storage { reason: &'static str },
+    #[error("usage report evidence is invalid: {reason}")]
+    InvalidData { reason: &'static str },
+    #[error("usage report exceeds numeric range: {reason}")]
+    Overflow { reason: &'static str },
     #[error("usage report cursor is invalid")]
     InvalidCursor,
     #[error("usage report date range is invalid")]
@@ -142,7 +142,9 @@ impl UsageReportEvidence {
         for (event, basis) in &self.dispatches {
             event
                 .validate_snapshot()
-                .map_err(|_| UsageReportError::InvalidData)?;
+                .map_err(|_| UsageReportError::InvalidData {
+                    reason: "dispatch snapshot failed validation",
+                })?;
             let terminal = terminals.get(&event.logical_attempt_id);
             let mut row = UsageReportRow {
                 id: event.id.to_string(),
@@ -194,11 +196,11 @@ impl UsageReportEvidence {
                     }
                 }
             if let Some(basis) = basis {
-                row.apply_cost(
-                    basis
-                        .calculate_job(event)
-                        .map_err(|_| UsageReportError::InvalidData)?,
-                );
+                row.apply_cost(basis.calculate_job(event).map_err(|_| {
+                    UsageReportError::InvalidData {
+                        reason: "job cost could not be calculated",
+                    }
+                })?);
             } else if dispatch_counts.get(&event.logical_attempt_id) == Some(&1)
                 && !cleared_attempts.contains(&event.logical_attempt_id)
                 && let Some((aggregate, basis)) = aggregate_costs.get(&event.logical_attempt_id)
@@ -215,11 +217,11 @@ impl UsageReportEvidence {
                 }) = &event.result
                 && terminal_usage == dispatch_usage
             {
-                row.apply_cost(
-                    basis
-                        .calculate(aggregate)
-                        .map_err(|_| UsageReportError::InvalidData)?,
-                );
+                row.apply_cost(basis.calculate(aggregate).map_err(|_| {
+                    UsageReportError::InvalidData {
+                        reason: "aggregate cost could not be calculated",
+                    }
+                })?);
             }
             rows.push(row);
         }
@@ -232,7 +234,9 @@ impl UsageReportEvidence {
             event
                 .record
                 .validate()
-                .map_err(|_| UsageReportError::InvalidData)?;
+                .map_err(|_| UsageReportError::InvalidData {
+                    reason: "usage record failed validation",
+                })?;
             let mut row = UsageReportRow {
                 id: event.id.to_string(),
                 timestamp: event.record.recorded_at.get(),
@@ -246,11 +250,11 @@ impl UsageReportEvidence {
                 row.apply_usage(usage);
             }
             if let Some(basis) = basis {
-                row.apply_cost(
-                    basis
-                        .calculate(event)
-                        .map_err(|_| UsageReportError::InvalidData)?,
-                );
+                row.apply_cost(basis.calculate(event).map_err(|_| {
+                    UsageReportError::InvalidData {
+                        reason: "event cost could not be calculated",
+                    }
+                })?);
             }
             rows.push(row);
         }
@@ -258,7 +262,9 @@ impl UsageReportEvidence {
         let mut ids = BTreeSet::new();
         for row in &rows {
             if row.id.is_empty() || !ids.insert(&row.id) {
-                return Err(UsageReportError::InvalidData);
+                return Err(UsageReportError::InvalidData {
+                    reason: "report row id is blank or duplicated",
+                });
             }
             row.validate()?;
         }
@@ -284,7 +290,9 @@ impl UsageReportRow {
         .flatten()
         {
             if !value.is_finite() {
-                return Err(UsageReportError::InvalidData);
+                return Err(UsageReportError::InvalidData {
+                    reason: "a cost value is not finite",
+                });
             }
         }
         Ok(())
@@ -485,7 +493,10 @@ mod tests {
         assert_eq!(rows[0].status, UsageReportStatus::Failed);
         let snapshot = corrupt.dispatches[0].0.snapshot.as_mut().expect("admission");
         snapshot.character_name = Some("Renamed".into());
-        assert_eq!(corrupt.charge_rows(), Err(UsageReportError::InvalidData));
+        assert!(matches!(
+            corrupt.charge_rows(),
+            Err(UsageReportError::InvalidData { .. })
+        ));
     }
 
     #[test]

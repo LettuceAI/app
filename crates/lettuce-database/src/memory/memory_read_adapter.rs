@@ -13,8 +13,8 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use super::{dynamic_memory_run_adapter, memory_adapter, memory_branch_adapter};
 use crate::Database;
 
-fn storage(_: impl std::fmt::Debug) -> MemoryRepositoryError {
-    MemoryRepositoryError::Failure("sqlite memory read failed".into())
+fn storage(error: impl std::fmt::Debug) -> MemoryRepositoryError {
+    MemoryRepositoryError::Failure(format!("sqlite memory read failed: {error:?}"))
 }
 
 pub(crate) fn resolved_summary_in(

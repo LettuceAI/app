@@ -95,7 +95,9 @@ impl<
             self.repository,
             crate::BuiltInPromptId::MemoryRuntime,
         )
-        .map_err(|_| CompanionMemoryRepairError::InvalidPrompt)?;
+        .map_err(|error| CompanionMemoryRepairError::InvalidPrompt {
+            reason: format!("memory runtime prompt text could not be loaded: {error}"),
+        })?;
         let context = repair_context(&text, &candidates)?;
         let request = InferenceRequest {
             turn_id: GenerationTurnId::from_uuid(run.id.as_uuid()),
@@ -113,7 +115,9 @@ impl<
         };
         request
             .validate()
-            .map_err(|_| CompanionMemoryRepairError::InvalidPrompt)?;
+            .map_err(|error| CompanionMemoryRepairError::InvalidPrompt {
+                reason: format!("repair request failed validation: {error}"),
+            })?;
         let mut outcome = match run_memory_request_with_fallback(
             self.repository,
             self.inference,
@@ -138,8 +142,11 @@ impl<
         let resolved = resolve(&candidates, &repairs);
         if resolved.is_empty() {
             if let Some(outcome) = &outcome {
-                cleanup_outcome_replays(self.repository, outcome)
-                    .map_err(|_| CompanionMemoryRepairError::ReplayCleanup)?;
+                cleanup_outcome_replays(self.repository, outcome).map_err(|error| {
+                    CompanionMemoryRepairError::ReplayCleanup {
+                        reason: error.to_string(),
+                    }
+                })?;
             }
             return Ok(None);
         }
@@ -160,8 +167,11 @@ impl<
         ) {
             Ok(planned) => planned,
             Err(error) => {
-                cleanup_outcome_replays(self.repository, &outcome)
-                    .map_err(|_| CompanionMemoryRepairError::ReplayCleanup)?;
+                cleanup_outcome_replays(self.repository, &outcome).map_err(|error| {
+                    CompanionMemoryRepairError::ReplayCleanup {
+                        reason: error.to_string(),
+                    }
+                })?;
                 return Err(CompanionMemoryRepairError::InvalidOutcome(error));
             }
         };
@@ -241,8 +251,11 @@ fn repair_context(
     candidates: &[MemoryRepairCandidate],
 ) -> Result<ProviderNeutralContext, CompanionMemoryRepairError> {
     let render = |key: &str, variables: Vec<(Variable, String)>| {
-        text.render_with(key, variables)
-            .map_err(|_| CompanionMemoryRepairError::InvalidPrompt)
+        text.render_with(key, variables).map_err(|error| {
+            CompanionMemoryRepairError::InvalidPrompt {
+                reason: format!("repair prompt fragment {key} could not be rendered: {error}"),
+            }
+        })
     };
     let lines = candidates
         .iter()
@@ -283,11 +296,16 @@ fn repair_context(
         })
         .try_fold(0_usize, usize::checked_add)
         .and_then(|size| u32::try_from(size).ok())
-        .ok_or(CompanionMemoryRepairError::InvalidPrompt)?;
+        .ok_or(CompanionMemoryRepairError::InvalidPrompt {
+            reason: "repair prompt text exceeds the byte limit".to_owned(),
+        })?;
     Ok(ProviderNeutralContext {
         budget: lettuce_conversations::ContextBudgetReport {
-            selected_messages: u32::try_from(messages.len())
-                .map_err(|_| CompanionMemoryRepairError::InvalidPrompt)?,
+            selected_messages: u32::try_from(messages.len()).map_err(|_| {
+                CompanionMemoryRepairError::InvalidPrompt {
+                    reason: "repair message count does not fit in u32".to_owned(),
+                }
+            })?,
             omitted_messages: 0,
             input_bytes,
             estimated_input_tokens: input_bytes.saturating_add(3) / 4,
@@ -410,14 +428,14 @@ fn guessed_outcome(
 pub enum CompanionMemoryRepairError {
     #[error("background memory run persistence failed: {0}")]
     Run(#[from] DynamicMemoryRunRepositoryError),
-    #[error("memory repair prompt is unavailable")]
-    InvalidPrompt,
+    #[error("memory repair prompt is unavailable: {reason}")]
+    InvalidPrompt { reason: String },
     #[error("memory repair response is invalid: {0}")]
     InvalidOutcome(CompanionMemoryInferenceError),
     #[error("memory repair round limit reached")]
     RoundLimit,
-    #[error("memory repair replay cleanup failed")]
-    ReplayCleanup,
+    #[error("memory repair replay cleanup failed: {reason}")]
+    ReplayCleanup { reason: String },
     #[error("memory repair was cancelled")]
     Cancelled,
 }
@@ -581,7 +599,9 @@ mod tests {
         ) -> Result<DynamicMemoryInferenceRound, DynamicMemoryRunRepositoryError> {
             round
                 .validate()
-                .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+                .map_err(|_| DynamicMemoryRunRepositoryError::Invalid {
+                    reason: "simulated failure",
+                })?;
             let admitted = DynamicMemoryInferenceRound {
                 run_id,
                 attempt_id,

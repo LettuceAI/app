@@ -21,8 +21,12 @@ impl lettuce_usage::AppUsageRepository for Database {
         if !lettuce_usage::is_app_usage_day(day) {
             return Err(lettuce_usage::AppUsageError::InvalidDay);
         }
-        let active_ms =
-            i64::try_from(active_ms).map_err(|_| lettuce_usage::AppUsageError::Storage)?;
+        let active_ms = i64::try_from(active_ms).map_err(|error| {
+            tracing::warn!(%error, "add app usage failed");
+            lettuce_usage::AppUsageError::Storage {
+                reason: "add app usage: a storage step failed",
+            }
+        })?;
         self.connection()
             .and_then(|connection| {
                 connection
@@ -35,29 +39,53 @@ impl lettuce_usage::AppUsageRepository for Database {
                     .map_err(crate::DatabaseError::from)
             })
             .map(|_| ())
-            .map_err(|_| lettuce_usage::AppUsageError::Storage)
+            .map_err(|error| { tracing::warn!(%error, "add app usage failed"); lettuce_usage::AppUsageError::Storage { reason: "add app usage: a storage step failed" } })
     }
 
     fn app_usage_days(
         &self,
     ) -> Result<Vec<lettuce_usage::AppUsageDay>, lettuce_usage::AppUsageError> {
-        let storage = |_| lettuce_usage::AppUsageError::Storage;
+        let storage = |error| {
+            tracing::warn!(%error, "app usage days failed");
+            lettuce_usage::AppUsageError::Storage {
+                reason: "app usage days: a storage step failed",
+            }
+        };
         let connection = self.connection().map_err(storage)?;
         let mut statement = connection
             .prepare("SELECT day, active_ms FROM app_usage_days ORDER BY day")
-            .map_err(|_| lettuce_usage::AppUsageError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "app usage days failed");
+                lettuce_usage::AppUsageError::Storage {
+                    reason: "app usage days: a storage step failed",
+                }
+            })?;
         let mut days = Vec::new();
         for row in statement
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })
-            .map_err(|_| lettuce_usage::AppUsageError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "app usage days failed");
+                lettuce_usage::AppUsageError::Storage {
+                    reason: "app usage days: a storage step failed",
+                }
+            })?
         {
-            let (day, active_ms) = row.map_err(|_| lettuce_usage::AppUsageError::Storage)?;
+            let (day, active_ms) = row.map_err(|error| {
+                tracing::warn!(%error, "app usage days failed");
+                lettuce_usage::AppUsageError::Storage {
+                    reason: "app usage days: a storage step failed",
+                }
+            })?;
             days.push(lettuce_usage::AppUsageDay {
                 day,
-                active_ms: u64::try_from(active_ms)
-                    .map_err(|_| lettuce_usage::AppUsageError::Storage)?,
+                active_ms: u64::try_from(active_ms).map_err(|error| {
+                    tracing::warn!(%error, "app usage days failed");
+                    lettuce_usage::AppUsageError::Storage {
+                        reason: "app usage days: a storage step failed",
+                    }
+                })?,
             });
         }
         Ok(days)
@@ -74,12 +102,24 @@ impl lettuce_usage::JobUsageLedger for Database {
             || record.provider_account_revision.get() == 0
             || record.validate_snapshot().is_err()
         {
-            return Err(UsageLedgerError::Invalid);
+            return Err(UsageLedgerError::Invalid {
+                reason: "admit job usage: a value failed validation",
+            });
         }
-        let encoded = crate::encode_versioned(&record, 1).map_err(|_| UsageLedgerError::Invalid)?;
-        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let encoded = crate::encode_versioned(&record, 1).map_err(|error| {
+            tracing::warn!(%error, "admit job usage failed");
+            UsageLedgerError::Invalid {
+                reason: "admit job usage: a value could not be read or converted",
+            }
+        })?;
+        let db = self.connection().map_err(|error| {
+            tracing::warn!(%error, "admit job usage failed");
+            UsageLedgerError::Storage {
+                reason: "admit job usage: a storage step failed",
+            }
+        })?;
         db.execute("INSERT OR IGNORE INTO job_inference_usage (id,job_id,admitted_at,record_json) SELECT ?1,?2,?3,?4 WHERE EXISTS (SELECT 1 FROM jobs WHERE id=?2)",
-            params![record.id.to_string(), record.job_id.to_string(), record.admitted_at.get(), encoded]).map_err(|_| UsageLedgerError::Storage)?;
+            params![record.id.to_string(), record.job_id.to_string(), record.admitted_at.get(), encoded]).map_err(|error| { tracing::warn!(%error, "admit job usage failed"); UsageLedgerError::Storage { reason: "admit job usage: a storage step failed" } })?;
         let saved: Option<String> = db
             .query_row(
                 "SELECT record_json FROM job_inference_usage WHERE id=?1",
@@ -87,7 +127,12 @@ impl lettuce_usage::JobUsageLedger for Database {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "admit job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "admit job usage: a storage step failed",
+                }
+            })?;
         if saved.as_deref() != Some(&encoded) {
             return Err(UsageLedgerError::Conflict);
         }
@@ -98,11 +143,26 @@ impl lettuce_usage::JobUsageLedger for Database {
         id: UsageEventId,
         result: lettuce_usage::JobInferenceUsageResult,
     ) -> Result<(), UsageLedgerError> {
-        let encoded = crate::encode_versioned(&result, 1).map_err(|_| UsageLedgerError::Invalid)?;
-        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let encoded = crate::encode_versioned(&result, 1).map_err(|error| {
+            tracing::warn!(%error, "settle job usage failed");
+            UsageLedgerError::Invalid {
+                reason: "settle job usage: a value could not be read or converted",
+            }
+        })?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "settle job usage failed");
+            UsageLedgerError::Storage {
+                reason: "settle job usage: a storage step failed",
+            }
+        })?;
         let db = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?;
         let admission: Option<(String, Option<String>)> = db
             .query_row(
                 "SELECT record_json,result_json FROM job_inference_usage WHERE id=?1",
@@ -110,23 +170,50 @@ impl lettuce_usage::JobUsageLedger for Database {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?;
         let (admission, settled) = admission.ok_or(UsageLedgerError::Conflict)?;
-        let admission: lettuce_usage::JobInferenceUsage =
-            crate::decode_versioned(&admission, 1).map_err(|_| UsageLedgerError::Storage)?;
-        admission
-            .validate_snapshot()
-            .map_err(|_| UsageLedgerError::Storage)?;
+        let admission: lettuce_usage::JobInferenceUsage = crate::decode_versioned(&admission, 1)
+            .map_err(|error| {
+                tracing::warn!(?error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?;
+        admission.validate_snapshot().map_err(|error| {
+            tracing::warn!(%error, "settle job usage failed");
+            UsageLedgerError::Storage {
+                reason: "settle job usage: a storage step failed",
+            }
+        })?;
         if let Some(settled) = settled {
-            let settled =
-                crate::decode_versioned(&settled, 1).map_err(|_| UsageLedgerError::Storage)?;
+            let settled = crate::decode_versioned(&settled, 1).map_err(|error| {
+                tracing::warn!(?error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?;
             admission
                 .validate_result_snapshot(&settled)
-                .map_err(|_| UsageLedgerError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "settle job usage failed");
+                    UsageLedgerError::Storage {
+                        reason: "settle job usage: a storage step failed",
+                    }
+                })?;
             if settled != result {
                 return Err(UsageLedgerError::Conflict);
             }
-            db.commit().map_err(|_| UsageLedgerError::Storage)?;
+            db.commit().map_err(|error| {
+                tracing::warn!(%error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?;
             return Ok(());
         }
         admission.validate_result_snapshot(&result)?;
@@ -134,7 +221,12 @@ impl lettuce_usage::JobUsageLedger for Database {
             "UPDATE job_inference_usage SET result_json=?2 WHERE id=?1 AND result_json IS NULL",
             params![id.to_string(), encoded],
         )
-        .map_err(|_| UsageLedgerError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "settle job usage failed");
+            UsageLedgerError::Storage {
+                reason: "settle job usage: a storage step failed",
+            }
+        })?;
         let saved: Option<String> = db
             .query_row(
                 "SELECT result_json FROM job_inference_usage WHERE id=?1",
@@ -142,43 +234,86 @@ impl lettuce_usage::JobUsageLedger for Database {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?
             .flatten();
         let saved = saved
             .map(|value| {
                 crate::decode_versioned::<lettuce_usage::JobInferenceUsageResult>(&value, 1)
             })
             .transpose()
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "settle job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "settle job usage: a storage step failed",
+                }
+            })?;
         if saved.as_ref() != Some(&result) {
             return Err(UsageLedgerError::Conflict);
         }
-        db.commit().map_err(|_| UsageLedgerError::Storage)?;
+        db.commit().map_err(|error| {
+            tracing::warn!(%error, "settle job usage failed");
+            UsageLedgerError::Storage {
+                reason: "settle job usage: a storage step failed",
+            }
+        })?;
         Ok(())
     }
     fn job_usage(
         &self,
         job_id: lettuce_types::JobId,
     ) -> Result<Vec<lettuce_usage::JobInferenceUsage>, UsageLedgerError> {
-        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
-        let mut query = db.prepare("SELECT record_json,result_json FROM job_inference_usage WHERE job_id=?1 ORDER BY admitted_at,id").map_err(|_| UsageLedgerError::Storage)?;
+        let db = self.connection().map_err(|error| {
+            tracing::warn!(%error, "job usage failed");
+            UsageLedgerError::Storage {
+                reason: "job usage: a storage step failed",
+            }
+        })?;
+        let mut query = db.prepare("SELECT record_json,result_json FROM job_inference_usage WHERE job_id=?1 ORDER BY admitted_at,id").map_err(|error| { tracing::warn!(%error, "job usage failed"); UsageLedgerError::Storage { reason: "job usage: a storage step failed" } })?;
         query
             .query_map([job_id.to_string()], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
             })
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "job usage: a storage step failed",
+                }
+            })?
             .map(|row| {
-                let (record, result) = row.map_err(|_| UsageLedgerError::Storage)?;
+                let (record, result) = row.map_err(|error| {
+                    tracing::warn!(%error, "job usage failed");
+                    UsageLedgerError::Storage {
+                        reason: "job usage: a storage step failed",
+                    }
+                })?;
                 let mut record =
                     crate::decode_versioned::<lettuce_usage::JobInferenceUsage>(&record, 1)
-                        .map_err(|_| UsageLedgerError::Storage)?;
+                        .map_err(|error| {
+                            tracing::warn!(?error, "job usage failed");
+                            UsageLedgerError::Storage {
+                                reason: "job usage: a storage step failed",
+                            }
+                        })?;
                 record.result = result
                     .map(|r| crate::decode_versioned(&r, 1))
                     .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?;
-                record
-                    .validate_snapshot()
-                    .map_err(|_| UsageLedgerError::Storage)?;
+                    .map_err(|error| {
+                        tracing::warn!(?error, "job usage failed");
+                        UsageLedgerError::Storage {
+                            reason: "job usage: a storage step failed",
+                        }
+                    })?;
+                record.validate_snapshot().map_err(|error| {
+                    tracing::warn!(%error, "job usage failed");
+                    UsageLedgerError::Storage {
+                        reason: "job usage: a storage step failed",
+                    }
+                })?;
                 Ok(record)
             })
             .collect()
@@ -191,31 +326,69 @@ impl lettuce_usage::UsageCostLedger for Database {
         event_id: UsageEventId,
         basis: lettuce_usage::UsageCostBasis,
     ) -> Result<lettuce_usage::UsageCost, UsageLedgerError> {
-        let event = UsageLedger::get(self, event_id)?.ok_or(UsageLedgerError::Invalid)?;
+        let event = UsageLedger::get(self, event_id)?.ok_or(UsageLedgerError::Invalid {
+            reason: "record cost: a required value is missing",
+        })?;
         let cost = basis.calculate(&event)?;
-        let encoded = crate::encode_versioned(&basis, 1).map_err(|_| UsageLedgerError::Invalid)?;
-        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let encoded = crate::encode_versioned(&basis, 1).map_err(|error| {
+            tracing::warn!(%error, "record cost failed");
+            UsageLedgerError::Invalid {
+                reason: "record cost: a value could not be read or converted",
+            }
+        })?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "record cost failed");
+            UsageLedgerError::Storage {
+                reason: "record cost: a storage step failed",
+            }
+        })?;
         let tx = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "record cost failed");
+                UsageLedgerError::Storage {
+                    reason: "record cost: a storage step failed",
+                }
+            })?;
         tx.execute(
             "INSERT OR IGNORE INTO usage_costs (event_id, basis_json) VALUES (?1, ?2)",
             params![event_id.to_string(), encoded],
         )
-        .map_err(|_| UsageLedgerError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "record cost failed");
+            UsageLedgerError::Storage {
+                reason: "record cost: a storage step failed",
+            }
+        })?;
         let stored: String = tx
             .query_row(
                 "SELECT basis_json FROM usage_costs WHERE event_id=?1",
                 [event_id.to_string()],
                 |row| row.get(0),
             )
-            .map_err(|_| UsageLedgerError::Storage)?;
-        let stored = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "record cost failed");
+                UsageLedgerError::Storage {
+                    reason: "record cost: a storage step failed",
+                }
+            })?;
+        let stored = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1).map_err(
+            |error| {
+                tracing::warn!(?error, "record cost failed");
+                UsageLedgerError::Storage {
+                    reason: "record cost: a storage step failed",
+                }
+            },
+        )?;
         if stored != basis {
             return Err(UsageLedgerError::Conflict);
         }
-        tx.commit().map_err(|_| UsageLedgerError::Storage)?;
+        tx.commit().map_err(|error| {
+            tracing::warn!(%error, "record cost failed");
+            UsageLedgerError::Storage {
+                reason: "record cost: a storage step failed",
+            }
+        })?;
         Ok(lettuce_usage::UsageCost {
             event_id,
             basis,
@@ -229,23 +402,44 @@ impl lettuce_usage::UsageCostLedger for Database {
     ) -> Result<Option<lettuce_usage::UsageCost>, UsageLedgerError> {
         let stored: Option<String> = self
             .connection()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get cost failed");
+                UsageLedgerError::Storage {
+                    reason: "get cost: a storage step failed",
+                }
+            })?
             .query_row(
                 "SELECT basis_json FROM usage_costs WHERE event_id=?1",
                 [event_id.to_string()],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "get cost failed");
+                UsageLedgerError::Storage {
+                    reason: "get cost: a storage step failed",
+                }
+            })?;
         let Some(stored) = stored else {
             return Ok(None);
         };
-        let basis = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
-            .map_err(|_| UsageLedgerError::Storage)?;
-        let event = UsageLedger::get(self, event_id)?.ok_or(UsageLedgerError::Storage)?;
-        let cost = basis
-            .calculate(&event)
-            .map_err(|_| UsageLedgerError::Storage)?;
+        let basis = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1).map_err(
+            |error| {
+                tracing::warn!(?error, "get cost failed");
+                UsageLedgerError::Storage {
+                    reason: "get cost: a storage step failed",
+                }
+            },
+        )?;
+        let event = UsageLedger::get(self, event_id)?.ok_or(UsageLedgerError::Storage {
+            reason: "get cost: a required value is missing",
+        })?;
+        let cost = basis.calculate(&event).map_err(|error| {
+            tracing::warn!(%error, "get cost failed");
+            UsageLedgerError::Storage {
+                reason: "get cost: a storage step failed",
+            }
+        })?;
         Ok(Some(lettuce_usage::UsageCost {
             event_id,
             basis,
@@ -257,31 +451,69 @@ impl lettuce_usage::UsageCostLedger for Database {
         event_id: UsageEventId,
         basis: lettuce_usage::UsageCostBasis,
     ) -> Result<lettuce_usage::UsageCost, UsageLedgerError> {
-        let event = load_job_usage(self, event_id)?.ok_or(UsageLedgerError::Invalid)?;
+        let event = load_job_usage(self, event_id)?.ok_or(UsageLedgerError::Invalid {
+            reason: "record job cost: a required value is missing",
+        })?;
         let cost = basis.calculate_job(&event)?;
-        let encoded = crate::encode_versioned(&basis, 1).map_err(|_| UsageLedgerError::Invalid)?;
-        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let encoded = crate::encode_versioned(&basis, 1).map_err(|error| {
+            tracing::warn!(%error, "record job cost failed");
+            UsageLedgerError::Invalid {
+                reason: "record job cost: a value could not be read or converted",
+            }
+        })?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "record job cost failed");
+            UsageLedgerError::Storage {
+                reason: "record job cost: a storage step failed",
+            }
+        })?;
         let tx = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "record job cost failed");
+                UsageLedgerError::Storage {
+                    reason: "record job cost: a storage step failed",
+                }
+            })?;
         tx.execute(
             "INSERT OR IGNORE INTO job_usage_costs (event_id, basis_json) VALUES (?1, ?2)",
             params![event_id.to_string(), encoded],
         )
-        .map_err(|_| UsageLedgerError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "record job cost failed");
+            UsageLedgerError::Storage {
+                reason: "record job cost: a storage step failed",
+            }
+        })?;
         let stored: String = tx
             .query_row(
                 "SELECT basis_json FROM job_usage_costs WHERE event_id=?1",
                 [event_id.to_string()],
                 |row| row.get(0),
             )
-            .map_err(|_| UsageLedgerError::Storage)?;
-        let stored = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "record job cost failed");
+                UsageLedgerError::Storage {
+                    reason: "record job cost: a storage step failed",
+                }
+            })?;
+        let stored = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1).map_err(
+            |error| {
+                tracing::warn!(?error, "record job cost failed");
+                UsageLedgerError::Storage {
+                    reason: "record job cost: a storage step failed",
+                }
+            },
+        )?;
         if stored != basis {
             return Err(UsageLedgerError::Conflict);
         }
-        tx.commit().map_err(|_| UsageLedgerError::Storage)?;
+        tx.commit().map_err(|error| {
+            tracing::warn!(%error, "record job cost failed");
+            UsageLedgerError::Storage {
+                reason: "record job cost: a storage step failed",
+            }
+        })?;
         Ok(lettuce_usage::UsageCost {
             event_id,
             basis,
@@ -295,23 +527,44 @@ impl lettuce_usage::UsageCostLedger for Database {
     ) -> Result<Option<lettuce_usage::UsageCost>, UsageLedgerError> {
         let stored: Option<String> = self
             .connection()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get job cost failed");
+                UsageLedgerError::Storage {
+                    reason: "get job cost: a storage step failed",
+                }
+            })?
             .query_row(
                 "SELECT basis_json FROM job_usage_costs WHERE event_id=?1",
                 [event_id.to_string()],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "get job cost failed");
+                UsageLedgerError::Storage {
+                    reason: "get job cost: a storage step failed",
+                }
+            })?;
         let Some(stored) = stored else {
             return Ok(None);
         };
-        let basis = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
-            .map_err(|_| UsageLedgerError::Storage)?;
-        let event = load_job_usage(self, event_id)?.ok_or(UsageLedgerError::Storage)?;
-        let cost = basis
-            .calculate_job(&event)
-            .map_err(|_| UsageLedgerError::Storage)?;
+        let basis = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1).map_err(
+            |error| {
+                tracing::warn!(?error, "get job cost failed");
+                UsageLedgerError::Storage {
+                    reason: "get job cost: a storage step failed",
+                }
+            },
+        )?;
+        let event = load_job_usage(self, event_id)?.ok_or(UsageLedgerError::Storage {
+            reason: "get job cost: a required value is missing",
+        })?;
+        let cost = basis.calculate_job(&event).map_err(|error| {
+            tracing::warn!(%error, "get job cost failed");
+            UsageLedgerError::Storage {
+                reason: "get job cost: a storage step failed",
+            }
+        })?;
         Ok(Some(lettuce_usage::UsageCost {
             event_id,
             basis,
@@ -326,21 +579,41 @@ fn load_job_usage(
 ) -> Result<Option<lettuce_usage::JobInferenceUsage>, UsageLedgerError> {
     let raw: Option<(String, Option<String>)> = database
         .connection()
-        .map_err(|_| UsageLedgerError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "load job usage failed");
+            UsageLedgerError::Storage {
+                reason: "load job usage: a storage step failed",
+            }
+        })?
         .query_row(
             "SELECT record_json, result_json FROM job_inference_usage WHERE id=?1",
             [event_id.to_string()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
-        .map_err(|_| UsageLedgerError::Storage)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "load job usage failed");
+            UsageLedgerError::Storage {
+                reason: "load job usage: a storage step failed",
+            }
+        })?;
     raw.map(|(record, result)| {
         let mut record = crate::decode_versioned::<lettuce_usage::JobInferenceUsage>(&record, 1)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "load job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "load job usage: a storage step failed",
+                }
+            })?;
         record.result = result
             .map(|result| crate::decode_versioned(&result, 1))
             .transpose()
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(?error, "load job usage failed");
+                UsageLedgerError::Storage {
+                    reason: "load job usage: a storage step failed",
+                }
+            })?;
         Ok(record)
     })
     .transpose()
@@ -371,7 +644,9 @@ fn parse_outcome(value: &str) -> Result<UsageOutcome, UsageLedgerError> {
         "failed" => Ok(UsageOutcome::Failed),
         "cancelled" => Ok(UsageOutcome::Cancelled),
         "interrupted" => Ok(UsageOutcome::Interrupted),
-        _ => Err(UsageLedgerError::Storage),
+        _ => Err(UsageLedgerError::Storage {
+            reason: "parse outcome: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -382,7 +657,9 @@ fn parse_unavailable(value: &str) -> Result<UsageUnavailableReason, UsageLedgerE
         "provider_omitted" => Ok(UsageUnavailableReason::ProviderOmitted),
         "imported" => Ok(UsageUnavailableReason::Imported),
         "transport_failed" => Ok(UsageUnavailableReason::TransportFailed),
-        _ => Err(UsageLedgerError::Storage),
+        _ => Err(UsageLedgerError::Storage {
+            reason: "parse unavailable: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -468,7 +745,14 @@ impl RawUsageEvent {
             Some(lettuce_conversations::UsageRecordSnapshot {
                 character_id: self
                     .character_source_id
-                    .map(|value| value.parse().map_err(|_| UsageLedgerError::Storage))
+                    .map(|value| {
+                        value.parse().map_err(|error| {
+                            tracing::warn!(%error, "decode failed");
+                            UsageLedgerError::Storage {
+                                reason: "decode: a storage step failed",
+                            }
+                        })
+                    })
                     .transpose()?,
                 character_name: self.character_name,
                 model_name: self.model_name,
@@ -477,16 +761,22 @@ impl RawUsageEvent {
                 operation_kind: self.operation_kind,
                 finish_reason: self.finish_reason,
                 error_message: self.error_message,
-                memory_tokens: self
-                    .memory_tokens
-                    .map(u64::try_from)
-                    .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
-                summary_tokens: self
-                    .summary_tokens
-                    .map(u64::try_from)
-                    .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                memory_tokens: self.memory_tokens.map(u64::try_from).transpose().map_err(
+                    |error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    },
+                )?,
+                summary_tokens: self.summary_tokens.map(u64::try_from).transpose().map_err(
+                    |error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    },
+                )?,
                 provider_response_id: self.provider_response_id,
             })
         } else {
@@ -498,110 +788,185 @@ impl RawUsageEvent {
                     .provider_reported_cost
                     .map(lettuce_conversations::ProviderReportedCost::try_from)
                     .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    })?,
                 cache_write_tokens: self
                     .cache_write_tokens
                     .map(u64::try_from)
                     .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    })?,
                 web_search_requests: self
                     .web_search_requests
                     .map(u64::try_from)
                     .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    })?,
                 cached_input_tokens: self
                     .cached_input_tokens
                     .map(u64::try_from)
                     .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    })?,
                 reasoning_tokens: self
                     .reasoning_tokens
                     .map(u64::try_from)
                     .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
-                image_tokens: self
-                    .image_tokens
-                    .map(u64::try_from)
-                    .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
-                audio_tokens: self
-                    .audio_tokens
-                    .map(u64::try_from)
-                    .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
-                total_tokens: self
-                    .total_tokens
-                    .map(u64::try_from)
-                    .transpose()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                    .map_err(|error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    })?,
+                image_tokens: self.image_tokens.map(u64::try_from).transpose().map_err(
+                    |error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    },
+                )?,
+                audio_tokens: self.audio_tokens.map(u64::try_from).transpose().map_err(
+                    |error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    },
+                )?,
+                total_tokens: self.total_tokens.map(u64::try_from).transpose().map_err(
+                    |error| {
+                        tracing::warn!(%error, "decode failed");
+                        UsageLedgerError::Storage {
+                            reason: "decode: a storage step failed",
+                        }
+                    },
+                )?,
                 input_tokens: self
                     .input_tokens
                     .and_then(|value| u64::try_from(value).ok())
-                    .ok_or(UsageLedgerError::Storage)?,
+                    .ok_or(UsageLedgerError::Storage {
+                        reason: "decode: a required value is missing",
+                    })?,
                 output_tokens: self
                     .output_tokens
                     .and_then(|value| u64::try_from(value).ok())
-                    .ok_or(UsageLedgerError::Storage)?,
+                    .ok_or(UsageLedgerError::Storage {
+                        reason: "decode: a required value is missing",
+                    })?,
             }),
             "unavailable" => UsageCounters::Unavailable(parse_unavailable(
                 self.unavailable_reason
                     .as_deref()
-                    .ok_or(UsageLedgerError::Storage)?,
+                    .ok_or(UsageLedgerError::Storage {
+                        reason: "decode: a required value is missing",
+                    })?,
             )?),
-            _ => return Err(UsageLedgerError::Storage),
+            _ => {
+                return Err(UsageLedgerError::Storage {
+                    reason: "decode: a stored value is not recognised",
+                });
+            }
         };
         let event = UsageEvent {
-            id: UsageEventId::from_str(&self.id).map_err(|_| UsageLedgerError::Storage)?,
+            id: UsageEventId::from_str(&self.id).map_err(|error| {
+                tracing::warn!(%error, "decode failed");
+                UsageLedgerError::Storage {
+                    reason: "decode: a storage step failed",
+                }
+            })?,
             origin: match self.origin.as_str() {
                 "live" => lettuce_usage::UsageEventOrigin::Live,
                 "legacy_import" => lettuce_usage::UsageEventOrigin::LegacyImport,
-                _ => return Err(UsageLedgerError::Storage),
+                _ => {
+                    return Err(UsageLedgerError::Storage {
+                        reason: "decode: a stored value is not recognised",
+                    });
+                }
             },
             record: UsageRecord {
                 snapshot,
-                turn_id: self
-                    .turn_id
-                    .parse()
-                    .map_err(|_| UsageLedgerError::Storage)?,
-                attempt_id: self
-                    .attempt_id
-                    .parse()
-                    .map_err(|_| UsageLedgerError::Storage)?,
+                turn_id: self.turn_id.parse().map_err(|error| {
+                    tracing::warn!(%error, "decode failed");
+                    UsageLedgerError::Storage {
+                        reason: "decode: a storage step failed",
+                    }
+                })?,
+                attempt_id: self.attempt_id.parse().map_err(|error| {
+                    tracing::warn!(%error, "decode failed");
+                    UsageLedgerError::Storage {
+                        reason: "decode: a storage step failed",
+                    }
+                })?,
                 outcome: parse_outcome(&self.outcome)?,
                 usage,
                 model_profile_id: self
                     .model_profile_id
-                    .map(|value| value.parse().map_err(|_| UsageLedgerError::Storage))
+                    .map(|value| {
+                        value.parse().map_err(|error| {
+                            tracing::warn!(%error, "decode failed");
+                            UsageLedgerError::Storage {
+                                reason: "decode: a storage step failed",
+                            }
+                        })
+                    })
                     .transpose()?,
                 model_revision: self
                     .model_revision
                     .map(|value| {
-                        u64::try_from(value)
-                            .ok()
-                            .map(Revision::new)
-                            .ok_or(UsageLedgerError::Storage)
+                        u64::try_from(value).ok().map(Revision::new).ok_or(
+                            UsageLedgerError::Storage {
+                                reason: "decode: a required value is missing",
+                            },
+                        )
                     })
                     .transpose()?,
                 provider_account_id: self
                     .provider_account_id
-                    .map(|value| value.parse().map_err(|_| UsageLedgerError::Storage))
+                    .map(|value| {
+                        value.parse().map_err(|error| {
+                            tracing::warn!(%error, "decode failed");
+                            UsageLedgerError::Storage {
+                                reason: "decode: a storage step failed",
+                            }
+                        })
+                    })
                     .transpose()?,
                 provider_account_revision: self
                     .provider_account_revision
                     .map(|value| {
-                        u64::try_from(value)
-                            .ok()
-                            .map(Revision::new)
-                            .ok_or(UsageLedgerError::Storage)
+                        u64::try_from(value).ok().map(Revision::new).ok_or(
+                            UsageLedgerError::Storage {
+                                reason: "decode: a required value is missing",
+                            },
+                        )
                     })
                     .transpose()?,
                 recorded_at: lettuce_types::TimestampMillis::new(self.recorded_at),
             },
         };
-        event
-            .record
-            .validate()
-            .map_err(|_| UsageLedgerError::Storage)?;
+        event.record.validate().map_err(|error| {
+            tracing::warn!(%error, "decode failed");
+            UsageLedgerError::Storage {
+                reason: "decode: a storage step failed",
+            }
+        })?;
         Ok(event)
     }
 }
@@ -616,10 +981,28 @@ pub(crate) fn load_all_usage_in(
 ) -> Result<Vec<UsageEvent>, UsageLedgerError> {
     transaction
         .prepare(&format!("{SELECT_EVENT} ORDER BY recorded_at,id"))
-        .map_err(|_| UsageLedgerError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "load all usage in failed");
+            UsageLedgerError::Storage {
+                reason: "load all usage in: a storage step failed",
+            }
+        })?
         .query_map([], hydrate)
-        .map_err(|_| UsageLedgerError::Storage)?
-        .map(|row| row.map_err(|_| UsageLedgerError::Storage)?.decode())
+        .map_err(|error| {
+            tracing::warn!(%error, "load all usage in failed");
+            UsageLedgerError::Storage {
+                reason: "load all usage in: a storage step failed",
+            }
+        })?
+        .map(|row| {
+            row.map_err(|error| {
+                tracing::warn!(%error, "load all usage in failed");
+                UsageLedgerError::Storage {
+                    reason: "load all usage in: a storage step failed",
+                }
+            })?
+            .decode()
+        })
         .collect()
 }
 
@@ -631,10 +1014,28 @@ pub(crate) fn load_turn_usage_in(
         .prepare(&format!(
             "{SELECT_EVENT} WHERE turn_id = ?1 ORDER BY recorded_at,id"
         ))
-        .map_err(|_| UsageLedgerError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "load turn usage in failed");
+            UsageLedgerError::Storage {
+                reason: "load turn usage in: a storage step failed",
+            }
+        })?
         .query_map([turn_id], hydrate)
-        .map_err(|_| UsageLedgerError::Storage)?
-        .map(|row| row.map_err(|_| UsageLedgerError::Storage)?.decode())
+        .map_err(|error| {
+            tracing::warn!(%error, "load turn usage in failed");
+            UsageLedgerError::Storage {
+                reason: "load turn usage in: a storage step failed",
+            }
+        })?
+        .map(|row| {
+            row.map_err(|error| {
+                tracing::warn!(%error, "load turn usage in failed");
+                UsageLedgerError::Storage {
+                    reason: "load turn usage in: a storage step failed",
+                }
+            })?
+            .decode()
+        })
         .collect()
 }
 
@@ -654,7 +1055,12 @@ pub(crate) fn insert_usage_event_in(
             hydrate,
         )
         .optional()
-        .map_err(|_| UsageLedgerError::Storage)?
+        .map_err(|error| {
+            tracing::warn!(%error, "insert usage event in failed");
+            UsageLedgerError::Storage {
+                reason: "insert usage event in: a storage step failed",
+            }
+        })?
         .map(RawUsageEvent::decode)
         .transpose()?;
     if let Some(stored) = stored {
@@ -684,24 +1090,40 @@ pub(crate) fn insert_usage_event_in(
         UsageCounters::Unavailable(_) => (None, None, None),
     };
     let [image, audio, total] = [image, audio, total].map(|value| {
-        value
-            .map(i64::try_from)
-            .transpose()
-            .map_err(|_| UsageLedgerError::Invalid)
+        value.map(i64::try_from).transpose().map_err(|error| {
+            tracing::warn!(%error, "insert usage event in failed");
+            UsageLedgerError::Invalid {
+                reason: "insert usage event in: a value could not be read or converted",
+            }
+        })
     });
-    let cached = cached
-        .map(i64::try_from)
-        .transpose()
-        .map_err(|_| UsageLedgerError::Invalid)?;
-    let reasoning = reasoning
-        .map(i64::try_from)
-        .transpose()
-        .map_err(|_| UsageLedgerError::Invalid)?;
+    let cached = cached.map(i64::try_from).transpose().map_err(|error| {
+        tracing::warn!(%error, "insert usage event in failed");
+        UsageLedgerError::Invalid {
+            reason: "insert usage event in: a value could not be read or converted",
+        }
+    })?;
+    let reasoning = reasoning.map(i64::try_from).transpose().map_err(|error| {
+        tracing::warn!(%error, "insert usage event in failed");
+        UsageLedgerError::Invalid {
+            reason: "insert usage event in: a value could not be read or converted",
+        }
+    })?;
     let (kind, input, output, unavailable) = match event.record.usage {
         UsageCounters::Known(ref usage) => (
             "known",
-            Some(i64::try_from(usage.input_tokens).map_err(|_| UsageLedgerError::Invalid)?),
-            Some(i64::try_from(usage.output_tokens).map_err(|_| UsageLedgerError::Invalid)?),
+            Some(i64::try_from(usage.input_tokens).map_err(|error| {
+                tracing::warn!(%error, "insert usage event in failed");
+                UsageLedgerError::Invalid {
+                    reason: "insert usage event in: a value could not be read or converted",
+                }
+            })?),
+            Some(i64::try_from(usage.output_tokens).map_err(|error| {
+                tracing::warn!(%error, "insert usage event in failed");
+                UsageLedgerError::Invalid {
+                    reason: "insert usage event in: a value could not be read or converted",
+                }
+            })?),
             None,
         ),
         UsageCounters::Unavailable(reason) => {
@@ -713,12 +1135,22 @@ pub(crate) fn insert_usage_event_in(
         .and_then(|value| value.memory_tokens)
         .map(i64::try_from)
         .transpose()
-        .map_err(|_| UsageLedgerError::Invalid)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "insert usage event in failed");
+            UsageLedgerError::Invalid {
+                reason: "insert usage event in: a value could not be read or converted",
+            }
+        })?;
     let summary_tokens = snapshot
         .and_then(|value| value.summary_tokens)
         .map(i64::try_from)
         .transpose()
-        .map_err(|_| UsageLedgerError::Invalid)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "insert usage event in failed");
+            UsageLedgerError::Invalid {
+                reason: "insert usage event in: a value could not be read or converted",
+            }
+        })?;
     transaction
             .execute(
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
@@ -741,19 +1173,19 @@ pub(crate) fn insert_usage_event_in(
                     event.record
                         .model_revision
                         .map(|value| i64::try_from(value.get())
-                            .map_err(|_| UsageLedgerError::Invalid))
+                            .map_err(|error| { tracing::warn!(%error, "insert usage event in failed"); UsageLedgerError::Invalid { reason: "insert usage event in: a value could not be read or converted" } }))
                         .transpose()?,
                     event.record.provider_account_id.map(|value| value.to_string()),
                     event.record
                         .provider_account_revision
                         .map(|value| i64::try_from(value.get())
-                            .map_err(|_| UsageLedgerError::Invalid))
+                            .map_err(|error| { tracing::warn!(%error, "insert usage event in failed"); UsageLedgerError::Invalid { reason: "insert usage event in: a value could not be read or converted" } }))
                         .transpose()?,
                     event.record.recorded_at.get(),
                     cached,
                     reasoning,
-                    cache_write.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
-                    web_search.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
+                    cache_write.map(i64::try_from).transpose().map_err(|error| { tracing::warn!(%error, "insert usage event in failed"); UsageLedgerError::Invalid { reason: "insert usage event in: a value could not be read or converted" } })?,
+                    web_search.map(i64::try_from).transpose().map_err(|error| { tracing::warn!(%error, "insert usage event in failed"); UsageLedgerError::Invalid { reason: "insert usage event in: a value could not be read or converted" } })?,
                     provider_reported_cost,
                     image?,
                     audio?,
@@ -773,17 +1205,32 @@ pub(crate) fn insert_usage_event_in(
                     event.origin.as_str(),
                 ],
             )
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| { tracing::warn!(%error, "insert usage event in failed"); UsageLedgerError::Storage { reason: "insert usage event in: a storage step failed" } })?;
     Ok(())
 }
 
 impl UsageLedger for Database {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError> {
-        record.validate().map_err(|_| UsageLedgerError::Invalid)?;
-        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        record.validate().map_err(|error| {
+            tracing::warn!(%error, "record failed");
+            UsageLedgerError::Invalid {
+                reason: "record: a value could not be read or converted",
+            }
+        })?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "record failed");
+            UsageLedgerError::Storage {
+                reason: "record: a storage step failed",
+            }
+        })?;
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| UsageLedgerError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "record failed");
+                UsageLedgerError::Storage {
+                    reason: "record: a storage step failed",
+                }
+            })?;
         let conversation_id = transaction
             .query_row(
                 "SELECT conversation_id FROM generation_attempts WHERE turn_id = ?1 AND id = ?2",
@@ -791,9 +1238,14 @@ impl UsageLedger for Database {
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "record failed");
+                UsageLedgerError::Storage {
+                    reason: "record: a storage step failed",
+                }
+            })?
             .ok_or(UsageLedgerError::Conflict)?;
-        let cleared: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='conversation' AND json_extract(proof_json,'$.value.attempt_id')=?1)", [record.attempt_id.to_string()], |row| row.get(0)).map_err(|_| UsageLedgerError::Storage)?;
+        let cleared: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM usage_tombstones WHERE ledger='conversation' AND json_extract(proof_json,'$.value.attempt_id')=?1)", [record.attempt_id.to_string()], |row| row.get(0)).map_err(|error| { tracing::warn!(%error, "record failed"); UsageLedgerError::Storage { reason: "record: a storage step failed" } })?;
         if cleared {
             return Err(UsageLedgerError::Conflict);
         }
@@ -810,7 +1262,12 @@ impl UsageLedger for Database {
                 hydrate,
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "record failed");
+                UsageLedgerError::Storage {
+                    reason: "record: a storage step failed",
+                }
+            })?
             .map(RawUsageEvent::decode)
             .transpose()?;
         if let Some(existing) = existing {
@@ -818,9 +1275,12 @@ impl UsageLedger for Database {
             {
                 return Err(UsageLedgerError::Conflict);
             }
-            transaction
-                .commit()
-                .map_err(|_| UsageLedgerError::Storage)?;
+            transaction.commit().map_err(|error| {
+                tracing::warn!(%error, "record failed");
+                UsageLedgerError::Storage {
+                    reason: "record: a storage step failed",
+                }
+            })?;
             return Ok(existing);
         }
         let event = UsageEvent {
@@ -829,22 +1289,35 @@ impl UsageLedger for Database {
             record,
         };
         insert_usage_event_in(&transaction, &conversation_id, &event)?;
-        transaction
-            .commit()
-            .map_err(|_| UsageLedgerError::Storage)?;
+        transaction.commit().map_err(|error| {
+            tracing::warn!(%error, "record failed");
+            UsageLedgerError::Storage {
+                reason: "record: a storage step failed",
+            }
+        })?;
         Ok(event)
     }
 
     fn get(&self, id: UsageEventId) -> Result<Option<UsageEvent>, UsageLedgerError> {
         self.connection()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get failed");
+                UsageLedgerError::Storage {
+                    reason: "get: a storage step failed",
+                }
+            })?
             .query_row(
                 &format!("{SELECT_EVENT} WHERE id = ?1"),
                 [id.to_string()],
                 hydrate,
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get failed");
+                UsageLedgerError::Storage {
+                    reason: "get: a storage step failed",
+                }
+            })?
             .map(RawUsageEvent::decode)
             .transpose()
     }
@@ -855,14 +1328,24 @@ impl UsageLedger for Database {
         attempt_id: lettuce_types::GenerationAttemptId,
     ) -> Result<Option<UsageEvent>, UsageLedgerError> {
         self.connection()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get for attempt failed");
+                UsageLedgerError::Storage {
+                    reason: "get for attempt: a storage step failed",
+                }
+            })?
             .query_row(
                 &format!("{SELECT_EVENT} WHERE turn_id = ?1 AND attempt_id = ?2"),
                 params![turn_id.to_string(), attempt_id.to_string()],
                 hydrate,
             )
             .optional()
-            .map_err(|_| UsageLedgerError::Storage)?
+            .map_err(|error| {
+                tracing::warn!(%error, "get for attempt failed");
+                UsageLedgerError::Storage {
+                    reason: "get for attempt: a storage step failed",
+                }
+            })?
             .map(RawUsageEvent::decode)
             .transpose()
     }
@@ -874,8 +1357,10 @@ impl UsagePort for Database {
         UsageLedger::record(self, record)
             .map(|event| event.id)
             .map_err(|error| match error {
-                UsageLedgerError::Invalid | UsageLedgerError::Conflict => PortError::Rejected,
-                UsageLedgerError::Storage => PortError::Unavailable,
+                UsageLedgerError::Invalid { .. } | UsageLedgerError::Conflict => {
+                    PortError::Rejected
+                }
+                UsageLedgerError::Storage { .. } => PortError::Unavailable,
             })
     }
 }
@@ -941,16 +1426,16 @@ mod tests {
         };
         let mut foreign = completed.clone();
         foreign.provider_response_id = Some("foreign-response".into());
-        assert_eq!(
+        assert!(matches!(
             database.settle_job_usage(record.id, result(foreign)),
-            Err(UsageLedgerError::Invalid)
-        );
+            Err(UsageLedgerError::Invalid { .. })
+        ));
         let mut changed = completed.clone();
         changed.provider_label = Some("Changed account".into());
-        assert_eq!(
+        assert!(matches!(
             database.settle_job_usage(record.id, result(changed)),
-            Err(UsageLedgerError::Invalid)
-        );
+            Err(UsageLedgerError::Invalid { .. })
+        ));
         assert_eq!(
             database.job_usage(job.id).expect("unsettled snapshot"),
             vec![record.clone()]
@@ -1079,7 +1564,7 @@ mod tests {
         for id in [record.id, UsageEventId::new()] {
             assert!(matches!(
                 database.record_job_cost(id, basis.clone()),
-                Err(UsageLedgerError::Invalid)
+                Err(UsageLedgerError::Invalid { .. })
             ));
             assert!(database.get_job_cost(id).expect("no cost").is_none());
         }
@@ -1105,7 +1590,7 @@ mod tests {
             .expect("replay admission after settlement");
         assert!(matches!(
             database.record_job_cost(record.id, basis.clone()),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         for result in [
             JobInferenceUsageResult::Cancelled,
@@ -1125,7 +1610,7 @@ mod tests {
                 .expect("settle");
             assert!(matches!(
                 database.record_job_cost(unavailable.id, basis.clone()),
-                Err(UsageLedgerError::Invalid)
+                Err(UsageLedgerError::Invalid { .. })
             ));
         }
         let mut retry = record.clone();
@@ -1181,7 +1666,7 @@ mod tests {
             }
             assert!(matches!(
                 database.record_job_cost(retry.id, wrong),
-                Err(UsageLedgerError::Invalid)
+                Err(UsageLedgerError::Invalid { .. })
             ));
         }
         assert!(
@@ -1729,7 +2214,7 @@ mod tests {
         }
         assert!(matches!(
             basis.calculate(&reported),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         let mut reported_basis = basis.clone();
         reported_basis.input.authoritative_total_cost = Some(0.25);
@@ -1744,13 +2229,13 @@ mod tests {
         mismatched.input.cache_write_tokens = 1;
         assert!(matches!(
             mismatched.calculate(&detailed),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         mismatched.input.cache_write_tokens = 0;
         mismatched.input.web_search_requests = 1;
         assert!(matches!(
             mismatched.calculate(&detailed),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         assert!((cost.cost.total_cost - 0.18).abs() < 1e-12);
         assert_eq!(
@@ -1778,13 +2263,13 @@ mod tests {
         wrong.input.prompt_tokens = 121;
         assert!(matches!(
             database.record_cost(event.id, wrong),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         let mut wrong = basis.clone();
         wrong.model_profile_id = ModelProfileId::new();
         assert!(matches!(
             database.record_cost(event.id, wrong),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         assert_eq!(
             UsageLedger::get(&database, event.id).expect("raw event"),
@@ -1817,7 +2302,7 @@ mod tests {
         let unknown = UsageLedger::record(&unknown_database, unknown).expect("unavailable event");
         assert!(matches!(
             unknown_database.record_cost(unknown.id, basis),
-            Err(UsageLedgerError::Invalid)
+            Err(UsageLedgerError::Invalid { .. })
         ));
         assert!(
             unknown_database

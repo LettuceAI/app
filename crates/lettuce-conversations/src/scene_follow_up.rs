@@ -113,8 +113,8 @@ pub struct SceneFollowUpChange {
 pub enum SceneFollowUpError {
     #[error("the reply variant has no such follow-up")]
     NotFound,
-    #[error("the scene follow-up storage failed")]
-    Storage,
+    #[error("the scene follow-up storage failed: {reason}")]
+    Storage { reason: &'static str },
 }
 
 pub trait SceneFollowUpRepository: Send + Sync {

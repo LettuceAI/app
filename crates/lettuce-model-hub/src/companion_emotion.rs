@@ -66,7 +66,9 @@ impl RemoteCompanionEmotionModel {
                     sha256: file.sha256.clone(),
                     git_blob_id: file.git_blob_id.clone(),
                 })
-                .ok_or(CompanionEmotionInstallError::InvalidRemote)
+                .ok_or(CompanionEmotionInstallError::InvalidRemote {
+                    reason: "pin does not contain the model, tokenizer and labels files".to_owned(),
+                })
         };
         let model = Self {
             source_revision: pinned.revision.clone(),
@@ -90,7 +92,11 @@ impl RemoteCompanionEmotionModel {
             || self.tokenizer.sha256.is_none()
             || self.labels.byte_size > MAX_LABELS_FILE_BYTES
         {
-            return Err(CompanionEmotionInstallError::InvalidRemote);
+            return Err(CompanionEmotionInstallError::InvalidRemote {
+                reason:
+                    "pin revision, file paths, digests or labels size violate the Thymos layout"
+                        .to_owned(),
+            });
         }
         for artifact in self.artifacts() {
             if artifact.byte_size == 0
@@ -104,7 +110,9 @@ impl RemoteCompanionEmotionModel {
                     .is_some_and(|id| !is_commit(id))
                 || (artifact.sha256.is_none() && artifact.git_blob_id.is_none())
             {
-                return Err(CompanionEmotionInstallError::InvalidRemote);
+                return Err(CompanionEmotionInstallError::InvalidRemote {
+                    reason: "pinned file size or digest is invalid or missing".to_owned(),
+                });
             }
         }
         Ok(())
@@ -186,7 +194,9 @@ impl InstalledCompanionEmotionManifest {
     /// as the upstream `inference.py` does.
     pub fn verify(&self) -> Result<VerifiedCompanionEmotionArtifacts, ModelArtifactError> {
         if !is_commit(&self.source_revision) {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "source revision is not a commit".to_owned(),
+            });
         }
         verify_artifact(&self.model)?;
         verify_artifact(&self.tokenizer)?;
@@ -195,7 +205,9 @@ impl InstalledCompanionEmotionManifest {
         if let Some(expected) = labels.model_sha256.as_deref()
             && sha256_file(&self.model.path)? != expected
         {
-            return Err(ModelArtifactError::Mismatch);
+            return Err(ModelArtifactError::Mismatch {
+                reason: "model digest does not match the labels file",
+            });
         }
         Ok(VerifiedCompanionEmotionArtifacts {
             source_revision: self.source_revision.clone(),
@@ -235,29 +247,44 @@ struct LabelsFile {
 
 impl CompanionEmotionLabels {
     pub fn read(path: &Path) -> Result<Self, ModelArtifactError> {
-        let file = File::open(path).map_err(|_| ModelArtifactError::Unreadable)?;
+        let file = File::open(path).map_err(|error| ModelArtifactError::Unreadable {
+            reason: format!("opening the labels file failed: {error}"),
+        })?;
         let mut bytes = Vec::new();
         file.take(MAX_LABELS_FILE_BYTES + 1)
             .read_to_end(&mut bytes)
-            .map_err(|_| ModelArtifactError::Unreadable)?;
-        if u64::try_from(bytes.len()).map_err(|_| ModelArtifactError::InvalidManifest)?
-            > MAX_LABELS_FILE_BYTES
+            .map_err(|error| ModelArtifactError::Unreadable {
+                reason: format!("reading the labels file failed: {error}"),
+            })?;
+        if u64::try_from(bytes.len()).map_err(|_| ModelArtifactError::InvalidManifest {
+            reason: "labels file length exceeds the u64 range".to_owned(),
+        })? > MAX_LABELS_FILE_BYTES
         {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "labels file exceeds the size limit".to_owned(),
+            });
         }
         Self::parse(&bytes)
     }
 
     pub fn parse(bytes: &[u8]) -> Result<Self, ModelArtifactError> {
         let file: LabelsFile =
-            serde_json::from_slice(bytes).map_err(|_| ModelArtifactError::InvalidManifest)?;
-        let window = file.max_length.ok_or(ModelArtifactError::InvalidManifest)?;
+            serde_json::from_slice(bytes).map_err(|error| ModelArtifactError::InvalidManifest {
+                reason: format!("labels file is not valid json: {error}"),
+            })?;
+        let window = file.max_length.ok_or(ModelArtifactError::InvalidManifest {
+            reason: "labels file has no max_length".to_owned(),
+        })?;
         if file.labels.is_empty()
             || file.labels.len() != file.thresholds.len()
             || file.labels.iter().any(|label| label.trim().is_empty())
             || window > MAX_WINDOW_TOKENS
         {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason:
+                    "labels are empty, mismatched with thresholds, blank or the window is too large"
+                        .to_owned(),
+            });
         }
         let thresholds = file
             .thresholds
@@ -266,7 +293,9 @@ impl CompanionEmotionLabels {
                 let value = value as f32;
                 (value.is_finite() && (0.0..=1.0).contains(&value))
                     .then_some(value)
-                    .ok_or(ModelArtifactError::InvalidManifest)
+                    .ok_or(ModelArtifactError::InvalidManifest {
+                        reason: "label threshold is not a finite value between 0 and 1".to_owned(),
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         let model_sha256 = match file.model_sha256 {
@@ -276,7 +305,11 @@ impl CompanionEmotionLabels {
             {
                 Some(value)
             }
-            Some(_) => return Err(ModelArtifactError::InvalidManifest),
+            Some(_) => {
+                return Err(ModelArtifactError::InvalidManifest {
+                    reason: "labels file model digest is not a sha256 hex string".to_owned(),
+                });
+            }
             None => None,
         };
         let labels = Self {
@@ -287,7 +320,9 @@ impl CompanionEmotionLabels {
         };
         let stride = labels.stride();
         if labels.window < 4 || stride == 0 || stride >= labels.window - 2 {
-            return Err(ModelArtifactError::InvalidManifest);
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "labels window and stride are inconsistent".to_owned(),
+            });
         }
         Ok(labels)
     }
@@ -323,13 +358,17 @@ impl CompanionEmotionLabels {
 }
 
 fn sha256_file(path: &Path) -> Result<String, ModelArtifactError> {
-    let mut file = File::open(path).map_err(|_| ModelArtifactError::Unreadable)?;
+    let mut file = File::open(path).map_err(|error| ModelArtifactError::Unreadable {
+        reason: format!("opening the file for hashing failed: {error}"),
+    })?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
-            .map_err(|_| ModelArtifactError::Unreadable)?;
+            .map_err(|error| ModelArtifactError::Unreadable {
+                reason: format!("reading the file for hashing failed: {error}"),
+            })?;
         if read == 0 {
             break;
         }
@@ -357,8 +396,8 @@ pub enum CompanionEmotionInstallStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionEmotionInstallError {
-    #[error("the Thymos model description is invalid")]
-    InvalidRemote,
+    #[error("the Thymos model description is invalid: {reason}")]
+    InvalidRemote { reason: String },
     #[error("the installed Thymos model is invalid: {0}")]
     Artifact(#[from] ModelArtifactError),
     #[error("Thymos model storage failed: {0}")]
@@ -474,9 +513,16 @@ impl CompanionEmotionInstallStore {
             return Ok(None);
         };
         let manifest: InstalledCompanionEmotionManifest =
-            serde_json::from_slice(&bytes).map_err(|_| ModelArtifactError::InvalidManifest)?;
+            serde_json::from_slice(&bytes).map_err(|error| {
+                ModelArtifactError::InvalidManifest {
+                    reason: format!("installed manifest is not valid json: {error}"),
+                }
+            })?;
         if !is_commit(&manifest.source_revision) {
-            return Err(ModelArtifactError::InvalidManifest.into());
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "installed manifest source revision is not a commit".to_owned(),
+            }
+            .into());
         }
         for (artifact, remote_path) in [
             (&manifest.model, THYMOS_MODEL_PATH),
@@ -486,7 +532,10 @@ impl CompanionEmotionInstallStore {
             let key =
                 ObjectKey::from_segments(local_segments(&manifest.source_revision, remote_path))?;
             if !self.inner.owns_installed_path(&key, &artifact.path) {
-                return Err(ModelArtifactError::InvalidManifest.into());
+                return Err(ModelArtifactError::InvalidManifest {
+                    reason: "installed manifest path is outside the managed layout".to_owned(),
+                }
+                .into());
             }
         }
         Ok(Some(manifest))
@@ -503,17 +552,22 @@ impl CompanionEmotionInstallStore {
             &mut manifest.tokenizer,
             &mut manifest.labels,
         ] {
-            let relative = artifact
-                .path
-                .strip_prefix(old_root)
-                .map_err(|_| ModelArtifactError::InvalidManifest)?;
+            let relative = artifact.path.strip_prefix(old_root).map_err(|_| {
+                ModelArtifactError::InvalidManifest {
+                    reason: "manifest artifact path is outside the old root".to_owned(),
+                }
+            })?;
             artifact.path = self.root.join(relative);
         }
         manifest.verify()?;
         let bytes =
-            serde_json::to_vec(&manifest).map_err(|_| ModelArtifactError::InvalidManifest)?;
+            serde_json::to_vec(&manifest).map_err(|error| ModelArtifactError::InvalidManifest {
+                reason: format!("manifest could not be serialized: {error}"),
+            })?;
         self.write_record(INSTALLED_MANIFEST_FILE, &bytes)?;
-        self.installed()?.ok_or(ModelArtifactError::Missing)?;
+        self.installed()?.ok_or(ModelArtifactError::Missing {
+            reason: "rebound model files are missing".to_owned(),
+        })?;
         Ok(())
     }
 
@@ -552,21 +606,30 @@ impl CompanionEmotionInstallStore {
             return Ok(None);
         };
         if file.is_empty() || file.len() > max_bytes {
-            return Err(ModelArtifactError::InvalidManifest.into());
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "record is empty or exceeds the size limit".to_owned(),
+            }
+            .into());
         }
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
-            .map_err(|_| ModelArtifactError::Unreadable)?;
+            .map_err(|error| ModelArtifactError::Unreadable {
+                reason: format!("reading the record failed: {error}"),
+            })?;
         Ok(Some(bytes))
     }
 
     /// Stages a record beside the current one and renames it over it, so a
     /// crash leaves either the old or the new record.
     fn write_record(&self, name: &str, bytes: &[u8]) -> Result<(), CompanionEmotionInstallError> {
-        if u64::try_from(bytes.len()).map_err(|_| ModelArtifactError::InvalidManifest)?
-            > MAX_INSTALLED_MANIFEST_BYTES
+        if u64::try_from(bytes.len()).map_err(|_| ModelArtifactError::InvalidManifest {
+            reason: "record length exceeds the u64 range".to_owned(),
+        })? > MAX_INSTALLED_MANIFEST_BYTES
         {
-            return Err(ModelArtifactError::InvalidManifest.into());
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "record exceeds the size limit".to_owned(),
+            }
+            .into());
         }
         let staged = ObjectKey::from_segments([format!("{name}{STAGED_SUFFIX}")])?;
         let partial =
@@ -668,8 +731,11 @@ impl CompanionEmotionInstallLock<'_> {
         else {
             return Ok(None);
         };
-        let record: ActiveInstallRecord =
-            serde_json::from_slice(&bytes).map_err(|_| ModelArtifactError::InvalidManifest)?;
+        let record: ActiveInstallRecord = serde_json::from_slice(&bytes).map_err(|error| {
+            ModelArtifactError::InvalidManifest {
+                reason: format!("active install record is not valid json: {error}"),
+            }
+        })?;
         let remote = RemoteCompanionEmotionModel {
             source_revision: record.source_revision,
             model: record.model.into_remote(THYMOS_MODEL_PATH),
@@ -678,7 +744,10 @@ impl CompanionEmotionInstallLock<'_> {
         };
         remote.validate()?;
         if record.job_id.trim().is_empty() {
-            return Err(ModelArtifactError::InvalidManifest.into());
+            return Err(ModelArtifactError::InvalidManifest {
+                reason: "active install record has a blank job id".to_owned(),
+            }
+            .into());
         }
         Ok(Some(ActiveCompanionEmotionInstall {
             job_id: record.job_id,
@@ -700,7 +769,9 @@ impl CompanionEmotionInstallLock<'_> {
             tokenizer: ActiveArtifactRecord::from_remote(&remote.tokenizer),
             labels: ActiveArtifactRecord::from_remote(&remote.labels),
         })
-        .map_err(|_| ModelArtifactError::InvalidManifest)?;
+        .map_err(|error| ModelArtifactError::InvalidManifest {
+            reason: format!("active install record could not be serialized: {error}"),
+        })?;
         self.store.write_record(ACTIVE_INSTALL_FILE, &bytes)
     }
 
@@ -729,7 +800,9 @@ impl CompanionEmotionInstallLock<'_> {
         for artifact in remote.artifacts() {
             let path = pinned
                 .installed_path(&remote.pinned_artifact(artifact))?
-                .ok_or(ModelArtifactError::Missing)?;
+                .ok_or(ModelArtifactError::Missing {
+                    reason: "installed model file is missing".to_owned(),
+                })?;
             if artifact.sha256.is_none()
                 && let Some(blob_id) = artifact.git_blob_id.as_deref()
                 && let Err(error) = verify_git_blob(&path, blob_id)
@@ -739,8 +812,11 @@ impl CompanionEmotionInstallLock<'_> {
             }
             paths.push(path);
         }
-        let [model, tokenizer, labels] = <[PathBuf; 3]>::try_from(paths)
-            .map_err(|_| CompanionEmotionInstallError::InvalidRemote)?;
+        let [model, tokenizer, labels] = <[PathBuf; 3]>::try_from(paths).map_err(|_| {
+            CompanionEmotionInstallError::InvalidRemote {
+                reason: "installed files are not the model, tokenizer and labels".to_owned(),
+            }
+        })?;
         let manifest = InstalledCompanionEmotionManifest {
             source_revision: remote.source_revision.clone(),
             model: InstalledModelArtifact::inspect(model)?,
@@ -749,7 +825,9 @@ impl CompanionEmotionInstallLock<'_> {
         };
         manifest.verify()?;
         let bytes =
-            serde_json::to_vec(&manifest).map_err(|_| ModelArtifactError::InvalidManifest)?;
+            serde_json::to_vec(&manifest).map_err(|error| ModelArtifactError::InvalidManifest {
+                reason: format!("manifest could not be serialized: {error}"),
+            })?;
         self.store.write_record(INSTALLED_MANIFEST_FILE, &bytes)?;
         let cleared = self.clear_active().is_ok();
         let revisions = self
@@ -844,8 +922,12 @@ mod tests {
     fn remote_from(
         body: &[u8],
     ) -> Result<RemoteCompanionEmotionModel, CompanionEmotionInstallError> {
-        let pinned = crate::pinned_files(THYMOS_REPOSITORY, body, &THYMOS_FILES)
-            .map_err(|_| CompanionEmotionInstallError::InvalidRemote)?;
+        let pinned =
+            crate::pinned_files(THYMOS_REPOSITORY, body, &THYMOS_FILES).map_err(|error| {
+                CompanionEmotionInstallError::InvalidRemote {
+                    reason: format!("pin does not describe the Thymos files: {error}"),
+                }
+            })?;
         RemoteCompanionEmotionModel::from_pinned_files(&pinned)
     }
 
@@ -886,21 +968,20 @@ mod tests {
         let mut value: serde_json::Value =
             serde_json::from_slice(&detail(b"model", b"tokenizer", b"{}")).expect("value");
         value["siblings"][2]["lfs"] = serde_json::Value::Null;
-        assert_eq!(
+        assert!(matches!(
             remote_from(&serde_json::to_vec(&value).expect("json")),
-            Err(CompanionEmotionInstallError::InvalidRemote)
-        );
+            Err(CompanionEmotionInstallError::InvalidRemote { .. })
+        ));
         let mut value: serde_json::Value =
             serde_json::from_slice(&detail(b"model", b"tokenizer", b"{}")).expect("value");
         value["siblings"][4]
             .as_object_mut()
             .expect("labels")
             .remove("blobId");
-        assert_eq!(
+        assert!(matches!(
             remote_from(&serde_json::to_vec(&value).expect("json")),
-            Err(CompanionEmotionInstallError::InvalidRemote),
-            "labels.json without a SHA-256 or git blob id"
-        );
+            Err(CompanionEmotionInstallError::InvalidRemote { .. })
+        ));
     }
 
     #[test]
@@ -920,11 +1001,10 @@ mod tests {
             serde_json::json!({ "labels": ["a"], "thresholds": [0.5], "max_length": 3 }),
             serde_json::json!({ "labels": ["a"], "thresholds": [0.5], "max_length": 96, "model_sha256": "xyz" }),
         ] {
-            assert_eq!(
+            assert!(matches!(
                 CompanionEmotionLabels::parse(&serde_json::to_vec(&invalid).expect("json")),
-                Err(ModelArtifactError::InvalidManifest),
-                "{invalid}"
-            );
+                Err(ModelArtifactError::InvalidManifest { .. })
+            ));
         }
         let empty_sha = serde_json::json!({
             "labels": ["a"], "thresholds": [0.5], "max_length": 4, "model_sha256": ""
@@ -967,7 +1047,7 @@ mod tests {
         assert!(matches!(
             store.lock().complete(&remote),
             Err(CompanionEmotionInstallError::Artifact(
-                ModelArtifactError::Missing
+                ModelArtifactError::Missing { .. }
             ))
         ));
         install(&root, &remote, [b"model", b"tokenizer", &labels]);
@@ -996,12 +1076,12 @@ mod tests {
         let remote = remote(b"model", b"tokenizer", &labels);
         install(&root, &remote, [b"model", b"tokenizer", &labels]);
         let store = CompanionEmotionInstallStore::open(&root).expect("store");
-        assert_eq!(
+        assert!(matches!(
             store.lock().complete(&remote),
             Err(CompanionEmotionInstallError::Artifact(
-                ModelArtifactError::Mismatch
+                ModelArtifactError::Mismatch { .. }
             ))
-        );
+        ));
         assert_eq!(store.status(), CompanionEmotionInstallStatus::NotInstalled);
         std::fs::remove_dir_all(root).ok();
     }
@@ -1015,7 +1095,10 @@ mod tests {
         let store = CompanionEmotionInstallStore::open(&root).expect("store");
         let manifest = store.lock().complete(&remote).expect("complete").manifest;
         std::fs::write(&manifest.tokenizer.path, b"tokenizes").expect("tamper");
-        assert_eq!(manifest.verify(), Err(ModelArtifactError::Mismatch));
+        assert!(matches!(
+            manifest.verify(),
+            Err(ModelArtifactError::Mismatch { .. })
+        ));
         std::fs::remove_file(&manifest.model.path).expect("remove model");
         assert_eq!(store.status(), CompanionEmotionInstallStatus::Damaged);
         std::fs::remove_dir_all(root).ok();
@@ -1038,12 +1121,12 @@ mod tests {
                 &serde_json::to_vec(&manifest).expect("json"),
             )
             .expect("write");
-        assert_eq!(
+        assert!(matches!(
             store.installed(),
             Err(CompanionEmotionInstallError::Artifact(
-                ModelArtifactError::InvalidManifest
+                ModelArtifactError::InvalidManifest { .. }
             ))
-        );
+        ));
         assert_eq!(store.status(), CompanionEmotionInstallStatus::Damaged);
         assert!(store.lock().remove().expect("remove"));
         assert!(
@@ -1161,12 +1244,12 @@ mod tests {
         tampered[last - 1] = b' ';
         install(&root, &remote, [b"model", b"tokenizer", &tampered]);
         let store = CompanionEmotionInstallStore::open(&root).expect("store");
-        assert_eq!(
+        assert!(matches!(
             store.lock().complete(&remote),
             Err(CompanionEmotionInstallError::Pinned(
-                PinnedArtifactError::Mismatch
+                PinnedArtifactError::Mismatch { .. }
             ))
-        );
+        ));
         assert!(
             !root
                 .join("revisions")

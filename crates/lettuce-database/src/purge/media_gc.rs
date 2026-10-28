@@ -217,7 +217,9 @@ impl Database {
     > {
         use lettuce_media::{MediaKind, MediaLibraryEntry, MediaLibraryError};
         if role.is_some_and(|kind| !matches!(kind, MediaKind::Image | MediaKind::Audio)) {
-            return Err(MediaLibraryError::InvalidData);
+            return Err(MediaLibraryError::InvalidData {
+                reason: "media library search: a value failed validation",
+            });
         }
         let query = query.trim().to_lowercase();
         let pattern = format!("%{}%", query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
@@ -245,7 +247,12 @@ impl Database {
             _ => unreachable!(),
         });
         let limit = usize::from(lettuce_types::PageLimit::new(request.limit.get()).get());
-        let mut connection = self.connection().map_err(|_| MediaLibraryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| {
+            tracing::warn!(%error, "media library search failed");
+            MediaLibraryError::Storage {
+                reason: "media library search: a storage step failed",
+            }
+        })?;
         connection.create_scalar_function(
             "media_library_search_key", 1,
             rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
@@ -253,7 +260,12 @@ impl Database {
         ).map_err(library_sql_error)?;
         let transaction = connection
             .transaction()
-            .map_err(|_| MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "media library search failed");
+                MediaLibraryError::Storage {
+                    reason: "media library search: a storage step failed",
+                }
+            })?;
         let ids: Vec<String> = transaction.prepare("SELECT id FROM media_assets WHERE blob_kind IN ('image','audio') AND (?1 IS NULL OR blob_kind=?1) AND media_library_search_key(COALESCE(json_extract(provenance_json,'$.source_label'),id)) LIKE ?5 ESCAPE '\\' AND (?2 IS NULL OR updated_at<?2 OR (updated_at=?2 AND id>?3)) ORDER BY updated_at DESC,id ASC LIMIT ?4")
             .and_then(|mut statement| statement.query_map(rusqlite::params![role_name,cursor.as_ref().map(|cursor| cursor.updated_at),cursor.as_ref().map(|cursor| cursor.id.as_str()),i64::try_from(limit+1).map_err(|_| rusqlite::Error::InvalidQuery)?,pattern], |row| row.get(0))?.collect()).map_err(library_sql_error)?;
         let has_more = ids.len() > limit;
@@ -264,10 +276,17 @@ impl Database {
         };
         let mut items = Vec::with_capacity(limit);
         for id in ids.into_iter().take(limit) {
-            let asset_id = id.parse().map_err(|_| MediaLibraryError::InvalidData)?;
+            let asset_id = id.parse().map_err(|error| {
+                tracing::warn!(%error, "media library search failed");
+                MediaLibraryError::InvalidData {
+                    reason: "media library search: a value could not be read or converted",
+                }
+            })?;
             let asset = crate::load_asset_with_blob(&transaction, asset_id)
                 .map_err(library_sql_error)?
-                .ok_or(MediaLibraryError::InvalidData)?;
+                .ok_or(MediaLibraryError::InvalidData {
+                    reason: "media library search: a required value is missing",
+                })?;
             let blob = transaction
                 .query_row(
                     &format!(
@@ -287,7 +306,9 @@ impl Database {
             });
         }
         let next_cursor = if has_more {
-            let last = items.last().ok_or(MediaLibraryError::InvalidData)?;
+            let last = items.last().ok_or(MediaLibraryError::InvalidData {
+                reason: "media library search: a required value is missing",
+            })?;
             Some(crate::hex_encode(
                 &serde_json::to_vec(&MediaLibraryCursor {
                     version: 1,
@@ -296,14 +317,24 @@ impl Database {
                     updated_at: last.asset.updated_at.get(),
                     id: last.asset.id.to_string(),
                 })
-                .map_err(|_| MediaLibraryError::InvalidData)?,
+                .map_err(|error| {
+                    tracing::warn!(%error, "media library search failed");
+                    MediaLibraryError::InvalidData {
+                        reason: "media library search: a value could not be read or converted",
+                    }
+                })?,
             ))
         } else {
             None
         };
         transaction
             .commit()
-            .map_err(|_| MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "media library search failed");
+                MediaLibraryError::Storage {
+                    reason: "media library search: a storage step failed",
+                }
+            })?;
         Ok(lettuce_types::Page { items, next_cursor })
     }
 
@@ -313,17 +344,32 @@ impl Database {
     ) -> Result<Vec<lettuce_media::MediaReference>, lettuce_media::MediaLibraryError> {
         let mut connection = self
             .connection()
-            .map_err(|_| lettuce_media::MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "media references failed");
+                lettuce_media::MediaLibraryError::Storage {
+                    reason: "media references: a storage step failed",
+                }
+            })?;
         let transaction = connection
             .transaction()
-            .map_err(|_| lettuce_media::MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "media references failed");
+                lettuce_media::MediaLibraryError::Storage {
+                    reason: "media references: a storage step failed",
+                }
+            })?;
         let exists: bool = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
                 [id.to_string()],
                 |row| row.get(0),
             )
-            .map_err(|_| lettuce_media::MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "media references failed");
+                lettuce_media::MediaLibraryError::Storage {
+                    reason: "media references: a storage step failed",
+                }
+            })?;
         if !exists {
             return Err(lettuce_media::MediaLibraryError::NotFound);
         }
@@ -440,8 +486,12 @@ struct MediaLibraryCursor {
 
 fn library_sql_error(error: rusqlite::Error) -> lettuce_media::MediaLibraryError {
     match error {
-        rusqlite::Error::InvalidQuery => lettuce_media::MediaLibraryError::InvalidData,
-        _ => lettuce_media::MediaLibraryError::Storage,
+        rusqlite::Error::InvalidQuery => lettuce_media::MediaLibraryError::InvalidData {
+            reason: "library sql error: a stored value is not recognised",
+        },
+        _ => lettuce_media::MediaLibraryError::Storage {
+            reason: "library sql error: a stored value is not recognised",
+        },
     }
 }
 
@@ -477,8 +527,12 @@ impl lettuce_media::MediaLibraryRepository for Database {
 
 fn media_library_error(error: PurgeError) -> lettuce_media::MediaLibraryError {
     match error {
-        PurgeError::Storage => lettuce_media::MediaLibraryError::Storage,
-        _ => lettuce_media::MediaLibraryError::InvalidData,
+        PurgeError::Storage { .. } => lettuce_media::MediaLibraryError::Storage {
+            reason: "media library error: a stored value is not recognised",
+        },
+        _ => lettuce_media::MediaLibraryError::InvalidData {
+            reason: "media library error: a stored value is not recognised",
+        },
     }
 }
 
@@ -486,8 +540,8 @@ impl From<crate::ApiOperationError> for lettuce_media::MediaLibraryError {
     fn from(error: crate::ApiOperationError) -> Self {
         match error {
             crate::ApiOperationError::Conflict => Self::Conflict,
-            crate::ApiOperationError::InvalidData => Self::InvalidData,
-            crate::ApiOperationError::Storage => Self::Storage,
+            crate::ApiOperationError::InvalidData { reason } => Self::InvalidData { reason },
+            crate::ApiOperationError::Storage { reason } => Self::Storage { reason },
         }
     }
 }
@@ -507,7 +561,12 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 [&asset],
                 |row| row.get(0),
             )
-            .map_err(|_| MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "remove media library asset failed");
+                MediaLibraryError::Storage {
+                    reason: "remove media library asset: a storage step failed",
+                }
+            })?;
         if !exists {
             return Err(MediaLibraryError::NotFound);
         }
@@ -515,13 +574,23 @@ impl crate::ApiOperationTransaction<'_, '_> {
         if !owners.is_empty() {
             return Err(MediaLibraryError::InUse(owners));
         }
-        self.transaction.execute("UPDATE media_assets SET retention='persistent',expires_at=NULL,revision=revision+1,updated_at=?2 WHERE id=?1", rusqlite::params![asset,now.get()]).map_err(|_| MediaLibraryError::Storage)?;
+        self.transaction.execute("UPDATE media_assets SET retention='persistent',expires_at=NULL,revision=revision+1,updated_at=?2 WHERE id=?1", rusqlite::params![asset,now.get()]).map_err(|error| {
+            tracing::warn!(%error, "remove media library asset failed");
+            MediaLibraryError::Storage {
+                reason: "remove media library asset: a storage step failed",
+            }
+        })?;
         self.transaction
             .execute(
                 "INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) VALUES (?1,?2)",
                 rusqlite::params![asset, now.get()],
             )
-            .map_err(|_| MediaLibraryError::Storage)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "remove media library asset failed");
+                MediaLibraryError::Storage {
+                    reason: "remove media library asset: a storage step failed",
+                }
+            })?;
         collect_in(self.transaction, now).map_err(media_library_error)
     }
 }

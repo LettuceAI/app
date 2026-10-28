@@ -47,19 +47,24 @@ impl<
             .attempts
             .iter()
             .find(|attempt| attempt.id == request.attempt_id)
-            .ok_or(ConversationInitialInferenceError::InvalidOwnership)?;
+            .ok_or(ConversationInitialInferenceError::InvalidOwnership {
+                reason: "the turn has no such attempt",
+            })?;
         if turn.conversation_id != conversation_id
             || turn.operation != request.operation
             || attempt.job_id != Some(handle.id())
             || request.cancellation != Some(handle.id())
         {
-            return Err(ConversationInitialInferenceError::InvalidOwnership);
+            return Err(ConversationInitialInferenceError::InvalidOwnership {
+                reason: "turn, operation, attempt job or request cancellation differs from the handle",
+            });
         }
         {
-            let model = turn
-                .resolved_model
-                .as_ref()
-                .ok_or(ConversationInitialInferenceError::InvalidModel)?;
+            let model = turn.resolved_model.as_ref().ok_or(
+                ConversationInitialInferenceError::InvalidModel {
+                    reason: "the turn has no resolved model",
+                },
+            )?;
             let profile = &request.profile.chat_profile;
             if model.source_id != profile.model_profile_id
                 || model.source_revision != profile.model_revision
@@ -68,14 +73,18 @@ impl<
                 || model.provider_protocol != profile.provider_protocol
                 || model.external_model_id != profile.external_model_id
             {
-                return Err(ConversationInitialInferenceError::InvalidModel);
+                return Err(ConversationInitialInferenceError::InvalidModel {
+                    reason: "the resolved model differs from the request profile",
+                });
             }
         }
         if turn.prompt != request.context.attributions.prompt
             || turn.lorebooks != request.context.attributions.lorebooks
             || turn.memory != request.context.attributions.memory
         {
-            return Err(ConversationInitialInferenceError::InvalidOwnership);
+            return Err(ConversationInitialInferenceError::InvalidOwnership {
+                reason: "the request attributions differ from the turn",
+            });
         }
         let binding = InitialInferenceBinding::from_request(conversation_id, &request)?;
         if let Some(record) = self.repository.initial_inference(&binding)? {
@@ -84,7 +93,9 @@ impl<
         if turn.status != GenerationTurnStatus::Running
             || attempt.status != GenerationAttemptStatus::Running
         {
-            return Err(ConversationInitialInferenceError::InvalidOwnership);
+            return Err(ConversationInitialInferenceError::InvalidOwnership {
+                reason: "the turn or attempt is not running",
+            });
         }
         if handle.cancellation_token().is_cancelled() {
             return Err(ConversationInitialInferenceError::Cancelled);
@@ -135,9 +146,9 @@ impl<
                 }
             }
             Err(JobInferenceError::Provider(error)) => InitialInferenceResult::Failed(error),
-            Err(JobInferenceError::Evidence) => {
+            Err(JobInferenceError::Evidence { reason }) => {
                 return Err(ConversationInitialInferenceError::Repository(
-                    ConversationRepositoryError::Storage,
+                    ConversationRepositoryError::Storage { reason },
                 ));
             }
         };
@@ -202,10 +213,10 @@ fn cleanup_provider_replays<R: ProviderReplayArtifactPort + ?Sized>(
 pub enum ConversationInitialInferenceError {
     #[error("initial inference is pending and requires attempt recovery")]
     Pending,
-    #[error("conversation inference ownership is invalid")]
-    InvalidOwnership,
-    #[error("conversation inference model identity is invalid")]
-    InvalidModel,
+    #[error("conversation inference ownership is invalid: {reason}")]
+    InvalidOwnership { reason: &'static str },
+    #[error("conversation inference model identity is invalid: {reason}")]
+    InvalidModel { reason: &'static str },
     #[error("conversation inference was cancelled")]
     Cancelled,
     #[error("conversation inference request is invalid: {0}")]

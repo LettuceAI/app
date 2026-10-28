@@ -21,8 +21,8 @@ pub struct CompanionConsolidationJobAdmission {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionConsolidationJobAdmissionError {
-    #[error("companion consolidation source is invalid")]
-    InvalidSource,
+    #[error("companion consolidation source is invalid: {reason}")]
+    InvalidSource { reason: String },
     #[error("companion consolidation Soul read failed: {0:?}")]
     Soul(SoulRepositoryError),
     #[error("companion consolidation growth read failed: {0}")]
@@ -60,10 +60,11 @@ impl<
         if result.applied_facts == 0 {
             return Ok(None);
         }
-        let receipt = result
-            .receipt
-            .as_ref()
-            .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource)?;
+        let receipt = result.receipt.as_ref().ok_or(
+            CompanionConsolidationJobAdmissionError::InvalidSource {
+                reason: "growth result has no receipt".to_owned(),
+            },
+        )?;
         let growth_run = self
             .sources
             .load_companion_growth_run(growth_job_id)
@@ -73,13 +74,18 @@ impl<
             || receipt.operation_id != growth_run.operation_id
             || receipt.expected_revision != growth_run.soul.revision
         {
-            return Err(CompanionConsolidationJobAdmissionError::InvalidSource);
+            return Err(CompanionConsolidationJobAdmissionError::InvalidSource {
+                reason: "receipt differs from the growth run owner, operation or revision"
+                    .to_owned(),
+            });
         }
         let growth_job = self
             .jobs
             .get(growth_job_id)
             .map_err(CompanionConsolidationJobAdmissionError::Job)?
-            .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource)?;
+            .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource {
+                reason: "job of the run is missing from the store".to_owned(),
+            })?;
         if growth_job.kind != JobKind::CompanionGrowth
             || growth_job.state != JobState::Succeeded
             || growth_job.outcome
@@ -87,7 +93,9 @@ impl<
                     result_ref: OutcomeRef::Character(growth_run.character_id),
                 })
         {
-            return Err(CompanionConsolidationJobAdmissionError::InvalidSource);
+            return Err(CompanionConsolidationJobAdmissionError::InvalidSource {
+                reason: "growth job did not succeed for the growth character".to_owned(),
+            });
         }
         match self
             .sources
@@ -98,7 +106,9 @@ impl<
                     .jobs
                     .get(run.job_id)
                     .map_err(CompanionConsolidationJobAdmissionError::Job)?
-                    .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource)?;
+                    .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource {
+                        reason: "job of the run is missing from the store".to_owned(),
+                    })?;
                 return Ok(Some(CompanionConsolidationJobAdmission {
                     run,
                     job,
@@ -110,20 +120,29 @@ impl<
         }
         let soul = SoulRepository::get(self.sources, growth_run.soul_owner())
             .map_err(CompanionConsolidationJobAdmissionError::Soul)?
-            .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource)?;
+            .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource {
+                reason: "the soul of the growth run is missing".to_owned(),
+            })?;
         if soul.revision != receipt.resulting_revision
             || !consolidation_ready(&soul, receipt.applied_at)
         {
             return Ok(None);
         }
         let idempotency_key =
-            IdempotencyKey::new(format!("companion-consolidation-{growth_job_id}"))
-                .map_err(|_| CompanionConsolidationJobAdmissionError::InvalidSource)?;
+            IdempotencyKey::new(format!("companion-consolidation-{growth_job_id}")).map_err(
+                |error| CompanionConsolidationJobAdmissionError::InvalidSource {
+                    reason: error.to_string(),
+                },
+            )?;
         let subject = JobSubject::new(
             SubjectKind::Conversation,
             growth_run.conversation_id.to_string(),
         )
-        .map_err(|_| CompanionConsolidationJobAdmissionError::InvalidSource)?;
+        .map_err(
+            |error| CompanionConsolidationJobAdmissionError::InvalidSource {
+                reason: error.to_string(),
+            },
+        )?;
         let admitted = self
             .jobs
             .create_or_get(

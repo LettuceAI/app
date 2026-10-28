@@ -367,10 +367,10 @@ pub enum CompanionStateRepositoryError {
     NotFound,
     AlreadyExists,
     Conflict,
-    Invalid,
+    Invalid { reason: String },
     OperationMismatch,
-    Corrupt,
-    Failure,
+    Corrupt { reason: String },
+    Failure { reason: String },
 }
 
 pub trait CompanionStateRepository: Send + Sync {
@@ -431,9 +431,17 @@ impl PreparedCompanionLaunch {
             if details.character.source_id == owner.character_id)
             && plan.conversation_id == owner.conversation_id;
         if !character_matches {
-            return Err(CompanionLaunchRepositoryError::Invalid);
+            return Err(CompanionLaunchRepositoryError::Invalid {
+                reason:
+                    "the launch plan is not a direct conversation with the state owner character"
+                        .to_owned(),
+            });
         }
-        validate_runtime_state(&initial).map_err(|_| CompanionLaunchRepositoryError::Invalid)?;
+        validate_runtime_state(&initial).map_err(|error| {
+            CompanionLaunchRepositoryError::Invalid {
+                reason: format!("the initial runtime state is invalid: {error:?}"),
+            }
+        })?;
         Ok(Self {
             conversation,
             owner,
@@ -476,7 +484,7 @@ impl PreparedCompanionLaunch {
 pub enum CompanionLaunchRepositoryError {
     Conversation(ConversationRepositoryError),
     State(CompanionStateRepositoryError),
-    Invalid,
+    Invalid { reason: String },
 }
 
 pub trait CompanionConversationCreator: Send + Sync {
@@ -504,14 +512,19 @@ impl PreparedCompanionSend {
     ) -> Result<Self, CompanionSendRepositoryError> {
         command
             .validate()
-            .map_err(|_| CompanionSendRepositoryError::Invalid)?;
+            .map_err(|error| CompanionSendRepositoryError::Invalid {
+                reason: format!("the send command failed validation: {error}"),
+            })?;
         if command.conversation_id != owner.conversation_id
             || validate_runtime_state(&replacement.state).is_err()
             || effect_seed
                 .as_ref()
                 .is_some_and(|seed| seed.validate().is_err())
         {
-            return Err(CompanionSendRepositoryError::Invalid);
+            return Err(CompanionSendRepositoryError::Invalid {
+                reason: "the send replacement state, effect seed or conversation does not validate"
+                    .to_owned(),
+            });
         }
         Ok(Self {
             command,
@@ -542,7 +555,7 @@ impl PreparedCompanionSend {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompanionSendRepositoryError {
     Conversation(ConversationRepositoryError),
-    Invalid,
+    Invalid { reason: String },
 }
 
 pub trait CompanionConversationSender: Send + Sync {
@@ -562,7 +575,9 @@ impl PreparedCompanionContinue {
     pub fn new(command: ContinueConversation) -> Result<Self, CompanionContinueRepositoryError> {
         lettuce_conversations::ConversationMutation::Continue(command.clone())
             .validate()
-            .map_err(|_| CompanionContinueRepositoryError::Invalid)?;
+            .map_err(|error| CompanionContinueRepositoryError::Invalid {
+                reason: format!("the continue command failed validation: {error}"),
+            })?;
         Ok(Self { command })
     }
 
@@ -575,7 +590,7 @@ impl PreparedCompanionContinue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompanionContinueRepositoryError {
     Conversation(ConversationRepositoryError),
-    Invalid,
+    Invalid { reason: String },
 }
 
 pub trait CompanionConversationContinuer: Send + Sync {
@@ -851,7 +866,7 @@ pub fn validate_runtime_state(
             .iter()
             .any(|value| value.trim().is_empty())
     {
-        return Err(CompanionStateRepositoryError::Invalid);
+        return Err(CompanionStateRepositoryError::Invalid { reason: "the runtime state has an out-of-range value, a timestamp order violation or a blank driver or signal".to_owned() });
     }
     Ok(())
 }
@@ -1057,9 +1072,9 @@ mod tests {
         state.emotional_state.momentum.hurt = -0.4;
         assert_eq!(validate_runtime_state(&state), Ok(()));
         state.emotional_state.felt.hurt = -0.1;
-        assert_eq!(
+        assert!(matches!(
             validate_runtime_state(&state),
-            Err(CompanionStateRepositoryError::Invalid)
-        );
+            Err(CompanionStateRepositoryError::Invalid { .. })
+        ));
     }
 }

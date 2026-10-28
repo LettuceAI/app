@@ -12,12 +12,16 @@ pub struct LibraryCounts {
 
 impl Database {
     pub fn library_counts(&self) -> Result<LibraryCounts, RepositoryError> {
-        let connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let connection = self
+            .connection()
+            .map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         connection.query_row(
             "SELECT (SELECT count(*) FROM characters WHERE status='active'), (SELECT count(*) FROM personas WHERE status='active'), (SELECT count(*) FROM lorebooks WHERE status='active'), (SELECT count(*) FROM media_assets WHERE blob_kind='image'), (SELECT count(*) FROM media_assets WHERE blob_kind='audio')",
             [],
             |row| Ok(LibraryCounts { characters: row.get(0)?, personas: row.get(1)?, lorebooks: row.get(2)?, images: row.get(3)?, audio: row.get(4)? }),
-        ).map_err(|_| RepositoryError::Storage)
+        ).map_err(|error| RepositoryError::Storage { reason: error.to_string() })
     }
 }
 

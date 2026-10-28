@@ -40,7 +40,7 @@ fn message(text: impl Into<String>) -> HfBrowseError {
 fn request_failed(what: &str, error: JsonClientError) -> HfBrowseError {
     let text = format!("{what}: {error}");
     match error {
-        JsonClientError::Transport => HfBrowseError::offline(text),
+        JsonClientError::Transport { .. } => HfBrowseError::offline(text),
         _ => message(text),
     }
 }

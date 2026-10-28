@@ -72,8 +72,8 @@ pub enum TtsSynthesisError {
     Repository(#[from] SynthesisRepositoryError),
     #[error("TTS synthesis job failed: {0}")]
     Jobs(#[from] StoreError),
-    #[error("TTS synthesis job and request are inconsistent")]
-    InvalidWork,
+    #[error("TTS synthesis job and request are inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -93,10 +93,17 @@ pub(crate) fn synthesis_job_spec(
     request: &SynthesisRequest,
 ) -> Result<lettuce_jobs::NewJob, TtsSynthesisError> {
     request.validate()?;
-    let subject = JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string())
-        .map_err(|_| TtsSynthesisError::InvalidWork)?;
-    let key = IdempotencyKey::new(format!("speech-synthesize-{}", request.id))
-        .map_err(|_| TtsSynthesisError::InvalidWork)?;
+    let subject =
+        JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string()).map_err(|_| {
+            TtsSynthesisError::InvalidWork {
+                reason: "the install asset id is not a valid job subject",
+            }
+        })?;
+    let key = IdempotencyKey::new(format!("speech-synthesize-{}", request.id)).map_err(|_| {
+        TtsSynthesisError::InvalidWork {
+            reason: "the install asset id is not a valid job subject",
+        }
+    })?;
     let resources = match request.provider.config.provider_kind() {
         AudioProviderKind::Kokoro => vec![
             ResourceClass::ModelLoad,
@@ -148,7 +155,9 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(TtsSynthesisError::InvalidWork)?;
+            .ok_or(TtsSynthesisError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job_record(&job, &record)?;
         if job.state == JobState::Succeeded {
             return Ok(None);
@@ -158,7 +167,9 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(record.request.id) {
-            return Err(TtsSynthesisError::InvalidWork);
+            return Err(TtsSynthesisError::InvalidWork {
+                reason: "claim input differs from the request",
+            });
         }
         let handle = JobHandle::new(job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -183,7 +194,9 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         let job = self
             .jobs
             .get(job_id)?
-            .ok_or(TtsSynthesisError::InvalidWork)?;
+            .ok_or(TtsSynthesisError::InvalidWork {
+                reason: "the job is missing from the store",
+            })?;
         validate_job_record(&job, &record)?;
         match (&record.state, job.state) {
             (SynthesisState::Succeeded { .. }, JobState::Succeeded) => {
@@ -254,7 +267,9 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
             || work.claim.claim.job_id != work.job.id
             || work.handle.id() != work.job.id
         {
-            return Err(TtsSynthesisError::InvalidWork);
+            return Err(TtsSynthesisError::InvalidWork {
+                reason: "claimed work does not match its running job, claim or handle",
+            });
         }
         if matches!(work.record.state, SynthesisState::Succeeded { .. }) {
             return self.finish_success(work, true, time());
@@ -335,7 +350,9 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         now: TimestampMillis,
     ) -> Result<TtsSynthesisRunResult, TtsSynthesisError> {
         if !matches!(work.record.state, SynthesisState::Succeeded { .. }) {
-            return Err(TtsSynthesisError::InvalidWork);
+            return Err(TtsSynthesisError::InvalidWork {
+                reason: "job already succeeded but the record did not",
+            });
         }
         let at = now.max(work.job.updated_at);
         self.jobs.append_and_transition(JobMutation::Progress {
@@ -403,7 +420,7 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         let exhausted = retryable && !speech_retry_allowed(work.claim.claim.attempt.get());
         let message = if exhausted {
             match &error {
-                TtsSynthesisError::Runtime(TtsRuntimeError::NetworkUnavailable) => {
+                TtsSynthesisError::Runtime(TtsRuntimeError::NetworkUnavailable { .. }) => {
                     format!("{SPEECH_RETRIES_EXHAUSTED}-network")
                 }
                 TtsSynthesisError::Runtime(TtsRuntimeError::ProviderUnavailable { status }) => {
@@ -424,6 +441,7 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
                 })?;
             return Ok(TtsSynthesisRunResult::RetryScheduled { error, job });
         }
+        tracing::warn!(job_id = %work.job.id, %error, "TTS synthesis job failed");
         let job = self.jobs.append_and_transition(JobMutation::Fail {
             claim: work.claim.claim,
             error: JobError::new(code, false, message).expect("constant TTS error label is valid"),
@@ -443,7 +461,9 @@ fn validate_job_record(
         || job.subject.kind != SubjectKind::SpeechRequest
         || job.subject.id.as_str() != record.request.id.to_string()
     {
-        return Err(TtsSynthesisError::InvalidWork);
+        return Err(TtsSynthesisError::InvalidWork {
+            reason: "job differs from the record in id, kind or subject",
+        });
     }
     if job.state == JobState::Succeeded
         && (!matches!(record.state, SynthesisState::Succeeded { .. })
@@ -452,7 +472,9 @@ fn validate_job_record(
                     result_ref: OutcomeRef::Request(record.request.id),
                 }))
     {
-        return Err(TtsSynthesisError::InvalidWork);
+        return Err(TtsSynthesisError::InvalidWork {
+            reason: "job outcome differs from the record request",
+        });
     }
     Ok(())
 }
@@ -470,20 +492,20 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
 
     match error {
         TtsSynthesisError::Invalid(_)
-        | TtsSynthesisError::Runtime(TtsRuntimeError::Rejected)
+        | TtsSynthesisError::Runtime(TtsRuntimeError::Rejected { .. })
         | TtsSynthesisError::Audio(TtsAudioError::Invalid(_))
         | TtsSynthesisError::Audio(TtsAudioError::Media(
             MediaStoreError::EmptyInput
             | MediaStoreError::InputTooLarge
             | MediaStoreError::UnsupportedFormat
-            | MediaStoreError::InvalidHeader
+            | MediaStoreError::InvalidHeader { .. }
             | MediaStoreError::KindMismatch
             | MediaStoreError::MimeMismatch
             | MediaStoreError::PixelLimitExceeded
             | MediaStoreError::InvalidDimensions
-            | MediaStoreError::InvalidMetadata,
+            | MediaStoreError::InvalidMetadata { .. },
         ))
-        | TtsSynthesisError::InvalidWork => (
+        | TtsSynthesisError::InvalidWork { .. } => (
             JobErrorCode::InvalidInput,
             false,
             "TTS synthesis input or output is invalid",
@@ -494,8 +516,8 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
             "TTS synthesis was cancelled",
         ),
         TtsSynthesisError::Runtime(
-            TtsRuntimeError::Unavailable
-            | TtsRuntimeError::NetworkUnavailable
+            TtsRuntimeError::Unavailable { .. }
+            | TtsRuntimeError::NetworkUnavailable { .. }
             | TtsRuntimeError::ProviderUnavailable { .. },
         ) => (
             JobErrorCode::CapabilityUnavailable,
@@ -525,7 +547,7 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
         TtsSynthesisError::Secret(SecretStoreError::Missing) => {
             (JobErrorCode::Authentication, false, SPEECH_SECRET_MISSING)
         }
-        TtsSynthesisError::Runtime(TtsRuntimeError::Failed) => {
+        TtsSynthesisError::Runtime(TtsRuntimeError::Failed { .. }) => {
             (JobErrorCode::WorkerFailed, false, "TTS synthesis failed")
         }
         TtsSynthesisError::Audio(_)
@@ -932,7 +954,9 @@ mod tests {
                 &secrets,
                 &Runtime {
                     calls: calls.clone(),
-                    outcome: Err(TtsRuntimeError::Unavailable),
+                    outcome: Err(TtsRuntimeError::Unavailable {
+                        reason: "simulated failure",
+                    }),
                     cancel_after_response: false,
                 },
                 &media,

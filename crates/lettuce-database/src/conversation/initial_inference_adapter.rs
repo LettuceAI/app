@@ -46,11 +46,15 @@ fn verify_usage(
         .optional()
         .map_err(slice::db)?
         .ok_or(ConversationRepositoryError::Conflict)?;
-    let admission: lettuce_usage::JobInferenceUsage =
-        crate::decode_versioned(&admission, 1).map_err(|_| ConversationRepositoryError::Storage)?;
+    let admission: lettuce_usage::JobInferenceUsage = crate::decode_versioned(&admission, 1)
+        .map_err(|error| ConversationRepositoryError::Storage {
+            reason: format!("{error:?}"),
+        })?;
     let evidence: lettuce_usage::JobInferenceUsageResult =
         crate::decode_versioned(&evidence.ok_or(ConversationRepositoryError::Conflict)?, 1)
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: format!("{error:?}"),
+            })?;
     let turn = conversation_mutations::load_turn(
         transaction,
         record.binding.conversation_id,
@@ -142,18 +146,24 @@ fn load(
             .map_err(ConversationRepositoryError::Invalid)?
             != *binding
     {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "load: stored data failed a consistency check".to_owned(),
+        });
     }
     let result: Option<InitialInferenceResult> =
         result.as_deref().map(slice::decode).transpose()?;
     if result.is_some() != settled_at.is_some() || settled_at.is_some_and(|at| at < admitted_at) {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "load: stored data failed a consistency check".to_owned(),
+        });
     }
     let mut expected_refs = BTreeMap::new();
     if let Some(result) = &result {
         result
             .validate()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         expected_refs = replay_references(result);
         for reference in expected_refs.values() {
             conversation_artifact_adapter::verify_replay_in_transaction(transaction, reference)
@@ -174,21 +184,27 @@ fn load(
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(slice::db)?;
     if stored_refs != expected_refs.into_keys().collect::<Vec<_>>() {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "load: stored data failed a consistency check".to_owned(),
+        });
     }
     let record = InitialInferenceRecord {
         binding: binding.clone(),
         request,
-        usage_event_id: usage_event_id
-            .parse()
-            .map_err(|_| ConversationRepositoryError::Storage)?,
+        usage_event_id: usage_event_id.parse().map_err(|error| {
+            ConversationRepositoryError::Storage {
+                reason: format!("{error}"),
+            }
+        })?,
         admitted_at: TimestampMillis::new(admitted_at),
         result,
         settled_at: settled_at.map(TimestampMillis::new),
     };
     if let Some(result) = &record.result {
         let proof = crate::usage_clear::dispatch_tombstone_in(transaction, record.usage_event_id)
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+            .map_err(|error| ConversationRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         match proof {
             Some(lettuce_usage::UsageTombstone::Dispatch {
                 attempt_id, job_id, ..
@@ -248,7 +264,9 @@ pub(crate) fn load_for_attempt_in(
     let binding = InitialInferenceBinding::from_request(conversation_id, &request)
         .map_err(ConversationRepositoryError::Invalid)?;
     if binding.turn_id != turn_id || binding.attempt_id != attempt_id || binding.job_id != job_id {
-        return Err(ConversationRepositoryError::Storage);
+        return Err(ConversationRepositoryError::Storage {
+            reason: "load for attempt in: stored data failed a consistency check".to_owned(),
+        });
     }
     load(transaction, &binding)
 }
@@ -258,9 +276,11 @@ impl InitialInferenceRepository for Database {
         &self,
         binding: &InitialInferenceBinding,
     ) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection.transaction().map_err(slice::db)?;
         let result = load(&transaction, binding)?;
         transaction.commit().map_err(slice::db)?;
@@ -274,9 +294,11 @@ impl InitialInferenceRepository for Database {
         attempt_id: GenerationAttemptId,
         job_id: JobId,
     ) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError> {
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection.transaction().map_err(slice::db)?;
         let record =
             load_for_attempt_in(&transaction, conversation_id, turn_id, attempt_id, job_id)?;
@@ -294,9 +316,11 @@ impl InitialInferenceRepository for Database {
             .map_err(ConversationRepositoryError::Invalid)?;
         let mut stored_request = request.clone();
         stored_request.stream_sink = None;
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(slice::db)?;
@@ -377,9 +401,11 @@ impl InitialInferenceRepository for Database {
         result
             .validate()
             .map_err(ConversationRepositoryError::Invalid)?;
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let mut connection =
+            self.connection()
+                .map_err(|error| ConversationRepositoryError::Storage {
+                    reason: error.to_string(),
+                })?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(slice::db)?;

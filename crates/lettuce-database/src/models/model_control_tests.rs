@@ -64,7 +64,9 @@ fn model_changes_are_signalled_once_on_commit_and_never_on_rollback() {
                 .transaction
                 .execute("INSERT INTO model_changes DEFAULT VALUES", [])
                 .expect("write");
-            Err(ApiOperationError::Storage)
+            Err(ApiOperationError::Storage {
+                reason: "injected failure",
+            })
         },
     );
     assert!(result.is_err());
@@ -139,7 +141,9 @@ fn failure_between_model_default_and_receipt_writes_rolls_everything_back() {
         TimestampMillis::new(1),
         |scope| {
             scope.save_model_profile(model.clone(), None, true)?;
-            Err(ModelRepositoryError::Storage)
+            Err(ModelRepositoryError::Storage {
+                reason: "injected failure".to_owned(),
+            })
         },
     );
     assert!(result.is_err());
@@ -168,7 +172,9 @@ fn failure_between_model_default_and_receipt_writes_rolls_everything_back() {
         TimestampMillis::new(2),
         |scope| {
             scope.delete_model_profile(model.id, model.revision, TimestampMillis::new(2))?;
-            Err(ModelRepositoryError::Storage)
+            Err(ModelRepositoryError::Storage {
+                reason: "injected failure".to_owned(),
+            })
         },
     );
     assert!(deletion.is_err());

@@ -53,14 +53,14 @@ pub struct BackupRestoreWorkspace {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BackupRestoreWorkspaceError {
-    #[error("restore workspace contains conflicting or incomplete content")]
-    Conflict,
-    #[error("restore workspace receipt could not be encoded")]
-    Serialization,
+    #[error("restore workspace contains conflicting or incomplete content: {reason}")]
+    Conflict { reason: String },
+    #[error("restore workspace receipt could not be encoded: {reason}")]
+    Serialization { reason: String },
     #[error("restore workspace storage failed: {0}")]
     Platform(PlatformError),
-    #[error("backup media could not be read from the source")]
-    Source,
+    #[error("backup media could not be read from the source: {reason}")]
+    Source { reason: String },
 }
 
 impl BackupRestoreWorkspace {
@@ -77,16 +77,21 @@ impl BackupRestoreWorkspace {
     ) -> Result<BackupRestoreStagingReceipt, BackupRestoreWorkspaceError> {
         let receipt = staging_receipt(plan);
         for entry in &plan.media {
-            let bytes = plan
-                .read_media(entry)
-                .map_err(|_| BackupRestoreWorkspaceError::Source)?;
+            let bytes =
+                plan.read_media(entry)
+                    .map_err(|error| BackupRestoreWorkspaceError::Source {
+                        reason: format!("reading the media from the plan failed: {error}"),
+                    })?;
             self.stage_media(&entry.content_hash, &bytes)?;
         }
         for artifact in &plan.artifacts {
             self.stage_artifact(artifact)?;
         }
-        let bytes =
-            serde_json::to_vec(&receipt).map_err(|_| BackupRestoreWorkspaceError::Serialization)?;
+        let bytes = serde_json::to_vec(&receipt).map_err(|error| {
+            BackupRestoreWorkspaceError::Serialization {
+                reason: format!("staging receipt could not be encoded: {error}"),
+            }
+        })?;
         self.stage_bytes(
             ObjectKey::from_segments(["partial", "restore-receipt.json"])
                 .map_err(BackupRestoreWorkspaceError::Platform)?,
@@ -104,7 +109,9 @@ impl BackupRestoreWorkspace {
         plan: &LegacyBackupCompatibilityPlan,
     ) -> Result<LegacyBackupRestoreStagingReceipt, BackupRestoreWorkspaceError> {
         plan.verify_seal()
-            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+            .map_err(|error| BackupRestoreWorkspaceError::Conflict {
+                reason: format!("legacy plan seal verification failed: {error}"),
+            })?;
         let receipt = LegacyBackupRestoreStagingReceipt {
             version: BACKUP_RESTORE_STAGING_VERSION,
             source_hash: plan.inventory().source_hash.clone(),
@@ -125,7 +132,9 @@ impl BackupRestoreWorkspace {
         for item in &plan.inventory().media {
             let bytes = item
                 .read()
-                .map_err(|_| BackupRestoreWorkspaceError::Source)?;
+                .map_err(|error| BackupRestoreWorkspaceError::Source {
+                    reason: format!("reading the legacy media item failed: {error}"),
+                })?;
             let content_hash = &item.content_hash;
             let name = content_hash.as_str();
             self.stage_bytes(
@@ -137,8 +146,11 @@ impl BackupRestoreWorkspace {
                 &bytes,
             )?;
         }
-        let bytes =
-            serde_json::to_vec(&receipt).map_err(|_| BackupRestoreWorkspaceError::Serialization)?;
+        let bytes = serde_json::to_vec(&receipt).map_err(|error| {
+            BackupRestoreWorkspaceError::Serialization {
+                reason: format!("legacy staging receipt could not be encoded: {error}"),
+            }
+        })?;
         self.stage_bytes(
             ObjectKey::from_segments(["partial", "legacy-restore-receipt.json"])
                 .map_err(BackupRestoreWorkspaceError::Platform)?,
@@ -165,13 +177,21 @@ impl BackupRestoreWorkspace {
             return Ok(());
         };
         let mut bytes = Vec::new();
-        installed
-            .read_to_end(&mut bytes)
-            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+        installed.read_to_end(&mut bytes).map_err(|error| {
+            BackupRestoreWorkspaceError::Conflict {
+                reason: format!("reading the installed legacy receipt failed: {error}"),
+            }
+        })?;
         let actual: LegacyBackupRestoreStagingReceipt =
-            serde_json::from_slice(&bytes).map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+            serde_json::from_slice(&bytes).map_err(|error| {
+                BackupRestoreWorkspaceError::Conflict {
+                    reason: format!("installed legacy receipt is not valid json: {error}"),
+                }
+            })?;
         if actual != *expected {
-            return Err(BackupRestoreWorkspaceError::Conflict);
+            return Err(BackupRestoreWorkspaceError::Conflict {
+                reason: "installed legacy receipt differs from the expected receipt".to_owned(),
+            });
         }
         Ok(())
     }
@@ -188,7 +208,9 @@ impl BackupRestoreWorkspace {
                     .map_err(BackupRestoreWorkspaceError::Platform)?,
             )
             .map_err(BackupRestoreWorkspaceError::Platform)?
-            .ok_or(BackupRestoreWorkspaceError::Conflict)
+            .ok_or(BackupRestoreWorkspaceError::Conflict {
+                reason: "staged media is missing".to_owned(),
+            })
     }
 
     /// The staged bytes of one media blob, checked against its hash.
@@ -203,13 +225,19 @@ impl BackupRestoreWorkspace {
                     .map_err(BackupRestoreWorkspaceError::Platform)?,
             )
             .map_err(BackupRestoreWorkspaceError::Platform)?
-            .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+            .ok_or(BackupRestoreWorkspaceError::Conflict {
+                reason: "staged media is missing".to_owned(),
+            })?;
         let mut bytes = zeroize::Zeroizing::new(Vec::new());
-        installed
-            .read_to_end(&mut bytes)
-            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+        installed.read_to_end(&mut bytes).map_err(|error| {
+            BackupRestoreWorkspaceError::Conflict {
+                reason: format!("reading the staged media failed: {error}"),
+            }
+        })?;
         if content_hash(&bytes) != *expected {
-            return Err(BackupRestoreWorkspaceError::Conflict);
+            return Err(BackupRestoreWorkspaceError::Conflict {
+                reason: "staged media content hash does not match".to_owned(),
+            });
         }
         Ok(bytes)
     }
@@ -264,7 +292,9 @@ impl BackupRestoreWorkspace {
         expected: &[u8],
     ) -> Result<(), BackupRestoreWorkspaceError> {
         let expected_len =
-            u64::try_from(expected.len()).map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+            u64::try_from(expected.len()).map_err(|_| BackupRestoreWorkspaceError::Conflict {
+                reason: "expected length exceeds the u64 range".to_owned(),
+            })?;
         match self
             .files
             .prepare(partial, target.clone(), expected_len.max(1))
@@ -275,18 +305,29 @@ impl BackupRestoreWorkspace {
                 verify_reader(&mut file, actual_len, expected_len, expected_hash)?;
             }
             InstallPreparation::Resume(mut file) => {
-                let offset = usize::try_from(file.offset())
-                    .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
-                let prefix = expected
-                    .get(..offset)
-                    .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+                let offset = usize::try_from(file.offset()).map_err(|_| {
+                    BackupRestoreWorkspaceError::Conflict {
+                        reason: "staged offset exceeds the platform size".to_owned(),
+                    }
+                })?;
+                let prefix =
+                    expected
+                        .get(..offset)
+                        .ok_or(BackupRestoreWorkspaceError::Conflict {
+                            reason: "staged offset is past the expected bytes".to_owned(),
+                        })?;
                 file.rewind()
                     .map_err(BackupRestoreWorkspaceError::Platform)?;
                 let mut staged_prefix = vec![0_u8; offset];
-                file.read_exact(&mut staged_prefix)
-                    .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+                file.read_exact(&mut staged_prefix).map_err(|error| {
+                    BackupRestoreWorkspaceError::Conflict {
+                        reason: format!("reading the staged prefix failed: {error}"),
+                    }
+                })?;
                 if staged_prefix != prefix {
-                    return Err(BackupRestoreWorkspaceError::Conflict);
+                    return Err(BackupRestoreWorkspaceError::Conflict {
+                        reason: "staged prefix differs from the expected bytes".to_owned(),
+                    });
                 }
                 file.append(&expected[offset..])
                     .map_err(BackupRestoreWorkspaceError::Platform)?;
@@ -300,7 +341,9 @@ impl BackupRestoreWorkspace {
                             .files
                             .inspect(&target)
                             .map_err(BackupRestoreWorkspaceError::Platform)?
-                            .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+                            .ok_or(BackupRestoreWorkspaceError::Conflict {
+                                reason: "staged file is missing after installation".to_owned(),
+                            })?;
                         let actual_len = installed.len();
                         verify_reader(&mut installed, actual_len, expected_len, expected_hash)?;
                     }
@@ -312,7 +355,9 @@ impl BackupRestoreWorkspace {
             .files
             .inspect(&target)
             .map_err(BackupRestoreWorkspaceError::Platform)?
-            .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+            .ok_or(BackupRestoreWorkspaceError::Conflict {
+                reason: "staged file is missing after commit".to_owned(),
+            })?;
         let actual_len = installed.len();
         verify_reader(&mut installed, actual_len, expected_len, expected_hash)
     }
@@ -327,15 +372,25 @@ impl BackupRestoreWorkspace {
             .files
             .inspect(&target)
             .map_err(BackupRestoreWorkspaceError::Platform)?
-            .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+            .ok_or(BackupRestoreWorkspaceError::Conflict {
+                reason: "staging receipt is missing".to_owned(),
+            })?;
         let mut bytes = Vec::new();
-        installed
-            .read_to_end(&mut bytes)
-            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+        installed.read_to_end(&mut bytes).map_err(|error| {
+            BackupRestoreWorkspaceError::Conflict {
+                reason: format!("reading the installed receipt failed: {error}"),
+            }
+        })?;
         let actual: BackupRestoreStagingReceipt =
-            serde_json::from_slice(&bytes).map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+            serde_json::from_slice(&bytes).map_err(|error| {
+                BackupRestoreWorkspaceError::Conflict {
+                    reason: format!("installed receipt is not valid json: {error}"),
+                }
+            })?;
         if actual != *expected {
-            return Err(BackupRestoreWorkspaceError::Conflict);
+            return Err(BackupRestoreWorkspaceError::Conflict {
+                reason: "installed receipt differs from the expected receipt".to_owned(),
+            });
         }
         Ok(())
     }
@@ -350,15 +405,25 @@ impl BackupRestoreWorkspace {
             .files
             .inspect(&target)
             .map_err(BackupRestoreWorkspaceError::Platform)?
-            .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+            .ok_or(BackupRestoreWorkspaceError::Conflict {
+                reason: "legacy staging receipt is missing".to_owned(),
+            })?;
         let mut bytes = Vec::new();
-        installed
-            .read_to_end(&mut bytes)
-            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+        installed.read_to_end(&mut bytes).map_err(|error| {
+            BackupRestoreWorkspaceError::Conflict {
+                reason: format!("reading the installed legacy receipt failed: {error}"),
+            }
+        })?;
         let actual: LegacyBackupRestoreStagingReceipt =
-            serde_json::from_slice(&bytes).map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+            serde_json::from_slice(&bytes).map_err(|error| {
+                BackupRestoreWorkspaceError::Conflict {
+                    reason: format!("installed legacy receipt is not valid json: {error}"),
+                }
+            })?;
         if actual != *expected {
-            return Err(BackupRestoreWorkspaceError::Conflict);
+            return Err(BackupRestoreWorkspaceError::Conflict {
+                reason: "installed legacy receipt differs from the expected receipt".to_owned(),
+            });
         }
         Ok(())
     }
@@ -395,14 +460,19 @@ fn verify_reader(
     expected_hash: &ContentHash,
 ) -> Result<(), BackupRestoreWorkspaceError> {
     if actual_len != expected_len {
-        return Err(BackupRestoreWorkspaceError::Conflict);
+        return Err(BackupRestoreWorkspaceError::Conflict {
+            reason: "staged length differs from the expected length".to_owned(),
+        });
     }
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = reader
-            .read(&mut buffer)
-            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+        let read =
+            reader
+                .read(&mut buffer)
+                .map_err(|error| BackupRestoreWorkspaceError::Conflict {
+                    reason: format!("reading the staged file failed: {error}"),
+                })?;
         if read == 0 {
             break;
         }
@@ -413,7 +483,9 @@ fn verify_reader(
     if actual_hash == *expected_hash {
         return Ok(());
     }
-    Err(BackupRestoreWorkspaceError::Conflict)
+    Err(BackupRestoreWorkspaceError::Conflict {
+        reason: "staged content differs from the expected content".to_owned(),
+    })
 }
 
 fn content_hash(bytes: &[u8]) -> ContentHash {
@@ -511,10 +583,10 @@ mod tests {
             receipt
         );
 
-        assert_eq!(
+        assert!(matches!(
             workspace.stage_legacy(&other),
-            Err(BackupRestoreWorkspaceError::Conflict)
-        );
+            Err(BackupRestoreWorkspaceError::Conflict { .. })
+        ));
         std::fs::remove_dir_all(root).expect("remove restore workspace");
     }
 
@@ -535,10 +607,10 @@ mod tests {
             .expect("create partial parent");
         std::fs::write(partial, b"changed").expect("write changed prefix");
 
-        assert_eq!(
+        assert!(matches!(
             workspace.stage_legacy(&plan),
-            Err(BackupRestoreWorkspaceError::Conflict)
-        );
+            Err(BackupRestoreWorkspaceError::Conflict { .. })
+        ));
         assert!(!root.join("restore").join("legacy-receipt.json").exists());
         std::fs::remove_dir_all(root).expect("remove restore workspace");
     }

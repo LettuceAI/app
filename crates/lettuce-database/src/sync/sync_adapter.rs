@@ -24,20 +24,32 @@ use crate::catalog::persona_adapter::{
 };
 use crate::Database;
 
-fn storage(_: impl std::fmt::Debug) -> LocalChangeJournalError {
-    LocalChangeJournalError::Storage
+fn storage(error: impl std::fmt::Debug) -> LocalChangeJournalError {
+    tracing::warn!(?error, "sync adapter storage step failed");
+    LocalChangeJournalError::Storage {
+        reason: "sync adapter: a storage step failed",
+    }
 }
 
-fn corrupt(_: impl std::fmt::Debug) -> LocalChangeJournalError {
-    LocalChangeJournalError::Corrupt
+fn corrupt(error: impl std::fmt::Debug) -> LocalChangeJournalError {
+    tracing::warn!(?error, "sync adapter storage step failed");
+    LocalChangeJournalError::Corrupt {
+        reason: "sync adapter: a storage step failed",
+    }
 }
 
-fn incoming_storage(_: impl std::fmt::Debug) -> IncomingChangeError {
-    IncomingChangeError::Storage
+fn incoming_storage(error: impl std::fmt::Debug) -> IncomingChangeError {
+    tracing::warn!(?error, "sync adapter storage step failed");
+    IncomingChangeError::Storage {
+        reason: "sync adapter: a storage step failed",
+    }
 }
 
-fn incoming_corrupt(_: impl std::fmt::Debug) -> IncomingChangeError {
-    IncomingChangeError::Corrupt
+fn incoming_corrupt(error: impl std::fmt::Debug) -> IncomingChangeError {
+    tracing::warn!(?error, "sync adapter storage step failed");
+    IncomingChangeError::Corrupt {
+        reason: "sync adapter: a storage step failed",
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,7 +100,9 @@ impl StoredIncomingChange {
         payload_bytes: Option<Vec<u8>>,
     ) -> Result<CanonicalChange, IncomingChangeError> {
         if self.version != CANONICAL_CHANGE_VERSION {
-            return Err(IncomingChangeError::Corrupt);
+            return Err(IncomingChangeError::Corrupt {
+                reason: "into change: stored data failed a consistency check",
+            });
         }
         let id = SyncChangeId::from_uuid(Uuid::parse_str(&self.id).map_err(incoming_corrupt)?);
         let origin_device = SyncDeviceId::from_uuid(
@@ -99,7 +113,9 @@ impl StoredIncomingChange {
             let device =
                 SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(incoming_corrupt)?);
             if frontier.insert(device, sequence).is_some() {
-                return Err(IncomingChangeError::Corrupt);
+                return Err(IncomingChangeError::Corrupt {
+                    reason: "into change: stored data failed a consistency check",
+                });
             }
         }
         let payload = match (self.payload_schema, self.payload_version, payload_bytes) {
@@ -107,7 +123,9 @@ impl StoredIncomingChange {
             (Some(schema), Some(version), Some(bytes)) => {
                 Some(CanonicalPayload::new(schema, version, bytes).map_err(incoming_corrupt)?)
             }
-            _ => return Err(IncomingChangeError::Corrupt),
+            _ => return Err(IncomingChangeError::Corrupt {
+                reason: "into change: a stored value is not recognised",
+            }),
         };
         let change = CanonicalChange::new(
             id,
@@ -127,7 +145,9 @@ impl StoredIncomingChange {
         if change.fingerprint()
             != &ContentHash::parse(self.fingerprint).map_err(incoming_corrupt)?
         {
-            return Err(IncomingChangeError::Corrupt);
+            return Err(IncomingChangeError::Corrupt {
+                reason: "into change: stored data failed a consistency check",
+            });
         }
         Ok(change)
     }
@@ -146,7 +166,9 @@ fn operation_from_name(value: &str) -> Result<ChangeOperation, LocalChangeJourna
         "insert" => Ok(ChangeOperation::Insert),
         "update" => Ok(ChangeOperation::Update),
         "delete" => Ok(ChangeOperation::Delete),
-        _ => Err(LocalChangeJournalError::Corrupt),
+        _ => Err(LocalChangeJournalError::Corrupt {
+            reason: "operation from name: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -276,9 +298,12 @@ fn record_local_change_in_skipping(
     if request.operation() == ChangeOperation::Delete && frontier.is_empty() {
         tracing::error!(
             kind = request.entity().kind(),
+            reason = "the delete has no causal frontier",
             "a local delete without causal dependencies would read as a carried delete"
         );
-        return Err(LocalChangeJournalError::Corrupt);
+        return Err(LocalChangeJournalError::Corrupt {
+            reason: "record local change in skipping: stored data failed a consistency check",
+        });
     }
     let (device, sequence, mut timestamp) = next_identity_and_stamp(connection, now, &frontier)?;
     if let Some(source_time) = source_time.filter(|time| *time < timestamp.wall_time()) {
@@ -301,12 +326,21 @@ fn record_local_change_in_skipping(
         request.base_revision().cloned(),
         request.payload().cloned(),
     )
-    .map_err(|_| LocalChangeJournalError::Invalid)?;
+    .map_err(|error| {
+        tracing::warn!(%error, "record local change in skipping failed");
+        LocalChangeJournalError::Invalid {
+            reason: "record local change in skipping: a value could not be read or converted",
+        }
+    })?;
     insert_change(connection, Some(operation_id), &change, now)?;
     resolve_dominated_conflicts(connection, &change, now, skipped_conflict).map_err(|error| {
         match error {
-            ApplyOneError::Storage => LocalChangeJournalError::Storage,
-            _ => LocalChangeJournalError::Corrupt,
+            ApplyOneError::Storage => LocalChangeJournalError::Storage {
+                reason: "record local change in skipping: a stored value is not recognised",
+            },
+            _ => LocalChangeJournalError::Corrupt {
+                reason: "record local change in skipping: a stored value is not recognised",
+            },
         }
     })?;
     Ok(LocalChangeAdmission {
@@ -352,7 +386,9 @@ fn hydrate_change(
     row: StoredChangeRow,
 ) -> Result<CanonicalChange, LocalChangeJournalError> {
     if row.format_version != i64::from(CANONICAL_CHANGE_VERSION) {
-        return Err(LocalChangeJournalError::Corrupt);
+        return Err(LocalChangeJournalError::Corrupt {
+            reason: "hydrate change: stored data failed a consistency check",
+        });
     }
     let id = SyncChangeId::from_uuid(Uuid::parse_str(&row.id).map_err(corrupt)?);
     let origin_device =
@@ -393,7 +429,9 @@ fn hydrate_change(
         let device = SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(corrupt)?);
         let sequence = u64::try_from(sequence).map_err(corrupt)?;
         if frontier.insert(device, sequence).is_some() {
-            return Err(LocalChangeJournalError::Corrupt);
+            return Err(LocalChangeJournalError::Corrupt {
+                reason: "hydrate change: stored data failed a consistency check",
+            });
         }
     }
     let change = CanonicalChange::new(
@@ -410,7 +448,9 @@ fn hydrate_change(
     .map_err(corrupt)?;
     let fingerprint = ContentHash::parse(row.fingerprint).map_err(corrupt)?;
     if change.fingerprint() != &fingerprint {
-        return Err(LocalChangeJournalError::Corrupt);
+        return Err(LocalChangeJournalError::Corrupt {
+            reason: "hydrate change: stored data failed a consistency check",
+        });
     }
     Ok(change)
 }
@@ -427,11 +467,15 @@ fn hydrate_payload(
             let version = u32::try_from(version).map_err(corrupt)?;
             let payload = CanonicalPayload::new(schema, version, bytes).map_err(corrupt)?;
             if payload.content_hash() != &ContentHash::parse(hash).map_err(corrupt)? {
-                return Err(LocalChangeJournalError::Corrupt);
+                return Err(LocalChangeJournalError::Corrupt {
+                    reason: "hydrate payload: stored data failed a consistency check",
+                });
             }
             Ok(Some(payload))
         }
-        _ => Err(LocalChangeJournalError::Corrupt),
+        _ => Err(LocalChangeJournalError::Corrupt {
+            reason: "hydrate payload: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -460,7 +504,9 @@ fn load_frontier(connection: &Connection) -> Result<CausalFrontier, LocalChangeJ
         let device = SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(corrupt)?);
         let sequence = u64::try_from(sequence).map_err(corrupt)?;
         if sequence == 0 || frontier.insert(device, sequence).is_some() {
-            return Err(LocalChangeJournalError::Corrupt);
+            return Err(LocalChangeJournalError::Corrupt {
+                reason: "load frontier: stored data failed a consistency check",
+            });
         }
     }
     Ok(frontier)
@@ -468,7 +514,9 @@ fn load_frontier(connection: &Connection) -> Result<CausalFrontier, LocalChangeJ
 
 fn validate_frontier(frontier: &CausalFrontier) -> Result<(), LocalChangeJournalError> {
     if frontier.len() > MAX_FRONTIER_DEVICES || frontier.values().any(|sequence| *sequence == 0) {
-        return Err(LocalChangeJournalError::InvalidFrontier);
+        return Err(LocalChangeJournalError::InvalidFrontier {
+            reason: "validate frontier: a value failed validation",
+        });
     }
     Ok(())
 }
@@ -569,8 +617,15 @@ fn carried_deletes(tx: &Transaction<'_>) -> Result<Vec<CarriedDelete>, LocalChan
             tx,
             SyncChangeId::from_uuid(Uuid::parse_str(&id).map_err(corrupt)?),
         )
-        .map_err(|_| LocalChangeJournalError::Storage)?
-        .ok_or(LocalChangeJournalError::Corrupt)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "carried deletes failed");
+            LocalChangeJournalError::Storage {
+                reason: "carried deletes: a storage step failed",
+            }
+        })?
+        .ok_or(LocalChangeJournalError::Corrupt {
+            reason: "carried deletes: a required value is missing",
+        })?;
         let kind = change.entity().kind();
         let queued = match crate::purge::PurgeKind::from_sync_kind(kind) {
             Some(purge) => tx
@@ -667,7 +722,9 @@ fn unjournaled_deletes(
         let deleted = HybridTimestamp::new(TimestampMillis::new(deleted_at), 0);
         let timestamp = match latest_entity_stamp(tx, &entity)? {
             Some(latest) if latest >= deleted => {
-                successor_stamp(latest).ok_or(LocalChangeJournalError::Corrupt)?
+                successor_stamp(latest).ok_or(LocalChangeJournalError::Corrupt {
+                    reason: "unjournaled deletes: a required value is missing",
+                })?
             }
             _ => deleted,
         };
@@ -835,7 +892,12 @@ pub(crate) fn rebaseline_journal_if_format_changed(
                 carried.base_revision.clone(),
                 None,
             )
-            .map_err(|_| LocalChangeJournalError::Invalid)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "rebaseline journal if format changed failed");
+                LocalChangeJournalError::Invalid {
+                    reason: "rebaseline journal if format changed: a value could not be read or converted",
+                }
+            })?;
             insert_change(tx, Some(OperationId::new()), &change, now)?;
             tx.execute(
                 "UPDATE purge_queue SET change_id = ?3
@@ -876,7 +938,12 @@ fn change_for_sequence(
              WHERE origin_device_id = ?1 AND origin_sequence = ?2",
             params![
                 device.as_uuid().to_string(),
-                i64::try_from(sequence).map_err(|_| LocalChangeJournalError::Exhausted)?
+                i64::try_from(sequence).map_err(|error| {
+                    tracing::warn!(%error, "change for sequence failed");
+                    LocalChangeJournalError::Exhausted {
+                        reason: "change for sequence: a value could not be read or converted",
+                    }
+                })?
             ],
             |row| row.get::<_, String>(0),
         )
@@ -919,7 +986,9 @@ fn load_peer_frontier(
         let device = SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(corrupt)?);
         let sequence = u64::try_from(sequence).map_err(corrupt)?;
         if sequence == 0 || frontier.insert(device, sequence).is_some() {
-            return Err(LocalChangeJournalError::Corrupt);
+            return Err(LocalChangeJournalError::Corrupt {
+                reason: "load peer frontier: stored data failed a consistency check",
+            });
         }
     }
     validate_frontier(&frontier)?;
@@ -964,11 +1033,15 @@ fn next_identity_and_stamp(
     if (current_sequence == 0 && frontier.contains_key(&device))
         || (current_sequence > 0 && frontier.get(&device) != Some(&current_sequence))
     {
-        return Err(LocalChangeJournalError::Corrupt);
+        return Err(LocalChangeJournalError::Corrupt {
+            reason: "next identity and stamp: stored data failed a consistency check",
+        });
     }
     let sequence = sequence
         .checked_add(1)
-        .ok_or(LocalChangeJournalError::Exhausted)?;
+        .ok_or(LocalChangeJournalError::Exhausted {
+            reason: "next identity and stamp: a required value is missing",
+        })?;
     let (next_wall, next_counter) = if now.get() > wall_time {
         (now.get(), 0)
     } else {
@@ -976,12 +1049,19 @@ fn next_identity_and_stamp(
             wall_time,
             counter
                 .checked_add(1)
-                .ok_or(LocalChangeJournalError::Exhausted)?,
+                .ok_or(LocalChangeJournalError::Exhausted {
+                    reason: "next identity and stamp: a required value is missing",
+                })?,
         )
     };
     let sequence_u64 = u64::try_from(sequence).map_err(corrupt)?;
     let counter_u32 =
-        u32::try_from(next_counter).map_err(|_| LocalChangeJournalError::Exhausted)?;
+        u32::try_from(next_counter).map_err(|error| {
+            tracing::warn!(%error, "next identity and stamp failed");
+            LocalChangeJournalError::Exhausted {
+                reason: "next identity and stamp: a value could not be read or converted",
+            }
+        })?;
     connection
         .execute(
             "UPDATE sync_local_state
@@ -1017,7 +1097,9 @@ fn observe_remote_clock(
         let counter = if wall == remote_wall {
             remote_counter
                 .checked_add(1)
-                .ok_or(LocalChangeJournalError::Exhausted)?
+                .ok_or(LocalChangeJournalError::Exhausted {
+                    reason: "observe remote clock: a required value is missing",
+                })?
         } else {
             0
         };
@@ -1036,15 +1118,21 @@ fn observe_remote_clock(
         local_counter
             .max(remote_counter)
             .checked_add(1)
-            .ok_or(LocalChangeJournalError::Exhausted)?
+            .ok_or(LocalChangeJournalError::Exhausted {
+                reason: "observe remote clock: a required value is missing",
+            })?
     } else if wall == local_wall {
         local_counter
             .checked_add(1)
-            .ok_or(LocalChangeJournalError::Exhausted)?
+            .ok_or(LocalChangeJournalError::Exhausted {
+                reason: "observe remote clock: a required value is missing",
+            })?
     } else if wall == remote_wall {
         remote_counter
             .checked_add(1)
-            .ok_or(LocalChangeJournalError::Exhausted)?
+            .ok_or(LocalChangeJournalError::Exhausted {
+                reason: "observe remote clock: a required value is missing",
+            })?
     } else {
         0
     };
@@ -1075,7 +1163,12 @@ fn insert_change(
             (None, None, None, None)
         };
     let origin_sequence =
-        i64::try_from(change.origin_sequence()).map_err(|_| LocalChangeJournalError::Exhausted)?;
+        i64::try_from(change.origin_sequence()).map_err(|error| {
+            tracing::warn!(%error, "insert change failed");
+            LocalChangeJournalError::Exhausted {
+                reason: "insert change: a value could not be read or converted",
+            }
+        })?;
     connection
         .execute(
             "INSERT INTO sync_changes (
@@ -1117,7 +1210,12 @@ fn insert_change(
                 params![
                     change.id().as_uuid().to_string(),
                     device.as_uuid().to_string(),
-                    i64::try_from(*sequence).map_err(|_| LocalChangeJournalError::Exhausted)?,
+                    i64::try_from(*sequence).map_err(|error| {
+                        tracing::warn!(%error, "insert change failed");
+                        LocalChangeJournalError::Exhausted {
+                            reason: "insert change: a value could not be read or converted",
+                        }
+                    })?,
                 ],
             )
             .map_err(storage)?;
@@ -1176,7 +1274,9 @@ fn load_materialized_change(
         .map_err(incoming_storage)?;
     id.map(|id| {
         let id = SyncChangeId::from_uuid(Uuid::parse_str(&id).map_err(incoming_corrupt)?);
-        load_change_by_id(connection, id)?.ok_or(IncomingChangeError::Corrupt)
+        load_change_by_id(connection, id)?.ok_or(IncomingChangeError::Corrupt {
+            reason: "load materialized change: a required value is missing",
+        })
     })
     .transpose()
 }
@@ -1208,7 +1308,9 @@ fn load_staged_changes(
             serde_json::from_slice(&document).map_err(incoming_corrupt)?;
         let change = stored.into_change(payload_bytes)?;
         if change.id().as_uuid().to_string() != id || change.fingerprint().as_str() != fingerprint {
-            return Err(IncomingChangeError::Corrupt);
+            return Err(IncomingChangeError::Corrupt {
+                reason: "load staged changes: stored data failed a consistency check",
+            });
         }
         changes.push(change);
     }
@@ -1231,7 +1333,9 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
                     ChangeOperation::Insert | ChangeOperation::Update
                 )
             {
-                return Err(IncomingChangeError::Corrupt);
+                return Err(IncomingChangeError::Corrupt {
+                    reason: "supported change: stored data failed a consistency check",
+                });
             }
             Ok(true)
         }
@@ -1245,7 +1349,9 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
                     ChangeOperation::Insert | ChangeOperation::Update
                 )
             {
-                return Err(IncomingChangeError::Corrupt);
+                return Err(IncomingChangeError::Corrupt {
+                    reason: "supported change: stored data failed a consistency check",
+                });
             }
             Ok(true)
         }
@@ -1417,9 +1523,16 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::LOREBOOK_BINDINGS_SYNC_VERSION,
         ) => {
             let codec =
-                snapshot_codec(change.entity().kind()).ok_or(IncomingChangeError::Corrupt)?;
+                snapshot_codec(change.entity().kind()).ok_or(IncomingChangeError::Corrupt {
+                    reason: "supported change: a required value is missing",
+                })?;
             (codec.decode)(change.entity().id(), payload.bytes())
-                .map_err(|_| IncomingChangeError::Corrupt)?;
+                .map_err(|error| {
+                    tracing::warn!(?error, "supported change failed");
+                    IncomingChangeError::Corrupt {
+                        reason: "supported change: a storage step failed",
+                    }
+                })?;
             Ok(true)
         }
         (
@@ -1428,7 +1541,9 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_VERSION,
         ) => {
             if change.operation() != ChangeOperation::Insert {
-                return Err(IncomingChangeError::Corrupt);
+                return Err(IncomingChangeError::Corrupt {
+                    reason: "supported change: stored data failed a consistency check",
+                });
             }
             serde_json::from_slice::<
                 crate::conversation::conversation_artifact_adapter::SyncSnapshotArtifact,
@@ -1443,7 +1558,9 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             if value.asset.id.to_string() != change.entity().id()
                 || change.operation() != ChangeOperation::Insert
             {
-                return Err(IncomingChangeError::Corrupt);
+                return Err(IncomingChangeError::Corrupt {
+                    reason: "supported change: stored data failed a consistency check",
+                });
             }
             Ok(true)
         }
@@ -1465,6 +1582,7 @@ fn incoming_wins(incoming: &CanonicalChange, current: &CanonicalChange) -> bool 
     )
 }
 
+#[derive(Debug)]
 enum ApplyOneError {
     Pending,
     Corrupt,
@@ -1500,7 +1618,11 @@ fn record_not_synced(
         )
         .map_err(|_| ApplyOneError::Storage)?;
     if !recorded {
-        tracing::warn!(kind, "a synced entity is too large to sync");
+        tracing::warn!(
+            kind,
+            reason = "the encoded entity exceeds the sync size limit",
+            "a synced entity is too large to sync"
+        );
         crate::purge::record_notice(
             connection,
             crate::PurgeNoticeEntity::SyncEntity,
@@ -1518,7 +1640,7 @@ fn repository_apply_error(error: RepositoryError) -> ApplyOneError {
         RepositoryError::NotFound
         | RepositoryError::Archived
         | RepositoryError::HasDependencies => ApplyOneError::Pending,
-        RepositoryError::Storage => ApplyOneError::Storage,
+        RepositoryError::Storage { .. } => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     }
 }
@@ -1601,7 +1723,7 @@ fn resolve_dominated_conflicts(
                 );
                 load_change_by_id(connection, current_id)
                     .map_err(|error| match error {
-                        IncomingChangeError::Storage => ApplyOneError::Storage,
+                        IncomingChangeError::Storage { .. } => ApplyOneError::Storage,
                         _ => ApplyOneError::Corrupt,
                     })?
                     .ok_or(ApplyOneError::Corrupt)
@@ -1609,7 +1731,7 @@ fn resolve_dominated_conflicts(
             .transpose()?;
         let incoming = load_change_by_id(connection, incoming_id)
             .map_err(|error| match error {
-                IncomingChangeError::Storage => ApplyOneError::Storage,
+                IncomingChangeError::Storage { .. } => ApplyOneError::Storage,
                 _ => ApplyOneError::Corrupt,
             })?
             .ok_or(ApplyOneError::Corrupt)?;
@@ -1776,7 +1898,7 @@ fn model_apply_error(error: lettuce_models::ModelRepositoryError) -> ApplyOneErr
     match error {
         lettuce_models::ModelRepositoryError::AccountMissing
         | lettuce_models::ModelRepositoryError::NotFound => ApplyOneError::Pending,
-        lettuce_models::ModelRepositoryError::Storage => ApplyOneError::Storage,
+        lettuce_models::ModelRepositoryError::Storage { .. } => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     }
 }
@@ -2181,7 +2303,9 @@ fn conversation_apply_error(
     match error {
         lettuce_conversations::ConversationRepositoryError::NotFound
         | lettuce_conversations::ConversationRepositoryError::Busy => ApplyOneError::Pending,
-        lettuce_conversations::ConversationRepositoryError::Storage => ApplyOneError::Storage,
+        lettuce_conversations::ConversationRepositoryError::Storage { .. } => {
+            ApplyOneError::Storage
+        }
         _ => ApplyOneError::Corrupt,
     }
 }
@@ -2700,8 +2824,14 @@ const COMPANION_NOTE_CODEC: SnapshotCodec = SnapshotCodec {
 fn row_apply_error(error: crate::sync::row_sync_adapter::RowSyncError) -> ApplyOneError {
     match error {
         crate::sync::row_sync_adapter::RowSyncError::Pending => ApplyOneError::Pending,
-        crate::sync::row_sync_adapter::RowSyncError::Corrupt => ApplyOneError::Corrupt,
-        crate::sync::row_sync_adapter::RowSyncError::Storage => ApplyOneError::Storage,
+        crate::sync::row_sync_adapter::RowSyncError::Corrupt { reason } => {
+            tracing::warn!(%reason, "a synced row is corrupt");
+            ApplyOneError::Corrupt
+        }
+        crate::sync::row_sync_adapter::RowSyncError::Storage { reason } => {
+            tracing::warn!(%reason, "a synced row could not be stored");
+            ApplyOneError::Storage
+        }
     }
 }
 
@@ -2838,7 +2968,7 @@ row_codec!(
 
 fn creation_apply_error(error: lettuce_creation::CreationRepositoryError) -> ApplyOneError {
     match error {
-        lettuce_creation::CreationRepositoryError::Storage => ApplyOneError::Storage,
+        lettuce_creation::CreationRepositoryError::Storage { .. } => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     }
 }
@@ -3419,9 +3549,13 @@ fn snapshot_source_time(kind: &str, bytes: &[u8]) -> Option<TimestampMillis> {
 
 fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
     match error {
-        ApplyOneError::Storage => LocalChangeJournalError::Storage,
+        ApplyOneError::Storage => LocalChangeJournalError::Storage {
+            reason: "journal apply error: a stored value is not recognised",
+        },
         ApplyOneError::Pending | ApplyOneError::Corrupt | ApplyOneError::Unencodable => {
-            LocalChangeJournalError::Corrupt
+            LocalChangeJournalError::Corrupt {
+                reason: "journal apply error: stored data failed a consistency check",
+            }
         }
     }
 }
@@ -3445,7 +3579,7 @@ fn settle_snapshot_delete(
         .map(|value| load_materialized_change(tx, change.entity(), value.content_hash()))
         .transpose()
         .map_err(|error| match error {
-            IncomingChangeError::Storage => ApplyOneError::Storage,
+            IncomingChangeError::Storage { .. } => ApplyOneError::Storage,
             _ => ApplyOneError::Corrupt,
         })?
         .flatten();
@@ -3802,13 +3936,19 @@ pub(crate) fn keep_queued_delete(
     let Ok(uuid) = Uuid::parse_str(change_id) else {
         return Ok(false);
     };
-    let Some(change) = load_change_by_id(tx, SyncChangeId::from_uuid(uuid))
-        .map_err(|_| crate::PurgeError::Storage)?
+    let Some(change) = load_change_by_id(tx, SyncChangeId::from_uuid(uuid)).map_err(|error| {
+        tracing::warn!(%error, "keep queued delete failed");
+        crate::PurgeError::Storage {
+            reason: "keep queued delete: a storage step failed",
+        }
+    })?
     else {
         return Ok(false);
     };
     keep_for_unseen_changes(tx, &change, kind, now).map_err(|error| match error {
-        ApplyOneError::Storage => crate::PurgeError::Storage,
+        ApplyOneError::Storage => crate::PurgeError::Storage {
+            reason: "keep queued delete: a stored value is not recognised",
+        },
         _ => crate::PurgeError::Integrity,
     })
 }
@@ -3832,7 +3972,7 @@ fn rejournal_scope(
     now: TimestampMillis,
 ) -> Result<bool, ApplyOneError> {
     let journal = |error: LocalChangeJournalError| match error {
-        LocalChangeJournalError::Storage => ApplyOneError::Storage,
+        LocalChangeJournalError::Storage { .. } => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     };
     let key = params![scope.kind.name(), scope.id];
@@ -4204,7 +4344,7 @@ fn settle_snapshot_change(
         .map(|value| load_materialized_change(tx, change.entity(), value.content_hash()))
         .transpose()
         .map_err(|error| match error {
-            IncomingChangeError::Storage => ApplyOneError::Storage,
+            IncomingChangeError::Storage { .. } => ApplyOneError::Storage,
             _ => ApplyOneError::Corrupt,
         })?
         .flatten();
@@ -4330,7 +4470,7 @@ fn settle_change(
                 tx, &artifact, now,
             )
             .map_err(|error| match error {
-                lettuce_conversations::ArtifactError::Storage => ApplyOneError::Storage,
+                lettuce_conversations::ArtifactError::Storage { .. } => ApplyOneError::Storage,
                 _ => ApplyOneError::Corrupt,
             })?;
             Ok(false)
@@ -4509,12 +4649,18 @@ fn mark_batch_pending(
     Ok(())
 }
 
-fn conflict_storage(_: impl std::fmt::Debug) -> ConflictRepositoryError {
-    ConflictRepositoryError::Storage
+fn conflict_storage(error: impl std::fmt::Debug) -> ConflictRepositoryError {
+    tracing::warn!(?error, "sync adapter storage step failed");
+    ConflictRepositoryError::Storage {
+        reason: "sync adapter: a storage step failed",
+    }
 }
 
-fn conflict_corrupt(_: impl std::fmt::Debug) -> ConflictRepositoryError {
-    ConflictRepositoryError::Corrupt
+fn conflict_corrupt(error: impl std::fmt::Debug) -> ConflictRepositoryError {
+    tracing::warn!(?error, "sync adapter storage step failed");
+    ConflictRepositoryError::Corrupt {
+        reason: "sync adapter: a storage step failed",
+    }
 }
 
 fn conflict_value(
@@ -4527,8 +4673,15 @@ fn conflict_value(
     }
     match entity_kind {
         "character" | "lorebook" | "prompt" => {
-            let codec = snapshot_codec(entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
-            (codec.decode)(entity_id, payload).map_err(|_| ConflictRepositoryError::Corrupt)?;
+            let codec = snapshot_codec(entity_kind).ok_or(ConflictRepositoryError::Corrupt {
+                reason: "conflict value: a required value is missing",
+            })?;
+            (codec.decode)(entity_id, payload).map_err(|error| {
+                tracing::warn!(?error, "conflict value failed");
+                ConflictRepositoryError::Corrupt {
+                    reason: "conflict value: a storage step failed",
+                }
+            })?;
             match entity_kind {
                 "character" => serde_json::from_slice(payload).map(SyncConflictValue::Character).map_err(conflict_corrupt),
                 "lorebook" => serde_json::from_slice(payload).map(SyncConflictValue::Lorebook).map_err(conflict_corrupt),
@@ -4539,20 +4692,26 @@ fn conflict_value(
             let persona: Persona = serde_json::from_slice(payload).map_err(conflict_corrupt)?;
             persona.validate().map_err(conflict_corrupt)?;
             if persona.id.to_string() != entity_id {
-                return Err(ConflictRepositoryError::Corrupt);
+                return Err(ConflictRepositoryError::Corrupt {
+                    reason: "conflict value: stored data failed a consistency check",
+                });
             }
             Ok(SyncConflictValue::Persona(persona))
         }
         "persona_default" => {
             if entity_id != "application" {
-                return Err(ConflictRepositoryError::Corrupt);
+                return Err(ConflictRepositoryError::Corrupt {
+                    reason: "conflict value: stored data failed a consistency check",
+                });
             }
             let state: PersonaDefaultState =
                 serde_json::from_slice(payload).map_err(conflict_corrupt)?;
             state.validate().map_err(conflict_corrupt)?;
             Ok(SyncConflictValue::Default(state))
         }
-        _ => Err(ConflictRepositoryError::Corrupt),
+        _ => Err(ConflictRepositoryError::Corrupt {
+            reason: "conflict value: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -4568,10 +4727,16 @@ fn conflict_candidate(
             let id = SyncChangeId::from_uuid(Uuid::parse_str(id).map_err(conflict_corrupt)?);
             load_change_by_id(connection, id)
                 .map_err(|error| match error {
-                    IncomingChangeError::Storage => ConflictRepositoryError::Storage,
-                    _ => ConflictRepositoryError::Corrupt,
+                    IncomingChangeError::Storage { .. } => ConflictRepositoryError::Storage {
+                        reason: "conflict candidate: a stored value is not recognised",
+                    },
+                    _ => ConflictRepositoryError::Corrupt {
+                        reason: "conflict candidate: a stored value is not recognised",
+                    },
                 })?
-                .ok_or(ConflictRepositoryError::Corrupt)
+                .ok_or(ConflictRepositoryError::Corrupt {
+                    reason: "conflict candidate: a required value is missing",
+                })
         })
         .transpose()?;
     Ok(SyncConflictCandidate {
@@ -4632,7 +4797,9 @@ fn resolution_value(
             resolved.validate().map_err(conflict_corrupt)?;
             Ok(SyncConflictValue::Prompt(resolved))
         }
-        _ => Err(ConflictRepositoryError::Corrupt),
+        _ => Err(ConflictRepositoryError::Corrupt {
+            reason: "resolution value: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -4667,10 +4834,14 @@ fn resolution_request(
             lettuce_sync::canonical_prompt_payload(current).map_err(conflict_corrupt)?,
             lettuce_sync::canonical_prompt_payload(resolved).map_err(conflict_corrupt)?,
         ),
-        _ => return Err(ConflictRepositoryError::Corrupt),
+        _ => return Err(ConflictRepositoryError::Corrupt {
+            reason: "resolution request: a stored value is not recognised",
+        }),
     };
     if entity.kind() != entity_kind {
-        return Err(ConflictRepositoryError::Corrupt);
+        return Err(ConflictRepositoryError::Corrupt {
+            reason: "resolution request: stored data failed a consistency check",
+        });
     }
     NewCanonicalChange::new(
         entity,
@@ -4686,10 +4857,16 @@ fn materialized_conflict_value(
     entity_kind: &str,
     entity_id: &str,
 ) -> Result<SyncConflictValue, ConflictRepositoryError> {
-    let codec = snapshot_codec(entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
+    let codec = snapshot_codec(entity_kind).ok_or(ConflictRepositoryError::Corrupt {
+        reason: "materialized conflict value: a required value is missing",
+    })?;
     match (codec.current)(connection, entity_id).map_err(|error| match error {
-        ApplyOneError::Storage => ConflictRepositoryError::Storage,
-        _ => ConflictRepositoryError::Corrupt,
+        ApplyOneError::Storage => ConflictRepositoryError::Storage {
+            reason: "materialized conflict value: a stored value is not recognised",
+        },
+        _ => ConflictRepositoryError::Corrupt {
+            reason: "materialized conflict value: a stored value is not recognised",
+        },
     })? {
         Some(payload) => conflict_value(entity_kind, entity_id, payload.bytes()),
         None => Ok(SyncConflictValue::Deleted),
@@ -4706,7 +4883,9 @@ fn conflict_choice_name(choice: ConflictChoice) -> &'static str {
 fn map_local_conflict_error(error: LocalChangeJournalError) -> ConflictRepositoryError {
     match error {
         LocalChangeJournalError::Conflict => ConflictRepositoryError::Conflict,
-        _ => ConflictRepositoryError::Storage,
+        _ => ConflictRepositoryError::Storage {
+            reason: "map local conflict error: a stored value is not recognised",
+        },
     }
 }
 
@@ -4763,7 +4942,9 @@ fn conflict_candidates(
     match record.winning_side.as_str() {
         "current" => Ok((prior, incoming)),
         "incoming" => Ok((incoming, prior)),
-        _ => Err(ConflictRepositoryError::Corrupt),
+        _ => Err(ConflictRepositoryError::Corrupt {
+            reason: "conflict candidates: stored data failed a consistency check",
+        }),
     }
 }
 
@@ -4783,7 +4964,9 @@ impl LocalChangeJournal for Database {
         journaled += journal_referenced_snapshots(&tx, now)?;
         let mut present = Vec::with_capacity(SCANNED_CODECS.len());
         for codec in SCANNED_CODECS {
-            let ids = codec.ids.ok_or(LocalChangeJournalError::Corrupt)?;
+            let ids = codec.ids.ok_or(LocalChangeJournalError::Corrupt {
+                reason: "journal current state: a required value is missing",
+            })?;
             let ids = ids(&tx).map_err(journal_apply_error)?;
             let latest = latest_journaled(&tx, codec.kind)?;
             let mut skipped = Vec::new();
@@ -4943,7 +5126,9 @@ impl LocalChangeJournal for Database {
         let local_frontier = load_frontier(&connection)?;
         if local_device(&connection)?.is_none() {
             if !local_frontier.is_empty() {
-                return Err(LocalChangeJournalError::Corrupt);
+                return Err(LocalChangeJournalError::Corrupt {
+                    reason: "outbound changes: stored data failed a consistency check",
+                });
             }
             return Ok(OutboundChangeBatch {
                 changes: Vec::new(),
@@ -5013,7 +5198,9 @@ impl LocalChangeJournal for Database {
             payload_bytes += bytes;
             let (sequence, last) = cursors
                 .get_mut(&origin)
-                .ok_or(LocalChangeJournalError::Corrupt)?;
+                .ok_or(LocalChangeJournalError::Corrupt {
+                    reason: "outbound changes: a required value is missing",
+                })?;
             simulated.insert(origin, *sequence);
             if *sequence == *last {
                 cursors.remove(&origin);
@@ -5065,7 +5252,12 @@ impl LocalChangeJournal for Database {
                     params![
                         peer.as_uuid().to_string(),
                         origin.as_uuid().to_string(),
-                        i64::try_from(bounded).map_err(|_| LocalChangeJournalError::Exhausted)?,
+                        i64::try_from(bounded).map_err(|error| {
+                            tracing::warn!(%error, "record peer acknowledgement failed");
+                            LocalChangeJournalError::Exhausted {
+                                reason: "record peer acknowledgement: a value could not be read or converted",
+                            }
+                        })?,
                         now.get()
                     ],
                 )
@@ -5217,7 +5409,9 @@ fn resolve_sync_conflict_in(
     if record.status == "resolved" {
         let resolved_id = record
             .resolved_by_change_id
-            .ok_or(ConflictRepositoryError::Corrupt)?;
+            .ok_or(ConflictRepositoryError::Corrupt {
+                reason: "resolve sync conflict in: a required value is missing",
+            })?;
         if record.resolution_choice.as_deref() != Some(conflict_choice_name(choice)) {
             return Err(ConflictRepositoryError::Conflict);
         }
@@ -5233,7 +5427,9 @@ fn resolve_sync_conflict_in(
         || record.resolution_choice.is_some()
         || record.resolved_by_change_id.is_some()
     {
-        return Err(ConflictRepositoryError::Corrupt);
+        return Err(ConflictRepositoryError::Corrupt {
+            reason: "resolve sync conflict in: stored data failed a consistency check",
+        });
     }
     let materialized =
         materialized_conflict_value(transaction, &record.entity_kind, &record.entity_id)?;
@@ -5256,11 +5452,22 @@ fn resolve_sync_conflict_in(
             ).map_err(conflict_corrupt)?;
             (None, request)
         }
-        (SyncConflictValue::Deleted, _) => return Err(ConflictRepositoryError::Unsupported),
+        (SyncConflictValue::Deleted, _) => return Err(ConflictRepositoryError::Unsupported {
+            reason: "resolve sync conflict in: a stored value is not recognised",
+        }),
         (_, SyncConflictValue::Deleted) => {
-            let codec = snapshot_codec(&record.entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
-            if codec.delete.is_none() { return Err(ConflictRepositoryError::Unsupported); }
-            let base = (codec.current)(transaction, &record.entity_id).map_err(|_| ConflictRepositoryError::Corrupt)?.ok_or(ConflictRepositoryError::Conflict)?;
+            let codec = snapshot_codec(&record.entity_kind).ok_or(ConflictRepositoryError::Corrupt {
+                reason: "resolve sync conflict in: a required value is missing",
+            })?;
+            if codec.delete.is_none() { return Err(ConflictRepositoryError::Unsupported {
+                reason: "resolve sync conflict in: the operation is not supported here",
+            }); }
+            let base = (codec.current)(transaction, &record.entity_id).map_err(|error| {
+                tracing::warn!(?error, "resolve sync conflict in failed");
+                ConflictRepositoryError::Corrupt {
+                    reason: "resolve sync conflict in: a storage step failed",
+                }
+            })?.ok_or(ConflictRepositoryError::Conflict)?;
             let request = NewCanonicalChange::new(
                 SyncEntity::new(&record.entity_kind, &record.entity_id).map_err(conflict_corrupt)?,
                 ChangeOperation::Delete, Some(base.content_hash().clone()), None,
@@ -5286,18 +5493,37 @@ fn resolve_sync_conflict_in(
         return Err(ConflictRepositoryError::Conflict);
     }
     if resolved.is_some() {
-        let codec = snapshot_codec(&record.entity_kind).ok_or(ConflictRepositoryError::Corrupt)?;
-        let payload = request.payload().ok_or(ConflictRepositoryError::Corrupt)?;
+        let codec = snapshot_codec(&record.entity_kind).ok_or(ConflictRepositoryError::Corrupt {
+            reason: "resolve sync conflict in: a required value is missing",
+        })?;
+        let payload = request.payload().ok_or(ConflictRepositoryError::Corrupt {
+            reason: "resolve sync conflict in: a required value is missing",
+        })?;
         let applied = (codec.materialize)(transaction, &record.entity_id, payload.bytes()).map_err(|error| match error {
-            ApplyOneError::Storage => ConflictRepositoryError::Storage,
-            ApplyOneError::Pending => ConflictRepositoryError::Unavailable,
-            ApplyOneError::Unencodable => ConflictRepositoryError::Unsupported,
-            ApplyOneError::Corrupt => ConflictRepositoryError::Corrupt,
+            ApplyOneError::Storage => ConflictRepositoryError::Storage {
+                reason: "resolve sync conflict in: a stored value is not recognised",
+            },
+            ApplyOneError::Pending => ConflictRepositoryError::Unavailable {
+                reason: "resolve sync conflict in: a stored value is not recognised",
+            },
+            ApplyOneError::Unencodable => ConflictRepositoryError::Unsupported {
+                reason: "resolve sync conflict in: a stored value is not recognised",
+            },
+            ApplyOneError::Corrupt => ConflictRepositoryError::Corrupt {
+                reason: "resolve sync conflict in: a stored value is not recognised",
+            },
         })?;
         if !applied { return Err(ConflictRepositoryError::Conflict); }
     } else if materialized != SyncConflictValue::Deleted {
-        let delete = snapshot_codec(&record.entity_kind).and_then(|codec| codec.delete).ok_or(ConflictRepositoryError::Unsupported)?;
-        delete(transaction, &admission.change, now).map_err(|_| ConflictRepositoryError::Storage)?;
+        let delete = snapshot_codec(&record.entity_kind).and_then(|codec| codec.delete).ok_or(ConflictRepositoryError::Unsupported {
+            reason: "resolve sync conflict in: a required value is missing",
+        })?;
+        delete(transaction, &admission.change, now).map_err(|error| {
+            tracing::warn!(?error, "resolve sync conflict in failed");
+            ConflictRepositoryError::Storage {
+                reason: "resolve sync conflict in: a storage step failed",
+            }
+        })?;
     }
     let changed = transaction
         .execute(
@@ -5317,8 +5543,12 @@ fn resolve_sync_conflict_in(
     }
     resolve_dominated_conflicts(transaction, &admission.change, now, None).map_err(
         |error| match error {
-            ApplyOneError::Storage => ConflictRepositoryError::Storage,
-            _ => ConflictRepositoryError::Corrupt,
+            ApplyOneError::Storage => ConflictRepositoryError::Storage {
+                reason: "resolve sync conflict in: a stored value is not recognised",
+            },
+            _ => ConflictRepositoryError::Corrupt {
+                reason: "resolve sync conflict in: a stored value is not recognised",
+            },
         },
     )?;
     Ok(admission.change)
@@ -5351,13 +5581,17 @@ impl IncomingChangeRepository for Database {
         let payload_bytes = changes.iter().try_fold(0usize, |total, change| {
             total
                 .checked_add(change.payload().map_or(0, |payload| payload.bytes().len()))
-                .ok_or(IncomingChangeError::InvalidBatch)
+                .ok_or(IncomingChangeError::InvalidBatch {
+                    reason: "stage incoming batch: a required value is missing",
+                })
         })?;
         if changes.is_empty()
             || changes.len() > MAX_INCOMING_CHANGES
             || (changes.len() > 1 && payload_bytes > MAX_INCOMING_PAYLOAD_BYTES)
         {
-            return Err(IncomingChangeError::InvalidBatch);
+            return Err(IncomingChangeError::InvalidBatch {
+                reason: "stage incoming batch: a value failed validation",
+            });
         }
         if &canonical_batch_hash(changes) != declared_hash {
             return Err(IncomingChangeError::InvalidBatchHash);
@@ -5367,7 +5601,9 @@ impl IncomingChangeRepository for Database {
             let document = serde_json::to_vec(&StoredIncomingChange::from_change(change))
                 .map_err(incoming_corrupt)?;
             if document.len() > 131_072 {
-                return Err(IncomingChangeError::InvalidBatch);
+                return Err(IncomingChangeError::InvalidBatch {
+                    reason: "stage incoming batch: a value failed validation",
+                });
             }
             encoded.push(document);
         }
@@ -5402,7 +5638,9 @@ impl IncomingChangeRepository for Database {
                 "staged" => IncomingBatchState::Staged,
                 "pending" => IncomingBatchState::Pending,
                 "committed" => IncomingBatchState::Committed,
-                _ => return Err(IncomingChangeError::Corrupt),
+                _ => return Err(IncomingChangeError::Corrupt {
+                    reason: "stage incoming batch: a stored value is not recognised",
+                }),
             };
             transaction.commit().map_err(incoming_storage)?;
             return Ok(IncomingBatchAdmission {
@@ -5482,13 +5720,17 @@ impl IncomingChangeRepository for Database {
             });
         }
         if !matches!(state.as_str(), "staged" | "pending") {
-            return Err(IncomingChangeError::Corrupt);
+            return Err(IncomingChangeError::Corrupt {
+                reason: "apply incoming batch: stored data failed a consistency check",
+            });
         }
         let changes = load_staged_changes(&connection, batch_id)?;
         if changes.len() != usize::try_from(expected_count).map_err(incoming_corrupt)?
             || canonical_batch_hash(&changes).as_str() != stored_hash
         {
-            return Err(IncomingChangeError::Corrupt);
+            return Err(IncomingChangeError::Corrupt {
+                reason: "apply incoming batch: stored data failed a consistency check",
+            });
         }
         let mut has_unsupported_change = false;
         for change in &changes {
@@ -5546,9 +5788,19 @@ impl IncomingChangeRepository for Database {
                 continue;
             }
             observe_remote_clock(&transaction, change.timestamp(), now)
-                .map_err(|_| IncomingChangeError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "apply incoming batch failed");
+                    IncomingChangeError::Storage {
+                        reason: "apply incoming batch: a storage step failed",
+                    }
+                })?;
             insert_change(&transaction, None, change, now)
-                .map_err(|_| IncomingChangeError::Storage)?;
+                .map_err(|error| {
+                    tracing::warn!(%error, "apply incoming batch failed");
+                    IncomingChangeError::Storage {
+                        reason: "apply incoming batch: a storage step failed",
+                    }
+                })?;
             let result =
                 settle_or_defer(&transaction, change, now).map(|settled| settled.unwrap_or(false));
             match result {
@@ -5559,14 +5811,22 @@ impl IncomingChangeRepository for Database {
                 Err(
                     ApplyOneError::Corrupt | ApplyOneError::Pending | ApplyOneError::Unencodable,
                 ) => {
-                    return Err(IncomingChangeError::Corrupt);
+                    return Err(IncomingChangeError::Corrupt {
+                        reason: "apply incoming batch: stored data failed a consistency check",
+                    });
                 }
-                Err(ApplyOneError::Storage) => return Err(IncomingChangeError::Storage),
+                Err(ApplyOneError::Storage) => return Err(IncomingChangeError::Storage {
+                    reason: "apply incoming batch: a stored value is not recognised",
+                }),
             }
         }
         retry_deferred_changes(&transaction, now).map_err(|error| match error {
-            ApplyOneError::Corrupt => IncomingChangeError::Corrupt,
-            _ => IncomingChangeError::Storage,
+            ApplyOneError::Corrupt => IncomingChangeError::Corrupt {
+                reason: "apply incoming batch: a stored value is not recognised",
+            },
+            _ => IncomingChangeError::Storage {
+                reason: "apply incoming batch: a stored value is not recognised",
+            },
         })?;
         transaction
             .execute(
@@ -5805,14 +6065,11 @@ mod tests {
             )
             .expect("trigger");
 
-        assert_eq!(
-            database.record_local_change(
+        assert!(matches!(database.record_local_change(
                 OperationId::new(),
                 request(b"first"),
                 TimestampMillis::new(10)
-            ),
-            Err(LocalChangeJournalError::Storage)
-        );
+            ), Err(LocalChangeJournalError::Storage { .. })));
         let connection = database.connection().expect("connection");
         assert_eq!(
             connection
@@ -5846,14 +6103,11 @@ mod tests {
             .execute("DELETE FROM sync_frontiers", [])
             .expect("corrupt frontier");
 
-        assert_eq!(
-            database.record_local_change(
+        assert!(matches!(database.record_local_change(
                 OperationId::new(),
                 request(b"second"),
                 TimestampMillis::new(20)
-            ),
-            Err(LocalChangeJournalError::Corrupt)
-        );
+            ), Err(LocalChangeJournalError::Corrupt { .. })));
         let connection = database.connection().expect("connection");
         let sequence = connection
             .query_row(
@@ -6412,10 +6666,7 @@ mod tests {
             None,
         )
         .expect("delete");
-        assert_eq!(
-            database.record_local_change(OperationId::new(), delete, TimestampMillis::new(10)),
-            Err(LocalChangeJournalError::Corrupt)
-        );
+        assert!(matches!(database.record_local_change(OperationId::new(), delete, TimestampMillis::new(10)), Err(LocalChangeJournalError::Corrupt { .. })));
         assert!(database.local_frontier().expect("frontier").is_empty());
     }
 

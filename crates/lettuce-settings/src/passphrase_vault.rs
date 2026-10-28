@@ -37,14 +37,14 @@ pub enum PassphraseVaultError {
     AlreadyExists,
     #[error("no passphrase vault exists")]
     Missing,
-    #[error("the passphrase is empty, too long or contains control characters")]
-    InvalidPassphrase,
+    #[error("the passphrase is empty, too long or contains control characters: {reason}")]
+    InvalidPassphrase { reason: &'static str },
     #[error("the passphrase does not unlock the vault")]
     WrongPassphrase,
-    #[error("the passphrase vault is corrupt")]
-    Corrupt,
-    #[error("the passphrase vault could not be read or written")]
-    Io,
+    #[error("the passphrase vault is corrupt: {reason}")]
+    Corrupt { reason: &'static str },
+    #[error("the passphrase vault could not be read or written: {reason}")]
+    Io { reason: &'static str },
 }
 
 /// A password-protected local vault for devices without an OS credential
@@ -126,7 +126,12 @@ impl PassphraseVault {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 return Err(PassphraseVaultError::AlreadyExists);
             }
-            Err(_) => return Err(PassphraseVaultError::Io),
+            Err(error) => {
+                tracing::warn!(%error, "creating the passphrase vault file failed");
+                return Err(PassphraseVaultError::Io {
+                    reason: "creating the vault file failed",
+                });
+            }
         }
         Ok(vault)
     }
@@ -155,7 +160,9 @@ impl PassphraseVault {
         let _guard = self
             .lock
             .lock()
-            .map_err(|_| PassphraseVaultError::Corrupt)?;
+            .map_err(|_| PassphraseVaultError::Corrupt {
+                reason: "vault lock is poisoned",
+            })?;
         let mut entries = self.entries()?;
         Ok(entries.0.remove(name).map(Zeroizing::new))
     }
@@ -164,7 +171,9 @@ impl PassphraseVault {
         let _guard = self
             .lock
             .lock()
-            .map_err(|_| PassphraseVaultError::Corrupt)?;
+            .map_err(|_| PassphraseVaultError::Corrupt {
+                reason: "vault lock is poisoned",
+            })?;
         let mut entries = self.entries()?;
         if let Some(mut replaced) = entries.0.insert(name.to_owned(), value.to_vec()) {
             replaced.zeroize();
@@ -176,7 +185,9 @@ impl PassphraseVault {
         let _guard = self
             .lock
             .lock()
-            .map_err(|_| PassphraseVaultError::Corrupt)?;
+            .map_err(|_| PassphraseVaultError::Corrupt {
+                reason: "vault lock is poisoned",
+            })?;
         let mut entries = self.entries()?;
         if entries.0.remove(name).is_some() {
             self.seal(&entries)?;
@@ -187,14 +198,18 @@ impl PassphraseVault {
     fn entries(&self) -> Result<Entries, PassphraseVaultError> {
         let sealed = read_sealed(self.file.as_ref())?.ok_or(PassphraseVaultError::Missing)?;
         if sealed.kdf != self.kdf {
-            return Err(PassphraseVaultError::Corrupt);
+            return Err(PassphraseVaultError::Corrupt {
+                reason: "vault key derivation settings differ from the unlocked settings",
+            });
         }
         self.open(&sealed)
     }
 
     fn open(&self, sealed: &SealedVault) -> Result<Entries, PassphraseVaultError> {
         if sealed.nonce.len() != NONCE_BYTES {
-            return Err(PassphraseVaultError::Corrupt);
+            return Err(PassphraseVaultError::Corrupt {
+                reason: "vault nonce has the wrong length",
+            });
         }
         let aad = associated_data(&sealed.kdf)?;
         let plaintext = Zeroizing::new(
@@ -208,19 +223,31 @@ impl PassphraseVault {
                 )
                 .map_err(|_| PassphraseVaultError::WrongPassphrase)?,
         );
-        serde_json::from_slice::<Entries>(&plaintext).map_err(|_| PassphraseVaultError::Corrupt)
+        serde_json::from_slice::<Entries>(&plaintext).map_err(|error| {
+            tracing::warn!(%error, "passphrase vault entries could not be decoded");
+            PassphraseVaultError::Corrupt {
+                reason: "vault entries are not valid JSON",
+            }
+        })
     }
 
     fn seal(&self, entries: &Entries) -> Result<(), PassphraseVaultError> {
         let bytes = self.sealed_bytes(entries)?;
-        self.file
-            .write(&bytes)
-            .map_err(|_| PassphraseVaultError::Io)
+        self.file.write(&bytes).map_err(|error| {
+            tracing::warn!(%error, "writing the passphrase vault file failed");
+            PassphraseVaultError::Io {
+                reason: "writing the vault file failed",
+            }
+        })
     }
 
     fn sealed_bytes(&self, entries: &Entries) -> Result<Vec<u8>, PassphraseVaultError> {
-        let plaintext =
-            Zeroizing::new(serde_json::to_vec(entries).map_err(|_| PassphraseVaultError::Corrupt)?);
+        let plaintext = Zeroizing::new(serde_json::to_vec(entries).map_err(|error| {
+            tracing::warn!(%error, "passphrase vault entries could not be serialized");
+            PassphraseVaultError::Corrupt {
+                reason: "vault entries could not be serialized",
+            }
+        })?);
         let mut nonce = vec![0_u8; NONCE_BYTES];
         OsRng.fill_bytes(&mut nonce);
         let aad = associated_data(&self.kdf)?;
@@ -232,51 +259,101 @@ impl PassphraseVault {
                     aad: &aad,
                 },
             )
-            .map_err(|_| PassphraseVaultError::Corrupt)?;
+            .map_err(|_| PassphraseVaultError::Corrupt {
+                reason: "vault encryption failed",
+            })?;
         let bytes = serde_json::to_vec(&SealedVault {
             version: VAULT_VERSION,
             kdf: self.kdf.clone(),
             nonce,
             ciphertext,
         })
-        .map_err(|_| PassphraseVaultError::Corrupt)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "the sealed passphrase vault could not be serialized");
+            PassphraseVaultError::Corrupt {
+                reason: "sealed vault could not be serialized",
+            }
+        })?;
         if bytes.len() > MAX_VAULT_BYTES {
-            return Err(PassphraseVaultError::Corrupt);
+            return Err(PassphraseVaultError::Corrupt {
+                reason: "sealed vault exceeds the size limit",
+            });
         }
         Ok(bytes)
     }
 }
 
 fn read_sealed(file: &dyn VaultFile) -> Result<Option<SealedVault>, PassphraseVaultError> {
-    let Some(bytes) = file.read().map_err(|_| PassphraseVaultError::Io)? else {
+    let Some(bytes) = file.read().map_err(|error| {
+        tracing::warn!(%error, "reading the passphrase vault file failed");
+        PassphraseVaultError::Io {
+            reason: "reading the vault file failed",
+        }
+    })?
+    else {
         return Ok(None);
     };
     if bytes.len() > MAX_VAULT_BYTES {
-        return Err(PassphraseVaultError::Corrupt);
+        return Err(PassphraseVaultError::Corrupt {
+            reason: "vault file exceeds the size limit",
+        });
     }
-    let sealed: SealedVault =
-        serde_json::from_slice(&bytes).map_err(|_| PassphraseVaultError::Corrupt)?;
-    if sealed.version != VAULT_VERSION
-        || sealed.kdf.salt.len() != SALT_BYTES
-        || !(8 * 1024..=1024 * 1024).contains(&sealed.kdf.memory_kib)
-        || !(1..=16).contains(&sealed.kdf.iterations)
-        || !(1..=16).contains(&sealed.kdf.lanes)
-    {
-        return Err(PassphraseVaultError::Corrupt);
+    let sealed: SealedVault = serde_json::from_slice(&bytes).map_err(|error| {
+        tracing::warn!(%error, "the passphrase vault file could not be decoded");
+        PassphraseVaultError::Corrupt {
+            reason: "vault file is not valid JSON",
+        }
+    })?;
+    if sealed.version != VAULT_VERSION {
+        return Err(PassphraseVaultError::Corrupt {
+            reason: "vault version is not supported",
+        });
+    }
+    if sealed.kdf.salt.len() != SALT_BYTES {
+        return Err(PassphraseVaultError::Corrupt {
+            reason: "vault salt has the wrong length",
+        });
+    }
+    if !(8 * 1024..=1024 * 1024).contains(&sealed.kdf.memory_kib) {
+        return Err(PassphraseVaultError::Corrupt {
+            reason: "vault key derivation memory is out of range",
+        });
+    }
+    if !(1..=16).contains(&sealed.kdf.iterations) {
+        return Err(PassphraseVaultError::Corrupt {
+            reason: "vault key derivation iterations are out of range",
+        });
+    }
+    if !(1..=16).contains(&sealed.kdf.lanes) {
+        return Err(PassphraseVaultError::Corrupt {
+            reason: "vault key derivation lanes are out of range",
+        });
     }
     Ok(Some(sealed))
 }
 
 fn associated_data(kdf: &VaultKdf) -> Result<Vec<u8>, PassphraseVaultError> {
-    serde_json::to_vec(&(VAULT_VERSION, kdf)).map_err(|_| PassphraseVaultError::Corrupt)
+    serde_json::to_vec(&(VAULT_VERSION, kdf)).map_err(|error| {
+        tracing::warn!(%error, "passphrase vault associated data could not be serialized");
+        PassphraseVaultError::Corrupt {
+            reason: "vault associated data could not be serialized",
+        }
+    })
 }
 
 fn validate_passphrase(passphrase: &str) -> Result<(), PassphraseVaultError> {
-    if passphrase.is_empty()
-        || passphrase.len() > MAX_PASSPHRASE_BYTES
-        || passphrase.chars().any(char::is_control)
-    {
-        Err(PassphraseVaultError::InvalidPassphrase)
+    if passphrase.is_empty() {
+        Err(PassphraseVaultError::InvalidPassphrase {
+            reason: "passphrase is empty",
+        })
+    } else if passphrase.len() > MAX_PASSPHRASE_BYTES {
+        Err(PassphraseVaultError::InvalidPassphrase {
+            reason: "passphrase is too long",
+        })
+    } else if passphrase.chars().any(char::is_control) {
+        Err(PassphraseVaultError::InvalidPassphrase {
+            reason: "passphrase contains control characters",
+        })
     } else {
         Ok(())
     }
@@ -286,12 +363,22 @@ fn derive_key(
     passphrase: &str,
     kdf: &VaultKdf,
 ) -> Result<Zeroizing<[u8; 32]>, PassphraseVaultError> {
-    let params = Params::new(kdf.memory_kib, kdf.iterations, kdf.lanes, Some(32))
-        .map_err(|_| PassphraseVaultError::Corrupt)?;
+    let params =
+        Params::new(kdf.memory_kib, kdf.iterations, kdf.lanes, Some(32)).map_err(|error| {
+            tracing::warn!(%error, "passphrase vault key derivation parameters are invalid");
+            PassphraseVaultError::Corrupt {
+                reason: "key derivation parameters are invalid",
+            }
+        })?;
     let mut key = Zeroizing::new([0_u8; 32]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
         .hash_password_into(passphrase.as_bytes(), &kdf.salt, key.as_mut())
-        .map_err(|_| PassphraseVaultError::Corrupt)?;
+        .map_err(|error| {
+            tracing::warn!(%error, "passphrase vault key derivation failed");
+            PassphraseVaultError::Corrupt {
+                reason: "key derivation failed",
+            }
+        })?;
     Ok(key)
 }
 

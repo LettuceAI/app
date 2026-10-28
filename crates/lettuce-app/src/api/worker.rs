@@ -448,7 +448,9 @@ impl ReplyMediaStore for UnstoredReplyMedia {
         _origin: ReplyImageOrigin,
         _bytes: &[u8],
     ) -> Result<lettuce_types::AssetId, lettuce_media::MediaStoreError> {
-        Err(lettuce_media::MediaStoreError::CatalogFailure)
+        Err(lettuce_media::MediaStoreError::CatalogFailure {
+            reason: "no media store is available for reply images",
+        })
     }
 
     fn discard_reply_image(

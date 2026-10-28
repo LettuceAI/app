@@ -64,53 +64,73 @@ fn db_error(error: rusqlite::Error) -> RepositoryError {
                 field: "persona.storage",
             })
         }
-        _ => RepositoryError::Storage,
+        _ => RepositoryError::Storage {
+            reason: "db error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
 fn sync_error(error: LocalChangeJournalError) -> RepositoryError {
     match error {
         LocalChangeJournalError::Conflict => RepositoryError::AlreadyExists,
-        _ => RepositoryError::Storage,
+        _ => RepositoryError::Storage {
+            reason: "sync error: a stored value is not recognised".to_owned(),
+        },
     }
 }
 
 fn persona_insert_change(persona: &Persona) -> Result<NewCanonicalChange, RepositoryError> {
     NewCanonicalChange::new(
-        persona_sync_entity(persona.id).map_err(|_| RepositoryError::Storage)?,
+        persona_sync_entity(persona.id).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         ChangeOperation::Insert,
         None,
-        Some(canonical_persona_payload(persona).map_err(|_| RepositoryError::Storage)?),
+        Some(canonical_persona_payload(persona).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?),
     )
-    .map_err(|_| RepositoryError::Storage)
+    .map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn persona_update_change(
     before: &Persona,
     after: &Persona,
 ) -> Result<NewCanonicalChange, RepositoryError> {
-    let before = canonical_persona_payload(before).map_err(|_| RepositoryError::Storage)?;
+    let before = canonical_persona_payload(before).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     NewCanonicalChange::new(
-        persona_sync_entity(after.id).map_err(|_| RepositoryError::Storage)?,
+        persona_sync_entity(after.id).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         ChangeOperation::Update,
         Some(before.content_hash().clone()),
-        Some(canonical_persona_payload(after).map_err(|_| RepositoryError::Storage)?),
+        Some(canonical_persona_payload(after).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?),
     )
-    .map_err(|_| RepositoryError::Storage)
+    .map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn persona_default_update_change(
     before: &PersonaDefaultState,
     after: &PersonaDefaultState,
 ) -> Result<NewCanonicalChange, RepositoryError> {
-    let before = canonical_persona_default_payload(before).map_err(|_| RepositoryError::Storage)?;
+    let before = canonical_persona_default_payload(before).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?;
     NewCanonicalChange::new(
-        persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+        persona_default_sync_entity().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         ChangeOperation::Update,
         Some(before.content_hash().clone()),
-        Some(canonical_persona_default_payload(after).map_err(|_| RepositoryError::Storage)?),
+        Some(canonical_persona_default_payload(after).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?),
     )
-    .map_err(|_| RepositoryError::Storage)
+    .map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 fn replay_persona_update_change(
@@ -128,13 +148,17 @@ fn replay_persona_update_change(
         .ok_or(RepositoryError::NotFound)?;
     let next = expected_revision
         .next()
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     if current.revision != next
         || current.updated_at != now
-        || change.entity() != &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?
+        || change.entity() != &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?
         || change.operation() != ChangeOperation::Update
         || change.payload()
-            != Some(&canonical_persona_payload(&current).map_err(|_| RepositoryError::Storage)?)
+            != Some(&canonical_persona_payload(&current).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?)
     {
         return Err(RepositoryError::StaleRevision {
             expected: expected_revision,
@@ -156,16 +180,18 @@ fn replay_persona_default_change(
     let current = read_default(tx).map_err(db_error)?;
     let next = expected_revision
         .next()
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     if current.revision != next
         || current.updated_at != now
         || change.entity()
-            != &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?
+            != &persona_default_sync_entity().map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?
         || change.operation() != ChangeOperation::Update
         || change.payload()
             != Some(
                 &canonical_persona_default_payload(&current)
-                    .map_err(|_| RepositoryError::Storage)?,
+                    .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?,
             )
     {
         return Err(RepositoryError::StaleRevision {
@@ -257,7 +283,7 @@ fn revision(value: i64) -> Result<Revision, rusqlite::Error> {
 }
 
 fn sql_u64(value: u64) -> Result<i64, RepositoryError> {
-    i64::try_from(value).map_err(|_| RepositoryError::Storage)
+    i64::try_from(value).map_err(|error| RepositoryError::Storage { reason: error.to_string() })
 }
 
 /// The canonical key used by both writes and searches.  NFKC is applied before
@@ -329,7 +355,7 @@ fn record_persona_media_assets(
             )
             .map_err(db_error)?;
         let request = media_asset_insert_change(&lettuce_media::SyncMediaAsset { asset, blob })
-            .map_err(|_| RepositoryError::Storage)?;
+            .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
         record_local_change_in(tx, media_asset_create_operation(id), &request, now)
             .map_err(sync_error)?;
     }
@@ -489,7 +515,9 @@ fn normalize_media(mut media: PersonaMedia) -> Result<PersonaMedia, RepositoryEr
         media.links.push(link);
     }
     for (ordinal, mut link) in design.into_iter().enumerate() {
-        link.ordinal = u32::try_from(ordinal).map_err(|_| RepositoryError::Storage)?;
+        link.ordinal = u32::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         media.links.push(link);
     }
     media.validate()?;
@@ -556,7 +584,9 @@ pub(crate) fn insert_persona(
     replace_media(tx, persona.id, &media)?;
     load_persona(tx, persona.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "insert persona: a required value is missing".to_owned(),
+        })
 }
 
 pub(crate) fn apply_synced_persona(
@@ -604,7 +634,9 @@ pub(crate) fn apply_synced_persona(
     replace_media(tx, persona.id, &media)?;
     load_persona(tx, persona.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "apply synced persona: a required value is missing".to_owned(),
+        })
 }
 
 pub(crate) fn apply_synced_persona_default(
@@ -645,7 +677,7 @@ pub(crate) fn revise_persona(
     ensure_active(tx, id, expected_revision)?;
     let next = expected_revision
         .next()
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     let crop = draft
         .avatar_crop
         .as_ref()
@@ -687,7 +719,9 @@ pub(crate) fn revise_persona(
     }
     load_persona(tx, id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "revise persona: a required value is missing".to_owned(),
+        })
 }
 
 fn update_root(
@@ -698,7 +732,7 @@ fn update_root(
 ) -> Result<Revision, RepositoryError> {
     let next = expected_revision
         .next()
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     let changed = tx
         .execute(
             "UPDATE personas SET revision=?2,updated_at=?3 WHERE id=?1 AND revision=?4",
@@ -732,7 +766,9 @@ fn create_persona_in(tx: &Transaction<'_>, persona: Persona) -> Result<Persona, 
     let request = persona_insert_change(&canonical)?;
     let operation = entity_scoped_operation(
         tx,
-        &persona_sync_entity(canonical.id).map_err(|_| RepositoryError::Storage)?,
+        &persona_sync_entity(canonical.id).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         operation,
     )
     .map_err(sync_error)?;
@@ -748,11 +784,19 @@ fn create_persona_in(tx: &Transaction<'_>, persona: Persona) -> Result<Persona, 
     }
     let stored = load_persona(tx, persona.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)?;
-    if canonical_persona_payload(&stored).map_err(|_| RepositoryError::Storage)?
-        != *admission.change.payload().ok_or(RepositoryError::Storage)?
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "create persona in: a required value is missing".to_owned(),
+        })?;
+    if canonical_persona_payload(&stored).map_err(|error| RepositoryError::Storage {
+        reason: error.to_string(),
+    })?
+        != *admission.change.payload().ok_or_else(|| RepositoryError::Storage {
+            reason: "create persona in: a required value is missing".to_owned(),
+        })?
     {
-        return Err(RepositoryError::Storage);
+        return Err(RepositoryError::Storage {
+            reason: "create persona in: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(stored)
 }
@@ -766,7 +810,9 @@ fn set_default_in(
     let operation = persona_set_default_operation(expected_default_revision, id);
     let operation = entity_scoped_operation(
         tx,
-        &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+        &persona_default_sync_entity().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         operation,
     )
     .map_err(sync_error)?;
@@ -790,7 +836,7 @@ fn set_default_in(
     }
     let next = expected_default_revision
         .next()
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     let changed = tx
         .execute(
             "UPDATE persona_defaults SET default_persona_id=?1,revision=?2,updated_at=?3 WHERE id=1 AND revision=?4",
@@ -813,7 +859,9 @@ fn set_default_in(
     let request = persona_default_update_change(&current, &state)?;
     let admission = record_local_change_in(tx, operation, &request, now).map_err(sync_error)?;
     if !admission.created {
-        return Err(RepositoryError::Storage);
+        return Err(RepositoryError::Storage {
+            reason: "set default in: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(state)
 }
@@ -826,7 +874,9 @@ fn clear_default_in(
     let operation = persona_clear_default_operation(expected_default_revision);
     let operation = entity_scoped_operation(
         tx,
-        &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+        &persona_default_sync_entity().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?,
         operation,
     )
     .map_err(sync_error)?;
@@ -844,7 +894,7 @@ fn clear_default_in(
     }
     let next = expected_default_revision
         .next()
-        .map_err(|_| RepositoryError::Storage)?;
+        .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
     let changed = tx
         .execute(
             "UPDATE persona_defaults SET default_persona_id=NULL,revision=?1,updated_at=?2 WHERE id=1 AND revision=?3",
@@ -866,7 +916,9 @@ fn clear_default_in(
     let request = persona_default_update_change(&current, &state)?;
     let admission = record_local_change_in(tx, operation, &request, now).map_err(sync_error)?;
     if !admission.created {
-        return Err(RepositoryError::Storage);
+        return Err(RepositoryError::Storage {
+            reason: "clear default in: stored data failed a consistency check".to_owned(),
+        });
     }
     Ok(state)
 }
@@ -897,7 +949,9 @@ fn import_persona_file_in(tx: &rusqlite::Transaction<'_>, import: &PersonaFileIm
                     field: "persona.lorebooks",
                 },
             ),
-            BindingRepositoryError::Failure(_) => RepositoryError::Storage,
+            BindingRepositoryError::Failure(_) => RepositoryError::Storage {
+                reason: "import persona file in: a stored value is not recognised".to_owned(),
+            },
         })?;
     }
     if import.make_default {
@@ -906,13 +960,17 @@ fn import_persona_file_in(tx: &rusqlite::Transaction<'_>, import: &PersonaFileIm
     }
     let persona = load_persona(tx, persona.id)
         .map_err(db_error)?
-        .ok_or(RepositoryError::Storage)?;
+        .ok_or_else(|| RepositoryError::Storage {
+            reason: "import persona file in: a required value is missing".to_owned(),
+        })?;
     Ok(persona)
 }
 
 impl PersonaFileRepository for Database {
     fn import_persona_file(&self, import: &PersonaFileImport) -> Result<Persona, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(db_error)?;
         let persona = import_persona_file_in(&tx, import)?;
         tx.commit().map_err(db_error)?;
@@ -923,7 +981,9 @@ impl PersonaFileRepository for Database {
         &self,
         asset_id: AssetId,
     ) -> Result<Option<lettuce_types::MediaBlobId>, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -955,7 +1015,7 @@ impl PersonaFileRepository for Database {
         blob_id
             .parse()
             .map(Some)
-            .map_err(|_| RepositoryError::Storage)
+            .map_err(|error| RepositoryError::Storage { reason: format!("{error}") })
     }
 
     fn release_unused_blob(
@@ -963,7 +1023,9 @@ impl PersonaFileRepository for Database {
         blob_id: lettuce_types::MediaBlobId,
         now: TimestampMillis,
     ) -> Result<bool, RepositoryError> {
-        let connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let released = connection
             .execute(
                 "UPDATE media_blobs SET state='missing', updated_at=?2
@@ -979,7 +1041,9 @@ impl PersonaFileRepository for Database {
 
 impl PersonaRepository for Database {
     fn create(&self, persona: Persona) -> Result<Persona, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -989,7 +1053,9 @@ impl PersonaRepository for Database {
     }
 
     fn get(&self, id: PersonaId) -> Result<Option<Persona>, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1000,7 +1066,9 @@ impl PersonaRepository for Database {
 
     /// A default that names an archived persona reads as no default.
     fn get_default_snapshot(&self) -> Result<PersonaDefaultSnapshot, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1060,7 +1128,9 @@ impl PersonaRepository for Database {
         let sql = format!(
             "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR (?7 AND persona_search_key(description) LIKE ?2 ESCAPE '\\') OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
         );
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         connection
             .create_scalar_function(
                 "persona_search_key",
@@ -1098,7 +1168,9 @@ impl PersonaRepository for Database {
             items.push(
                 load_persona(&tx, id)
                     .map_err(db_error)?
-                    .ok_or(RepositoryError::Storage)?,
+                    .ok_or_else(|| RepositoryError::Storage {
+                        reason: "search: a required value is missing".to_owned(),
+                    })?,
             );
         }
         let next_cursor = if has_more {
@@ -1128,13 +1200,17 @@ impl PersonaRepository for Database {
     ) -> Result<Persona, RepositoryError> {
         draft.validate()?;
         let operation = persona_revise_operation(id, expected_revision);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1144,7 +1220,7 @@ impl PersonaRepository for Database {
                 .ok_or(RepositoryError::NotFound)?;
             let next = expected_revision
                 .next()
-                .map_err(|_| RepositoryError::Storage)?;
+                .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
             let expected = apply_persona_draft(
                 Persona {
                     revision: expected_revision,
@@ -1157,12 +1233,16 @@ impl PersonaRepository for Database {
             if current.revision != next
                 || current != expected
                 || change.entity()
-                    != &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?
+                    != &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?
                 || change.operation() != ChangeOperation::Update
                 || change.payload()
                     != Some(
                         &canonical_persona_payload(&current)
-                            .map_err(|_| RepositoryError::Storage)?,
+                            .map_err(|error| RepositoryError::Storage {
+                                reason: error.to_string(),
+                            })?,
                     )
             {
                 return Err(RepositoryError::StaleRevision {
@@ -1184,11 +1264,15 @@ impl PersonaRepository for Database {
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "revise: stored data failed a consistency check".to_owned(),
+            });
         }
         let persona = revise_persona(&tx, id, expected_revision, draft, now)?;
         if persona != expected {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "revise: stored data failed a consistency check".to_owned(),
+            });
         }
         tx.commit().map_err(db_error)?;
         Ok(persona)
@@ -1203,13 +1287,17 @@ impl PersonaRepository for Database {
     ) -> Result<Persona, RepositoryError> {
         let media = normalize_media(media)?;
         let operation = persona_update_media_operation(id, expected_revision, &media);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1225,7 +1313,9 @@ impl PersonaRepository for Database {
         update_root(&tx, id, expected_revision, now)?;
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "update media: a required value is missing".to_owned(),
+            })?;
         let request = persona_update_change(&before, &persona)?;
         record_persona_media_assets(
             &tx,
@@ -1235,7 +1325,9 @@ impl PersonaRepository for Database {
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "update media: stored data failed a consistency check".to_owned(),
+            });
         }
         tx.commit().map_err(db_error)?;
         Ok(persona)
@@ -1249,13 +1341,17 @@ impl PersonaRepository for Database {
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
         let operation = persona_attach_media_operation(id, expected_revision, &link);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1303,7 +1399,9 @@ impl PersonaRepository for Database {
             }
             0
         } else {
-            usize::try_from(link.ordinal).map_err(|_| RepositoryError::Storage)?
+            usize::try_from(link.ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?
         };
         if target > same_slot.len() {
             return Err(RepositoryError::Invalid(
@@ -1314,7 +1412,9 @@ impl PersonaRepository for Database {
         }
         same_slot.insert(target, link);
         for (ordinal, link) in same_slot.iter_mut().enumerate() {
-            link.ordinal = u32::try_from(ordinal).map_err(|_| RepositoryError::Storage)?;
+            link.ordinal = u32::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         }
         links.extend(same_slot);
         let media = normalize_media(PersonaMedia { links })?;
@@ -1322,7 +1422,9 @@ impl PersonaRepository for Database {
         update_root(&tx, id, expected_revision, now)?;
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "attach media: a required value is missing".to_owned(),
+            })?;
         let request = persona_update_change(&current, &persona)?;
         record_persona_media_assets(
             &tx,
@@ -1332,7 +1434,9 @@ impl PersonaRepository for Database {
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "attach media: stored data failed a consistency check".to_owned(),
+            });
         }
         tx.commit().map_err(db_error)?;
         Ok(persona)
@@ -1347,13 +1451,17 @@ impl PersonaRepository for Database {
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
         let operation = persona_detach_media_operation(id, expected_revision, asset_id, slot);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1384,14 +1492,18 @@ impl PersonaRepository for Database {
             .filter(|link| link.slot == PersonaMediaSlot::DesignReference)
             .enumerate()
         {
-            link.ordinal = u32::try_from(ordinal).map_err(|_| RepositoryError::Storage)?;
+            link.ordinal = u32::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         }
         let media = normalize_media(PersonaMedia { links })?;
         replace_media(&tx, id, &media)?;
         update_root(&tx, id, expected_revision, now)?;
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "detach media: a required value is missing".to_owned(),
+            })?;
         let request = persona_update_change(&before, &persona)?;
         record_persona_media_assets(
             &tx,
@@ -1401,7 +1513,9 @@ impl PersonaRepository for Database {
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "detach media: stored data failed a consistency check".to_owned(),
+            });
         }
         tx.commit().map_err(db_error)?;
         Ok(persona)
@@ -1418,13 +1532,17 @@ impl PersonaRepository for Database {
     ) -> Result<Persona, RepositoryError> {
         let operation =
             persona_reorder_media_operation(id, expected_revision, slot, asset_id, target_ordinal);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1446,7 +1564,9 @@ impl PersonaRepository for Database {
         let Some(index) = selected.iter().position(|link| link.asset_id == asset_id) else {
             return Err(RepositoryError::NotFound);
         };
-        let target = usize::try_from(target_ordinal).map_err(|_| RepositoryError::Storage)?;
+        let target = usize::try_from(target_ordinal).map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         if target >= selected.len() {
             return Err(RepositoryError::Invalid(
                 lettuce_characters::ValidationError::InvalidValue {
@@ -1457,7 +1577,9 @@ impl PersonaRepository for Database {
         let value = selected.remove(index);
         selected.insert(target, value);
         for (ordinal, link) in selected.iter_mut().enumerate() {
-            link.ordinal = u32::try_from(ordinal).map_err(|_| RepositoryError::Storage)?;
+            link.ordinal = u32::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?;
         }
         let mut links: Vec<_> = current
             .media
@@ -1471,7 +1593,9 @@ impl PersonaRepository for Database {
         update_root(&tx, id, expected_revision, now)?;
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "reorder media: a required value is missing".to_owned(),
+            })?;
         let request = persona_update_change(&before, &persona)?;
         record_persona_media_assets(
             &tx,
@@ -1481,7 +1605,9 @@ impl PersonaRepository for Database {
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "reorder media: stored data failed a consistency check".to_owned(),
+            });
         }
         tx.commit().map_err(db_error)?;
         Ok(persona)
@@ -1493,7 +1619,9 @@ impl PersonaRepository for Database {
         expected_default_revision: Revision,
         now: TimestampMillis,
     ) -> Result<PersonaDefaultState, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1507,7 +1635,9 @@ impl PersonaRepository for Database {
         expected_default_revision: Revision,
         now: TimestampMillis,
     ) -> Result<PersonaDefaultState, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
@@ -1526,13 +1656,17 @@ impl PersonaRepository for Database {
             request.expected_persona_revision,
             request.expected_default_revision,
         );
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(request.persona_id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(request.persona_id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1541,7 +1675,9 @@ impl PersonaRepository for Database {
             .map(|expected_default| {
                 entity_scoped_operation(
                     &tx,
-                    &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+                    &persona_default_sync_entity().map_err(|error| RepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     persona_archive_default_operation(
                         request.persona_id,
                         request.expected_persona_revision,
@@ -1604,7 +1740,7 @@ impl PersonaRepository for Database {
         let next_persona = request
             .expected_persona_revision
             .next()
-            .map_err(|_| RepositoryError::Storage)?;
+            .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
         let changed = tx
             .execute(
                 "UPDATE personas SET status='archived',revision=?2,updated_at=?3 WHERE id=?1 AND revision=?4",
@@ -1632,7 +1768,7 @@ impl PersonaRepository for Database {
                 .ok_or(RepositoryError::MissingDefaultRevision)?;
             let next_default = expected_default
                 .next()
-                .map_err(|_| RepositoryError::Storage)?;
+                .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
             let changed = tx
                 .execute(
                     "UPDATE persona_defaults SET default_persona_id=NULL,revision=?1,updated_at=?2 WHERE id=1 AND revision=?3",
@@ -1653,7 +1789,9 @@ impl PersonaRepository for Database {
         }
         let persona = load_persona(&tx, request.persona_id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "archive: a required value is missing".to_owned(),
+            })?;
         let default = read_default(&tx).map_err(db_error)?;
         let result = PersonaArchiveResult { persona, default };
         result.validate()?;
@@ -1666,7 +1804,9 @@ impl PersonaRepository for Database {
         let admission = record_local_change_in(&tx, operation, &persona_change, request.now)
             .map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "archive: stored data failed a consistency check".to_owned(),
+            });
         }
         if is_default {
             let default_operation =
@@ -1676,7 +1816,9 @@ impl PersonaRepository for Database {
                 record_local_change_in(&tx, default_operation, &default_change, request.now)
                     .map_err(sync_error)?;
             if !admission.created {
-                return Err(RepositoryError::Storage);
+                return Err(RepositoryError::Storage {
+                    reason: "archive: stored data failed a consistency check".to_owned(),
+                });
             }
         }
         tx.commit().map_err(db_error)?;
@@ -1690,13 +1832,17 @@ impl PersonaRepository for Database {
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
         let operation = persona_restore_operation(id, expected_revision);
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         let operation = entity_scoped_operation(
             &tx,
-            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })?,
             operation,
         )
         .map_err(sync_error)?;
@@ -1717,7 +1863,7 @@ impl PersonaRepository for Database {
         }
         let next = expected_revision
             .next()
-            .map_err(|_| RepositoryError::Storage)?;
+            .map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
         let changed = tx
             .execute(
             "UPDATE personas SET status='active',revision=?2,updated_at=?3 WHERE id=?1 AND revision=?4",
@@ -1741,7 +1887,9 @@ impl PersonaRepository for Database {
         }
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+            .ok_or_else(|| RepositoryError::Storage {
+                reason: "restore: a required value is missing".to_owned(),
+            })?;
         let change = persona_update_change(&current, &persona)?;
         record_persona_media_assets(
             &tx,
@@ -1750,7 +1898,9 @@ impl PersonaRepository for Database {
         )?;
         let admission = record_local_change_in(&tx, operation, &change, now).map_err(sync_error)?;
         if !admission.created {
-            return Err(RepositoryError::Storage);
+            return Err(RepositoryError::Storage {
+                reason: "restore: stored data failed a consistency check".to_owned(),
+            });
         }
         tx.commit().map_err(db_error)?;
         Ok(persona)
@@ -1759,7 +1909,9 @@ impl PersonaRepository for Database {
 
 impl PersonaDependencyReader for Database {
     fn dependencies(&self, id: PersonaId) -> Result<DependencyReport, RepositoryError> {
-        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
@@ -1812,10 +1964,14 @@ impl crate::ApiOperationTransaction<'_, '_> {
         let mut media = current.media.clone();
         let count = media.links.iter().filter(|link| link.slot == slot).count();
         if (slot != PersonaMediaSlot::DesignReference && ordinal != 0)
-            || usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? > count
+            || usize::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                reason: error.to_string(),
+            })? > count
             || (slot == PersonaMediaSlot::DesignReference
                 && asset.is_none()
-                && usize::try_from(ordinal).map_err(|_| RepositoryError::Storage)? == count)
+                && usize::try_from(ordinal).map_err(|error| RepositoryError::Storage {
+                    reason: error.to_string(),
+                })? == count)
         {
             return Err(RepositoryError::Invalid(
                 lettuce_characters::ValidationError::InvalidValue { field: "ordinal" },
@@ -1914,7 +2070,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 replace_media(self.transaction, id, &media)?;
                 let after = load_persona(self.transaction, id)
                     .map_err(db_error)?
-                    .ok_or(RepositoryError::Storage)?;
+                    .ok_or_else(|| RepositoryError::Storage {
+                        reason: "save persona: a required value is missing".to_owned(),
+                    })?;
                 after.validate()?;
                 record_persona_media_assets(
                     self.transaction,
@@ -1923,7 +2081,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 )?;
                 let operation = entity_scoped_operation(
                     self.transaction,
-                    &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+                    &persona_sync_entity(id).map_err(|error| RepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?,
                     persona_revise_operation(id, expected),
                 )
                 .map_err(sync_error)?;
@@ -1932,7 +2092,9 @@ impl crate::ApiOperationTransaction<'_, '_> {
                     .map_err(sync_error)?
                     .created
                 {
-                    return Err(RepositoryError::Storage);
+                    return Err(RepositoryError::Storage {
+                        reason: "save persona: stored data failed a consistency check".to_owned(),
+                    });
                 }
                 Ok(after)
             }
@@ -4091,7 +4253,9 @@ mod tests {
         let mut persona = Persona::new(PersonaId::new(), "Persona".into(), "Description".into(), TimestampMillis::new(1)).expect("persona");
         persona.media.links.push(PersonaMediaLink { asset_id: asset, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
         let persona = PersonaRepository::create(&database, persona).expect("create");
-        database.commit_api_operation::<Persona, crate::ApiOperationError>("persona_save", "unchanged", "digest", TimestampMillis::new(10), |scope| scope.save_persona(Some(persona.id), Some(Revision::INITIAL), PersonaDraftUpdate { title: persona.title.clone(), description: persona.description.clone(), nickname: None, design_description: None, avatar_crop: None, image_recommendation: None }, persona.media.clone(), TimestampMillis::new(10)).map_err(|_| crate::ApiOperationError::Storage)).expect("save");
+        database.commit_api_operation::<Persona, crate::ApiOperationError>("persona_save", "unchanged", "digest", TimestampMillis::new(10), |scope| scope.save_persona(Some(persona.id), Some(Revision::INITIAL), PersonaDraftUpdate { title: persona.title.clone(), description: persona.description.clone(), nickname: None, design_description: None, avatar_crop: None, image_recommendation: None }, persona.media.clone(), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "persona save keeps unchanged avatar out of gc failed"); crate::ApiOperationError::Storage {
+            reason: "injected failure",
+        } })).expect("save");
         let queued: i64 = database.connection().expect("lock").query_row("SELECT count(*) FROM media_gc_candidates", [], |row| row.get(0)).expect("queue");
         assert_eq!(queued, 0);
     }
@@ -4141,16 +4305,15 @@ mod tests {
                             RepositoryError::StaleRevision { .. } => {
                                 crate::ApiOperationError::Conflict
                             }
-                            _ => crate::ApiOperationError::Storage,
+                            _ => crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            },
                         })
                 },
             )
         };
         database.connection().expect("lock").execute_batch("CREATE TEMP TRIGGER fail_persona_save_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late failure'); END;").expect("fault");
-        assert_eq!(
-            apply("save", "digest", Revision::INITIAL),
-            Err(crate::ApiOperationError::Storage)
-        );
+        assert!(matches!(apply("save", "digest", Revision::INITIAL), Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             PersonaRepository::get(&database, id).expect("get"),
             Some(persona)
@@ -4228,7 +4391,9 @@ mod tests {
                                 PersonaMedia::default(),
                                 TimestampMillis::new(2),
                             )
-                            .map_err(|_| crate::ApiOperationError::Storage)
+                            .map_err(|error| { tracing::warn!(%error, "persona save process exit preserves fields media and replay state failed"); crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            } })
                     },
                 )
                 .expect("save");
@@ -4298,7 +4463,9 @@ mod tests {
                             PersonaMedia::default(),
                             TimestampMillis::new(2),
                         )
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "persona save process exit preserves fields media and replay state failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             )
             .expect("retry");
@@ -4351,7 +4518,9 @@ mod tests {
                                         RepositoryError::StaleRevision { .. } => {
                                             crate::ApiOperationError::Conflict
                                         }
-                                        _ => crate::ApiOperationError::Storage,
+                                        _ => crate::ApiOperationError::Storage {
+                                            reason: "injected failure",
+                                        },
                                     })
                             },
                         )
@@ -4405,10 +4574,12 @@ mod tests {
                             before.revision,
                             TimestampMillis::new(2),
                         )
-                        .map_err(|_| crate::ApiOperationError::Storage)
+                        .map_err(|error| { tracing::warn!(%error, "persona default and receipt roll back together failed"); crate::ApiOperationError::Storage {
+                            reason: "injected failure",
+                        } })
                 },
             );
-        assert_eq!(result, Err(crate::ApiOperationError::Storage));
+        assert!(matches!(result, Err(crate::ApiOperationError::Storage { .. })));
         assert_eq!(
             PersonaRepository::get_default_snapshot(&database)
                 .expect("default")
@@ -4454,7 +4625,9 @@ mod tests {
                             RepositoryError::StaleRevision { .. } => {
                                 crate::ApiOperationError::Conflict
                             }
-                            _ => crate::ApiOperationError::Storage,
+                            _ => crate::ApiOperationError::Storage {
+                                reason: "injected failure",
+                            },
                         })
                 },
             )

@@ -76,14 +76,16 @@ impl LegacyArchive {
         let mut zip = self
             .zip
             .lock()
-            .map_err(|_| LegacyBackupInventoryError::InvalidArchive)?;
-        let mut file = zip
-            .by_index(index)
-            .map_err(archive_error)?;
+            .map_err(|_| LegacyBackupInventoryError::InvalidArchive {
+                reason: "archive lock is poisoned".to_owned(),
+            })?;
+        let mut file = zip.by_index(index).map_err(archive_error)?;
         let encrypted = read_bounded(&mut file, MAX_LEGACY_BACKUP_ENTRY_BYTES as u64 + 16)?;
         let decrypted = Zeroizing::new(decrypt(&encrypted, &self.key, &self.nonce)?);
         if decrypted.len() > MAX_LEGACY_BACKUP_ENTRY_BYTES {
-            return Err(LegacyBackupInventoryError::LimitExceeded);
+            return Err(LegacyBackupInventoryError::LimitExceeded {
+                reason: "decrypted entry exceeds the size limit",
+            });
         }
         Ok(decrypted)
     }
@@ -91,8 +93,8 @@ impl LegacyArchive {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LegacyMediaReadError {
-    #[error("legacy media file could not be read")]
-    Unreadable,
+    #[error("legacy media file could not be read: {reason}")]
+    Unreadable { reason: String },
     #[error("legacy media file exceeds {limit} bytes")]
     TooLarge { limit: u64 },
     #[error("legacy media changed after it was inventoried")]
@@ -122,10 +124,15 @@ impl LegacyBackupMedia {
         path: PathBuf,
         max_bytes: u64,
     ) -> Result<Self, LegacyMediaReadError> {
-        let file = std::fs::File::open(&path).map_err(|_| LegacyMediaReadError::Unreadable)?;
+        let file =
+            std::fs::File::open(&path).map_err(|error| LegacyMediaReadError::Unreadable {
+                reason: format!("opening the legacy media file failed: {error}"),
+            })?;
         let mut hasher = blake3::Hasher::new();
         let byte_len = std::io::copy(&mut file.take(max_bytes.saturating_add(1)), &mut hasher)
-            .map_err(|_| LegacyMediaReadError::Unreadable)?;
+            .map_err(|error| LegacyMediaReadError::Unreadable {
+                reason: format!("reading the legacy media file failed: {error}"),
+            })?;
         if byte_len > max_bytes {
             return Err(LegacyMediaReadError::TooLarge { limit: max_bytes });
         }
@@ -152,12 +159,18 @@ impl LegacyBackupMedia {
                         file.take(self.byte_len.saturating_add(1))
                             .read_to_end(&mut bytes)
                     })
-                    .map_err(|_| LegacyMediaReadError::Unreadable)?;
+                    .map_err(|error| LegacyMediaReadError::Unreadable {
+                        reason: format!("reading the legacy media entry failed: {error}"),
+                    })?;
                 bytes
             }
-            LegacyMediaSource::Archive(archive, index) => archive
-                .entry(*index)
-                .map_err(|_| LegacyMediaReadError::Unreadable)?,
+            LegacyMediaSource::Archive(archive, index) => {
+                archive
+                    .entry(*index)
+                    .map_err(|error| LegacyMediaReadError::Unreadable {
+                        reason: format!("opening the legacy media archive entry failed: {error}"),
+                    })?
+            }
         };
         if bytes.len() as u64 != self.byte_len || content_hash(&bytes) != self.content_hash {
             return Err(LegacyMediaReadError::Changed);
@@ -294,29 +307,44 @@ impl LegacyBackupMediaRoot {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LegacyBackupInventoryError {
-    #[error("legacy backup source could not be read")]
-    Io,
+    #[error("legacy backup source could not be read: {reason}")]
+    Io { reason: String },
     #[error("legacy backup password is invalid")]
     InvalidPassword,
-    #[error("legacy backup archive is malformed")]
-    InvalidArchive,
-    #[error("legacy backup manifest is unsupported or malformed")]
-    InvalidManifest,
-    #[error("legacy backup inventory is unsafe or inconsistent")]
-    InvalidInventory,
-    #[error("legacy backup exceeds its size or entry limit")]
-    LimitExceeded,
+    #[error("legacy backup archive is malformed: {reason}")]
+    InvalidArchive { reason: String },
+    #[error("legacy backup manifest is unsupported or malformed: {reason}")]
+    InvalidManifest { reason: String },
+    #[error("legacy backup inventory is unsafe or inconsistent: {reason}")]
+    InvalidInventory { reason: String },
+    #[error("legacy backup exceeds its size or entry limit: {reason}")]
+    LimitExceeded { reason: &'static str },
     #[error("legacy backup authentication failed")]
     Authentication,
 }
 
 fn read_error(failure: std::io::Error) -> LegacyBackupInventoryError {
-    if matches!(failure.kind(), std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::InvalidData) { LegacyBackupInventoryError::InvalidArchive }
-    else { LegacyBackupInventoryError::Io }
+    if matches!(
+        failure.kind(),
+        std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::InvalidData
+    ) {
+        LegacyBackupInventoryError::InvalidArchive {
+            reason: format!("archive ended early or has invalid data: {failure}"),
+        }
+    } else {
+        LegacyBackupInventoryError::Io {
+            reason: format!("reading the archive failed: {failure}"),
+        }
+    }
 }
 
 fn archive_error(failure: zip::result::ZipError) -> LegacyBackupInventoryError {
-    match failure { zip::result::ZipError::Io(failure) => read_error(failure), _ => LegacyBackupInventoryError::InvalidArchive }
+    match failure {
+        zip::result::ZipError::Io(failure) => read_error(failure),
+        failure => LegacyBackupInventoryError::InvalidArchive {
+            reason: format!("archive is malformed: {failure}"),
+        },
+    }
 }
 
 #[derive(Deserialize)]
@@ -333,15 +361,20 @@ fn read_manifest<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
 ) -> Result<LegacyManifest, LegacyBackupInventoryError> {
     let manifest_bytes = read_public_entry(archive, "manifest.json", MAX_LEGACY_MANIFEST_BYTES)?;
-    let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes)
-        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?;
+    let manifest: LegacyManifest = serde_json::from_slice(&manifest_bytes).map_err(|error| {
+        LegacyBackupInventoryError::InvalidManifest {
+            reason: format!("manifest is not valid json: {error}"),
+        }
+    })?;
     if manifest.version != LEGACY_MANIFEST_VERSION
         || !manifest.encrypted
         || manifest.app_version.is_empty()
         || manifest.app_version.len() > 64
         || manifest.app_version.chars().any(char::is_control)
     {
-        return Err(LegacyBackupInventoryError::InvalidManifest);
+        return Err(LegacyBackupInventoryError::InvalidManifest {
+            reason: "manifest version, encryption flag or app version is invalid".to_owned(),
+        });
     }
     Ok(manifest)
 }
@@ -351,12 +384,16 @@ pub fn zip_has_legacy_backup_manifest(
 ) -> Result<bool, LegacyBackupInventoryError> {
     let mut archive = match ZipArchive::new(input).map_err(archive_error) {
         Ok(archive) => archive,
-        Err(LegacyBackupInventoryError::Io) => return Err(LegacyBackupInventoryError::Io),
+        Err(LegacyBackupInventoryError::Io { reason }) => {
+            return Err(LegacyBackupInventoryError::Io { reason });
+        }
         Err(_) => return Ok(false),
     };
     match read_manifest(&mut archive) {
         Ok(_) => Ok(true),
-        Err(LegacyBackupInventoryError::Io) => Err(LegacyBackupInventoryError::Io),
+        Err(LegacyBackupInventoryError::Io { reason }) => {
+            Err(LegacyBackupInventoryError::Io { reason })
+        }
         Err(_) => Ok(false),
     }
 }
@@ -373,8 +410,11 @@ pub fn read_legacy_backup_header(
     Ok(crate::BackupHeader {
         version: 1,
         created_at: lettuce_types::TimestampMillis::new(
-            i64::try_from(manifest.created_at)
-                .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?,
+            i64::try_from(manifest.created_at).map_err(|_| {
+                LegacyBackupInventoryError::InvalidManifest {
+                    reason: "manifest creation time exceeds the i64 range".to_owned(),
+                }
+            })?,
         ),
         app_version: manifest.app_version,
     })
@@ -399,7 +439,9 @@ pub fn decode_legacy_backup_inventory(
         .read_exact(&mut prefix)
         .map_err(read_error)?;
     if prefix != *b"PK\x03\x04" {
-        return Err(LegacyBackupInventoryError::InvalidArchive);
+        return Err(LegacyBackupInventoryError::InvalidArchive {
+            reason: "file does not start with a zip signature".to_owned(),
+        });
     }
     input
         .seek(SeekFrom::Start(0))
@@ -413,7 +455,9 @@ pub fn decode_legacy_backup_inventory(
     let mut archive = ZipArchive::new(Box::new(input) as Box<dyn crate::BackupSource>)
         .map_err(archive_error)?;
     if archive.is_empty() || archive.len() > MAX_BACKUP_ENTRIES {
-        return Err(LegacyBackupInventoryError::LimitExceeded);
+        return Err(LegacyBackupInventoryError::LimitExceeded {
+            reason: "archive is empty or has too many entries",
+        });
     }
     validate_archive_metadata(&mut archive)?;
     let manifest = read_manifest(&mut archive)?;
@@ -450,7 +494,9 @@ pub fn decode_legacy_backup_inventory(
                 && name.ends_with(".json")
                 && document_kind(&format!("{name}.enc")).is_some() =>
             {
-                return Err(LegacyBackupInventoryError::InvalidInventory);
+                return Err(LegacyBackupInventoryError::InvalidInventory {
+                    reason: "encrypted data document has no matching plain entry".to_owned(),
+                });
             }
             None => {
                 warnings.push(LegacyBackupWarning::UnknownEntry { name });
@@ -510,21 +556,29 @@ fn validate_archive_metadata(
             .map_err(archive_error)?;
         let name = normalize_archive_name(file.name())?;
         if !names.insert(name.clone()) {
-            return Err(LegacyBackupInventoryError::InvalidInventory);
+            return Err(LegacyBackupInventoryError::InvalidInventory {
+                reason: "archive entry name is duplicated".to_owned(),
+            });
         }
         if file.is_dir() {
             continue;
         }
         let max_entry = u64::try_from(MAX_LEGACY_BACKUP_ENTRY_BYTES)
-            .map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
+            .map_err(|_| LegacyBackupInventoryError::LimitExceeded {
+                reason: "entry size limit exceeds the u64 range",
+            })?
             .saturating_add(16);
         if file.size() > max_entry {
-            return Err(LegacyBackupInventoryError::LimitExceeded);
+            return Err(LegacyBackupInventoryError::LimitExceeded {
+                reason: "archive entry exceeds the size limit",
+            });
         }
         total = total
             .checked_add(file.size())
             .filter(|total| *total <= crate::MAX_BACKUP_TOTAL_BYTES)
-            .ok_or(LegacyBackupInventoryError::LimitExceeded)?;
+            .ok_or(LegacyBackupInventoryError::LimitExceeded {
+                reason: "archive total size exceeds the limit",
+            })?;
     }
     Ok(())
 }
@@ -534,11 +588,16 @@ fn read_public_entry<R: Read + std::io::Seek>(
     name: &str,
     max_bytes: u64,
 ) -> Result<Vec<u8>, LegacyBackupInventoryError> {
-    let mut file = archive
-        .by_name(name)
-        .map_err(|failure| match failure { zip::result::ZipError::Io(failure) => read_error(failure), _ => LegacyBackupInventoryError::InvalidInventory })?;
+    let mut file = archive.by_name(name).map_err(|failure| match failure {
+        zip::result::ZipError::Io(failure) => read_error(failure),
+        failure => LegacyBackupInventoryError::InvalidInventory {
+            reason: format!("archive entry could not be opened: {failure}"),
+        },
+    })?;
     if file.is_dir() || file.size() > max_bytes {
-        return Err(LegacyBackupInventoryError::LimitExceeded);
+        return Err(LegacyBackupInventoryError::LimitExceeded {
+            reason: "archive entry is a directory or exceeds the size limit",
+        });
     }
     read_bounded(&mut file, max_bytes)
 }
@@ -552,10 +611,13 @@ fn read_bounded(
         .take(max_bytes.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(read_error)?;
-    if u64::try_from(bytes.len()).map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
-        > max_bytes
+    if u64::try_from(bytes.len()).map_err(|_| LegacyBackupInventoryError::LimitExceeded {
+        reason: "entry length exceeds the u64 range",
+    })? > max_bytes
     {
-        return Err(LegacyBackupInventoryError::LimitExceeded);
+        return Err(LegacyBackupInventoryError::LimitExceeded {
+            reason: "entry exceeds the size limit",
+        });
     }
     Ok(bytes)
 }
@@ -595,7 +657,9 @@ fn media_name(
 ) -> Result<(LegacyBackupMediaRoot, Vec<String>), LegacyBackupInventoryError> {
     let plain = name
         .strip_suffix(".enc")
-        .ok_or(LegacyBackupInventoryError::InvalidInventory)?;
+        .ok_or(LegacyBackupInventoryError::InvalidInventory {
+            reason: "media entry name has no encrypted suffix".to_owned(),
+        })?;
     let mut segments = plain.split('/');
     let root = match segments.next() {
         Some("images") => LegacyBackupMediaRoot::Images,
@@ -603,11 +667,17 @@ fn media_name(
         Some("attachments") => LegacyBackupMediaRoot::Attachments,
         Some("sessions") => LegacyBackupMediaRoot::Sessions,
         Some("generated_images") => LegacyBackupMediaRoot::GeneratedImages,
-        _ => return Err(LegacyBackupInventoryError::InvalidInventory),
+        _ => {
+            return Err(LegacyBackupInventoryError::InvalidInventory {
+                reason: "media entry is not under a known media root".to_owned(),
+            });
+        }
     };
     let relative_segments = segments.map(str::to_owned).collect::<Vec<_>>();
     if relative_segments.is_empty() {
-        return Err(LegacyBackupInventoryError::InvalidInventory);
+        return Err(LegacyBackupInventoryError::InvalidInventory {
+            reason: "media entry has no path under its root".to_owned(),
+        });
     }
     Ok((root, relative_segments))
 }
@@ -632,7 +702,9 @@ fn normalize_archive_name(name: &str) -> Result<String, LegacyBackupInventoryErr
     if safe_archive_name(&normalized) {
         Ok(normalized)
     } else {
-        Err(LegacyBackupInventoryError::InvalidInventory)
+        Err(LegacyBackupInventoryError::InvalidInventory {
+            reason: "archive entry name is not a safe relative path".to_owned(),
+        })
     }
 }
 
@@ -647,11 +719,17 @@ fn decode_array<const N: usize>(
     value: Option<&str>,
 ) -> Result<[u8; N], LegacyBackupInventoryError> {
     let decoded = general_purpose::STANDARD
-        .decode(value.ok_or(LegacyBackupInventoryError::InvalidManifest)?)
-        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)?;
+        .decode(value.ok_or(LegacyBackupInventoryError::InvalidManifest {
+            reason: "manifest has no value for a required field".to_owned(),
+        })?)
+        .map_err(|error| LegacyBackupInventoryError::InvalidManifest {
+            reason: format!("manifest field is not valid base64: {error}"),
+        })?;
     decoded
         .try_into()
-        .map_err(|_| LegacyBackupInventoryError::InvalidManifest)
+        .map_err(|_| LegacyBackupInventoryError::InvalidManifest {
+            reason: "manifest field has an unexpected length".to_owned(),
+        })
 }
 
 fn validate_password(password: &str) -> Result<(), LegacyBackupInventoryError> {
@@ -815,7 +893,7 @@ mod tests {
             decode(valid, "wrong password"),
             Err(LegacyBackupInventoryError::Authentication)
         );
-        assert_eq!(
+        assert!(matches!(
             decode(
                 archive(
                     LEGACY_MANIFEST_VERSION,
@@ -823,17 +901,17 @@ mod tests {
                 ),
                 PASSWORD,
             ),
-            Err(LegacyBackupInventoryError::InvalidInventory)
-        );
-        assert_eq!(
+            Err(LegacyBackupInventoryError::InvalidInventory { .. })
+        ));
+        assert!(matches!(
             decode(archive(3, &[]), PASSWORD),
-            Err(LegacyBackupInventoryError::InvalidManifest)
-        );
+            Err(LegacyBackupInventoryError::InvalidManifest { .. })
+        ));
     }
 
     #[test]
     fn legacy_inventory_rejects_duplicate_and_traversing_entries() {
-        assert_eq!(
+        assert!(matches!(
             decode(
                 archive(
                     LEGACY_MANIFEST_VERSION,
@@ -844,9 +922,9 @@ mod tests {
                 ),
                 PASSWORD,
             ),
-            Err(LegacyBackupInventoryError::InvalidInventory)
-        );
-        assert_eq!(
+            Err(LegacyBackupInventoryError::InvalidInventory { .. })
+        ));
+        assert!(matches!(
             decode(
                 archive(
                     LEGACY_MANIFEST_VERSION,
@@ -854,13 +932,13 @@ mod tests {
                 ),
                 PASSWORD,
             ),
-            Err(LegacyBackupInventoryError::InvalidInventory)
-        );
+            Err(LegacyBackupInventoryError::InvalidInventory { .. })
+        ));
     }
 
     #[test]
     fn legacy_inventory_rejects_absolute_windows_paths() {
-        assert_eq!(
+        assert!(matches!(
             decode(
                 archive(
                     LEGACY_MANIFEST_VERSION,
@@ -868,8 +946,8 @@ mod tests {
                 ),
                 PASSWORD
             ),
-            Err(LegacyBackupInventoryError::InvalidInventory)
-        );
+            Err(LegacyBackupInventoryError::InvalidInventory { .. })
+        ));
     }
 
     #[test]

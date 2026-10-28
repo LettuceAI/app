@@ -36,12 +36,14 @@ pub(crate) struct RowTable {
 #[derive(Debug)]
 pub(crate) enum RowSyncError {
     Pending,
-    Corrupt,
-    Storage,
+    Corrupt { reason: String },
+    Storage { reason: String },
 }
 
-fn storage(_: impl std::fmt::Debug) -> RowSyncError {
-    RowSyncError::Storage
+fn storage(error: impl std::fmt::Debug) -> RowSyncError {
+    RowSyncError::Storage {
+        reason: format!("{error:?}"),
+    }
 }
 
 fn key_expression(spec: &RowTable) -> String {
@@ -63,7 +65,9 @@ fn key_values(spec: &RowTable, id: &str) -> Result<Vec<Value>, RowSyncError> {
         if index + 1 == spec.key.len() {
             values.push(Value::Text(rest.to_owned()));
         } else {
-            let (value, tail) = rest.split_once(':').ok_or(RowSyncError::Corrupt)?;
+            let (value, tail) = rest.split_once(':').ok_or_else(|| RowSyncError::Corrupt {
+                reason: "a composite row key has fewer parts than its columns".to_owned(),
+            })?;
             values.push(Value::Text(value.to_owned()));
             rest = tail;
         }
@@ -88,10 +92,18 @@ fn to_json(value: Value) -> Result<serde_json::Value, RowSyncError> {
         Value::Null => serde_json::Value::Null,
         Value::Integer(value) => serde_json::Value::Number(value.into()),
         Value::Real(value) => {
-            serde_json::Value::Number(Number::from_f64(value).ok_or(RowSyncError::Corrupt)?)
+            serde_json::Value::Number(Number::from_f64(value).ok_or_else(|| {
+                RowSyncError::Corrupt {
+                    reason: "a stored real number is not finite".to_owned(),
+                }
+            })?)
         }
         Value::Text(value) => serde_json::Value::String(value),
-        Value::Blob(_) => return Err(RowSyncError::Corrupt),
+        Value::Blob(_) => {
+            return Err(RowSyncError::Corrupt {
+                reason: "a blob column cannot be synced as JSON".to_owned(),
+            });
+        }
     })
 }
 
@@ -101,10 +113,16 @@ fn to_sql(value: &serde_json::Value) -> Result<Value, RowSyncError> {
         serde_json::Value::Bool(value) => Value::Integer(i64::from(*value)),
         serde_json::Value::Number(number) => match number.as_i64() {
             Some(value) => Value::Integer(value),
-            None => Value::Real(number.as_f64().ok_or(RowSyncError::Corrupt)?),
+            None => Value::Real(number.as_f64().ok_or_else(|| RowSyncError::Corrupt {
+                reason: "a JSON number is not representable".to_owned(),
+            })?),
         },
         serde_json::Value::String(value) => Value::Text(value.clone()),
-        _ => return Err(RowSyncError::Corrupt),
+        _ => {
+            return Err(RowSyncError::Corrupt {
+                reason: "a JSON value has no SQL column type".to_owned(),
+            });
+        }
     })
 }
 
@@ -141,14 +159,18 @@ pub(crate) fn row_decode(
     bytes: &[u8],
 ) -> Result<Map<String, serde_json::Value>, RowSyncError> {
     let object: Map<String, serde_json::Value> =
-        serde_json::from_slice(bytes).map_err(|_| RowSyncError::Corrupt)?;
+        serde_json::from_slice(bytes).map_err(|error| RowSyncError::Corrupt {
+            reason: format!("a synced row is not a JSON object: {error}"),
+        })?;
     if object.len() != spec.columns.len()
         || spec
             .columns
             .iter()
             .any(|column| !object.contains_key(*column))
     {
-        return Err(RowSyncError::Corrupt);
+        return Err(RowSyncError::Corrupt {
+            reason: "a synced row does not carry exactly the table columns".to_owned(),
+        });
     }
     for value in object.values() {
         to_sql(value)?;
@@ -183,10 +205,14 @@ pub(crate) fn row_materialize(
         "legacy_usage_records" => {
             let mut keys = key_values(spec, id)?.into_iter().map(|value| match value {
                 Value::Text(value) => Ok(value),
-                _ => Err(RowSyncError::Corrupt),
+                _ => Err(RowSyncError::Corrupt {
+                    reason: "a legacy usage key part is not text".to_owned(),
+                }),
             });
             let (Some(run_id), Some(source_id)) = (keys.next(), keys.next()) else {
-                return Err(RowSyncError::Corrupt);
+                return Err(RowSyncError::Corrupt {
+                    reason: "a legacy usage key has fewer than two parts".to_owned(),
+                });
             };
             Some(
                 lettuce_usage::UsageTombstone::Legacy {
@@ -231,7 +257,9 @@ pub(crate) fn row_materialize(
             .columns
             .iter()
             .position(|column| *column == reference.column)
-            .ok_or(RowSyncError::Corrupt)?;
+            .ok_or_else(|| RowSyncError::Corrupt {
+                reason: "a row reference names a column the table does not have".to_owned(),
+            })?;
         if values[index] == Value::Null || exists(transaction, reference.table, &values[index])? {
             continue;
         }
@@ -255,7 +283,9 @@ pub(crate) fn row_materialize(
                     .iter()
                     .position(|name| name == column)
                     .map(|index| values[index].clone())
-                    .ok_or(RowSyncError::Corrupt)
+                    .ok_or_else(|| RowSyncError::Corrupt {
+                        reason: "an identity column is not among the table columns".to_owned(),
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         if identity.iter().all(|value| *value == Value::Null) {

@@ -48,8 +48,8 @@ pub enum StagedLorebookPlannerDispatchError {
     Jobs(#[from] StoreError),
     #[error("staged lorebook planner repository operation failed: {0}")]
     Repository(#[from] StagedLorebookRepositoryError),
-    #[error("staged lorebook planner claimed work is inconsistent")]
-    InvalidWork,
+    #[error("staged lorebook planner claimed work is inconsistent: {reason}")]
+    InvalidWork { reason: &'static str },
 }
 
 #[derive(Debug)]
@@ -78,14 +78,20 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<Option<StagedLorebookPlannerClaimedWork>, StagedLorebookPlannerDispatchError> {
         let run = self.runs.load_staged_lorebook(request_id)?;
         if run.project.stage != StagedLorebookStage::Planning {
-            return Err(StagedLorebookPlannerDispatchError::InvalidWork);
+            return Err(StagedLorebookPlannerDispatchError::InvalidWork {
+                reason: "staged lorebook project is not in the planning stage",
+            });
         }
-        let job = self
-            .jobs
-            .get(run.job_id)?
-            .ok_or(StagedLorebookPlannerDispatchError::InvalidWork)?;
+        let job =
+            self.jobs
+                .get(run.job_id)?
+                .ok_or(StagedLorebookPlannerDispatchError::InvalidWork {
+                    reason: "job of the run is missing from the store",
+                })?;
         if job.kind != JobKind::CreationRun {
-            return Err(StagedLorebookPlannerDispatchError::InvalidWork);
+            return Err(StagedLorebookPlannerDispatchError::InvalidWork {
+                reason: "job kind does not match the run",
+            });
         }
         let at = now.max(job.updated_at);
         let Some(claim) = self
@@ -95,7 +101,9 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::Request(request_id) {
-            return Err(StagedLorebookPlannerDispatchError::InvalidWork);
+            return Err(StagedLorebookPlannerDispatchError::InvalidWork {
+                reason: "claim input differs from the run",
+            });
         }
         let handle = JobHandle::new(run.job_id);
         self.jobs.append_and_transition(JobMutation::Start {
@@ -130,7 +138,9 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             || work.job.state != JobState::Running
             || work.claim.input_ref != OutcomeRef::Request(work.run.request_id)
         {
-            return Err(StagedLorebookPlannerDispatchError::InvalidWork);
+            return Err(StagedLorebookPlannerDispatchError::InvalidWork {
+                reason: "claimed work does not match its run, handle, job or claim input",
+            });
         }
         let at = now.max(work.job.updated_at);
         let cancelled = self
@@ -203,6 +213,7 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(StagedLorebookPlannerSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                tracing::warn!(job_id = %work.job.id, %error, "staged lorebook planner job failed");
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -220,29 +231,29 @@ fn retryable(error: &StagedLorebookPlannerExecutionError) -> bool {
         StagedLorebookPlannerExecutionError::Inference(PortError::Provider(failure)) => {
             failure.kind == ProviderFailureKind::Unavailable
         }
-        StagedLorebookPlannerExecutionError::ReplayCleanup
-        | StagedLorebookPlannerExecutionError::Repository(StagedLorebookRepositoryError::Failure) => {
-            true
-        }
+        StagedLorebookPlannerExecutionError::ReplayCleanup { .. }
+        | StagedLorebookPlannerExecutionError::Repository(
+            StagedLorebookRepositoryError::Failure { .. },
+        ) => true,
         _ => false,
     }
 }
 
 fn job_error(error: &StagedLorebookPlannerExecutionError) -> JobError {
     let (code, message) = match error {
-        StagedLorebookPlannerExecutionError::InvalidOwnership
-        | StagedLorebookPlannerExecutionError::InvalidPrompt
-        | StagedLorebookPlannerExecutionError::ContextTooLarge => (
+        StagedLorebookPlannerExecutionError::InvalidOwnership { .. }
+        | StagedLorebookPlannerExecutionError::InvalidPrompt { .. }
+        | StagedLorebookPlannerExecutionError::ContextTooLarge { .. } => (
             JobErrorCode::InvalidInput,
             "staged-lorebook-planner-invalid-input",
         ),
         StagedLorebookPlannerExecutionError::Inference(_)
-        | StagedLorebookPlannerExecutionError::InvalidResponse => (
+        | StagedLorebookPlannerExecutionError::InvalidResponse { .. } => (
             JobErrorCode::WorkerFailed,
             "staged-lorebook-planner-provider-rejected",
         ),
         StagedLorebookPlannerExecutionError::Prompt(_)
-        | StagedLorebookPlannerExecutionError::ReplayCleanup
+        | StagedLorebookPlannerExecutionError::ReplayCleanup { .. }
         | StagedLorebookPlannerExecutionError::Repository(_) => (
             JobErrorCode::StorageFailure,
             "staged-lorebook-planner-storage-failed",
@@ -267,10 +278,14 @@ mod tests {
             PortError::Unavailable
         )));
         assert!(retryable(&StagedLorebookPlannerExecutionError::Repository(
-            StagedLorebookRepositoryError::Failure
+            StagedLorebookRepositoryError::Failure {
+                reason: "simulated failure"
+            }
         )));
         assert!(!retryable(
-            &StagedLorebookPlannerExecutionError::InvalidResponse
+            &StagedLorebookPlannerExecutionError::InvalidResponse {
+                reason: "simulated failure".to_owned()
+            }
         ));
     }
 }
