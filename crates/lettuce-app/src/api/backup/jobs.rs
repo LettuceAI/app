@@ -476,10 +476,10 @@ mod fix_tests {
 
     impl crate::api::JobEventSink for RestoreStages {
         fn emit(&self, event: dto::JobEvent) -> bool {
-            if let dto::JobEvent::Progress { job } = event {
-                if let Some(label) = job.progress.label_code {
-                    self.0.lock().expect("stages").push((label, std::thread::current().id()));
-                }
+            if let dto::JobEvent::Progress { job } = event
+                && let Some(label) = job.progress.label_code
+            {
+                self.0.lock().expect("stages").push((label, std::thread::current().id()));
             }
             true
         }
@@ -493,11 +493,12 @@ mod fix_tests {
         stages.0.lock().expect("initial snapshot").clear();
         let runtime_thread = std::thread::current().id();
         Box::new(fixture.work).run(fixture.harness.context.clone(), Arc::new(super::super::tests::Progress)).await.expect("restore");
-        let recorded = stages.0.lock().expect("stages");
-        let labels: Vec<_> = recorded.iter().map(|(label, _)| label.as_str()).collect();
-        assert_eq!(labels, ["decode", "stage", "write", "verify", "switch"]);
-        assert!(recorded.iter().all(|(_, thread)| *thread != runtime_thread), "restore work must leave the async runtime available for other tasks");
-        drop(recorded);
+        {
+            let recorded = stages.0.lock().expect("stages");
+            let labels: Vec<_> = recorded.iter().map(|(label, _)| label.as_str()).collect();
+            assert_eq!(labels, ["decode", "stage", "write", "verify", "switch"]);
+            assert!(recorded.iter().all(|(_, thread)| *thread != runtime_thread), "restore work must leave the async runtime available for other tasks");
+        }
         let workers = fixture.host.workers.lock().expect("workers").take().expect("started");
         workers.stop_for_restore().await.expect("stop");
     }

@@ -837,9 +837,8 @@ fn parse_tool_call(
     arguments: Option<serde_json::Value>,
 ) -> Result<ProposedToolCall, AdapterError> {
     let (arguments, raw_arguments) = crate::common::checked_tool_argument_value(arguments)
-        .map_err(|error| {
+        .inspect_err(|_| {
             tracing::warn!(reason = "invalid_tool_arguments", "provider tool arguments are incomplete or not an object");
-            error
         })?;
     let call = ProposedToolCall {
         provider_call_id: Some(

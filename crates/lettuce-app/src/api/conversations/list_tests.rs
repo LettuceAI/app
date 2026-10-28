@@ -541,7 +541,7 @@ async fn a_failed_change_read_is_retried_without_another_signal() {
         &context,
         Arc::new(move |context: &crate::api::ApiContext, after, limit| {
             if remaining
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
                     left.checked_sub(1)
                 })
                 .is_ok()

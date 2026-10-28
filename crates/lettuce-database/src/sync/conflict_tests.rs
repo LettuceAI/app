@@ -116,7 +116,6 @@ fn edit(database: &Database, kind: &str, id: &str, name: &str, at: i64) {
     let mut connection = database.connection().expect("connection");
     let tx = connection.transaction().expect("transaction");
     let payload = (codec.current)(&tx, id)
-        .ok()
         .expect("current")
         .expect("present");
     let mut value: serde_json::Value = serde_json::from_slice(payload.bytes()).expect("value");
@@ -150,7 +149,6 @@ fn edit(database: &Database, kind: &str, id: &str, name: &str, at: i64) {
         child
     }).collect());
     (codec.materialize)(&tx, id, &serde_json::to_vec(&value).expect("payload"))
-        .ok()
         .expect("edit");
     tx.commit().expect("commit");
 }
@@ -193,7 +191,6 @@ fn character_lorebook_and_prompt_resolutions_propagate_replay_and_reject_stale()
             let mut connection = source.connection().expect("connection");
             let tx = connection.transaction().expect("transaction");
             (snapshot_codec(kind).expect("codec").materialize)(&tx, &id, payload.bytes())
-                .ok()
                 .expect("initial");
             tx.commit().expect("commit");
         }
@@ -270,7 +267,7 @@ fn character_lorebook_and_prompt_resolutions_propagate_replay_and_reject_stale()
         let value = |database: &Database| {
             let mut connection = database.connection().expect("connection");
             let tx = connection.transaction().expect("transaction");
-            (codec.current)(&tx, &id).ok().expect("current")
+            (codec.current)(&tx, &id).expect("current")
         };
         assert_eq!(value(&source), value(&target));
     }
@@ -285,7 +282,6 @@ fn deleted_current_is_acknowledged_and_other_cannot_recreate_the_character() {
         let mut connection = source.connection().expect("connection");
         let tx = connection.transaction().expect("transaction");
         (CHARACTER_CODEC.materialize)(&tx, &id, payload.bytes())
-            .ok()
             .expect("initial");
         tx.commit().expect("commit");
     }
@@ -668,7 +664,6 @@ fn resolution_racing_incoming_apply_never_overwrites_an_unobserved_current_snaps
             let mut connection = source.connection().expect("connection");
             let tx = connection.transaction().expect("transaction");
             (snapshot_codec(kind).expect("codec").materialize)(&tx, &id, payload.bytes())
-                .ok()
                 .expect("initial");
             tx.commit().expect("commit");
         }
@@ -860,7 +855,7 @@ fn aggregate_resolutions_replace_or_keep_the_chosen_children() {
             {
                 let mut connection = source.connection().expect("connection");
                 let tx = connection.transaction().expect("transaction");
-                (snapshot_codec(kind).expect("codec").materialize)(&tx, &id, payload.bytes()).ok().expect("initial");
+                (snapshot_codec(kind).expect("codec").materialize)(&tx, &id, payload.bytes()).expect("initial");
                 tx.commit().expect("commit");
             }
             replicate(&source, &target, 2);
@@ -872,7 +867,7 @@ fn aggregate_resolutions_replace_or_keep_the_chosen_children() {
             let children = |database: &Database| {
                 let mut connection = database.connection().expect("connection");
                 let tx = connection.transaction().expect("transaction");
-                let payload = (snapshot_codec(kind).expect("codec").current)(&tx, &id).ok().expect("current").expect("present");
+                let payload = (snapshot_codec(kind).expect("codec").current)(&tx, &id).expect("current").expect("present");
                 let value: serde_json::Value = serde_json::from_slice(payload.bytes()).expect("snapshot");
                 value[if kind == "character" { "scenes" } else { "entries" }].clone()
             };

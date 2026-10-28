@@ -1643,8 +1643,7 @@ fn customization_legacy_snapshots_keep_differences_and_inherit_old_global_matche
     let mut global = lettuce_settings::GlobalSettings::default();
     global.ui_preferences.0.insert("appearanceInheritanceBaseline".to_owned(), serde_json::json!({"fontSize":"medium","bubbleOpacity":35}));
     global.ui_preferences.0.insert("chatAppearance".to_owned(), serde_json::json!({"fontSize":"xlarge","bubbleOpacity":80}));
-    let mut presentation = lettuce_characters::CharacterPresentationV1::default();
-    presentation.chat_appearance_overrides = None;
+    let mut presentation = lettuce_characters::CharacterPresentationV1 { chat_appearance_overrides: None, ..Default::default() };
     let value = super::settings::resolved_appearance(&global, Some(&presentation)).expect("appearance");
     assert_eq!(value["fontSize"], "xlarge");
     assert_eq!(value["bubbleOpacity"], 80);

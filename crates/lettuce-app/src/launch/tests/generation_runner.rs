@@ -4740,7 +4740,7 @@ async fn run_plain_dynamic_cycle_with_racing_edits(edits: usize, cancel: bool) {
         ) -> Result<EmbeddingVector, crate::EmbeddingGenerationError> {
             if self
                 .remaining
-                .fetch_update(
+                .try_update(
                     std::sync::atomic::Ordering::SeqCst,
                     std::sync::atomic::Ordering::SeqCst,
                     |remaining| remaining.checked_sub(1),

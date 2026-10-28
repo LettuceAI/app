@@ -861,9 +861,7 @@ fn parameter_tag_arguments(raw: &str) -> Option<serde_json::Value> {
             return None;
         }
         let after_start = &trimmed[start + "<parameter".len()..];
-        let Some(name_end) = after_start.find('>') else {
-            return None;
-        };
+        let name_end = after_start.find('>')?;
         let name = after_start[..name_end]
             .trim()
             .trim_start_matches('=')
@@ -875,9 +873,7 @@ fn parameter_tag_arguments(raw: &str) -> Option<serde_json::Value> {
             return None;
         }
         let content_start = start + "<parameter".len() + name_end + 1;
-        let Some(end_rel) = trimmed[content_start..].find("</parameter>") else {
-            return None;
-        };
+        let end_rel = trimmed[content_start..].find("</parameter>")?;
         let content_end = content_start + end_rel;
         map.insert(
             name.to_owned(),

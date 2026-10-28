@@ -155,10 +155,11 @@ fn summary_background(
     match &conversation.kind {
         ConversationKind::Direct(details) => {
             let id = details.character.source_id;
-            if !characters.contains_key(&id) {
-                let loaded = CharacterRepository::get(context.backend().database(), id)
-                    .map_err(IntoApiError::into_api_error)?;
-                characters.insert(id, loaded);
+            if let std::collections::hash_map::Entry::Vacant(entry) = characters.entry(id) {
+                entry.insert(
+                    CharacterRepository::get(context.backend().database(), id)
+                        .map_err(IntoApiError::into_api_error)?,
+                );
             }
             Ok(match characters.get(&id).and_then(Option::as_ref) {
                 Some(character) => {
