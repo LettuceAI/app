@@ -214,6 +214,11 @@ describe("conversation screen", () => {
           status: "ok",
           data: {
             speaker_selection: selection,
+            ...(!selection.heuristic_fallback ? { used_sources: {
+              lorebook_entries: [{ lorebook_id: "book1", entry_id: "entry1", lorebook_name: "Harbor lore", title: "The harbor", text: "Ferries stop at dusk." }],
+              memories: [{ memory_id: "memory1", text: "Cassian remembers the crossing.", match_score_basis_points: 8300 }, { memory_id: "memory2", text: "A pinned promise.", match_score_basis_points: null }],
+              memory_summary: "We reached the harbor.",
+            } } : {}),
             prompt: null, lorebooks: [], turn_id: "t1", candidate_id: "k1", operation: "send",
             model: { display_name: "Chat model", external_model_id: "chat", provider_kind: "openrouter" },
             streaming: true,
@@ -227,6 +232,20 @@ describe("conversation screen", () => {
     fireEvent.contextMenu(await screen.findByText("Sit down."));
     expect(await screen.findByText("Why this character responded")).toBeTruthy();
     expect(await screen.findByText(selection.reason ?? "LLM selection was unavailable. Chosen using participation and recent replies.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Lorebook entries used/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Memories used/ }));
+    if (selection.heuristic_fallback) {
+      expect(screen.getAllByText("These details were not recorded for this reply.").length).toBe(2);
+    } else {
+      expect(screen.queryByText("Ferries stop at dusk.")).toBeNull();
+      expect(screen.getByText("The harbor")).toBeTruthy();
+      expect(screen.getByText("Harbor lore")).toBeTruthy();
+      expect(screen.getByText("Cassian remembers the crossing.")).toBeTruthy();
+      expect(screen.getByText("Match 83%")).toBeTruthy();
+      expect(screen.getByText("A pinned promise.")).toBeTruthy();
+      expect(screen.queryByText("We reached the harbor.")).toBeNull();
+    }
+
   });
 
   it("lets the LLM choose the next group speaker without asking the user", async () => {

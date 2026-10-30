@@ -144,6 +144,20 @@
       "mtpValue": "MTP {{value}}×",
       "promptValue": "↓{{value}}",
       "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Lorebook entries used",
+      "memories": "Memories used",
+      "memory": "Memory",
+      "match": "Match {{score}}",
+      "noLorebooks": "No lorebook entries were used for this reply.",
+      "noMemories": "No memory items were used for this reply.",
+      "notRecorded": "These details were not recorded for this reply.",
+      "searchEntries": "Search used entries",
+      "searchMemories": "Search used memories",
+      "noMatches": "Nothing matches your search.",
+      "showing": "{{shown}} of {{total}}",
+      "more": "Show more"
     }
   },
   "edit": {

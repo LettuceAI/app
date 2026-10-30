@@ -8,6 +8,7 @@ import type { TimelineMessage } from "@/api/generated/bindings";
 import { statsOf } from "../data/messages";
 import { metricsQuery, usageQuery } from "../data/queries";
 import { MessagePromptDetails, SpeakerSelectionReason } from "./MessagePromptDetails";
+import { MessageSources } from "./MessageSources";
 import { CompanionEffectRow } from "../companion/EffectSheet";
 
 export interface MessageMenuProps {
@@ -96,6 +97,7 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
       <MessageStats api={api} conversationId={conversationId} message={message} />
       {groupBranch && message.role === "assistant" && <SpeakerSelectionReason api={api} conversationId={conversationId} messageId={message.id} />}
       {companion && message.role === "assistant" && onCompanionEffect && <CompanionEffectRow key={message.id} api={api} conversationId={conversationId} message={message} onOpen={onCompanionEffect} />}
+      {message.role === "assistant" && <MessageSources key={message.id} api={api} conversationId={conversationId} messageId={message.id} />}
       <ListGroup>
         {!scene && <ListRowButton icon={<Copy size={icon.lg} />} title={t("menu.copy")} chevron={false} onClick={onCopy} />}
         {canEdit && <ListRowButton icon={<Pencil size={icon.lg} />} title={t("menu.edit")} onClick={onEdit} />}
