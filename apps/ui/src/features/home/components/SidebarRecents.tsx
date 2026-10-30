@@ -63,7 +63,7 @@ export function SidebarRecents({ api, onOpen, onMenu, heldId }: { api: ApiClient
   const fade = reduced ? { duration: 0 } : open ? { duration: 0.2, delay: 0.1 } : { duration: 0.1 };
 
   return (
-    <div className="pb-2" aria-label={t("sidebar.label")}>
+    <div className="select-none pb-2" aria-label={t("sidebar.label")}>
       {byRecency(all, openedAt).map((entry, index) => (
         <motion.section key={entry.group} aria-label={t(`recent.${entry.group}`)} initial={false} animate={{ marginTop: index === 0 ? 0 : open ? 12 : 2 }} transition={spring}>
           <motion.h2
