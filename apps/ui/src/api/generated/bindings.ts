@@ -7295,6 +7295,7 @@ export type PromptSnapshot = PromptSnapshot_Serialize | PromptSnapshot_Deseriali
  *  sent even when the character, persona or lorebooks changed since.
  */
 export type PromptSnapshot_Deserialize = {
+	speaker_selection?: SpeakerSelectionDetails | null,
 	prompt: HistoricalSourceView | null,
 	lorebooks: HistoricalSourceView[],
 	turn_id: string,
@@ -7315,6 +7316,7 @@ export type PromptSnapshot_Deserialize = {
  *  sent even when the character, persona or lorebooks changed since.
  */
 export type PromptSnapshot_Serialize = {
+	speaker_selection?: SpeakerSelectionDetails,
 	prompt: HistoricalSourceView | null,
 	lorebooks: HistoricalSourceView[],
 	turn_id: string,
@@ -8700,6 +8702,11 @@ export type SourceDeleteResult = {
 };
 
 export type SpeakerSelectionChange = { type: "set"; method: SpeakerSelectionMethod } | { type: "reset" };
+
+export type SpeakerSelectionDetails = {
+	reason: string | null,
+	heuristic_fallback: boolean,
+};
 
 export type SpeakerSelectionMethod = "llm" | "heuristic" | "round_robin" | "director" | "director_action";
 

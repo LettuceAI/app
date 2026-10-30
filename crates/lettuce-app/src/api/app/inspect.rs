@@ -82,6 +82,7 @@ pub(super) fn snapshot_view(
     let budget = &record.request.context.budget;
     let sections = record.request.context.attributions.sections.as_ref();
     dto::PromptSnapshot {
+        speaker_selection: None,
         prompt: None,
         lorebooks: Vec::new(),
         turn_id: turn_id.to_string(),
@@ -205,6 +206,10 @@ pub async fn message_prompt_snapshot(
                 )
             })?;
             let mut view = snapshot_view(context, turn.id, &candidate, &record);
+            view.speaker_selection = turn.selected_speaker.as_ref().map(|decision| dto::SpeakerSelectionDetails {
+                reason: decision.rationale_summary.clone(),
+                heuristic_fallback: decision.fallback == lettuce_conversations::SpeakerFallback::Heuristic,
+            });
             view.prompt = turn
                 .prompt
                 .as_ref()

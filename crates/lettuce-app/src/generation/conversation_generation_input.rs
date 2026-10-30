@@ -1329,12 +1329,17 @@ where
                 &global_model_settings,
             ),
             &ChatRequirements {
-                require_tools: true,
+                // Unknown support is missing metadata, not a provider rejection.
+                // Let the tool request run and fall back if the provider rejects it.
+                require_tools: model.config.capabilities.tools != lettuce_models::CapabilityStatus::Unknown,
                 ..Default::default()
             },
         ) {
             Ok(profile) => profile,
-            Err(_) => return heuristic_fallback(policy, None, None),
+            Err(error) => {
+                tracing::warn!(?error, %model_id, "speaker selection model could not be resolved; using heuristic");
+                return heuristic_fallback(policy, None, None);
+            }
         };
         let selection_text = crate::generation::runtime_text::RuntimeText::load(
             self.repository,

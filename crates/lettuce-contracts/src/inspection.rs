@@ -122,6 +122,9 @@ pub enum PromptSectionsUnavailable {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct PromptSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub speaker_selection: Option<SpeakerSelectionDetails>,
     pub prompt: Option<crate::HistoricalSourceView>,
     pub lorebooks: Vec<crate::HistoricalSourceView>,
     pub turn_id: String,
@@ -134,6 +137,14 @@ pub struct PromptSnapshot {
     pub budget: PromptBudget,
     pub sections: Option<Vec<PromptSection>>,
     pub sections_unavailable: Option<PromptSectionsUnavailable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SpeakerSelectionDetails {
+    pub reason: Option<String>,
+    pub heuristic_fallback: bool,
 }
 
 /// Renders the prompt the next LLM speaker selection would send in a group

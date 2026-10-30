@@ -2021,6 +2021,51 @@ async fn a_group_switched_to_llm_selection_uses_the_live_speaker_model() {
 }
 
 #[tokio::test]
+async fn llm_selection_attempts_tools_when_support_is_unknown() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario(
+        &backend,
+        "unknown-speaker-tools",
+        lettuce_characters::SpeakerSelection::Llm,
+        false,
+    );
+    let model_id = seed_speaker_model(
+        backend.database(),
+        "unknown-speaker-tools",
+        lettuce_models::CapabilityStatus::Unknown,
+    );
+    set_group_speaker_model(backend.database(), Some(model_id));
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![
+        call_outcome(
+            "unknown-tools-selection",
+            "select_next_speaker",
+            serde_json::json!({
+                "character_id": speakers[1],
+                "reasoning": "This participant was asked to respond."
+            }),
+            (15, 2),
+        ),
+        text_outcome("unknown-tools-generation", "Group reply.", 20, 4),
+    ]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = backend
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(&work, ConversationGenerationRuntimeInput::default(), TimestampMillis::new(1_020))
+        .await
+        .expect("run group generation with unknown tool support");
+    let decision = result.turn.selected_speaker.expect("speaker decision");
+    assert_eq!(decision.participant_id, speakers[1]);
+    assert_eq!(decision.fallback, SpeakerFallback::None);
+    assert_eq!(decision.rationale_summary.as_deref(), Some("This participant was asked to respond."));
+    let requests = inference.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 2, "selection must call the provider before generation");
+    assert_eq!(requests[0].profile.chat_profile.model_profile_id, model_id);
+    assert!(requests[0].tools.is_some());
+    assert_eq!(requests[0].profile.chat_profile.capabilities.tools, lettuce_models::CapabilityStatus::Unknown);
+}
+
+#[tokio::test]
 async fn llm_selection_follows_the_live_speaker_model_setting() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let (scenario, speakers) = group_scenario(

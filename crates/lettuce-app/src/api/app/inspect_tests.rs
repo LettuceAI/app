@@ -265,6 +265,41 @@ fn text_of(message: &dto::PromptMessage) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_snapshot_reports_the_speaker_reason_and_heuristic_fallback() {
+    use lettuce_characters::GroupRepository;
+    for fallback in [false, true] {
+        let harness = harness(Reply::Text("Hello."));
+        let cast = group_cast(&harness, "selection-reason").await;
+        let database = harness.context.backend().database();
+        let group = GroupRepository::get(database, cast.group_id).expect("group").expect("exists").group;
+        GroupRepository::set_speaker_selection(database, cast.group_id, group.revision, lettuce_characters::SpeakerSelection::Llm, harness.context.now()).expect("LLM selection");
+        if !fallback {
+            let speaker = cast.bea;
+            *harness.provider.response_hook.lock().expect("hook") = Some(Arc::new(move |request, outcome| {
+                if request.tools.as_ref().is_some_and(|tools| tools.definitions.iter().any(|tool| tool.name == "select_next_speaker")) {
+                    outcome.candidates[0].parts.clear();
+                    outcome.candidates[0].tool_calls = vec![lettuce_conversations::ProposedToolCall {
+                        provider_call_id: None,
+                        name: "select_next_speaker".into(),
+                        arguments: serde_json::json!({ "character_id": speaker, "reasoning": "Bea knows the harbor." }),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    }];
+                }
+            }));
+        }
+        send(&harness, &cast.chat, "selection-reason-send", "Who knows the harbor?", stream()).await.expect("send");
+        run_generation(&harness).await;
+        let view = open(&harness, &cast.chat).await;
+        let reply = view.messages.items.iter().find(|message| message.role == dto::MessageRole::Assistant).expect("reply");
+        let details = snapshot(&harness, &reply.id).await.expect("snapshot").speaker_selection.expect("selection");
+        assert_eq!(details.heuristic_fallback, fallback);
+        assert_eq!(details.reason.as_deref(), if fallback { None } else { Some("Bea knows the harbor.") });
+        assert_eq!(harness.provider.requests.lock().expect("requests").len(), 2);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_snapshot_shows_what_was_assembled_even_after_the_character_changes() {
     let harness = harness(Reply::Text("Hello."));
     let (chat, reply) = replied_chat(&harness, "snapshot").await;
