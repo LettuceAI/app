@@ -81,7 +81,7 @@ export function newCharacterDraft(name: string, description: string): CharacterD
         participants_bar_enabled: true,
         participants_bar_avatar_size: "medium",
         participants_bar_avatar_shape: "round",
-        participants_bar_background: "fading",
+        participants_bar_background: "transparent",
         participants_bar_gap: "normal",
         participants_bar_align: "left",
         participants_bar_hint_position: "bottom",

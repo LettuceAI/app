@@ -26,24 +26,26 @@ interface ChoiceSheetProps {
   api: ApiClient;
   open: boolean;
   value: string | null;
-  onChange: (id: string | null) => void;
+  onChange: (id: string | null) => void | Promise<boolean>;
   onClose: () => void;
+  defaultChoice?: { title: string; description: string };
+  busy?: boolean;
 }
 
 /** One model for the character's chats, or the app default. */
-export function ModelChoiceSheet({ api, open, value, onChange, onClose }: ChoiceSheetProps) {
+export function ModelChoiceSheet({ api, open, value, onChange, onClose, defaultChoice, busy = false }: ChoiceSheetProps) {
   const { t } = useTranslation("characters");
   const status = useQuery(modelsQuery(api));
   const chat = useChatModels(api);
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const shown = chat.models.filter((model) => !needle || model.name.toLowerCase().includes(needle));
-  const choose = (id: string | null) => {
-    onChange(id);
-    onClose();
+  const choose = async (id: string | null) => {
+    if (busy) return;
+    if (await onChange(id) !== false) onClose();
   };
   return (
-    <Sheet open={open} onClose={onClose} size="sm" title={t("pickers.model")}>
+    <Sheet open={open} onClose={onClose} size="sm" title={t("pickers.model")} dismissible={!busy}>
       {status.isPending ? (
         <LoadingState />
       ) : status.isError ? (
@@ -61,11 +63,12 @@ export function ModelChoiceSheet({ api, open, value, onChange, onClose }: Choice
           <ListGroup>
             <ListRowButton
               icon={<Cpu size={icon.lg} />}
-              title={t("details.modelDefault")}
-              description={t("pickers.modelDefaultBody")}
+              title={defaultChoice?.title ?? t("details.modelDefault")}
+              description={defaultChoice?.description ?? t("pickers.modelDefaultBody")}
               chevron={false}
               trailing={value === null ? mark : undefined}
-              onClick={() => choose(null)}
+              disabled={busy}
+              onClick={() => void choose(null)}
             />
             {shown.map((model) => (
               <ListRowButton
@@ -81,7 +84,8 @@ export function ModelChoiceSheet({ api, open, value, onChange, onClose }: Choice
                 description={model.local ? t("pickers.onDevice") : model.provider}
                 chevron={false}
                 trailing={model.id === value ? mark : undefined}
-                onClick={() => choose(model.id)}
+                disabled={busy}
+                onClick={() => void choose(model.id)}
               />
             ))}
           </ListGroup>

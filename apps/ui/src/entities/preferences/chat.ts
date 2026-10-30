@@ -82,7 +82,7 @@ export const CHAT_DEFAULTS: ChatLook = {
   participantsBarEnabled: true,
   participantsBarAvatarSize: "medium",
   participantsBarAvatarShape: "round",
-  participantsBarBackground: "fading",
+  participantsBarBackground: "transparent",
   participantsBarGap: "normal",
   participantsBarAlign: "left",
   participantsBarHintPosition: "bottom",

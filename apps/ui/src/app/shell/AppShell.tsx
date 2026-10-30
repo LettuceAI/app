@@ -202,7 +202,8 @@ export function AppShell() {
               open={createOpen}
               onClose={() => setCreateOpen(false)}
               onCreate={(kind) => {
-                if (kind === "lorebook") void navigate({ to: "/library/lorebooks/new", state: { lorebookFlowPushed: true } });
+                if (kind === "group") void navigate({ to: "/groups/new" });
+                else if (kind === "lorebook") void navigate({ to: "/library/lorebooks/new", state: { lorebookFlowPushed: true } });
                 else void navigate({ to: kind === "persona" ? "/personas/new" : "/characters/new" });
               }}
               onDiscover={() => {

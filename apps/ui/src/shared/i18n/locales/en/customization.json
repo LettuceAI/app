@@ -243,6 +243,20 @@
     "message": "Message",
     "send": "Send",
     "reasoning": "Reasoning",
-    "messageActions": "Message actions"
-  }
+    "messageActions": "Message actions",
+    "reset": "Reset"
+  },
+  "participantsBar": "Participants bar",
+  "showParticipantsBarHint": "Character faces above the composer in group chats. Tap one to mention, long-press or right-click to mute.",
+  "barAvatarShape": "Face shape",
+  "barRound": "Round",
+  "barBoxed": "Square",
+  "barRoundedBox": "Rounded square",
+  "barBackground": "Bar background",
+  "barFading": "Fading",
+  "barTransparent": "Transparent",
+  "barSpacing": "Face spacing",
+  "barHint": "Director hint",
+  "barHintTop": "Above",
+  "barHintBottom": "Below"
 }

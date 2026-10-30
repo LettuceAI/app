@@ -12,3 +12,5 @@ export { WhatsNewSheet } from "./WhatsNewSheet";
 export { ModelEditorPage } from "./ModelEditorPage";
 
 export { ModelBrowserPage, type BrowserSearch } from "./model-browser/ModelBrowserPage";
+
+export { ChatPreview, ChatSettings } from "./customization/ChatTab";

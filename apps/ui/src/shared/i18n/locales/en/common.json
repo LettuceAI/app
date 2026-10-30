@@ -73,6 +73,8 @@
     }
   },
   "create": {
+    "group": "Create a group",
+    "groupBody": "Put characters together in a chat",
     "title": "Create",
     "description": "Someone to talk to, or a world for them.",
     "character": "Create a character",

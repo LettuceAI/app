@@ -185,12 +185,14 @@ function ColorRow({
   fallback,
   onChange,
   checkContrast = true,
+  inheritance,
 }: {
   title: string;
   description?: string;
   value: string | null;
   fallback: string;
   checkContrast?: boolean;
+  inheritance?: { source: string; reset?: () => void };
   onChange: (value: string | null) => void;
 }) {
   const { t } = useTranslation("customization");
@@ -199,18 +201,18 @@ function ColorRow({
   return (
     <ListRow
       title={title}
-      description={
+      description={inheritance?.source ?? (
         low
           ? t("lowContrast", { ratio: contrastRatio(value!, theme.colors.surface).toFixed(1) })
           : value
             ? value
-            : (description ?? t("themeDefault"))
+            : (description ?? t("themeDefault")))
       }
       {...(low ? { tone: "warning" as const } : {})}
       trailing={
         <span className="flex items-center gap-1">
-          {value && (
-            <IconButton label={t("resetColor", { title })} size="sm" onClick={() => onChange(null)}>
+          {(inheritance ? inheritance.reset !== undefined : value !== null) && (
+            <IconButton label={t("resetColor", { title })} size="sm" onClick={() => inheritance ? inheritance.reset?.() : onChange(null)}>
               <RotateCcw size={icon.sm} />
             </IconButton>
           )}
@@ -228,14 +230,24 @@ export function ChatSettings({
   set,
   phone,
   onReset,
+  group = false,
+  source,
+  resetField,
+  overridden,
 }: {
   look: ChatLook;
   set: Set;
   phone: boolean;
   onReset: () => void;
+  group?: boolean;
+  source?: (key: keyof ChatLook) => string;
+  resetField?: (key: keyof ChatLook) => void;
+  overridden?: (key: keyof ChatLook) => boolean;
 }) {
   const { t } = useTranslation("customization");
   const { theme } = useTheme();
+  const control = (key: keyof ChatLook, content: ReactNode) => <span className={cn("flex min-w-0 flex-wrap items-center gap-2", phone && "w-full")}>{overridden?.(key) && <Button size="sm" variant="ghost" onClick={() => resetField?.(key)}>{t("controls.reset")}</Button>}{content}</span>;
+  const colorInheritance = (key: keyof ChatLook) => source ? { inheritance: { source: source(key), ...(overridden?.(key) ? { reset: () => resetField?.(key) } : {}) } } : {};
   const SIZE3 = opts([
     ["small", t("small")],
     ["medium", t("medium")],
@@ -262,8 +274,8 @@ export function ChatSettings({
       phone={phone}
       icon={rowIcon}
       title={title}
-      description={description}
-      control={
+      description={source?.(key) ?? description}
+      control={control(key,
         <Pick
           label={title}
           block={phone}
@@ -272,7 +284,7 @@ export function ChatSettings({
           options={options}
           onChange={(v) => set(key, v as ChatLook[K])}
         />
-      }
+      )}
     />
   );
   const toggle = (
@@ -284,13 +296,13 @@ export function ChatSettings({
     <ListRow
       icon={rowIcon}
       title={title}
-      description={description}
+      description={source?.(key) ?? description}
       trailing={
-        <Switch
+        control(key, <Switch
           checked={look[key] as boolean}
           onChange={(v) => set(key, v as never)}
           aria-label={title}
-        />
+        />)
       }
     />
   );
@@ -310,7 +322,7 @@ export function ChatSettings({
           <Type size={icon.lg} />,
         )}
         {row("lineSpacing", t("lineSpacing"), SPACING3, <AlignCenter size={icon.lg} />)}
-        {row(
+        {!group && row(
           "composerFontSize",
           t("composerTextSize"),
           opts([
@@ -399,8 +411,8 @@ export function ChatSettings({
           phone={phone}
           icon={<Info size={icon.lg} />}
           title={t("showUnderReplies")}
-          description={t("modelTokenCountsAndSpeed")}
-          control={
+          description={source?.("details") ?? t("modelTokenCountsAndSpeed")}
+          control={control("details",
             <SelectMenu<Detail>
               multiple
               className={phone ? "w-full" : "w-48"}
@@ -409,7 +421,7 @@ export function ChatSettings({
               options={DETAILS.map(({ value }) => ({ value, label: t(`details.${value}`) }))}
               onChange={(v) => set("details", v)}
             />
-          }
+          )}
         />
         {look.details.length > 0 &&
           row(
@@ -440,6 +452,44 @@ export function ChatSettings({
         {look.avatarShape !== "hidden" && row("avatarSize", t("avatarSize"), SIZE3)}
       </ListGroup>
 
+      <ListGroup label={t("participantsBar")}>
+        {toggle("participantsBarEnabled", t("showParticipantsBar"), t("showParticipantsBarHint"), <Users size={icon.lg} />)}
+        {look.participantsBarEnabled && (
+          <>
+            {row("participantsBarAvatarSize", t("avatarSize"), SIZE3)}
+            {row(
+              "participantsBarAvatarShape",
+              t("barAvatarShape"),
+              opts([
+                ["round", t("barRound")],
+                ["boxed", t("barBoxed")],
+                ["rounded_box", t("barRoundedBox")],
+              ] as const),
+            )}
+            {row(
+              "participantsBarBackground",
+              t("barBackground"),
+              opts([
+                ["solid", t("solid")],
+                ["fading", t("barFading")],
+                ["transparent", t("barTransparent")],
+              ] as const),
+            )}
+            {row("participantsBarGap", t("barSpacing"), SPACING3)}
+            {row("participantsBarAlign", t("alignment"), ALIGN3)}
+            {row(
+              "participantsBarHintPosition",
+              t("barHint"),
+              opts([
+                ["top", t("barHintTop")],
+                ["bottom", t("barHintBottom")],
+                ["hidden", t("hidden")],
+              ] as const),
+            )}
+          </>
+        )}
+      </ListGroup>
+
       {!phone && (
         <ListGroup label={t("chatColumn")}>
           {row(
@@ -458,8 +508,8 @@ export function ChatSettings({
           {look.chatColumnWidth === "custom" && (
             <ListRow
               title={t("customWidth")}
-              description={t("400To2400Pixels")}
-              trailing={
+              description={source?.("chatColumnWidthPx") ?? t("400To2400Pixels")}
+              trailing={control("chatColumnWidthPx",
                 <NumberInput
                   className="w-32"
                   value={look.chatColumnWidthPx}
@@ -468,7 +518,7 @@ export function ChatSettings({
                   step={40}
                   onChange={(v) => set("chatColumnWidthPx", v ?? 960)}
                 />
-              }
+              )}
             />
           )}
           {look.chatColumnWidth !== "full" && row("chatColumnAlign", t("position"), ALIGN3)}
@@ -476,9 +526,9 @@ export function ChatSettings({
             toggle("chatHeaderMoves", t("headerFollowsTheColumn"))}
           {look.chatColumnWidth !== "full" &&
             toggle("chatFooterMoves", t("composerFollowsTheColumn"))}
-          {look.chatColumnWidth !== "full" &&
+          {!group && look.chatColumnWidth !== "full" &&
             toggle("chatWidgetAreaEnabled", t("widgetsBesideTheChat"), t("futureWidgets"))}
-          {look.chatColumnWidth !== "full" &&
+          {!group && look.chatColumnWidth !== "full" &&
             look.chatWidgetAreaEnabled &&
             row(
               "chatWidgetCenterMode",
@@ -498,7 +548,8 @@ export function ChatSettings({
             phone={phone}
             icon={<Palette size={icon.lg} />}
             title={t("yourMessages")}
-            control={
+            description={source?.("userBubbleColor")}
+            control={control("userBubbleColor",
               <Pick
                 label={t("yourMessages")}
                 menu
@@ -513,13 +564,14 @@ export function ChatSettings({
                 ] as const)}
                 onChange={(v) => set("userBubbleColor", v)}
               />
-            }
+            )}
           />
           {look.userBubbleColor === "custom" && (
             <ColorRow
               checkContrast={false}
               title={t("yourBubbleColor")}
               value={look.userBubbleColorHex}
+              {...colorInheritance("userBubbleColorHex")}
               fallback={theme.colors.accent}
               onChange={(v) => set("userBubbleColorHex", v)}
             />
@@ -528,7 +580,8 @@ export function ChatSettings({
             phone={phone}
             icon={<Palette size={icon.lg} />}
             title={t("characterMessages")}
-            control={
+            description={source?.("assistantBubbleColor")}
+            control={control("assistantBubbleColor",
               <Pick
                 label={t("characterMessages")}
                 menu
@@ -543,13 +596,14 @@ export function ChatSettings({
                 ] as const)}
                 onChange={(v) => set("assistantBubbleColor", v)}
               />
-            }
+            )}
           />
           {look.assistantBubbleColor === "custom" && (
             <ColorRow
               checkContrast={false}
               title={t("characterBubbleColor")}
               value={look.assistantBubbleColorHex}
+              {...colorInheritance("assistantBubbleColorHex")}
               fallback={themeToVars(theme)["--color-surface-1"] ?? theme.colors.surface}
               onChange={(v) => set("assistantBubbleColorHex", v)}
             />
@@ -559,6 +613,7 @@ export function ChatSettings({
             title={t("composer")}
             description={t("themeDefault")}
             value={look.footerInputColorHex}
+              {...colorInheritance("footerInputColorHex")}
             fallback={themeToVars(theme)["--color-surface-el"] ?? theme.colors.surface}
             onChange={(v) => set("footerInputColorHex", v)}
           />
@@ -572,30 +627,35 @@ export function ChatSettings({
             <ColorRow
               title={t("allMessageText")}
               value={look.messageTextColorHex}
+              {...colorInheritance("messageTextColorHex")}
               fallback={theme.colors.fg}
               onChange={(v) => set("messageTextColorHex", v)}
             />
             <ColorRow
               title={t("plainText")}
               value={look.plainTextColorHex}
+              {...colorInheritance("plainTextColorHex")}
               fallback={theme.colors.fg}
               onChange={(v) => set("plainTextColorHex", v)}
             />
             <ColorRow
               title={t("italicActions")}
               value={look.italicTextColorHex}
+              {...colorInheritance("italicTextColorHex")}
               fallback={theme.colors.fg}
               onChange={(v) => set("italicTextColorHex", v)}
             />
             <ColorRow
               title={t("quotesDialogue")}
               value={look.quotedTextColorHex}
+              {...colorInheritance("quotedTextColorHex")}
               fallback={theme.colors.fg}
               onChange={(v) => set("quotedTextColorHex", v)}
             />
             <ColorRow
               title={t("inlineCode")}
               value={look.inlineCodeTextColorHex}
+              {...colorInheritance("inlineCodeTextColorHex")}
               fallback={theme.colors.fg}
               onChange={(v) => set("inlineCodeTextColorHex", v)}
             />
@@ -609,7 +669,8 @@ export function ChatSettings({
           <Row
             phone={phone}
             title={t("dim")}
-            control={
+            description={source?.("backgroundDim")}
+            control={control("backgroundDim",
               <Slider
                 className={phone ? "w-full" : "w-40"}
                 value={look.backgroundDim}
@@ -619,12 +680,13 @@ export function ChatSettings({
                 showValue={(v) => t("percent", { value: v })}
                 aria-label={t("dim")}
               />
-            }
+            )}
           />
           <Row
             phone={phone}
             title={t("blur")}
-            control={
+            description={source?.("backgroundBlur")}
+            control={control("backgroundBlur",
               <Slider
                 className={phone ? "w-full" : "w-40"}
                 value={look.backgroundBlur}
@@ -634,12 +696,13 @@ export function ChatSettings({
                 showValue={(v) => t("pixels", { value: v })}
                 aria-label={t("blur")}
               />
-            }
+            )}
           />
           <Row
             phone={phone}
             title={t("bubbleOpacity")}
-            control={
+            description={source?.("bubbleOpacity")}
+            control={control("bubbleOpacity",
               <Slider
                 className={phone ? "w-full" : "w-40"}
                 value={look.bubbleOpacity}
@@ -649,7 +712,7 @@ export function ChatSettings({
                 showValue={(v) => t("percent", { value: v })}
                 aria-label={t("bubbleOpacity")}
               />
-            }
+            )}
           />
           {row(
             "bubbleBlur",
@@ -677,7 +740,7 @@ export function ChatSettings({
         </Text>
       </section>
 
-      <Collapsible
+      {!group && <Collapsible
         title={t("groupChats")}
         description={t("futureGroup")}
         variant="panel"
@@ -726,7 +789,7 @@ export function ChatSettings({
         ) : (
           <Text variant="hint">{t("theBarIsHiddenInGroupChats")}</Text>
         )}
-      </Collapsible>
+      </Collapsible>}
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <Text variant="hint" className="max-w-md">

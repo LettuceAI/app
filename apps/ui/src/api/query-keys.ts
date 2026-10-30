@@ -24,6 +24,10 @@ export const queryKeys = {
     draftDefault: (mode: LibraryInteractionMode = "roleplay") =>
       [...queryKeys.characters.all, "draft-default", mode] as const,
   },
+  groups: {
+    all: ["groups"] as const,
+    list: () => ["groups", "list"] as const,
+  },
   prompts: {
     all: ["prompts"] as const,
     list: (kind: PromptKind) => [...queryKeys.prompts.all, "list", kind] as const,
@@ -117,6 +121,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.usage.all,
     queryKeys.conversations.lists(),
     queryKeys.home.characters(),
+    queryKeys.groups.all,
     queryKeys.media.library(),
     queryKeys.library.counts(),
     queryKeys.conversations.detail(event.conversation_id),
@@ -125,12 +130,14 @@ export const appEventInvalidations: AppEventInvalidations = {
   conversation_changed: (event) => [
     queryKeys.conversations.lists(),
     queryKeys.home.characters(),
+    queryKeys.groups.all,
     queryKeys.conversations.detail(event.conversation_id),
     queryKeys.lorebooks.previews(),
   ],
   conversation_removed: () => [
     queryKeys.conversations.lists(),
     queryKeys.home.characters(),
+    queryKeys.groups.all,
     queryKeys.lorebooks.previews(),
   ],
   memory_changed: (event) => [queryKeys.memory.detail(event.conversation_id), queryKeys.companions.soul(event.conversation_id)],
@@ -145,6 +152,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.lorebooks.previews(),
     queryKeys.characters.all,
     queryKeys.home.characters(),
+    queryKeys.groups.all,
     queryKeys.library.all,
     queryKeys.media.library(),
     queryKeys.memory.all,
@@ -156,7 +164,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.library.all,
     queryKeys.media.library(),
   ],
-  group_changed: () => [queryKeys.lorebooks.previews()],
+  group_changed: () => [queryKeys.groups.all, queryKeys.lorebooks.previews()],
   lorebooks_changed: () => [
     queryKeys.lorebookProjects.all,
     queryKeys.lorebooks.all,

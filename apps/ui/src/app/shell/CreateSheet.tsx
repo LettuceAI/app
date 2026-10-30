@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, BookText, FileUp, UserPlus, UserRound } from "lucide-react";
+import { BookOpen, BookText, FileUp, UserPlus, UserRound, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import { isApiFailure } from "@/api/client";
 import { importCharacterCard } from "@/features/home";
 
-export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api: ApiClient; open: boolean; onClose: () => void; onCreate: (kind: "character" | "persona" | "lorebook") => void; onDiscover: () => void }) {
+export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api: ApiClient; open: boolean; onClose: () => void; onCreate: (kind: "character" | "group" | "persona" | "lorebook") => void; onDiscover: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -39,6 +39,7 @@ export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api:
               onCreate("character");
             }}
           />
+          <ListRowButton icon={<Users size={icon.lg} />} title={t("create.group")} description={t("create.groupBody")} onClick={() => { onClose(); onCreate("group"); }} />
           <ListRowButton
             icon={<UserRound size={icon.lg} />}
             title={t("create.persona")}

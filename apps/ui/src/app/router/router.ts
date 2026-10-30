@@ -27,6 +27,7 @@ import {
   LorebookPreviewPage,
   validateLibrarySearch,
 } from "@/features/library";
+import { GroupsPage, CreateGroupPage, EditGroupPage } from "@/features/groups";
 import { HomePage } from "@/features/home";
 import { OnboardingPage } from "@/features/onboarding";
 import {
@@ -104,8 +105,13 @@ const welcomeBackRoute = createRoute({
 const groupsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/groups",
-  component: NavigationPage,
+  component: GroupsPage,
 });
+const newGroupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups/new", component: CreateGroupPage });
+const editGroupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups/$groupId/edit", component: EditGroupPage,
+  validateSearch: (search: Record<string, unknown>): { section?: "group" | "members" | "scene" | "chat" | "appearance" } => (
+    ["group", "members", "scene", "chat", "appearance"].includes(String(search.section)) ? { section: search.section as "group" | "members" | "scene" | "chat" | "appearance" } : {}
+  ), });
 const discoverRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/discover",
@@ -443,6 +449,8 @@ const routeTree = rootRoute.addChildren([
   welcomeRoute,
   welcomeBackRoute,
   groupsRoute,
+  newGroupRoute,
+  editGroupRoute,
   discoverRoute,
   libraryRoute,
   newLorebookRoute,

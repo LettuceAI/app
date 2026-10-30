@@ -12,6 +12,7 @@ import companions from "./locales/en/companions.json";
 import customization from "./locales/en/customization.json";
 import common from "./locales/en/common.json";
 import conversations from "./locales/en/conversations.json";
+import groups from "./locales/en/groups.json";
 import home from "./locales/en/home.json";
 import library from "./locales/en/library.json";
 import openedFiles from "./locales/en/opened-files.json";
@@ -39,6 +40,7 @@ export const resources = {
     common,
     conversations,
     home,
+    groups,
     library,
     onboarding,
     "opened-files": openedFiles,
