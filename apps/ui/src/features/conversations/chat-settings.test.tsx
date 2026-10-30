@@ -107,6 +107,55 @@ const panelCalls: MockCallHandlers = {
 };
 
 describe("chat settings panel", () => {
+  it("saves group member models, keeps failed pickers open and follows group inheritance without prompt overrides", async () => {
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" },
+      prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" },
+      members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [
+        { participant_id: "pc", character_id: "ch1", name: "Cassian", enabled: true, muted: false, model: { id: null, source: "character" } },
+      ] },
+    };
+    const participant = vi.fn<NonNullable<MockCallHandlers["conversationParticipantUpdate"]>>()
+      .mockReturnValueOnce({ status: "error", error: { code: "conflict", message: "Do not display this diagnostic", details: null } })
+      .mockReturnValue({ status: "ok", data: { revision: 5, settings_revision: 3 } });
+    const update = vi.fn<NonNullable<MockCallHandlers["conversationSettingsUpdate"]>>(() => ({ status: "ok", data: groupSettings }));
+    await open({ path: "/chat/c1?panel=settings", calls: {
+      ...panelCalls,
+      conversationOpen: () => ({ status: "ok", data: view([], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
+      conversationSettingsGet: () => ({ status: "ok", data: groupSettings }),
+      conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [{ participant_id: "pc", character_id: "ch1", name: "Cassian", enabled: true, muted: false, percent: 0, message_count: 0, last_spoke_at: null, last_spoke_message_id: null }] } }),
+      modelsList: () => ({ status: "ok", data: { models: [{ id: "m1", provider_account_id: "a", external_model_id: "x", display_name: "Vision", kind: "chat", config: {}, input_scopes: ["text", "image"], output_scopes: ["text"], revision: 1, created_at: 1, updated_at: 1 }], default_model_id: "m1", revision: 1 } }),
+      conversationParticipantUpdate: participant, conversationSettingsUpdate: update,
+      promptsList: () => ({ status: "ok", data: { items: [
+        { id: "p1", name: "Group dialogue", kind: "group_chat_conversational", archived: false, origin: { type: "user" }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
+        { id: "p2", name: "Group story", kind: "group_chat_roleplay", archived: false, origin: { type: "user" }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
+      ], next_cursor: null } }),
+    } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Cassian.*Vision/ }));
+    const model = await screen.findByRole("dialog", { name: "Model" });
+    fireEvent.click(await within(model).findByRole("button", { name: /Vision/ }));
+    await waitFor(() => expect(participant).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("dialog", { name: "Model" })).toBeTruthy();
+    expect(screen.queryByText("Do not display this diagnostic")).toBeNull();
+    await waitFor(() => expect((within(model).getByRole("button", { name: /Vision/ }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(within(model).getByRole("button", { name: /Vision/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Model" })).toBeNull());
+    expect(participant.mock.calls[1]![0]).toMatchObject({ conversation_id: "c1", participant_id: "pc", model: { type: "set", id: "m1" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Cassian.*Vision/ }));
+    fireEvent.click(await within(await screen.findByRole("dialog", { name: "Model" })).findByRole("button", { name: /^Character’s model/ }));
+    await waitFor(() => expect(participant).toHaveBeenCalledTimes(3));
+    expect(participant.mock.calls[2]![0].model).toEqual({ type: "reset" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Model" })).toBeNull());
+    expect(screen.queryByRole("button", { name: /^Conversation prompt/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Roleplay prompt/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Follow group members/ }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![0].patch.reset_members).toBe(true);
+    await waitFor(() => expect((screen.getByRole("button", { name: /^Follow group models/ }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: /^Follow group models/ }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update.mock.calls[1]![0].patch.reset_member_models).toBe(true);
+  });
+
   it("starts each history visit at the top without resetting scroll while searching", async () => {
     await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
     const settingsDialog = await screen.findByRole("dialog", { name: "Chat settings" });

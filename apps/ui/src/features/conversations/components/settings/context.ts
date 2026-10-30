@@ -4,9 +4,9 @@ import type { ConversationSettingsPatch_Deserialize, ConversationSettingsView, C
 import type { ConversationServices } from "../../data/actions";
 
 export type PanelView =
-  | "root" | "history" | "notes" | "starters" | "advanced";
+  | "root" | "history" | "notes" | "starters" | "advanced" | "appearance";
 
-export type PanelSheet = "persona" | "model" | "background" | "note" | "lorebooks" | "history_actions" | "companion_time";
+export type PanelSheet = "persona" | "model" | "background" | "note" | "lorebooks" | "history_actions" | "companion_time" | "member_model";
 
 export interface PanelCtx {
   api: ApiClient;

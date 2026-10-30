@@ -12,6 +12,7 @@ export function HistoryView({ ctx }: { ctx: PanelCtx }) {
     <ChatHistoryList
       api={ctx.api}
       characterId={ctx.characterId}
+      groupId={ctx.view.source.type === "group" ? ctx.view.source.group_id : null}
       currentConversationId={ctx.conversationId}
       busy={ctx.busy}
       run={ctx.run}

@@ -120,7 +120,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
       onClose={close}
       dismissible={sheet === null}
       scrollRef={scrollRef}
-      footer={current === "advanced" ? <div ref={setFooterTarget} className="@container" /> : undefined}
+      footer={current === "advanced" || current === "appearance" ? <div ref={setFooterTarget} className="@container" /> : undefined}
       title={t(`settings.views.${current}`)}
       size="lg"
       placement="side"

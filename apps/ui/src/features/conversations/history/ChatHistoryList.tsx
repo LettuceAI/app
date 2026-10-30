@@ -8,12 +8,13 @@ import {
 import type { ConversationSummary, LifecycleFilter } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { exportChat, removeChat, renameChat, setArchived } from "../data/chat-actions";
-import { characterChatsQuery } from "../data/settings-queries";
+import { sourceChatsQuery } from "../data/settings-queries";
 import type { ApiClient } from "@/api/client";
 
 interface ChatHistoryListProps {
   api: ApiClient;
   characterId: string | null;
+  groupId?: string | null;
   currentConversationId?: string;
   busy: boolean;
   run: <T>(task: () => Promise<T>) => Promise<T | undefined>;
@@ -49,11 +50,11 @@ export function RenameRow({ initial, onSave, onCancel, busy, label, saveLabel }:
   );
 }
 
-export function ChatHistoryList({ api, characterId, currentConversationId, busy, run, actionsOpen, onActionsOpenChange, onOpen, onRemoveCurrent, emptyAction }: ChatHistoryListProps) {
+export function ChatHistoryList({ api, characterId, groupId = null, currentConversationId, busy, run, actionsOpen, onActionsOpenChange, onOpen, onRemoveCurrent, emptyAction }: ChatHistoryListProps) {
   const { t, i18n } = useTranslation("conversations");
   const queryClient = useQueryClient();
   const phone = useCompactLayout();
-  const chats = useQuery(characterChatsQuery(api, characterId));
+  const chats = useQuery(sourceChatsQuery(api, characterId, groupId));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<LifecycleFilter>("all");
   const [sort, setSort] = useState<(typeof historySorts)[number]>("recent");

@@ -2,20 +2,22 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Archive, ArchiveRestore, BookOpen, CalendarClock, Check, Clock, Copy, Cpu, Download, History, Image as ImageIcon, MessageSquarePlus, Pencil,
-  NotebookPen, Sparkles, SlidersHorizontal, Trash2, Upload, User, GitBranch,
+  NotebookPen, Paintbrush, Sparkles, SlidersHorizontal, Trash2, Upload, User, GitBranch,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert, Avatar, Button, confirm, icon, IconButton, Input, ListGroup, ListRow, ListRowButton, LoadingState, Switch, toast } from "@lettuceai/crisp";
 import { overrideCount } from "@/entities/model/model-config";
 import { queryKeys } from "@/api/query-keys";
-import { startDirectChat } from "../../data/actions";
+import { startDirectChat, startGroupChat } from "../../data/actions";
 import { duplicateChat, exportChat, importChatLog, removeChat, renameChat, setArchived } from "../../data/chat-actions";
 import { memoryQuery, modelsQuery, personasQuery } from "../../data/queries";
 import { lorebooksQuery } from "@/entities/lorebook";
-import { characterChatsQuery, characterQuery, effectivePersonaId, messageCountQuery } from "../../data/settings-queries";
+import { characterQuery, effectivePersonaId, messageCountQuery, sourceChatsQuery } from "../../data/settings-queries";
 import { useChatModels } from "../../data/use-models";
 import { formatTime } from "../../data/messages";
 import type { PanelCtx } from "./context";
+import { MembersSection } from "./MembersSection";
+import { SpeakerSelectionGroup } from "./SpeakerSelectionGroup";
 import { SettingRow } from "./SettingRow";
 
 export interface SettingsRootProps {
@@ -33,7 +35,8 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
   const { api, queryClient, conversationId, view, settings } = ctx;
   const character = useQuery(characterQuery(api, ctx.characterId));
   const count = useQuery(messageCountQuery(api, conversationId));
-  const chats = useQuery(characterChatsQuery(api, ctx.characterId));
+  const groupId = view.source.type === "group" ? view.source.group_id : null;
+  const chats = useQuery(sourceChatsQuery(api, ctx.characterId, groupId));
   const personas = useQuery({ ...personasQuery(api, conversationId), enabled: settings !== undefined });
   const lorebooks = useQuery({ ...lorebooksQuery(api), enabled: settings !== undefined });
   const chat = useChatModels(api);
@@ -70,6 +73,11 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
     if (done) setRenaming(false);
   };
   const startChat = async () => {
+    if (groupId) {
+      const id = await ctx.run(() => startGroupChat(api, queryClient, groupId));
+      if (id) ctx.goTo(id, true);
+      return;
+    }
     if (!ctx.characterId) return;
     if (starters > 0) {
       ctx.open("starters");
@@ -157,17 +165,24 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
         </div>
       </div>
 
+      {groupId && <MembersSection ctx={ctx} />}
+
+      {groupId && <SpeakerSelectionGroup ctx={ctx} />}
+
       <ListGroup label={t("settings.sections.chat")}>
+        {groupId && <ListRowButton icon={<Paintbrush size={icon.lg} />} title={t("settings.views.appearance")} description={t("settings.groupAppearanceHint")} onClick={() => ctx.open("appearance")} />}
         <SettingRow icon={<User size={icon.lg} />} title={t("tools.persona")} value={personaValue} source={settings.persona.source} disabled={ctx.busy} onOpen={() => ctx.openSheet("persona")} onReset={() => void ctx.save({ persona: { type: "reset" } })} />
-        <SettingRow
-          icon={<Cpu size={icon.lg} />}
-          title={t("settings.model.title")}
-          value={modelValue}
-          source={settings.model.source}
-          disabled={ctx.busy}
-          onOpen={() => ctx.openSheet("model")}
-          onReset={() => void ctx.save({ model: { type: "reset" } })}
-        />
+        {!groupId && (
+          <SettingRow
+            icon={<Cpu size={icon.lg} />}
+            title={t("settings.model.title")}
+            value={modelValue}
+            source={settings.model.source}
+            disabled={ctx.busy}
+            onOpen={() => ctx.openSheet("model")}
+            onReset={() => void ctx.save({ model: { type: "reset" } })}
+          />
+        )}
         <ListRowButton icon={<NotebookPen size={icon.lg} />} title={t("tools.note")} description={settings.author_note?.trim() ? t("tools.noteActive") : t("tools.noteInactive")} onClick={() => ctx.openSheet("note")} />
         <SettingRow
           icon={<ImageIcon size={icon.lg} />}
@@ -236,14 +251,16 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
         </ListGroup>
       </section>
 
-      <ListGroup label={t("settings.sections.generation")}>
-        <ListRowButton
-          icon={<SlidersHorizontal size={icon.lg} />}
-          title={t("settings.generation.title")}
-          description={overrides > 0 ? t("settings.generation.count", { count: overrides }) : t("settings.generation.inherited")}
-          onClick={() => ctx.open("advanced")}
-        />
-      </ListGroup>
+      {!groupId && (
+        <ListGroup label={t("settings.sections.generation")}>
+          <ListRowButton
+            icon={<SlidersHorizontal size={icon.lg} />}
+            title={t("settings.generation.title")}
+            description={overrides > 0 ? t("settings.generation.count", { count: overrides }) : t("settings.generation.inherited")}
+            onClick={() => ctx.open("advanced")}
+          />
+        </ListGroup>
+      )}
 
       {companion && (
         <ListGroup label={t("settings.sections.companion")}>
@@ -253,12 +270,12 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
       )}
 
       <ListGroup label={t("settings.sections.actions")}>
-        <ListRowButton icon={<MessageSquarePlus size={icon.lg} />} title={t("settings.actions.newChat")} description={t("settings.actions.newChatHint")} disabled={ctx.busy || !ctx.characterId || character.isPending} onClick={() => void startChat()} />
+        <ListRowButton icon={<MessageSquarePlus size={icon.lg} />} title={t("settings.actions.newChat")} description={t(groupId ? "settings.actions.newGroupChatHint" : "settings.actions.newChatHint")} disabled={ctx.busy || (!groupId && (!ctx.characterId || character.isPending))} onClick={() => void startChat()} />
         <ListRowButton icon={<History size={icon.lg} />} title={t("settings.actions.history")} description={t("settings.actions.historyHint")} onClick={() => ctx.open("history")} />
         <ListRowButton icon={<GitBranch size={icon.lg} />} title={t("settings.actions.branches")} description={t("settings.actions.branchesHint")} onClick={onBranches} />
         <ListRowButton icon={<Copy size={icon.lg} />} title={t("settings.actions.duplicate")} description={t("settings.actions.duplicateHint")} chevron={false} disabled={ctx.busy} onClick={() => void duplicate()} />
         <ListRowButton icon={<Download size={icon.lg} />} title={t("settings.actions.export")} description={t("settings.actions.exportHint")} chevron={false} disabled={ctx.busy} onClick={() => void exportThis()} />
-        <ListRowButton icon={<Upload size={icon.lg} />} title={t("settings.actions.import")} description={t("settings.actions.importHint")} chevron={false} disabled={ctx.busy || !ctx.characterId} onClick={() => void importLog()} />
+        <ListRowButton icon={<Upload size={icon.lg} />} title={t("settings.actions.import")} description={t(groupId ? "settings.actions.importGroupHint" : "settings.actions.importHint")} chevron={false} disabled={ctx.busy || !ctx.characterId} onClick={() => void importLog()} />
         <ListRowButton
           icon={view.archived ? <ArchiveRestore size={icon.lg} /> : <Archive size={icon.lg} />}
           title={view.archived ? t("settings.actions.restore") : t("settings.actions.archive")}
