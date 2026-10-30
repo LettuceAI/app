@@ -1821,6 +1821,8 @@ impl PromptRuntimeValues {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryPromptLine {
+    pub memory_id: Option<lettuce_types::MemoryId>,
+    pub match_score_basis_points: Option<i32>,
     pub text: String,
     pub observed: Option<MemoryObservation>,
 }
@@ -1964,6 +1966,9 @@ impl ProviderNeutralContext {
                 lorebook.activated_entry_ids.iter().copied(),
             )?;
         }
+        if let Some(sources) = &self.attributions.used_sources {
+            sources.validate()?;
+        }
         let mut tool_calls = std::collections::HashMap::new();
         let mut tool_results = std::collections::HashSet::new();
         for message in &self.messages {
@@ -2025,6 +2030,8 @@ impl ProviderNeutralContext {
 #[serde(deny_unknown_fields)]
 pub struct ContextAttributions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_sources: Option<UsedContextSources>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_snapshot: Option<UsageRecordSnapshot>,
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
@@ -2034,6 +2041,47 @@ pub struct ContextAttributions {
     /// recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sections: Option<Vec<ContextSection>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsedContextSources {
+    pub lorebook_entries: Vec<UsedLorebookEntry>,
+    pub memories: Vec<UsedMemory>,
+    pub memory_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsedLorebookEntry {
+    pub lorebook_id: lettuce_types::LorebookId,
+    pub entry_id: lettuce_types::LorebookEntryId,
+    pub lorebook_name: String,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsedMemory {
+    pub memory_id: Option<lettuce_types::MemoryId>,
+    pub text: String,
+    pub match_score_basis_points: Option<i32>,
+}
+
+impl UsedContextSources {
+    fn validate(&self) -> Result<(), crate::ValidationError> {
+        for entry in &self.lorebook_entries {
+            crate::validation::validate_text("used_sources.lorebook_text", &entry.text, crate::validation::MAX_AUTHORED_TEXT_BYTES, false)?;
+        }
+        for memory in &self.memories {
+            crate::validation::validate_text("used_sources.memory_text", &memory.text, crate::validation::MAX_GUIDANCE_BYTES, false)?;
+        }
+        if let Some(summary) = &self.memory_summary {
+            crate::validation::validate_text("used_sources.memory_summary", summary, crate::validation::MAX_GUIDANCE_BYTES, false)?;
+        }
+        Ok(())
+    }
 }
 
 /// The kind of source a prompt section came from.
@@ -2068,6 +2116,9 @@ pub struct ContextSection {
 
 impl ContextAttributions {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        if let Some(sources) = &self.used_sources {
+            sources.validate()?;
+        }
         if let Some(prompt) = &self.prompt {
             if prompt.revision.get() == 0 {
                 return Err(crate::ValidationError::ZeroRevision);
@@ -2802,6 +2853,8 @@ mod tests {
             },
             summary: Some("summary".into()),
             key_memories: vec![MemoryPromptLine {
+                memory_id: None,
+                match_score_basis_points: None,
                 text: "a durable fact".into(),
                 observed: Some(MemoryObservation {
                     local_time: "2026-09-11 10:00".into(),

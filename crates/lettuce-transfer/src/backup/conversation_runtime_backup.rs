@@ -7,7 +7,7 @@ use lettuce_conversations::{
 use lettuce_types::{ConversationId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_RUNTIME_BACKUP_VERSION: u32 = 2;
+pub const CONVERSATION_RUNTIME_BACKUP_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,7 +146,7 @@ impl ConversationRuntimeBackup {
         &mut self,
         history: &crate::ConversationHistoryBackup,
     ) -> Result<(), ConversationRuntimeBackupError> {
-        if self.version != CONVERSATION_RUNTIME_BACKUP_VERSION {
+        if !matches!(self.version, 2 | CONVERSATION_RUNTIME_BACKUP_VERSION) {
             return Err(ConversationRuntimeBackupError::InvalidData {
                 reason: "backup version is not the supported version",
             });

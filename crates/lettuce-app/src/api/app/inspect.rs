@@ -82,6 +82,17 @@ pub(super) fn snapshot_view(
     let budget = &record.request.context.budget;
     let sections = record.request.context.attributions.sections.as_ref();
     dto::PromptSnapshot {
+        used_sources: record.request.context.attributions.used_sources.as_ref().map(|sources| dto::PromptSources {
+            lorebook_entries: sources.lorebook_entries.iter().map(|entry| dto::PromptLorebookEntry {
+                lorebook_id: entry.lorebook_id.to_string(), entry_id: entry.entry_id.to_string(),
+                lorebook_name: entry.lorebook_name.clone(), title: entry.title.clone(), text: entry.text.clone(),
+            }).collect(),
+            memories: sources.memories.iter().map(|memory| dto::PromptMemory {
+                memory_id: memory.memory_id.map(|id| id.to_string()), text: memory.text.clone(),
+                match_score_basis_points: memory.match_score_basis_points,
+            }).collect(),
+            memory_summary: sources.memory_summary.clone(),
+        }),
         speaker_selection: None,
         prompt: None,
         lorebooks: Vec::new(),

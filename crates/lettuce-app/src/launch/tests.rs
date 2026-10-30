@@ -5187,6 +5187,8 @@ async fn a_manual_memory_send_adds_the_relevant_memories_block_like_legacy() {
             },
             summary: None,
             key_memories: vec![lettuce_conversations::MemoryPromptLine {
+                memory_id: None,
+                match_score_basis_points: None,
                 text: "Ada fears the sea.".into(),
                 observed: None,
             }],

@@ -838,6 +838,8 @@ fn sample_context(
     .into_iter()
     .map(|key| {
         let line = lettuce_conversations::MemoryPromptLine {
+            memory_id: None,
+            match_score_basis_points: None,
             text: fragment(key)?,
             observed: None,
         };

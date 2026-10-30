@@ -124,6 +124,9 @@ pub enum PromptSectionsUnavailable {
 pub struct PromptSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "specta", specta(optional))]
+    pub used_sources: Option<PromptSources>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(optional))]
     pub speaker_selection: Option<SpeakerSelectionDetails>,
     pub prompt: Option<crate::HistoricalSourceView>,
     pub lorebooks: Vec<crate::HistoricalSourceView>,
@@ -137,6 +140,35 @@ pub struct PromptSnapshot {
     pub budget: PromptBudget,
     pub sections: Option<Vec<PromptSection>>,
     pub sections_unavailable: Option<PromptSectionsUnavailable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptSources {
+    pub lorebook_entries: Vec<PromptLorebookEntry>,
+    pub memories: Vec<PromptMemory>,
+    pub memory_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptLorebookEntry {
+    pub lorebook_id: String,
+    pub entry_id: String,
+    pub lorebook_name: String,
+    pub title: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptMemory {
+    pub memory_id: Option<String>,
+    pub text: String,
+    pub match_score_basis_points: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

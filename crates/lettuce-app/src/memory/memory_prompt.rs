@@ -11,6 +11,8 @@ pub(crate) fn memory_prompt_line(
     effective_now: TimestampMillis,
 ) -> MemoryPromptLine {
     MemoryPromptLine {
+        memory_id: Some(memory.id),
+        match_score_basis_points: None,
         text: memory.text.clone(),
         observed: memory.observed_at.map(|observed_at| {
             let observed = match Local.timestamp_millis_opt(observed_at.get()) {

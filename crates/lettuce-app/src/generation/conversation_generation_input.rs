@@ -1003,8 +1003,10 @@ where
                     .await?;
                 let key_memories = selected
                     .iter()
-                    .map(|item| {
-                        crate::memory::memory_prompt::memory_prompt_line(item, reference_now)
+                    .map(|(item, score)| {
+                        let mut line = crate::memory::memory_prompt::memory_prompt_line(item, reference_now);
+                        line.match_score_basis_points = *score;
+                        line
                     })
                     .collect::<Vec<_>>();
                 (
@@ -2110,7 +2112,7 @@ where
                         .items
                         .iter()
                         .find(|item| item.id == *id && item.superseded_by.is_none())
-                        .cloned()
+                        .map(|item| (item.clone(), None))
                         .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -2134,7 +2136,7 @@ where
                         attempt_id: work.attempt_id,
                         space_id: memory.id,
                         expected_revision: memory.revision,
-                        selected_memory_ids: selected.iter().map(|item| item.id).collect(),
+                        selected_memory_ids: selected.iter().map(|(item, _)| item.id).collect(),
                         accessed_at: now,
                     },
                 )
@@ -2146,7 +2148,11 @@ where
         let effective_now = shape.clock.effective_now(effective_now);
         let key_memories = selected
             .iter()
-            .map(|item| crate::memory::memory_prompt::memory_prompt_line(item, effective_now))
+            .map(|(item, score)| {
+                let mut line = crate::memory::memory_prompt::memory_prompt_line(item, effective_now);
+                line.match_score_basis_points = *score;
+                line
+            })
             .collect::<Vec<_>>();
         let contribution =
             (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
@@ -2182,6 +2188,8 @@ where
             .iter()
             .filter(|item| item.superseded_by.is_none())
             .map(|item| lettuce_conversations::MemoryPromptLine {
+                memory_id: Some(item.id),
+                match_score_basis_points: None,
                 text: item.text.clone(),
                 observed: None,
             })
@@ -2235,7 +2243,7 @@ where
         settings: &DynamicMemoryPolicySnapshot,
         shape: MemoryPromptShape,
         now: TimestampMillis,
-    ) -> Result<Vec<lettuce_memory::MemoryItem>, ConversationGenerationInputError> {
+    ) -> Result<Vec<(lettuce_memory::MemoryItem, Option<i32>)>, ConversationGenerationInputError> {
         let active = memory
             .items
             .iter()
@@ -2369,7 +2377,13 @@ where
             shape.companion,
             temporal_range.is_some(),
         );
-        Ok(selected.into_iter().cloned().collect())
+        Ok(selected.into_iter().map(|item| {
+            let score = projections.iter().find(|projection| projection.memory_id == item.id)
+                .and_then(|projection| memory_similarity_score(&query_embedding, projection, item, &self.embedding.calibration()))
+                .filter(|score| score.is_finite())
+                .map(|score| (score * 10_000.0).round() as i32);
+            (item.clone(), score)
+        }).collect())
     }
 
     fn timeline(
@@ -2981,6 +2995,18 @@ fn heuristic_fallback(
     Ok(decision)
 }
 
+fn memory_similarity_score(
+    query: &lettuce_embeddings::EmbeddingVector,
+    projection: &lettuce_embeddings::MemoryEmbeddingProjection,
+    item: &lettuce_memory::MemoryItem,
+    calibration: &lettuce_embeddings::SimilarityCalibration,
+) -> Option<f32> {
+    let raw = legacy_cosine(query, &projection.vector)?;
+    let dimensions = lettuce_embeddings::EmbeddingDimensions::from_len(query.values.len());
+    let shown = dimensions.map_or(raw, |dimensions| calibration.score(raw, dimensions));
+    Some(if item.is_cold && !item.is_pinned { shown * 0.7 } else { shown })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn select_memories<'a>(
     query_text: &str,
@@ -2999,20 +3025,12 @@ fn select_memories<'a>(
         .iter()
         .map(|projection| (projection.memory_id, projection))
         .collect::<HashMap<_, _>>();
-    let dimensions = lettuce_embeddings::EmbeddingDimensions::from_len(query.values.len());
     let candidates = active
         .iter()
         .copied()
         .filter_map(|item| {
             let projection = projections.get(&item.id)?;
-            let raw = legacy_cosine(query, &projection.vector)?;
-            let shown = dimensions.map_or(raw, |dimensions| calibration.score(raw, dimensions));
-            let score = if item.is_cold && !item.is_pinned {
-                shown * 0.7
-            } else {
-                shown
-            };
-            Some((score, item))
+            memory_similarity_score(query, projection, item, calibration).map(|score| (score, item))
         })
         .collect::<Vec<_>>();
     let threshold = calibration.retrieval_threshold(

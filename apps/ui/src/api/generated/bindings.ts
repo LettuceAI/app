@@ -7153,6 +7153,20 @@ export type PromptInput = {
 
 export type PromptKind = "direct_chat" | "companion_chat" | "group_chat_roleplay" | "group_chat_conversational" | "dynamic_memory_summarizer" | "dynamic_memory_manager" | "reply_helper_roleplay" | "reply_helper_conversational" | "lorebook_entry_writer" | "lorebook_keyword_generator" | "lorebook_generator_planner" | "lorebook_generator_writer" | "lorebook_generator_refine" | "lorebook_generator_coherence" | "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" | "companion_soul_writer" | "companion_growthcycle" | "companion_consolidation" | "runtime_text";
 
+export type PromptLorebookEntry = {
+	lorebook_id: string,
+	entry_id: string,
+	lorebook_name: string,
+	title: string,
+	text: string,
+};
+
+export type PromptMemory = {
+	memory_id: string | null,
+	text: string,
+	match_score_basis_points: number | null,
+};
+
 export type PromptMessage = PromptMessage_Serialize | PromptMessage_Deserialize;
 
 export type PromptMessage_Deserialize = {
@@ -7295,6 +7309,7 @@ export type PromptSnapshot = PromptSnapshot_Serialize | PromptSnapshot_Deseriali
  *  sent even when the character, persona or lorebooks changed since.
  */
 export type PromptSnapshot_Deserialize = {
+	used_sources?: PromptSources | null,
 	speaker_selection?: SpeakerSelectionDetails | null,
 	prompt: HistoricalSourceView | null,
 	lorebooks: HistoricalSourceView[],
@@ -7316,6 +7331,7 @@ export type PromptSnapshot_Deserialize = {
  *  sent even when the character, persona or lorebooks changed since.
  */
 export type PromptSnapshot_Serialize = {
+	used_sources?: PromptSources,
 	speaker_selection?: SpeakerSelectionDetails,
 	prompt: HistoricalSourceView | null,
 	lorebooks: HistoricalSourceView[],
@@ -7329,6 +7345,12 @@ export type PromptSnapshot_Serialize = {
 	budget: PromptBudget,
 	sections: PromptSection[] | null,
 	sections_unavailable: PromptSectionsUnavailable | null,
+};
+
+export type PromptSources = {
+	lorebook_entries: PromptLorebookEntry[],
+	memories: PromptMemory[],
+	memory_summary: string | null,
 };
 
 export type PromptSummary = {

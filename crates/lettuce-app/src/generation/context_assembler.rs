@@ -391,6 +391,7 @@ where
                 .insert(PromptVariable::RegenerateGuidance, guidance.to_owned());
         }
         let group_user_name = runtime_values.persona_name.clone();
+        let source_values = runtime_values.clone();
         let runtime = RuntimeSections::render(
             self.sources,
             &PromptRenderContext {
@@ -552,11 +553,26 @@ where
         } else {
             !memory_summary.is_empty() || !key_lines.is_empty()
         };
+        let uses_memory_value = |placeholders: &[&str]| {
+            rendered_prompt.relative.iter().chain(&rendered_prompt.in_chat).any(|message| {
+                message.substitutions.iter().any(|value| {
+                    placeholders.contains(&value.placeholder.as_str()) && value.start < value.end
+                })
+            })
+        };
+        let mut memory_items_used = !key_lines.is_empty()
+            && uses_memory_value(&["{{key_memories}}", "{{selected_memories}}"]);
+        let mut memory_summary_used = !memory_summary.is_empty()
+            && uses_memory_value(&["{{context_summary}}", "{{memory_summary}}"]);
         if !group && !memory_summary.is_empty() && !summary_placeholder {
-            place(runtime.section("runtime_context_summary"));
+            let section = runtime.section("runtime_context_summary");
+            memory_summary_used |= section.is_some();
+            place(section);
         }
         if !group && !key_lines.is_empty() && !keys_placeholder {
-            place(runtime.section("runtime_key_memories"));
+            let section = runtime.section("runtime_key_memories");
+            memory_items_used |= section.is_some();
+            place(section);
         }
         if !lorebook_text.trim().is_empty() && !template_has_placeholder(prompt, "{{lorebook}}") {
             place(runtime.section("runtime_world_information"));
@@ -647,6 +663,7 @@ where
             && !key_lines.is_empty()
             && let Some(section) = runtime.section("runtime_relevant_memories")
         {
+            memory_items_used = true;
             sections.extend(section.sources);
             in_chat.insert(0, (section.depth.unwrap_or_default(), section.message));
         }
@@ -702,6 +719,37 @@ where
             history_text_bytes,
         )?;
         let attributions = ContextAttributions {
+            used_sources: Some(lettuce_conversations::UsedContextSources {
+                lorebook_entries: lore_entries
+                    .iter()
+                    .filter(|entry| {
+                        !entry.entry.content.trim().is_empty()
+                            && sections.iter().any(|section| {
+                                section.kind == ContextSectionKind::Lorebook
+                                    && section.label.as_deref() == Some(entry.entry.title.as_str())
+                            })
+                    })
+                    .map(|entry| lettuce_conversations::UsedLorebookEntry {
+                        lorebook_id: entry.source.lorebook_id,
+                        entry_id: entry.entry.id,
+                        lorebook_name: entry.source.name.clone(),
+                        title: entry.entry.title.clone(),
+                        text: if group {
+                            source_values.resolve_names(entry.entry.content.trim())
+                        } else {
+                            names.resolve_names(&source_values.resolve_identity(entry.entry.content.trim()))
+                        },
+                    })
+                    .collect(),
+                memories: request.memory.as_ref().filter(|_| memory_items_used).map(|memory| {
+                    memory.key_memories.iter().map(|line| lettuce_conversations::UsedMemory {
+                        memory_id: line.memory_id,
+                        text: line.text.clone(),
+                        match_score_basis_points: line.match_score_basis_points,
+                    }).collect()
+                }).unwrap_or_default(),
+                memory_summary: memory_summary_used.then_some(memory_summary),
+            }),
             usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
                 character_id: selected_character(&snapshot, &request).map(|body| body.character_id),
                 character_name: selected_character(&snapshot, &request)

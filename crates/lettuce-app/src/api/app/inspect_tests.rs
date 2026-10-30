@@ -415,8 +415,10 @@ async fn a_record_from_before_the_breakdown_has_no_sections_and_says_why() {
     .expect("record")
     .expect("recorded request");
     record.request.context.attributions.sections = None;
+    record.request.context.attributions.used_sources = None;
     let view = super::inspect::snapshot_view(&harness.context, turn.id, &candidate, &record);
     assert_eq!(view.sections, None);
+    assert_eq!(view.used_sources, None);
     assert_eq!(
         view.sections_unavailable,
         Some(dto::PromptSectionsUnavailable::PredatesBreakdown)
@@ -424,6 +426,9 @@ async fn a_record_from_before_the_breakdown_has_no_sections_and_says_why() {
     assert!(!view.messages.is_empty());
     let stored = serde_json::to_string(&record.request.context.attributions).expect("attributions");
     assert!(!stored.contains("sections"));
+    assert!(!stored.contains("used_sources"));
+    let old: lettuce_conversations::ContextAttributions = serde_json::from_str(&stored).expect("old record");
+    assert_eq!(serde_json::to_string(&old).expect("unchanged serialization"), stored);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -838,6 +843,19 @@ async fn the_snapshot_preserves_distinct_lore_titles_for_identical_placed_conten
     .expect("bind");
     let (_, reply) = replied_chat(&harness, "identical-lore-breakdown").await;
     let stored = snapshot(&harness, &reply).await.expect("snapshot");
+    let sources = stored.used_sources.as_ref().expect("recorded sources");
+    assert_eq!(sources.lorebook_entries.len(), 2);
+    for entry in &sources.lorebook_entries {
+        assert_eq!(entry.lorebook_id, book.book.id.to_string());
+        assert_eq!(entry.lorebook_name, "Shared content");
+        assert_eq!(entry.text, "same Ada");
+    }
+    LorebookRepository::archive(database, book.book.id, book.book.revision, harness.context.now())
+        .expect("archive the source");
+    assert_eq!(
+        snapshot(&harness, &reply).await.expect("historical snapshot").used_sources,
+        stored.used_sources,
+    );
     assert!(
         stored
             .messages
