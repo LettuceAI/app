@@ -2005,7 +2005,9 @@ where
         }
         let (participant_id, method, reference) = if let Some(participant_id) = turn.forced_speaker
         {
-            let method =
+            let method = if turn.operation == lettuce_conversations::GenerationOperation::Regenerate {
+                SpeakerDecisionMethod::Explicit
+            } else {
                 match crate::generation::live_sources::live_group(self.repository, conversation)
                     .map_err(|_| {
                         ConversationGenerationInputError::Context(
@@ -2021,7 +2023,8 @@ where
                         SpeakerDecisionMethod::DirectorAction
                     }
                     _ => SpeakerDecisionMethod::Explicit,
-                };
+                }
+            };
             (participant_id, method, None)
         } else if let GenerationTarget::ExistingCandidate {
             message_id,

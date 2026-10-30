@@ -323,10 +323,18 @@ async fn regenerate_adds_a_variant_replays_its_key_and_conflicts_on_another_requ
  {
     let harness = harness(Reply::Text("Hello."));
     let (chat, reply) = replied_chat(&harness, "regen").await;
+    let original_model = harness.provider.requests.lock().expect("requests")[0]
+        .profile.chat_profile.model_profile_id;
+    let override_model = crate::launch::tests::seed_model(
+        harness.context.backend().database(),
+        lettuce_models::ProviderProtocol::Ollama,
+        "ollama",
+    );
     let stale = conversation(&harness, &chat).revision.get();
     let stream = Arc::new(RecordingStream::default());
     let mut request = regenerate_request(&harness, &chat, &reply, "regen-1");
     request.guidance = Some("  shorter ".into());
+    request.model_profile_id = Some(format!("  {override_model}  "));
     let accepted = conversation_regenerate(&harness.context, request.clone(), stream.clone())
         .await
         .expect("regenerate");
@@ -336,6 +344,10 @@ async fn regenerate_adds_a_variant_replays_its_key_and_conflicts_on_another_requ
     )
     .expect("turn");
     assert_eq!(turn.guidance.as_deref(), Some("shorter"));
+    assert_eq!(
+        turn.requested_model_override.expect("one-turn model").source_id,
+        override_model,
+    );
     run_generation(&harness).await;
     assert_eq!(
         last_event(&stream),
@@ -354,6 +366,10 @@ async fn regenerate_adds_a_variant_replays_its_key_and_conflicts_on_another_requ
     assert_eq!(shown.candidate_count, 2);
     assert_eq!(shown.candidate_index, Some(1));
     assert_eq!(view.messages.items.len(), 2);
+    assert_eq!(
+        harness.provider.requests.lock().expect("requests")[1].profile.chat_profile.model_profile_id,
+        override_model,
+    );
 
     let replay_stream = Arc::new(RecordingStream::default());
     let replayed =
@@ -399,6 +415,11 @@ async fn regenerate_adds_a_variant_replays_its_key_and_conflicts_on_another_requ
     )
     .await
     .expect("with the current revision");
+    run_generation(&harness).await;
+    assert_eq!(
+        harness.provider.requests.lock().expect("requests")[2].profile.chat_profile.model_profile_id,
+        original_model,
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -980,21 +1001,87 @@ async fn a_group_reply_regenerates_with_its_speaker_or_a_forced_one() {
     let view = open(&harness, &cast.chat).await;
     assert_eq!(author_of(&view, first), original);
 
-    let mut forced = regenerate_request(&harness, &cast.chat, first, "group-regen-2");
-    forced.forced_speaker_participant_id = Some(cast.bea.to_string());
-    conversation_regenerate(
+    conversation_participant_update(
         &harness.context,
-        forced,
-        Arc::new(RecordingStream::default()),
+        dto::ConversationParticipantUpdateRequest {
+            conversation_id: cast.chat.clone(),
+            participant_id: cast.bea.to_string(),
+            enabled: None,
+            muted: Some(true),
+            model: None,
+            client_operation_id: "group-regen-mute-bea".into(),
+        },
     )
     .await
-    .expect("forced speaker");
-    run_generation(&harness).await;
-    let view = open(&harness, &cast.chat).await;
-    assert_eq!(
-        author_of(&view, first).as_deref(),
-        Some(&*cast.bea.to_string())
+    .expect("mute Bea for automatic selection");
+    let model = crate::launch::tests::seed_model(
+        harness.context.backend().database(),
+        lettuce_models::ProviderProtocol::Ollama,
+        "ollama",
     );
+    for (index, method) in [
+        dto::SpeakerSelectionMethod::RoundRobin,
+        dto::SpeakerSelectionMethod::Heuristic,
+        dto::SpeakerSelectionMethod::Llm,
+        dto::SpeakerSelectionMethod::Director,
+        dto::SpeakerSelectionMethod::DirectorAction,
+    ].into_iter().enumerate() {
+        let settings = conversation_settings_get(
+            &harness.context,
+            dto::ConversationSettingsGetRequest { conversation_id: cast.chat.clone() },
+        ).await.expect("settings");
+        conversation_settings_update(
+            &harness.context,
+            dto::ConversationSettingsUpdateRequest {
+                conversation_id: cast.chat.clone(),
+                expected_settings_revision: settings.settings_revision,
+                patch: dto::ConversationSettingsPatch {
+                    speaker_selection: Some(dto::SpeakerSelectionChange::Set { method }),
+                    ..Default::default()
+                },
+            },
+        ).await.expect("speaker selection mode");
+        let before = harness.provider.requests.lock().expect("requests").len();
+        let mut forced = regenerate_request(
+            &harness, &cast.chat, first, &format!("group-regen-forced-{index}"),
+        );
+        forced.forced_speaker_participant_id = Some(cast.bea.to_string());
+        forced.guidance = Some("  Keep it brief.  ".into());
+        forced.model_profile_id = Some(model.to_string());
+        let accepted = conversation_regenerate(
+            &harness.context,
+            forced,
+            Arc::new(RecordingStream::default()),
+        ).await.expect("explicitly selected muted speaker");
+        run_generation(&harness).await;
+        let turn = ConversationReader::get_turn(
+            harness.context.backend().database(), accepted.turn_id.parse().expect("turn"),
+        ).expect("regeneration turn");
+        assert_eq!(turn.status, GenerationTurnStatus::Succeeded, "{method:?}: {turn:?}");
+        assert_eq!(
+            turn.selected_speaker.expect("speaker").method,
+            lettuce_conversations::SpeakerDecisionMethod::Explicit,
+        );
+        assert_eq!(
+            author_of(&open(&harness, &cast.chat).await, first).as_deref(),
+            Some(&*cast.bea.to_string()),
+        );
+        {
+            let requests = harness.provider.requests.lock().expect("requests");
+            assert_eq!(requests.len(), before + 1, "forced regeneration skips LLM speaker selection");
+            let request = requests.last().expect("regenerated request");
+            assert_eq!(request.profile.chat_profile.model_profile_id, model);
+            assert!(request.context.messages.iter().flat_map(|message| &message.parts).any(|part| {
+                matches!(part, lettuce_conversations::ProviderContextPart::Text { text } if text.contains("Keep it brief."))
+            }));
+        }
+        let after = conversation_settings_get(
+            &harness.context,
+            dto::ConversationSettingsGetRequest { conversation_id: cast.chat.clone() },
+        ).await.expect("settings after regeneration");
+        assert_eq!(after.model, settings.model);
+        assert_eq!(after.members, settings.members);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
