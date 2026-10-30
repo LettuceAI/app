@@ -59,7 +59,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
 
   const view = timeline.data?.pages[0]?.view ?? undefined;
   const participants = view?.participants ?? [];
-  const chatName = characterParticipant(view)?.name ?? view?.title;
+  const chatName = view?.kind === "group" ? view.title : (characterParticipant(view)?.name ?? view?.title);
   const cycleItems = useMemo(() => cycles.data?.pages.flatMap((page) => page.items) ?? [], [cycles.data]);
   const pinnedItems = useMemo(() => pinned.data?.pages.flatMap((page) => page.items) ?? [], [pinned.data]);
 

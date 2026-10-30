@@ -40,9 +40,13 @@ import { BeetrootRain } from "./components/BeetrootRain";
 import { ChatSettingsPanel } from "./components/settings/ChatSettingsPanel";
 import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
+import { ParticipantsBar } from "./components/ParticipantsBar";
+import { SpeakerSheet, type Speaker } from "./components/SpeakerSheet";
 import { EffectSheet } from "./companion/EffectSheet";
 import { Timeline } from "./components/Timeline";
 import {
+  addUserMessage,
+  branchGroupToCharacter,
   branchToNewChat,
   deleteMessage,
   editMessage,
@@ -50,10 +54,12 @@ import {
   rewindTo,
   selectCandidate,
   selectScene,
+  setMemberMuted,
   updateSettings,
   type ConversationServices,
 } from "./data/actions";
 import {
+  authorOf,
   characterParticipant,
   formatTime,
   textOf,
@@ -61,7 +67,7 @@ import {
   type MediaItem,
 } from "./data/messages";
 import { candidatesQuery, memoryQuery, personasQuery, settingsQuery } from "./data/queries";
-import { characterQuery } from "./data/settings-queries";
+import { characterQuery, libraryCastQuery } from "./data/settings-queries";
 import { useGeneration } from "./data/use-generation";
 import { useSearch } from "./data/use-search";
 import { useTimeline } from "./data/use-timeline";
@@ -169,6 +175,9 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const search = useSearch(api, conversationId);
 
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [branching, setBranching] = useState<TimelineMessage | null>(null);
+  const [selection, setSelection] = useState<{ behavior: "cue" | "action"; id: string } | null>(null);
+  const [directorWiggle, setDirectorWiggle] = useState(0);
   const [effectMessage, setEffectMessage] = useState<TimelineMessage | null>(null);
   const { shown: shownEffect } = useClosingValue(effectMessage);
   const [editing, setEditing] = useState<TimelineMessage | null>(null);
@@ -228,7 +237,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const menuMessage = menuId ? (messages.find((message) => message.id === menuId) ?? null) : null;
   const { shown: shownMenu } = useClosingValue(menuMessage);
 
-  const character = characterParticipant(view);
+  const isGroup = view?.kind === "group";
+  const character = isGroup ? null : characterParticipant(view);
   const personaChoice = settings.data?.persona;
   const personas = useQuery({
     ...personasQuery(api, conversationId),
@@ -256,6 +266,34 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   );
   const name = character?.name ?? view?.title ?? t("header.untitled");
   const avatar = character?.avatar?.url ?? null;
+  const cast = useQuery({ ...libraryCastQuery(api), enabled: isGroup });
+  const descriptions = useMemo(
+    () => new Map((cast.data ?? []).map((character) => [character.id, character.description ?? ""])),
+    [cast.data],
+  );
+  const members = useMemo(() => participants.filter((entry) => entry.role === "character"), [participants]);
+  const faces = useMemo(
+    () => members.map((member) => ({ name: member.name, src: member.avatar?.url ?? null })),
+    [members],
+  );
+  const speakers = useMemo<Speaker[]>(
+    () =>
+      members.map((member) => ({
+        id: member.id,
+        name: member.name,
+        avatar: member.avatar?.url ?? null,
+        characterId: member.character_id,
+        description: member.character_id ? (descriptions.get(member.character_id) ?? null) : null,
+        muted:
+          settings.data?.members?.participants.find((entry) => entry.character_id === member.character_id)
+            ?.muted ?? false,
+      })),
+    [members, settings.data, descriptions],
+  );
+  const method = settings.data?.speaker_selection?.method;
+  const directorBehavior = !isGroup ? null : method === "director" ? "cue" : method === "director_action" ? "action" : null;
+  const directorSelected = directorBehavior && selection?.behavior === directorBehavior ? selection.id : null;
+  const barVisible = isGroup && speakers.length >= 2 && (look.participantsBarEnabled || directorBehavior !== null);
   const pendingTurn = Boolean(view?.pending_turn_id) && !meta.active;
   const sending = meta.active || pendingTurn;
   const background = settings.data?.background.asset?.url ?? null;
@@ -411,6 +449,51 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     return accepted;
   };
 
+  const sendDirector = async (text: string, attachments: ComposerAttachment[]) => {
+    if (attachments.length > 0) {
+      toast.error(t("director.noAttachments"));
+      return false;
+    }
+    if (directorBehavior === "cue" && !directorSelected) {
+      setDirectorWiggle((count) => count + 1);
+      return false;
+    }
+    timeline.jumpToLatest();
+    if (text && !(await run(() => addUserMessage(services, text)))) return false;
+    if (directorBehavior === "cue" && directorSelected) await generation.continueReply(swap, directorSelected);
+    return true;
+  };
+
+  const directorContinue = () => {
+    if (directorSelected) void generation.continueReply(swap, directorSelected);
+    else setDirectorWiggle((count) => count + 1);
+  };
+
+  const directorTap = async (member: Speaker) => {
+    if (directorBehavior === "cue") {
+      setSelection({ behavior: "cue", id: member.id });
+      return;
+    }
+    const text = composer.current?.read().trim() ?? "";
+    if (text) {
+      composer.current?.replace("");
+      if (!(await run(() => addUserMessage(services, text)))) {
+        composer.current?.replace(text);
+        return;
+      }
+    }
+    timeline.jumpToLatest();
+    await generation.continueReply(swap, member.id);
+  };
+
+  const toggleMute = (member: Speaker, muted: boolean) => {
+    if (muted && speakers.filter((entry) => !entry.muted).length <= 1) {
+      toast.error(t("settings.members.last"));
+      return;
+    }
+    void run(() => setMemberMuted(services, member.id, muted));
+  };
+
   const copy = async (message: TimelineMessage) => {
     setMenuId(null);
     try {
@@ -454,6 +537,14 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     });
   };
 
+  const branchGroupHere = (message: TimelineMessage, characterId: string) => {
+    void run(async () => {
+      const id = await branchGroupToCharacter(services, message, characterId);
+      toast.success(t("toast.branched"));
+      void navigate({ to: "/chat/$conversationId", params: { conversationId: id }, search: {} });
+    });
+  };
+
   const remove = async (message: TimelineMessage) => {
     setMenuId(null);
     const sure = await confirm({
@@ -487,11 +578,12 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const strings = useMemo(
     () => ({
       ...Object.fromEntries(crispKeys.map((key) => [key, t(`crisp.${key}`)])),
+      ...(directorBehavior === "action" ? { composerSend: t("director.addMessage") } : {}),
       composerRecording: (elapsed: string) => t("crisp.composerRecording", { elapsed }),
       composerAttachmentRemove: (name: string | undefined) =>
         t("crisp.composerAttachmentRemove", { name: name ?? "" }),
     }),
-    [t],
+    [t, directorBehavior],
   );
   const directCharacterId = view?.source.type === "direct" ? view.source.character_id : null;
   const menuAfter =
@@ -531,6 +623,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           scene={sceneSwitch}
           onScene={onScene}
           onRetry={() => void generation.retry()}
+          bottomInset={barVisible}
         />
         <div
           className="relative shrink-0 px-3 pb-[calc(var(--safe-bottom)+10px)] pt-2 @xl:px-6"
@@ -555,9 +648,27 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               name={name}
               sending={sending}
               disabled={!view.can_send && !sending}
-              canContinue={messages.length > 0}
-              onSend={send}
-              onContinue={() => void generation.continueReply(swap)}
+              canContinue={directorBehavior !== "action" && messages.length > 0}
+              onSend={directorBehavior ? sendDirector : send}
+              onContinue={() =>
+                directorBehavior ? directorContinue() : void generation.continueReply(swap)
+              }
+              mentions={isGroup ? speakers : undefined}
+              above={
+                barVisible
+                  ? (draft, setDraft) => (
+                      <ParticipantsBar
+                        members={speakers}
+                        draft={draft}
+                        setDraft={setDraft}
+                        disabled={sending}
+                        director={directorBehavior ? { behavior: directorBehavior, selectedId: directorSelected, wiggle: directorWiggle } : null}
+                        onSelect={(member) => void directorTap(member)}
+                        onToggleMute={toggleMute}
+                      />
+                    )
+                  : undefined
+              }
               onStop={() => generation.stop(view.pending_turn_id)}
               topSlot={
                 inlineAuthorNote && settings.data ? (
@@ -597,6 +708,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               columnStyle={look.chatHeaderMoves ? columnStyle : undefined}
               name={name}
               avatar={avatar}
+              {...(isGroup ? { faces } : {})}
               phone={phone}
               memory={memoryOn || companion ? { count: memory.data?.items.length ?? 0, busy: memoryBusy, ...(companion ? { label: t("companion.title") } : {}) } : null}
               search={search}
@@ -623,7 +735,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
                   : shownMenu.role === "scene"
                     ? "message.titleScene"
                     : "message.titleSystem",
-              { name },
+              { name: (isGroup ? authorOf(participants, shownMenu)?.name : undefined) ?? name },
             )
           }
           description={shownMenu && formatTime(shownMenu.created_at, i18n.language)}
@@ -661,11 +773,23 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               onRewind={() => void rewind(shownMenu, menuAfter)}
               {...(directCharacterId
                 ? { onBranch: () => branchHere(shownMenu, directCharacterId) }
-                : {})}
+                : isGroup
+                  ? { onBranch: () => { setMenuId(null); setBranching(shownMenu); }, groupBranch: true }
+                  : {})}
               onDelete={() => void remove(shownMenu)}
             />
           )}
         </Sheet>
+
+        <SpeakerSheet
+          open={branching !== null}
+          purpose="branch"
+          speakers={speakers}
+          onClose={() => setBranching(null)}
+          onPick={(speaker) => {
+            if (branching && speaker?.characterId) branchGroupHere(branching, speaker.characterId);
+          }}
+        />
 
         {shownEffect && <EffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />}
 

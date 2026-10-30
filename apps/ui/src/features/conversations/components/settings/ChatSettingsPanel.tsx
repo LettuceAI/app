@@ -1,3 +1,4 @@
+import { PersonaSheet } from "@/entities/persona";
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
@@ -10,7 +11,7 @@ import { FailureState } from "@/shared/ui/FailureState";
 import { pickBackground, updateSettings, type ConversationServices } from "../../data/actions";
 import { personasQuery } from "../../data/queries";
 import { effectivePersonaId } from "../../data/settings-queries";
-import { BackgroundSheet, NoteSheet, PersonaSheet } from "../ToolSheets";
+import { BackgroundSheet, NoteSheet } from "../ToolSheets";
 import { ModelSheet } from "./ModelSheet";
 import { LorebooksSheet } from "./LorebooksSheet";
 import { PanelViews } from "./PanelViews";

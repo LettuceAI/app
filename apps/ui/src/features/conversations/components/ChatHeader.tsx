@@ -9,7 +9,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Avatar, Button, cn, icon, IconButton, Input, useOnSurface } from "@lettuceai/crisp";
+import { Avatar, AvatarGroup, Button, cn, icon, IconButton, Input, useOnSurface } from "@lettuceai/crisp";
 import type { Search } from "../data/use-search";
 import { useChatLook } from "@/entities/preferences";
 
@@ -17,6 +17,7 @@ export interface ChatHeaderProps {
   columnStyle?: CSSProperties | undefined;
   name: string;
   avatar: string | null;
+  faces?: readonly { name: string; src: string | null }[];
   phone: boolean;
   memory: { count: number; busy: boolean; label?: string } | null;
   search: Search;
@@ -28,6 +29,7 @@ export interface ChatHeaderProps {
 export function ChatHeader({
   name,
   avatar,
+  faces,
   phone,
   memory,
   search,
@@ -108,7 +110,7 @@ export function ChatHeader({
   );
   const who = (
     <>
-      <Avatar src={avatar} name={name} size="sm" />
+      {faces ? <AvatarGroup people={faces} max={3} size="sm" /> : <Avatar src={avatar} name={name} size="sm" />}
       <span className="min-w-0 truncate text-base font-semibold text-fg">{name}</span>
     </>
   );

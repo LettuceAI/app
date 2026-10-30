@@ -7,7 +7,7 @@ import type { ApiClient } from "@/api/client";
 import type { TimelineMessage } from "@/api/generated/bindings";
 import { statsOf } from "../data/messages";
 import { metricsQuery, usageQuery } from "../data/queries";
-import { MessagePromptDetails } from "./MessagePromptDetails";
+import { MessagePromptDetails, SpeakerSelectionReason } from "./MessagePromptDetails";
 import { CompanionEffectRow } from "../companion/EffectSheet";
 
 export interface MessageMenuProps {
@@ -26,6 +26,7 @@ export interface MessageMenuProps {
   onPin: () => void;
   onRewind: () => void;
   onBranch?: () => void;
+  groupBranch?: boolean;
   onDelete: () => void;
 }
 
@@ -87,12 +88,13 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onPin, onRewind, onBranch, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onPin, onRewind, onBranch, groupBranch = false, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
     <div className="space-y-3 pb-1">
       <MessageStats api={api} conversationId={conversationId} message={message} />
+      {groupBranch && message.role === "assistant" && <SpeakerSelectionReason api={api} conversationId={conversationId} messageId={message.id} />}
       {companion && message.role === "assistant" && onCompanionEffect && <CompanionEffectRow key={message.id} api={api} conversationId={conversationId} message={message} onOpen={onCompanionEffect} />}
       <ListGroup>
         {!scene && <ListRowButton icon={<Copy size={icon.lg} />} title={t("menu.copy")} chevron={false} onClick={onCopy} />}
@@ -134,8 +136,8 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
           {!scene && onBranch && (
             <ListRowButton
               icon={<GitBranch size={icon.lg} />}
-              title={t("menu.branch")}
-              description={busy ? t("menu.regenerateBusy") : t("menu.branchHint")}
+              title={t(groupBranch ? "menu.branchGroup" : "menu.branch")}
+              description={busy ? t("menu.regenerateBusy") : t(groupBranch ? "menu.branchGroupHint" : "menu.branchHint")}
               chevron={false}
               disabled={busy}
               onClick={onBranch}

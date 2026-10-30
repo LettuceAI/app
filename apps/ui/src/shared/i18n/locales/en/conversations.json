@@ -24,10 +24,66 @@
     "yesterday": "Yesterday",
     "loadingOlder": "Loading earlier messages",
     "empty": "No messages yet",
-    "jumpToLatest": "Jump to latest"
+    "jumpToLatest": "Jump to latest",
+    "selectingSpeaker": "Selecting character…"
   },
   "composer": {
     "placeholder": "Message {{name}}…"
+  },
+  "members": {
+    "add": {
+      "row": "Add character",
+      "title": "Add a character",
+      "body": "They join this chat from now on.",
+      "search": "Search characters",
+      "empty": "Every character is already in this chat",
+      "noMatch": "No character matches"
+    },
+    "remove": {
+      "label": "Remove {{name}}",
+      "title": "Remove {{name}}?",
+      "body": "They stop answering in this chat. Their earlier messages stay.",
+      "confirm": "Remove"
+    },
+    "followGroup": "Follow group members",
+    "followGroupHint": "Reset members and muted characters to the group settings",
+    "models": "Character models in this chat",
+    "followModels": "Follow group models",
+    "followModelsHint": "Remove all character model overrides in this chat",
+    "characterModel": "Character’s model",
+    "characterModelHint": "Use the character’s own model setting"
+  },
+  "mention": {
+    "title": "Mention a character",
+    "select": "to select",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "Mention {{name}}",
+    "unmention": "Remove the mention of {{name}}",
+    "muted": "{{name}} is muted. Long-press or right-click to unmute",
+    "speak": "Have {{name}} respond"
+  },
+  "director": {
+    "hint": "Tap a character to choose who responds",
+    "selectedHint": "{{name}} will respond when you send",
+    "actionHint": "Send adds your message. Tap a character to make them respond",
+    "respondingHint": "{{name}} is responding",
+    "addMessage": "Add message without a reply",
+    "noAttachments": "Messages in director mode can't carry attachments"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Who speaks next",
+      "body": "Pick a member to answer, or let the group decide."
+    },
+    "branch": {
+      "title": "Continue one-on-one",
+      "body": "Opens a new chat with one member and the story up to this message."
+    },
+    "auto": "Let the group decide",
+    "autoBody": "Uses the speaker selection of this chat",
+    "muted": "Skipped unless named"
   },
   "message": {
     "image": "Attached image",
@@ -40,6 +96,10 @@
     "document": "Document"
   },
   "menu": {
+    "selection": {
+      "title": "Why this character responded",
+      "fallback": "LLM selection was unavailable. Chosen using participation and recent replies."
+    },
     "copy": "Copy text",
     "edit": "Edit",
     "regenerate": "Regenerate",
@@ -55,6 +115,8 @@
     "deleteHint": "Unpin it first",
     "branch": "Branch from here",
     "branchHint": "Opens a new chat with the story up to here",
+    "branchGroup": "Continue one-on-one",
+    "branchGroupHint": "Opens a chat with one member and the story up to here",
     "details": {
       "title": "Prompt details",
       "hint": "What was sent for this reply",
@@ -316,7 +378,8 @@
       "history": "Chat history",
       "notes": "Scheduled notes",
       "starters": "New chat",
-      "advanced": "Model settings"
+      "advanced": "Model settings",
+      "appearance": "Group appearance"
     },
     "back": "Back",
     "reset": "Reset",
@@ -340,7 +403,32 @@
       "companion": "Companion",
       "actions": "Chat",
       "generation": "Generation",
-      "lorebooks": "Lorebooks"
+      "lorebooks": "Lorebooks",
+      "members": "Members",
+      "speaker": "Speaker selection"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Uses your default model to choose who speaks (costs tokens)",
+      "heuristic": "Heuristic",
+      "heuristicHint": "Uses participation balance and context clues (free)",
+      "round_robin": "Round Robin",
+      "round_robinHint": "Characters take turns in order (free)",
+      "director": "Director",
+      "directorHint": "You choose which character responds to each message",
+      "style": "Director style",
+      "cue": "Cue",
+      "action": "Action",
+      "cueHint": "Tap a character to choose who responds. Send delivers your message and triggers their reply.",
+      "actionHint": "Send only adds your message. Tap a character's avatar to make them respond instantly.",
+      "own": "This chat has its own choice"
+    },
+    "members": {
+      "replies_one": "{{count}} reply, {{percent}}",
+      "replies_other": "{{count}} replies, {{percent}}",
+      "muted": "Skipped unless named",
+      "last": "At least one member has to answer",
+      "answers": "{{name}} answers in this chat"
     },
     "model": {
       "title": "Model",
@@ -457,6 +545,7 @@
     "actions": {
       "newChat": "New chat",
       "newChatHint": "Start another conversation with this character",
+      "newGroupChatHint": "Start another conversation with this group",
       "history": "Chat history",
       "historyHint": "Open, rename or delete earlier chats",
       "branches": "Branches",
@@ -467,6 +556,7 @@
       "exportHint": "Save the conversation as a file",
       "import": "Import a chat log",
       "importHint": "Bring a conversation in from a file",
+      "importGroupHint": "Not available for group chats yet",
       "archive": "Archive chat",
       "archiveHint": "Hide it from the list, keep everything",
       "restore": "Restore chat",
@@ -505,7 +595,8 @@
       "nextYear": "Next year",
       "year": "Year",
       "time": "Time"
-    }
+    },
+    "groupAppearanceHint": "Appearance for all chats in this group"
   },
   "memory": {
     "title": "Memory",

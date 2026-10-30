@@ -200,6 +200,12 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
           case "notice":
             hooksRef.current.onNotice(event.code);
             break;
+          case "speaker_selecting":
+            store.setSelecting();
+            break;
+          case "speaker_selected":
+            store.setSpeaker(event.character_id);
+            break;
           case "delta": {
             const previousLength = store.getText().text.length;
             store.appendDelta(event.text, event.reasoning);
@@ -283,7 +289,7 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
   );
 
   const continueReply = useCallback(
-    (swapPlaces: boolean) =>
+    (swapPlaces: boolean, speakerParticipantId: string | null = null) =>
       run(null, null, null, (onEvent, signal) =>
         api.stream(
           "conversationContinue",
@@ -292,7 +298,7 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
               conversation_id: conversationId,
               expected_revision: currentRevision(queryClient, conversationId),
               client_operation_id: crypto.randomUUID(),
-              forced_speaker_participant_id: null,
+              forced_speaker_participant_id: speakerParticipantId,
               swap_places: swapPlaces,
             },
           ],
@@ -304,7 +310,7 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
   );
 
   const regenerate = useCallback(
-    (messageId: string, swapPlaces: boolean) =>
+    (messageId: string, swapPlaces: boolean, speakerParticipantId: string | null = null) =>
       run(messageId, null, null, (onEvent, signal) =>
         api.stream(
           "conversationRegenerate",
@@ -316,7 +322,7 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
               client_operation_id: crypto.randomUUID(),
               guidance: null,
               model_profile_id: null,
-              forced_speaker_participant_id: null,
+              forced_speaker_participant_id: speakerParticipantId,
               swap_places: swapPlaces,
             },
           ],

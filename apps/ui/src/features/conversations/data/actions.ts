@@ -21,6 +21,31 @@ export function mediaIds(message: TimelineMessage): string[] {
   return message.parts.flatMap((part: MessagePartView) => (part.type === "media" ? [part.asset.asset_id] : []));
 }
 
+export async function addUserMessage(services: ConversationServices, text: string): Promise<void> {
+  trimIfStuck(services);
+  const { api, queryClient, conversationId } = services;
+  await api.call("conversationAddUserMessage", {
+    conversation_id: conversationId,
+    text,
+    expected_revision: currentRevision(queryClient, conversationId),
+    client_operation_id: crypto.randomUUID(),
+  });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+}
+
+export async function setMemberMuted(services: ConversationServices, participantId: string, muted: boolean): Promise<void> {
+  const { api, queryClient, conversationId } = services;
+  await api.call("conversationParticipantUpdate", {
+    conversation_id: conversationId,
+    participant_id: participantId,
+    enabled: null,
+    muted,
+    model: null,
+    client_operation_id: crypto.randomUUID(),
+  });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
+}
+
 export async function editMessage(services: ConversationServices, message: TimelineMessage, text: string): Promise<void> {
   trimIfStuck(services);
   const { api, queryClient, conversationId } = services;
@@ -72,6 +97,22 @@ export async function branchToNewChat(services: ConversationServices, message: T
   trimIfStuck(services);
   const { api, queryClient } = services;
   const copy = await api.call("conversationBranchDirectToCharacter", {
+    conversation_id: services.conversationId,
+    message_id: message.id,
+    character_id: characterId,
+    client_operation_id: crypto.randomUUID(),
+  });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
+  ]);
+  return copy.conversation_id;
+}
+
+export async function branchGroupToCharacter(services: ConversationServices, message: TimelineMessage, characterId: string): Promise<string> {
+  trimIfStuck(services);
+  const { api, queryClient } = services;
+  const copy = await api.call("conversationBranchToCharacterFromMessage", {
     conversation_id: services.conversationId,
     message_id: message.id,
     character_id: characterId,
@@ -172,6 +213,12 @@ export async function pickBackground(services: ConversationServices): Promise<bo
   const asset = await services.api.call("assetsIngest", { source, role: "background" });
   await updateSettings(services, { background: { type: "image", asset_id: asset.asset_id } });
   return true;
+}
+
+export async function startGroupChat(api: ApiClient, queryClient: QueryClient, groupId: string): Promise<string> {
+  const launched = await api.call("conversationLaunchGroup", { group_id: groupId, client_operation_id: crypto.randomUUID() });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() });
+  return launched.conversation_id;
 }
 
 export async function startDirectChat(api: ApiClient, queryClient: QueryClient, characterId: string, starterId: string | null = null): Promise<string> {

@@ -29,13 +29,36 @@ export function messageCountQuery(api: ApiClient, conversationId: string) {
   });
 }
 
-export function characterChatsQuery(api: ApiClient, characterId: string | null) {
+export function sourceChatsQuery(api: ApiClient, characterId: string | null, groupId: string | null) {
   return queryOptions({
-    queryKey: [...queryKeys.conversations.lists(), "character", characterId] as const,
+    queryKey: [...queryKeys.conversations.lists(), groupId ? "group" : "character", groupId ?? characterId] as const,
     queryFn: (): Promise<ConversationSummary[]> =>
-      allPages((cursor) => api.call("conversationsList", { kind: "direct", character_id: characterId, source_group_id: null, lifecycle: "all", cursor, limit: null })),
-    enabled: characterId !== null,
+      allPages((cursor) =>
+        api.call("conversationsList", groupId
+          ? { kind: "group", character_id: null, source_group_id: groupId, lifecycle: "all", cursor, limit: null }
+          : { kind: "direct", character_id: characterId, source_group_id: null, lifecycle: "all", cursor, limit: null }),
+      ),
+    enabled: characterId !== null || groupId !== null,
   });
+}
+
+export function libraryCastQuery(api: ApiClient) {
+  return queryOptions({
+    queryKey: queryKeys.characters.list(),
+    queryFn: () => allPages((cursor) => api.call("charactersList", { cursor, limit: null })),
+  });
+}
+
+export function participationQuery(api: ApiClient, conversationId: string, enabled: boolean) {
+  return queryOptions({
+    queryKey: [...queryKeys.conversations.detail(conversationId), "participation"] as const,
+    queryFn: () => api.call("conversationParticipationStats", { conversation_id: conversationId }),
+    enabled,
+  });
+}
+
+export function characterChatsQuery(api: ApiClient, characterId: string | null) {
+  return sourceChatsQuery(api, characterId, null);
 }
 
 export function notesQuery(api: ApiClient, characterId: string | null) {

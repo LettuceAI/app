@@ -19,6 +19,8 @@ export interface GenerationMeta {
   userText: string | null;
   userMessageId: string | null;
   targetId: string | null;
+  speakerId: string | null;
+  selecting: boolean;
   failure: GenerationFailure | null;
 }
 
@@ -35,6 +37,8 @@ const idleMeta: GenerationMeta = {
   userText: null,
   userMessageId: null,
   targetId: null,
+  speakerId: null,
+  selecting: false,
   failure: null,
 };
 
@@ -88,6 +92,15 @@ export class GenerationStore {
 
   setTurn(turnId: string) {
     if (this.meta.active && this.meta.turnId !== turnId) this.setMeta({ ...this.meta, turnId });
+  }
+
+  setSelecting() {
+    if (this.meta.active && !this.meta.selecting) this.setMeta({ ...this.meta, selecting: true });
+  }
+
+  setSpeaker(characterId: string) {
+    if (this.meta.active && (this.meta.speakerId !== characterId || this.meta.selecting))
+      this.setMeta({ ...this.meta, speakerId: characterId, selecting: false });
   }
 
   setLoading(loading: ModelLoading) {

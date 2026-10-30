@@ -85,6 +85,19 @@ function Details({ api, conversationId, messageId }: { api: ApiClient; conversat
   );
 }
 
+export function SpeakerSelectionReason({ api, conversationId, messageId }: { api: ApiClient; conversationId: string; messageId: string }) {
+  const { t } = useTranslation("conversations");
+  const snapshot = useQuery(promptSnapshotQuery(api, conversationId, messageId));
+  const selection = snapshot.data?.speaker_selection;
+  if (!selection || (!selection.reason && !selection.heuristic_fallback)) return null;
+  return (
+    <ListGroup>
+      <ListRow title={t("menu.selection.title")} description={selection.reason ?? t("menu.selection.fallback")} />
+      {selection.reason && selection.heuristic_fallback && <p className="px-4 pb-3 text-xs text-fg-3">{t("menu.selection.fallback")}</p>}
+    </ListGroup>
+  );
+}
+
 export function MessagePromptDetails({ api, conversationId, messageId }: { api: ApiClient; conversationId: string; messageId: string }) {
   const { t } = useTranslation("conversations");
   const [open, setOpen] = useState(false);

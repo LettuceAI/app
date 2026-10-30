@@ -197,6 +197,71 @@ async function typeAndSend(text: string) {
 const accepted = { status: "ok" as const, data: { user_message_id: "u1", turn_id: "t1" } };
 
 describe("conversation screen", () => {
+  it.each([
+    { reason: "Cassian knows the harbor.", heuristic_fallback: false },
+    { reason: null, heuristic_fallback: true },
+  ])("shows the group speaker selection result in the message menu: $heuristic_fallback", async (selection) => {
+    await open({
+      calls: {
+        conversationOpen: () => ({
+          status: "ok",
+          data: view([message("a1", "assistant", "Sit down.")], {
+            kind: "group",
+            source: { type: "group", group_id: "g1" },
+          }),
+        }),
+        messagePromptSnapshot: () => ({
+          status: "ok",
+          data: {
+            speaker_selection: selection,
+            prompt: null, lorebooks: [], turn_id: "t1", candidate_id: "k1", operation: "send",
+            model: { display_name: "Chat model", external_model_id: "chat", provider_kind: "openrouter" },
+            streaming: true,
+            parameters: { temperature: null, top_p: null, top_k: null, max_output_tokens: null, context_length: null, frequency_penalty: null, presence_penalty: null, repetition_penalty: null },
+            messages: [], budget: { selected_messages: 0, omitted_messages: 0, input_bytes: 0, estimated_input_tokens: 0, truncated: false },
+            sections: null, sections_unavailable: "predates_breakdown",
+          },
+        }),
+      },
+    });
+    fireEvent.contextMenu(await screen.findByText("Sit down."));
+    expect(await screen.findByText("Why this character responded")).toBeTruthy();
+    expect(await screen.findByText(selection.reason ?? "LLM selection was unavailable. Chosen using participation and recent replies.")).toBeTruthy();
+  });
+
+  it("lets the LLM choose the next group speaker without asking the user", async () => {
+    const continueReply = vi.fn<NonNullable<MockStreamHandlers["conversationContinue"]>>(() => ({
+      status: "ok" as const,
+      data: { turn_id: "t1" },
+    }));
+    await open({
+      calls: {
+        conversationOpen: () => ({
+          status: "ok",
+          data: view([message("a1", "assistant", "Sit down.")], {
+            kind: "group",
+            source: { type: "group", group_id: "g1" },
+          }),
+        }),
+        conversationSettingsGet: () => ({
+          status: "ok",
+          data: {
+            ...settings,
+            kind: "group",
+            speaker_selection: { method: "llm", source: "group" },
+          },
+        }),
+      },
+      streams: { conversationContinue: continueReply },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Let the character continue" }));
+    await waitFor(() => expect(continueReply).toHaveBeenCalledTimes(1));
+    expect(continueReply.mock.calls[0]?.[0][0]).toMatchObject({
+      forced_speaker_participant_id: null,
+    });
+    expect(screen.queryByText("Who speaks next")).toBeNull();
+  });
+
   it("applies the saved composer font and color to the actual chat composer", async () => {
     await open({
       calls: {

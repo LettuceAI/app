@@ -9,7 +9,8 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from "react";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -20,6 +21,7 @@ import {
   IconButton,
   MessageDivider,
   Message,
+  motion as m,
   useCompactLayout,
 } from "@lettuceai/crisp";
 import { MessageSquare } from "lucide-react";
@@ -59,6 +61,7 @@ export interface TimelineProps {
   scene: { messageId: string; index: number; total: number } | null;
   onScene: (message: TimelineMessage, delta: -1 | 1) => void;
   onRetry: () => void;
+  bottomInset?: boolean;
 }
 
 const nearBottom = 80;
@@ -81,6 +84,7 @@ export function Timeline({
   scene,
   onScene,
   onRetry,
+  bottomInset = false,
   columnStyle,
 }: TimelineProps) {
   const { t } = useTranslation("conversations");
@@ -88,6 +92,12 @@ export function Timeline({
   const appearance = useMessageAppearance();
   const phone = useCompactLayout();
   const meta = useSyncExternalStore(store.subscribeMeta, store.getMeta);
+  const speaker = meta.speakerId
+    ? participants.find((participant) => participant.character_id === meta.speakerId)
+    : undefined;
+  const replyAuthor = speaker
+    ? { name: speaker.name, avatar: speaker.avatar?.url ?? null }
+    : character;
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const top = useRef<HTMLDivElement>(null);
@@ -310,7 +320,7 @@ export function Timeline({
         onPointerDown={onPointerDown}
         className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]"
       >
-        <div ref={content} style={columnStyle} className={cn("pb-6 pt-3", phone ? "px-3" : "px-6")}>
+        <div ref={content} style={columnStyle} className={cn("pt-3", bottomInset ? "pb-24" : "pb-6", phone ? "px-3" : "px-6")}>
           <div ref={top} aria-hidden className="h-px" />
           {loadingOlder && (
             <p role="status" className="pb-2 text-center text-2xs text-fg-3">
@@ -382,8 +392,19 @@ export function Timeline({
               </Message>
             </div>
           )}
-          {trailing && <StreamingReply store={store} author={character} group="only" />}
-          {!meta.active && pendingTurn && <PendingReply author={character} group="only" />}
+          {trailing && meta.selecting && (
+            <motion.div
+              className="mt-4 flex items-center gap-2 text-fg-3"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={m.quick}
+            >
+              <Loader2 size={icon.md} className="animate-spin" />
+              <span className="text-sm">{t("timeline.selectingSpeaker")}</span>
+            </motion.div>
+          )}
+          {trailing && !meta.selecting && <StreamingReply store={store} author={replyAuthor} group="only" />}
+          {!meta.active && pendingTurn && <PendingReply author={replyAuthor} group="only" />}
           {meta.failure && (
             <div className="mt-5">
               <Alert
@@ -403,7 +424,7 @@ export function Timeline({
         </div>
       </div>
       {(!atBottom || windowed) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center">
           <IconButton
             label={t("timeline.jumpToLatest")}
             shape="round"

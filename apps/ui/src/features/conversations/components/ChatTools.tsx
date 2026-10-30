@@ -1,3 +1,4 @@
+import { PersonaSheet } from "@/entities/persona";
 import { useCallback, useEffect, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -10,10 +11,11 @@ import { pickBackground, updateSettings, type ConversationServices } from "../da
 import { helpMeReplyEnabledQuery, modelsQuery, personasQuery } from "../data/queries";
 import { effectivePersonaId } from "../data/settings-queries";
 import { useHelpReply } from "../data/use-help-reply";
+import { attachmentScopes } from "../data/attachment-scopes";
 import type { ComposerHandle } from "./ChatComposer";
 import { DiceSheet } from "./DiceSheet";
 import { HelpChoiceSheet, HelpResultSheet } from "./HelpReplySheets";
-import { BackgroundSheet, NoteSheet, PersonaSheet } from "./ToolSheets";
+import { BackgroundSheet, NoteSheet } from "./ToolSheets";
 
 export type ToolPanel = "menu" | "persona" | "background" | "note" | "dice" | "helpChoice" | "helpResult";
 
@@ -44,8 +46,7 @@ export function ChatTools({ api, services, conversationId, settings, panel, setP
   const [saving, setSaving] = useState(false);
   const helpEnabled = useQuery(helpMeReplyEnabledQuery(api)).data ?? true;
   const models = useQuery(modelsQuery(api));
-  const modelId = settings?.model.id ?? null;
-  const scopes = models.data?.models.find((model) => model.id === modelId)?.input_scopes ?? [];
+  const scopes = attachmentScopes(settings, models.data);
   const imageInput = scopes.includes("image");
   const audioInput = scopes.includes("audio");
   const personas = useQuery({ ...personasQuery(api, conversationId), enabled: panel === "menu" || panel === "persona" });
@@ -131,16 +132,18 @@ export function ChatTools({ api, services, conversationId, settings, panel, setP
             onClick={() => setPanel("note")}
           />
           <ListRowButton icon={<Dices size={icon.lg} />} title={t("tools.dice")} description={t("tools.diceHint")} onClick={() => setPanel("dice")} />
-          <ListRowButton
-            icon={<ArrowLeftRight size={icon.lg} />}
-            title={swap ? t("tools.swapOn") : t("tools.swap")}
-            description={swap ? t("tools.swapOnHint") : t("tools.swapHint")}
-            chevron={false}
-            onClick={() => {
-              onSwap(!swap);
-              setPanel(null);
-            }}
-          />
+          {settings?.kind !== "group" && (
+            <ListRowButton
+              icon={<ArrowLeftRight size={icon.lg} />}
+              title={swap ? t("tools.swapOn") : t("tools.swap")}
+              description={swap ? t("tools.swapOnHint") : t("tools.swapHint")}
+              chevron={false}
+              onClick={() => {
+                onSwap(!swap);
+                setPanel(null);
+              }}
+            />
+          )}
         </ListGroup>
       </Sheet>
 
