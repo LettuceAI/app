@@ -20,6 +20,8 @@ mod reset_database;
 pub use reset_database::{ResetDatabaseError, ResetDatabaseSeed};
 #[cfg(test)]
 mod reset_database_tests;
+#[cfg(test)]
+mod migration_tests;
 pub use storage_maintenance::StorageMaintenanceError;
 mod conversation;
 mod memory;
