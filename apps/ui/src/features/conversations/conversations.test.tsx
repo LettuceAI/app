@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -198,9 +198,10 @@ const accepted = { status: "ok" as const, data: { user_message_id: "u1", turn_id
 
 describe("conversation screen", () => {
   it.each([
-    { reason: "Cassian knows the harbor.", heuristic_fallback: false },
-    { reason: null, heuristic_fallback: true },
-  ])("shows the group speaker selection result in the message menu: $heuristic_fallback", async (selection) => {
+    { reason: "Cassian knows the harbor.", heuristic_fallback: false, empty: false },
+    { reason: null, heuristic_fallback: true, empty: false },
+    { reason: "No extra sources needed.", heuristic_fallback: false, empty: true },
+  ])("shows the group speaker selection result in the message menu: $heuristic_fallback, empty: $empty", async ({ empty, ...selection }) => {
     await open({
       calls: {
         conversationOpen: () => ({
@@ -215,8 +216,8 @@ describe("conversation screen", () => {
           data: {
             speaker_selection: selection,
             ...(!selection.heuristic_fallback ? { used_sources: {
-              lorebook_entries: [{ lorebook_id: "book1", entry_id: "entry1", lorebook_name: "Harbor lore", title: "The harbor", text: "Ferries stop at dusk." }],
-              memories: [{ memory_id: "memory1", text: "Cassian remembers the crossing.", match_score_basis_points: 8300 }, { memory_id: "memory2", text: "A pinned promise.", match_score_basis_points: null }],
+              lorebook_entries: empty ? [] : [{ lorebook_id: "book1", entry_id: "entry1", lorebook_name: "Harbor lore", title: "The harbor", text: "Ferries stop at dusk." }],
+              memories: empty ? [] : [{ memory_id: "memory1", text: "Cassian remembers the crossing.", match_score_basis_points: 8300 }, { memory_id: "memory2", text: "A pinned promise.", match_score_basis_points: null }],
               memory_summary: "We reached the harbor.",
             } } : {}),
             prompt: null, lorebooks: [], turn_id: "t1", candidate_id: "k1", operation: "send",
@@ -232,6 +233,11 @@ describe("conversation screen", () => {
     fireEvent.contextMenu(await screen.findByText("Sit down."));
     expect(await screen.findByText("Why this character responded")).toBeTruthy();
     expect(await screen.findByText(selection.reason ?? "LLM selection was unavailable. Chosen using participation and recent replies.")).toBeTruthy();
+    if (empty) {
+      expect(screen.queryByRole("button", { name: /Lorebook entries used/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Memories used/ })).toBeNull();
+      return;
+    }
     fireEvent.click(screen.getByRole("button", { name: /Lorebook entries used/ }));
     fireEvent.click(screen.getByRole("button", { name: /Memories used/ }));
     if (selection.heuristic_fallback) {
@@ -705,6 +711,101 @@ describe("conversation screen", () => {
     expect(regenerate.mock.calls[0]?.[0]).toMatchObject([
       { conversation_id: "c1", message_id: "a1", expected_revision: 4 },
     ]);
+  });
+
+  it.each([
+    { kind: "direct", another: false },
+    { kind: "companion", another: false },
+    { kind: "group", another: false },
+    { kind: "group", another: true },
+  ] as const)("combines regeneration direction and model in $kind with another character: $another", async ({ kind, another }) => {
+    const regenerate = vi.fn<NonNullable<MockStreamHandlers["conversationRegenerate"]>>(() => ({
+      status: "ok", data: { turn_id: "t3" },
+    }));
+    const saveSettings = vi.fn();
+    const changeMember = vi.fn();
+    const group = kind === "group";
+    await open({
+      streams: { conversationRegenerate: regenerate },
+      calls: {
+        conversationOpen: () => ({ status: "ok", data: view([message("a1", "assistant", "Sit down.")], group ? {
+          kind: "group", source: { type: "group", group_id: "g1" },
+          participants: [
+            { id: "pc", role: "character", name: "Cassian", character_id: "ch1", avatar: { asset_id: "avatar1", url: "/cassian.png" } },
+            { id: "p2", role: "character", name: "Bea", character_id: "ch2", avatar: { asset_id: "avatar2", url: "/bea.png" } },
+            { id: "p3", role: "character", name: "Removed member", character_id: "ch3", avatar: null },
+          ],
+        } : {}) }),
+        conversationSettingsGet: () => ({ status: "ok", data: { ...settings,
+          ...(kind === "companion" ? { companion_time: { mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 } } : {}),
+          ...(group ? { kind: "group", members: {
+            members_source: "conversation", muted_source: "conversation", models_source: "group",
+            participants: [
+              { participant_id: "pc", character_id: "ch1", name: "Cassian", enabled: true, muted: false, model: settings.model },
+              { participant_id: "p2", character_id: "ch2", name: "Bea", enabled: true, muted: true, model: settings.model },
+              { participant_id: "p3", character_id: "ch3", name: "Removed member", enabled: false, muted: false, model: settings.model },
+            ],
+          } } : {}),
+        } }),
+        modelsList: () => ({ status: "ok", data: { models: [{
+          id: "m2", provider_account_id: "account", external_model_id: "vendor/second", display_name: "Second model", kind: "chat", config: {},
+          input_scopes: ["text"], output_scopes: ["text"], revision: 1, created_at: 1, updated_at: 1,
+        }], default_model_id: "m1", revision: 1 } }),
+        conversationSettingsUpdate: (request) => { saveSettings(request); return { status: "ok", data: settings }; },
+        conversationParticipantUpdate: (request) => { changeMember(request); return { status: "ok", data: settings }; },
+      },
+    });
+    fireEvent.contextMenu(await screen.findByText("Sit down."));
+    fireEvent.click(await screen.findByRole("button", { name: /Regeneration options/ }));
+    let panel = await screen.findByRole("dialog", { name: "Regeneration options" });
+    if (group) expect(within(panel).getByRole("img", { name: "Cassian" }).querySelector("img")?.getAttribute("src")).toBe("/cassian.png");
+    fireEvent.change(within(panel).getByRole("textbox", { name: "Direction" }), { target: { value: "  Keep it brief.  " } });
+    fireEvent.click(within(panel).getByRole("button", { name: /Reply model/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Second model/ }));
+    panel = await screen.findByRole("dialog", { name: "Regeneration options" });
+    if (another) {
+      fireEvent.click(within(panel).getByRole("button", { name: /Character/ }));
+      const chooser = await screen.findByRole("dialog", { name: "Choose character" });
+      expect(within(chooser).queryByText("Removed member")).toBeNull();
+      fireEvent.click(within(chooser).getByRole("button", { name: /Bea/ }));
+      panel = await screen.findByRole("dialog", { name: "Regeneration options" });
+      expect(within(panel).getByRole("img", { name: "Bea" }).querySelector("img")?.getAttribute("src")).toBe("/bea.png");
+    } else if (!group) {
+      expect(within(panel).queryByRole("button", { name: /^Character/ })).toBeNull();
+    }
+    fireEvent.click(within(panel).getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => expect(regenerate).toHaveBeenCalledTimes(1));
+    expect(regenerate.mock.calls[0]?.[0]).toMatchObject([{
+      conversation_id: "c1", message_id: "a1", expected_revision: 4,
+      guidance: "Keep it brief.", model_profile_id: "m2", forced_speaker_participant_id: another ? "p2" : null,
+    }]);
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(changeMember).not.toHaveBeenCalled();
+  });
+
+  it("keeps regeneration direction after rejection and resets it when closed", async () => {
+    const regenerate = vi.fn<NonNullable<MockStreamHandlers["conversationRegenerate"]>>(() => ({
+      status: "error", error: { code: "conflict", message: "private diagnostic", details: null },
+    }));
+    await open({ streams: { conversationRegenerate: regenerate } });
+    fireEvent.contextMenu(await screen.findByText("Sit down."));
+    fireEvent.click(await screen.findByRole("button", { name: /Regeneration options/ }));
+    let panel = await screen.findByRole("dialog", { name: "Regeneration options" });
+    fireEvent.change(within(panel).getByRole("textbox", { name: "Direction" }), { target: { value: "Keep my direction" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => expect(within(panel).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(false));
+    expect((within(panel).getByRole("textbox", { name: "Direction" }) as HTMLTextAreaElement).value).toBe("Keep my direction");
+    fireEvent.click(within(panel).getByRole("button", { name: /Reply model/ }));
+    await screen.findByRole("dialog", { name: "Model" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Model" })).toBeNull());
+    expect(screen.getByRole("dialog", { name: "Regeneration options" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Regeneration options" })).toBeNull());
+    fireEvent.contextMenu(screen.getByText("Sit down."));
+    fireEvent.click(await screen.findByRole("button", { name: /Regeneration options/ }));
+    panel = await screen.findByRole("dialog", { name: "Regeneration options" });
+    expect((within(panel).getByRole("textbox", { name: "Direction" }) as HTMLTextAreaElement).value).toBe("");
   });
 
   it("selects the neighbouring reply variant through its candidate id", async () => {

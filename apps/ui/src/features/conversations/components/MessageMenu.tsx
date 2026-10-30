@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Copy, GitBranch, History, Pencil, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, GitBranch, History, Pencil, Pin, PinOff, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Skeleton } from "@lettuceai/crisp";
 import { object } from "@/entities/preferences";
@@ -23,6 +23,7 @@ export interface MessageMenuProps {
   onCopy: () => void;
   onEdit: () => void;
   onRegenerate: () => void;
+  onRegenerateOptions: () => void;
   canEdit: boolean;
   onPin: () => void;
   onRewind: () => void;
@@ -89,7 +90,7 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onPin, onRewind, onBranch, groupBranch = false, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, groupBranch = false, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
@@ -102,6 +103,7 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
         {!scene && <ListRowButton icon={<Copy size={icon.lg} />} title={t("menu.copy")} chevron={false} onClick={onCopy} />}
         {canEdit && <ListRowButton icon={<Pencil size={icon.lg} />} title={t("menu.edit")} onClick={onEdit} />}
         {canRegenerate && (
+          <>
           <ListRowButton
             icon={<RefreshCw size={icon.lg} />}
             tone="secondary"
@@ -111,6 +113,14 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
             disabled={busy}
             onClick={onRegenerate}
           />
+          <ListRowButton
+            icon={<SlidersHorizontal size={icon.lg} />}
+            title={t("regeneration.title")}
+            description={busy ? t("menu.regenerateBusy") : t(groupBranch ? "regeneration.groupHint" : "regeneration.hint")}
+            disabled={busy}
+            onClick={onRegenerateOptions}
+          />
+          </>
         )}
         {!scene && (
           <ListRowButton

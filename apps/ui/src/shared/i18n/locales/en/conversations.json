@@ -81,6 +81,13 @@
       "title": "Continue one-on-one",
       "body": "Opens a new chat with one member and the story up to this message."
     },
+    "regenerate": {
+      "title": "Choose character",
+      "body": "Only for this reply. Muted members can be chosen too.",
+      "same": "Same character",
+      "search": "Search characters",
+      "noMatches": "No characters match your search"
+    },
     "auto": "Let the group decide",
     "autoBody": "Uses the speaker selection of this chat",
     "muted": "Skipped unless named"
@@ -159,6 +166,21 @@
       "showing": "{{shown}} of {{total}}",
       "more": "Show more"
     }
+  },
+  "regeneration": {
+    "title": "Regeneration options",
+    "hint": "Direction and model",
+    "groupHint": "Direction, model and character",
+    "oneReply": "Only for this reply",
+    "direction": "Direction",
+    "directionHint": "Optional. Describe what to change in the new reply.",
+    "placeholder": "Keep it shorter, change the tone, or take another approach",
+    "model": "Reply model",
+    "usualModel": "Use the usual model",
+    "modelUnavailable": "This model is no longer available. Choose another.",
+    "character": "Character",
+    "sameCharacter": "Same character: {{name}}",
+    "characterUnavailable": "This character is no longer a member. Choose another."
   },
   "edit": {
     "title": "Edit message",

@@ -40,6 +40,7 @@ import { BeetrootRain } from "./components/BeetrootRain";
 import { ChatSettingsPanel } from "./components/settings/ChatSettingsPanel";
 import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
+import { RegenerationSheet } from "./components/RegenerationSheet";
 import { ParticipantsBar } from "./components/ParticipantsBar";
 import { SpeakerSheet, type Speaker } from "./components/SpeakerSheet";
 import { EffectSheet } from "./companion/EffectSheet";
@@ -181,6 +182,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const [effectMessage, setEffectMessage] = useState<TimelineMessage | null>(null);
   const { shown: shownEffect } = useClosingValue(effectMessage);
   const [editing, setEditing] = useState<TimelineMessage | null>(null);
+  const [regenerating, setRegenerating] = useState<{ message: TimelineMessage } | null>(null);
+  const { shown: shownRegeneration, session: regenerationSession } = useClosingValue(regenerating);
   const [busy, setBusy] = useState(false);
   const [modelRequired, setModelRequired] = useState(false);
   const [panel, setPanel] = useState<ToolPanel | null>(null);
@@ -769,6 +772,10 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
                 timeline.jumpToLatest();
                 void generation.regenerate(shownMenu.id, swap);
               }}
+              onRegenerateOptions={() => {
+                setMenuId(null);
+                setRegenerating({ message: shownMenu });
+              }}
               onPin={() => togglePin(shownMenu)}
               onRewind={() => void rewind(shownMenu, menuAfter)}
               {...(directCharacterId
@@ -780,6 +787,24 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             />
           )}
         </Sheet>
+
+        {shownRegeneration && <RegenerationSheet
+          key={regenerationSession}
+          api={api}
+          conversationId={conversationId}
+          open={regenerating !== null}
+          group={isGroup}
+          speakers={speakers}
+          originalName={authorOf(participants, shownRegeneration.message)?.name ?? name}
+          originalAvatar={authorOf(participants, shownRegeneration.message)?.avatar ?? null}
+          busy={meta.active || pendingTurn}
+          onClose={() => setRegenerating(null)}
+          onRegenerate={async (options) => {
+            const accepted = await generation.regenerate(shownRegeneration.message.id, swap, options);
+            if (accepted) timeline.jumpToLatest();
+            return accepted;
+          }}
+        />}
 
         <SpeakerSheet
           open={branching !== null}

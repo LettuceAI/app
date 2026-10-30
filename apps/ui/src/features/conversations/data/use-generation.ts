@@ -25,6 +25,12 @@ interface Accepted {
   user_message_id?: string;
 }
 
+export interface RegenerationOptions {
+  direction?: string;
+  modelProfileId?: string | null;
+  speakerParticipantId?: string | null;
+}
+
 interface Run {
   settled: boolean;
   stopRequested: boolean;
@@ -310,7 +316,7 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
   );
 
   const regenerate = useCallback(
-    (messageId: string, swapPlaces: boolean, speakerParticipantId: string | null = null) =>
+    (messageId: string, swapPlaces: boolean, options: RegenerationOptions = {}) =>
       run(messageId, null, null, (onEvent, signal) =>
         api.stream(
           "conversationRegenerate",
@@ -320,9 +326,9 @@ export function useGeneration(api: ApiClient, conversationId: string, hooks: Gen
               message_id: messageId,
               expected_revision: currentRevision(queryClient, conversationId),
               client_operation_id: crypto.randomUUID(),
-              guidance: null,
-              model_profile_id: null,
-              forced_speaker_participant_id: speakerParticipantId,
+              guidance: options.direction?.trim() || null,
+              model_profile_id: options.modelProfileId ?? null,
+              forced_speaker_participant_id: options.speakerParticipantId ?? null,
               swap_places: swapPlaces,
             },
           ],

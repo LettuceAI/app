@@ -25,6 +25,7 @@ function LorebookSources({ sources, sections }: { sources: PromptSources | undef
   const entries = sources?.lorebook_entries;
   const historicalLabels = sections?.filter((section) => section.kind === "lorebook") ?? [];
   const count = entries?.length ?? historicalLabels.length;
+  if (entries?.length === 0) return null;
   const needle = query.trim().toLocaleLowerCase();
   const shown = entries?.filter((entry) =>
     [entry.title, entry.lorebook_name].some((text) => text.toLocaleLowerCase().includes(needle)),
@@ -54,6 +55,7 @@ function MemorySources({ sources }: { sources: PromptSources | undefined }) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(40);
   const memories = sources?.memories ?? [];
+  if (sources && memories.length === 0) return null;
   const needle = query.trim().toLocaleLowerCase();
   const shown = memories.filter((memory) => memory.text.toLocaleLowerCase().includes(needle));
   const percent = new Intl.NumberFormat(i18n.language, { style: "percent", maximumFractionDigits: 0 });
@@ -86,6 +88,7 @@ export function MessageSources({ api, conversationId, messageId }: { api: ApiCli
     ? <Text variant="hint">{t("menu.sources.notRecorded")}</Text>
     : <FailureState size="sm" error={snapshot.error} onRetry={() => void snapshot.refetch()} />;
   const sources = snapshot.data.used_sources ?? undefined;
+  if (sources && sources.lorebook_entries.length === 0 && sources.memories.length === 0) return null;
   return <div className="space-y-2">
     <LorebookSources sources={sources} sections={snapshot.data.sections} />
     <MemorySources sources={sources} />

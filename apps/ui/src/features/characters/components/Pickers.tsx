@@ -38,6 +38,11 @@ export function ModelChoiceSheet({ api, open, value, onChange, onClose, defaultC
   const status = useQuery(modelsQuery(api));
   const chat = useChatModels(api);
   const [query, setQuery] = useState("");
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setQuery("");
+  }
   const needle = query.trim().toLowerCase();
   const shown = chat.models.filter((model) => !needle || model.name.toLowerCase().includes(needle));
   const choose = async (id: string | null) => {
