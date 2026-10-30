@@ -31,6 +31,7 @@ async fn draft(context: &ApiContext, character_id: String) -> dto::GroupDraft {
         group_conversation_prompt_id: None,
         group_roleplay_prompt_id: None,
         presentation: character.draft.presentation.chat_appearance,
+        presentation_overrides: None,
         members: vec![
             dto::LibraryGroupMember {
                 character_id,
@@ -93,6 +94,8 @@ async fn group_editor_get_save_replays_and_rejects_changed_or_stale_writes() {
     );
     let mut draft = before.draft.clone();
     draft.name = "Edited".into();
+    draft.presentation_overrides = Some(vec!["font_size".into()]);
+    draft.presentation.font_size = dto::LibraryFontSize::Large;
     draft.members[1].muted = false;
     let request = dto::GroupSaveRequest {
         group_id: Some(before.id.clone()),

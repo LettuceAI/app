@@ -105,7 +105,7 @@ pub fn canonical_prompt_payload(
 
 pub const GROUP_SYNC_KIND: &str = "group";
 pub const GROUP_SYNC_SCHEMA: &str = "group.snapshot";
-pub const GROUP_SYNC_VERSION: u32 = 1;
+pub const GROUP_SYNC_VERSION: u32 = 2;
 pub const GROUP_LOREBOOK_BINDINGS_SYNC_KIND: &str = "group_lorebook_bindings";
 
 /// The complete reusable group: profile, members and starting scene.

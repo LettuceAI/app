@@ -1580,6 +1580,7 @@ fn map_groups(
             group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: lettuce_characters::ChatAppearanceV1::default(),
+            presentation_overrides: None,
             members: members.clone(),
             starting_scene_id: starting_scene.as_ref().map(|scene| scene.id),
             background_asset_id: None,

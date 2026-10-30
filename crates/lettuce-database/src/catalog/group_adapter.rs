@@ -209,7 +209,7 @@ fn group_row(
 ) -> Result<Option<GroupProfile>, rusqlite::Error> {
     connection
         .query_row(
-            "SELECT id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at FROM groups WHERE id=?1",
+            "SELECT id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,presentation_overrides_json FROM groups WHERE id=?1",
             [group_id.to_string()],
             |row| {
                 let status_text: String = row.get(1)?;
@@ -239,6 +239,7 @@ fn group_row(
                     group_conversation_prompt_id: row.get::<_, Option<String>>(10)?.map(id).transpose()?,
                     group_roleplay_prompt_id: row.get::<_, Option<String>>(11)?.map(id).transpose()?,
                     presentation,
+                    presentation_overrides: row.get::<_, Option<String>>(19)?.map(|value| serde_json::from_str(&value).map_err(|_| invalid())).transpose()?,
                     members: Vec::new(),
                     starting_scene_id: row.get::<_, Option<String>>(15)?.map(id).transpose()?,
                     background_asset_id: row.get::<_, Option<String>>(13)?.map(id).transpose()?,
@@ -723,6 +724,16 @@ fn write_presentation(
     Ok(())
 }
 
+fn write_presentation_overrides(
+    tx: &Transaction<'_>,
+    group_id: GroupId,
+    fields: Option<&std::collections::BTreeSet<String>>,
+) -> Result<(), RepositoryError> {
+    let fields = fields.map(serde_json::to_string).transpose().map_err(|error| RepositoryError::Storage { reason: error.to_string() })?;
+    tx.execute("UPDATE groups SET presentation_overrides_json=?2 WHERE id=?1", params![group_id.to_string(), fields]).map_err(db_error)?;
+    Ok(())
+}
+
 pub(crate) fn insert_group_plan(
     tx: &rusqlite::Transaction<'_>,
     plan: &CreateGroupPlan,
@@ -758,6 +769,7 @@ pub(crate) fn insert_group_rows(
     tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'image',?15,?16,?17,?18)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), chat_mode_name(plan.group.chat_mode), selection_kind(&plan.group.persona), match &plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, plan.group.group_conversation_prompt_id.map(|id| id.to_string()), plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get()]).map_err(db_error)?;
     write_members(tx, plan.group.id, &plan.group.members)?;
     write_presentation(tx, plan.group.id, &plan.group.presentation)?;
+    write_presentation_overrides(tx, plan.group.id, plan.group.presentation_overrides.as_ref())?;
     if let Some(starting) = &plan.starting_scene {
         insert_scene(tx, plan.group.id, starting)?;
     }
@@ -871,6 +883,7 @@ fn replace_group_graph(
     tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode=?5,persona_selection_kind=?6,persona_id=?7,speaker_selection=?8,memory_policy=?9,disable_character_lorebooks=?10,group_conversation_prompt_id=?11,group_roleplay_prompt_id=?12,presentation_json=?13,background_asset_id=?14,starting_scene_id=?15,revision=?16,created_at=?17,updated_at=?18 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), chat_mode_name(group.chat_mode), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, group.group_conversation_prompt_id.map(|id| id.to_string()), group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get()]).map_err(db_error)?;
     write_members(tx, group.id, &group.members)?;
     write_presentation(tx, group.id, &group.presentation)?;
+    write_presentation_overrides(tx, group.id, group.presentation_overrides.as_ref())?;
     if let Some(starting) = &details.starting_scene {
         insert_scene(tx, group.id, starting)?;
     }
@@ -1263,10 +1276,12 @@ impl GroupRepository for Database {
         let current = ensure_group(&tx, id, expected_revision, false)?;
         let mut proposed = current.group.clone();
         proposed.presentation = presentation.clone();
+        proposed.presentation_overrides = None;
         proposed.revision = next_revision(expected_revision)?;
         proposed.updated_at = now;
         proposed.validate()?;
         write_presentation(&tx, id, &presentation)?;
+        write_presentation_overrides(&tx, id, None)?;
         bump_group(&tx, id, expected_revision, now)?;
         let result = load_details(&tx, id)
             .map_err(db_error)?
@@ -2356,6 +2371,7 @@ mod tests {
         group.group_conversation_prompt_id = Some(PromptDocumentId::new());
         group.group_roleplay_prompt_id = Some(PromptDocumentId::new());
         group.presentation = presentation.clone();
+        group.presentation_overrides = Some(["font_size".to_owned(), "chat_widget_slots".to_owned()].into());
         group.background_asset_id = Some(background_asset);
         group.starting_scene_id = Some(scene_id);
         group.validate().expect("full group");

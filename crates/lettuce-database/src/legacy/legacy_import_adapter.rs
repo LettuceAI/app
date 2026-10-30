@@ -2624,6 +2624,7 @@ fn legacy_group_plan(
             group_conversation_prompt_id: prompt(&candidate.group_conversation_prompt_source_id),
             group_roleplay_prompt_id: prompt(&candidate.group_roleplay_prompt_source_id),
             presentation: candidate.chat_appearance.clone(),
+            presentation_overrides: None,
             members,
             starting_scene_id: candidate
                 .starting_scene

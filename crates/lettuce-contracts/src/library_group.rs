@@ -51,6 +51,9 @@ pub struct GroupDraft {
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub group_roleplay_prompt_id: Option<String>,
     pub presentation: crate::LibraryChatAppearanceV1,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub presentation_overrides: Option<Vec<String>>,
     pub members: Vec<LibraryGroupMember>,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]

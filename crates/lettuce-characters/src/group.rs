@@ -41,6 +41,8 @@ pub struct GroupProfile {
     pub group_conversation_prompt_id: Option<PromptDocumentId>,
     pub group_roleplay_prompt_id: Option<PromptDocumentId>,
     pub presentation: ChatAppearanceV1,
+    #[serde(default)]
+    pub presentation_overrides: Option<std::collections::BTreeSet<String>>,
     pub members: Vec<GroupMember>,
     pub starting_scene_id: Option<SceneId>,
     pub background_asset_id: Option<AssetId>,
@@ -68,6 +70,7 @@ impl GroupProfile {
             group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
+            presentation_overrides: Some(std::collections::BTreeSet::new()),
             members,
             starting_scene_id: None,
             background_asset_id: None,
@@ -102,6 +105,12 @@ impl GroupProfile {
             member.validate()?;
         }
         self.presentation.validate()?;
+        if let Some(fields) = &self.presentation_overrides {
+            let value = serde_json::to_value(&self.presentation).map_err(|_| ValidationError::InvalidValue { field: "group.presentation_overrides" })?;
+            if fields.iter().any(|key| key == "format_version" || value.get(key).is_none()) {
+                return Err(ValidationError::InvalidValue { field: "group.presentation_overrides" });
+            }
+        }
         Ok(())
     }
 
@@ -165,6 +174,7 @@ mod tests {
             group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
+            presentation_overrides: None,
             members,
             starting_scene_id: None,
             background_asset_id: None,
@@ -222,6 +232,20 @@ mod tests {
         .expect("group");
         assert_eq!(group.chat_mode, ChatMode::Conversation);
         assert_eq!(group.speaker_selection, SpeakerSelection::Llm);
+    }
+
+    #[test]
+    fn group_appearance_mask_is_optional_and_rejects_unknown_fields() {
+        let mut value = group(vec![member(0, false), member(1, true)]);
+        let mut historical = serde_json::to_value(&value).expect("serialize");
+        historical.as_object_mut().expect("object").remove("presentation_overrides");
+        assert_eq!(serde_json::from_value::<GroupProfile>(historical).expect("old group").presentation_overrides, None);
+        value.presentation_overrides = Some(["font_size".to_owned()].into());
+        assert!(value.validate().is_ok());
+        for field in ["format_version", "composer_font_size", "bogus"] {
+            value.presentation_overrides = Some([field.to_owned()].into());
+            assert_eq!(value.validate(), Err(ValidationError::InvalidValue { field: "group.presentation_overrides" }));
+        }
     }
 
     #[test]

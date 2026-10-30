@@ -773,6 +773,7 @@ async fn model_usage_reports_exactly_what_delete_changes() {
                 group_conversation_prompt_id: None,
                 group_roleplay_prompt_id: None,
                 presentation: character.draft.presentation.chat_appearance.clone(),
+                presentation_overrides: None,
                 members: vec![
                     dto::LibraryGroupMember {
                         character_id: character.id.clone(),

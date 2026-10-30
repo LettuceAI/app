@@ -1639,6 +1639,29 @@ fn customization_sparse_appearance_inherits_each_unselected_field() {
 }
 
 #[test]
+fn group_appearance_preserves_explicit_defaults_and_follows_unselected_fields() {
+    let mut global = lettuce_settings::GlobalSettings::default();
+    global.ui_preferences.0.insert("chatAppearance".into(), serde_json::json!({"fontSize":"large","bubbleRadius":"pill"}));
+    let mut group = lettuce_characters::GroupProfile::new(lettuce_types::GroupId::new(), "Crew".into(), vec![
+        lettuce_characters::GroupMember { character_id: lettuce_types::CharacterId::new(), ordinal: 0, muted: false, model_profile_override: None },
+        lettuce_characters::GroupMember { character_id: lettuce_types::CharacterId::new(), ordinal: 1, muted: false, model_profile_override: None },
+    ], TimestampMillis::new(1)).expect("group");
+    group.presentation_overrides = Some(["bubble_radius".to_owned()].into_iter().collect());
+    let value = super::settings::resolved_group_appearance(&global, Some(&group)).expect("appearance");
+    assert_eq!(value["fontSize"], "large");
+    assert_eq!(value["bubbleRadius"], "rounded");
+    group.presentation_overrides = Some(Default::default());
+    let value = super::settings::resolved_group_appearance(&global, Some(&group)).expect("reset");
+    assert_eq!(value["bubbleRadius"], "pill");
+    assert_eq!(value["messageInfoPlacement"], "belowBubble");
+    global.ui_preferences.0.insert("appearanceInheritanceBaseline".into(), serde_json::json!({"messageInfoPlacement":"belowBubble"}));
+    global.ui_preferences.0.insert("chatAppearance".into(), serde_json::json!({"messageInfoPlacement":"insideBubble"}));
+    group.presentation_overrides = None;
+    let value = super::settings::resolved_group_appearance(&global, Some(&group)).expect("historical inheritance");
+    assert_eq!(value["messageInfoPlacement"], "insideBubble");
+}
+
+#[test]
 fn customization_legacy_snapshots_keep_differences_and_inherit_old_global_matches() {
     let mut global = lettuce_settings::GlobalSettings::default();
     global.ui_preferences.0.insert("appearanceInheritanceBaseline".to_owned(), serde_json::json!({"fontSize":"medium","bubbleOpacity":35}));

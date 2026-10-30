@@ -282,7 +282,7 @@ pub(crate) fn settings_view(
                 },
             };
             dto::ConversationSettingsView {
-                appearance: resolved_appearance(&global, None)?,
+                appearance: resolved_group_appearance(&global, profile)?,
                 conversation_id: conversation.id.to_string(),
                 kind: dto::ConversationKind::Group,
                 title: conversation.title.clone(),
@@ -378,6 +378,39 @@ fn companion_time_view(
         set_at,
         effective_at: clock.effective_now(context.now()).get(),
     }))
+}
+
+pub(crate) fn resolved_group_appearance(global: &lettuce_settings::GlobalSettings, group: Option<&GroupProfile>) -> Result<serde_json::Value, ApiError> {
+    let mut global = global.clone();
+    for key in ["chatAppearance", "appearanceInheritanceBaseline"] {
+        if let Some(placement) = global.ui_preferences.0.get_mut(key).and_then(|value| value.get_mut("messageInfoPlacement")) {
+            if let Some(value) = placement.as_str() {
+                let name = value.chars().fold(String::new(), |mut name, character| {
+                    if character.is_uppercase() { name.push('_'); name.extend(character.to_lowercase()); } else { name.push(character); }
+                    name
+                });
+                *placement = serde_json::Value::String(name);
+            }
+        }
+    }
+    let presentation = group.map(|group| lettuce_characters::CharacterPresentationV1 {
+        chat_appearance: group.presentation.clone(),
+        chat_appearance_overrides: group.presentation_overrides.clone(),
+        ..Default::default()
+    });
+    let mut value = resolved_appearance(&global, presentation.as_ref())?;
+    if let Some(placement) = value.get_mut("messageInfoPlacement") {
+        if let Some(name) = placement.as_str() {
+            let mut parts = name.split('_');
+            let mut camel = parts.next().unwrap_or_default().to_owned();
+            for part in parts {
+                let mut chars = part.chars();
+                if let Some(first) = chars.next() { camel.extend(first.to_uppercase()); camel.extend(chars); }
+            }
+            *placement = serde_json::Value::String(camel);
+        }
+    }
+    Ok(value)
 }
 
 pub(crate) fn resolved_appearance(global: &lettuce_settings::GlobalSettings, presentation: Option<&lettuce_characters::CharacterPresentationV1>) -> Result<serde_json::Value, ApiError> {

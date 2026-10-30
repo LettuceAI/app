@@ -176,6 +176,11 @@ const MIGRATION_22: Migration = Migration {
     sql: include_str!("../migrations/0022_image_generation.sql"),
 };
 
+const MIGRATION_23: Migration = Migration {
+    id: 23,
+    sql: include_str!("../migrations/0023_group_appearance.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -199,6 +204,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_20,
     MIGRATION_21,
     MIGRATION_22,
+    MIGRATION_23,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -3681,7 +3687,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 22);
+        assert_eq!(count, 23);
 
         let changed = Migration {
             id: 1,
@@ -3752,7 +3758,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -3975,7 +3981,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         for column in [
             "target_kind",
@@ -5574,7 +5580,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         drop(connection);
         drop(database);
@@ -5624,7 +5630,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         drop(connection);
         drop(database);
@@ -5656,7 +5662,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 22);
+        assert_eq!(migration_count, 23);
         for table in [
             "groups",
             "group_members",
@@ -5705,7 +5711,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 22);
+        assert_eq!(count, 23);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -5733,7 +5739,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         drop(connection);
         drop(reopened);
@@ -5769,7 +5775,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         let column: i64 = connection
             .query_row(
@@ -5796,7 +5802,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         drop(connection);
         drop(reopened);
@@ -5845,7 +5851,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            22
+            23
         );
         drop(connection);
         drop(database);
