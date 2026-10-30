@@ -59,6 +59,8 @@ fn view(context: &ApiContext, details: GroupDetails) -> Result<dto::GroupView, A
             }
         }
     }
+    root.insert("group_conversation_prompt_id".into(), serde_json::Value::Null);
+    root.insert("group_roleplay_prompt_id".into(), serde_json::Value::Null);
     root.insert("starting_scene".into(), value["starting_scene"].take());
     let draft =
         serde_json::from_value(serde_json::Value::Object(root)).map_err(|_| mapping_error())?;
@@ -78,6 +80,9 @@ fn plan_from(
     id: GroupId,
     now: TimestampMillis,
 ) -> Result<CreateGroupPlan, ApiError> {
+    if draft.group_conversation_prompt_id.is_some() || draft.group_roleplay_prompt_id.is_some() {
+        return Err(invalid_field("draft", "group prompts are configured on each character"));
+    }
     let mut value = serde_json::to_value(draft).map_err(|_| mapping_error())?;
     let root = value.as_object_mut().ok_or_else(mapping_error)?;
     let mut starting = root.remove("starting_scene").ok_or_else(mapping_error)?;

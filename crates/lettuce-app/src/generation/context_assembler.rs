@@ -856,34 +856,14 @@ where
             .transpose()
     }
 
-    /// The prompt a group speaker generates with, read live each turn: the
-    /// conversation's own selection, the speaker's group prompt, then the
-    /// group's (`policy::group_prompt`). A prompt the conversation disabled
-    /// yields none.
     fn live_group_prompt(
         &self,
-        conversation: &lettuce_conversations::Conversation,
+        _conversation: &lettuce_conversations::Conversation,
         live: &crate::generation::live_sources::LiveGroup,
         speaker: Option<CharacterId>,
     ) -> Result<Option<(PromptSnapshot, String)>, ContextAssemblyError> {
         let unavailable = || ContextAssemblyError::ConversationUnavailable;
         let roleplay = live.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
-        let selected = match conversation.current_settings.as_ref().map(|settings| {
-            if roleplay {
-                (
-                    settings.roleplay_prompt_provenance,
-                    settings.roleplay_prompt.as_ref(),
-                )
-            } else {
-                (settings.prompt_provenance, settings.prompt.as_ref())
-            }
-        }) {
-            Some((SettingProvenance::Disabled, _)) => return Ok(None),
-            Some((SettingProvenance::CurrentOverride, prompt)) => {
-                prompt.map(|prompt| prompt.source_id)
-            }
-            _ => None,
-        };
         let member = speaker
             .map(|id| CharacterRepository::get(self.sources, id))
             .transpose()
@@ -897,14 +877,7 @@ where
                     defaults.group_conversation_prompt_id
                 }
             });
-        let group = live.profile.as_ref().and_then(|group| {
-            if roleplay {
-                group.group_roleplay_prompt_id
-            } else {
-                group.group_conversation_prompt_id
-            }
-        });
-        crate::launch::policy::group_prompt(self.sources, live.chat_mode, [selected, member, group])
+        crate::launch::policy::group_prompt(self.sources, live.chat_mode, member)
             .map_err(|_| unavailable())?
             .map(|document| {
                 prompt_document(

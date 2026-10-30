@@ -114,7 +114,7 @@ pub fn resolve_effective_settings(
                     field: "effective_settings.selected_speaker",
                 })?;
 
-            let launch_prompt = selection_or_fallback(&member.prompt, &details.group.prompt);
+            let launch_prompt = selection_value(&member.prompt);
             let launch_model = match &participant.model_selection {
                 SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
                     Some(model.clone())
@@ -156,25 +156,7 @@ pub fn resolve_effective_settings(
                     |settings| settings.voice.clone(),
                     None,
                 ),
-                prompt: match conversation
-                    .current_settings
-                    .as_ref()
-                    .and_then(|settings| settings.chat_mode)
-                    .unwrap_or(details.group.chat_mode)
-                {
-                    GroupChatModeSnapshot::Conversation => current_or_launch(
-                        conversation,
-                        |settings| settings.prompt_provenance,
-                        |settings| settings.prompt.clone(),
-                        launch_prompt,
-                    ),
-                    GroupChatModeSnapshot::Roleplay => current_or_launch(
-                        conversation,
-                        |settings| settings.roleplay_prompt_provenance,
-                        |settings| settings.roleplay_prompt.clone(),
-                        launch_prompt,
-                    ),
-                },
+                prompt: launch_prompt,
                 lorebooks: group_lorebooks(
                     conversation,
                     selection_value(&details.group.lorebooks).unwrap_or_default(),
@@ -317,18 +299,6 @@ fn selection_value<T: Clone>(selection: &SnapshotSelection<T>) -> Option<T> {
             Some(value.clone())
         }
         SnapshotSelection::Disabled => None,
-    }
-}
-
-fn selection_or_fallback<T: Clone>(
-    selected: &SnapshotSelection<T>,
-    fallback: &SnapshotSelection<T>,
-) -> Option<T> {
-    match selected {
-        SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) => {
-            Some(value.clone())
-        }
-        SnapshotSelection::Disabled => selection_value(fallback),
     }
 }
 
@@ -743,7 +713,7 @@ mod tests {
         let (conversation, speaker) = group_conversation(GroupChatModeSnapshot::Roleplay);
         let effective =
             resolve_effective_settings(&conversation, Some(speaker)).expect("group settings");
-        let (group_prompt_id, member_prompt_id, second_speaker) =
+        let (_group_prompt_id, member_prompt_id, second_speaker) =
             match &conversation.kind {
                 ConversationKind::Group(details) => (
                     match &details.group.prompt {
@@ -783,7 +753,7 @@ mod tests {
             .expect("fallback settings");
         assert_eq!(
             second.prompt.as_ref().map(|prompt| prompt.source_id),
-            Some(group_prompt_id)
+            None
         );
         assert_eq!(second.lorebooks.len(), 2);
 

@@ -225,6 +225,12 @@ impl Builder<'_> {
         if change.model_settings.is_some() && group {
             return Err(invalid("model_settings"));
         }
+        if group && matches!(change.prompt, Some(Choice::Set(_) | Choice::None)) {
+            return Err(invalid("prompt"));
+        }
+        if group && matches!(change.roleplay_prompt, Some(Choice::Set(_) | Choice::None)) {
+            return Err(invalid("roleplay_prompt"));
+        }
         let mut patch = CurrentConversationSettingsPatch::default();
         if let Some(time_override) = change.companion_time {
             let context = crate::companion::companion_clock::companion_clock_context(

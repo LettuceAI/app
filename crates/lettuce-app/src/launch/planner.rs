@@ -1,5 +1,5 @@
 use lettuce_characters::{
-    CharacterRepository, ConversationStarter, GroupDetails, GroupProfile, GroupRepository, Persona,
+    CharacterRepository, ConversationStarter, GroupDetails, GroupRepository, Persona,
     PersonaRepository, Scene, SceneOwner, StarterRole,
 };
 use lettuce_companions::{
@@ -980,7 +980,7 @@ where
         let scene_text = scene
             .value()
             .and_then(|value| policy::resolve_group_scene_text(value, variants));
-        let prompt = self.resolve_group_prompt(&group.group, chat_mode)?;
+        let prompt = self.resolve_group_prompt(chat_mode)?;
         let member_prompts = self.resolve_member_prompts(&characters, chat_mode)?;
 
         let group_bindings = if new_group {
@@ -1407,51 +1407,17 @@ where
         Ok(Selected::Inherited(&starting.scene))
     }
 
-    /// The group's own prompt for the mode, then the bundled built-in for that
-    /// mode. Both tiers are inherited: nothing in a group launch request names
-    /// a prompt, so an archived one degrades instead of failing. A member's
-    /// direct prompt is never a group fallback.
     fn resolve_group_prompt(
         &self,
-        group: &GroupProfile,
         chat_mode: GroupChatModeSnapshot,
     ) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
-        let purpose = group_prompt_purpose(chat_mode);
-        let (built_in, authored) = match chat_mode {
-            GroupChatModeSnapshot::Conversation => (
-                BuiltInPromptId::GroupChat,
-                group.group_conversation_prompt_id,
-            ),
-            GroupChatModeSnapshot::Roleplay => (
-                BuiltInPromptId::GroupChatRoleplay,
-                group.group_roleplay_prompt_id,
-            ),
+        let built_in = match chat_mode {
+            GroupChatModeSnapshot::Conversation => BuiltInPromptId::GroupChat,
+            GroupChatModeSnapshot::Roleplay => BuiltInPromptId::GroupChatRoleplay,
         };
-        if let Some(prompt_id) = authored {
-            match PromptRepository::lookup_exact(self.sources, prompt_id, purpose)
-                .map_err(LaunchSourceError::Prompt)?
-            {
-                PromptLookupResult::Missing => {
-                    return Err(ConversationLaunchError::PromptNotFound { prompt_id });
-                }
-                PromptLookupResult::PurposeMismatch { .. } => {
-                    return Err(ConversationLaunchError::PromptWrongPurpose { prompt_id });
-                }
-                PromptLookupResult::Available { document } => {
-                    return Ok(Selected::Inherited(document));
-                }
-                PromptLookupResult::Archived { .. } => {}
-            }
-        }
-        Ok(Selected::Inherited(
-            self.built_in_prompt(built_in, purpose)?,
-        ))
+        Ok(Selected::Inherited(self.built_in_prompt(built_in, group_prompt_purpose(chat_mode))?))
     }
 
-    /// Tier two of the group prompt chain: a speaker generates with its own
-    /// prompt for this mode and falls through to the group prompt without one.
-    /// The other mode's authored id is never read, and a member's direct prompt
-    /// is not a group prompt at all.
     fn resolve_member_prompts(
         &self,
         characters: &[lettuce_characters::CharacterDetails],

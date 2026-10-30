@@ -290,18 +290,8 @@ pub(crate) fn settings_view(
                 settings_revision: conversation.settings_revision().map(Revision::get),
                 author_note: own.and_then(|settings| settings.author_note.clone()),
                 persona: choice(persona, persona_source),
-                prompt: group_prompt(
-                    context,
-                    &conversation,
-                    profile,
-                    GroupChatModeSnapshot::Conversation,
-                )?,
-                roleplay_prompt: Some(group_prompt(
-                    context,
-                    &conversation,
-                    profile,
-                    GroupChatModeSnapshot::Roleplay,
-                )?),
+                prompt: choice::<PromptDocumentId>(None, dto::SettingSource::Character),
+                roleplay_prompt: None,
                 lorebooks,
                 model,
                 background,
@@ -560,7 +550,6 @@ fn prompt_source(source: PromptSource) -> dto::SettingSource {
         PromptSource::Conversation => dto::SettingSource::Conversation,
         PromptSource::Starter => dto::SettingSource::Launch,
         PromptSource::Character => dto::SettingSource::Character,
-        PromptSource::Group => dto::SettingSource::Group,
         PromptSource::AppDefault => dto::SettingSource::AppDefault,
     }
 }
@@ -625,52 +614,6 @@ fn direct_prompt(
             starter,
             defaults.direct_prompt_id,
             app.default_prompt_document_id,
-        )
-        .map_err(source_error)?
-        {
-            Some((document, source)) => choice(Some(document.id), prompt_source(source)),
-            None => choice::<PromptDocumentId>(None, dto::SettingSource::AppDefault),
-        },
-    )
-}
-
-fn group_prompt(
-    context: &ApiContext,
-    conversation: &Conversation,
-    profile: Option<&GroupProfile>,
-    mode: GroupChatModeSnapshot,
-) -> Result<dto::SettingChoice, ApiError> {
-    let own = conversation
-        .current_settings
-        .as_ref()
-        .map(|settings| match mode {
-            GroupChatModeSnapshot::Conversation => {
-                (settings.prompt_provenance, settings.prompt.as_ref())
-            }
-            GroupChatModeSnapshot::Roleplay => (
-                settings.roleplay_prompt_provenance,
-                settings.roleplay_prompt.as_ref(),
-            ),
-        });
-    let selected = match own {
-        Some((SettingProvenance::Disabled, _)) => {
-            return Ok(choice::<PromptDocumentId>(
-                None,
-                dto::SettingSource::Conversation,
-            ));
-        }
-        Some((SettingProvenance::CurrentOverride, prompt)) => prompt.map(|prompt| prompt.source_id),
-        _ => None,
-    };
-    let group = profile.and_then(|profile| match mode {
-        GroupChatModeSnapshot::Conversation => profile.group_conversation_prompt_id,
-        GroupChatModeSnapshot::Roleplay => profile.group_roleplay_prompt_id,
-    });
-    Ok(
-        match policy::group_prompt_with_source(
-            context.backend().database(),
-            mode,
-            [selected, None, group],
         )
         .map_err(source_error)?
         {

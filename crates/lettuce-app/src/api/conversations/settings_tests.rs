@@ -356,20 +356,8 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
             .map(|flag| (flag.value, flag.source)),
         Some((true, group))
     );
-    assert_eq!(
-        live.prompt,
-        dto::SettingChoice {
-            id: id(talk),
-            source: group
-        }
-    );
-    assert_eq!(
-        live.roleplay_prompt,
-        Some(dto::SettingChoice {
-            id: id(play),
-            source: group
-        })
-    );
+    assert_eq!(live.prompt, dto::SettingChoice { id: None, source: dto::SettingSource::Character });
+    assert_eq!(live.roleplay_prompt, None);
     assert_eq!(
         live.background
             .asset
@@ -424,7 +412,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
     assert!(turn_group.disable_character_lorebooks);
 
     let other_persona = seed_persona(database, "Oak");
-    let other_talk = seed_prompt(database, "Talk two", PromptPurpose::GroupChatConversational);
     let own = update(
         &harness,
         &chat,
@@ -433,10 +420,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
             persona: Some(dto::ChoiceChange::Set {
                 id: other_persona.to_string(),
             }),
-            prompt: Some(dto::ChoiceChange::Set {
-                id: other_talk.to_string(),
-            }),
-            roleplay_prompt: Some(dto::ChoiceChange::None),
             lorebooks: Some(dto::LorebooksChange::Set { ids: Vec::new() }),
             background: Some(dto::BackgroundChange::Hidden),
             scene: Some(dto::IdChange::Set {
@@ -517,20 +500,8 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
             source: conversation
         }
     );
-    assert_eq!(
-        kept.prompt,
-        dto::SettingChoice {
-            id: id(other_talk),
-            source: conversation
-        }
-    );
-    assert_eq!(
-        kept.roleplay_prompt,
-        Some(dto::SettingChoice {
-            id: None,
-            source: conversation
-        })
-    );
+    assert_eq!(kept.prompt, dto::SettingChoice { id: None, source: dto::SettingSource::Character });
+    assert_eq!(kept.roleplay_prompt, None);
     assert_eq!(
         (kept.lorebooks.ids.len(), kept.lorebooks.source),
         (0, conversation)
@@ -593,20 +564,8 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
             source: group
         }
     );
-    assert_eq!(
-        reset.prompt,
-        dto::SettingChoice {
-            id: id(talk),
-            source: group
-        }
-    );
-    assert_eq!(
-        reset.roleplay_prompt,
-        Some(dto::SettingChoice {
-            id: id(play),
-            source: group
-        })
-    );
+    assert_eq!(reset.prompt, dto::SettingChoice { id: None, source: dto::SettingSource::Character });
+    assert_eq!(reset.roleplay_prompt, None);
     assert_eq!(reset.lorebooks.ids, vec![book.to_string()]);
     assert_eq!(reset.background.source, group);
     assert_eq!(reset.scene.source, group);

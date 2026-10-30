@@ -135,8 +135,8 @@ pub(crate) fn group_body(group: &GroupProfile, members: &[GroupMember]) -> Group
             Selection::Explicit(id) => DocumentSelectionV1::Explicit(id),
             Selection::Disabled => DocumentSelectionV1::Disabled,
         },
-        group_conversation_prompt_id: group.group_conversation_prompt_id,
-        group_roleplay_prompt_id: group.group_roleplay_prompt_id,
+        group_conversation_prompt_id: None,
+        group_roleplay_prompt_id: None,
         members: members
             .iter()
             .map(|member| GroupMemberV1 {

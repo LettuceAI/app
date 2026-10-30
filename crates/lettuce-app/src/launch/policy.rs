@@ -147,7 +147,6 @@ pub(crate) enum PromptSource {
     Conversation,
     Starter,
     Character,
-    Group,
     AppDefault,
 }
 
@@ -183,24 +182,18 @@ pub(crate) fn direct_prompt_with_source<S: PromptRepository + ?Sized>(
         .map(|document| (document, PromptSource::AppDefault)))
 }
 
-/// A group speaker's prompt for the chat mode, read live each turn: the
-/// conversation's own selection, the speaker's group prompt, then the group's
-/// prompt, each only when it is an active document of the mode's purpose, else
-/// the bundled group prompt. `None` only when the bundled prompt is missing.
 pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
     chat_mode: GroupChatModeSnapshot,
-    candidates: [Option<PromptDocumentId>; 3],
+    member: Option<PromptDocumentId>,
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
-    Ok(group_prompt_with_source(sources, chat_mode, candidates)?.map(|(document, _)| document))
+    Ok(group_prompt_with_source(sources, chat_mode, member)?.map(|(document, _)| document))
 }
 
-/// `group_prompt` and the step that answered: the conversation, the
-/// speaker, the group or the bundled prompt.
 pub(crate) fn group_prompt_with_source<S: PromptRepository + ?Sized>(
     sources: &S,
     chat_mode: GroupChatModeSnapshot,
-    candidates: [Option<PromptDocumentId>; 3],
+    member: Option<PromptDocumentId>,
 ) -> Result<Option<(PromptDocument, PromptSource)>, PromptRepositoryError> {
     let (purpose, built_in) = match chat_mode {
         GroupChatModeSnapshot::Conversation => (
@@ -212,19 +205,9 @@ pub(crate) fn group_prompt_with_source<S: PromptRepository + ?Sized>(
             crate::BuiltInPromptId::GroupChatRoleplay,
         ),
     };
-    let steps = [
-        PromptSource::Conversation,
-        PromptSource::Character,
-        PromptSource::Group,
-    ];
-    for (prompt_id, source) in candidates.into_iter().zip(steps) {
-        let Some(prompt_id) = prompt_id else {
-            continue;
-        };
-        if let PromptLookupResult::Available { document } =
-            sources.lookup_exact(prompt_id, purpose)?
-        {
-            return Ok(Some((document, source)));
+    if let Some(prompt_id) = member {
+        if let PromptLookupResult::Available { document } = sources.lookup_exact(prompt_id, purpose)? {
+            return Ok(Some((document, PromptSource::Character)));
         }
     }
     Ok(
