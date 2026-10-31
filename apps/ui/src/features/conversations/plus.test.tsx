@@ -199,6 +199,29 @@ describe("chat plus menu and microphone", () => {
     expect(await screen.findByText("Install a speech recognition model to dictate.")).toBeTruthy();
   });
 
+  it("allows another microphone permission attempt after each denial", async () => {
+    let attempts = 0;
+    const start = vi.fn<NonNullable<MockCallHandlers["dictationStart"]>>(() => {
+      attempts++;
+      return attempts < 3
+        ? { status: "error", error: { code: "unavailable", message: "private permission diagnostic", details: { type: "speech", failure: { type: "microphone_permission_denied" } } } }
+        : { status: "ok", data: { capture_id: "cap1" } };
+    });
+    await open({ calls: { dictationStart: start, dictationCancel: () => ({ status: "ok", data: null }) } });
+    const box = await screen.findByPlaceholderText("Message Cassian…");
+    fireEvent.change(box, { target: { value: "Keep my draft" } });
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      fireEvent.click(screen.getByRole("button", { name: "Record voice" }));
+      await waitFor(() => expect(start).toHaveBeenCalledTimes(attempt));
+      await screen.findByText("Allow microphone access to record.");
+      expect(box).toHaveProperty("value", "Keep my draft");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Record voice" }));
+    expect(await screen.findByRole("button", { name: "Stop and transcribe" })).toBeTruthy();
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText("private permission diagnostic")).toBeNull();
+  });
+
   it("passes the swap toggle to continue", async () => {
     const proceed = vi.fn((_args: unknown[]) => ({ status: "ok" as const, data: { turn_id: "t9" } }));
     await open({ streams: { conversationContinue: proceed } });

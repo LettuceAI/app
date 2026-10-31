@@ -8,15 +8,22 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
+import androidx.activity.result.ActivityResult
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import app.tauri.annotation.Command
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
+import app.tauri.PermissionState
 import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
@@ -33,7 +40,7 @@ class BackgroundWorkArgs {
   var active: Boolean = false
 }
 
-@TauriPlugin
+@TauriPlugin(permissions = [Permission(alias = "microphone", strings = [Manifest.permission.RECORD_AUDIO])])
 class HostPlugin(private val activity: Activity) : Plugin(activity) {
   private var channel: Channel? = null
   private val pending = ArrayList<JSObject>()
@@ -41,6 +48,8 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
   private var notificationsRequested = false
   private var workActive = false
   private var memoryWarningPending = false
+  private var pendingMicrophone: Invoke? = null
+  private var microphoneDialog: AlertDialog? = null
   private val memoryCallbacks = object : ComponentCallbacks2 {
     override fun onConfigurationChanged(configuration: Configuration) {}
     override fun onLowMemory() { memoryWarning() }
@@ -54,7 +63,81 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
   init { activity.application.registerComponentCallbacks(memoryCallbacks) }
 
   override fun onDestroy(activity: AppCompatActivity) {
+    val dialog = microphoneDialog
+    pendingMicrophone?.let { finishMicrophonePermission(it, false) }
+    dialog?.dismiss()
     activity.application.unregisterComponentCallbacks(memoryCallbacks)
+  }
+
+  @Command
+  fun requestMicrophonePermission(invoke: Invoke) {
+    activity.runOnUiThread {
+      if (activity.isFinishing || activity.isDestroyed) {
+        invoke.reject("the microphone permission activity is unavailable")
+        return@runOnUiThread
+      }
+      if (pendingMicrophone != null) {
+        invoke.reject("a microphone permission request is already open")
+        return@runOnUiThread
+      }
+      pendingMicrophone = invoke
+      try {
+        if (microphoneGranted()) {
+          finishMicrophonePermission(invoke, true)
+        } else if (getPermissionState("microphone") == PermissionState.DENIED) {
+          // Android suppresses the system prompt after a permanent denial.
+          // Offer settings again on each explicit recording attempt instead.
+          microphoneDialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.microphone_permission_title)
+            .setMessage(R.string.microphone_permission_settings)
+            .setNegativeButton(android.R.string.cancel) { _, _ -> finishMicrophonePermission(invoke, false) }
+            .setPositiveButton(R.string.open_app_settings) { _, _ ->
+              try {
+                startActivityForResult(invoke, Intent(
+                  Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                  Uri.parse("package:${activity.packageName}")
+                ), "microphoneSettingsResult")
+              } catch (error: Exception) {
+                rejectMicrophonePermission(invoke, error)
+              }
+            }
+            .setOnCancelListener { finishMicrophonePermission(invoke, false) }
+            .show()
+        } else {
+          requestPermissionForAlias("microphone", invoke, "microphonePermissionResult")
+        }
+      } catch (error: Exception) {
+        rejectMicrophonePermission(invoke, error)
+      }
+    }
+  }
+
+  @PermissionCallback
+  fun microphonePermissionResult(invoke: Invoke) {
+    finishMicrophonePermission(invoke, microphoneGranted())
+  }
+
+  @ActivityCallback
+  @Suppress("UNUSED_PARAMETER")
+  fun microphoneSettingsResult(invoke: Invoke, result: ActivityResult) {
+    finishMicrophonePermission(invoke, microphoneGranted())
+  }
+
+  private fun microphoneGranted(): Boolean =
+    ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+  private fun finishMicrophonePermission(invoke: Invoke, granted: Boolean) {
+    if (pendingMicrophone !== invoke) return
+    pendingMicrophone = null
+    microphoneDialog = null
+    invoke.resolve(JSObject().put("granted", granted))
+  }
+
+  private fun rejectMicrophonePermission(invoke: Invoke, error: Exception) {
+    if (pendingMicrophone !== invoke) return
+    pendingMicrophone = null
+    microphoneDialog = null
+    invoke.reject("the microphone permission could not be requested", error)
   }
 
   @Synchronized

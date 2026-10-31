@@ -401,7 +401,7 @@
   "mic": {
     "error": {
       "noModel": "Install a speech recognition model to dictate.",
-      "permission": "Microphone access is blocked. Allow it in your system settings.",
+      "permission": "Allow microphone access to record.",
       "noMicrophone": "No microphone was found.",
       "noAudio": "Nothing was recorded.",
       "busy": "Another recording is in progress.",

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use lettuce_app::MicrophoneCapture;
 
-pub(crate) fn capture() -> Option<Arc<dyn MicrophoneCapture>> {
+pub(crate) fn capture<R: tauri::Runtime>(_handle: &tauri::AppHandle<R>) -> Option<Arc<dyn MicrophoneCapture>> {
     #[cfg(any(
         target_os = "linux",
         target_os = "windows",
@@ -10,7 +10,13 @@ pub(crate) fn capture() -> Option<Arc<dyn MicrophoneCapture>> {
         target_os = "android"
     ))]
     {
-        Some(Arc::new(desktop::NativeMicrophone))
+        Some(Arc::new(desktop::NativeMicrophone {
+            #[cfg(target_os = "android")]
+            permission: {
+                let handle = _handle.clone();
+                Arc::new(move || crate::host::request_microphone_permission(&handle))
+            },
+        }))
     }
     #[cfg(not(any(
         target_os = "linux",
@@ -40,7 +46,10 @@ mod desktop {
         PreparedCapture,
     };
 
-    pub(super) struct NativeMicrophone;
+    pub(super) struct NativeMicrophone {
+        #[cfg(target_os = "android")]
+        pub(super) permission: Arc<dyn Fn() -> Result<(), MicrophoneError> + Send + Sync>,
+    }
 
     struct Prepared {
         device: Device,
@@ -66,7 +75,7 @@ mod desktop {
 
         fn prepare_device(&self, id: Option<&str>) -> Result<Box<dyn PreparedCapture>, MicrophoneError> {
             #[cfg(target_os = "android")]
-            super::android_record_audio_permission()?;
+            (self.permission)()?;
             let host = cpal::default_host();
             let device = if let Some(id) = id {
                 let id = id.strip_prefix("input:").ok_or(MicrophoneError::NoInputDevice)?;
@@ -224,35 +233,5 @@ mod desktop {
             tracing::warn!(%error, "the microphone stream could not be opened");
             MicrophoneError::Failed
         })
-    }
-}
-
-#[cfg(target_os = "android")]
-fn android_record_audio_permission() -> Result<(), lettuce_app::MicrophoneError> {
-    use jni::objects::{JObject, JValue};
-    use lettuce_app::MicrophoneError;
-    let context = ndk_context::android_context();
-    let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }
-        .map_err(|_| MicrophoneError::Failed)?;
-    let mut env = vm
-        .attach_current_thread()
-        .map_err(|_| MicrophoneError::Failed)?;
-    let activity = unsafe { JObject::from_raw(context.context().cast()) };
-    let permission = env
-        .new_string("android.permission.RECORD_AUDIO")
-        .map_err(|_| MicrophoneError::Failed)?;
-    let granted = env
-        .call_method(
-            &activity,
-            "checkSelfPermission",
-            "(Ljava/lang/String;)I",
-            &[JValue::Object(permission.as_ref())],
-        )
-        .and_then(|value| value.i())
-        .map_err(|_| MicrophoneError::Failed)?;
-    if granted == 0 {
-        Ok(())
-    } else {
-        Err(MicrophoneError::PermissionDenied)
     }
 }

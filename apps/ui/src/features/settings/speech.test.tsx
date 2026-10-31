@@ -152,6 +152,26 @@ describe("speech recognition settings", () => {
     expect(drawer().getByRole("button", { name: "Remove recording" })).toBeTruthy();
   });
 
+  it("allows another recording permission attempt after each denial", async () => {
+    let attempts = 0;
+    const start = vi.fn<NonNullable<MockCallHandlers["audioCaptureStart"]>>(() => {
+      attempts++;
+      return attempts < 3
+        ? { status: "error", error: { code: "unavailable", message: "private permission diagnostic", details: { type: "speech", failure: { type: "microphone_permission_denied" } } } }
+        : ok({ capture_id: "capture1" });
+    });
+    await mount({ calls: { audioCaptureStart: start } });
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await click("Record");
+      await waitFor(() => expect(start).toHaveBeenCalledTimes(attempt));
+      expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Allow microphone access to record.");
+    }
+    await click("Record");
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeTruthy();
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText("private permission diagnostic")).toBeNull();
+  });
+
   it("rejoins the same transcription after its watch fails instead of admitting duplicate work", async () => {
     let failed = false;
     const transcribe = vi.fn<NonNullable<MockCallHandlers["transcribeFile"]>>(() => ok({ job_id: "job1" }));

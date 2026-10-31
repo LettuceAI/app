@@ -4,6 +4,9 @@
     <string name="background_work_channel">"Background work"</string>
     <string name="background_work_title">"Running in the background"</string>
     <string name="background_work_body">"Tap to open LettuceAI"</string>
+    <string name="microphone_permission_title">"Allow microphone access"</string>
+    <string name="microphone_permission_settings">"Allow microphone access in Android app settings to record audio."</string>
+    <string name="open_app_settings">"Open settings"</string>
     <string name="shortcut_new_character_short">"New"</string>
     <string name="shortcut_new_character_long">"New character"</string>
     <string name="shortcut_library_short">"Library"</string>

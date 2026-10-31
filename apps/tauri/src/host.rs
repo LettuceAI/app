@@ -187,7 +187,7 @@ pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
 }
 
 #[cfg(target_os = "android")]
-pub(crate) use android::{finish_startup, follow_active_work};
+pub(crate) use android::{finish_startup, follow_active_work, request_microphone_permission};
 
 #[cfg(target_os = "android")]
 mod android {
@@ -205,6 +205,26 @@ mod android {
     const PLUGIN_CLASS: &str = "HostPlugin";
 
     struct AndroidHost<R: Runtime>(PluginHandle<R>);
+
+    #[derive(serde::Deserialize)]
+    struct MicrophonePermission {
+        granted: bool,
+    }
+
+    /// Called on the capture worker before opening the native audio input.
+    pub(crate) fn request_microphone_permission<R: Runtime>(
+        app: &AppHandle<R>,
+    ) -> Result<(), lettuce_app::MicrophoneError> {
+        use lettuce_app::MicrophoneError;
+        let host = app.try_state::<AndroidHost<R>>().ok_or(MicrophoneError::Failed)?;
+        let permission = host.0.run_mobile_plugin::<MicrophonePermission>(
+            "requestMicrophonePermission", serde_json::json!({}),
+        ).map_err(|error| {
+            tracing::warn!(%error, "the Android microphone permission could not be requested");
+            MicrophoneError::Failed
+        })?;
+        if permission.granted { Ok(()) } else { Err(MicrophoneError::PermissionDenied) }
+    }
 
     pub(super) fn register<R: Runtime, C: DeserializeOwned>(
         app: &AppHandle<R>,

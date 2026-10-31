@@ -3719,3 +3719,49 @@ async fn retained_test_transcription_releases_job_reference_but_keeps_audio_unti
     super::collect_recordings(&env.context).expect("expiry GC");
     assert!(!object.exists());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn microphone_permission_denials_are_retried_for_dictation_and_settings_capture() {
+    struct PermissionMic(AtomicUsize);
+    impl MicrophoneCapture for PermissionMic {
+        fn prepare(&self) -> Result<Box<dyn PreparedCapture>, MicrophoneError> {
+            if self.0.fetch_add(1, Ordering::AcqRel) < 2 {
+                Err(MicrophoneError::PermissionDenied)
+            } else {
+                Ok(Box::new(FakePrepared(vec![0.25; 8000])))
+            }
+        }
+    }
+    for dictation in [true, false] {
+        let microphone = Arc::new(PermissionMic(AtomicUsize::new(0)));
+        let env = env(TtsMode::Speak, AsrMode::Text("unused"), Some(microphone.clone()));
+        if dictation {
+            install_whisper_file(&env.root);
+            env.context.speech_state().legacy_whisper_admitted().store(false, Ordering::Release);
+        }
+        let start = || async {
+            if dictation {
+                super::dictation_start(&env.context, dto::DictationStartRequest {
+                    device_id: None, conversation_id: None,
+                }).await
+            } else {
+                super::audio_capture_start(&env.context, dto::AudioCaptureStartRequest {
+                    device_id: None,
+                }).await
+            }
+        };
+        for attempt in 1..=2 {
+            let denied = start().await.expect_err("permission denied");
+            assert_eq!(denied.details, Some(ApiErrorDetails::Speech {
+                failure: SpeechFailure::MicrophonePermissionDenied,
+            }));
+            assert_eq!(microphone.0.load(Ordering::Acquire), attempt);
+            assert!(!crate::dictation_scratch_root(&env.root).exists());
+        }
+        let capture = start().await.expect("permission granted on a later recording attempt");
+        assert_eq!(microphone.0.load(Ordering::Acquire), 3);
+        super::dictation_cancel(&env.context, dto::DictationCancelRequest {
+            capture_id: capture.capture_id,
+        }).await.expect("cancel successful recording");
+    }
+}

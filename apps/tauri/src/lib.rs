@@ -168,7 +168,7 @@ fn open_context<R: Runtime>(handle: &AppHandle<R>, secrets: Arc<dyn lettuce_sett
         Arc::new(events::TauriEventSink(handle.clone())),
         files::file_access(handle),
         asset_protocol::ASSET_URL_BASE.to_owned(),
-        microphone::capture(),
+        microphone::capture(handle),
     )?;
     #[cfg(target_os = "android")]
     host::follow_active_work(handle, context.watch_active_work());
