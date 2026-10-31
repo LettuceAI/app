@@ -38,6 +38,8 @@ pub enum LorebookKeywordExecutionError {
     InvalidPrompt { reason: String },
     #[error("lorebook keyword generation inference was cancelled")]
     Cancelled,
+    #[error("lorebook keyword generation timed out")]
+    TimedOut,
     #[error("lorebook keyword generation inference returned an invalid response: {reason}")]
     InvalidResponse { reason: String },
     #[error("lorebook keyword generation request is too large: {reason}")]
@@ -155,7 +157,12 @@ where
                         PortError::Unavailable,
                     ));
                 }
-                Err(_) => {
+                Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(error)) => {
+                    tracing::warn!(
+                        %request_id,
+                        ?error,
+                        "native lorebook keyword request failed; trying structured fallback"
+                    );
                     attempts = self
                         .repository
                         .commit_lorebook_keyword_attempt(
@@ -188,6 +195,10 @@ where
         }
         tracing::warn!(
             request_id = %request_id,
+            job_id = %run.job_id,
+            provider = %run.profile.chat_profile.provider_kind,
+            model = %run.profile.chat_profile.external_model_id,
+            native_tool_calls = attempts.last().map_or(0, |attempt| attempt.calls.len()),
             "native lorebook keyword result was unusable; using structured fallback"
         );
         if handle.cancellation_token().is_cancelled() {

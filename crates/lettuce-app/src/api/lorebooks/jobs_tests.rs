@@ -37,8 +37,140 @@ fn request(book: &dto::LorebookView) -> dto::LorebookKeywordsDraftRequest {
     }
 }
 
+#[tokio::test]
+async fn keyword_draft_standard_runner_publishes_the_terminal_watch_event() {
+    #[derive(Default)]
+    struct Events(std::sync::Mutex<Vec<dto::JobEvent>>);
+    impl JobEventSink for Events {
+        fn emit(&self, event: dto::JobEvent) -> bool {
+            self.0.lock().expect("events").push(event);
+            true
+        }
+    }
+    let harness = harness(Reply::Text(
+        r#"{"tool":"write_lorebook_keywords","arguments":{"keywords":["Coast","City"]}}"#,
+    ));
+    let book = book(&harness).await;
+    let mut feed = crate::api::jobs::JobFeed::start(&harness.context).await.expect("feed");
+    let accepted = lorebook_keywords_draft(&harness.context, request(&book)).await.expect("admit");
+    let events = Arc::new(Events::default());
+    job_watch(&harness.context, dto::JobWatchRequest { job_id: accepted.job_id.clone() }, events.clone())
+        .await.expect("watch");
+    let runner = JobRunner::new(harness.context.clone(), JobHandlers::standard());
+    assert!(runner.run_once().await.expect("start runner"));
+    tokio::time::timeout(std::time::Duration::from_secs(5), runner.wait_idle()).await.expect("keyword job completes");
+    feed.publish(&harness.context).await.expect("publish result");
+    let events = events.0.lock().expect("events");
+    assert!(events.iter().any(|event| matches!(event,
+        dto::JobEvent::Completed { job } if job.id == accepted.job_id && matches!(&job.result,
+            Some(dto::JobResultDto::LorebookKeywords { keywords }) if keywords == &["Coast", "City"]
+        )
+    )), "the keyword watch must receive its result: {events:?}");
+}
+
 fn custom_prompt(harness: &crate::api::tests::Harness) -> lettuce_context::PromptDocument {
     custom_prompt_for(harness, crate::BuiltInPromptId::LorebookKeywordGenerator)
+}
+
+#[tokio::test]
+async fn keyword_draft_stops_retrying_transient_failures_and_publishes_failure() {
+    #[derive(Default)]
+    struct Events(std::sync::Mutex<Vec<dto::JobEvent>>);
+    impl JobEventSink for Events {
+        fn emit(&self, event: dto::JobEvent) -> bool {
+            self.0.lock().expect("events").push(event);
+            true
+        }
+    }
+    let harness = harness(Reply::Text("ignored"));
+    let book = book(&harness).await;
+    let mut feed = crate::api::jobs::JobFeed::start(&harness.context).await.expect("feed");
+    let accepted = lorebook_keywords_draft(&harness.context, request(&book)).await.expect("admit");
+    let events = Arc::new(Events::default());
+    job_watch(&harness.context, dto::JobWatchRequest { job_id: accepted.job_id.clone() }, events.clone())
+        .await.expect("watch");
+    let db = harness.context.backend().database();
+    let request_id = super::jobs::request_id("lorebook_keywords_draft", "keywords", &request(&book))
+        .expect("request id");
+    let dispatcher = harness.context.backend().lorebook_keyword_dispatcher();
+    for attempt in 1..=3 {
+        let work = dispatcher.claim(
+            request_id,
+            WorkerId::new(),
+            TimestampMillis::now().expect("now"),
+            std::time::Duration::from_secs(60),
+            &lettuce_jobs::ResourceAvailability::all(),
+        ).expect("claim").expect("work");
+        assert_eq!(work.claim.claim.attempt.get(), attempt);
+        let settled = dispatcher.settle(
+            work,
+            Err(crate::LorebookKeywordExecutionError::Inference(lettuce_conversations::PortError::Unavailable)),
+            CancellationReason::User,
+            TimestampMillis::now().expect("now"),
+        ).expect("settle");
+        if attempt < 3 {
+            assert!(matches!(settled, crate::LorebookKeywordSettledWork::RetryScheduled { .. }));
+        } else {
+            assert!(matches!(settled, crate::LorebookKeywordSettledWork::Failed { .. }));
+        }
+    }
+    assert!(dispatcher.claim(
+        request_id, WorkerId::new(), TimestampMillis::now().expect("now"),
+        std::time::Duration::from_secs(60), &lettuce_jobs::ResourceAvailability::all(),
+    ).expect("claim after failure").is_none());
+    assert_eq!(JobStore::get(db, accepted.job_id.parse().expect("job id")).expect("job").expect("exists").state,
+        lettuce_jobs::JobState::Failed);
+    feed.publish(&harness.context).await.expect("publish failure");
+    assert!(events.0.lock().expect("events").iter().any(|event| matches!(event,
+        dto::JobEvent::Failed { job } if job.id == accepted.job_id
+            && job.failure.as_ref().is_some_and(|failure| failure.code == dto::JobFailureCode::WorkerFailed)
+    )));
+}
+
+#[tokio::test(start_paused = true)]
+async fn keyword_draft_times_out_native_and_fallback_requests() {
+    for fallback in [false, true] {
+        let harness = harness(Reply::UntilCancelled);
+        let book = book(&harness).await;
+        let accepted = lorebook_keywords_draft(&harness.context, request(&book))
+            .await.expect("admit");
+        let job_id = accepted.job_id.parse().expect("job id");
+        let db = harness.context.backend().database();
+        let job = JobStore::get(db, job_id).expect("job").expect("exists");
+        let work = LorebookHandler.claim(&harness.context, &job, WorkerId::new())
+            .await.expect("claim").expect("work");
+        if fallback {
+            let request_id = super::jobs::request_id("lorebook_keywords_draft", "keywords", &request(&book))
+                .expect("request id");
+            db.commit_lorebook_keyword_attempt(request_id, lettuce_creation::LorebookKeywordAttemptCheckpoint {
+                ordinal: 0,
+                attempt_kind: lettuce_creation::LorebookKeywordAttemptKind::Native,
+                calls: vec![],
+                decision: lettuce_creation::LorebookKeywordAttemptDecision::StructuredFallback,
+                usage: None,
+                provider_finish_reason: None,
+                provider_request_id: None,
+                completed_at: TimestampMillis::now().expect("now"),
+            }).expect("native checkpoint");
+        }
+        let cancellation = work.cancellation();
+        let runtime = harness.context.backend().inference_runtime();
+        runtime.register_cancellation(job_id, cancellation.clone()).expect("register cancellation");
+        let running = tokio::spawn(work.run(harness.context.clone(), Arc::new(Progress)));
+        harness.provider.entered.notified().await;
+        tokio::time::advance(std::time::Duration::from_secs(121)).await;
+        running.await.expect("join").expect("timeout settles the job");
+        runtime.unregister_cancellation(job_id).expect("unregister cancellation");
+        assert!(cancellation.is_cancelled(), "the provider must be stopped");
+        let view = job_get(&harness.context, dto::JobGetRequest { job_id: accepted.job_id })
+            .await.expect("job view");
+        assert_eq!(view.state, dto::JobStateDto::Failed);
+        assert_eq!(view.failure.expect("timeout failure").code, dto::JobFailureCode::TimedOut);
+        assert_eq!(harness.provider.requests.lock().expect("requests").len(), 1);
+        let usage = lettuce_usage::JobUsageLedger::job_usage(db, job_id).expect("usage");
+        assert_eq!(usage.len(), 1);
+        assert!(usage[0].result.is_some(), "timed out inference usage must be settled");
+    }
 }
 
 fn custom_prompt_for(

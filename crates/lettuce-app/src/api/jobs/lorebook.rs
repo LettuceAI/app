@@ -231,6 +231,33 @@ impl ClaimedJob for ClaimedEntry {
 }
 
 struct ClaimedKeyword(crate::LorebookKeywordClaimedWork);
+
+const KEYWORD_GENERATION_TIMEOUT: Duration = Duration::from_secs(120);
+
+struct KeywordInference<'a> {
+    inference: &'a dyn lettuce_conversations::InferencePort,
+    handle: &'a lettuce_jobs::handle::JobHandle,
+    deadline: tokio::time::Instant,
+    timed_out: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl lettuce_conversations::InferencePort for KeywordInference<'_> {
+    async fn run(
+        &self,
+        request: lettuce_conversations::InferenceRequest,
+    ) -> Result<lettuce_conversations::InferenceOutcome, lettuce_conversations::PortError> {
+        match tokio::time::timeout_at(self.deadline, self.inference.run(request)).await {
+            Ok(result) => result,
+            Err(_) => {
+                self.timed_out.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.handle.request_cancel();
+                Err(lettuce_conversations::PortError::Cancelled)
+            }
+        }
+    }
+}
+
 #[async_trait]
 impl ClaimedJob for ClaimedKeyword {
     fn cancellation(&self) -> CancellationToken {
@@ -246,8 +273,14 @@ impl ClaimedJob for ClaimedKeyword {
         let sink = RequestId::new();
         let receiver = runtime.register_stream(sink).map_err(internal)?;
         let forwarder = tokio::spawn(forward(receiver, progress));
+        let bounded = KeywordInference {
+            inference: context.inference(),
+            handle: &self.0.handle,
+            deadline: tokio::time::Instant::now() + KEYWORD_GENERATION_TIMEOUT,
+            timed_out: std::sync::atomic::AtomicBool::new(false),
+        };
         let inference = crate::companion::companion_memory_host::JobOutputInference::new(
-            context.inference(),
+            &bounded,
             Some(runtime),
             Some(sink),
         );
@@ -262,6 +295,11 @@ impl ClaimedJob for ClaimedKeyword {
                 context.now(),
             )
             .await;
+        let result = if bounded.timed_out.load(std::sync::atomic::Ordering::Relaxed) {
+            Err(crate::LorebookKeywordExecutionError::TimedOut)
+        } else {
+            result
+        };
         runtime.unregister_stream(sink).map_err(internal)?;
         forwarder.await.map_err(internal)?;
         if context.shutdown_token().is_cancelled()

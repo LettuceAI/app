@@ -13,6 +13,8 @@ use lettuce_types::{RequestId, TimestampMillis};
 
 use crate::{LorebookKeywordExecutionError, LorebookKeywordExecutionResult};
 
+const MAX_KEYWORD_JOB_ATTEMPTS: u32 = 3;
+
 #[derive(Debug, Clone)]
 pub struct LorebookKeywordClaimedWork {
     pub run: LorebookKeywordGenerationRun,
@@ -178,7 +180,17 @@ impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
                     })?;
                 Ok(LorebookKeywordSettledWork::Cancelled { error, job })
             }
-            Err(error) if retryable(&error) => {
+            Err(error)
+                if retryable(&error)
+                    && work.claim.claim.attempt.get() < MAX_KEYWORD_JOB_ATTEMPTS =>
+            {
+                tracing::warn!(
+                    job_id = %work.job.id,
+                    request_id = %work.run.request_id,
+                    attempt = work.claim.claim.attempt.get(),
+                    ?error,
+                    "lorebook keyword job will retry"
+                );
                 let job = self
                     .jobs
                     .append_and_transition(JobMutation::RetryScheduled {
@@ -188,7 +200,13 @@ impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(LorebookKeywordSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
-                tracing::warn!(job_id = %work.job.id, %error, "lorebook keyword job failed");
+                tracing::warn!(
+                    job_id = %work.job.id,
+                    request_id = %work.run.request_id,
+                    attempt = work.claim.claim.attempt.get(),
+                    ?error,
+                    "lorebook keyword job failed"
+                );
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),
@@ -216,6 +234,9 @@ fn retryable(error: &LorebookKeywordExecutionError) -> bool {
 
 fn job_error(error: &LorebookKeywordExecutionError) -> JobError {
     let (code, message) = match error {
+        LorebookKeywordExecutionError::TimedOut => {
+            (JobErrorCode::TimedOut, "lorebook-keyword-timed-out")
+        }
         LorebookKeywordExecutionError::InvalidOwnership { .. }
         | LorebookKeywordExecutionError::InvalidPrompt { .. }
         | LorebookKeywordExecutionError::ContextTooLarge { .. } => {

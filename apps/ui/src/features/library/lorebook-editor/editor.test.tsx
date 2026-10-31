@@ -3,11 +3,13 @@ import { toast } from "@lettuceai/crisp";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  JobEvent,
+  JobView,
   LorebookEntriesMutateRequest,
   LorebookEntryView,
   LorebookView_Serialize,
 } from "@/api/generated/bindings";
-import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
+import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
@@ -105,9 +107,11 @@ async function setup(
   calls: MockCallHandlers = {},
   platform: "other" | "android" = "other",
   store = backend(),
+  streams: MockStreamHandlers = {},
 ) {
   const requests = { get: 0 };
   const transport = createMockTransport({
+    streams,
     calls: {
       appStatus: () =>
         ok({ ...mockAppStatus, platform, ui_state: { onboarding: { completed: true } } }),
@@ -356,6 +360,67 @@ describe("lorebook editor page", () => {
     expect(
       within(dialog).getByRole("switch", { name: "Enabled" }).getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it.each([false, true])("applies keyword suggestions when completion arrives before watch acceptance: %s", async (early) => {
+    const queued: JobView = {
+      id: "job-1", kind: "creation_run", subject: { kind: "model_profile", id: "model-1" },
+      subject_detail: null, state: "queued", created_at: 1, updated_at: 1,
+      progress: { current: 0, total: null, unit: null, label_code: null, bytes_per_second: null },
+      failure: null, result: null,
+    };
+    const completed: JobEvent = { type: "completed", job: {
+      ...queued, state: "succeeded",
+      result: { type: "lorebook_keywords", keywords: ["Coast", "coast", "gate key", "City"] },
+    } };
+    let deliver: ((event: JobEvent) => void) | undefined;
+    const { store } = await setup(
+      { lorebookKeywordsDraft: () => ok({ job_id: queued.id }) },
+      "other", backend(),
+      { jobWatch: (_args, emit) => {
+        deliver = emit;
+        if (early) emit(completed);
+        return ok(queued);
+      } },
+    );
+    fireEvent.click(await screen.findByText("Gate content"));
+    const suggest = await screen.findByRole("button", { name: "Suggest" });
+    fireEvent.click(suggest);
+    await waitFor(() => expect(deliver).toBeDefined());
+    if (!early) await act(async () => deliver!(completed));
+    await waitFor(() => expect((suggest as HTMLButtonElement).disabled).toBe(false));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Coast")).toBeTruthy();
+    expect(within(dialog).getByText("City")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save entry" }));
+    await waitFor(() => expect(store.writes).toHaveLength(1));
+    expect(store.writes[0]).toMatchObject({ mutations: [{
+      type: "update", entry_id: "Gate", entry: { content: "Gate content", keywords: ["gate key", "Coast", "City"] },
+    }] });
+  });
+
+  it.each(["watch", "timeout"])("clears the suggesting state after a %s failure and allows another attempt", async (kind) => {
+    const accept = vi.fn(() => ok({ job_id: "job-1" }));
+    const failed: JobView = {
+      id: "job-1", kind: "creation_run", subject: { kind: "model_profile", id: "model-1" },
+      subject_detail: null, state: "failed", created_at: 1, updated_at: 1,
+      progress: { current: 0, total: null, unit: null, label_code: null, bytes_per_second: null },
+      failure: {
+        code: "timed_out", retryable: false, reason: null, entity_import: null,
+        model: null, hugging_face: null, ollama: null, image: null, speech: null,
+      },
+      result: null,
+    };
+    const watch = vi.fn(() => kind === "watch" ? failure("unavailable") : ok(failed));
+    await setup({ lorebookKeywordsDraft: accept }, "other", backend(), { jobWatch: watch });
+    fireEvent.click(await screen.findByText("Gate content"));
+    const suggest = await screen.findByRole("button", { name: "Suggest" });
+    fireEvent.click(suggest);
+    expect(await screen.findByText(kind === "watch" ? "It isn't available right now." : "The model request timed out.")).toBeTruthy();
+    await waitFor(() => expect((suggest as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(suggest);
+    await waitFor(() => expect(accept).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(watch).toHaveBeenCalledTimes(2));
   });
 
   it("cancels a running keyword suggestion when the sheet closes", async () => {
