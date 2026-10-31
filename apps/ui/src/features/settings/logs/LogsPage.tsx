@@ -359,7 +359,7 @@ function LogViewer({
   });
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [virtualizer, size, wrap, phone, showAt, selected]);
+  }, [virtualizer, size, wrap, phone, showAt]);
   const virtualRows = virtualizer.getVirtualItems();
   const offsets = [
     ...new Set(virtualRows.map((row) => Math.floor(row.index / pageSize) * pageSize)),

@@ -16,6 +16,7 @@ afterEach(() => {
   toast.dismiss();
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 const day = "app-2026-10-26.log";
@@ -51,6 +52,7 @@ const view = (request: LogQueryRequest): LogQueryView => {
 async function mount(
   options: {
     phone?: boolean;
+    rowHeight?: number;
     calls?: MockCallHandlers;
     files?: string[];
     language?: "en" | "cimode";
@@ -60,7 +62,7 @@ async function mount(
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
     this: HTMLElement,
   ) {
-    return this.hasAttribute("data-index") ? 28 : 600;
+    return this.hasAttribute("data-index") ? (options.rowHeight ?? 28) : 600;
   });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1000);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
@@ -68,7 +70,7 @@ async function mount(
   ) {
     const scroller = this.closest("main");
     const top = this === scroller ? 0 : -(scroller?.scrollTop ?? 0);
-    return new DOMRect(0, top, 1000, this.hasAttribute("data-index") ? 28 : 600);
+    return new DOMRect(0, top, 1000, this.hasAttribute("data-index") ? (options.rowHeight ?? 28) : 600);
   });
   let files = options.files ?? [day];
   const query = vi.fn<NonNullable<MockCallHandlers["logQuery"]>>((request) => ok(view(request)));
@@ -123,6 +125,42 @@ const openMore = async () => {
   fireEvent.click(await screen.findByRole("button", { name: "More" }));
 };
 const row = async (message: string) => (await screen.findByText(message)).closest("button")!;
+
+it("keeps measured phone row heights when navigating between problems", async () => {
+  const observers: { callback: ResizeObserverCallback; elements: Set<Element> }[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    elements = new Set<Element>();
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) { this.callback = callback; observers.push(this); }
+    observe(element: Element) { this.elements.add(element); }
+    unobserve(element: Element) { this.elements.delete(element); }
+    disconnect() { this.elements.clear(); }
+  });
+  await mount({ phone: true, rowHeight: 144 });
+  await screen.findByText("model failed");
+  await act(async () => {
+    for (const observer of observers) {
+      const entries = [...observer.elements].filter((element) => element.hasAttribute("data-index")).map((target) => ({
+        target, borderBoxSize: [{ blockSize: 144, inlineSize: 1000 }],
+      } as unknown as ResizeObserverEntry));
+      if (entries.length) observer.callback(entries, {} as ResizeObserver);
+    }
+  });
+  const expectSeparatedRows = () => {
+    const rows = [...document.querySelectorAll<HTMLElement>("[data-index]")];
+    for (let index = 1; index < rows.length; index++) {
+      const top = (element: HTMLElement) => Number.parseFloat(element.style.transform.replace("translateY(", ""));
+      expect(top(rows[index]!) - top(rows[index - 1]!)).toBeGreaterThanOrEqual(144);
+    }
+  };
+  expectSeparatedRows();
+  fireEvent.click(screen.getByRole("button", { name: "Next problem" }));
+  expectSeparatedRows();
+  fireEvent.click(screen.getByRole("button", { name: "Next problem" }));
+  expectSeparatedRows();
+  fireEvent.click(screen.getByRole("button", { name: "Previous problem" }));
+  expectSeparatedRows();
+});
 
 it("reads native lines and sends level and whole-day search filters", async () => {
   const { query } = await mount();
