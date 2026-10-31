@@ -71,7 +71,7 @@ mod tests {
             &root, None, Arc::new(lettuce_settings::InMemorySecretStore::new()),
             Arc::new(crate::events::TauriEventSink(app.handle().clone())),
             crate::files::file_access(app.handle()),
-            crate::asset_protocol::ASSET_URL_BASE.into(), crate::microphone::capture(),
+            crate::asset_protocol::ASSET_URL_BASE.into(), crate::microphone::capture(app.handle()),
         ).expect("open backend");
         app.manage(ApiContextSlot::new(Arc::new(context)));
         app.state::<BackendStartup>().finish(Ok(()));

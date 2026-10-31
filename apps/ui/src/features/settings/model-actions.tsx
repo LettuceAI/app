@@ -1,6 +1,7 @@
 import { confirm } from "@lettuceai/crisp";
 import type { TFunction } from "i18next";
 import type { ApiClient } from "@/api/client";
+import { pickExportTarget } from "@/api/export-target";
 import type { ModelView } from "@/api/generated/bindings";
 
 export async function deleteModelWithUsage(api: ApiClient, model: ModelView, t: TFunction<"settings">): Promise<boolean> {
@@ -22,6 +23,6 @@ export async function deleteModelWithUsage(api: ApiClient, model: ModelView, t: 
 }
 
 export async function exportModel(api: ApiClient, model: ModelView) {
-  const picked = await api.call("filesPickSave", { suggested_name: `${model.display_name.replace(/[/\\]/g, "_")}.uec`, kind: "any" });
-  if (picked.target) await api.call("modelExport", { id: model.id, target: picked.target });
+  const picked = await pickExportTarget(api, { suggested_name: `${model.display_name.replace(/[/\\]/g, "_")}.uec`, kind: "any" });
+  if (picked) await api.call("modelExport", { id: model.id, target: picked.target });
 }

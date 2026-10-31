@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { pickExportTarget } from "@/api/export-target";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { BookOpen, Brain, Check, Copy, Download, FileText, Heart, Image, LayoutList, List, MessageSquare, MessageSquareReply, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, Trash2, Upload } from "lucide-react";
@@ -106,8 +107,8 @@ export function PromptsPage() {
     toast.success(t("{{name}} is now the default", { name: prompt.name }));
   });
   const exportPrompt = (prompt: PromptSummary) => action.mutate(async () => {
-    const picked = await api.call("filesPickSave", { suggested_name: `${prompt.name.replace(/[^\p{L}\p{N}_-]+/gu, "_")}.uec`, kind: "json" });
-    if (!picked.target) return;
+    const picked = await pickExportTarget(api, { suggested_name: `${prompt.name.replace(/[^\p{L}\p{N}_-]+/gu, "_")}.uec`, kind: "json" });
+    if (!picked) return;
     await api.call("promptExport", { id: prompt.id, target: picked.target });
     toast.success(t("Exported {{name}}", { name: prompt.name }));
   });

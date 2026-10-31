@@ -44,7 +44,7 @@ import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
 import { ModelTools } from "./ModelTools";
-import { deleteModelWithUsage } from "./model-actions";
+import { deleteModelWithUsage, exportModel } from "./model-actions";
 
 const modelListViews = ["all", "provider", "providerColumns"] as const;
 type ModelListView = (typeof modelListViews)[number];
@@ -480,15 +480,7 @@ export function ModelsPage() {
               chevron={false}
               onClick={() =>
                 run(async () => {
-                  const picked = await api.call("filesPickSave", {
-                    suggested_name: `${menu.display_name.replace(/[/\\]/g, "_")}.uec`,
-                    kind: "any",
-                  });
-                  if (picked.target)
-                    await api.call("modelExport", {
-                      id: menu.id,
-                      target: picked.target,
-                    });
+                  await exportModel(api, menu);
                 })
               }
             />

@@ -16,6 +16,16 @@ fn access_error(error: &std::io::Error) -> FileAccessError {
     }
 }
 
+#[cfg(any(target_os = "android", test))]
+fn backup_temporary_exists(path: &Path) -> Result<bool, FileAccessError> {
+    // Android FS metadata can succeed for a raw path that does not exist.
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(access_error(&error)),
+    }
+}
+
 struct ExportTarget(std::fs::File);
 
 impl Write for ExportTarget {
@@ -391,9 +401,9 @@ impl<R: Runtime> AndroidFileAccess<R> {
         {
             return Err(FileAccessError::Unsupported);
         }
-        self.fs()
-            .get_info(&tauri_plugin_android_fs::FsUri::from_path(&intent))
-            .map_err(|_| self.metadata_error())?;
+        if !backup_temporary_exists(intent)? {
+            return Err(FileAccessError::NotFound);
+        }
         public
             .scan_by_path(intent, Some("application/octet-stream"))
             .map_err(platform_error)
@@ -450,16 +460,8 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         if intent.parent() != Some(directory.as_path()) {
             return Err(FileAccessError::Unsupported);
         }
-        if self
-            .fs()
-            .get_info(&tauri_plugin_android_fs::FsUri::from_path(&intent))
-            .is_ok()
-        {
+        if backup_temporary_exists(intent)? {
             return Err(FileAccessError::Busy);
-        }
-        match self.metadata_error() {
-            FileAccessError::NotFound => {}
-            failure => return Err(failure),
         }
         let name = intent.file_name().ok_or(FileAccessError::Unsupported)?;
         let uri = public
@@ -766,6 +768,45 @@ pub(crate) fn file_access<R: Runtime>(handle: &AppHandle<R>) -> std::sync::Arc<d
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_temporary_existence_checks_the_filesystem() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-backup-existence-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).expect("root");
+        let temporary = root.join("lettuce-backup-test.partial");
+        assert_eq!(backup_temporary_exists(&temporary), Ok(false));
+        std::fs::write(&temporary, []).expect("empty temporary");
+        assert_eq!(backup_temporary_exists(&temporary), Ok(true));
+        std::fs::remove_file(&temporary).expect("remove temporary");
+        std::fs::create_dir(&temporary).expect("directory at temporary path");
+        assert_eq!(backup_temporary_exists(&temporary), Ok(true));
+        #[cfg(unix)]
+        {
+            std::fs::remove_dir(&temporary).expect("remove directory");
+            std::os::unix::fs::symlink(root.join("missing"), &temporary).expect("dangling symlink");
+            assert_eq!(backup_temporary_exists(&temporary), Ok(true));
+        }
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn backup_temporary_existence_preserves_filesystem_errors() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-backup-existence-error-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).expect("root");
+        let parent = root.join("file");
+        std::fs::write(&parent, []).expect("file in place of directory");
+        assert_eq!(
+            backup_temporary_exists(&parent.join("temporary.partial")),
+            Err(FileAccessError::Io)
+        );
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     #[test]
     fn export_refuses_a_concurrent_writer_and_releases_on_close() {

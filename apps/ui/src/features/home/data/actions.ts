@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
+import { pickExportTarget } from "@/api/export-target";
 import type { CharacterExportFormat, CharacterSummary, ConversationSummary, EntityExportResult } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 
@@ -40,10 +41,10 @@ export function exportFileName(name: string, format: CharacterExportFormat, now:
   return `character_${safe}_${date}.${exportExtension[format]}`;
 }
 
-/** Asks where to save the character card and writes it there; null when the dialog was cancelled. */
+/** Exports a character card; null when the save dialog was cancelled. */
 export async function exportCharacter({ api }: HomeServices, character: CharacterSummary, format: CharacterExportFormat): Promise<EntityExportResult | null> {
-  const picked = await api.call("filesPickSave", { suggested_name: exportFileName(character.name, format, new Date()), kind: "character_card" });
-  if (!picked.target) return null;
+  const picked = await pickExportTarget(api, { suggested_name: exportFileName(character.name, format, new Date()), kind: "character_card" });
+  if (!picked) return null;
   return api.call("characterExport", { id: character.id, format, target: picked.target });
 }
 

@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { pickExportTarget } from "@/api/export-target";
 import { queryKeys } from "@/api/query-keys";
 import { ApiFailure, type ApiClient } from "@/api/client";
 import type {
@@ -48,11 +49,11 @@ export async function exportEntry(
   lorebookFormat: LorebookExportFormat = "uec",
 ): Promise<EntityExportResult | null> {
   const uec = entry.kind === "persona" || (entry.kind === "lorebook" && lorebookFormat === "uec");
-  const picked = await api.call("filesPickSave", {
+  const picked = await pickExportTarget(api, {
     suggested_name: `${entry.name.replace(/[^\p{L}\p{N}_-]+/gu, "_")}.${uec ? "uec" : "json"}`,
     kind: entry.kind === "character" ? "character_card" : uec ? "any" : "json",
   });
-  if (!picked.target) return null;
+  if (!picked) return null;
   if (entry.kind === "character")
     return api.call("characterExport", { id: entry.id, format: "v3", target: picked.target });
   if (entry.kind === "persona")

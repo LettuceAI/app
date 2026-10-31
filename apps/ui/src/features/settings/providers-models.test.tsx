@@ -289,12 +289,27 @@ describe("model settings", () => {
       status: "ok",
       data: { target: null },
     }));
-    await mount("models", { filesPickSave: pick, modelExport: exportModel });
+    await mount("models", {
+      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "windows", ui_state: { onboarding: { completed: true } } } }),
+      filesPickSave: pick, modelExport: exportModel,
+    });
     fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ }));
     await click(/Export/);
     await waitFor(() => expect(pick).toHaveBeenCalled());
     expect(pick.mock.calls[0]?.[0].suggested_name).toBe("My model.uec");
     expect(exportModel).not.toHaveBeenCalled();
+  });
+
+  it("exports a model to Android Downloads without a save picker", async () => {
+    const write = vi.fn<NonNullable<MockCallHandlers["modelExport"]>>(() => ({
+      status: "ok", data: { uri: "content://downloads/model", suggested_name: "model.uec", warnings: [] },
+    }));
+    const pick = vi.fn<NonNullable<MockCallHandlers["filesPickSave"]>>(() => ({ status: "ok", data: { target: null } }));
+    await mount("models", { filesPickSave: pick, modelExport: write });
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ }));
+    await click(/Export/);
+    await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: model.id, target: null }));
+    expect(pick).not.toHaveBeenCalled();
   });
 
   it("searches model names, IDs and providers across views, including collapsed groups", async () => {

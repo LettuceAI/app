@@ -41,6 +41,20 @@ async function openPage(calls: MockCallHandlers = {}, path = "/settings/prompts"
 }
 const sheet = () => within(screen.getAllByRole("dialog").at(-1)!);
 
+it("exports a system prompt to Android Downloads without a save picker", async () => {
+  const pick = vi.fn(() => ok({ target: { uri: "content://picked/prompt" } }));
+  const write = vi.fn(() => ok({ uri: "content://downloads/prompt", suggested_name: "prompt.uec", warnings: [] }));
+  await openPage({
+    appStatus: () => ok({ ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } }),
+    filesPickSave: pick,
+    promptExport: write,
+  });
+  fireEvent.contextMenu((await screen.findByText("Story")).closest("button")!);
+  fireEvent.click(await screen.findByRole("button", { name: /^Export/ }));
+  await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: "p1", target: null }));
+  expect(pick).not.toHaveBeenCalled();
+});
+
 describe("system prompt management", () => {
   it("loads every cursor, filters by purpose and hides runtime fragments", async () => {
     const list = vi.fn(({ cursor }) => ok({ items: cursor ? [document({ id: "memory", name: "Memory work", kind: "dynamic_memory_manager" }).prompt, document({ id: "runtime", name: "Internal fragment", kind: "runtime_text" }).prompt] : [document().prompt], next_cursor: cursor ? null : "next" }));

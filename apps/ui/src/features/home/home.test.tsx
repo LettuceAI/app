@@ -1,13 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CharacterSummary, ConversationSummary } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus } from "@/api/mock-transport";
+import { createApiClient } from "@/api/client";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
 import { customGradientCss, textOnColors } from "./data/gradient";
-import { exportFileName } from "./data/actions";
+import { exportCharacter, exportFileName } from "./data/actions";
 import { sortByActivity } from "./data/home-characters";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
@@ -44,6 +46,19 @@ afterEach(() => {
 });
 
 describe("home characters", () => {
+  it.each(["uec", "v3", "v2"] as const)("exports %s character cards to Android Downloads without a save picker", async (format) => {
+    const pick = vi.fn(() => ({ status: "ok" as const, data: { target: null } }));
+    const write = vi.fn(() => ({ status: "ok" as const, data: { uri: "content://downloads/character", suggested_name: "character.uec", warnings: [] } }));
+    const api = createApiClient(createMockTransport({ calls: {
+      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android" } }),
+      filesPickSave: pick, characterExport: write,
+    } }));
+    await expect(exportCharacter({ api, queryClient: new QueryClient() }, character("ch1", "Cassian"), format))
+      .resolves.toMatchObject({ uri: "content://downloads/character" });
+    expect(write).toHaveBeenCalledExactlyOnceWith({ id: "ch1", format, target: null });
+    expect(pick).not.toHaveBeenCalled();
+  });
+
   it("opens a character's history from its menu even before its first chat", async () => {
     const runtime = await renderHome([character("ch1", "Cassian")]);
     fireEvent.contextMenu((await screen.findByText("Cassian")).closest("button")!);

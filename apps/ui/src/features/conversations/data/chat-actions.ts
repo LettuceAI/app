@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
+import { pickExportTarget } from "@/api/export-target";
 import type { CompanionNoteUpsertRequest } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job/watch";
@@ -55,8 +56,8 @@ export async function deleteBranch(api: ApiClient, queryClient: QueryClient, con
 }
 
 export async function exportChat(api: ApiClient, conversationId: string, title: string): Promise<string | null> {
-  const picked = await api.call("filesPickSave", { suggested_name: `${title.replace(/[/\\]/g, "_") || "chat"}.jsonl`, kind: "chat_log" });
-  if (!picked.target) return null;
+  const picked = await pickExportTarget(api, { suggested_name: `${title.replace(/[/\\]/g, "_") || "chat"}.jsonl`, kind: "chat_log" });
+  if (!picked) return null;
   const exported = await api.call("chatExport", { conversation_id: conversationId, target: picked.target });
   return exported.uri;
 }
