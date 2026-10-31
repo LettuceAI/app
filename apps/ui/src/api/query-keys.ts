@@ -125,6 +125,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.media.library(),
     queryKeys.library.counts(),
     queryKeys.conversations.detail(event.conversation_id),
+    queryKeys.memory.detail(event.conversation_id),
     queryKeys.lorebooks.previews(),
   ],
   conversation_changed: (event) => [
@@ -132,6 +133,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.home.characters(),
     queryKeys.groups.all,
     queryKeys.conversations.detail(event.conversation_id),
+    queryKeys.memory.detail(event.conversation_id),
     queryKeys.lorebooks.previews(),
   ],
   conversation_removed: () => [

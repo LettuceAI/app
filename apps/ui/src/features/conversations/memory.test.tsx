@@ -8,6 +8,7 @@ import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStr
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
+import { queryKeys } from "@/api/query-keys";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
@@ -97,8 +98,7 @@ async function open(setup: Setup = {}) {
     world.revision += 1;
     return { status: "ok" as const, data: { revision: world.revision, memory_id: null } };
   };
-  const runtime = await createAppRuntime({
-    transport: createMockTransport({
+  const transport = createMockTransport({
       calls: {
         appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "other", ui_state: { onboarding: { completed: true } } } }),
         conversationOpen: () => ({ status: "ok", data: conversation(setup.messages ?? [message("a1", "assistant", "Sit down.")]) }),
@@ -157,7 +157,9 @@ async function open(setup: Setup = {}) {
         ...setup.calls,
       },
       ...(setup.streams ? { streams: setup.streams } : {}),
-    }),
+  });
+  const runtime = await createAppRuntime({
+    transport,
     history: createMemoryHistory({ initialEntries: [setup.path ?? "/chat/c1/memory"] }),
     i18n: await createTestI18n("en"),
   });
@@ -165,12 +167,26 @@ async function open(setup: Setup = {}) {
     render(<App runtime={runtime} />);
   });
   const called = (command: string) => calls.filter((entry) => entry.command === command);
-  return { runtime, world, calls, called };
+  return { runtime, transport, world, calls, called };
 }
 
 const tabNames = () => screen.getAllByRole("tab").map((tab) => (tab.textContent ?? "").replace(/\d+$/, ""));
 
 describe("chat memory page", () => {
+  it.each([
+    { type: "conversation_changed", conversation_id: "c1" },
+    { type: "generation_settled", conversation_id: "c1", turn_id: "t1" },
+  ] as const)("updates the message counter without leaving the page after $type", async (event) => {
+    const { runtime, transport, world } = await open();
+    await screen.findByText("Next update in 12 messages");
+    await waitFor(() => expect(runtime.queryClient.isFetching({ queryKey: queryKeys.memory.detail("c1") })).toBe(0));
+    world.status = { ...world.status, messages_since_last_cycle: 9, messages_until_next_cycle: 11, total_conversation_messages: 29 };
+    await act(async () => transport.emitAppEvent(event));
+    expect(await screen.findByText("Next update in 11 messages")).toBeTruthy();
+    expect(screen.getByText("9 of 20")).toBeTruthy();
+    expect(runtime.router.state.location.pathname).toBe("/chat/c1/memory");
+  });
+
   it("shows three tabs in dynamic mode and two in manual mode", async () => {
     await open({ mode: "dynamic" });
     await screen.findByPlaceholderText("Search memories");

@@ -91,6 +91,20 @@ describe("AppEventBridge", () => {
     expect(invalidated()).toEqual(["conversations/detail/c1", "conversations/detail/c1/messages"]);
   });
 
+  it.each([
+    { type: "conversation_changed", conversation_id: "c1" },
+    { type: "generation_settled", conversation_id: "c1", turn_id: "t1" },
+  ] as const)("refreshes only the affected conversation's memory status on $type", async (event) => {
+    const { transport, queryClient } = await setup();
+    const current = queryKeys.memory.detail("c1");
+    const other = queryKeys.memory.detail("c2");
+    queryClient.setQueryData(current, { messages_since_last_cycle: 8 });
+    queryClient.setQueryData(other, { messages_since_last_cycle: 3 });
+    await act(async () => transport.emitAppEvent(event));
+    expect(queryClient.getQueryState(current)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(other)?.isInvalidated).toBe(false);
+  });
+
   it("ignores event types the table does not know", async () => {
     const { transport, invalidated } = await setup();
     await act(async () => transport.emitAppEvent({ type: "future_event" } as unknown as AppEvent));
