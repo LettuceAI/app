@@ -129,6 +129,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const [landing, setLanding] = useState<string | null>(requestedMessage);
   const homing = useRef(false);
   const stuck = useRef(true);
+  const [followRequest, setFollowRequest] = useState(0);
   const onStick = useCallback((value: boolean) => {
     stuck.current = value;
   }, []);
@@ -435,8 +436,14 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     [scenes, sceneIndex, services, run],
   );
 
-  const send = async (text: string, attachments: ComposerAttachment[]) => {
+  const followLatest = () => {
+    stuck.current = true;
     timeline.jumpToLatest();
+    setFollowRequest((current) => current + 1);
+  };
+
+  const send = async (text: string, attachments: ComposerAttachment[]) => {
+    followLatest();
     setPendingMedia(
       attachments.map((attachment) => ({
         id: attachment.id,
@@ -463,14 +470,14 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
       setDirectorWiggle((count) => count + 1);
       return false;
     }
-    timeline.jumpToLatest();
+    followLatest();
     if (text && !(await run(() => addUserMessage(services, text)))) return false;
     if (directorBehavior === "cue" && directorSelected) await generation.continueReply(swap, directorSelected);
     return true;
   };
 
   const sendSystem = async (text: string, attachments: ComposerAttachment[]) => {
-    timeline.jumpToLatest();
+    followLatest();
     return run(() => addSystemMessage(services, text, attachments.map((attachment) => attachment.id)));
   };
 
@@ -485,6 +492,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
       return;
     }
     const text = composer.current?.read().trim() ?? "";
+    followLatest();
     if (text) {
       composer.current?.replace("");
       if (!(await run(() => addUserMessage(services, text)))) {
@@ -492,7 +500,6 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
         return;
       }
     }
-    timeline.jumpToLatest();
     await generation.continueReply(swap, member.id);
   };
 
@@ -617,6 +624,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           timeline={timeline}
           store={store}
           onStick={onStick}
+          followRequest={followRequest}
           participants={participants}
           user={user ? { name: user.name, avatar: user.avatar?.url ?? null } : undefined}
           character={

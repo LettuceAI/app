@@ -3,6 +3,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApiClient } from "@/api/client";
+import { queryKeys } from "@/api/query-keys";
 import type {
   ConversationSettingsView,
   ConversationView,
@@ -233,6 +234,69 @@ async function typeAndSend(text: string) {
 }
 
 const accepted = { status: "ok" as const, data: { user_message_id: "u1", turn_id: "t1" } };
+
+function readEarlierMessages(scroller: HTMLElement) {
+  let height = 1000;
+  let top = 600;
+  Object.defineProperties(scroller, {
+    clientHeight: { configurable: true, get: () => 400 },
+    scrollHeight: { configurable: true, get: () => height },
+    scrollTop: { configurable: true, get: () => top, set: (value: number) => { top = Math.max(0, Math.min(value, height - 400)); } },
+  });
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: -100 });
+  scroller.scrollTop = 150;
+  fireEvent.scroll(scroller);
+  return (value: number) => { height = value; };
+}
+
+it.each([
+  { platform: "android", kind: "user" }, { platform: "other", kind: "user" },
+  { platform: "android", kind: "system" }, { platform: "other", kind: "system" },
+] as const)("follows the new $kind message after sending while reading earlier messages on $platform", async ({ platform, kind }) => {
+  const messages = [message("a1", "assistant", "Sit down.")];
+  let grow = (_height: number) => {};
+  const send = vi.fn<NonNullable<MockStreamHandlers["conversationSend"]>>(() => {
+    grow(1400);
+    return accepted;
+  });
+  const system = vi.fn<NonNullable<MockCallHandlers["conversationAddSystemMessage"]>>((request) => {
+    grow(1400);
+    const added = message("s1", "system", request.text);
+    messages.push(added);
+    return { status: "ok", data: { message: added, revision: 5 } };
+  });
+  await open({ platform, messages: () => [...messages], streams: { conversationSend: send }, calls: { conversationAddSystemMessage: system } });
+  await screen.findByText("Sit down.");
+  const scroller = document.getElementById("m-a1")!.closest<HTMLElement>(".overflow-y-auto")!;
+  grow = readEarlierMessages(scroller);
+  expect(scroller.scrollTop).toBe(150);
+  const box = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(box, { target: { value: "A new message at the end." } });
+  if (kind === "system") {
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Send message" }));
+    const menu = await screen.findByRole("dialog", { name: "Send as system message?" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Send" }));
+  } else fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByText("A new message at the end.");
+  await waitFor(() => expect(scroller.scrollTop).toBe(1000));
+  expect(kind === "system" ? system : send).toHaveBeenCalledOnce();
+});
+
+it("keeps the reading position when a new message arrives without a local send", async () => {
+  const messages = [message("a1", "assistant", "Sit down.")];
+  const runtime = await open({ messages: () => [...messages] });
+  await screen.findByText("Sit down.");
+  const scroller = document.getElementById("m-a1")!.closest<HTMLElement>(".overflow-y-auto")!;
+  const grow = readEarlierMessages(scroller);
+  grow(1400);
+  messages.push(message("a2", "assistant", "An incoming reply."));
+  await act(async () => {
+    await runtime.queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail("c1") });
+  });
+  expect(await screen.findByText("An incoming reply.")).toBeTruthy();
+  expect(scroller.scrollTop).toBe(150);
+});
 
 describe("conversation screen", () => {
   it.each([

@@ -47,6 +47,7 @@ export interface TimelineProps {
   timeline: TimelineData;
   store: GenerationStore;
   onStick: (stuck: boolean) => void;
+  followRequest: number;
   participants: readonly ParticipantView[];
   user: Author | undefined;
   character: Author | undefined;
@@ -70,6 +71,7 @@ export function Timeline({
   timeline,
   store,
   onStick,
+  followRequest,
   participants,
   user,
   character,
@@ -143,6 +145,11 @@ export function Timeline({
   }, [loadOlder]);
 
   useLayoutEffect(() => {
+    prepend.current = null;
+    setStick(true);
+  }, [followRequest, setStick]);
+
+  useLayoutEffect(() => {
     const el = scroller.current;
     const saved = prepend.current;
     if (el && saved) {
@@ -168,7 +175,7 @@ export function Timeline({
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [messages, meta.active, meta.userText, meta.failure, pendingTurn]);
+  }, [messages, meta.active, meta.userText, meta.failure, pendingTurn, followRequest]);
 
   useEffect(() => {
     const body = content.current;
