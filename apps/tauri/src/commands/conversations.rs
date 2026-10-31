@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use lettuce_app::api::{self, ApiContextSlot, GenerationEventSink};
 use lettuce_contracts::{
-    ApiError, ConversationAddUserMessageRequest, ConversationContinueRequest,
+    ApiError, ConversationAddSystemMessageRequest, ConversationAddUserMessageRequest, ConversationContinueRequest,
     ConversationHelpMeReplyRequest, ConversationMessagesAroundRequest, ConversationMessagesRequest,
     ConversationOpenRequest, ConversationPage, ConversationParticipantAddRequest,
     ConversationParticipantUpdateRequest, ConversationPinnedMessagesRequest,
@@ -255,6 +255,16 @@ pub async fn conversation_add_user_message(
 ) -> Result<MessageChanged, ApiError> {
     let context = context.snapshot()?;
     api::conversation_add_user_message(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_add_system_message(
+    context: State<'_, ApiContextSlot>,
+    request: ConversationAddSystemMessageRequest,
+) -> Result<MessageChanged, ApiError> {
+    let context = context.snapshot()?;
+    api::conversation_add_system_message(&context, request).await
 }
 
 #[tauri::command]

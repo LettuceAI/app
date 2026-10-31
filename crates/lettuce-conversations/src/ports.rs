@@ -1265,6 +1265,21 @@ pub trait ConversationRepository: ConversationCreator {
         &self,
         command: &SendConversation,
         now: TimestampMillis,
+    ) -> Result<AppendUserMessageResult, ConversationRepositoryError> {
+        command.validate().map_err(ConversationRepositoryError::Invalid)?;
+        self.append_message(&crate::AppendMessage {
+            conversation_id: command.conversation_id,
+            branch_id: command.branch_id,
+            expected_revision: command.expected_revision,
+            operation: command.operation.clone(),
+            message: command.message.clone(),
+        }, now)
+    }
+    /// Appends a user or visible system message without creating a generation turn.
+    fn append_message(
+        &self,
+        command: &crate::AppendMessage,
+        now: TimestampMillis,
     ) -> Result<AppendUserMessageResult, ConversationRepositoryError>;
     fn begin_regenerate(
         &self,

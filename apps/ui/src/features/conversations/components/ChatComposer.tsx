@@ -1,21 +1,24 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useBlocker, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   Banner,
   Button,
   Composer,
+  Sheet,
   toast,
   useCompactLayout,
   type ComposerAttachment,
 } from "@lettuceai/crisp";
 import { useChatLook } from "@/entities/preferences";
-import type { ApiClient, ApiFailure } from "@/api/client";
+import { ApiFailure, type ApiClient } from "@/api/client";
 import { dictationErrorKey, useDictation } from "../data/use-dictation";
 import type { MemoryBlockedReason, RequiredModel } from "@/api/generated/bindings";
 import { activeMention, insertMention, type ActiveMention } from "../data/mentions";
 import { MentionPicker } from "./MentionPicker";
 import type { Speaker } from "./SpeakerSheet";
+
+const systemSendConfirmationKey = "lettuce.chat.systemSendConfirmationDisabled";
 
 export interface Blockers {
   missingModels: readonly RequiredModel[];
@@ -105,6 +108,7 @@ export interface ChatComposerProps {
   disabled: boolean;
   canContinue: boolean;
   onSend: (text: string, attachments: ComposerAttachment[]) => Promise<boolean>;
+  onSendSystem?: (text: string, attachments: ComposerAttachment[]) => Promise<boolean>;
   onContinue: () => void;
   onStop: () => void;
   onAttach: () => void;
@@ -122,6 +126,7 @@ export function ChatComposer({
   disabled,
   canContinue,
   onSend,
+  onSendSystem,
   onContinue,
   onStop,
   onAttach,
@@ -135,6 +140,11 @@ export function ChatComposer({
   const phone = useCompactLayout();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [systemMenu, setSystemMenu] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submitBusy = useRef(false);
+  const systemConfirmed = useRef(false);
+  if (systemMenu && (sending || disabled)) setSystemMenu(false);
   const draftRef = useRef(draft);
   useEffect(() => {
     draftRef.current = draft;
@@ -200,17 +210,47 @@ export function ChatComposer({
     }
   };
 
-  const send = () => {
+  const send = (submit = onSend) => {
+    if (submitBusy.current || sending || disabled) return;
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
     const sent = attachments;
+    submitBusy.current = true;
+    setSubmitting(submit === onSendSystem);
     setDraft("");
     setAttachments([]);
-    void onSend(text, sent).then((accepted) => {
+    setMention(null);
+    void submit(text, sent).catch((error: unknown) => {
+      toast.error(common(`errors.code.${ApiFailure.fromRejection(error).code}`));
+      return false;
+    }).then((accepted) => {
       if (accepted) return;
       setDraft((current) => (current.length === 0 ? text : current));
       setAttachments((current) => (current.length === 0 ? sent : current));
+    }).finally(() => {
+      submitBusy.current = false;
+      setSubmitting(false);
     });
+  };
+
+  const sendAsSystem = () => {
+    if (!onSendSystem || submitBusy.current || sending || disabled || (!draft.trim() && attachments.length === 0)) return;
+    let confirmed = systemConfirmed.current;
+    try {
+      confirmed ||= window.localStorage.getItem(systemSendConfirmationKey) === "1";
+    } catch { /* Keep the confirmation available when storage is blocked. */ }
+    if (confirmed) send(onSendSystem);
+    else setSystemMenu(true);
+  };
+
+  const confirmSystemSend = () => {
+    setSystemMenu(false);
+    if (!onSendSystem || submitBusy.current || sending || disabled) return;
+    systemConfirmed.current = true;
+    try {
+      window.localStorage.setItem(systemSendConfirmationKey, "1");
+    } catch { /* The acknowledgement still lasts for this mounted chat. */ }
+    send(onSendSystem);
   };
 
   return (
@@ -224,7 +264,8 @@ export function ChatComposer({
           topSlot={topSlot}
           value={draft}
           onChange={change}
-          onSend={send}
+          onSend={() => send()}
+          {...(onSendSystem ? { onSendAsSystem: sendAsSystem } : {})}
           onStop={onStop}
           onAttach={onAttach}
           attachments={attachments}
@@ -241,14 +282,37 @@ export function ChatComposer({
             onStart: () => void dictation.start(),
             onStop: () => void dictation.stop(),
             onCancel: dictation.cancel,
-            disabled: sending || disabled,
+            disabled: sending || disabled || submitting,
           }}
           sending={sending}
-          disabled={disabled}
+          disabled={disabled || submitting}
           enterSends={!phone}
           placeholder={t("composer.placeholder", { name })}
         />
       </div>
+      {onSendSystem && <SystemSendSheet open={systemMenu} onClose={() => setSystemMenu(false)} onConfirm={confirmSystemSend} />}
     </div>
+  );
+}
+
+/** First-use acknowledgement for sending a visible system message without a reply. */
+function SystemSendSheet({ open, onClose, onConfirm }: { open: boolean; onClose: () => void; onConfirm: () => void }) {
+  const { t } = useTranslation("conversations");
+  const { t: common } = useTranslation("common");
+  useBlocker({
+    shouldBlockFn: ({ action }) => {
+      if (action !== "BACK" || !open) return false;
+      onClose();
+      return true;
+    },
+    enableBeforeUnload: false,
+  });
+  return (
+    <Sheet open={open} onClose={onClose} size="sm" title={t("composer.systemSend.title")} description={t("composer.systemSend.description")}>
+      <div className="flex gap-2">
+        <Button variant="secondary" className="flex-1" onClick={onClose}>{common("actions.cancel")}</Button>
+        <Button variant="primary" className="flex-1" onClick={onConfirm}>{t("composer.systemSend.send")}</Button>
+      </div>
+    </Sheet>
   );
 }

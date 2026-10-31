@@ -186,6 +186,44 @@ async function open(setup: Setup = {}) {
 afterEach(() => {
   toast.dismiss();
   cleanup();
+  localStorage.removeItem("lettuce.chat.systemSendConfirmationDisabled");
+});
+
+it("appends a visible system message from the composer without starting any generation", async () => {
+  const messages = [message("a1", "assistant", "Sit down.")];
+  const system = vi.fn<NonNullable<MockCallHandlers["conversationAddSystemMessage"]>>((request) => {
+    const added = message("s1", "system", request.text);
+    messages.push(added);
+    return { status: "ok", data: { message: added, revision: 5 } };
+  });
+  const send = vi.fn<NonNullable<MockStreamHandlers["conversationSend"]>>();
+  const proceed = vi.fn<NonNullable<MockStreamHandlers["conversationContinue"]>>();
+  const runtime = await open({ messages: () => [...messages], calls: { conversationAddSystemMessage: system }, streams: { conversationSend: send, conversationContinue: proceed } });
+  const box = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(box, { target: { value: "The sun has set." } });
+  fireEvent.contextMenu(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByRole("dialog", { name: "Send as system message?" });
+  // Memory history does not invoke POP blockers; exercise the browser BACK callback.
+  let blocked = false;
+  await act(async () => {
+    for (const blocker of runtime.router.history._getBlockers?.() ?? []) {
+      blocked = await blocker.blockerFn({ currentLocation: runtime.router.history.location, nextLocation: runtime.router.history.location, action: "BACK" });
+      if (blocked) break;
+    }
+  });
+  expect(blocked).toBe(true);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(runtime.router.state.location.pathname).toBe("/chat/c1");
+  expect(system).not.toHaveBeenCalled();
+  fireEvent.contextMenu(screen.getByRole("button", { name: "Send message" }));
+  const menu = await screen.findByRole("dialog", { name: "Send as system message?" });
+  fireEvent.click(within(menu).getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(system).toHaveBeenCalledOnce());
+  expect(system.mock.calls[0]?.[0]).toMatchObject({ conversation_id: "c1", text: "The sun has set.", media: [], expected_revision: 4, client_operation_id: expect.any(String) });
+  expect(await screen.findByText("The sun has set.")).toBeTruthy();
+  expect(document.getElementById("m-s1")?.textContent).toContain("The sun has set.");
+  expect(send).not.toHaveBeenCalled();
+  expect(proceed).not.toHaveBeenCalled();
 });
 
 async function typeAndSend(text: string) {

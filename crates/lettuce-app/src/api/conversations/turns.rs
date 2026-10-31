@@ -715,6 +715,82 @@ pub async fn conversation_add_user_message(
         .await
 }
 
+/// Adds a visible system message to the active branch without starting a turn.
+pub async fn conversation_add_system_message(
+    context: &ApiContext,
+    request: dto::ConversationAddSystemMessageRequest,
+) -> Result<dto::MessageChanged, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    let text = request.text.trim().to_owned();
+    let media = super::send_media::parse_media(&request.media)?;
+    if text.is_empty() && media.is_empty() {
+        return Err(invalid_field("text", "the message text is blank"));
+    }
+    let client_revision = expected_revision(request.expected_revision)?;
+    let encoded_media = serde_json::to_vec(&request.media)
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let operation = operation(
+        request.client_operation_id,
+        &[
+            b"lettuce-conversation-add-system-message-v1",
+            conversation_id.to_string().as_bytes(),
+            text.as_bytes(),
+            &encoded_media,
+        ],
+    )?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            if replayed(context, conversation_id, OperationKind::AppendMessage, &operation)? {
+                let record = ConversationReader::operation_record(
+                    database,
+                    conversation_id,
+                    OperationKind::AppendMessage,
+                    &operation,
+                )
+                .map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| api_error(ApiErrorCode::Internal, "the recorded operation is missing"))?;
+                let lettuce_conversations::OperationResultRef::Message(message_id) = record.result else {
+                    return Err(api_error(ApiErrorCode::Internal, "the recorded operation is not a message"));
+                };
+                return current_message(context, conversation_id, message_id);
+            }
+            let conversation = writable(context, conversation_id)?;
+            refuse_live_turn(context, conversation_id)?;
+            super::send_media::attachment_kinds(database, &media)?;
+            let mut parts = Vec::with_capacity(media.len() + 1);
+            if !text.is_empty() {
+                parts.push(MessagePart::Text { text });
+            }
+            parts.extend(media.iter().map(|asset_id| MessagePart::MediaAsset {
+                asset_id: *asset_id,
+                role: lettuce_conversations::MediaAssetRole::Attachment,
+            }));
+            let appended = ConversationRepository::append_message(
+                database,
+                &lettuce_conversations::AppendMessage {
+                    conversation_id,
+                    branch_id: conversation.active_branch_id,
+                    expected_revision: client_revision,
+                    operation,
+                    message: MessageDraft {
+                        role: MessageRole::System,
+                        author_participant_id: None,
+                        parts,
+                        visibility: MessageVisibility::Visible,
+                        pinned: false,
+                        scene_edited: false,
+                    },
+                },
+                context.now(),
+            )
+            .map_err(|error| begin_error(context, conversation_id, error))?;
+            let revision = committed_revision(&appended.outbox);
+            changed(context, appended.value, revision)
+        })
+        .await
+}
+
 #[cfg(test)]
 mod revision_race_tests {
     use super::*;

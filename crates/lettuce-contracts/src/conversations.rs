@@ -725,6 +725,21 @@ pub struct ConversationAddUserMessageRequest {
     pub client_operation_id: String,
 }
 
+/// Appends a visible system message without generating a reply. Text may be
+/// blank only when media is attached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationAddSystemMessageRequest {
+    pub conversation_id: String,
+    pub text: String,
+    #[serde(default)]
+    pub media: Vec<String>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
 /// A queued turn; its stream is the channel the request passed in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

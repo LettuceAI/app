@@ -67,7 +67,7 @@ pub use conversations::settings::{
     conversation_settings_update,
 };
 pub use conversations::turns::{
-    conversation_add_user_message, conversation_continue, conversation_regenerate,
+    conversation_add_system_message, conversation_add_user_message, conversation_continue, conversation_regenerate,
     conversation_retry,
 };
 pub use conversations::{

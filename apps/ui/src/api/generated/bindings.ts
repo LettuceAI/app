@@ -82,6 +82,7 @@ export const commands = {
 	conversationContinue: (request: ConversationContinueRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_continue", { request, onEvent })),
 	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
 	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_add_user_message", { request })),
+	conversationAddSystemMessage: (request: ConversationAddSystemMessageRequest_Deserialize) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_add_system_message", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
 	messageSceneImageApprove: (request: MessageSceneImageApproveRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_approve", { request })),
@@ -1594,6 +1595,36 @@ export type ContentFilterLogEntry = {
 
 export type ContentFilterLogView = {
 	entries: ContentFilterLogEntry[],
+};
+
+/**
+ *  Appends a visible system message without generating a reply. Text may be
+ *  blank only when media is attached.
+ */
+export type ConversationAddSystemMessageRequest = ConversationAddSystemMessageRequest_Serialize | ConversationAddSystemMessageRequest_Deserialize;
+
+/**
+ *  Appends a visible system message without generating a reply. Text may be
+ *  blank only when media is attached.
+ */
+export type ConversationAddSystemMessageRequest_Deserialize = {
+	conversation_id: string,
+	text: string,
+	media?: string[],
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+/**
+ *  Appends a visible system message without generating a reply. Text may be
+ *  blank only when media is attached.
+ */
+export type ConversationAddSystemMessageRequest_Serialize = {
+	conversation_id: string,
+	text: string,
+	media: string[],
+	expected_revision: number,
+	client_operation_id: string,
 };
 
 /**

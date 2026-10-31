@@ -22,7 +22,8 @@ use lettuce_conversations::{
     GenerationFailure, GenerationFailureCode, GenerationFailureResult, GenerationFinalization,
     GenerationFinalizationResult, GenerationInput, GenerationInterruptionResult,
     GenerationOperation, GenerationRecovery, GenerationRecoveryResult, GenerationTarget,
-    GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessagePart, OperationKind,
+    GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessageDraft, MessagePart,
+    OperationKind,
     OperationResultRef, OperationToken, ParticipantPolicyResult, PrepareGeneration,
     PreparedConversationSettingsUpdate, RegenerateCandidate, RegenerateCandidateResult,
     RenameConversation, RenameConversationResult, RequestCancellationResult, ResolveGroupSpeaker,
@@ -2443,33 +2444,35 @@ pub(crate) fn allocate_timeline_ordinal(
         .map_err(kernel::map_constraint)
 }
 
-/// Writes the user message, its first revision, and the media projection for
+/// Writes an authored message, its first revision, and the media projection for
 /// that revision, then advances the branch head onto it.
-fn insert_user_message(
+fn insert_authored_message(
     transaction: &Transaction<'_>,
-    command: &SendConversation,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    message: &MessageDraft,
     parent_message_id: Option<MessageId>,
     now: TimestampMillis,
 ) -> Result<(MessageId, MessageRevisionId), ConversationRepositoryError> {
     let message_id = MessageId::new();
     let revision_id = MessageRevisionId::new();
-    let ordinal = allocate_timeline_ordinal(transaction, command.conversation_id)?;
-    let effective_at = message_effective_time(transaction, command.conversation_id, now)?;
+    let ordinal = allocate_timeline_ordinal(transaction, conversation_id)?;
+    let effective_at = message_effective_time(transaction, conversation_id, now)?;
     transaction
         .execute(
             "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?13, ?9, ?10, ?11, ?12, NULL, 1, ?8, ?8)",
             params![
-                command.conversation_id.to_string(),
+                conversation_id.to_string(),
                 message_id.to_string(),
-                command.branch_id.to_string(),
+                branch_id.to_string(),
                 parent_message_id.map(|id| id.to_string()),
-                command.message.author_participant_id.map(|id| id.to_string()),
-                kernel::message_role_name(command.message.role),
+                message.author_participant_id.map(|id| id.to_string()),
+                kernel::message_role_name(message.role),
                 ordinal,
                 now.get(),
-                kernel::message_visibility_name(command.message.visibility),
-                i64::from(command.message.pinned),
-                i64::from(command.message.scene_edited),
+                kernel::message_visibility_name(message.visibility),
+                i64::from(message.pinned),
+                i64::from(message.scene_edited),
                 revision_id.to_string(),
                 effective_at.get(),
             ],
@@ -2479,16 +2482,16 @@ fn insert_user_message(
         .execute(
             "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, NULL, NULL, NULL)",
             params![
-                command.conversation_id.to_string(),
+                conversation_id.to_string(),
                 revision_id.to_string(),
                 message_id.to_string(),
-                command.branch_id.to_string(),
-                slice::encode(&command.message.parts)?,
+                branch_id.to_string(),
+                slice::encode(&message.parts)?,
                 now.get(),
             ],
         )
         .map_err(kernel::map_constraint)?;
-    for (part_ordinal, part) in command.message.parts.iter().enumerate() {
+    for (part_ordinal, part) in message.parts.iter().enumerate() {
         let MessagePart::MediaAsset { asset_id, role } = part else {
             continue;
         };
@@ -2496,7 +2499,7 @@ fn insert_user_message(
             .execute(
                 "INSERT INTO revision_media_refs (conversation_id, message_revision_id, part_ordinal, asset_id, media_role, state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
                 params![
-                    command.conversation_id.to_string(),
+                    conversation_id.to_string(),
                     revision_id.to_string(),
                     i64::try_from(part_ordinal).map_err(|error| ConversationRepositoryError::Storage {
                         reason: error.to_string(),
@@ -2514,8 +2517,8 @@ fn insert_user_message(
             params![
                 message_id.to_string(),
                 now.get(),
-                command.conversation_id.to_string(),
-                command.branch_id.to_string(),
+                conversation_id.to_string(),
+                branch_id.to_string(),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -2753,8 +2756,14 @@ where
             )?;
             let parent_message_id =
                 branch_parent(transaction, context.conversation_id, command.branch_id)?;
-            let (message_id, revision_id) =
-                insert_user_message(transaction, command, parent_message_id, context.now)?;
+            let (message_id, revision_id) = insert_authored_message(
+                transaction,
+                command.conversation_id,
+                command.branch_id,
+                &command.message,
+                parent_message_id,
+                context.now,
+            )?;
             let turn_id = GenerationTurnId::new();
             insert_turn(
                 transaction,
@@ -3454,9 +3463,9 @@ impl ConversationRepository for Database {
         begin_continue_with_hook(self, command, now, |_, _| Ok(()))
     }
 
-    fn append_user_message(
+    fn append_message(
         &self,
-        command: &SendConversation,
+        command: &lettuce_conversations::AppendMessage,
         now: TimestampMillis,
     ) -> Result<lettuce_conversations::AppendUserMessageResult, ConversationRepositoryError> {
         command
@@ -3480,8 +3489,14 @@ impl ConversationRepository for Database {
                 require_no_live_turn(transaction, context.conversation_id)?;
                 let parent_message_id =
                     branch_parent(transaction, context.conversation_id, command.branch_id)?;
-                let (message_id, revision_id) =
-                    insert_user_message(transaction, command, parent_message_id, context.now)?;
+                let (message_id, revision_id) = insert_authored_message(
+                    transaction,
+                    command.conversation_id,
+                    command.branch_id,
+                    &command.message,
+                    parent_message_id,
+                    context.now,
+                )?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 let mut events = restored_events(restored, context, revision);

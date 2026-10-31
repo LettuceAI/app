@@ -46,6 +46,22 @@ export async function setMemberMuted(services: ConversationServices, participant
   await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) });
 }
 
+export async function addSystemMessage(services: ConversationServices, text: string, media: string[]): Promise<void> {
+  trimIfStuck(services);
+  const { api, queryClient, conversationId } = services;
+  await api.call("conversationAddSystemMessage", {
+    conversation_id: conversationId,
+    text,
+    media,
+    expected_revision: currentRevision(queryClient, conversationId),
+    client_operation_id: crypto.randomUUID(),
+  });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
+  ]);
+}
+
 export async function editMessage(services: ConversationServices, message: TimelineMessage, text: string): Promise<void> {
   trimIfStuck(services);
   const { api, queryClient, conversationId } = services;

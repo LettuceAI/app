@@ -627,3 +627,39 @@ async fn a_group_member_without_a_live_model_uses_the_conversations_model() {
         .await
         .expect("the conversation's own model accepts images");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn system_messages_keep_media_without_requiring_a_generation_model() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat = launch(&harness, "system-media-launch").await;
+    let database = harness.context.backend().database();
+    let image_id = image(database, "af");
+    let audio_id = audio(database, "bf");
+    let revision = ConversationReader::get(database, chat.parse().expect("chat")).expect("conversation").conversation.revision.get();
+    let request = dto::ConversationAddSystemMessageRequest {
+        conversation_id: chat.clone(),
+        text: String::new(),
+        media: vec![image_id.to_string(), audio_id.to_string()],
+        expected_revision: revision,
+        client_operation_id: "system-media".into(),
+    };
+    let added = crate::api::conversation_add_system_message(&harness.context, request.clone()).await.expect("media-only system message");
+    assert_eq!(added.message.role, dto::MessageRole::System);
+    assert_eq!(added.message.parts.len(), 2);
+    for (part, id) in added.message.parts.iter().zip([image_id, audio_id]) {
+        let dto::MessagePartView::Media { asset, .. } = part else { panic!("media part") };
+        assert_eq!(asset.asset_id, id.to_string());
+    }
+    let replay = crate::api::conversation_add_system_message(&harness.context, request).await.expect("replay");
+    assert_eq!(replay.message.id, added.message.id);
+    let mut invalid = dto::ConversationAddSystemMessageRequest {
+        conversation_id: chat,
+        text: "Note".into(),
+        media: vec![image_id.to_string(), image_id.to_string()],
+        expected_revision: added.revision,
+        client_operation_id: "system-invalid-media".into(),
+    };
+    assert_eq!(crate::api::conversation_add_system_message(&harness.context, invalid.clone()).await.expect_err("duplicate").code, ApiErrorCode::InvalidInput);
+    invalid.media = vec![lettuce_types::AssetId::new().to_string()];
+    assert_eq!(crate::api::conversation_add_system_message(&harness.context, invalid).await.expect_err("missing").code, ApiErrorCode::InvalidInput);
+}

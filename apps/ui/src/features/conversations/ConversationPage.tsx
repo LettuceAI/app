@@ -47,6 +47,7 @@ import { EffectSheet } from "./companion/EffectSheet";
 import { Timeline } from "./components/Timeline";
 import {
   addUserMessage,
+  addSystemMessage,
   branchGroupToCharacter,
   branchToNewChat,
   deleteMessage,
@@ -86,6 +87,7 @@ const crispKeys = [
   "composerMessage",
   "composerStop",
   "composerSend",
+  "composerSendAsSystem",
   "composerSending",
   "composerContinue",
   "messageScene",
@@ -467,6 +469,11 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     return true;
   };
 
+  const sendSystem = async (text: string, attachments: ComposerAttachment[]) => {
+    timeline.jumpToLatest();
+    return run(() => addSystemMessage(services, text, attachments.map((attachment) => attachment.id)));
+  };
+
   const directorContinue = () => {
     if (directorSelected) void generation.continueReply(swap, directorSelected);
     else setDirectorWiggle((count) => count + 1);
@@ -653,6 +660,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               disabled={!view.can_send && !sending}
               canContinue={directorBehavior !== "action" && messages.length > 0}
               onSend={directorBehavior ? sendDirector : send}
+              onSendSystem={sendSystem}
               onContinue={() =>
                 directorBehavior ? directorContinue() : void generation.continueReply(swap)
               }

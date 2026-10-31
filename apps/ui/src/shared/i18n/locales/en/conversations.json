@@ -28,7 +28,12 @@
     "selectingSpeaker": "Selecting character…"
   },
   "composer": {
-    "placeholder": "Message {{name}}…"
+    "placeholder": "Message {{name}}…",
+    "systemSend": {
+      "title": "Send as system message?",
+      "description": "Sends the composer content as a visible system message. It does not trigger generation.",
+      "send": "Send"
+    }
   },
   "members": {
     "add": {
@@ -266,6 +271,7 @@
     "composerMessage": "Message",
     "composerStop": "Stop generating",
     "composerSend": "Send message",
+    "composerSendAsSystem": "Long-press or right-click to send as system",
     "composerSending": "Sending",
     "composerContinue": "Let the character continue",
     "messageScene": "Scene",

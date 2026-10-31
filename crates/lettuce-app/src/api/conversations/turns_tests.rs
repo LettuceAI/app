@@ -1421,3 +1421,56 @@ async fn message_usage_follows_the_reply_variant_the_message_shows() {
         .is_none()
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn system_messages_are_visible_replayed_and_never_start_generation() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat = launch(&harness, "system-launch").await;
+    let request = dto::ConversationAddSystemMessageRequest {
+        conversation_id: chat.clone(),
+        text: "  The sun has set.  ".into(),
+        media: vec![],
+        expected_revision: conversation(&harness, &chat).revision.get(),
+        client_operation_id: "system-1".into(),
+    };
+    let added = conversation_add_system_message(&harness.context, request.clone()).await.expect("system message");
+    assert_eq!(added.message.role, dto::MessageRole::System);
+    assert_eq!(added.message.author_participant_id, None);
+    assert_eq!(added.message.parts, vec![dto::MessagePartView::Text { text: "The sun has set.".into() }]);
+    let replayed = conversation_add_system_message(&harness.context, request.clone()).await.expect("replay");
+    assert_eq!(added.message.id, replayed.message.id);
+    let mut changed = request.clone();
+    changed.text = "Different text".into();
+    assert_eq!(conversation_add_system_message(&harness.context, changed).await.expect_err("key reused").code, ApiErrorCode::Conflict);
+    let mut stale = request.clone();
+    stale.client_operation_id = "system-stale".into();
+    assert_eq!(conversation_add_system_message(&harness.context, stale).await.expect_err("stale").code, ApiErrorCode::Conflict);
+    let mut blank = request;
+    blank.text = " \n ".into();
+    blank.client_operation_id = "system-blank".into();
+    assert_eq!(conversation_add_system_message(&harness.context, blank).await.expect_err("blank").code, ApiErrorCode::InvalidInput);
+    let view = open(&harness, &chat).await;
+    assert_eq!(view.messages.items.len(), 1);
+    assert_eq!(view.messages.items[0].id, added.message.id);
+    assert_eq!(view.branch.head_message_id, Some(added.message.id));
+    assert!(view.pending_turn_id.is_none());
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    assert!(!worker.run_once().await.expect("no generation job"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn system_messages_refuse_live_turns_without_writing() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat = launch(&harness, "system-busy-launch").await;
+    send(&harness, &chat, "system-busy-send", "Hi", Arc::new(RecordingStream::default())).await.expect("send");
+    let before = open(&harness, &chat).await;
+    let error = conversation_add_system_message(&harness.context, dto::ConversationAddSystemMessageRequest {
+        conversation_id: chat.clone(),
+        text: "System note".into(),
+        media: vec![],
+        expected_revision: before.revision,
+        client_operation_id: "system-busy".into(),
+    }).await.expect_err("busy");
+    assert_eq!(error.code, ApiErrorCode::Busy);
+    assert_eq!(open(&harness, &chat).await.messages, before.messages);
+}

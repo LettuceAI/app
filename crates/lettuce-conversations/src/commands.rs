@@ -529,6 +529,26 @@ impl SendConversation {
     }
 }
 
+/// Appends an authored user or system message without beginning a turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppendMessage {
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+    pub expected_revision: Revision,
+    pub operation: OperationToken,
+    pub message: MessageDraft,
+}
+
+impl AppendMessage {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if !matches!(self.message.role, MessageRole::User | MessageRole::System) {
+            return Err(ValidationError::InvalidValue { field: "append.message.role" });
+        }
+        self.message.validate()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContinueConversation {
