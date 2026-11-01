@@ -73,6 +73,9 @@ not add support for older systems. Rust and frontend tool versions and
 third-party action revisions are pinned in the workflows and composite actions.
 CUDA builds cache registry and Git sources, without uploading their large compiled
 target directories to the Actions cache.
+Linux CUDA jobs install the GCC/G++ major version pinned in
+`scripts/cuda-gcc-version` and select it for C, C++, and NVCC host compilation.
+Local `dev:cuda` and `build:cuda` commands use the same version.
 
 Android uses the existing `ANDROID_KEY_BASE64`, `ANDROID_KEY_ALIAS`, and
 `ANDROID_KEY_PASSWORD` repository secrets. Signing is checked before artifacts are

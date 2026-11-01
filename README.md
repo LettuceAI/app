@@ -56,6 +56,14 @@ Use `bun run build` to create a desktop bundle. GPU builds have `build:cuda`,
 then run `bun run tauri android dev` or `bun run tauri android build`.
 iOS requires native project initialization; see the [shell README](apps/tauri/README.md).
 
+On Linux, `dev:cuda` and `build:cuda` require the GCC/G++ major version pinned in
+[`scripts/cuda-gcc-version`](scripts/cuda-gcc-version), currently 14. Install
+`gcc-14` and `g++-14` on PATH. These commands select them through `CC`, `CXX`,
+`CUDAHOSTCXX`, and `NVCC_CCBIN`; a different default system compiler is ignored.
+Linux CUDA CI builds use the same pin. Direct Cargo/Tauri invocations must set
+those variables themselves. If reusing a native CMake build configured with another
+CUDA host compiler, use a fresh build directory when changing the pin.
+
 For frontend work, `bun run dev:ui` runs the UI in a browser with a mock backend.
 The frontend lives in [`apps/ui/`](apps/ui/), the native shell in
 [`apps/tauri/`](apps/tauri/), and the Rust libraries in [`crates/`](crates/).

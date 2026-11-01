@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 async function main() {
@@ -8,6 +9,22 @@ async function main() {
 
   const env = { ...process.env };
   if (!args.includes("--help") && !args.includes("-h")) {
+    if (process.platform === "linux") {
+      const major = readFileSync(new URL("./cuda-gcc-version", import.meta.url), "utf8").trim();
+      if (!/^\d+$/.test(major)) throw new Error("Invalid pinned CUDA GCC version in scripts/cuda-gcc-version.");
+      const cc = Bun.which(`gcc-${major}`);
+      const cxx = Bun.which(`g++-${major}`);
+      if (!cc || !cxx) throw new Error(`Linux CUDA builds require gcc-${major} and g++-${major}. Install both compilers and make sure they are on PATH.`);
+      for (const compiler of [cc, cxx]) {
+        const result = Bun.spawnSync([compiler, "-dumpversion"], { stdout: "pipe", stderr: "pipe" });
+        if (result.exitCode !== 0 || new TextDecoder().decode(result.stdout).trim().split(".")[0] !== major) {
+          throw new Error(`Expected GCC ${major}, but ${compiler} did not report that version.`);
+        }
+      }
+      Object.assign(env, { CC: cc, CXX: cxx, CUDAHOSTCXX: cxx, NVCC_CCBIN: cxx });
+      console.log(`CUDA host compiler: GCC ${major} (${cxx})`);
+    }
+
     const smi = Bun.which("nvidia-smi");
     if (!smi) throw new Error("nvidia-smi was not found. Install the NVIDIA driver and make sure nvidia-smi is on PATH.");
 
