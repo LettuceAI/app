@@ -131,6 +131,32 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "Vulkan_ROOT=$sdk" >> $env:GITHUB_ENV
           "$sdk/Bin" >> $env:GITHUB_PATH
+      - name: Fetch SPIRV-Headers for the Windows Vulkan build
+        if: runner.os == 'Windows' && inputs.features == 'vulkan'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: KhronosGroup/SPIRV-Headers
+          ref: 2a9b6f951c7d6b04b6c21fe1bf3f475b68b84801 # vulkan-sdk-1.3.296.0
+          path: .ci-deps/spirv-headers
+          persist-credentials: false
+      - name: Install and verify Windows Vulkan development packages
+        if: runner.os == 'Windows' && inputs.features == 'vulkan'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'spirv-headers'
+          $headersBuild = Join-Path $env:RUNNER_TEMP 'spirv-headers-build'
+          cmake -S .ci-deps/spirv-headers -B $headersBuild -G Ninja "-DCMAKE_INSTALL_PREFIX=$prefix" -DSPIRV_HEADERS_ENABLE_TESTS=OFF -DSPIRV_HEADERS_ENABLE_INSTALL=ON
+          if ($LASTEXITCODE -ne 0) { throw 'SPIRV-Headers configuration failed' }
+          cmake --install $headersBuild
+          if ($LASTEXITCODE -ne 0) { throw 'SPIRV-Headers installation failed' }
+          $prefixes = "$prefix;$env:VULKAN_SDK"
+          if ($env:CMAKE_PREFIX_PATH) { $prefixes += ";$env:CMAKE_PREFIX_PATH" }
+          "CMAKE_PREFIX_PATH=$prefixes" >> $env:GITHUB_ENV
+          $checkBuild = Join-Path $env:RUNNER_TEMP 'vulkan-toolchain-check'
+          cmake -S scripts/check-vulkan-toolchain -B $checkBuild -G Ninja "-DCMAKE_PREFIX_PATH=$prefixes" -DCMAKE_BUILD_TYPE=Release
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan development package discovery failed' }
+          cmake --build $checkBuild --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan header and linker check failed' }
       - uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d # v0.2.36
         if: inputs.features == 'cuda'
         with:
