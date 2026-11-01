@@ -3412,7 +3412,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "llama-cpp-2"
 version = "0.1.154"
-source = "git+https://github.com/MegalithOfficial/llama-cpp-rs?rev=779747a230595809b7c48a31edf8a8345e3cb682#779747a230595809b7c48a31edf8a8345e3cb682"
+source = "git+https://github.com/MegalithOfficial/llama-cpp-rs?rev=defe87b4d4951c2364071619ab7031c424f8d2c3#defe87b4d4951c2364071619ab7031c424f8d2c3"
 dependencies = [
  "encoding_rs",
  "enumflags2",
@@ -3425,7 +3425,7 @@ dependencies = [
 [[package]]
 name = "llama-cpp-sys-2"
 version = "0.1.154"
-source = "git+https://github.com/MegalithOfficial/llama-cpp-rs?rev=779747a230595809b7c48a31edf8a8345e3cb682#779747a230595809b7c48a31edf8a8345e3cb682"
+source = "git+https://github.com/MegalithOfficial/llama-cpp-rs?rev=defe87b4d4951c2364071619ab7031c424f8d2c3#defe87b4d4951c2364071619ab7031c424f8d2c3"
 dependencies = [
  "bindgen",
  "cc",
