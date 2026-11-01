@@ -47,13 +47,24 @@ jobs:
         if: runner.os == 'Windows'
         with:
           arch: x64
-      - name: Pin the Windows MSVC linker
+      - name: Configure Windows MSVC and Ninja
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $linker = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64/link.exe'
-          if (!(Test-Path $linker)) { throw 'MSVC linker is missing' }
+          $tools = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64'
+          $compiler = Join-Path $tools 'cl.exe'
+          $linker = Join-Path $tools 'link.exe'
+          if (!(Test-Path $compiler) -or !(Test-Path $linker)) { throw 'MSVC compiler or linker is missing' }
+          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop).Source
+          $ninjaVersion = & $ninja --version
+          if ($LASTEXITCODE -ne 0 -or [version]$ninjaVersion -lt [version]'1.12') { throw 'Ninja 1.12 or newer is required for Windows long paths' }
+          $ninjaVersion
+          (Split-Path $ninja) >> $env:GITHUB_PATH
+          "CC=$compiler" >> $env:GITHUB_ENV
+          "CXX=$compiler" >> $env:GITHUB_ENV
           "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
+          # MSBuild FileTracker cannot handle the nested Vulkan shader generator paths.
+          'CMAKE_GENERATOR=Ninja' >> $env:GITHUB_ENV
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -129,7 +140,7 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           targets: ${{ inputs.target }}
-          cache-key: ${{ inputs.build_id }}
+          cache-key: ${{ runner.os == 'Windows' && format('{0}-ninja', inputs.build_id) || inputs.build_id }}
           target-directory: ${{ env.CARGO_TARGET_DIR }}
           cache-targets: ${{ inputs.features != 'cuda' }}
       - uses: ./.github/actions/configure-release
