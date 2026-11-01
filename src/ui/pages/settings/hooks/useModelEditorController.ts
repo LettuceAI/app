@@ -70,6 +70,7 @@ type ControllerReturn = {
   handleLlamaNPenRangeChange: (value: number | null) => void;
   handleLlamaXtcProbabilityChange: (value: number | null) => void;
   handleLlamaXtcThresholdChange: (value: number | null) => void;
+  handleLlamaTopNSigmaChange: (value: number | null) => void;
   handleLlamaAdaptiveTargetChange: (value: number | null) => void;
   handleLlamaAdaptiveDecayChange: (value: number | null) => void;
   handleLlamaDryMultiplierChange: (value: number | null) => void;
@@ -896,6 +897,19 @@ export function useModelEditorController(): ControllerReturn {
         payload: {
           ...state.modelAdvancedDraft,
           llamaXtcThreshold: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
+  const handleLlamaTopNSigmaChange = useCallback(
+    (value: number | null) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          llamaTopNSigma: value,
         },
       });
     },
@@ -1856,6 +1870,7 @@ export function useModelEditorController(): ControllerReturn {
     handleLlamaNPenRangeChange,
     handleLlamaXtcProbabilityChange,
     handleLlamaXtcThresholdChange,
+    handleLlamaTopNSigmaChange,
     handleLlamaAdaptiveTargetChange,
     handleLlamaAdaptiveDecayChange,
     handleLlamaDryMultiplierChange,

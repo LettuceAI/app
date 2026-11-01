@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) const DEFAULT_LLAMA_SAMPLER_PROFILE: &str = "balanced";
-pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 10] = [
+pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 11] = [
     "penalties",
     "grammar",
     "top_k",
@@ -10,6 +10,7 @@ pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 10] = [
     "dry",
     "typical",
     "xtc",
+    "top_n_sigma",
     "temp",
     "adaptive_p",
 ];
@@ -44,6 +45,7 @@ pub(super) struct ResolvedSamplerConfig {
     pub(super) dry_sequence_breakers: Option<Vec<String>>,
     pub(super) xtc_probability: Option<f64>,
     pub(super) xtc_threshold: Option<f64>,
+    pub(super) top_n_sigma: Option<f64>,
     pub(super) frequency_penalty: Option<f64>,
     pub(super) presence_penalty: Option<f64>,
     pub(super) adaptive_target: Option<f64>,
@@ -176,6 +178,7 @@ fn normalize_sampler_stage(value: &str) -> Option<&'static str> {
         "dry" => Some("dry"),
         "typical" | "typ_p" | "typical_p" => Some("typical"),
         "xtc" => Some("xtc"),
+        "top_n_sigma" | "top_nsigma" | "topnsigma" | "nsigma" => Some("top_n_sigma"),
         "temp" | "temperature" => Some("temp"),
         "adaptive_p" | "adaptivep" | "adaptive" => Some("adaptive_p"),
         _ => None,
@@ -416,6 +419,10 @@ pub(super) fn build_sampler(
                 config.seed.unwrap_or_else(rand::random::<u32>),
             )
         });
+    let mut top_n_sigma_sampler = config.top_n_sigma.filter(|n| *n > 0.0).map(|n| {
+        active_params.insert("top_n_sigma".to_string(), json!(n));
+        LlamaSampler::top_n_sigma(n as f32)
+    });
 
     let mut adaptive_requested = false;
     for stage in requested_order {
@@ -465,6 +472,12 @@ pub(super) fn build_sampler(
             "xtc" => {
                 if let Some(sampler) = xtc_sampler.take() {
                     order.push("xtc");
+                    samplers.push(sampler);
+                }
+            }
+            "top_n_sigma" => {
+                if let Some(sampler) = top_n_sigma_sampler.take() {
+                    order.push("top_n_sigma");
                     samplers.push(sampler);
                 }
             }

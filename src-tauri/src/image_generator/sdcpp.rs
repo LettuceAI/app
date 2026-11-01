@@ -542,6 +542,80 @@ const QWEN_VARIANTS: &[VariantSpec] = &[
     },
 ];
 
+const QWEN21_SHARED: &[ComponentSpec] = &[
+    ComponentSpec {
+        role: "text_encoder",
+        repo: "unsloth/Qwen3-VL-8B-Instruct-GGUF",
+        revision: "b93a7ee713758252c555be4210c00540df954dc2",
+        filename: "Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+        bytes: 5_027_785_568,
+        sha256: "108e7ff92b78eefd3db4741885104acba514255c11b617d3c7b197a5f46efe89",
+    },
+    ComponentSpec {
+        role: "vision_encoder",
+        repo: "unsloth/Qwen3-VL-8B-Instruct-GGUF",
+        revision: "b93a7ee713758252c555be4210c00540df954dc2",
+        filename: "mmproj-BF16.gguf",
+        bytes: 1_162_569_280,
+        sha256: "6516bb64bae1503a0fcd7ec9fa39655f8c481580be0a0a066397941d9761c9f4",
+    },
+    ComponentSpec {
+        role: "vae",
+        repo: "Comfy-Org/Qwen-Image-2.1",
+        revision: "0217efd1d9c9452e84f6448903d6e21bfa171ffd",
+        filename: "vae/qwen_image_2.1_vae_bf16.safetensors",
+        bytes: 675_509_688,
+        sha256: "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+    },
+];
+const QWEN21_VARIANTS: &[VariantSpec] = &[
+    VariantSpec {
+        id: "q3-k",
+        label: "Q3 K (smaller)",
+        description: "Lower memory use with a modest quality tradeoff.",
+        recommended: false,
+        smaller: true,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/Qwen-Image-2.1-GGUF",
+            revision: "cc11433936a06e9765f7c0c0b1f0436cfd2b9856",
+            filename: "qwen_image_2.1-Q3_K.gguf",
+            bytes: 3_270_553_632,
+            sha256: "5a6352cb450d334ba17a9d18c7fd8c3e774799245b9da0f963ce0c6624deb758",
+        },
+    },
+    VariantSpec {
+        id: "q4-k",
+        label: "Q4 K (recommended)",
+        description: "Best default balance of image quality, speed, and memory.",
+        recommended: true,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/Qwen-Image-2.1-GGUF",
+            revision: "cc11433936a06e9765f7c0c0b1f0436cfd2b9856",
+            filename: "qwen_image_2.1-Q4_K.gguf",
+            bytes: 4_197_494_816,
+            sha256: "29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2",
+        },
+    },
+    VariantSpec {
+        id: "q6-k",
+        label: "Q6 K (higher quality)",
+        description: "Higher precision with greater memory and storage use.",
+        recommended: false,
+        smaller: false,
+        diffusion: ComponentSpec {
+            role: "diffusion_model",
+            repo: "leejet/Qwen-Image-2.1-GGUF",
+            revision: "cc11433936a06e9765f7c0c0b1f0436cfd2b9856",
+            filename: "qwen_image_2.1-Q6_K.gguf",
+            bytes: 5_996_851_232,
+            sha256: "1c51d1a8e6cf2b215719dea0c4f0f4cbfff9214a1c7571e57913f57d6a9c3c12",
+        },
+    },
+];
+
 const PROFILES: &[ProfileSpec] = &[
     ProfileSpec {
         id: "z-image-turbo",
@@ -703,6 +777,26 @@ const PROFILES: &[ProfileSpec] = &[
         variants: QWEN_VARIANTS,
         shared_components: QWEN_SHARED,
     },
+    ProfileSpec {
+        id: "qwen-image-2.1",
+        display_name: "Qwen Image 2.1",
+        family: "Qwen",
+        description: "Unified text-to-image and multi-reference editing with native transparency and strong in-image text rendering.",
+        license: "Qwen-Image Research License (non-commercial)",
+        source_url: "https://huggingface.co/Qwen/Qwen-Image-2.1",
+        supports_text_to_image: true,
+        supports_image_edit: true,
+        max_reference_images: Some(10),
+        requires_reference_image: false,
+        recommended_for_scenes: true,
+        default_width: 1024,
+        default_height: 1024,
+        default_steps: 35,
+        default_cfg: 6.0,
+        minimum_runtime_build: Some(883),
+        variants: QWEN21_VARIANTS,
+        shared_components: QWEN21_SHARED,
+    },
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -762,6 +856,11 @@ fn hf_profile_rules(profile: &ProfileSpec) -> (Vec<&'static str>, Vec<&'static s
             vec!["qwen-image-edit-2511", "qwen_image_edit_2511"],
             vec!["qwen2.5-vl-7b", "qwen2.5vl-7b"],
             7.0,
+        ),
+        "qwen-image-2.1" => (
+            vec!["qwen-image-2.1", "qwen_image_2.1", "qwen-image-2-1", "qwen_image_2_1"],
+            vec!["qwen3-vl-8b", "qwen3vl-8b"],
+            8.0,
         ),
         _ => (Vec::new(), Vec::new(), 0.0),
     }
@@ -3852,6 +3951,7 @@ fn profile_lora_architecture(profile_id: Option<&str>) -> Option<&'static str> {
         "flux-2-klein-9b" | "flux-2-klein-base-9b" => Some("flux2-klein-9b"),
         "krea-2-turbo" | "krea-2-raw" => Some("krea-2"),
         "qwen-image-edit-2511" => Some("qwen-image-edit-2511"),
+        "qwen-image-2.1" => Some("qwen-image-2.1"),
         _ => None,
     }
 }
@@ -4882,6 +4982,13 @@ async fn ensure_server(
         if let Some(params_backend_spec) = params_backend_spec {
             command.arg("--params-backend").arg(params_backend_spec);
         }
+    } else if runtime_build_number(&config.sdcpp_runtime_release)
+        .map_or(true, |build| build >= AUTO_FIT_VALUE_MIN_BUILD)
+    {
+        // stable-diffusion.cpp master-962 (PR #2132) turned --auto-fit into a
+        // value-taking option; older builds still expect the bare flag, and an
+        // unknown/non-numbered tag is treated as current.
+        command.arg("--auto-fit").arg("on");
     } else {
         command.arg("--auto-fit");
     }
@@ -5831,6 +5938,10 @@ fn find_profile_variant(
         .ok_or_else(|| format!("Unknown {} variant: {}", profile.display_name, variant_id))?;
     Ok((profile, variant))
 }
+
+/// stable-diffusion.cpp build at which `--auto-fit` became a value-taking
+/// option (`on`/`off`) instead of a bare flag (PR #2132, commit d763dae).
+const AUTO_FIT_VALUE_MIN_BUILD: u32 = 962;
 
 fn runtime_build_number(release: &str) -> Option<u32> {
     release

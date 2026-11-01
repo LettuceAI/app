@@ -96,6 +96,7 @@ impl FeatureGenerationSettings {
             llama_n_pen_range: self.llama_n_pen_range,
             llama_xtc_probability: self.llama_xtc_probability,
             llama_xtc_threshold: self.llama_xtc_threshold,
+            llama_top_n_sigma: self.llama_top_n_sigma,
             llama_dry_multiplier: self.llama_dry_multiplier,
             llama_dry_base: self.llama_dry_base,
             llama_dry_allowed_length: self.llama_dry_allowed_length,
@@ -124,6 +125,7 @@ impl FeatureGenerationSettings {
             || self.llama_n_pen_range.is_some()
             || self.llama_xtc_probability.is_some()
             || self.llama_xtc_threshold.is_some()
+            || self.llama_top_n_sigma.is_some()
             || self.llama_dry_multiplier.is_some()
             || self.llama_dry_base.is_some()
             || self.llama_dry_allowed_length.is_some()

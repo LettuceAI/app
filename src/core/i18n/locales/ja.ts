@@ -8003,6 +8003,9 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "上位トークンを除外する確率（0 = オフ）。多様性を高めます。",
       xtcThreshold: "XTC しきい値",
       xtcThresholdDesc: "トークンが XTC による除外対象となるために必要な最小確率。",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "最上位ロジットから n 標準偏差以内のトークンのみを残します（0 = オフ）。top-k/top-p/min-p を置き換えます。",
       seed: "Seed",
       seedDesc: "ランダムシード。空白でランダム。",
       ropeBase: "RoPE Base",
@@ -8159,6 +8162,7 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "ペナルティ範囲",
     xtcProbability: "XTC 確率",
     xtcThreshold: "XTC しきい値",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -8239,6 +8243,10 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "上位の選択肢を除外 — 多様性のために高確率のトークンを捨てます。",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "最上位ロジットから n 標準偏差以内のトークンのみを残します。n が設定されない限りオフ。top-k/top-p/min-p を置き換えることを目的としています。",
       },
       temp: {
         label: "Temperature",
@@ -10226,6 +10234,7 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "繰り返し・頻度・存在ペナルティに使う直近のトークン数。`-1` はコンテキスト全体を使用します",
       xtcProbability: "XTC 確率",
       xtcThreshold: "XTC しきい値",
+      topNSigma: "Top-n-sigma",
       localOverride: "ローカルオーバーライド",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0` でシーケンス反復制御を無効化",

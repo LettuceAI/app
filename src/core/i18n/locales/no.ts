@@ -4826,6 +4826,7 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Nylige tokens for repetisjons-, frekvens- og tilstedeværelsesstraff; `-1` bruker hele konteksten",
       xtcProbability: "XTC-sannsynlighet",
       xtcThreshold: "XTC-terskel",
+      topNSigma: "Top-n-sigma",
       localOverride: "Lokal overstyring",
       dryMultiplier: "DRY-multiplikator",
       dryMultiplierDescription: "`0` deaktiverer kontroll av sekvensrepetisjon",
@@ -8819,6 +8820,9 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Sjanse for å utelukke topp-tokener (0 = av). Øker variasjonen.",
       xtcThreshold: "XTC-terskel",
       xtcThresholdDesc: "Minste sannsynlighet et token må ha for å kunne fjernes av XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Beholder tokens innenfor n standardavvik fra den øverste logiten (0 = av). Erstatter top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Tilfeldig seed. La stå tomt for tilfeldig.",
       ropeBase: "RoPE Base",
@@ -8975,6 +8979,7 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Straffeområde",
     xtcProbability: "XTC-sannsynlighet",
     xtcThreshold: "XTC-terskel",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY-multiplikator",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY tillatt lengde",
@@ -9055,6 +9060,10 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Utelukk de beste valgene — forkaster tokener med høy sannsynlighet for variasjon.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Beholder bare tokens innenfor n standardavvik fra den øverste logiten. Av med mindre n er satt; ment å erstatte top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",

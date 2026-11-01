@@ -294,7 +294,7 @@ fn to_search_result(detail: ApiModel) -> super::HfSearchResult {
 fn vae_family_term(profile: &sdcpp::HfBundleProfile) -> &'static str {
     if profile.id.starts_with("krea") {
         "wan"
-    } else if profile.id == "qwen-image-edit-2511" {
+    } else if profile.id.starts_with("qwen-image") {
         "qwen"
     } else {
         "flux"
@@ -453,10 +453,10 @@ fn role_compatible(profile: &sdcpp::HfBundleProfile, role: &str, model_id: &str,
     match role {
         "diffusion_model" => profile.diffusion_markers.iter().any(|marker| evidence.contains(marker)),
         "text_encoder" => profile.encoder_markers.iter().any(|marker| evidence.contains(marker)),
-        "vision_encoder" => profile.id == "qwen-image-edit-2511"
+        "vision_encoder" => profile.id.starts_with("qwen-image")
             && (evidence.contains("mmproj") || evidence.contains("vision")),
         "vae" if profile.id.starts_with("krea") => evidence.contains("wan") && evidence.contains("vae"),
-        "vae" if profile.id == "qwen-image-edit-2511" => evidence.contains("qwen") && evidence.contains("vae"),
+        "vae" if profile.id.starts_with("qwen-image") => evidence.contains("qwen") && evidence.contains("vae"),
         "vae" => (evidence.contains("flux") || evidence.contains("ae.")) && (evidence.contains("vae") || evidence.contains("ae.")),
         _ => false,
     }
@@ -482,6 +482,8 @@ async fn gguf_architecture_hint(
     [
         "qwen2.5-vl-7b",
         "qwen2.5vl-7b",
+        "qwen3-vl-8b",
+        "qwen3vl-8b",
         "qwen3-vl-4b",
         "qwen3vl-4b",
         "qwen3-8b",

@@ -1197,6 +1197,24 @@ pub(super) fn resolve_llama_xtc_threshold(
         .or(settings.advanced_model_settings.llama_xtc_threshold)
 }
 
+pub(super) fn resolve_llama_top_n_sigma(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<f64> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_top_n_sigma)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_top_n_sigma)
+        })
+        .or(settings.advanced_model_settings.llama_top_n_sigma)
+}
+
 pub(super) fn resolve_llama_adaptive_target(
     session: &Session,
     model: &Model,

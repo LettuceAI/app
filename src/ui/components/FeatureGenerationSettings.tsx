@@ -20,6 +20,7 @@ import {
   ADVANCED_LLAMA_SEED_RANGE,
   ADVANCED_LLAMA_XTC_PROBABILITY_RANGE,
   ADVANCED_LLAMA_XTC_THRESHOLD_RANGE,
+  ADVANCED_LLAMA_TOP_N_SIGMA_RANGE,
   ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE,
   ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE,
   ADVANCED_MAX_TOKENS_RANGE,
@@ -131,6 +132,13 @@ const LLAMA_NUMBER_FIELDS = [
     range: ADVANCED_LLAMA_XTC_THRESHOLD_RANGE,
     decimals: 2,
     step: 0.01,
+  },
+  {
+    key: "llamaTopNSigma",
+    labelKey: "featureGeneration.topNSigma",
+    range: ADVANCED_LLAMA_TOP_N_SIGMA_RANGE,
+    decimals: 1,
+    step: 0.1,
   },
   {
     key: "llamaAdaptiveTarget",

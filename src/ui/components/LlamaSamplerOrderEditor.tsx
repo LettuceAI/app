@@ -62,6 +62,10 @@ const STAGE_META: Record<
     labelKey: "samplerOrder.stages.xtc.label",
     descriptionKey: "samplerOrder.stages.xtc.desc",
   },
+  top_n_sigma: {
+    labelKey: "samplerOrder.stages.topNSigma.label",
+    descriptionKey: "samplerOrder.stages.topNSigma.desc",
+  },
   temp: {
     labelKey: "samplerOrder.stages.temp.label",
     descriptionKey: "samplerOrder.stages.temp.desc",

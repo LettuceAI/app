@@ -24,7 +24,8 @@ use super::{
     resolve_llama_sampler_order, resolve_llama_sampler_profile, resolve_llama_seed,
     resolve_llama_single_gpu_device_id_leveled, resolve_llama_streaming_enabled,
     resolve_llama_strict_mode, resolve_llama_swa_full, resolve_llama_threads,
-    resolve_llama_threads_batch, resolve_llama_ubatch_size, resolve_llama_xtc_probability,
+    resolve_llama_threads_batch, resolve_llama_top_n_sigma, resolve_llama_ubatch_size,
+    resolve_llama_xtc_probability,
     resolve_llama_xtc_threshold, resolve_max_tokens, resolve_presence_penalty, resolve_temperature,
     resolve_top_k, resolve_top_p,
 };
@@ -191,6 +192,9 @@ fn build_llama_extra_fields(
     if let Some(v) = resolve_llama_xtc_threshold(session, model, settings) {
         extra.insert("llamaXtcThreshold".to_string(), json!(v));
     }
+    if let Some(v) = resolve_llama_top_n_sigma(session, model, settings) {
+        extra.insert("llamaTopNSigma".to_string(), json!(v));
+    }
     if let Some(v) = resolve_llama_adaptive_target(session, model, settings) {
         extra.insert("llamaAdaptiveTarget".to_string(), json!(v));
     }
@@ -261,6 +265,7 @@ mod tests {
             llama_dry_sequence_breakers: Some(vec![":".to_string()]),
             llama_xtc_probability: Some(0.5),
             llama_xtc_threshold: Some(0.1),
+            llama_top_n_sigma: Some(1.5),
             llama_adaptive_target: Some(0.3),
             llama_adaptive_decay: Some(0.95),
             ..Default::default()
@@ -307,7 +312,7 @@ mod tests {
         assert_eq!(extra.get("llamaNPenRange"), Some(&json!(64)));
         assert_eq!(
             extra.len(),
-            44,
+            45,
             "unexpected llama extra-body key count; a resolver stopped emitting or a new field was added without updating this fixture: {:?}",
             extra.keys().collect::<Vec<_>>()
         );

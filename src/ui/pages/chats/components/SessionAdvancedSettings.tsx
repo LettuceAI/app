@@ -23,6 +23,7 @@ import {
   ADVANCED_LLAMA_N_PEN_RANGE,
   ADVANCED_LLAMA_XTC_PROBABILITY_RANGE,
   ADVANCED_LLAMA_XTC_THRESHOLD_RANGE,
+  ADVANCED_LLAMA_TOP_N_SIGMA_RANGE,
   ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE,
   ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE,
 } from "../../../components/AdvancedModelSettingsForm";
@@ -370,6 +371,17 @@ export function SessionAdvancedSettings({
                                 max={ADVANCED_LLAMA_XTC_THRESHOLD_RANGE.max}
                                 step={0.01}
                                 onChange={(v) => update({ llamaXtcThreshold: v })}
+                              />
+
+                              <ParameterField
+                                label={t("sessionAdvanced.samplingMemory.topNSigma")}
+                                description={t("sessionAdvanced.samplingMemory.topNSigmaDesc")}
+                                value={draft.llamaTopNSigma}
+                                placeholder={t("sessionAdvanced.defaultPlaceholder")}
+                                min={ADVANCED_LLAMA_TOP_N_SIGMA_RANGE.min}
+                                max={ADVANCED_LLAMA_TOP_N_SIGMA_RANGE.max}
+                                step={0.1}
+                                onChange={(v) => update({ llamaTopNSigma: v })}
                               />
 
                               <ParameterField

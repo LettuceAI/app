@@ -8003,6 +8003,9 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtcProbabilityDesc: "Probabilità di escludere i token più probabili (0 = disattivato). Aumenta la varietà.",
       xtcThreshold: "Soglia XTC",
       xtcThresholdDesc: "Probabilità minima che un token deve avere per essere rimosso da XTC.",
+      topNSigma: "Top-n-sigma",
+      topNSigmaDesc:
+        "Mantiene i token entro n deviazioni standard dal logit principale (0 = disattivato). Sostituisce top-k/top-p/min-p.",
       seed: "Seed",
       seedDesc: "Seed casuale. Lascia vuoto per casuale.",
       ropeBase: "RoPE Base",
@@ -8159,6 +8162,7 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
     penaltyRange: "Intervallo penalità",
     xtcProbability: "Probabilità XTC",
     xtcThreshold: "Soglia XTC",
+    topNSigma: "Top-n-sigma",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -8239,6 +8243,10 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       xtc: {
         label: "XTC",
         desc: "Escludi le scelte principali — scarta i token ad alta probabilità per più varietà.",
+      },
+      topNSigma: {
+        label: "Top-n-sigma",
+        desc: "Mantiene solo i token entro n deviazioni standard dal logit principale. Disattivato finché n non è impostato; pensato per sostituire top-k/top-p/min-p.",
       },
       temp: {
         label: "Temperature",
@@ -10226,6 +10234,7 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
       penaltyRangeDescription: "Token recenti usati dalle penalità di ripetizione, frequenza e presenza; `-1` usa l'intero contesto",
       xtcProbability: "Probabilità XTC",
       xtcThreshold: "Soglia XTC",
+      topNSigma: "Top-n-sigma",
       localOverride: "Override locale",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0` disabilita il controllo della ripetizione di sequenze",
