@@ -2,7 +2,7 @@
 
 The Tauri 3 alpha shell uses Wry on desktop, Android and iOS. Linux uses GTK3 and WebKitGTK; Windows uses WebView2 and Apple platforms use WKWebView. The Android project lives in `gen/android`; iOS still requires `bun run tauri ios init` in `apps/ui` to generate its native project. It holds no application behavior: it opens the application API from `lettuce-app`, runs its workers, and exposes it to the webview as commands, events and the asset URI scheme. It is the only application crate that depends on Tauri and tauri-specta (`scripts/check-architecture.sh` enforces this), and nothing depends on it.
 
-The workspace currently uses local sibling checkouts of `tauri`, `tauri-specta`, `tauri-plugin-single-window` and `tauri-plugin-android-fs`. These changes are not published dependencies. Specta's unpublished rc.26 crates are pinned to the same upstream revision as the Specta fork. The dialog plugin uses `xdg-portal` with its defaults disabled. CEF is not selected or initialized by the application.
+The workspace fetches the `tauri`, `tauri-specta`, `tauri-plugin-single-window` and `tauri-plugin-android-fs` forks from `MegalithOfficial` on GitHub, pinned to full commit revisions in the root `Cargo.toml`. The Tauri crates share one revision through `[patch.crates-io]`. Specta's unpublished rc.26 crates are pinned to the same upstream revision as the Specta fork. The dialog plugin uses `xdg-portal` with its defaults disabled. CEF is not selected or initialized by the application.
 
 For an isolated debug launch, pass a separate identifier and `app.appDirectoriesOverride` through a Tauri configuration file.
 

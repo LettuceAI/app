@@ -31,7 +31,6 @@ key.properties
 /old-code/src-tauri/onnxruntime-ios/
 /old-code/node_modules/
 /old-code/dist/
-/README.md
 /architecture/
 /docs/
 /crates/*/PLAN.md

@@ -1,0 +1,40 @@
+# Maintainer: MegalithOfficial
+
+pkgname='@PKGNAME@'
+pkgver='@PKGVER@'
+pkgrel=@PKGREL@
+pkgdesc='AI character chat and roleplay (@DESCRIPTION@, prebuilt binary)'
+arch=('x86_64')
+url='https://www.lettuceai.app'
+license=('AGPL-3.0-only')
+depends=('glibc>=2.39' 'gcc-libs' 'gtk3' 'webkit2gtk-4.1' 'libsoup3' 'dbus' 'alsa-lib' 'wayland' 'libx11' 'xdg-utils' @DEPENDS@)
+optdepends=('xdg-desktop-portal: file dialogs (requires a desktop portal backend)' 'gnome-keyring: system keyring for API keys' @OPTDEPENDS@)
+provides=('@APPNAME@=@PKGVER@')
+conflicts=(@CONFLICTS@)
+options=('!strip' '!debug')
+source=('@ASSET@::@URL@')
+sha256sums=('@SHA256@')
+
+_appname='@APPNAME@'
+_archive_dir='@ARCHIVE_DIR@'
+
+package() {
+  install -dm755 "$pkgdir/opt/$_appname" "$pkgdir/usr/bin"
+  cp -a --no-preserve=ownership "$srcdir/$_archive_dir/." "$pkgdir/opt/$_appname/"
+  printf '#!/bin/sh\nexec /opt/%s/AppRun "$@"\n' "$_appname" > "$pkgdir/usr/bin/$_appname"
+  chmod 755 "$pkgdir/usr/bin/$_appname"
+  install -Dm644 "$srcdir/$_archive_dir/.DirIcon" "$pkgdir/usr/share/pixmaps/$_appname.png"
+  install -Dm644 "$srcdir/$_archive_dir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -dm755 "$pkgdir/usr/share/applications"
+  printf '%s\n' \
+    '[Desktop Entry]' \
+    'Type=Application' \
+    'Name=@DISPLAY_NAME@' \
+    'Comment=AI character chat and roleplay' \
+    "Exec=$_appname %F" \
+    "Icon=$_appname" \
+    'Terminal=false' \
+    'Categories=Utility;' \
+    'MimeType=application/vnd.lettuceai.backup;application/vnd.lettuceai.uec+json;' \
+    > "$pkgdir/usr/share/applications/@APP_ID@.desktop"
+}

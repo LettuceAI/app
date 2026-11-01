@@ -1,0 +1,38 @@
+name: Setup LettuceAI build
+description: Install the pinned frontend and Rust tools and restore dependency caches.
+
+inputs:
+  targets:
+    description: Comma-separated Rust targets to install.
+    required: true
+  cache-key:
+    description: Platform and accelerator cache namespace.
+    required: true
+  target-directory:
+    description: Cargo target directory.
+    default: target
+  cache-targets:
+    description: Cache compiled artifacts as well as registry and Git sources.
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24'
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: '1.4.3'
+    - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      with:
+        toolchain: '1.98.0'
+        targets: ${{ inputs.targets }}
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: release-${{ inputs.cache-key }}
+        workspaces: . -> ${{ inputs.target-directory }}
+        cache-targets: ${{ inputs.cache-targets }}
+    - name: Install frontend dependencies
+      shell: bash
+      run: bun run setup

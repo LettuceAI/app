@@ -96,12 +96,12 @@ specta-typescript = "=0.0.13"
 tauri = { version = "=3.0.0-alpha.4", default-features = false }
 tauri-runtime-wry = "=3.0.0-alpha.4"
 tauri-build = { version = "=3.0.0-alpha.3", default-features = false }
-tauri-plugin-android-fs = { path = "../tauri-plugin-android-fs", default-features = false }
+tauri-plugin-android-fs = { git = "https://github.com/MegalithOfficial/tauri-plugin-android-fs", rev = "6def0b2c7e761bc7121fb09c5bd35998fc547530", default-features = false }
 tauri-plugin-dialog = { version = "=3.0.0-alpha.3", default-features = false, features = ["xdg-portal"] }
 tauri-plugin-opener = "=3.0.0-alpha.3"
 tauri-plugin-haptics = "=3.0.0-alpha.3"
-tauri-plugin-single-window = { path = "../tauri-plugin-single-window" }
-tauri-specta = { path = "../tauri-specta", features = ["derive", "typescript"] }
+tauri-plugin-single-window = { git = "https://github.com/MegalithOfficial/tauri-plugin-single-window", rev = "e43bb058666fcc8daca54e1b2e8cb9117b9e50f6" }
+tauri-specta = { git = "https://github.com/MegalithOfficial/tauri-specta", rev = "75afe7bfbd6a8861faa906b1169d4d4d82317fad", features = ["derive", "typescript"] }
 tar = "0.4"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "half", "ndarray"] }
 tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }
@@ -127,12 +127,12 @@ codegen-units = 1
 strip = "symbols"
 
 [patch.crates-io]
-tauri = { path = "../tauri/crates/tauri" }
-tauri-build = { path = "../tauri/crates/tauri-build" }
-tauri-codegen = { path = "../tauri/crates/tauri-codegen" }
-tauri-macros = { path = "../tauri/crates/tauri-macros" }
-tauri-runtime = { path = "../tauri/crates/tauri-runtime" }
-tauri-utils = { path = "../tauri/crates/tauri-utils" }
+tauri = { git = "https://github.com/MegalithOfficial/tauri", rev = "d166c9c11bead5e9b789b2a6ad9d40847b2ed905" }
+tauri-build = { git = "https://github.com/MegalithOfficial/tauri", rev = "d166c9c11bead5e9b789b2a6ad9d40847b2ed905" }
+tauri-codegen = { git = "https://github.com/MegalithOfficial/tauri", rev = "d166c9c11bead5e9b789b2a6ad9d40847b2ed905" }
+tauri-macros = { git = "https://github.com/MegalithOfficial/tauri", rev = "d166c9c11bead5e9b789b2a6ad9d40847b2ed905" }
+tauri-runtime = { git = "https://github.com/MegalithOfficial/tauri", rev = "d166c9c11bead5e9b789b2a6ad9d40847b2ed905" }
+tauri-utils = { git = "https://github.com/MegalithOfficial/tauri", rev = "d166c9c11bead5e9b789b2a6ad9d40847b2ed905" }
 specta = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
 specta-macros = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
 specta-serde = { git = "https://github.com/specta-rs/specta.git", rev = "2757fa8899926dce7da999780c7edf2dc08a732a" }
