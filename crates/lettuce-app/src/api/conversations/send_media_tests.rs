@@ -397,7 +397,7 @@ async fn attachments_report_their_kind() {
         .iter()
         .filter_map(|part| match part {
             dto::MessagePartView::Media { kind, .. } => Some(*kind),
-            dto::MessagePartView::Text { .. } => None,
+            dto::MessagePartView::Text { .. } | dto::MessagePartView::HistoricalSpeaker { .. } => None,
         })
         .collect();
     assert_eq!(

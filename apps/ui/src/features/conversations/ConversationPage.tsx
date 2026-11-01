@@ -42,13 +42,13 @@ import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
 import { RegenerationSheet } from "./components/RegenerationSheet";
 import { ParticipantsBar } from "./components/ParticipantsBar";
-import { SpeakerSheet, type Speaker } from "./components/SpeakerSheet";
+import { type Speaker } from "./components/SpeakerSheet";
+import { BranchSheet, type BranchTarget } from "./components/BranchSheet";
 import { EffectSheet } from "./companion/EffectSheet";
 import { Timeline } from "./components/Timeline";
 import {
   addUserMessage,
   addSystemMessage,
-  branchGroupToCharacter,
   branchToNewChat,
   deleteMessage,
   editMessage,
@@ -179,7 +179,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const search = useSearch(api, conversationId);
 
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [branching, setBranching] = useState<TimelineMessage | null>(null);
+  const [branching, setBranching] = useState<BranchTarget | null>(null);
   const [selection, setSelection] = useState<{ behavior: "cue" | "action"; id: string } | null>(null);
   const [directorWiggle, setDirectorWiggle] = useState(0);
   const [effectMessage, setEffectMessage] = useState<TimelineMessage | null>(null);
@@ -554,12 +554,10 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     });
   };
 
-  const branchGroupHere = (message: TimelineMessage, characterId: string) => {
-    void run(async () => {
-      const id = await branchGroupToCharacter(services, message, characterId);
-      toast.success(t("toast.branched"));
-      void navigate({ to: "/chat/$conversationId", params: { conversationId: id }, search: {} });
-    });
+  const chooseBranch = (messageId: string, kind: BranchTarget["kind"]) => {
+    if (!view) return;
+    setMenuId(null);
+    setBranching({ messageId, revision: view.revision, kind });
   };
 
   const remove = async (message: TimelineMessage) => {
@@ -797,8 +795,10 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               {...(directCharacterId
                 ? { onBranch: () => branchHere(shownMenu, directCharacterId) }
                 : isGroup
-                  ? { onBranch: () => { setMenuId(null); setBranching(shownMenu); }, groupBranch: true }
+                  ? { groupBranch: true }
                   : {})}
+              onBranchCharacter={() => chooseBranch(shownMenu.id, "character")}
+              {...(directCharacterId ? { onBranchGroup: () => chooseBranch(shownMenu.id, "group") } : {})}
               onDelete={() => void remove(shownMenu)}
             />
           )}
@@ -822,15 +822,15 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           }}
         />}
 
-        <SpeakerSheet
-          open={branching !== null}
-          purpose="branch"
-          speakers={speakers}
+        {branching && view && <BranchSheet
+          services={services} view={view} target={branching}
           onClose={() => setBranching(null)}
-          onPick={(speaker) => {
-            if (branching && speaker?.characterId) branchGroupHere(branching, speaker.characterId);
+          onCreated={(id) => {
+            setBranching(null);
+            toast.success(t("toast.branched"));
+            void navigate({ to: "/chat/$conversationId", params: { conversationId: id }, search: {} });
           }}
-        />
+        />}
 
         {shownEffect && <EffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />}
 
@@ -859,6 +859,13 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             onBranches={() =>
               void navigate({ to: "/chat/$conversationId/branches", params: { conversationId } })
             }
+            onBranchTarget={(kind) => void run(async () => {
+              const page = await api.call("conversationMessages", { conversation_id: conversationId, before_cursor: null, after_cursor: null, limit: 1 });
+              const message = page.items.at(-1);
+              if (!message) return;
+              await navigate({ to: "/chat/$conversationId", params: { conversationId }, search: {}, replace: true });
+              chooseBranch(message.id, kind);
+            })}
             onModels={() =>
               void navigate({ to: "/settings/$section", params: { section: "models" } })
             }

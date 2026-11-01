@@ -61,6 +61,7 @@ pub struct Annotation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AnnotationKind {
+    HistoricalSpeaker,
     SceneEdited,
     Safety,
     SystemNotice,
@@ -75,6 +76,10 @@ pub enum AnnotationKind {
     deny_unknown_fields
 )]
 pub enum AnnotationPayload {
+    HistoricalSpeaker {
+        character_id: lettuce_types::CharacterId,
+        name: String,
+    },
     SceneEdited {
         scene_id: Option<lettuce_types::SceneId>,
         direction: Option<String>,
@@ -144,6 +149,9 @@ impl Annotation {
             });
         }
         match (&self.kind, &self.payload) {
+            (AnnotationKind::HistoricalSpeaker, AnnotationPayload::HistoricalSpeaker { name, .. }) => {
+                validate_text("message.annotation.speaker", name, crate::validation::MAX_DISPLAY_CHARS, false)
+            }
             (AnnotationKind::SceneEdited, AnnotationPayload::SceneEdited { direction, .. }) => {
                 if let Some(direction) = direction {
                     validate_text(

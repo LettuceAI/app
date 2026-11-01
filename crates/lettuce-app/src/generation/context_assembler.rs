@@ -3182,11 +3182,36 @@ fn provider_message(
     {
         return Ok(None);
     }
+    let historical_speaker = parts(item).iter().find_map(|part| match part {
+        MessagePart::Annotation { annotation } => match &annotation.payload {
+            AnnotationPayload::HistoricalSpeaker { name, .. } => Some(name.clone()),
+            _ => None,
+        },
+        _ => None,
+    });
+    let copied_other_character = parts(item).iter().any(|part| matches!(part,
+        MessagePart::Annotation { annotation } if matches!(&annotation.payload,
+            AnnotationPayload::HistoricalSpeaker { character_id, .. }
+                if matches!(&aggregate.conversation.kind, ConversationKind::Direct(details) if details.character.source_id != *character_id)
+        )
+    ));
+    let historical_character = parts(item).iter().find_map(|part| match part {
+        MessagePart::Annotation { annotation } => match &annotation.payload {
+            AnnotationPayload::HistoricalSpeaker { character_id, .. } => Some(*character_id),
+            _ => None,
+        },
+        _ => None,
+    });
+    let selected_author = historical_character.map_or(item.message.author_participant_id == selected_speaker, |character_id| {
+        aggregate.conversation.participants.iter().any(|participant| Some(participant.id) == selected_speaker
+            && participant.source == lettuce_conversations::ParticipantSource::Character(character_id))
+    });
     let role = match (&aggregate.conversation.kind, item.message.role) {
+        (ConversationKind::Direct(_), MessageRole::Assistant) if copied_other_character && !swap_roles => MessageRole::User,
         (ConversationKind::Direct(_), MessageRole::User) if swap_roles => MessageRole::Assistant,
         (ConversationKind::Direct(_), MessageRole::Assistant) if swap_roles => MessageRole::User,
         (ConversationKind::Group(_), MessageRole::Assistant | MessageRole::User) => {
-            if item.message.author_participant_id == selected_speaker {
+            if selected_author {
                 MessageRole::Assistant
             } else {
                 MessageRole::User
@@ -3195,6 +3220,9 @@ fn provider_message(
         (_, role) => role,
     };
     let mut context_parts = provider_context_parts(parts(item))?;
+    if let Some(name) = &historical_speaker {
+        context_parts.insert(0, ProviderContextPart::Text { text: format!("{name}: ") });
+    }
     if time_stamps
         && matches!(
             item.message.role,
@@ -3213,7 +3241,7 @@ fn provider_message(
             None => context_parts.insert(0, ProviderContextPart::Text { text: stamp }),
         }
     }
-    if matches!(aggregate.conversation.kind, ConversationKind::Group(_))
+    if historical_speaker.is_none() && matches!(aggregate.conversation.kind, ConversationKind::Group(_))
         && role == MessageRole::User
         && matches!(
             item.message.role,
@@ -3275,7 +3303,7 @@ fn provider_context_parts(
             }
             MessagePart::ReasoningSummary { .. } => {}
             MessagePart::Annotation { annotation }
-                if matches!(annotation.payload, AnnotationPayload::SceneEdited { .. }) => {}
+                if matches!(annotation.payload, AnnotationPayload::SceneEdited { .. } | AnnotationPayload::HistoricalSpeaker { .. }) => {}
             MessagePart::ToolCall { .. }
             | MessagePart::ToolResult { .. }
             | MessagePart::Annotation { .. } => {

@@ -18,7 +18,8 @@ export function groupOf(list: readonly TimelineMessage[], index: number): Group 
   const same = (other: TimelineMessage | undefined) =>
     other !== undefined &&
     other.role === role &&
-    other.author_participant_id === message.author_participant_id;
+    other.author_participant_id === message.author_participant_id &&
+    other.parts.find((part) => part.type === "historical_speaker")?.name === message.parts.find((part) => part.type === "historical_speaker")?.name;
   const prev = same(list[index - 1]);
   const next = same(list[index + 1]);
   return prev && next ? "middle" : prev ? "end" : next ? "start" : "only";
@@ -69,6 +70,8 @@ export function authorOf(
   message: TimelineMessage,
 ): Author | undefined {
   if (message.role === "scene" || message.role === "system") return undefined;
+  const historical = message.parts.find((part) => part.type === "historical_speaker");
+  if (historical?.type === "historical_speaker") return { name: historical.name, avatar: null };
   const found =
     (message.author_participant_id
       ? participants.find((participant) => participant.id === message.author_participant_id)

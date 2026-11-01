@@ -1682,6 +1682,7 @@ export type ConversationCharacterCopyRequest = {
 	conversation_id: string,
 	message_id: string,
 	character_id: string,
+	expected_revision?: number | null,
 	client_operation_id: string,
 };
 
@@ -1719,6 +1720,9 @@ export type ConversationGroupCopyRequest = {
 	conversation_id: string,
 	message_id: string,
 	character_ids: string[],
+	chat_mode?: GroupChatMode | null,
+	title?: string | null,
+	expected_revision?: number | null,
 	client_operation_id: string,
 };
 
@@ -6355,11 +6359,11 @@ export type MessagePage_Serialize = {
 
 export type MessagePartView = MessagePartView_Serialize | MessagePartView_Deserialize;
 
-export type MessagePartView_Deserialize = { type: "text"; text: string } |
+export type MessagePartView_Deserialize = { type: "historical_speaker"; character_id: string; name: string } | { type: "text"; text: string } |
 /**  `kind` is what the asset holds; none when the asset row is gone. */
 { type: "media"; asset: AssetRef_Deserialize; role: MediaRole; kind: MediaPartKind | null };
 
-export type MessagePartView_Serialize = { type: "text"; text: string } |
+export type MessagePartView_Serialize = { type: "historical_speaker"; character_id: string; name: string } | { type: "text"; text: string } |
 /**  `kind` is what the asset holds; none when the asset row is gone. */
 { type: "media"; asset: AssetRef_Serialize; role: MediaRole; kind: MediaPartKind | null };
 

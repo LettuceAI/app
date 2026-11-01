@@ -596,7 +596,7 @@ fn text_of(message: &dto::TimelineMessage) -> String {
         .iter()
         .filter_map(|part| match part {
             dto::MessagePartView::Text { text } => Some(text.as_str()),
-            dto::MessagePartView::Media { .. } => None,
+            dto::MessagePartView::Media { .. } | dto::MessagePartView::HistoricalSpeaker { .. } => None,
         })
         .collect()
 }

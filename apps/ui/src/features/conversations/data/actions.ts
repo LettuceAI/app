@@ -109,14 +109,17 @@ export async function rewindTo(services: ConversationServices, message: Timeline
   });
 }
 
-export async function branchToNewChat(services: ConversationServices, message: TimelineMessage, characterId: string): Promise<string> {
+export interface BranchOptions { revision: number; operationId: string }
+
+export async function branchToNewChat(services: ConversationServices, message: Pick<TimelineMessage, "id">, characterId: string, options?: BranchOptions): Promise<string> {
   trimIfStuck(services);
   const { api, queryClient } = services;
   const copy = await api.call("conversationBranchDirectToCharacter", {
     conversation_id: services.conversationId,
     message_id: message.id,
     character_id: characterId,
-    client_operation_id: crypto.randomUUID(),
+    expected_revision: options?.revision ?? currentRevision(queryClient, services.conversationId),
+    client_operation_id: options?.operationId ?? crypto.randomUUID(),
   });
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
@@ -125,17 +128,38 @@ export async function branchToNewChat(services: ConversationServices, message: T
   return copy.conversation_id;
 }
 
-export async function branchGroupToCharacter(services: ConversationServices, message: TimelineMessage, characterId: string): Promise<string> {
+export async function branchGroupToCharacter(services: ConversationServices, message: Pick<TimelineMessage, "id">, characterId: string, options?: BranchOptions): Promise<string> {
   trimIfStuck(services);
   const { api, queryClient } = services;
   const copy = await api.call("conversationBranchToCharacterFromMessage", {
     conversation_id: services.conversationId,
     message_id: message.id,
     character_id: characterId,
-    client_operation_id: crypto.randomUUID(),
+    expected_revision: options?.revision ?? currentRevision(queryClient, services.conversationId),
+    client_operation_id: options?.operationId ?? crypto.randomUUID(),
   });
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
+  ]);
+  return copy.conversation_id;
+}
+
+export async function branchToGroup(services: ConversationServices, message: Pick<TimelineMessage, "id">, characterIds: string[], mode: "conversation" | "roleplay", title: string, options: BranchOptions): Promise<string> {
+  trimIfStuck(services);
+  const { api, queryClient, conversationId } = services;
+  const copy = await api.call("conversationBranchDirectToGroup", {
+    conversation_id: conversationId,
+    message_id: message.id,
+    character_ids: characterIds,
+    chat_mode: mode,
+    title: title.trim() || null,
+    expected_revision: options.revision,
+    client_operation_id: options.operationId,
+  });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.lists() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.groups.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
   ]);
   return copy.conversation_id;

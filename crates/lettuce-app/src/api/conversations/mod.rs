@@ -1,6 +1,8 @@
 pub(super) mod branches;
 #[cfg(test)]
 mod branches_tests;
+#[cfg(test)]
+mod branch_targets_tests;
 pub(super) mod copies;
 #[cfg(test)]
 mod copy_scene_tests;

@@ -110,6 +110,7 @@ interface Setup {
   streams?: MockStreamHandlers;
   platform?: "other" | "android";
   path?: string;
+  historyEntries?: string[];
 }
 
 async function open(setup: Setup = {}) {
@@ -175,7 +176,7 @@ async function open(setup: Setup = {}) {
       },
       ...(setup.streams ? { streams: setup.streams } : {}),
     }),
-    history: createMemoryHistory({ initialEntries: [setup.path ?? "/chat/c1"] }),
+    history: createMemoryHistory({ initialEntries: setup.historyEntries ?? [setup.path ?? "/chat/c1"] }),
     i18n: await createTestI18n("en"),
   });
   await act(async () => {
@@ -299,6 +300,79 @@ it("keeps the reading position when a new message arrives without a local send",
 });
 
 describe("conversation screen", () => {
+  it.each(["Conversation", "Roleplay"])("asks for additional characters and the %s group mode before branching", async (mode) => {
+    const branch = vi.fn(() => ({ status: "ok" as const, data: { conversation_id: "group-copy", revision: 1 } }));
+    const runtime = await open({ calls: {
+      charactersList: () => ({ status: "ok", data: { items: [
+        { id: "ch1", name: "Cassian", description: "The current character", avatar: null },
+        { id: "ch2", name: "Mira", description: "Another character", avatar: null },
+      ], next_cursor: null } } as never),
+      conversationBranchDirectToGroup: branch,
+    } });
+    fireEvent.contextMenu(await screen.findByText("Sit down."));
+    fireEvent.click(await screen.findByText("Branch to group chat"));
+    const dialog = await screen.findByRole("dialog", { name: "Branch to group chat" });
+    const create = within(dialog).getByRole("button", { name: "Create branch" });
+    expect((create as HTMLButtonElement).disabled).toBe(true);
+    expect((await within(dialog).findByRole("button", { name: /Cassian/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(dialog).getByText("Mira"));
+    expect((create as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(dialog).getByText(mode));
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Group name" }), { target: { value: "Harbour friends" } });
+    expect(branch).not.toHaveBeenCalled();
+    fireEvent.click(create);
+    await waitFor(() => expect(branch).toHaveBeenCalledWith(expect.objectContaining({
+      conversation_id: "c1", message_id: "a1", character_ids: ["ch1", "ch2"],
+      chat_mode: mode.toLowerCase(), title: "Harbour friends", expected_revision: 4,
+    })));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/chat/group-copy"));
+  });
+
+  it("keeps branch selections on failure and retries with the same operation id", async () => {
+    const branch = vi.fn(() => ({ status: "error" as const, error: { code: "unavailable" as const, message: "provider", details: null } }));
+    const runtime = await open({ historyEntries: ["/", "/chat/c1"], calls: {
+      charactersList: () => ({ status: "ok", data: { items: [
+        { id: "ch2", name: "Mira", description: "Another character", avatar: null },
+      ], next_cursor: null } } as never),
+      conversationBranchDirectToCharacter: branch,
+    } });
+    await screen.findByText("Sit down.");
+    fireEvent.contextMenu(screen.getByText("Sit down."));
+    fireEvent.click(await screen.findByText("Branch to another character"));
+    const dialog = await screen.findByRole("dialog", { name: "Branch to another character" });
+    fireEvent.click(await within(dialog).findByText("Mira"));
+    const create = within(dialog).getByRole("button", { name: "Create branch" });
+    fireEvent.click(create);
+    expect(await screen.findByText("It isn't available right now.")).toBeTruthy();
+    await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(create);
+    await waitFor(() => expect(branch).toHaveBeenCalledTimes(2));
+    expect(branch.mock.calls[0]).toEqual(branch.mock.calls[1]);
+    await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+    expect(runtime.router.state.location.pathname).toBe("/chat/c1");
+    expect(runtime.router.history.canGoBack()).toBe(true);
+    await act(() => runtime.router.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Branch to another character" })).toBeNull());
+  });
+
+  it("branches a group message to a character outside its member list", async () => {
+    const branch = vi.fn(() => ({ status: "ok" as const, data: { conversation_id: "direct-copy", revision: 1 } }));
+    const runtime = await open({ calls: {
+      conversationOpen: () => ({ status: "ok", data: view([message("a1", "assistant", "Sit down.")], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
+      charactersList: () => ({ status: "ok", data: { items: [
+        { id: "outsider", name: "Outside character", description: null, avatar: null },
+      ], next_cursor: null } } as never),
+      conversationBranchToCharacterFromMessage: branch,
+    } });
+    fireEvent.contextMenu(await screen.findByText("Sit down."));
+    fireEvent.click(await screen.findByText("Branch to another character"));
+    const dialog = await screen.findByRole("dialog", { name: "Branch to another character" });
+    fireEvent.click(await within(dialog).findByText("Outside character"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create branch" }));
+    await waitFor(() => expect(branch).toHaveBeenCalledWith(expect.objectContaining({ character_id: "outsider", message_id: "a1", expected_revision: 4 })));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/chat/direct-copy"));
+  });
+
   it.each([
     { reason: "Cassian knows the harbor.", heuristic_fallback: false, empty: false },
     { reason: null, heuristic_fallback: true, empty: false },

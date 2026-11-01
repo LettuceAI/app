@@ -250,6 +250,11 @@ pub(crate) fn part_views(
                 kind: media_part_kind(context, *asset_id),
             }),
             MessagePart::ReasoningSummary { text } => reasoning.push(text.as_str()),
+            MessagePart::Annotation { annotation } if matches!(annotation.payload, lettuce_conversations::AnnotationPayload::HistoricalSpeaker { .. }) => {
+                if let lettuce_conversations::AnnotationPayload::HistoricalSpeaker { character_id, name } = &annotation.payload {
+                    parts.push(dto::MessagePartView::HistoricalSpeaker { character_id: character_id.to_string(), name: name.clone() });
+                }
+            }
             MessagePart::ToolCall { .. }
             | MessagePart::ToolResult { .. }
             | MessagePart::Annotation { .. } => {}

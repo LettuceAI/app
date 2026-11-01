@@ -34,6 +34,7 @@ export interface ChatSettingsPanelProps {
   onHome: () => void;
   onMemories: () => void;
   onBranches: () => void;
+  onBranchTarget?: (kind: "character" | "group") => void;
   onModels: () => void;
 }
 
@@ -106,7 +107,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
   if (settings.isError && !settings.data) {
     body = <FailureState error={settings.error} onRetry={() => void settings.refetch()} />;
   } else if (current === "root") {
-    body = <SettingsRoot ctx={ctx} name={props.name} avatar={props.avatar} onOpenMemories={props.onMemories} onBranches={props.onBranches} onModelsSettings={props.onModels} onHome={props.onHome} />;
+    body = <SettingsRoot ctx={ctx} name={props.name} avatar={props.avatar} onOpenMemories={props.onMemories} onBranches={props.onBranches} {...(props.onBranchTarget ? { onBranchTarget: props.onBranchTarget } : {})} onModelsSettings={props.onModels} onHome={props.onHome} />;
   } else {
     body = <PanelViews ctx={ctx} current={current} />;
   }

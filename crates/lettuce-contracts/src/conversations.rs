@@ -501,6 +501,10 @@ pub struct MessageCount {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MessagePartView {
+    HistoricalSpeaker {
+        character_id: String,
+        name: String,
+    },
     Text {
         text: String,
     },
@@ -1406,6 +1410,9 @@ pub struct ConversationCharacterCopyRequest {
     pub conversation_id: String,
     pub message_id: String,
     pub character_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(optional, type = Option<specta_typescript::Number>))]
+    pub expected_revision: Option<u64>,
     pub client_operation_id: String,
 }
 
@@ -1425,6 +1432,15 @@ pub struct ConversationGroupCopyRequest {
     pub conversation_id: String,
     pub message_id: String,
     pub character_ids: Vec<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub chat_mode: Option<GroupChatMode>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(optional, type = Option<specta_typescript::Number>))]
+    pub expected_revision: Option<u64>,
     pub client_operation_id: String,
 }
 

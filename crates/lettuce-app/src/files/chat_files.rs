@@ -684,6 +684,17 @@ where
                 ),
                 _ => (character.clone(), false, false),
             };
+            let source_parts = match &message.active_render_source {
+                MessageRenderSource::Candidate(_) => item.active_candidate.as_ref().map(|candidate| candidate.parts.as_slice()),
+                MessageRenderSource::Revision(_) => item.active_revision.as_ref().map(|revision| revision.parts.as_slice()),
+            };
+            let name = source_parts.and_then(|parts| parts.iter().find_map(|part| match part {
+                MessagePart::Annotation { annotation } => match &annotation.payload {
+                    lettuce_conversations::AnnotationPayload::HistoricalSpeaker { name, .. } => Some(name.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })).unwrap_or(name);
             lines.push(lettuce_transfer::ChatJsonlLine {
                 name,
                 is_user,

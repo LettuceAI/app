@@ -613,6 +613,13 @@ pub(crate) fn materialize_sources<C: ConversationReader + ?Sized>(
                     candidate.parts
                 }
             };
+            let speaker = parts.iter().find_map(|part| match part {
+                MessagePart::Annotation { annotation } => match &annotation.payload {
+                    lettuce_conversations::AnnotationPayload::HistoricalSpeaker { name, .. } => Some(name.clone()),
+                    _ => None,
+                },
+                _ => None,
+            });
             let text = parts
                 .into_iter()
                 .filter_map(|part| match part {
@@ -621,6 +628,7 @@ pub(crate) fn materialize_sources<C: ConversationReader + ?Sized>(
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            let text = speaker.map_or_else(|| text.clone(), |name| format!("{name}: {text}"));
             Ok(MaterializedSource {
                 message_id: source.message_id,
                 role: source.role,

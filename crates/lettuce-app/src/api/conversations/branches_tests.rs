@@ -238,6 +238,7 @@ async fn direct_character_copy_keeps_persona_lineage_and_replays_after_source_pu
     .await
     .expect("source message");
     let request = dto::ConversationCharacterCopyRequest {
+        expected_revision: None,
         conversation_id: source_id.clone(),
         message_id: message.message.id.clone(),
         character_id: harness.character_id.to_string(),
@@ -383,6 +384,9 @@ async fn direct_group_copy_creates_profile_and_chat_and_replays() {
     .await
     .expect("source message");
     let request = dto::ConversationGroupCopyRequest {
+        expected_revision: None,
+        chat_mode: None,
+        title: None,
         conversation_id: source_id.clone(),
         message_id: message.message.id.clone(),
         character_ids: vec![harness.character_id.to_string(), other.to_string()],
@@ -396,7 +400,7 @@ async fn direct_group_copy_creates_profile_and_chat_and_replays() {
         copied.conversation_id.parse().expect("target id"),
     )
     .expect("target");
-    assert_eq!(target.conversation.origin_conversation_id, None);
+    assert_eq!(target.conversation.origin_conversation_id.map(|id| id.to_string()), Some(source_id.clone()));
     let lettuce_conversations::ConversationKind::Group(details) = &target.conversation.kind else {
         panic!("group target");
     };

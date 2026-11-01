@@ -40,7 +40,7 @@ fn text_of(message: &dto::TimelineMessage) -> String {
         .iter()
         .filter_map(|part| match part {
             dto::MessagePartView::Text { text } => Some(text.as_str()),
-            dto::MessagePartView::Media { .. } => None,
+            dto::MessagePartView::Media { .. } | dto::MessagePartView::HistoricalSpeaker { .. } => None,
         })
         .collect()
 }
@@ -51,7 +51,7 @@ fn media_of(message: &dto::TimelineMessage) -> Vec<String> {
         .iter()
         .filter_map(|part| match part {
             dto::MessagePartView::Media { asset, .. } => Some(asset.asset_id.clone()),
-            dto::MessagePartView::Text { .. } => None,
+            dto::MessagePartView::Text { .. } | dto::MessagePartView::HistoricalSpeaker { .. } => None,
         })
         .collect()
 }
@@ -633,7 +633,7 @@ fn text_of_parts(parts: &[dto::MessagePartView]) -> String {
         .iter()
         .filter_map(|part| match part {
             dto::MessagePartView::Text { text } => Some(text.as_str()),
-            dto::MessagePartView::Media { .. } => None,
+            dto::MessagePartView::Media { .. } | dto::MessagePartView::HistoricalSpeaker { .. } => None,
         })
         .collect()
 }

@@ -53,12 +53,30 @@ fn replace_copy_placeholders(parts: &mut [MessagePart], kind: &SelectedConversat
     }
 }
 
+fn preserve_speaker(parts: &mut Vec<MessagePart>, participant: Option<&lettuce_conversations::ConversationParticipant>) {
+    use lettuce_conversations::{Annotation, AnnotationKind, AnnotationPayload, ParticipantSource};
+    parts.retain(|part| !matches!(part, MessagePart::Annotation { annotation } if matches!(annotation.payload, AnnotationPayload::CompanionEffect { .. })));
+    if parts.iter().any(|part| matches!(part, MessagePart::Annotation { annotation } if matches!(annotation.payload, AnnotationPayload::HistoricalSpeaker { .. }))) {
+        return;
+    }
+    if let Some(participant) = participant
+        && let ParticipantSource::Character(character_id) = participant.source
+    {
+        parts.push(MessagePart::Annotation { annotation: Annotation {
+            version: 1,
+            kind: AnnotationKind::HistoricalSpeaker,
+            payload: AnnotationPayload::HistoricalSpeaker { character_id, name: participant.display_name.clone() },
+        } });
+    }
+}
+
 fn copy_candidates_in(
     transaction: &rusqlite::Transaction<'_>,
     command: &ConversationContentCopy,
     source: &BackupMessage,
     target: &mut BackupMessage,
     participants: &[lettuce_conversations::ConversationParticipant],
+    source_participants: &[lettuce_conversations::ConversationParticipant],
 ) -> Result<(), ConversationRepositoryError> {
     use lettuce_conversations::{
         GenerationAttempt, GenerationAttemptStatus, GenerationInput, GenerationOperation,
@@ -202,6 +220,9 @@ fn copy_candidates_in(
         candidate.message_id = target.message.id;
         candidate.turn_id = turn_id;
         candidate.attempt_id = attempt_id;
+        if !matches!(command.kind, SelectedConversationCopyKind::Duplicate) {
+            preserve_speaker(&mut candidate.parts, source_participants.iter().find(|participant| participant.id == candidate.author_participant_id));
+        }
         candidate.author_participant_id = author;
         candidate.provider_replay = None;
         candidate.parts.retain(|part| {
@@ -351,20 +372,10 @@ impl crate::ApiOperationTransaction<'_, '_> {
         } else {
             items.last().map(|item| item.message.id)
         };
-        if matches!(
-            command.kind,
-            SelectedConversationCopyKind::DirectToCharacter
-        ) {
+        if matches!(command.kind, SelectedConversationCopyKind::DirectToGroup)
+            && matches!(&target.conversation.kind, lettuce_conversations::ConversationKind::Group(details) if details.group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Conversation)
+        {
             items.retain(|item| item.message.role != lettuce_conversations::MessageRole::Scene);
-        }
-        if matches!(command.kind, SelectedConversationCopyKind::DirectToGroup) {
-            items.retain(|item| {
-                matches!(
-                    item.message.role,
-                    lettuce_conversations::MessageRole::User
-                        | lettuce_conversations::MessageRole::Assistant
-                )
-            });
         }
         self.transaction.execute("INSERT INTO conversation_snapshot_refs (conversation_id,artifact_id) SELECT ?1,artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?2 ON CONFLICT DO NOTHING",rusqlite::params![command.target_conversation_id.to_string(),command.source_conversation_id.to_string()]).map_err(slice::db)?;
 
@@ -396,6 +407,11 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 }),
             }
             replace_copy_placeholders(&mut parts, &command.kind);
+            if item.message.role == lettuce_conversations::MessageRole::Assistant
+                && !matches!(command.kind, SelectedConversationCopyKind::Duplicate)
+            {
+                preserve_speaker(&mut parts, source.conversation.participants.iter().find(|participant| Some(participant.id) == item.message.author_participant_id));
+            }
             let author = if item.message.role == lettuce_conversations::MessageRole::Assistant
                 && !matches!(command.kind, SelectedConversationCopyKind::Duplicate)
             {
@@ -457,6 +473,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 && matches!(
                     command.kind,
                     SelectedConversationCopyKind::DirectToCharacter
+                        | SelectedConversationCopyKind::DirectToGroup
                         | SelectedConversationCopyKind::GroupToCharacterFromMessage { .. }
                 ) {
                 crate::backup::backup_adapter::read_conversation_message(
@@ -534,6 +551,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                     &source_backup,
                     &mut backup,
                     &target.conversation.participants,
+                    &source.conversation.participants,
                 )?;
             } else {
                 history::insert_message(self.transaction, &backup)?;
@@ -889,12 +907,14 @@ impl crate::ApiOperationTransaction<'_, '_> {
                     | lettuce_characters::RepositoryError::Invalid(_) => invalid("copy.group"),
                 })?;
         }
-        let memory = draft.companion.as_ref().map_or(
+        let memory = if !matches!(draft.kind, SelectedConversationCopyKind::Duplicate) {
+            super::conversation_creator::MemoryBinding::PerConversation
+        } else { draft.companion.as_ref().map_or(
             super::conversation_creator::MemoryBinding::PerConversation,
             |(owner, _, _)| {
                 super::conversation_creator::MemoryBinding::CompanionPool(owner.character_id)
             },
-        );
+        ) };
         let companion = draft.companion;
         let initialize = draft.initialize_companion;
         let mut commit = super::conversation_creator::create_on_transaction(
@@ -979,11 +999,13 @@ impl crate::ApiOperationTransaction<'_, '_> {
             through_message_id: draft.through_message_id,
             kind: draft.kind.clone(),
         })?;
-        if matches!(draft.kind, SelectedConversationCopyKind::DirectToCharacter) {
-            let message = draft
-                .through_message_id
-                .ok_or_else(|| invalid("copy.lineage_message"))?;
+        if !matches!(draft.kind, SelectedConversationCopyKind::Duplicate) {
+            let message = draft.through_message_id.or_else(|| source.branches.iter()
+                .find(|branch| branch.id == draft.source_branch_id)
+                .and_then(|branch| branch.head_message_id.or(branch.fork_message_id)));
+            if let Some(message) = message {
             self.transaction.execute("UPDATE conversations SET origin_conversation_id = ?2,origin_message_id = ?3 WHERE id = ?1",rusqlite::params![target.to_string(),draft.source_conversation_id.to_string(),message.to_string()]).map_err(slice::db)?;
+            }
         }
         commit.value.conversation =
             slice::hydrate_conversation(self.transaction, target, || {})?.conversation;

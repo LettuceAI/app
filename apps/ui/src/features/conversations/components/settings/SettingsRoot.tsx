@@ -26,11 +26,12 @@ export interface SettingsRootProps {
   avatar: string | null;
   onOpenMemories: () => void;
   onBranches: () => void;
+  onBranchTarget?: (kind: "character" | "group") => void;
   onModelsSettings: () => void;
   onHome: () => void;
 }
 
-export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, onModelsSettings, onHome }: SettingsRootProps) {
+export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, onBranchTarget, onModelsSettings, onHome }: SettingsRootProps) {
   const { t, i18n } = useTranslation("conversations");
   const { api, queryClient, conversationId, view, settings } = ctx;
   const character = useQuery(characterQuery(api, ctx.characterId));
@@ -273,6 +274,8 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
         <ListRowButton icon={<MessageSquarePlus size={icon.lg} />} title={t("settings.actions.newChat")} description={t(groupId ? "settings.actions.newGroupChatHint" : "settings.actions.newChatHint")} disabled={ctx.busy || (!groupId && (!ctx.characterId || character.isPending))} onClick={() => void startChat()} />
         <ListRowButton icon={<History size={icon.lg} />} title={t("settings.actions.history")} description={t("settings.actions.historyHint")} onClick={() => ctx.open("history")} />
         <ListRowButton icon={<GitBranch size={icon.lg} />} title={t("settings.actions.branches")} description={t("settings.actions.branchesHint")} onClick={onBranches} />
+        {onBranchTarget && <ListRowButton icon={<GitBranch size={icon.lg} />} title={t("branchSetup.characterTitle")} disabled={ctx.busy || view.pending_turn_id !== null} onClick={() => onBranchTarget("character")} />}
+        {onBranchTarget && view.kind === "direct" && <ListRowButton icon={<GitBranch size={icon.lg} />} title={t("branchSetup.groupTitle")} disabled={ctx.busy || view.pending_turn_id !== null} onClick={() => onBranchTarget("group")} />}
         <ListRowButton icon={<Copy size={icon.lg} />} title={t("settings.actions.duplicate")} description={t("settings.actions.duplicateHint")} chevron={false} disabled={ctx.busy} onClick={() => void duplicate()} />
         <ListRowButton icon={<Download size={icon.lg} />} title={t("settings.actions.export")} description={t("settings.actions.exportHint")} chevron={false} disabled={ctx.busy} onClick={() => void exportThis()} />
         <ListRowButton icon={<Upload size={icon.lg} />} title={t("settings.actions.import")} description={t(groupId ? "settings.actions.importGroupHint" : "settings.actions.importHint")} chevron={false} disabled={ctx.busy || !ctx.characterId} onClick={() => void importLog()} />

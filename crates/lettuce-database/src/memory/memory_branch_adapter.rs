@@ -203,10 +203,12 @@ pub(crate) fn seed_new_conversation_space_in(
             return Ok(HashMap::new());
         }
     }
-    let Some(source_space) = own_space_in(transaction, source_conversation_id, source_branch_id)?
-    else {
+    let owned_source = own_space_in(transaction, source_conversation_id, source_branch_id)?;
+    let Some(source_space) = memory_adapter::branch_space_id_in(transaction, source_conversation_id, source_branch_id)
+        .map_err(storage)? else {
         return Ok(HashMap::new());
     };
+    let pooled_source = owned_source != Some(source_space);
     let (cut, mut summary) = if let Some(message_id) = at_message_id {
         let position = message_position_in(transaction, source_conversation_id, message_id)?;
         branch_state_in(
@@ -223,7 +225,7 @@ pub(crate) fn seed_new_conversation_space_in(
             memory_adapter::get_summary_in(transaction, source_space).map_err(storage)?,
         )
     };
-    let seed = cut.map_or_else(
+    let mut seed = cut.map_or_else(
         || {
             memory_adapter::get_in(transaction, source_space)
                 .map_err(storage)?
@@ -234,6 +236,36 @@ pub(crate) fn seed_new_conversation_space_in(
         },
         Ok,
     )?;
+    if pooled_source {
+        let position = at_message_id.map(|id| message_position_in(transaction, source_conversation_id, id)).transpose()?;
+        let manual = super::memory_manual_adapter::history_in(transaction, source_conversation_id, source_branch_id, source_space)
+            .map_err(storage)?;
+        let mut local_ids: std::collections::HashSet<_> = manual.iter()
+            .filter(|edit| position.is_none_or(|position| edit.message_position <= position))
+            .filter_map(|edit| match &edit.edit.mutation {
+                lettuce_memory::MemoryManualMutation::Add { item } => Some(item.id),
+                _ => None,
+            }).collect();
+        for own in own_runs_in(transaction, source_conversation_id, source_branch_id, source_space, None)? {
+            if !own.succeeded || own.in_flight || position.is_some_and(|position| own.run.summary_window.end > position) {
+                continue;
+            }
+            let mut statement = transaction.prepare(
+                "SELECT result.outcome_json FROM dynamic_memory_background_tool_results result
+                 JOIN dynamic_memory_run_attempts attempt ON attempt.run_id = result.run_id AND attempt.id = result.attempt_id
+                 WHERE result.run_id = ?1 AND attempt.status = 'succeeded' ORDER BY result.round_ordinal, result.ordinal",
+            ).map_err(storage)?;
+            let outcomes = statement.query_map([own.run.id.to_string()], |row| row.get::<_, String>(0))
+                .map_err(storage)?.collect::<Result<Vec<_>, _>>().map_err(storage)?;
+            for outcome in outcomes {
+                let outcome: lettuce_memory::MemoryToolOutcome = crate::decode_versioned(&outcome, 1).map_err(storage)?;
+                if let lettuce_memory::MemoryToolOutcome::Created { id, .. } = outcome {
+                    local_ids.insert(id);
+                }
+            }
+        }
+        seed.items.retain(|item| item.source_message_id.is_some_and(|id| message_ids.contains_key(&id)) || local_ids.contains(&item.id));
+    }
     let space_id = match own_space_in(transaction, conversation_id, branch_id)? {
         Some(id) => {
             let current = memory_adapter::get_in(transaction, id)
@@ -323,6 +355,13 @@ pub(crate) fn seed_new_conversation_space_in(
         ).map_err(storage)?;
     }
     memory_adapter::replace_summary_in(transaction, space_id, summary.as_ref()).map_err(storage)?;
+    if let Some(summary) = &summary {
+        store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, summary)?;
+        transaction.execute(
+            "INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,?3) ON CONFLICT (conversation_id,branch_id) DO UPDATE SET window_end = excluded.window_end",
+            params![conversation_id.to_string(), branch_id.to_string(), i64::try_from(summary.window_end).map_err(storage)?],
+        ).map_err(storage)?;
+    }
     Ok(ids)
 }
 

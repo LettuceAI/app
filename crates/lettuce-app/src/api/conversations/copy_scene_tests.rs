@@ -86,6 +86,7 @@ async fn group_character_copies_replace_known_names_and_keep_current_scene_rules
     .await
     .expect("user");
     let from_message = dto::ConversationCharacterCopyRequest {
+        expected_revision: None,
         conversation_id: source.conversation_id.clone(),
         message_id: message.message.id.clone(),
         character_id: harness.character_id.to_string(),
@@ -110,7 +111,7 @@ async fn group_character_copies_replace_known_names_and_keep_current_scene_rules
         )
         .expect("target");
         assert_eq!(target.conversation.title, "Source Group - Ada");
-        assert_eq!(target.conversation.origin_conversation_id, None);
+        assert_eq!(target.conversation.origin_conversation_id.map(|id| id.to_string()), Some(source.conversation_id.clone()));
         let timeline = lettuce_conversations::ConversationReader::timeline_page(
             harness.context.backend().database(),
             target.conversation.id,

@@ -1,4 +1,18 @@
 {
+  "branchSetup": {
+    "groupTitle": "Branch to group chat",
+    "characterTitle": "Branch to another character",
+    "history": "Copies this chat up to the selected message, including its memories.",
+    "sourceLocked": "The current character stays in the group. Choose at least one more.",
+    "defaultName": "{{name}} Branch",
+    "search": "Search characters",
+    "empty": "No characters found",
+    "create": "Create branch",
+    "memberCount_one": "{{count}} character selected",
+    "memberCount_other": "{{count}} characters selected",
+    "changed": "This chat changed. Choose the branch point again.",
+    "chooseAgain": "Choose again"
+  },
   "historyPage": {
     "archivedCharacter": "Restore this character in your library to start a new chat."
   },

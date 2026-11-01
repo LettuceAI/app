@@ -103,6 +103,80 @@ fn copy_persona(
     }
 }
 
+fn preserve_copy_settings(
+    database: &lettuce_database::Database,
+    source: &lettuce_conversations::Conversation,
+    plan: &mut lettuce_conversations::CreateConversationPlan,
+    drafts: &mut Vec<lettuce_conversations::SnapshotArtifactDraft>,
+) -> Result<(), ApiError> {
+    use lettuce_conversations::{ConversationKind, SettingProvenance, SnapshotSelection};
+    let (persona, memory, scene) = match &source.kind {
+        ConversationKind::Direct(details) => (&details.persona, &details.memory, &details.scene),
+        ConversationKind::Group(details) => (&details.group.persona, &details.group.memory, &details.group.scene),
+    };
+    let settings = plan.current_settings.get_or_insert_with(|| {
+        lettuce_conversations::CurrentConversationSettings::inherited(lettuce_types::Revision::INITIAL)
+    });
+    settings.persona = match persona {
+        SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) => Some(value.clone()),
+        SnapshotSelection::Disabled => None,
+    };
+    settings.persona_provenance = if settings.persona.is_some() { SettingProvenance::CurrentOverride } else { SettingProvenance::Disabled };
+    settings.memory = match memory {
+        SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) => Some(value.clone()),
+        SnapshotSelection::Disabled => None,
+    };
+    settings.memory_provenance = if settings.memory.is_some() { SettingProvenance::CurrentOverride } else { SettingProvenance::Disabled };
+    if matches!(plan.kind, ConversationKind::Direct(_)) {
+        settings.scene = match scene {
+            SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) => Some(value.clone()),
+            SnapshotSelection::Disabled => None,
+        };
+        settings.scene_provenance = if settings.scene.is_some() { SettingProvenance::CurrentOverride } else { SettingProvenance::Disabled };
+    }
+    if let Some(current) = &source.current_settings {
+        settings.author_note = current.author_note.clone();
+        settings.author_note_provenance = current.author_note_provenance;
+        settings.model_override = current.model_override.clone();
+        settings.model_provenance = current.model_provenance;
+        settings.model_settings = current.model_settings.clone();
+        settings.lorebooks = current.lorebooks.clone();
+        settings.lorebooks_provenance = current.lorebooks_provenance;
+        if current.background.is_some() { settings.background = current.background.clone(); }
+        if current.persona_provenance != SettingProvenance::LaunchInherited {
+            settings.persona = current.persona.clone();
+            settings.persona_provenance = current.persona_provenance;
+        }
+        if current.memory_provenance != SettingProvenance::LaunchInherited {
+            settings.memory = current.memory.clone();
+            settings.memory_provenance = current.memory_provenance;
+        }
+        if matches!(plan.kind, ConversationKind::Direct(_)) && current.scene_provenance != SettingProvenance::LaunchInherited {
+            settings.scene = current.scene.clone();
+            settings.scene_provenance = current.scene_provenance;
+        }
+        if std::mem::discriminant(&source.kind) == std::mem::discriminant(&plan.kind) {
+            settings.prompt = current.prompt.clone();
+            settings.prompt_provenance = current.prompt_provenance;
+        }
+    }
+    if let Some(memory) = &mut settings.memory {
+        use lettuce_settings::GlobalSettingsStore;
+        let global = GlobalSettingsStore::load(database).map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+        let policy = if matches!(plan.kind, ConversationKind::Group(_)) {
+            global.settings.effective_group_dynamic_memory()
+        } else { &global.settings.dynamic_memory };
+        memory.dynamic_policy = crate::launch::planner::dynamic_memory_policy_snapshot(memory.mode, policy);
+    }
+    for reference in lettuce_conversations::conversation_launch_snapshot_references(plan) {
+        if !drafts.iter().any(|draft| draft.artifact_id == reference.artifact_id) {
+            drafts.push(database.copy_snapshot_draft(&reference)
+                .map_err(|_| api_error(ApiErrorCode::Unavailable, "a source settings snapshot is unavailable"))?);
+        }
+    }
+    Ok(())
+}
+
 fn copy_receipt(
     context: &ApiContext,
     command: &str,
@@ -189,6 +263,9 @@ async fn copy_character(
             let database = context.backend().database();
             let source = ConversationReader::get(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?;
+            if request.expected_revision.is_some_and(|revision| revision != source.conversation.revision.get()) {
+                return Err(api_error(ApiErrorCode::Conflict, "the source conversation changed"));
+            }
             if group_source != matches!(source.conversation.kind, ConversationKind::Group(_)) {
                 return Err(api_error(
                     ApiErrorCode::InvalidInput,
@@ -259,7 +336,7 @@ async fn copy_character(
                 request.client_operation_id
             ))
             .map_err(|_| api_error(ApiErrorCode::InvalidInput, "the operation key is invalid"))?;
-            let persona = copy_persona(&source.conversation);
+            let persona = if whole { copy_persona(&source.conversation) } else { crate::LaunchSelection::Disabled };
             let launch_request = crate::DirectConversationLaunchRequest {
                 format_version: crate::DIRECT_LAUNCH_REQUEST_FORMAT_V1,
                 title,
@@ -368,6 +445,7 @@ async fn copy_character(
                     })
                     .background = Some(lettuce_conversations::ConversationBackground::Hidden);
             }
+            if !whole { preserve_copy_settings(database, &source.conversation, &mut plan, &mut drafts)?; }
             let launch = lettuce_conversations::PreparedConversationLaunch::new(plan, drafts)
                 .map_err(|_| {
                     api_error(
@@ -462,7 +540,7 @@ async fn copy_character(
                                     through_message_id: message_id,
                                     kind,
                                     companion,
-                                    initialize_companion: group_source,
+                                    initialize_companion: group_source || matches!(&source.conversation.kind, ConversationKind::Direct(details) if details.character.source_id != character_id),
                                     new_group: None,
                                 },
                                 now,
@@ -489,6 +567,7 @@ pub async fn conversation_branch_to_character(
             conversation_id: request.conversation_id,
             message_id: String::new(),
             character_id: request.character_id,
+            expected_revision: None,
             client_operation_id: request.client_operation_id,
         },
         true,
@@ -552,6 +631,9 @@ pub async fn conversation_branch_direct_to_group(
             let database = context.backend().database();
             let source = ConversationReader::get(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?;
+            if request.expected_revision.is_some_and(|revision| revision != source.conversation.revision.get()) {
+                return Err(api_error(ApiErrorCode::Conflict, "the source conversation changed"));
+            }
             let ConversationKind::Direct(details) = &source.conversation.kind else {
                 return Err(api_error(
                     ApiErrorCode::InvalidInput,
@@ -608,8 +690,15 @@ pub async fn conversation_branch_direct_to_group(
                 now,
             )
             .map_err(|error| api_error(ApiErrorCode::InvalidInput, error.to_string()))?;
-            group.chat_mode = lettuce_characters::ChatMode::Roleplay;
-            let persona = copy_persona(&source.conversation);
+            group.chat_mode = match request.chat_mode.unwrap_or(dto::GroupChatMode::Roleplay) {
+                dto::GroupChatMode::Conversation => lettuce_characters::ChatMode::Conversation,
+                dto::GroupChatMode::Roleplay => lettuce_characters::ChatMode::Roleplay,
+            };
+            if let Some(title) = &request.title {
+                let title = title.trim();
+                if !title.is_empty() { group.name = title.to_owned(); }
+            }
+            let persona = crate::LaunchSelection::Disabled;
             group.persona = match persona {
                 crate::LaunchSelection::Disabled => lettuce_characters::Selection::Disabled,
                 crate::LaunchSelection::Explicit(id) => lettuce_characters::Selection::Explicit(id),
@@ -632,62 +721,44 @@ pub async fn conversation_branch_direct_to_group(
                 }
                 _ => character.character.defaults.memory_policy,
             };
-            let selected_scene_id = source
-                .conversation
-                .current_settings
-                .as_ref()
-                .and_then(|settings| settings.scene.as_ref())
-                .map(|scene| scene.source_id)
-                .or(match &details.scene {
-                    SnapshotSelection::Explicit(scene) | SnapshotSelection::Inherited(scene) => {
-                        Some(scene.source_id)
-                    }
+            let selected_scene = match source.conversation.current_settings.as_ref() {
+                Some(settings) if settings.scene_provenance == SettingProvenance::Disabled => None,
+                Some(settings) if settings.scene_provenance == SettingProvenance::CurrentOverride => settings.scene.as_ref(),
+                _ => match &details.scene {
+                    SnapshotSelection::Explicit(scene) | SnapshotSelection::Inherited(scene) => Some(scene),
                     SnapshotSelection::Disabled => None,
-                })
-                .or(character.character.defaults.default_scene_id);
-            let selected_scene = selected_scene_id
-                .map(|id| {
-                    character
-                        .scenes
-                        .iter()
-                        .find(|scene| scene.id == id)
-                        .ok_or_else(|| {
-                            api_error(
-                                ApiErrorCode::NotFound,
-                                "the owner's selected scene was not found",
-                            )
-                        })
-                })
-                .transpose()?;
-            let scene_text = selected_scene
-                .and_then(|scene| {
-                    crate::launch::policy::resolve_scene_text(scene, &character.variants)
-                })
-                .map(|text| text.trim().to_owned())
-                .filter(|text| !text.is_empty());
-            let starting_scene = scene_text
-                .map(|text| {
-                    Scene::new(
-                        lettuce_types::SceneId::new(),
-                        SceneOwner::Group(group_id),
-                        0,
-                        SceneDocumentV1 {
-                            format_version: 1,
-                            parts: vec![ScenePart::Text { text }],
-                        },
-                        now,
-                    )
-                    .map(|mut scene| {
-                        scene.direction =
-                            selected_scene.and_then(|source| source.direction.clone());
-                        GroupStartingScene {
-                            scene,
-                            variants: Vec::new(),
-                        }
-                    })
-                    .map_err(|error| api_error(ApiErrorCode::InvalidInput, error.to_string()))
-                })
-                .transpose()?;
+                },
+            };
+            let starting_scene = selected_scene
+                .filter(|_| group.chat_mode == lettuce_characters::ChatMode::Roleplay)
+                .map(|snapshot| {
+                    use lettuce_conversations::{ConversationSnapshotMaterializer, ScenePartV1, SceneAssetSlotV1};
+                    let body = database.materialize_scene(conversation_id, snapshot)
+                        .map_err(|_| api_error(ApiErrorCode::Unavailable, "the source scene snapshot is unavailable"))?;
+                    let variant = body.selected_variant_id.and_then(|id| body.variants.iter().find(|variant| variant.variant_id == id));
+                    let parts = variant.map_or(&body.content, |variant| &variant.content);
+                    let links: std::collections::HashMap<_, _> = body.assets.iter()
+                        .map(|asset| (asset.id, lettuce_types::SceneAssetLinkId::new())).collect();
+                    let parts = parts.iter().map(|part| match part {
+                        ScenePartV1::Text { text } => Ok(ScenePart::Text { text: text.clone() }),
+                        ScenePartV1::InlineAsset { link_id } => links.get(link_id).copied()
+                            .map(|link_id| ScenePart::InlineAsset { link_id })
+                            .ok_or_else(|| api_error(ApiErrorCode::Internal, "a source scene asset is missing")),
+                    }).collect::<Result<Vec<_>, ApiError>>()?;
+                    let scene = Scene {
+                        id: lettuce_types::SceneId::new(), owner: SceneOwner::Group(group_id),
+                        status: lettuce_characters::LifecycleStatus::Active, ordinal: 0,
+                        content: SceneDocumentV1 { format_version: 1, parts },
+                        direction: variant.and_then(|variant| variant.direction.clone()).or(body.direction.clone()),
+                        selected_variant_id: None,
+                        assets: body.assets.iter().map(|asset| lettuce_characters::SceneAssetLink {
+                            id: links[&asset.id], asset_id: asset.asset_id, ordinal: asset.ordinal,
+                            slot: match asset.slot { SceneAssetSlotV1::Background => lettuce_characters::SceneAssetSlot::Background, SceneAssetSlotV1::Inline => lettuce_characters::SceneAssetSlot::Inline },
+                        }).collect(),
+                        revision: lettuce_types::Revision::INITIAL, created_at: now, updated_at: now,
+                    };
+                    Ok::<_, ApiError>(GroupStartingScene { scene, variants: Vec::new() })
+                }).transpose()?;
             group.starting_scene_id = starting_scene.as_ref().map(|scene| scene.scene.id);
             let session_background = source
                 .conversation
@@ -702,8 +773,8 @@ pub async fn conversation_branch_direct_to_group(
                 });
             group.background_asset_id = session_background
                 .or_else(|| {
-                    selected_scene.and_then(|scene| {
-                        scene
+                    starting_scene.as_ref().and_then(|starting| {
+                        starting.scene
                             .assets
                             .iter()
                             .find(|asset| {
@@ -753,8 +824,10 @@ pub async fn conversation_branch_direct_to_group(
                     now,
                 )
                 .map_err(IntoApiError::into_api_error)?;
-            let (mut plan, drafts) = launch.into_parts();
+            let (mut plan, mut drafts) = launch.into_parts();
             plan.operation = operation.clone();
+            preserve_copy_settings(database, &source.conversation, &mut plan, &mut drafts)?;
+            plan.initial_timeline.entries.clear();
             let launch = lettuce_conversations::PreparedConversationLaunch::new(plan, drafts)
                 .map_err(|_| {
                     api_error(ApiErrorCode::InvalidInput, "the group launch is invalid")

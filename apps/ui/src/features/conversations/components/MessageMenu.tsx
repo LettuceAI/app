@@ -28,6 +28,8 @@ export interface MessageMenuProps {
   onPin: () => void;
   onRewind: () => void;
   onBranch?: () => void;
+  onBranchCharacter?: () => void;
+  onBranchGroup?: () => void;
   groupBranch?: boolean;
   onDelete: () => void;
 }
@@ -90,7 +92,7 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, groupBranch = false, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
@@ -155,6 +157,8 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
               onClick={onBranch}
             />
           )}
+          {!scene && onBranchCharacter && <ListRowButton icon={<GitBranch size={icon.lg} />} title={t("branchSetup.characterTitle")} disabled={busy} onClick={onBranchCharacter} />}
+          {!scene && onBranchGroup && <ListRowButton icon={<GitBranch size={icon.lg} />} title={t("branchSetup.groupTitle")} disabled={busy} onClick={onBranchGroup} />}
           {!scene && (
             <ListRowButton
               icon={<Trash2 size={icon.lg} />}
