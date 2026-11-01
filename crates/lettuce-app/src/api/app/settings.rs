@@ -506,6 +506,7 @@ pub(in crate::api) fn validate_sampler_finite(
         [
             value.llama_cpp.sampler.min_p,
             value.llama_cpp.sampler.typical_p,
+            value.llama_cpp.sampler.top_n_sigma,
             value.llama_cpp.sampler.repeat_penalty,
             value.llama_cpp.sampler.dry_multiplier,
             value.llama_cpp.sampler.dry_base,

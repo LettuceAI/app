@@ -343,6 +343,7 @@ pub enum SettingsLlamaSamplerProfile {
 pub enum SettingsLlamaSamplerStage {
     Penalties,
     Grammar,
+    TopNSigma,
     TopK,
     TopP,
     MinP,
@@ -361,6 +362,7 @@ pub struct SettingsLlamaSamplerSettings {
     pub order: Option<Vec<SettingsLlamaSamplerStage>>,
     pub min_p: Option<f64>,
     pub typical_p: Option<f64>,
+    pub top_n_sigma: Option<f64>,
     pub repeat_penalty: Option<f64>,
     pub n_pen_range: Option<i32>,
     pub dry_multiplier: Option<f64>,

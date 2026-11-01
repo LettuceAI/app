@@ -110,6 +110,7 @@ pub fn resolve_llama_settings(
             order: pick!(sampler.order),
             min_p: pick!(sampler.min_p),
             typical_p: pick!(sampler.typical_p),
+            top_n_sigma: pick!(sampler.top_n_sigma),
             repeat_penalty: pick!(sampler.repeat_penalty),
             n_pen_range: pick!(sampler.n_pen_range),
             dry_multiplier: pick!(sampler.dry_multiplier),
@@ -147,6 +148,7 @@ pub fn resolve_llama_settings(
         ]),
         min_p: Some(0.0),
         typical_p: Some(0.0),
+        top_n_sigma: None,
         repeat_penalty: Some(1.0),
         n_pen_range: Some(-1),
         dry_multiplier: Some(match memory {
@@ -200,6 +202,32 @@ mod tests {
         assert_eq!(resolve(Some(false), Some(true), None), Some(false));
         assert_eq!(resolve(None, Some(true), None), Some(true));
         assert_eq!(resolve(None, None, Some(true)), None);
+    }
+
+    #[test]
+    fn top_n_sigma_inherits_and_can_disable_a_parent_threshold() {
+        let mut input = LlamaResolutionInput::default();
+        let mut model = LlamaCppSettings::default();
+        input.global.sampler.top_n_sigma = Some(2.0);
+        assert_eq!(
+            resolve_llama_settings(&model, &input).settings.sampler.top_n_sigma,
+            Some(2.0)
+        );
+        model.sampler.top_n_sigma = Some(1.5);
+        assert_eq!(
+            resolve_llama_settings(&model, &input).settings.sampler.top_n_sigma,
+            Some(1.5)
+        );
+        input.session.sampler.top_n_sigma = Some(-1.0);
+        assert_eq!(
+            resolve_llama_settings(&model, &input).settings.sampler.top_n_sigma,
+            Some(-1.0)
+        );
+        input.memory_sampler = Some(LlamaMemorySampler::Direct);
+        assert_eq!(
+            resolve_llama_settings(&model, &input).settings.sampler.top_n_sigma,
+            None
+        );
     }
 
     #[test]

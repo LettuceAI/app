@@ -78,6 +78,13 @@ export const editorFields = {
     "max": 1,
     "step": 0.01
   },
+  "llamaTopNSigma": {
+    "store": "sampler",
+    "key": "top_n_sigma",
+    "type": "number",
+    "min": -1,
+    "step": 0.1
+  },
   "llamaTypicalP": {
     "store": "sampler",
     "key": "typical_p",
@@ -863,6 +870,7 @@ export const editorFields = {
     "options": [
       "penalties",
       "grammar",
+      "top_n_sigma",
       "top_k",
       "top_p",
       "min_p",

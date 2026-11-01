@@ -65,6 +65,7 @@ pub enum LlamaSamplerProfile {
 pub enum LlamaSamplerStage {
     Penalties,
     Grammar,
+    TopNSigma,
     TopK,
     TopP,
     MinP,
@@ -88,6 +89,9 @@ pub struct LlamaSamplerSettings {
     pub min_p: Option<f64>,
     #[serde(default)]
     pub typical_p: Option<f64>,
+    /// Logit standard deviation threshold; values at or below zero disable it.
+    #[serde(default)]
+    pub top_n_sigma: Option<f64>,
     #[serde(default)]
     pub repeat_penalty: Option<f64>,
     #[serde(default)]
@@ -136,6 +140,7 @@ impl LlamaSamplerSettings {
     pub fn validate(&self) -> Result<(), ParameterValidationError> {
         check_f64("llama_min_p", self.min_p, 0.0, 1.0)?;
         check_f64("llama_typical_p", self.typical_p, 0.0, 1.0)?;
+        check_f64("llama_top_n_sigma", self.top_n_sigma, -1.0, f64::from(f32::MAX))?;
         check_f64("llama_repeat_penalty", self.repeat_penalty, 0.0, 2.0)?;
         check_i32("llama_n_pen_range", self.n_pen_range, -1, 262_144)?;
         check_f64("llama_dry_multiplier", self.dry_multiplier, 0.0, 10.0)?;
@@ -805,6 +810,33 @@ pub const UNPICKED_LOCAL_MODEL_FILE: &str = "unpicked-local-model-file";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn top_n_sigma_accepts_disabled_values_and_rejects_invalid_thresholds() {
+        for value in [-1.0, 0.0, 1.0, 2.5, f64::from(f32::MAX)] {
+            let sampler = LlamaSamplerSettings {
+                top_n_sigma: Some(value),
+                ..Default::default()
+            };
+            assert!(sampler.validate().is_ok(), "{value}");
+            assert!(sampler.overrides_memory_sampler());
+            let saved = serde_json::to_value(&sampler).expect("serialize sampler");
+            assert_eq!(
+                serde_json::from_value::<LlamaSamplerSettings>(saved).expect("load sampler"),
+                sampler
+            );
+        }
+        for value in [-2.0, f64::NAN, f64::INFINITY, f64::MAX] {
+            let sampler = LlamaSamplerSettings {
+                top_n_sigma: Some(value),
+                ..Default::default()
+            };
+            assert_eq!(
+                sampler.validate(),
+                Err(ParameterValidationError::InvalidValue("llama_top_n_sigma"))
+            );
+        }
+    }
 
     #[test]
     fn dflash_settings_keep_the_legacy_editor_bounds() {

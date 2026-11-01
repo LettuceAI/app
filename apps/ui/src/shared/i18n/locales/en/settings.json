@@ -715,6 +715,7 @@
       "llamaSamplerProfile": "Profile",
       "llamaMinP": "Min P",
       "llamaTypicalP": "Typical P",
+      "llamaTopNSigma": "Top-n-sigma",
       "llamaSeed": "Seed",
       "llamaRepeatPenalty": "Repeat penalty",
       "llamaNPenRange": "Penalty range",
@@ -825,6 +826,7 @@
     "hints": {
       "temperature": "Higher is more varied",
       "llamaSamplerProfile": "A starting point the fields below adjust",
+      "llamaTopNSigma": "Logit standard deviation threshold; -1 turns it off",
       "llamaNPenRange": "-1 for the whole context",
       "llamaDryMultiplier": "0 turns DRY off",
       "llamaDryPenaltyLastN": "-1 for the whole context",
@@ -1002,6 +1004,7 @@
       "samplerOrder": {
         "penalties": "Penalties",
         "grammar": "Grammar",
+        "top_n_sigma": "Top-n-sigma",
         "top_k": "Top K",
         "top_p": "Top P",
         "min_p": "Min P",

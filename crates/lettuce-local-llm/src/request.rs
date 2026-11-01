@@ -65,6 +65,7 @@ pub struct LlamaSamplingInput {
     pub top_k: Option<u32>,
     pub min_p: Option<f64>,
     pub typical_p: Option<f64>,
+    pub top_n_sigma: Option<f64>,
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub repeat_penalty: Option<f64>,
@@ -129,6 +130,7 @@ pub struct ResolvedSampling {
     pub top_k: Option<u32>,
     pub min_p: Option<f64>,
     pub typical_p: Option<f64>,
+    pub top_n_sigma: Option<f64>,
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub repeat_penalty: Option<f64>,
@@ -319,6 +321,9 @@ impl LlamaGenerationRequest {
             top_k: input.top_k.filter(|value| *value > 0).or(defaults.top_k),
             min_p: input.min_p.or(defaults.min_p),
             typical_p: input.typical_p.or(defaults.typical_p),
+            top_n_sigma: input.top_n_sigma.filter(|value| {
+                value.is_finite() && (-1.0..=f64::from(f32::MAX)).contains(value)
+            }),
             frequency_penalty: input.frequency_penalty.or(defaults.frequency_penalty),
             presence_penalty: input.presence_penalty.or(defaults.presence_penalty),
             repeat_penalty: input

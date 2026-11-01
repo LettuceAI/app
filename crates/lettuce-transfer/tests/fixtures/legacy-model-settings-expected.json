@@ -55,6 +55,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -160,6 +161,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -265,6 +267,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -371,6 +374,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": 0.2,
         "xtc_threshold": null
@@ -480,6 +484,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -585,6 +590,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -690,6 +696,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -795,6 +802,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -900,6 +908,7 @@
         "profile": null,
         "repeat_penalty": null,
         "seed": null,
+        "top_n_sigma": null,
         "typical_p": null,
         "xtc_probability": null,
         "xtc_threshold": null
@@ -1049,6 +1058,7 @@
       "profile": "creative",
       "repeat_penalty": null,
       "seed": 42,
+      "top_n_sigma": null,
       "typical_p": null,
       "xtc_probability": null,
       "xtc_threshold": null

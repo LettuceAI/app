@@ -2897,6 +2897,7 @@ impl Run<'_> {
             top_k: self.sampling.top_k,
             min_p: self.sampling.min_p,
             typical_p: self.sampling.typical_p,
+            top_n_sigma: self.sampling.top_n_sigma,
             repeat_penalty: self.sampling.repeat_penalty,
             n_pen_range: self.sampling.n_pen_range,
             context_size: ctx_size,

@@ -8320,6 +8320,7 @@ export type SettingsLlamaSamplerSettings = {
 	order: SettingsLlamaSamplerStage[] | null,
 	min_p: number | null,
 	typical_p: number | null,
+	top_n_sigma: number | null,
 	repeat_penalty: number | null,
 	n_pen_range: number | null,
 	dry_multiplier: number | null,
@@ -8334,7 +8335,7 @@ export type SettingsLlamaSamplerSettings = {
 	adaptive_decay: number | null,
 };
 
-export type SettingsLlamaSamplerStage = "penalties" | "grammar" | "top_k" | "top_p" | "min_p" | "dry" | "typical" | "xtc" | "temp" | "adaptive_p";
+export type SettingsLlamaSamplerStage = "penalties" | "grammar" | "top_n_sigma" | "top_k" | "top_p" | "min_p" | "dry" | "typical" | "xtc" | "temp" | "adaptive_p";
 
 export type SettingsLorebookEntryGeneratorSettings = {
 	model_profile_id: string | null,

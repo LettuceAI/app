@@ -78,7 +78,7 @@ Gemma 4 forced reasoning adds `<|think|>\n` at the start of the first system mes
 
 ## Sampler
 
-`sampler` builds the chain: a profile (balanced, creative, stable, reasoning) and its defaults, the stage order (default or the user's, deduplicated; an explicit empty list means no stages), penalties only when a penalty is set, DRY, XTC, typical and min-p parameters, the template's lazy grammar forced to the front, then `dist` (seeded, random seed when none) above zero temperature, or `greedy`. `adaptive_p` is the tenth default stage; its position in the order is ignored, and when the order includes it and the target is in (0, 1] it replaces the final `dist` or `greedy` step with `adaptive_p(target, decay or 0.95 clamped to 0..0.99, seed)`.
+`sampler` builds the chain: a profile (balanced, creative, stable, reasoning) and its defaults, the stage order (default or the user's, deduplicated; an explicit empty list means no stages), penalties only when a penalty is set, DRY, XTC, top-n-sigma, typical and min-p parameters, the template's lazy grammar forced to the front, then `dist` (seeded, random seed when none) above zero temperature, or `greedy`. `top_n_sigma` runs before top-k by default when its threshold is positive; unset or nonpositive thresholds disable it. `adaptive_p` is the final default stage; its position in the order is ignored, and when the order includes it and the target is in (0, 1] it replaces the final `dist` or `greedy` step with `adaptive_p(target, decay or 0.95 clamped to 0..0.99, seed)`.
 
 DRY sequence breakers are decoded once (`decode_llama_sequence_breaker`), so a `\n` breaker survives.
 

@@ -100,7 +100,7 @@ fn model_profile_round_trips_typed_parameters_and_portable_runtime_settings() {
             parameters:uec3::ModelParameters {chat:Default::default(),features:Default::default()},
             capabilities:Default::default(),llama_cpp:Default::default(),stable_diffusion:Default::default()
         }).expect("wire capabilities")["capabilities"],
-        "llamaCpp": {}, "stableDiffusion": {}
+        "llamaCpp": {"sampler": {"topNSigma": 2.0, "order": ["top_n_sigma", "temp"]}}, "stableDiffusion": {}
     });
     let read = uec3::read(&source.to_string(), |_, _, _| panic!("no assets")).expect("model");
     assert!(read.warnings.is_empty());
@@ -119,6 +119,8 @@ fn model_profile_round_trips_typed_parameters_and_portable_runtime_settings() {
         output["entity"]["capabilities"],
         source["entity"]["capabilities"]
     );
+    assert_eq!(output["entity"]["llamaCpp"]["sampler"]["topNSigma"], json!(2.0));
+    assert_eq!(output["entity"]["llamaCpp"]["sampler"]["order"], json!(["top_n_sigma", "temp"]));
     assert_eq!(output["entity"]["provider"], source["entity"]["provider"]);
     let again = uec3::read(&output.to_string(), |_, _, _| panic!("no assets")).expect("again");
     assert_eq!(again.document, read.document);

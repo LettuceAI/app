@@ -33,6 +33,25 @@ async function click(name: string | RegExp) { fireEvent.click(await screen.findB
 afterEach(cleanup);
 
 describe("model editor page", () => {
+  it.each([false, true])("saves top-n-sigma, its order, and an explicit disabled threshold (phone: %s)", async (phone) => {
+    let saved: ModelSaveRequest | undefined;
+    await mount(undefined, {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "llamacpp" }] }),
+      modelGet: () => ({ status: "ok", data: { ...model, config: { ...full, llama_cpp: { sampler: { order: ["temp"] } } } } }),
+      modelSave: (request) => { saved = request; return { status: "ok", data: { ...model, config: request.model.config } }; },
+    }, phone);
+    await click(/^Generation/);
+    const threshold = await screen.findByRole("spinbutton", { name: "Top-n-sigma" });
+    expect(threshold.getAttribute("placeholder")).toBe("-1");
+    fireEvent.change(threshold, { target: { value: "2.5" } });
+    await click("Top-n-sigma");
+    await click("Move Top-n-sigma up");
+    await click("Save");
+    await waitFor(() => expect(saved?.model.config).toMatchObject({ llama_cpp: { sampler: { top_n_sigma: 2.5, order: ["top_n_sigma", "temp"] } } }));
+    fireEvent.change(threshold, { target: { value: "-1" } });
+    await click("Save");
+    await waitFor(() => expect(saved?.model.config).toMatchObject({ llama_cpp: { sampler: { top_n_sigma: -1 } } }));
+  });
   it.each([false, true])("shows the save bar only for changes and hides it after reverting, discarding or saving (phone: %s)", async (phone) => {
     const save = vi.fn<NonNullable<MockCallHandlers["modelSave"]>>((request) => ({ status: "ok", data: { ...model, display_name: request.model.display_name, config: request.model.config } }));
     await mount(undefined, { modelSave: save }, phone);

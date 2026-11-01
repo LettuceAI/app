@@ -1,6 +1,6 @@
 //! The llama.cpp sampler chain: the named profiles and their defaults, the
 //! stage order (default or the user's, deduplicated, an explicit empty list
-//! meaning no stages), the penalties/DRY/XTC/typical/min-p parameters, the
+//! meaning no stages), the penalties/DRY/XTC/typical/min-p/top-n-sigma parameters, the
 //! template's (lazy) grammar forced to the front, and last adaptive-p when
 //! the order asks for it and a target is set, else `dist` when the
 //! temperature is positive, `greedy` otherwise.
@@ -19,9 +19,10 @@ pub use crate::sampler_profile::{
 #[error("{0}")]
 pub struct SamplerError(pub String);
 
-pub const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 10] = [
+pub const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 11] = [
     "penalties",
     "grammar",
+    "top_n_sigma",
     "top_k",
     "top_p",
     "min_p",
@@ -41,6 +42,7 @@ pub struct ResolvedSamplerConfig {
     pub top_k: Option<u32>,
     pub min_p: Option<f64>,
     pub typical_p: Option<f64>,
+    pub top_n_sigma: Option<f64>,
     pub repeat_penalty: Option<f64>,
     pub n_pen_range: Option<i32>,
     pub context_size: u32,
@@ -125,10 +127,17 @@ fn anchor_pattern(value: &str) -> String {
     anchored
 }
 
+fn top_n_sigma_sampler(threshold: Option<f64>) -> Option<LlamaSampler> {
+    threshold
+        .filter(|n| n.is_finite() && *n > 0.0 && *n <= f64::from(f32::MAX))
+        .map(|n| LlamaSampler::top_n_sigma(n as f32))
+}
+
 fn normalize_sampler_stage(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
         "penalties" => Some("penalties"),
         "grammar" => Some("grammar"),
+        "top_n_sigma" | "top-n-sigma" | "top_nsigma" => Some("top_n_sigma"),
         "top_k" | "topk" => Some("top_k"),
         "top_p" | "topp" => Some("top_p"),
         "min_p" | "minp" => Some("min_p"),
@@ -289,6 +298,8 @@ pub fn build_sampler(
         );
     }
 
+    let mut top_n_sigma_sampler = top_n_sigma_sampler(config.top_n_sigma);
+
     let k = config.top_k.unwrap_or(40) as i32;
     active_params.insert("top_k".to_string(), json!(k));
     let mut top_k_sampler = Some(LlamaSampler::top_k(k));
@@ -380,6 +391,13 @@ pub fn build_sampler(
                     samplers.push(sampler);
                 }
             }
+            "top_n_sigma" => {
+                if let Some(sampler) = top_n_sigma_sampler.take() {
+                    order.push("top_n_sigma");
+                    active_params.insert("top_n_sigma".to_string(), json!(config.top_n_sigma));
+                    samplers.push(sampler);
+                }
+            }
             "top_k" => {
                 if let Some(sampler) = top_k_sampler.take() {
                     order.push("top_k");
@@ -464,6 +482,39 @@ pub fn build_sampler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn top_n_sigma_filters_logits_and_disabled_values_skip_the_stage() {
+        use llama_cpp_2::token::{
+            LlamaToken, data::LlamaTokenData, data_array::LlamaTokenDataArray,
+        };
+
+        for threshold in [None, Some(-1.0), Some(0.0), Some(f64::NAN), Some(f64::MAX)] {
+            assert!(top_n_sigma_sampler(threshold).is_none());
+        }
+        let mut sampler = top_n_sigma_sampler(Some(1.0)).expect("enabled sampler");
+        let mut candidates = LlamaTokenDataArray::new(
+            vec![
+                LlamaTokenData::new(LlamaToken(0), 0.0, 0.0),
+                LlamaTokenData::new(LlamaToken(1), 1.0, 0.0),
+                LlamaTokenData::new(LlamaToken(2), 2.0, 0.0),
+            ],
+            false,
+        );
+        candidates.apply_sampler(&mut sampler);
+        let logits: Vec<_> = candidates.data.iter().map(|token| token.logit()).collect();
+        assert_eq!(logits, vec![f32::NEG_INFINITY, f32::NEG_INFINITY, 2.0]);
+        let stages = vec![
+            "top-n-sigma".to_owned(),
+            "top_n_sigma".to_owned(),
+            "temp".to_owned(),
+        ];
+        assert_eq!(normalize_sampler_order(Some(&stages)), vec!["top_n_sigma", "temp"]);
+        let order = normalize_sampler_order(None);
+        let sigma = order.iter().position(|s| *s == "top_n_sigma").expect("sigma stage");
+        let top_k = order.iter().position(|s| *s == "top_k").expect("top-k stage");
+        assert!(sigma < top_k);
+    }
 
     #[test]
     fn sampler_order_preserves_explicit_subsets() {

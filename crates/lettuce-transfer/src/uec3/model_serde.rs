@@ -93,6 +93,7 @@ pub(super) struct WireOllamaOptionOverrides {
 pub(super) struct WireLlamaSamplerSettings {
     pub profile: Option<LlamaSamplerProfile>,
     pub order: Option<Vec<LlamaSamplerStage>>,
+    pub top_n_sigma: Option<f64>,
     pub min_p: Option<f64>,
     pub typical_p: Option<f64>,
     pub repeat_penalty: Option<f64>,
@@ -298,6 +299,7 @@ impl Default for WireLlamaSamplerSettings {
         Self {
             profile: value.profile,
             order: value.order,
+            top_n_sigma: value.top_n_sigma,
             min_p: value.min_p,
             typical_p: value.typical_p,
             repeat_penalty: value.repeat_penalty,

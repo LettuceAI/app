@@ -397,6 +397,7 @@ fn sampling(
                     match stage {
                         LlamaSamplerStage::Penalties => "penalties",
                         LlamaSamplerStage::Grammar => "grammar",
+                        LlamaSamplerStage::TopNSigma => "top_n_sigma",
                         LlamaSamplerStage::TopK => "top_k",
                         LlamaSamplerStage::TopP => "top_p",
                         LlamaSamplerStage::MinP => "min_p",
@@ -415,6 +416,7 @@ fn sampling(
         top_k: parameters.top_k.filter(|value| *value > 0),
         min_p: sampler.min_p,
         typical_p: sampler.typical_p,
+        top_n_sigma: sampler.top_n_sigma,
         frequency_penalty: parameters.frequency_penalty,
         presence_penalty: parameters.presence_penalty,
         repeat_penalty: sampler.repeat_penalty,
@@ -873,7 +875,12 @@ mod tests {
             gpu_distribution_mode: Some(LlamaGpuDistributionMode::Manual),
             kv_placement: Some(LlamaKvPlacement::SystemRam),
             sampler: LlamaSamplerSettings {
-                order: Some(vec![LlamaSamplerStage::TopK, LlamaSamplerStage::Temp]),
+                order: Some(vec![
+                    LlamaSamplerStage::TopNSigma,
+                    LlamaSamplerStage::TopK,
+                    LlamaSamplerStage::Temp,
+                ]),
+                top_n_sigma: Some(2.0),
                 ..LlamaSamplerSettings::default()
             },
             ..LlamaCppSettings::default()
@@ -932,9 +939,15 @@ mod tests {
         );
         assert_eq!(
             generation.sampling.order,
-            Some(vec!["top_k".to_owned(), "temp".to_owned()])
+            Some(vec![
+                "top_n_sigma".to_owned(),
+                "top_k".to_owned(),
+                "temp".to_owned(),
+            ])
         );
         assert_eq!(generation.sampling.top_k, Some(40));
+        assert_eq!(generation.sampling.top_n_sigma, Some(2.0));
+        assert_eq!(generation.resolve_sampling().top_n_sigma, Some(2.0));
 
         inference
             .profile

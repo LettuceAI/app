@@ -35,7 +35,7 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
   if (kind === "local") return [
     section("generation", [
       { fields: common },
-      group("sampler", ["llamaSamplerProfile", "samplerOrder", "llamaMinP", "llamaTypicalP", "llamaSeed"]),
+      group("sampler", ["llamaSamplerProfile", "samplerOrder", "llamaTopNSigma", "llamaMinP", "llamaTypicalP", "llamaSeed"]),
       group("repetition", ["llamaRepeatPenalty", "llamaNPenRange"]),
       group("dry", ["llamaDryMultiplier", "llamaDryBase", "llamaDryAllowedLength", "llamaDryPenaltyLastN", "llamaDrySequenceBreakers"]),
       group("xtc", ["llamaXtcProbability", "llamaXtcThreshold"]),

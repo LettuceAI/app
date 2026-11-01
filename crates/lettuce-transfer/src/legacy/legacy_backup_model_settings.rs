@@ -196,6 +196,7 @@ fn sampler_order(value: &Value) -> Option<Vec<LlamaSamplerStage>> {
 
 fn llama_sampler(reader: &mut Reader<'_>) -> LlamaSamplerSettings {
     LlamaSamplerSettings {
+        top_n_sigma: None,
         profile: reader.choice("llamaSamplerProfile", sampler_profile),
         order: reader.parse("llamaSamplerOrder", sampler_order),
         min_p: reader.f64("llamaMinP", 0.0, 1.0),
