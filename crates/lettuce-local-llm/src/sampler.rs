@@ -492,7 +492,7 @@ mod tests {
         for threshold in [None, Some(-1.0), Some(0.0), Some(f64::NAN), Some(f64::MAX)] {
             assert!(top_n_sigma_sampler(threshold).is_none());
         }
-        let mut sampler = top_n_sigma_sampler(Some(1.0)).expect("enabled sampler");
+        let sampler = top_n_sigma_sampler(Some(1.0)).expect("enabled sampler");
         let mut candidates = LlamaTokenDataArray::new(
             vec![
                 LlamaTokenData::new(LlamaToken(0), 0.0, 0.0),
@@ -501,7 +501,7 @@ mod tests {
             ],
             false,
         );
-        candidates.apply_sampler(&mut sampler);
+        candidates.apply_sampler(&sampler);
         let logits: Vec<_> = candidates.data.iter().map(|token| token.logit()).collect();
         assert_eq!(logits, vec![f32::NEG_INFINITY, f32::NEG_INFINITY, 2.0]);
         let stages = vec![

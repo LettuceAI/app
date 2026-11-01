@@ -35,6 +35,8 @@ pub enum LlamaRuntimeError {
 static SHARED_BACKEND: OnceLock<Arc<LlamaBackend>> = OnceLock::new();
 
 pub fn gguf_tensor_storage(kind: u32) -> Option<(u64, u64)> {
+    // GGUF stores u32, while bindgen's C enum is signed on MSVC and unsigned elsewhere.
+    let kind = llama_cpp_sys_2::ggml_type::try_from(u64::from(kind)).ok()?;
     if kind >= llama_cpp_sys_2::GGML_TYPE_COUNT {
         return None;
     }
@@ -517,5 +519,33 @@ mod real_model_plan {
             plan.estimated_runtime_reserve_bytes,
             plan.effective_vram_budget_bytes
         );
+    }
+}
+
+#[cfg(test)]
+mod tensor_storage_tests {
+    use super::gguf_tensor_storage;
+
+    #[test]
+    fn tensor_storage_reads_float_and_quantized_types() {
+        assert_eq!(gguf_tensor_storage(0), Some((1, 4)));
+        assert_eq!(gguf_tensor_storage(1), Some((1, 2)));
+        assert_eq!(gguf_tensor_storage(2), Some((32, 18)));
+        assert_eq!(gguf_tensor_storage(8), Some((32, 34)));
+    }
+
+    #[test]
+    fn tensor_storage_rejects_out_of_range_types() {
+        let count = u32::try_from(i64::from(llama_cpp_sys_2::GGML_TYPE_COUNT))
+            .expect("GGML type count");
+        for kind in [
+            count,
+            count + 1,
+            i32::MAX as u32,
+            (i32::MAX as u32) + 1,
+            u32::MAX,
+        ] {
+            assert_eq!(gguf_tensor_storage(kind), None, "GGUF tensor type {kind}");
+        }
     }
 }
