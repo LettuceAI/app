@@ -418,6 +418,14 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Một chương mới · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "đang chờ bạn.",
+      description: "Được xây dựng lại từ đầu. Sẵn sàng cho chương tiếp theo của bạn.",
+      action: "Khám phá LettuceAI Next",
+      later: "Tiếp tục dùng phiên bản này",
+    },
     available: {
       title: "Có phiên bản mới",
       description: "v{{latestVersion}} đã có sẵn. Bạn đang dùng v{{currentVersion}}.",

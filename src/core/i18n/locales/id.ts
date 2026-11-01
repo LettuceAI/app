@@ -418,6 +418,14 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Babak baru · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "menantimu.",
+      description: "Dibangun ulang dari awal. Siap untuk babak barumu.",
+      action: "Kenali LettuceAI Next",
+      later: "Tetap gunakan versi ini",
+    },
     available: {
       title: "Versi baru tersedia",
       description: "v{{latestVersion}} tersedia. Anda menggunakan v{{currentVersion}}.",

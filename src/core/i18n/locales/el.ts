@@ -418,6 +418,14 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Ένα νέο κεφάλαιο · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "σε περιμένει.",
+      description: "Ξαναχτισμένο από την αρχή. Έτοιμο για το επόμενο κεφάλαιό σου.",
+      action: "Γνώρισε το LettuceAI Next",
+      later: "Συνέχισε με αυτή την έκδοση",
+    },
     available: {
       title: "Νέα έκδοση διαθέσιμη",
       description: "Η v{{latestVersion}} είναι διαθέσιμη. Χρησιμοποιείτε την v{{currentVersion}}.",

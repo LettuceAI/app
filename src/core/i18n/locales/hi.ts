@@ -418,6 +418,14 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "एक नया अध्याय · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "आपका इंतज़ार कर रहा है।",
+      description: "शुरू से नए सिरे से बनाया गया। आपके अगले अध्याय के लिए तैयार।",
+      action: "LettuceAI Next से मिलें",
+      later: "इसी संस्करण का उपयोग जारी रखें",
+    },
     available: {
       title: "नया संस्करण उपलब्ध है",
       description: "v{{latestVersion}} उपलब्ध है। आप v{{currentVersion}} पर हैं।",

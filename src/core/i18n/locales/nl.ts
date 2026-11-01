@@ -418,6 +418,14 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Een nieuw hoofdstuk · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "wacht op je.",
+      description: "Van de grond af opnieuw gebouwd. Klaar voor jouw volgende hoofdstuk.",
+      action: "Ontdek LettuceAI Next",
+      later: "Deze versie blijven gebruiken",
+    },
     available: {
       title: "Nieuwe versie beschikbaar",
       description: "v{{latestVersion}} is beschikbaar. Je gebruikt v{{currentVersion}}.",

@@ -12,6 +12,7 @@ export type AppUpdateInfo = {
   downloadUrl: string;
   releaseTag: string;
   channel: "dev" | "release";
+  isNextRelease?: boolean;
 };
 
 type GitHubAsset = {
@@ -23,6 +24,7 @@ type GitHubRelease = {
   html_url?: string;
   draft?: boolean;
   prerelease?: boolean;
+  body?: string;
   assets?: GitHubAsset[];
 };
 
@@ -47,7 +49,14 @@ type CandidateRelease = {
   tag: string;
   url: string;
   version: ParsedVersionInfo;
+  isNextRelease: boolean;
 };
+
+export function getAppUpdateDismissKey(update: AppUpdateInfo, platformOs: string): string {
+  return update.isNextRelease
+    ? `app-next-announcement-dismissed:${platformOs}:3.0.0`
+    : `app-update-dismissed:${platformOs}:${update.releaseTag}`;
+}
 
 function isDevBuildVersion(currentVersion: string): boolean {
   const normalized = currentVersion.trim().toLowerCase();
@@ -171,15 +180,15 @@ function hasUsableAsset(release: GitHubRelease, platform: AppPlatform): boolean 
   }
 
   if (platform.os === "windows") {
-    return assetNames.some((name) => /^windows-.*\.zip$/i.test(name));
+    return assetNames.some((name) => /^windows-.*\.zip$/i.test(name) || /\.(exe|msi)$/i.test(name));
   }
 
   if (platform.os === "linux") {
-    return assetNames.some((name) => /^linux-.*\.zip$/i.test(name));
+    return assetNames.some((name) => /^linux-.*\.zip$/i.test(name) || /\.(deb|AppImage)$/i.test(name));
   }
 
   if (platform.os === "macos") {
-    return assetNames.some((name) => /^macos-.*\.(dmg|zip)$/i.test(name));
+    return assetNames.some((name) => /^macos-.*\.zip$/i.test(name) || /\.dmg$/i.test(name));
   }
 
   return false;
@@ -224,11 +233,19 @@ async function fetchMatchingRelease(
 
     for (const release of releases) {
       if (release.draft) continue;
+      const body = typeof release.body === "string" ? release.body : "";
+      if (body.includes("Nrelease!") || body.includes("Ndev!")) continue;
       if (channel === "dev" ? !release.prerelease : release.prerelease) continue;
       if (typeof release.tag_name !== "string" || typeof release.html_url !== "string") continue;
       if (!hasUsableAsset(release, platform)) continue;
 
-      const version = parseReleaseTagVersion(release.tag_name, prefix, channel);
+      // Next uses a unified release tag. Announce it only after the release is ready.
+      const isNextTag = /^(?:v|android-release-|desktop-release-)?3\.0\.0$/.test(release.tag_name);
+      if (isNextTag && !body.includes("ready!")) continue;
+      const isNextRelease = channel === "release" && isNextTag;
+      const version = isNextRelease
+        ? parseReleaseVersion("3.0.0")
+        : parseReleaseTagVersion(release.tag_name, prefix, channel);
       if (!version) continue;
 
       if (!best || compareVersions(version, best.version) > 0) {
@@ -236,6 +253,7 @@ async function fetchMatchingRelease(
           tag: release.tag_name,
           url: release.html_url,
           version,
+          isNextRelease,
         };
       }
     }
@@ -277,5 +295,6 @@ export async function checkForAppUpdate(platform: AppPlatform): Promise<AppUpdat
     ),
     releaseTag: latest.tag,
     channel,
+    isNextRelease: latest.isNextRelease,
   };
 }

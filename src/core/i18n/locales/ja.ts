@@ -418,6 +418,14 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "新たな章へ · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "があなたを待っています。",
+      description: "ゼロから生まれ変わりました。あなたの次の物語へ。",
+      action: "LettuceAI Next を見てみる",
+      later: "このバージョンを使い続ける",
+    },
     available: {
       title: "新しいバージョンがあります",
       description: "v{{latestVersion}} が利用可能です。現在のバージョンは v{{currentVersion}} です。",

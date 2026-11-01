@@ -418,6 +418,14 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Nowy rozdział · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "czeka na Ciebie.",
+      description: "Zbudowany od podstaw. Gotowy na Twój kolejny rozdział.",
+      action: "Poznaj LettuceAI Next",
+      later: "Dalej używaj tej wersji",
+    },
     available: {
       title: "Nowa wersja jest dostępna",
       description: "Dostępna jest wersja v{{latestVersion}}. Używasz v{{currentVersion}}.",

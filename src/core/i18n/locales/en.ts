@@ -424,6 +424,14 @@ export const enMessages = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "A new chapter · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "is waiting for you.",
+      description: "Rebuilt from the ground up. Ready for your next chapter.",
+      action: "Meet LettuceAI Next",
+      later: "Keep using this version",
+    },
     available: {
       title: "New version available",
       description: "v{{latestVersion}} is available. You are on v{{currentVersion}}.",

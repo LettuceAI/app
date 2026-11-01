@@ -418,6 +418,14 @@ export const zhHansMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "全新篇章 · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "正在等你。",
+      description: "从零重构，焕然一新。准备好与你开启下一个篇章。",
+      action: "探索 LettuceAI Next",
+      later: "继续使用当前版本",
+    },
     available: {
       title: "有新版本可用",
       description: "v{{latestVersion}} 已可使用。您当前使用的是 v{{currentVersion}}。",

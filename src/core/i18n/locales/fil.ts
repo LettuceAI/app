@@ -418,6 +418,14 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Isang bagong kabanata · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "ay naghihintay sa iyo.",
+      description: "Muling binuo mula sa simula. Handa para sa susunod mong kabanata.",
+      action: "Kilalanin ang LettuceAI Next",
+      later: "Patuloy na gamitin ang bersyong ito",
+    },
     available: {
       title: "May bagong bersyon",
       description: "Available ang v{{latestVersion}}. Nasa v{{currentVersion}} ka.",
