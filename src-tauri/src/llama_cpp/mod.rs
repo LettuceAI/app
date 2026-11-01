@@ -602,6 +602,23 @@ mod desktop {
         }
     }
 
+    /// Returns true if `prompt` ends with an open Gemma4 reasoning channel, i.e.
+    /// the generation prompt opened `<|channel>thought` without a following
+    /// `<channel|>` close. Newer Gemma4 chat templates open the thought channel
+    /// in their generation prompt whenever thinking is enabled, so the model's
+    /// reply begins mid-thought and never emits the open tag. In that case the
+    /// thinking parser has to start already inside the reasoning block, exactly
+    /// like the forced-reasoning path, or the whole thought leaks into content.
+    fn prompt_opens_reasoning_channel(prompt: &str) -> bool {
+        const OPEN: &str = "<|channel>thought";
+        match prompt.rfind(OPEN) {
+            Some(open_idx) => prompt[open_idx..]
+                .find(GEMMA4_REASONING_CLOSE)
+                .is_none(),
+            None => false,
+        }
+    }
+
     fn parse_local_thinking_options(
         body: &Value,
         messages: &[Value],
@@ -2902,6 +2919,15 @@ mod desktop {
                     format!("forced reasoning prefill appended to prompt: {prefill:?}"),
                 );
             }
+            // The reply begins mid-thought whenever the generation prompt already
+            // opened a reasoning channel — either because we prefilled it for
+            // forced Gemma4 reasoning, or because the chat template itself opens
+            // the thought channel in its generation prompt (newer Gemma4 templates
+            // do this when thinking is on). In both cases the output never emits
+            // the open tag, so the thinking parser must start already inside the
+            // reasoning block or the whole thought leaks into the visible content.
+            let reply_starts_in_reasoning = force_gemma4_reasoning
+                || prompt_opens_reasoning_channel(&built_prompt.prompt);
             if built_prompt.chat_template_result.is_some() {
                 crate::utils::emit_debug(
                     &app,
@@ -4039,11 +4065,11 @@ mod desktop {
                 }),
             );
             let mut sampler = built_sampler.sampler;
-            // When we prefilled the assistant reply with the reasoning opener, the
-            // model's output begins mid-thought and never emits the open tag, so
-            // start the parser already inside the reasoning block. Otherwise the
-            // whole thought would leak into the visible response.
-            let mut streamed_thinking_parser = if force_gemma4_reasoning {
+            // When the reply begins mid-thought (forced prefill or a template that
+            // opens the thought channel in its generation prompt), the output never
+            // emits the open tag, so start the parser already inside the reasoning
+            // block. Otherwise the whole thought would leak into the visible response.
+            let mut streamed_thinking_parser = if reply_starts_in_reasoning {
                 ThinkingTagStreamParser::starting_in_reasoning(GEMMA4_REASONING_CLOSE)
             } else {
                 ThinkingTagStreamParser::default()
@@ -4646,11 +4672,12 @@ mod desktop {
                 .or_else(|| final_message.get("thinking"))
                 .and_then(|value| value.as_str());
             let raw_content = extract_text_content(final_message.get("content"));
-            // When we prefilled the reasoning opener, the raw output begins
-            // mid-thought (no open tag), so the final split has to start already
-            // inside the reasoning block — otherwise the whole thought leaks into
-            // the saved/visible message even though streaming split it correctly.
-            let normalized = if force_gemma4_reasoning {
+            // When the reply begins mid-thought (forced prefill or a template that
+            // opens the thought channel in its generation prompt), the raw output
+            // has no open tag, so the final split has to start already inside the
+            // reasoning block — otherwise the whole thought leaks into the
+            // saved/visible message even though streaming split it correctly.
+            let normalized = if reply_starts_in_reasoning {
                 normalize_thinking_content_starting_in_reasoning(
                     raw_content.as_deref().filter(|value| !value.is_empty()),
                     explicit_reasoning,
@@ -5104,9 +5131,9 @@ mod desktop {
     mod tests {
         use super::{
             cache_eviction_count, common_token_prefix, message_thinking_directive,
-            parse_local_thinking_options, sample_generated_token, should_flush_stream,
-            text_context_key, GenerationSampler, IncrementalStopMatcher, STREAM_EMIT_BYTES,
-            STREAM_EMIT_INTERVAL,
+            parse_local_thinking_options, prompt_opens_reasoning_channel, sample_generated_token,
+            should_flush_stream, text_context_key, GenerationSampler, IncrementalStopMatcher,
+            STREAM_EMIT_BYTES, STREAM_EMIT_INTERVAL,
         };
         use serde_json::{json, Value};
         use std::time::Duration;
@@ -5134,6 +5161,32 @@ mod desktop {
                 self.sample_calls += 1;
                 llama_cpp_2::token::LlamaToken(42)
             }
+        }
+
+        #[test]
+        fn detects_generation_prompt_open_reasoning_channel() {
+            // Newer Gemma4 template: generation prompt leaves the thought channel open.
+            assert!(prompt_opens_reasoning_channel(
+                "<|turn>model\n<|channel>thought\n"
+            ));
+            // Forced-reasoning prefill produces the same open channel.
+            assert!(prompt_opens_reasoning_channel(
+                "<|turn>user\nhi<turn|>\n<|turn>model\n<|channel>thought\n"
+            ));
+            // Empty, immediately-closed thought (enable_thinking off) is NOT open.
+            assert!(!prompt_opens_reasoning_channel(
+                "<|turn>model\n<|channel>thought\n<channel|>"
+            ));
+            // Malformed force-on-new-template tail still ends open.
+            assert!(prompt_opens_reasoning_channel(
+                "<|turn>model\n<|channel>thought\n<channel|><|channel>thought\n"
+            ));
+            // Bare model turn (old template) does not open a channel.
+            assert!(!prompt_opens_reasoning_channel("<|turn>model\n"));
+            // A fully closed thought earlier in the prompt is not an open channel.
+            assert!(!prompt_opens_reasoning_channel(
+                "<|channel>thought\nreasoned<channel|>answer<turn|>\n"
+            ));
         }
 
         #[test]
