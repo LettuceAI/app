@@ -47,7 +47,7 @@
     "test:rust": "cargo test --workspace",
     "check:architecture": "bash scripts/check-architecture.sh",
     "check:all": "bun run check && bun run check:rust && bun run lint:rust && bun run test:rust && bun run check:architecture",
-    "bindings:generate": "cargo run -p lettuce-tauri --bin export-bindings"
+    "bindings:generate": "cargo run -p lettuce-tauri --features bindings --bin export-bindings"
   },
   "devDependencies": {
     "@types/bun": "^1.4.3",

@@ -206,6 +206,7 @@ jobs:
           while ((${#queue[@]})); do
             current="${queue[0]}"
             queue=("${queue[@]:1}")
+            needed="$(patchelf --print-needed "$current")"
             while IFS= read -r library; do
               case "$library" in libcudart.so*|libcublas.so*|libcublasLt.so*|libnvJitLink.so*|libnvrtc.so*|libnvrtc-builtins.so*) ;; *) continue ;; esac
               test ! -e ".release-cuda/$library" || continue
@@ -214,14 +215,18 @@ jobs:
                 if test -f "$directory/$library"; then found="$directory/$library"; break; fi
               done
               test -n "$found" || { echo "Missing CUDA dependency: $library" >&2; exit 1; }
+              echo "Bundling CUDA dependency: $library"
               cp -L "$found" ".release-cuda/$library"
               patchelf --set-rpath "\$ORIGIN" ".release-cuda/$library"
               queue+=(".release-cuda/$library")
-            done < <(patchelf --print-needed "$current")
+            done <<< "$needed"
           done
-          test -n "$(find .release-cuda -type f -name 'libcudart.so*' -print -quit)"
-          original_rpath="$(patchelf --print-rpath "$binary")"
-          patchelf --set-rpath "\$ORIGIN/../lib/lettuceai-cuda:$original_rpath" "$binary"
+          if test -n "$(find .release-cuda -type f -print -quit)"; then
+            original_rpath="$(patchelf --print-rpath "$binary")"
+            patchelf --set-rpath "\$ORIGIN/../lib/lettuceai-cuda:$original_rpath" "$binary"
+          else
+            echo 'No shared CUDA runtime dependencies; using the statically linked runtime.'
+          fi
           node <<'JS'
           const fs = require('node:fs');
           const path = require('node:path');

@@ -59,7 +59,7 @@ Images and other media never cross IPC as bytes, base64 or data URLs, in either 
 
 ## Bindings
 
-`tauri-specta` generates `apps/ui/src/api/generated/bindings.ts` from the command signatures and the `lettuce-contracts` types (their `specta` feature is enabled only here). Export trims trailing spaces on each line and ends with one newline. Regenerate after changing a command or contract with `cargo run -p lettuce-tauri --bin export-bindings`. The test `committed_bindings_are_current` exports to a temporary file and fails when the committed file differs, so `cargo test --workspace` catches stale bindings.
+`tauri-specta` generates `apps/ui/src/api/generated/bindings.ts` from the command signatures and the `lettuce-contracts` types (their `specta` feature is enabled only here). Export trims trailing spaces on each line and ends with one newline. Regenerate after changing a command or contract with `bun run bindings:generate`. The test `committed_bindings_are_current` exports to a temporary file and fails when the committed file differs, so `cargo test --workspace` catches stale bindings.
 
 ## Configuration
 

@@ -26,9 +26,11 @@ path = "src/main.rs"
 [[bin]]
 name = "export-bindings"
 path = "src/bin/export-bindings.rs"
+required-features = ["bindings"]
 
 [features]
 default = []
+bindings = []
 custom-protocol = ["tauri/custom-protocol"]
 vulkan = ["lettuce-app/llama-vulkan", "lettuce-app/asr-vulkan"]
 cuda = ["lettuce-app/llama-cuda", "lettuce-app/asr-cuda"]

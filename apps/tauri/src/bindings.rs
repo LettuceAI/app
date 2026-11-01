@@ -448,7 +448,7 @@ mod tests {
         let committed = std::fs::read_to_string(BINDINGS_PATH).unwrap_or_default();
         assert!(
             generated_text == committed,
-            "apps/ui/src/api/generated/bindings.ts is stale; run `cargo run -p lettuce-tauri --bin export-bindings`"
+            "apps/ui/src/api/generated/bindings.ts is stale; run `bun run bindings:generate`"
         );
     }
 }
