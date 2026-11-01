@@ -42,7 +42,7 @@ jobs:
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           log-accepted-android-sdk-licenses: false
-          packages: platform-tools platforms;android-37 build-tools;37.0.0 ndk;29.0.14206865
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;29.0.14206865
       - name: Configure Android native tools
         run: |
           df -h /
