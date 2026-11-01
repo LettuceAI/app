@@ -47,6 +47,13 @@ jobs:
         if: runner.os == 'Windows'
         with:
           arch: x64
+      - name: Pin the Windows MSVC linker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $linker = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64/link.exe'
+          if (!(Test-Path $linker)) { throw 'MSVC linker is missing' }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -114,8 +121,13 @@ jobs:
           version: ${{ inputs.version }}
           dev: ${{ inputs.dev }}
       - name: Compile the desktop app
+        if: runner.os != 'Windows'
         shell: bash
         run: bun run tauri build --ci --config "$GITHUB_WORKSPACE/.release-config.json" --target "$RUST_TARGET" --features "$BUILD_FEATURES" --no-bundle -- --locked
+      - name: Compile the Windows desktop app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: bun run tauri build --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --no-bundle -- --locked
       - name: Include Windows CUDA runtime libraries
         if: runner.os == 'Windows' && inputs.features == 'cuda'
         shell: pwsh
@@ -172,8 +184,13 @@ jobs:
           fs.writeFileSync('.release-config.json', JSON.stringify(config));
           JS
       - name: Create installers
+        if: runner.os != 'Windows'
         shell: bash
         run: bun run tauri bundle --ci --config "$GITHUB_WORKSPACE/.release-config.json" --target "$RUST_TARGET" --features "$BUILD_FEATURES" --bundles "$BUILD_BUNDLES"
+      - name: Create Windows installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: bun run tauri bundle --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --bundles "$env:BUILD_BUNDLES"
       - name: Collect installers and checksums
         shell: bash
         run: |
