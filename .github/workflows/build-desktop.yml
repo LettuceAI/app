@@ -55,7 +55,7 @@ jobs:
           $compiler = Join-Path $tools 'cl.exe'
           $linker = Join-Path $tools 'link.exe'
           if (!(Test-Path $compiler) -or !(Test-Path $linker)) { throw 'MSVC compiler or linker is missing' }
-          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop).Source
+          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
           $ninjaVersion = & $ninja --version
           if ($LASTEXITCODE -ne 0 -or [version]$ninjaVersion -lt [version]'1.12') { throw 'Ninja 1.12 or newer is required for Windows long paths' }
           $ninjaVersion
