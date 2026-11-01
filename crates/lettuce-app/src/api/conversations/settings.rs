@@ -67,6 +67,19 @@ pub(crate) fn settings_view(
     let persona = live_sources::live_persona(database, &conversation, profile)
         .map_err(source_error)?
         .map(|persona| persona.id);
+    let with_persona_lorebooks = |mut selected: dto::SettingChoices| -> Result<dto::SettingChoices, ApiError> {
+        if let Some(persona) = persona {
+            for id in policy::enabled_lorebooks(
+                &database.list_persona_bindings(persona).map_err(source_error)?,
+            ) {
+                let id = id.to_string();
+                if !selected.ids.contains(&id) {
+                    selected.ids.push(id);
+                }
+            }
+        }
+        Ok(selected)
+    };
     let memory = live_sources::live_memory(database, &conversation, &global)
         .map_err(source_error)?
         .map_or(dto::MemoryMode::Disabled, |memory| memory_mode(memory.mode));
@@ -133,7 +146,7 @@ pub(crate) fn settings_view(
                         books.iter().flatten().map(|book| book.source_id).collect(),
                         dto::SettingSource::Conversation,
                     ),
-                    _ => match &details.lorebooks {
+                    _ => with_persona_lorebooks(match &details.lorebooks {
                         SnapshotSelection::Explicit(books) => choices(
                             books.iter().map(|book| book.source_id).collect(),
                             dto::SettingSource::Launch,
@@ -142,21 +155,14 @@ pub(crate) fn settings_view(
                             choices(Vec::<LorebookId>::new(), dto::SettingSource::Launch)
                         }
                         SnapshotSelection::Inherited(_) => {
-                            let mut ids = policy::enabled_lorebooks(
+                            let ids = policy::enabled_lorebooks(
                                 &database
                                     .list_character_bindings(details.character.source_id)
                                     .map_err(source_error)?,
                             );
-                            if let Some(persona) = persona {
-                                ids.extend(policy::enabled_lorebooks(
-                                    &database
-                                        .list_persona_bindings(persona)
-                                        .map_err(source_error)?,
-                                ));
-                            }
                             choices(ids, dto::SettingSource::Character)
                         }
-                    },
+                    })?,
                 };
             let model = match own
                 .filter(|settings| settings.model_provenance == SettingProvenance::CurrentOverride)
@@ -236,19 +242,19 @@ pub(crate) fn settings_view(
                         books.iter().flatten().map(|book| book.source_id).collect(),
                         dto::SettingSource::Conversation,
                     ),
-                    _ => match &details.group.lorebooks {
+                    _ => with_persona_lorebooks(match &details.group.lorebooks {
                         SnapshotSelection::Disabled => {
                             choices(Vec::<LorebookId>::new(), dto::SettingSource::Launch)
                         }
-                        _ => choices(
-                            policy::enabled_lorebooks(
+                        _ => {
+                            let ids = policy::enabled_lorebooks(
                                 &database
                                     .list_group_bindings(details.group.source_id)
                                     .map_err(source_error)?,
-                            ),
-                            group_or_launch(profile),
-                        ),
-                    },
+                            );
+                            choices(ids, group_or_launch(profile))
+                        }
+                    })?,
                 };
             let model = match own
                 .filter(|settings| settings.model_provenance == SettingProvenance::CurrentOverride)

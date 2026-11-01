@@ -651,6 +651,167 @@ fn preview_ids(preview: &dto::LorebookTriggerPreview) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn persona_only_lorebooks_reach_direct_starter_and_group_turns_live() {
+    use lettuce_characters::{PersonaRepository, Selection, StarterRepository};
+
+    for kind in ["direct", "explicit-starter", "disabled-starter", "group"] {
+        let harness = harness(Reply::Text("A reply."));
+        let database = harness.context.backend().database();
+        let persona = crate::launch::tests::seed_persona(database, "Traveller");
+        let default = PersonaRepository::get_default_snapshot(database).expect("default persona");
+        PersonaRepository::set_default(
+            database, persona, default.state.revision, TimestampMillis::new(2),
+        )
+        .expect("select persona");
+        let (chat, speaker) = if kind == "group" {
+            let cast = crate::api::conversations::turns_tests::group_cast(&harness, kind).await;
+            conversation_settings_update(
+                &harness.context,
+                dto::ConversationSettingsUpdateRequest {
+                    conversation_id: cast.chat.clone(),
+                    expected_settings_revision: None,
+                    patch: dto::ConversationSettingsPatch {
+                        disable_character_lorebooks: Some(dto::FlagChange::Set { value: true }),
+                        ..dto::ConversationSettingsPatch::default()
+                    },
+                },
+            )
+            .await
+            .expect("disable character books only");
+            (cast.chat, Some(cast.ada_character))
+        } else if kind == "direct" {
+            (launch(&harness, kind).await, None)
+        } else {
+            let mut starter = crate::launch::tests::starter_with(
+                harness.character_id, 0, "Greeting", Vec::new(),
+            );
+            starter.lorebooks = if kind == "disabled-starter" {
+                Selection::Disabled
+            } else {
+                Selection::Explicit(Vec::new())
+            };
+            let starter_id = starter.id;
+            let character = CharacterRepository::get(database, harness.character_id)
+                .expect("character")
+                .expect("exists");
+            StarterRepository::add_starter(
+                database,
+                harness.character_id,
+                character.character.revision,
+                starter,
+                TimestampMillis::new(3),
+            )
+            .expect("starter");
+            let chat = conversation_launch_direct(
+                &harness.context,
+                dto::LaunchDirectRequest {
+                    character_id: harness.character_id.to_string(),
+                    title: None,
+                    scene_id: None,
+                    starter_id: Some(starter_id.to_string()),
+                    client_operation_id: kind.into(),
+                },
+            )
+            .await
+            .expect("launch")
+            .conversation_id;
+            (chat, None)
+        };
+        let book = create(
+            &harness, "persona-only", "Persona lore",
+            vec![entry("Dragon", "Dragons fly.", Some("dragon"))],
+        )
+        .await;
+        persona_lorebooks_bind(
+            &harness.context,
+            dto::PersonaLorebookBindRequest {
+                persona_id: persona.to_string(),
+                lorebook_id: book.lorebook.id.clone(),
+                expected_revision: 1,
+                target_ordinal: None,
+                client_operation_id: "bind-persona-only".into(),
+            },
+        )
+        .await
+        .expect("bind after launching the chat");
+        let settings = conversation_settings_get(
+            &harness.context,
+            dto::ConversationSettingsGetRequest { conversation_id: chat.clone() },
+        )
+        .await
+        .expect("settings");
+        assert_eq!(settings.lorebooks.ids, vec![book.lorebook.id.clone()], "{kind}");
+        let shown = preview(&harness, &chat, "A dragon appears", speaker).await;
+        assert_eq!(shown.active_lorebook_ids, vec![book.lorebook.id.clone()], "{kind}");
+        assert_eq!(shown.entries.len(), 1, "{kind}");
+        assert_eq!(
+            shown.entries[0].source,
+            dto::LorebookSourceTier::Persona { persona_id: persona.to_string() },
+            "{kind}",
+        );
+        send(
+            &harness, &chat, "persona-only-send", "A dragon appears",
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("send");
+        run_generation(&harness).await;
+        assert_eq!(turn_entries(database, &chat), preview_ids(&shown), "{kind}");
+        {
+            let requests = harness.provider.requests.lock().expect("requests");
+            let request = requests.last().expect("generation request");
+            assert!(request.context.messages.iter().flat_map(|message| &message.parts).any(|part| {
+                matches!(part, lettuce_conversations::ProviderContextPart::Text { text }
+                    if text.contains("Dragons fly."))
+            }), "{kind}: persona lore must reach the provider");
+        }
+
+        let changed = conversation_settings_update(
+            &harness.context,
+            dto::ConversationSettingsUpdateRequest {
+                conversation_id: chat.clone(),
+                expected_settings_revision: None,
+                patch: dto::ConversationSettingsPatch {
+                    lorebooks: Some(dto::LorebooksChange::Set { ids: Vec::new() }),
+                    ..dto::ConversationSettingsPatch::default()
+                },
+            },
+        )
+        .await
+        .expect("explicit chat selection");
+        assert!(changed.lorebooks.ids.is_empty(), "{kind}");
+        let cleared = preview(&harness, &chat, "A dragon appears", speaker).await;
+        assert!(cleared.entries.is_empty(), "{kind}");
+        let reset = conversation_settings_update(
+            &harness.context,
+            dto::ConversationSettingsUpdateRequest {
+                conversation_id: chat.clone(),
+                expected_settings_revision: None,
+                patch: dto::ConversationSettingsPatch {
+                    lorebooks: Some(dto::LorebooksChange::Reset),
+                    ..dto::ConversationSettingsPatch::default()
+                },
+            },
+        )
+        .await
+        .expect("restore inherited books");
+        assert_eq!(reset.lorebooks.ids, vec![book.lorebook.id.clone()], "{kind}");
+        let restored = preview(&harness, &chat, "A dragon appears", speaker).await;
+        assert_eq!(preview_ids(&restored), preview_ids(&shown), "{kind}");
+        bind_character(&harness, speaker.unwrap_or(harness.character_id), &book.lorebook.id);
+        let overlapping = preview(&harness, &chat, "A dragon appears", speaker).await;
+        assert_eq!(preview_ids(&overlapping), preview_ids(&shown), "{kind}");
+        let settings = conversation_settings_get(
+            &harness.context,
+            dto::ConversationSettingsGetRequest { conversation_id: chat },
+        )
+        .await
+        .expect("settings with overlapping bindings");
+        assert_eq!(settings.lorebooks.ids, vec![book.lorebook.id], "{kind}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn trigger_preview_matches_what_the_next_turn_injects() {
     let harness = harness(Reply::Text("A reply."));
     let database = harness.context.backend().database();

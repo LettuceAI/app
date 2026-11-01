@@ -1163,11 +1163,11 @@ where
 
     /// The lorebooks a turn activates, read live each turn in ordered tiers.
     /// A direct chat has one tier: the chat's own selection, else the
-    /// character's enabled bindings then the persona's. A group chat has two:
-    /// the conversation's own selection, else the group's bindings; then the
-    /// speaker's bindings unless the group disables character lorebooks. A
-    /// disabled selection is an empty own selection. Missing and archived
-    /// books are skipped by the activation.
+    /// character/starter selection plus the persona's bindings. A group chat
+    /// has two: the conversation's own selection, else the group selection
+    /// plus the persona's; then the speaker's bindings unless the group
+    /// disables character lorebooks. A disabled conversation override is an
+    /// empty own selection. Missing and archived books are skipped by activation.
     fn live_lorebook_tiers(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -1200,9 +1200,24 @@ where
                 .into_iter()
                 .map(move |id| (provenance, id))
         };
+        let persona_books = || {
+            persona
+                .map(|persona| {
+                    self.sources
+                        .list_persona_bindings(persona)
+                        .map(|bindings| {
+                            enabled(bindings, LorebookSourceProvenance::Persona { id: persona })
+                                .collect::<Vec<_>>()
+                        })
+                        .map_err(binding_error)
+                })
+                .transpose()
+                .map(Option::unwrap_or_default)
+        };
         let tiers = match &conversation.kind {
             ConversationKind::Direct(details) => {
-                let books = match (own, &details.lorebooks) {
+                let inherit_persona = own.is_none();
+                let mut books = match (own, &details.lorebooks) {
                     (Some(books), _) => books,
                     (None, SnapshotSelection::Disabled) => Vec::new(),
                     (None, SnapshotSelection::Explicit(books)) => books
@@ -1211,29 +1226,24 @@ where
                         .collect(),
                     (None, SnapshotSelection::Inherited(_)) => {
                         let character = details.character.source_id;
-                        let mut books = enabled(
+                        enabled(
                             self.sources
                                 .list_character_bindings(character)
                                 .map_err(binding_error)?,
                             LorebookSourceProvenance::Character { id: character },
                         )
-                        .collect::<Vec<_>>();
-                        if let Some(persona) = persona {
-                            books.extend(enabled(
-                                self.sources
-                                    .list_persona_bindings(persona)
-                                    .map_err(binding_error)?,
-                                LorebookSourceProvenance::Persona { id: persona },
-                            ));
-                        }
-                        books
+                        .collect::<Vec<_>>()
                     }
                 };
+                if inherit_persona {
+                    books.extend(persona_books()?);
+                }
                 vec![books]
             }
             ConversationKind::Group(details) => {
                 let group_id = details.group.source_id;
-                let group_books = match (own, &details.group.lorebooks) {
+                let inherit_persona = own.is_none();
+                let mut group_books = match (own, &details.group.lorebooks) {
                     (Some(books), _) => books,
                     (None, SnapshotSelection::Disabled) => Vec::new(),
                     (None, _) => enabled(
@@ -1244,6 +1254,9 @@ where
                     )
                     .collect(),
                 };
+                if inherit_persona {
+                    group_books.extend(persona_books()?);
+                }
                 let speaker_books = match speaker {
                     Some(character) if !disable_character_lorebooks => enabled(
                         self.sources
