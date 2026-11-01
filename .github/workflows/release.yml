@@ -1,0 +1,45 @@
+# Register the refactor workflow for manual dispatch from GitHub Actions.
+# Select refactor/lettuceai-next to run that branch's desktop and Android jobs.
+name: Build and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Dev app (separate installation) or stable release.
+        type: choice
+        options: [dev, stable]
+        default: dev
+      version:
+        description: Stable version, e.g. 3.0.0. Blank uses the source version; dev versions are automatic.
+        type: string
+        default: ''
+      cuda:
+        description: Include NVIDIA CUDA builds for Windows and Linux.
+        type: boolean
+        default: true
+      publish:
+        description: Create a GitHub release after all builds succeed. Leave off to keep only Actions artifacts.
+        type: boolean
+        default: false
+      aur:
+        description: Update stable or dev AUR packages after publishing the GitHub release.
+        type: boolean
+        default: true
+      previous_tag:
+        description: Optional ancestor tag to start the commit list from.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  select-refactor-branch:
+    name: Select the refactor branch
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Explain the required workflow branch
+        run: |
+          echo '::error::Select refactor/lettuceai-next in Run workflow to build the refactor app.'
+          exit 1
