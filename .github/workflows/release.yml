@@ -20,9 +20,9 @@ on:
         type: boolean
         default: true
       publish:
-        description: Publish a GitHub release after all builds succeed.
+        description: Create a GitHub release after all builds succeed. Leave off to keep only Actions artifacts.
         type: boolean
-        default: true
+        default: false
       aur:
         description: Update stable or dev AUR packages after publishing the GitHub release.
         type: boolean
@@ -176,7 +176,9 @@ jobs:
             fs.writeFileSync('.release/CHANGES.md', changes);
             fs.writeFileSync('.release/NOTES.md', notes);
             for (const [key, value] of Object.entries({sha, version, dev, matrix: JSON.stringify({include: matrix}), android_code: androidCode, publish})) core.setOutput(key, value);
-            await core.summary.addHeading(meta.title).addRaw(`Commit: ${sha}\n\n${commits.length} commits · ${meta.targets.length} build targets`).write();
+            const distribution = publish ? 'A GitHub release will be published after all builds succeed.'
+              : 'Builds will remain in Actions artifacts for 30 days. GitHub release and AUR publication are disabled.';
+            await core.summary.addHeading(meta.title).addRaw(`Commit: ${sha}\n\n${commits.length} commits · ${meta.targets.length} build targets\n\n${distribution}`).write();
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-metadata
@@ -301,7 +303,7 @@ jobs:
   aur:
     name: Publish stable or dev AUR packages
     needs: [prepare, publish]
-    if: (github.event_name == 'push' || inputs.aur) && (needs.prepare.outputs.dev == 'true' || !contains(needs.prepare.outputs.version, '-'))
+    if: needs.prepare.outputs.publish == 'true' && (github.event_name == 'push' || inputs.aur) && (needs.prepare.outputs.dev == 'true' || !contains(needs.prepare.outputs.version, '-'))
     uses: ./.github/workflows/publish-aur.yml
     with:
       release_tag: ${{ needs.publish.outputs.tag }}
