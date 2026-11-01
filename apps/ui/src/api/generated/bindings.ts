@@ -59,10 +59,10 @@ export const commands = {
 	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_select", { request })),
 	conversationBranchDelete: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_delete", { request })),
 	conversationDuplicate: (request: ConversationDuplicateRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_duplicate", { request })),
-	conversationBranchToCharacterFromMessage: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_to_character_from_message", { request })),
+	conversationBranchToCharacterFromMessage: (request: ConversationCharacterCopyRequest_Deserialize) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_to_character_from_message", { request })),
 	conversationBranchToCharacter: (request: ConversationGroupCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_to_character", { request })),
-	conversationBranchDirectToCharacter: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_direct_to_character", { request })),
-	conversationBranchDirectToGroup: (request: ConversationGroupCopyRequest) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_direct_to_group", { request })),
+	conversationBranchDirectToCharacter: (request: ConversationCharacterCopyRequest_Deserialize) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_direct_to_character", { request })),
+	conversationBranchDirectToGroup: (request: ConversationGroupCopyRequest_Deserialize) => typedError<ConversationCopyResult, ApiError_Serialize>(__TAURI_INVOKE("conversation_branch_direct_to_group", { request })),
 	conversationMessages: (request: ConversationMessagesRequest_Deserialize) => typedError<MessagePage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_edit", { request })),
 	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("message_delete", { request })),
@@ -1678,11 +1678,21 @@ export type ConversationBranchView = {
 	active: boolean,
 };
 
-export type ConversationCharacterCopyRequest = {
+export type ConversationCharacterCopyRequest = ConversationCharacterCopyRequest_Serialize | ConversationCharacterCopyRequest_Deserialize;
+
+export type ConversationCharacterCopyRequest_Deserialize = {
 	conversation_id: string,
 	message_id: string,
 	character_id: string,
 	expected_revision?: number | null,
+	client_operation_id: string,
+};
+
+export type ConversationCharacterCopyRequest_Serialize = {
+	conversation_id: string,
+	message_id: string,
+	character_id: string,
+	expected_revision?: number,
 	client_operation_id: string,
 };
 
@@ -1716,13 +1726,25 @@ export type ConversationGroupCharacterCopyRequest = {
 	client_operation_id: string,
 };
 
-export type ConversationGroupCopyRequest = {
+export type ConversationGroupCopyRequest = ConversationGroupCopyRequest_Serialize | ConversationGroupCopyRequest_Deserialize;
+
+export type ConversationGroupCopyRequest_Deserialize = {
 	conversation_id: string,
 	message_id: string,
 	character_ids: string[],
 	chat_mode?: GroupChatMode | null,
 	title?: string | null,
 	expected_revision?: number | null,
+	client_operation_id: string,
+};
+
+export type ConversationGroupCopyRequest_Serialize = {
+	conversation_id: string,
+	message_id: string,
+	character_ids: string[],
+	chat_mode?: GroupChatMode | null,
+	title?: string | null,
+	expected_revision?: number,
 	client_operation_id: string,
 };
 
