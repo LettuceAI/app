@@ -418,6 +418,14 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Новая глава · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "ждёт тебя.",
+      description: "Всё создано заново. Впереди новая глава твоей истории.",
+      action: "Открой для себя LettuceAI Next",
+      later: "Продолжить с этой версией",
+    },
     available: {
       title: "Доступна новая версия",
       description: "Доступна v{{latestVersion}}. У вас установлена v{{currentVersion}}.",

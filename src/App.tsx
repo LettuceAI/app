@@ -141,9 +141,10 @@ import { logManager, isLoggingEnabled } from "./core/utils/logger";
 import { getPlatform } from "./core/utils/platform";
 import { I18nProvider, useI18n } from "./core/i18n/context";
 import { hasSeenTooltip, setTooltipSeen } from "./core/storage/appState";
-import { checkForAppUpdate } from "./core/app-updates/checkForAppUpdate";
+import { checkForAppUpdate, getAppUpdateDismissKey, type AppUpdateInfo } from "./core/app-updates/checkForAppUpdate";
 import { detectUpdateChannel } from "./core/app-updates/checkForAppUpdate";
-import { presentAppUpdateToast } from "./core/app-updates/presentAppUpdateToast";
+import { NEXT_RELEASE_AVAILABLE_EVENT, presentAppUpdateToast } from "./core/app-updates/presentAppUpdateToast";
+import { NextReleasePage } from "./ui/pages/whats-new/NextReleasePage";
 import {
   readSettings,
   readSettingsCached,
@@ -631,18 +632,25 @@ function App() {
 
 function AppUpdateNotifier() {
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const onNextRelease = (event: Event) => {
+      const update = (event as CustomEvent<AppUpdateInfo>).detail;
+      if (!update?.isNextRelease || location.pathname === "/welcome-next") return;
+      navigate("/welcome-next", {
+        state: { update, returnTo: location.pathname + location.search },
+      });
+    };
+    window.addEventListener(NEXT_RELEASE_AVAILABLE_EVENT, onNextRelease);
+    return () => window.removeEventListener(NEXT_RELEASE_AVAILABLE_EVENT, onNextRelease);
+  }, [location.pathname, location.search, navigate]);
   const platform = useMemo(() => getPlatform(), []);
   const [autoChecksEnabled, setAutoChecksEnabled] = useState(true);
   const [settingsReady, setSettingsReady] = useState(false);
   const showUpdateToast = useCallback(
-    (update: {
-      currentVersion: string;
-      latestVersion: string;
-      releaseUrl: string;
-      downloadUrl: string;
-      releaseTag: string;
-      channel: "dev" | "release";
-    }) => {
+    (update: AppUpdateInfo) => {
       presentAppUpdateToast(update, platform.os, {
         title: t("updates.available.title"),
         description: t("updates.available.description", {
@@ -776,7 +784,7 @@ function AppUpdateNotifier() {
         const update = await checkForAppUpdate(platform);
         if (!update || cancelled) return;
 
-        const dismissKey = `app-update-dismissed:${platform.os}:${update.releaseTag}`;
+        const dismissKey = getAppUpdateDismissKey(update, platform.os);
         if (await hasSeenTooltip(dismissKey)) return;
         if (cancelled) return;
 
@@ -1151,7 +1159,7 @@ function AppContent() {
         <main
           ref={mainRef}
           className={`flex-1 ${showTopNav ? "pt-[var(--topnav-h,72px)]" : ""} ${
-            location.pathname === "/welcome"
+            (location.pathname === "/welcome" || location.pathname === "/welcome-next")
               ? "overflow-hidden px-0 pt-0 pb-0"
               : isOnboardingRoute
                 ? `overflow-y-auto ${isDesktop ? "" : "px-0 pt-5 pb-5"}`
@@ -1198,6 +1206,7 @@ function AppContent() {
             <Routes>
               <Route path="/" element={<OnboardingCheck />} />
               <Route path="/welcome" element={<OnboardingPage />} />
+              <Route path="/welcome-next" element={<NextReleasePage />} />
               <Route path="/onboarding/start" element={<OnboardingPage />} />
               <Route path="/onboarding/learn" element={<OnboardingPage />} />
               <Route path="/onboarding/path" element={<OnboardingPage />} />

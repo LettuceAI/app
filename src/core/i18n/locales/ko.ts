@@ -418,6 +418,14 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "새로운 시작 · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "가 여러분을 기다려요.",
+      description: "처음부터 새롭게 만들었어요. 여러분의 다음 이야기를 함께할 준비가 됐어요.",
+      action: "LettuceAI Next 만나보기",
+      later: "이 버전 계속 사용하기",
+    },
     available: {
       title: "새 버전 사용 가능",
       description: "v{{latestVersion}} 버전을 사용할 수 있습니다. 현재 버전은 v{{currentVersion}}입니다.",

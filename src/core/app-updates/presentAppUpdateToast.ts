@@ -1,7 +1,9 @@
 import { toast } from "../../ui/components/toast";
 import { setTooltipSeen } from "../storage/appState";
 import { openExternalUrl } from "../utils/openExternal";
-import type { AppUpdateInfo } from "./checkForAppUpdate";
+import { getAppUpdateDismissKey, type AppUpdateInfo } from "./checkForAppUpdate";
+
+export const NEXT_RELEASE_AVAILABLE_EVENT = "lettuce:next-release-available";
 
 type UpdateToastLabels = {
   title: string;
@@ -15,7 +17,12 @@ export function presentAppUpdateToast(
   platformOs: string,
   labels: UpdateToastLabels,
 ) {
-  const dismissKey = `app-update-dismissed:${platformOs}:${update.releaseTag}`;
+  if (update.isNextRelease) {
+    window.dispatchEvent(new CustomEvent(NEXT_RELEASE_AVAILABLE_EVENT, { detail: update }));
+    return;
+  }
+
+  const dismissKey = getAppUpdateDismissKey(update, platformOs);
   const targetUrl = update.channel === "dev" ? update.releaseUrl : update.downloadUrl;
 
   toast.success(labels.title, labels.description, {

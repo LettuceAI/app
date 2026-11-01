@@ -418,6 +418,14 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
     },
   },
   updates: {
+    nextRelease: {
+      available: "Yeni bir başlangıç · 3.0.0",
+      product: "LettuceAI Next",
+      waiting: "seni bekliyor.",
+      description: "Baştan aşağı yeniden tasarlandı. Yeni hikâyelerin için hazır.",
+      action: "LettuceAI Next ile tanış",
+      later: "Bu sürümü kullanmaya devam et",
+    },
     available: {
       title: "Yeni sürüm mevcut",
       description: "v{{latestVersion}} kullanılabilir. Şu anda v{{currentVersion}} kullanıyorsun.",
