@@ -18,6 +18,33 @@ function saved(request: CharacterSaveRequest_Deserialize): CharacterView_Seriali
   return { id: "c-new", archived: false, draft: request.draft, assets: [], revision: 1, created_at: 1, updated_at: 1 };
 }
 
+
+const ok = <T,>(data: T) => ({ status: "ok" as const, data });
+const avatarModel = { id: "image-model", name: "Image model", provider_kind: "openai", supports_editing: true };
+const avatarCalls: MockCallHandlers = {
+  avatarGenerationOptions: () => ok({ enabled: true, model: avatarModel }),
+  avatarGenerate: (request) => ok({ job_id: request.request_id, model: avatarModel, prompt: "rendered" }),
+};
+const avatarStreams: MockStreamHandlers = {
+  jobWatch: ([{ job_id }]) => ok({
+    id: job_id, kind: "image_generate", subject: { kind: "image_request", id: job_id }, subject_detail: null, state: "succeeded",
+    progress: { current: 0, total: null, unit: null, label_code: null, bytes_per_second: null }, created_at: 1, updated_at: 1, failure: null,
+    result: { type: "image_generation", images: [{ asset: { asset_id: job_id, url: `asset://${job_id}`, preview_url: null }, mime_type: "image/png", width: 512, height: 512, text: null }], rejected_outputs: 0 },
+  } as never),
+};
+
+async function generateAvatarFromPanel() {
+  fireEvent.click(await screen.findByRole("button", { name: "Generate avatar" }));
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "Describe the avatar" })).toBeTruthy());
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Describe the avatar" }), { target: { value: "a fox" } });
+  await waitFor(() => expect((within(dialog).getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
+  await waitFor(() => expect((within(dialog).getByRole("button", { name: "Use this avatar" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Use this avatar" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+}
+
 async function renderCreate(calls: MockCallHandlers = {}, language: "en" | "cimode" = "en", browser = false, streams: MockStreamHandlers = {}) {
   let history: RouterHistory;
   if (browser) {
@@ -546,6 +573,17 @@ describe("character creation", () => {
     await renderCreate({}, "cimode");
     expect(await screen.findByPlaceholderText("identity.namePlaceholder")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/Who is it|Character name/);
+  });
+});
+
+describe("character avatar generation", () => {
+  it("applies a generated avatar to the creation draft without saving it", async () => {
+    const save = vi.fn();
+    await renderCreate({ ...avatarCalls, characterSave: save }, "en", false, avatarStreams);
+    await generateAvatarFromPanel();
+    expect(document.querySelector('img[src^="asset://"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy();
+    expect(save).not.toHaveBeenCalled();
   });
 });
 

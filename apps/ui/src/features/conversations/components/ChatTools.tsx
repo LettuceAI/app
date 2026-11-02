@@ -2,6 +2,7 @@ import { PersonaSheet } from "@/entities/persona";
 import { useCallback, useEffect, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { pickImages } from "@/entities/image-input";
 import { ArrowLeftRight, Dices, FileAudio, Image as ImageIcon, NotebookPen, Sparkles, User } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
@@ -106,10 +107,14 @@ export function ChatTools({ api, services, conversationId, settings, panel, setP
   const attach = (kind: Extract<FilePickKind, "image" | "audio">) => {
     setPanel(null);
     void save(async () => {
+      if (kind === "image") {
+        await pickImages(api, { role: "attachment", multiple: true, onImage: ({ source, asset }) => composer.current?.attach({ id: asset.asset_id, src: asset.url, name: fileName(source.uri) }) });
+        return;
+      }
       const picked = await api.call("filesPickOpen", { kinds: [kind], multiple: true });
       for (const source of picked.sources) {
         const asset = await api.call("assetsIngest", { source, role: "attachment" });
-        composer.current?.attach({ id: asset.asset_id, ...(kind === "image" ? { src: asset.url } : {}), name: fileName(source.uri) });
+        composer.current?.attach({ id: asset.asset_id, name: fileName(source.uri) });
       }
     }, () => undefined);
   };

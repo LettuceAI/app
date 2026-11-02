@@ -1,0 +1,114 @@
+{
+  "generate": "Generate avatar",
+  "title": "Generate avatar",
+  "preview": {
+    "empty": "No image yet",
+    "emptyBody": "Describe an avatar below, or start from your own image.",
+    "alt": "Avatar preview",
+    "unchanged": "The avatar already on the form",
+    "editedFrom": "From {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versions",
+    "count_one": "{{count}} version",
+    "count_other": "{{count}} versions",
+    "current": "Current avatar",
+    "upload": "Uploaded image {{number}}",
+    "generation": "Generated image {{number}}",
+    "edit": "Edited image {{number}}",
+    "short": {
+      "current": "Current",
+      "upload": "Upload {{number}}",
+      "generation": "Image {{number}}",
+      "edit": "Edit {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Upload image"
+  },
+  "mode": {
+    "label": "What to do",
+    "generate": "New image",
+    "edit": "Edit selected",
+    "generateHint": "Starts over from the description only",
+    "editHint": "Changes a copy of {{version}}"
+  },
+  "prompt": {
+    "label": "Describe the avatar",
+    "placeholder": "A smiling fox in a knitted scarf, soft lighting"
+  },
+  "instruction": {
+    "label": "What to change",
+    "placeholder": "Make the scarf blue"
+  },
+  "actions": {
+    "generate": "Generate",
+    "edit": "Apply edit",
+    "cancel": "Cancel",
+    "use": "Use this avatar",
+    "retry": "Try again"
+  },
+  "busy": {
+    "uploading": "Adding the image",
+    "generating": "Generating the image",
+    "editing": "Editing the image",
+    "cancelling": "Cancelling"
+  },
+  "job": {
+    "progress": "{{current}} of {{total}}",
+    "rejected_one": "{{count}} result was set aside",
+    "rejected_other": "{{count}} results were set aside",
+    "cancelled": "Generation cancelled"
+  },
+  "settings": {
+    "open": "Open image settings"
+  },
+  "notice": {
+    "options": {
+      "title": "Could not check the avatar model",
+      "body": "Uploading still works."
+    },
+    "disabled": {
+      "title": "Avatar generation is off",
+      "body": "Turn it on in image settings to generate. Uploading still works."
+    },
+    "noModel": {
+      "title": "No avatar model chosen",
+      "body": "Choose a model that accepts and returns images. Uploading still works."
+    },
+    "incompatible": {
+      "title": "This model cannot make avatars",
+      "body": "Avatars need a model that accepts and returns images. Uploading still works."
+    },
+    "upload": {
+      "title": "Could not add the image"
+    },
+    "generation": {
+      "title": "Could not make the image"
+    },
+    "cancellation": {
+      "title": "Could not cancel",
+      "body": "The request may still be running. Try cancelling again."
+    },
+    "uncertain": {
+      "title": "Waiting for the result",
+      "body": "The connection dropped before the result arrived. Try again to reconnect, or cancel the request."
+    }
+  },
+  "failure": {
+    "cancelled": "The generation was cancelled.",
+    "setup": "The image model is not set up correctly. Check it in image settings.",
+    "invalidRequest": "The request was not accepted. Change the description and try again.",
+    "engine": "The image engine stopped before it finished.",
+    "timedOut": "The image took too long to make.",
+    "memory": "The image model ran out of memory.",
+    "storage": "The image could not be saved.",
+    "provider": "The provider could not make the image.",
+    "empty": "No image came back.",
+    "rejected": "The result was set aside and nothing was returned.",
+    "refused": "The model declined to make this image. Change the description and try again.",
+    "authentication": "The provider rejected the credentials. Check the provider in settings.",
+    "unavailable": "The image model is not available right now.",
+    "unknown": "Something went wrong while making the image."
+  }
+}

@@ -198,6 +198,90 @@ fn remote_model(context: &ApiContext) -> ModelProfileId {
     image_model(context, ProviderProtocol::OpenAiCompatible, "openai")
 }
 
+fn avatar_request(model: ModelProfileId) -> dto::AvatarGenerateRequest {
+    dto::AvatarGenerateRequest {
+        request_id: RequestId::new().to_string(),
+        model_id: Some(model.to_string()),
+        kind: dto::AvatarPromptKind::Generation {
+            subject_name: "Ada".into(),
+            subject_description: "A meticulous engineer".into(),
+            avatar_request: "in a workshop".into(),
+        },
+        source_asset_id: None,
+        character_id: None,
+    }
+}
+
+fn image_modalities(context: &ApiContext, id: ModelProfileId, input: CapabilityStatus, output: CapabilityStatus) {
+    let database = context.backend().database();
+    let mut model = ModelProfileRepository::get(database, id).expect("model").expect("exists");
+    let revision = model.revision;
+    model.config.capabilities.input_modalities.image = input;
+    model.config.capabilities.output_modalities.image = output;
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("modalities");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn avatar_generation_requires_supported_image_input_and_output_even_without_an_edit() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    assert!(avatar_generation_options(context).await.expect("options").model.is_none());
+    let model = remote_model(context);
+    for (input, output) in [
+        (CapabilityStatus::Unsupported, CapabilityStatus::Supported),
+        (CapabilityStatus::Unknown, CapabilityStatus::Supported),
+        (CapabilityStatus::Supported, CapabilityStatus::Unsupported),
+        (CapabilityStatus::Supported, CapabilityStatus::Unknown),
+    ] {
+        image_modalities(context, model, input, output);
+        assert!(avatar_generation_options(context).await.expect("options").model.is_none());
+        let error = avatar_generate(context, avatar_request(model)).await.expect_err("incompatible model");
+        assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    }
+    image_modalities(context, model, CapabilityStatus::Supported, CapabilityStatus::Supported);
+    let options = avatar_generation_options(context).await.expect("options");
+    assert_eq!(options.model.expect("compatible").id, model.to_string());
+    let request = avatar_request(model);
+    let first = avatar_generate(context, request.clone()).await.expect("admitted");
+    assert_eq!(avatar_generate(context, request.clone()).await.expect("replay"), first);
+    assert!(first.prompt.contains("Ada") && first.prompt.contains("workshop"));
+    let record = ImageGenerationRepository::get(context.backend().database(), first.job_id.parse().expect("job id")).expect("record");
+    assert_eq!(record.request.prompt, first.prompt);
+    assert!(record.request.input_images.is_empty());
+    let mut changed = request;
+    changed.kind = dto::AvatarPromptKind::Generation { subject_name: "Ada".into(), subject_description: String::new(), avatar_request: "another image".into() };
+    assert_eq!(avatar_generate(context, changed).await.expect_err("conflict").code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn avatar_edits_use_the_selected_image_and_disabled_generation_is_refused() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    let model = remote_model(context);
+    image_modalities(context, model, CapabilityStatus::Supported, CapabilityStatus::Supported);
+    let path = desktop.root.join("avatar.png");
+    std::fs::write(&path, png()).expect("source");
+    let image = assets_ingest(context, dto::AssetsIngestRequest { source: dto::FileSource { uri: path.to_string_lossy().into_owned() }, role: dto::AssetIngestRole::Avatar }).await.expect("image");
+    let mut request = avatar_request(model);
+    request.kind = dto::AvatarPromptKind::Edit { subject_name: "Ada".into(), subject_description: String::new(), current_avatar_prompt: "previous avatar".into(), edit_request: "add a scarf".into() };
+    assert_eq!(avatar_generate(context, request.clone()).await.expect_err("missing source").code, ApiErrorCode::InvalidInput);
+    request.source_asset_id = Some(image.asset_id.clone());
+    let accepted = avatar_generate(context, request).await.expect("edit");
+    let record = ImageGenerationRepository::get(context.backend().database(), accepted.job_id.parse().expect("job id")).expect("record");
+    assert_eq!(record.request.input_images, vec![image.asset_id.parse().expect("asset")]);
+    assert!(accepted.prompt.contains("previous avatar") && accepted.prompt.contains("add a scarf"));
+    let mut blank = avatar_request(model);
+    blank.kind = dto::AvatarPromptKind::Generation { subject_name: String::new(), subject_description: String::new(), avatar_request: "  ".into() };
+    assert_eq!(avatar_generate(context, blank).await.expect_err("blank prompt").code, ApiErrorCode::InvalidInput);
+    let database = context.backend().database();
+    let stored = lettuce_settings::GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.avatar_enabled = false;
+    lettuce_settings::GlobalSettingsStore::save(database, settings, stored.default_model_profile_id, stored.revision).expect("disable");
+    assert!(!avatar_generation_options(context).await.expect("options").enabled);
+    assert_eq!(avatar_generate(context, avatar_request(model)).await.expect_err("disabled").code, ApiErrorCode::Unsupported);
+}
+
 fn generate_request(model: ModelProfileId, prompt: &str) -> dto::ImageGenerateRequest {
     dto::ImageGenerateRequest {
         request_id: RequestId::new().to_string(),

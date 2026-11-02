@@ -69,12 +69,13 @@ export function ImageSettingsPage() {
   });
   const mobile = status.data?.platform === "android" || status.data?.platform === "ios";
   const images = candidates.filter(({ model, account }) => model.output_scopes.includes("image") && !(mobile && account.provider_kind.toLowerCase() === "sdcpp"));
+  const avatars = images.filter(({ model }) => model.input_scopes.includes("image"));
   const writers = candidates.filter(({ model }) => model.input_scopes.includes("text") && model.input_scopes.includes("image") && model.output_scopes.includes("text"));
   const describe = (kind: ImagePicker) => {
     if (!value) return undefined;
     const id = value[modelFields[kind]];
     if (id === null) return t(kind === "writer" ? "image.writer.first" : "image.first");
-    const chosen = (kind === "writer" ? writers : images).find(({ model }) => model.id === id);
+    const chosen = (kind === "writer" ? writers : kind === "avatar" ? avatars : images).find(({ model }) => model.id === id);
     return chosen ? t("image.selected", { model: chosen.model.display_name, provider: chosen.account.label }) : t("image.unavailable");
   };
   const choose = (id: string | null) => {
@@ -123,7 +124,7 @@ export function ImageSettingsPage() {
       </Page>
       </div>
       {localView && !mobile && <LocalImagePage view={localView} />}
-      {shown && ready && <ImageModelSheet key={shown} picker={shown} open={picker !== null} choices={shown === "writer" ? writers : images} value={selected} busy={busy} failure={failed ? { error: failed.error, retry: () => void failed.refetch() } : subscriptionError ? { error: subscriptionError.error, retry: () => window.location.reload() } : null} onChange={choose} onClose={close} onAdd={addModel} />}
+      {shown && ready && <ImageModelSheet key={shown} picker={shown} open={picker !== null} choices={shown === "writer" ? writers : shown === "avatar" ? avatars : images} value={selected} busy={busy} failure={failed ? { error: failed.error, retry: () => void failed.refetch() } : subscriptionError ? { error: subscriptionError.error, retry: () => window.location.reload() } : null} onChange={choose} onClose={close} onAdd={addModel} />}
     </>
   );
 }

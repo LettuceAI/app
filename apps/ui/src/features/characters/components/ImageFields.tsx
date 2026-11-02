@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Camera, Image as ImageIcon, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, CharacterCard, Field, icon, IconButton } from "@lettuceai/crisp";
@@ -5,13 +6,14 @@ import type { AssetRef, CharacterSummary } from "@/api/generated/bindings";
 import { useCardColors } from "@/features/home";
 import type { StepProps } from "./step-props";
 
-export function AvatarPicker({ name, image, busy, onChoose, onRemove }: { name: string; image: AssetRef | undefined; busy: boolean; onChoose: () => void; onRemove: () => void }) {
+export function AvatarPicker({ name, image, busy, onChoose, onRemove, actions }: { name: string; image: AssetRef | undefined; busy: boolean; onChoose: () => void; onRemove: () => void; actions?: ReactNode }) {
   const { t } = useTranslation("characters");
   return <div className="flex shrink-0 flex-col items-center gap-2">
     <IconButton label={t("identity.chooseAvatar")} variant="ghost" disabled={busy} className="relative h-28 w-28 overflow-visible rounded-full p-0" onClick={onChoose}>
       <Avatar src={image?.url ?? null} name={name || "?"} size="xl" className="h-28 w-28 text-3xl" />
       <span className="absolute -right-1 -bottom-1 flex h-9 w-9 items-center justify-center rounded-full border border-line-2 bg-surface-2 text-fg shadow-raised"><Camera size={icon.md} /></span>
     </IconButton>
+    {actions}
     {image && <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>{t("identity.removeAvatar")}</Button>}
   </div>;
 }

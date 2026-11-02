@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ActionBar, Button, confirm, icon, Page, Stepper, toast, useCompactLayout, Wizard } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
+import { AvatarOwnerProvider, staysOnPage, useAvatarDraft, type AvatarDraft } from "@/entities/image-input";
 import { newPersonaDraft, refreshLibrary } from "@/features/library";
 import { createPersona, importPersona } from "./data/actions";
 import { canLeave, isTouched, newPersonaForm, personaSteps, type PersonaDraft, type PersonaForm } from "./data/form";
@@ -24,10 +25,15 @@ export function CreatePersonaPage() {
   const { data: status } = useQuery(appStatusQuery(api));
   const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
   const [start] = useState<PersonaDraft>(() => newPersonaDraft("", ""));
-  const [form, setForm] = useState<PersonaForm>(() => newPersonaForm(start));
-  const [index, setIndex] = useState(0);
-  const [saving, setSaving] = useState(false);
   const finished = useRef(false);
+  const avatar: AvatarDraft<{ form: PersonaForm; index: number }> = useAvatarDraft<{ form: PersonaForm; index: number }>({
+    ownerId: "persona:new",
+    read: () => ({ form, index }),
+    beforeLeave: () => { finished.current = true; },
+  });
+  const [form, setForm] = useState<PersonaForm>(() => avatar.restored?.form ?? newPersonaForm(start));
+  const [index, setIndex] = useState(() => avatar.restored?.index ?? 0);
+  const [saving, setSaving] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   const attempt = useRef<{ payload: string; id: string } | null>(null);
   const step = personaSteps[index] ?? "identity";
@@ -56,8 +62,8 @@ export function CreatePersonaPage() {
   });
 
   useBlocker({
-    shouldBlockFn: async ({ action }) => {
-      if (finished.current) return false;
+    shouldBlockFn: async ({ action, current, next }) => {
+      if (finished.current || staysOnPage(current, next)) return false;
       if (action === "BACK" && live.current.index > 0) {
         go(live.current.index - 1);
         return true;
@@ -124,6 +130,7 @@ export function CreatePersonaPage() {
 
   const next = personaSteps[index + 1];
   return (
+    <AvatarOwnerProvider owner={avatar.owner}>
     <Page
       title={t("create.title")}
       onBack={back}
@@ -150,5 +157,6 @@ export function CreatePersonaPage() {
         </Wizard>
       </fieldset>
     </Page>
+    </AvatarOwnerProvider>
   );
 }

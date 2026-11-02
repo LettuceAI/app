@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { Button, Field, icon, IconButton, ListGroup, ListRow, ListRowButton, MediaTile, Textarea } from "@lettuceai/crisp";
 import { FailureState } from "@/shared/ui/FailureState";
+import { pickImage } from "@/entities/image-input";
 import { editedScene, sceneEditorText, sceneImageToken } from "../data/scene-editor";
 import type { StepProps } from "./MembersStep";
 import type { AssetRef } from "@/api/generated/bindings";
@@ -43,9 +44,8 @@ export function GroupSceneEditor({ api, form, update, autoFocus, assets, names }
     const start = editor.current?.selectionStart ?? text.length;
     const end = editor.current?.selectionEnd ?? start;
     try {
-      const picked = await api.call("filesPickOpen", { kinds: ["image"], multiple: false });
-      if (!picked.sources[0]) return;
-      const asset = await api.call("assetsIngest", { source: picked.sources[0], role: "reference_image" });
+      const asset = await pickImage(api, "reference_image");
+      if (!asset) return;
       if (!mounted.current) return;
       const link = { id: crypto.randomUUID(), asset_id: asset.asset_id, slot: "inline" as const, ordinal: scene?.assets.length ?? 0 };
       const token = sceneImageToken(link.id);

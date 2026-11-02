@@ -8,6 +8,7 @@ import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
 import type { CharacterView_Serialize } from "@/api/generated/bindings";
 import { startDirectChat } from "@/features/conversations";
+import { AvatarOwnerProvider, staysOnPage, useAvatarDraft, type AvatarDraft } from "@/entities/image-input";
 import { exportEntry, refreshLibrary } from "@/features/library";
 import { EditSaveBar } from "@/shared/ui/EditSaveBar";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -41,10 +42,16 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const { data: status } = useQuery(appStatusQuery(api));
   const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
   const [stored, setStored] = useState<Stored>(() => storedFrom(view, lorebooks));
-  const [draft, setDraft] = useState<CharacterForm>(stored.form);
+  const leaving = useRef(false);
+  const avatar: AvatarDraft<{ draft: CharacterForm; tab: EditTab; selectedSceneId: string | null }> = useAvatarDraft<{ draft: CharacterForm; tab: EditTab; selectedSceneId: string | null }>({
+    ownerId: `character:${characterId}`,
+    read: () => ({ draft, tab, selectedSceneId }),
+    beforeLeave: () => { leaving.current = true; },
+  });
+  const [draft, setDraft] = useState<CharacterForm>(() => avatar.restored?.draft ?? stored.form);
   const search = useSearch({ from: "/characters/$characterId/edit" });
-  const [tab, setTab] = useState<EditTab>(search.tab ?? "profile");
-  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(() => stored.form.draft.scenes[0]?.id ?? null);
+  const [tab, setTab] = useState<EditTab>(avatar.restored?.tab ?? search.tab ?? "profile");
+  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(() => avatar.restored ? avatar.restored.selectedSceneId : stored.form.draft.scenes[0]?.id ?? null);
   const [sceneEditorOpen, setSceneEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState(false);
@@ -53,7 +60,6 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const attempt = useRef<{ payload: string; id: string } | null>(null);
   const latest = useRef(stored);
   const busy = useRef(false);
-  const leaving = useRef(false);
 
   const companion = draft.draft.defaults.interaction_mode === "companion" && draft.draft.defaults.companion_soul !== null;
   if (tab === "soul" && !companion) setTab("profile");
@@ -69,8 +75,8 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   }, [dirty, mobileSceneEditor]);
 
   useBlocker({
-    shouldBlockFn: async ({ action }) => {
-      if (leaving.current) return false;
+    shouldBlockFn: async ({ action, current, next }) => {
+      if (leaving.current || staysOnPage(current, next)) return false;
       if (action === "BACK" && live.current.mobileSceneEditor) {
         setSceneEditorOpen(false);
         return true;
@@ -201,7 +207,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
 
   const props = { api, form: draft, update };
   let body: ReactNode;
-  if (tab === "profile") body = <ProfileTab {...props} onModeLoadingChange={setChangingMode} />;
+  if (tab === "profile") body = <ProfileTab {...props} characterId={characterId} onModeLoadingChange={setChangingMode} />;
   else if (tab === "scenes") body = <ScenesStep {...props} mode="edit" phone={phone} editorOpen={mobileSceneEditor} selectedId={selectedSceneId} onSelect={(id) => {
     setSelectedSceneId(id);
     setSceneEditorOpen(id !== null);
@@ -235,6 +241,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   );
 
   return (
+    <AvatarOwnerProvider owner={avatar.owner}>
     <Page
       title={mobileSceneEditor && selectedScene ? t("scenes.number", { number: selectedScene.ordinal + 1 }) : name || t("edit.title")}
       onBack={back}
@@ -251,6 +258,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
         </AnimatePresence>
       </fieldset>
     </Page>
+    </AvatarOwnerProvider>
   );
 }
 

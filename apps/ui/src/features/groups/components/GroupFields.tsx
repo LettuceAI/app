@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { pickImage } from "@/entities/image-input";
 import { Brain, Check, Hand, Image, RefreshCw, Scale } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, icon, ListGroup, ListRow, ListRowButton, Segmented, toast } from "@lettuceai/crisp";
@@ -17,9 +18,8 @@ export function BackgroundGroup({ api, form, update }: StepProps) {
     if (picking) return;
     setPicking(true);
     try {
-      const selected = await api.call("filesPickOpen", { kinds: ["image"], multiple: false });
-      if (!selected.sources[0]) return;
-      const asset = await api.call("assetsIngest", { source: selected.sources[0], role: "background" });
+      const asset = await pickImage(api, "background");
+      if (!asset) return;
       update((current) => ({ ...current, background: asset, draft: { ...current.draft, background_asset_id: asset.asset_id } }));
     } catch (error) { toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`)); }
     finally { setPicking(false); }

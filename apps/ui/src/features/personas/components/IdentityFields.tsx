@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Camera } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, Field, icon, IconButton, Input, toast } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
-import { pickImage } from "@/features/characters";
+import { AvatarGeneration, pickImage } from "@/entities/image-input";
 import { withAvatar } from "../data/form";
 import { PersonaDescription } from "./PersonaDescription";
 import type { StepProps } from "./step-props";
@@ -12,7 +11,6 @@ import type { StepProps } from "./step-props";
 export function IdentityFields({ api, form, update, disabled = false, autoFocus = false, onBusyChange }: StepProps & { disabled?: boolean; autoFocus?: boolean; onBusyChange?: (busy: boolean) => void }) {
   const { t } = useTranslation("personas");
   const { t: common } = useTranslation("common");
-  const queryClient = useQueryClient();
   const [picking, setPicking] = useState(false);
   const { draft } = form;
   const busy = picking || disabled;
@@ -21,7 +19,7 @@ export function IdentityFields({ api, form, update, disabled = false, autoFocus 
     setPicking(true);
     onBusyChange?.(true);
     try {
-      const asset = await pickImage({ api, queryClient }, "avatar");
+      const asset = await pickImage(api, "avatar");
       if (asset) update((current) => withAvatar(current, asset));
     } catch (error) {
       toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));
@@ -39,6 +37,12 @@ export function IdentityFields({ api, form, update, disabled = false, autoFocus 
           <Avatar src={form.avatar?.url ?? null} name={draft.title.trim() || "?"} size="xl" className="h-28 w-28 text-3xl" />
           <span className="absolute -right-1 -bottom-1 flex h-9 w-9 items-center justify-center rounded-full border border-line-2 bg-surface-2 text-fg shadow-raised"><Camera size={icon.md} /></span>
         </IconButton>
+        <AvatarGeneration
+          api={api}
+          disabled={busy}
+          readContext={() => ({ subjectName: draft.title.trim(), subjectDescription: draft.description.trim(), currentAvatar: form.avatar })}
+          onUse={(asset) => update((current) => withAvatar(current, asset))}
+        />
         {form.avatar && <Button size="sm" variant="ghost" disabled={busy} onClick={() => update((current) => withAvatar(current, null))}>{t("identity.removeAvatar")}</Button>}
       </div>
       <div className="w-full min-w-0 space-y-4 @xl:flex-1">

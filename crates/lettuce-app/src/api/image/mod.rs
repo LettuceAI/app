@@ -5,6 +5,7 @@
 #[cfg(test)]
 mod tests;
 
+mod avatar;
 mod engine;
 mod generate;
 mod helpers;
@@ -21,6 +22,7 @@ use super::ApiContext;
 use super::error::api_error;
 
 pub(crate) use engine::fit_estimate;
+pub use avatar::{avatar_generate, avatar_generation_options};
 pub use engine::{
     sd_bundle_runnability, sd_catalog, sd_component_library, sd_compute_policy_get,
     sd_compute_policy_save, sd_detect_model_file, sd_disk_usage, sd_model_install, sd_model_repair,

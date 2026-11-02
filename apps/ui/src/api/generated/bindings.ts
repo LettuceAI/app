@@ -262,6 +262,8 @@ export const commands = {
 	civitaiAuthClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("civitai_auth_clear")),
 	civitaiLoraDownload: (request: CivitaiLoraDownloadRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("civitai_lora_download", { request })),
 	avatarPrompt: (request: AvatarPromptRequest) => typedError<AvatarPrompt, ApiError_Serialize>(__TAURI_INVOKE("avatar_prompt", { request })),
+	avatarGenerationOptions: () => typedError<AvatarGenerationOptions, ApiError_Serialize>(__TAURI_INVOKE("avatar_generation_options")),
+	avatarGenerate: (request: AvatarGenerateRequest) => typedError<AvatarGenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("avatar_generate", { request })),
 	avatarGradient: (request: AvatarGradientRequest) => typedError<AvatarGradient, ApiError_Serialize>(__TAURI_INVOKE("avatar_gradient", { request })),
 	imageDesignReference: (request: ImageDesignReferenceRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_design_reference", { request })),
 	hfBrowserLinks: () => typedError<HfBrowserLinks, ApiError_Serialize>(__TAURI_INVOKE("hf_browser_links")),
@@ -906,6 +908,32 @@ export type AudioVoiceView = {
 	name: string,
 	preview_url: string | null,
 	labels: { [key in string]: string },
+};
+
+export type AvatarGenerateRequest = {
+	request_id: string,
+	model_id: string | null,
+	kind: AvatarPromptKind,
+	source_asset_id: string | null,
+	character_id: string | null,
+};
+
+export type AvatarGenerationAccepted = {
+	job_id: string,
+	model: AvatarGenerationModel,
+	prompt: string,
+};
+
+export type AvatarGenerationModel = {
+	id: string,
+	name: string,
+	provider_kind: string,
+	supports_editing: boolean,
+};
+
+export type AvatarGenerationOptions = {
+	enabled: boolean,
+	model: AvatarGenerationModel | null,
 };
 
 export type AvatarGradient = {

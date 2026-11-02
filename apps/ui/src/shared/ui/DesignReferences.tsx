@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Field, icon, IconButton, Textarea, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import type { AssetRef } from "@/api/generated/bindings";
+import { pickImage } from "@/entities/image-input";
 
 /** A design note and reference images that describe how someone looks, for generated scene images. */
 export function DesignReferences({ api, note, onNoteChange, references, onReferencesChange, autoFocus }: {
@@ -20,10 +21,8 @@ export function DesignReferences({ api, note, onNoteChange, references, onRefere
     if (picking) return;
     setPicking(true);
     try {
-      const picked = await api.call("filesPickOpen", { kinds: ["image"], multiple: false });
-      const source = picked.sources[0];
-      if (!source) return;
-      const asset = await api.call("assetsIngest", { source, role: "reference_image" });
+      const asset = await pickImage(api, "reference_image");
+      if (!asset) return;
       onReferencesChange((current) => [...current, asset]);
     } catch (error) {
       toast.error(t(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));

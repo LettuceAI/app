@@ -26,7 +26,7 @@ const model = (id: string, account: string, input: ModelView["input_scopes"], ou
   id, provider_account_id: account, external_model_id: `${id}-slug`, display_name: id, kind: "chat", config: {},
   input_scopes: input, output_scopes: output, revision: 1, created_at: 1, updated_at: 1,
 });
-const models = [model("Cloud image", "openai", ["text"], ["image"]), model("Local image", "sdcpp", ["text"], ["image"]), model("Vision writer", "openai", ["text", "image"], ["text"]), model("Text writer", "openai", ["text"], ["text"])];
+const models = [model("Cloud image", "openai", ["text", "image"], ["image"]), model("Draw only", "openai", ["text"], ["image"]), model("Local image", "sdcpp", ["text", "image"], ["image"]), model("Vision writer", "openai", ["text", "image"], ["text"]), model("Text writer", "openai", ["text"], ["text"])];
 
 const runtimeRef = { release: "master-100-abc", asset: "vulkan.zip" };
 const runtimeBuild = { ...runtimeRef, backend: "Vulkan", size_bytes: 1000, active: true };
@@ -100,7 +100,7 @@ describe("image settings", () => {
     await clickRow("Avatar model");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("button", { name: /Cloud image/ })).toBeTruthy();
-    expect(within(dialog).queryByRole("button", { name: /Local image|Vision writer|Text writer/ })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /Local image|Vision writer|Text writer|Draw only/ })).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: /Cloud image/ }));
     await waitFor(() => expect(current().global.image_generation.avatar_model_profile_id).toBe("Cloud image"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

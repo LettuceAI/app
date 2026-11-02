@@ -3,7 +3,7 @@ import { toast } from "@lettuceai/crisp";
 import { createBrowserHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LibraryLorebookBinding, PersonaDefaultView, PersonaSaveRequest_Deserialize, PersonaView_Serialize } from "@/api/generated/bindings";
-import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
+import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
@@ -59,7 +59,7 @@ function lorebookBackend(initial: string[], start = 5) {
   return { log, order: () => ids, list: () => ok(ids.map((id, index) => binding(id, index))), calls: { personaLorebooksBind: bind, personaLorebooksUnbind: unbind, personaLorebooksReorder: reorder } };
 }
 
-async function renderEdit(view: PersonaView_Serialize, calls: MockCallHandlers = {}) {
+async function renderEdit(view: PersonaView_Serialize, calls: MockCallHandlers = {}, streams: MockStreamHandlers = {}) {
   window.history.replaceState(null, "", "/");
   const history = createBrowserHistory();
   const runtime = await createAppRuntime({
@@ -76,6 +76,7 @@ async function renderEdit(view: PersonaView_Serialize, calls: MockCallHandlers =
         lorebooksList: () => ok({ items: books, next_cursor: null }),
         ...calls,
       },
+      streams,
     }),
     history,
     i18n: await createTestI18n("en"),
@@ -97,6 +98,32 @@ const defaultSwitch = () => screen.getByRole("switch", { name: "Use as default" 
 
 function saved(request: PersonaSaveRequest_Deserialize, revision = 6): PersonaView_Serialize {
   return { id: "p1", archived: false, draft: request.draft as PersonaView_Serialize["draft"], assets: [], revision, created_at: 1, updated_at: 2 };
+}
+
+
+const avatarModel = { id: "image-model", name: "Image model", provider_kind: "openai", supports_editing: true };
+const avatarCalls: MockCallHandlers = {
+  avatarGenerationOptions: () => ok({ enabled: true, model: avatarModel }),
+  avatarGenerate: (request) => ok({ job_id: request.request_id, model: avatarModel, prompt: "rendered" }),
+};
+const avatarStreams: MockStreamHandlers = {
+  jobWatch: ([{ job_id }]) => ok({
+    id: job_id, kind: "image_generate", subject: { kind: "image_request", id: job_id }, subject_detail: null, state: "succeeded",
+    progress: { current: 0, total: null, unit: null, label_code: null, bytes_per_second: null }, created_at: 1, updated_at: 1, failure: null,
+    result: { type: "image_generation", images: [{ asset: { asset_id: job_id, url: `asset://${job_id}`, preview_url: null }, mime_type: "image/png", width: 512, height: 512, text: null }], rejected_outputs: 0 },
+  } as never),
+};
+
+async function generateAvatarFromPanel() {
+  fireEvent.click(await screen.findByRole("button", { name: "Generate avatar" }));
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "Describe the avatar" })).toBeTruthy());
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Describe the avatar" }), { target: { value: "a fox" } });
+  await waitFor(() => expect((within(dialog).getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
+  await waitFor(() => expect((within(dialog).getByRole("button", { name: "Use this avatar" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Use this avatar" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
 
 async function pickBooks(...names: string[]) {
@@ -367,6 +394,18 @@ describe("persona edit page", () => {
     const { history } = await renderEdit(persona());
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(history.location.pathname).toBe("/"));
+  });
+});
+
+describe("persona avatar generation", () => {
+  it("applies a generated avatar to the draft and leaves saving to the page", async () => {
+    const save = vi.fn();
+    await renderEdit(persona(), { ...avatarCalls, personaSave: save }, avatarStreams);
+    expect(saveButton()).toBeNull();
+    await generateAvatarFromPanel();
+    expect(document.querySelector('img[src^="asset://"]')).not.toBeNull();
+    expect(saveButton()).not.toBeNull();
+    expect(save).not.toHaveBeenCalled();
   });
 });
 

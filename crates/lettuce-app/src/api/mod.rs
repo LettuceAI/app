@@ -83,7 +83,7 @@ pub use files::{
     assets_ingest, files_inspect, files_pick_directory, files_pick_open, files_pick_save,
 };
 pub use image::{
-    avatar_gradient, avatar_prompt, civitai_auth_clear, civitai_auth_save, civitai_auth_status,
+    avatar_generate, avatar_generation_options, avatar_gradient, avatar_prompt, civitai_auth_clear, civitai_auth_save, civitai_auth_status,
     civitai_lora_download, civitai_model, civitai_search, hf_image_bundle_files,
     hf_image_bundle_install, hf_image_bundle_profiles, hf_image_bundle_retry,
     hf_image_bundle_retry_registration, hf_image_bundle_search, image_capabilities,

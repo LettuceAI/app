@@ -1,5 +1,6 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
+import { pickImage } from "@/entities/image-input";
 import { isApiFailure } from "@/api/client";
 import type { ConversationSettingsPatch_Deserialize, ConversationSettingsView, MessagePartView, TimelineMessage } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
@@ -247,10 +248,8 @@ export async function updateSettings(services: ConversationServices, change: Par
 
 /** Lets the person pick an image and makes it this chat's background; resolves false when the picker was cancelled. */
 export async function pickBackground(services: ConversationServices): Promise<boolean> {
-  const picked = await services.api.call("filesPickOpen", { kinds: ["image"], multiple: false });
-  const source = picked.sources[0];
-  if (!source) return false;
-  const asset = await services.api.call("assetsIngest", { source, role: "background" });
+  const asset = await pickImage(services.api, "background");
+  if (!asset) return false;
   await updateSettings(services, { background: { type: "image", asset_id: asset.asset_id } });
   return true;
 }

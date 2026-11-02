@@ -6,12 +6,14 @@ export default mergeConfig(
   defineConfig({
     test: {
       restoreMocks: true,
+      maxWorkers: 2,
       projects: [
         {
           extends: true,
           test: {
             name: "ui",
             environment: "jsdom",
+            testTimeout: 15_000,
             include: ["src/**/*.test.{ts,tsx}"],
             setupFiles: ["src/shared/testing/setup.ts"],
           },

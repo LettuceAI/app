@@ -22,6 +22,20 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn avatar_generation_options(context: State<'_, ApiContextSlot>) -> Result<lettuce_contracts::AvatarGenerationOptions, ApiError> {
+    let context = context.snapshot()?;
+    api::avatar_generation_options(&context).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn avatar_generate(context: State<'_, ApiContextSlot>, request: lettuce_contracts::AvatarGenerateRequest) -> Result<lettuce_contracts::AvatarGenerationAccepted, ApiError> {
+    let context = context.snapshot()?;
+    api::avatar_generate(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn image_generate(
     context: State<'_, ApiContextSlot>,
     request: ImageGenerateRequest,

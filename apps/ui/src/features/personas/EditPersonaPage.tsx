@@ -6,6 +6,7 @@ import { confirm, ListGroup, ListRow, LoadingState, Page, Switch, toast, useComp
 import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
 import type { PersonaDefaultView, PersonaView_Serialize } from "@/api/generated/bindings";
+import { AvatarOwnerProvider, staysOnPage, useAvatarDraft, type AvatarDraft } from "@/entities/image-input";
 import { exportEntry, refreshLibrary } from "@/features/library";
 import { EditSaveBar } from "@/shared/ui/EditSaveBar";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -33,7 +34,13 @@ function EditFlow({ personaId, view, lorebooks, defaultSlot }: { personaId: stri
   const { data: status } = useQuery(appStatusQuery(api));
   const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
   const [stored, setStored] = useState<EditBaseline>(() => storedFrom(view, lorebooks));
-  const [draft, setDraft] = useState<PersonaForm>(stored.form);
+  const leaving = useRef(false);
+  const avatar: AvatarDraft<{ draft: PersonaForm }> = useAvatarDraft<{ draft: PersonaForm }>({
+    ownerId: `persona:${personaId}`,
+    read: () => ({ draft }),
+    beforeLeave: () => { leaving.current = true; },
+  });
+  const [draft, setDraft] = useState<PersonaForm>(() => avatar.restored?.draft ?? stored.form);
   const [slot, setSlot] = useState<PersonaDefaultView>(defaultSlot);
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState(false);
@@ -41,7 +48,6 @@ function EditFlow({ personaId, view, lorebooks, defaultSlot }: { personaId: stri
   const attempt = useRef<{ payload: string; id: string } | null>(null);
   const latest = useRef(stored);
   const busy = useRef(false);
-  const leaving = useRef(false);
 
   const dirty = useMemo(() => isDirty(draft, stored.form), [draft, stored.form]);
   const canSave = !saving && draft.draft.title.trim().length > 0 && draft.draft.description.trim().length > 0;
@@ -54,8 +60,8 @@ function EditFlow({ personaId, view, lorebooks, defaultSlot }: { personaId: stri
   }, [dirty]);
 
   useBlocker({
-    shouldBlockFn: async () => {
-      if (leaving.current || !live.current.dirty) return false;
+    shouldBlockFn: async ({ current, next }) => {
+      if (leaving.current || staysOnPage(current, next) || !live.current.dirty) return false;
       const discard = await confirm({
         title: t("edit.leaveTitle"),
         message: t("edit.leaveBody"),
@@ -179,6 +185,7 @@ function EditFlow({ personaId, view, lorebooks, defaultSlot }: { personaId: stri
   });
 
   return (
+    <AvatarOwnerProvider owner={avatar.owner}>
     <Page
       title={name || t("edit.title")}
       onBack={leave}
@@ -218,6 +225,7 @@ function EditFlow({ personaId, view, lorebooks, defaultSlot }: { personaId: stri
         </div>
       </fieldset>
     </Page>
+    </AvatarOwnerProvider>
   );
 }
 

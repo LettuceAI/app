@@ -4,6 +4,7 @@ import { Button, icon, ListGroup, ListRow } from "@lettuceai/crisp";
 import { withImage } from "../data/form";
 import { CardStyleRows } from "./CardStyleRows";
 import { CharacterMode } from "./CharacterMode";
+import { AvatarGenerate } from "./AvatarGenerate";
 import { AvatarPicker, CardPreview, ImageField } from "./ImageFields";
 import { useImagePicker } from "./use-image-picker";
 import { NameField } from "./ProfileFields";
@@ -19,7 +20,7 @@ export function IdentityStep({ api, form, update, onImport, importing, onModeLoa
   return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
-        <AvatarPicker name={draft.profile.name.trim()} image={images.avatar_original} busy={busy} onChoose={() => void choose("avatar_original")} onRemove={() => update((current) => withImage(current, "avatar_original", null))} />
+        <AvatarPicker name={draft.profile.name.trim()} image={images.avatar_original} busy={busy} onChoose={() => void choose("avatar_original")} onRemove={() => update((current) => withImage(current, "avatar_original", null))} actions={<AvatarGenerate api={api} form={form} update={update} disabled={busy} />} />
         <div className="w-full min-w-0 space-y-4 @xl:flex-1">
           <NameField form={form} update={update} focus />
           <CharacterMode api={api} form={form} update={update} onLoadingChange={onModeLoadingChange} />

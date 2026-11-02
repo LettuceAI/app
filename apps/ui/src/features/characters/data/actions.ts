@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { AssetIngestRole, AssetRef, CharacterSummary, CharacterView_Serialize, LibraryLorebookMutationResult } from "@/api/generated/bindings";
+import type { CharacterSummary, CharacterView_Serialize, LibraryLorebookMutationResult } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { characterChanged, lorebookIds } from "./edit";
 import { draftToSave, type CharacterForm } from "./form";
@@ -8,14 +8,6 @@ import { draftToSave, type CharacterForm } from "./form";
 export interface CharacterServices {
   api: ApiClient;
   queryClient: QueryClient;
-}
-
-/** Asks for an image and stores it; null when the picker was cancelled. */
-export async function pickImage({ api }: CharacterServices, role: AssetIngestRole): Promise<AssetRef | null> {
-  const picked = await api.call("filesPickOpen", { kinds: ["image"], multiple: false });
-  const source = picked.sources[0];
-  if (!source) return null;
-  return api.call("assetsIngest", { source, role });
 }
 
 export interface Created {

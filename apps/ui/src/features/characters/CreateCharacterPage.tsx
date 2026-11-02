@@ -7,6 +7,7 @@ import { ActionBar, Button, confirm, icon, LoadingState, Page, Stepper, toast, u
 import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
 import { startDirectChat } from "@/features/conversations";
+import { AvatarOwnerProvider, staysOnPage, useAvatarDraft, type AvatarDraft } from "@/entities/image-input";
 import { importCharacterCard } from "@/features/home";
 import { FailureState } from "@/shared/ui/FailureState";
 import { createCharacter } from "./data/actions";
@@ -27,16 +28,22 @@ function CreateFlow({ start }: { start: CharacterDraft }) {
   const canGoBack = useCanGoBack();
   const { data: status } = useQuery(appStatusQuery(api));
   const phone = useCompactLayout() || status?.platform === "android" || status?.platform === "ios";
+  const finished = useRef(false);
+  const avatar: AvatarDraft<{ form: CharacterForm; index: number; selectedSceneId: string | null }> = useAvatarDraft<{ form: CharacterForm; index: number; selectedSceneId: string | null }>({
+    ownerId: "character:new",
+    read: () => ({ form, index, selectedSceneId }),
+    beforeLeave: () => { finished.current = true; },
+  });
   const [form, setForm] = useState<CharacterForm>(() => {
+    if (avatar.restored) return avatar.restored.form;
     const initial = newForm(start);
     return start.scenes.length > 0 ? initial : withAddedScene(initial, { text: "", direction: "" }, crypto.randomUUID());
   });
-  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(() => form.draft.scenes[0]?.id ?? null);
+  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(() => avatar.restored ? avatar.restored.selectedSceneId : form.draft.scenes[0]?.id ?? null);
   const [sceneEditorOpen, setSceneEditorOpen] = useState(false);
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(() => avatar.restored?.index ?? 0);
   const [saving, setSaving] = useState(false);
   const [changingMode, setChangingMode] = useState(false);
-  const finished = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
   const attempt = useRef<{ payload: string; id: string } | null>(null);
   const step = createSteps[index] ?? "identity";
@@ -60,8 +67,8 @@ function CreateFlow({ start }: { start: CharacterDraft }) {
   };
 
   useBlocker({
-    shouldBlockFn: async ({ action }) => {
-      if (finished.current) return false;
+    shouldBlockFn: async ({ action, current, next }) => {
+      if (finished.current || staysOnPage(current, next)) return false;
       if (action === "BACK" && live.current.mobileSceneEditor) {
         setSceneEditorOpen(false);
         return true;
@@ -154,6 +161,7 @@ function CreateFlow({ start }: { start: CharacterDraft }) {
   </Button>;
 
   return (
+    <AvatarOwnerProvider owner={avatar.owner}>
     <Page
       title={mobileSceneEditor && selectedScene ? t("scenes.number", { number: selectedScene.ordinal + 1 }) : t("create.title")}
       onBack={back}
@@ -179,6 +187,7 @@ function CreateFlow({ start }: { start: CharacterDraft }) {
         </Wizard>
       </fieldset>
     </Page>
+    </AvatarOwnerProvider>
   );
 }
 

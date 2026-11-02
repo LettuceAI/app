@@ -277,6 +277,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::image::civitai_auth_clear,
             commands::image::civitai_lora_download,
             commands::image::avatar_prompt,
+            commands::image::avatar_generation_options,
+            commands::image::avatar_generate,
             commands::image::avatar_gradient,
             commands::image::image_design_reference,
             commands::hugging_face::hf_browser_links,

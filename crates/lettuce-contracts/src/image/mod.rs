@@ -2,6 +2,7 @@
 //! engine, LoRAs, Hugging Face image bundles, CivitAI and the avatar and
 //! design reference helpers.
 
+mod avatar;
 mod bundles;
 mod civitai;
 mod engine;
@@ -9,6 +10,7 @@ mod generation;
 mod helpers;
 mod loras;
 
+pub use avatar::*;
 pub use bundles::*;
 pub use civitai::*;
 pub use engine::*;

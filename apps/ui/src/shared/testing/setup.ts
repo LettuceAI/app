@@ -1,3 +1,7 @@
+import { configure } from "@testing-library/react";
+
+configure({ asyncUtilTimeout: 5_000 });
+
 Object.defineProperty(window, "scrollTo", { value: () => {}, writable: true, configurable: true });
 
 Object.defineProperty(window, "matchMedia", {

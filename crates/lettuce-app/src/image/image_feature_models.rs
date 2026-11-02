@@ -154,7 +154,10 @@ pub fn image_feature_model<C: ModelCatalog + ?Sized>(
             Err(ImageFeatureModelError::SceneModelUnsupported)
         };
     }
-    let candidates = all.into_iter().filter(image_model).collect::<Vec<_>>();
+    let candidates = all.into_iter().filter(|model| {
+        image_model(model) && (feature != ImageFeature::Avatar
+            || supported(model.profile.config.capabilities.input_modalities.image))
+    }).collect::<Vec<_>>();
     preferred(&candidates, chosen)
         .or_else(|| candidates.first())
         .cloned()
@@ -387,8 +390,8 @@ mod tests {
             ProviderAccountRepository::upsert(&database, account("openai"), None).expect("account");
         let text = profile(&remote, "text", 1, false, false);
         let vision = profile(&remote, "vision", 2, false, true);
-        let first_image = profile(&remote, "first-image", 3, true, false);
-        let second_image = profile(&remote, "second-image", 4, true, false);
+        let first_image = profile(&remote, "first-image", 3, true, true);
+        let second_image = profile(&remote, "second-image", 4, true, true);
         for model in [&second_image, &text, &first_image, &vision] {
             ModelProfileRepository::upsert(&database, model.clone(), None).expect("model");
         }

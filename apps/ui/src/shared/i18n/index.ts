@@ -14,6 +14,7 @@ import common from "./locales/en/common.json";
 import conversations from "./locales/en/conversations.json";
 import groups from "./locales/en/groups.json";
 import home from "./locales/en/home.json";
+import imageInput from "./locales/en/image-input.json";
 import library from "./locales/en/library.json";
 import openedFiles from "./locales/en/opened-files.json";
 import onboarding from "./locales/en/onboarding.json";
@@ -40,6 +41,7 @@ export const resources = {
     common,
     conversations,
     home,
+    "image-input": imageInput,
     groups,
     library,
     onboarding,
