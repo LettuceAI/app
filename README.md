@@ -68,9 +68,6 @@ For frontend work, `bun run dev:ui` runs the UI in a browser with a mock backend
 The frontend lives in [`apps/ui/`](apps/ui/), the native shell in
 [`apps/tauri/`](apps/tauri/), and the Rust libraries in [`crates/`](crates/).
 
-Release workflows, signing secrets, and AUR publication are documented in
-[Releasing](.github/RELEASING.md).
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and required checks.
