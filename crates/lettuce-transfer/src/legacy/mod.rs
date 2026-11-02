@@ -20,6 +20,7 @@ pub(crate) mod legacy_backup_usage;
 pub(crate) mod legacy_import_backup;
 pub(crate) mod legacy_sprout;
 pub(crate) mod legacy_sync_conflicts;
+pub(crate) mod legacy_timestamp;
 
 pub use legacy_backup::*;
 pub use legacy_backup_asr::*;
@@ -42,3 +43,6 @@ pub use legacy_backup_usage::*;
 pub use legacy_import_backup::*;
 pub use legacy_sprout::*;
 pub use legacy_sync_conflicts::*;
+pub use legacy_timestamp::{
+    deserialize_legacy_timestamp, deserialize_optional_legacy_timestamp, legacy_timestamp_value,
+};

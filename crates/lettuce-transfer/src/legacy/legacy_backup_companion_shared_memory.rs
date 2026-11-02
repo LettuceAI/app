@@ -17,6 +17,7 @@ const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 #[derive(Debug)]
 pub struct LegacyBackupCompanionSharedMemoryPlan {
     pub states: Vec<LegacyBackupCompanionSharedMemory>,
+    pub skipped: Vec<crate::LegacyImportSkip>,
     pub notices: Vec<LegacyBackupConversionNotice>,
     pub source: LegacyBackupScheduledNotePlan,
 }
@@ -121,7 +122,7 @@ struct EpisodeRow {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct LegacyRelationshipState {
     closeness: f64,
     trust: f64,
@@ -129,6 +130,7 @@ struct LegacyRelationshipState {
     tension: f64,
     stability: f64,
     interaction_count: u32,
+    #[serde(deserialize_with = "crate::deserialize_legacy_timestamp")]
     last_interaction_at: i64,
 }
 
@@ -149,11 +151,12 @@ pub fn plan_legacy_backup_companion_shared_memory(
         .iter()
         .find(|document| document.kind == LegacyBackupDocumentKind::CompanionSharedMemory);
     let mut notices = source.notices.clone();
+    let mut skipped = Vec::new();
     let states = match document {
         Some(document) => {
             let rows: Vec<StateRow> =
                 serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
-            map_states(rows, &source, &mut notices)?
+            map_states(rows, &source, &mut skipped, &mut notices)?
         }
         None => {
             notices.push(notice(LegacyBackupConversionNoticeKind::Absent, "$"));
@@ -162,8 +165,11 @@ pub fn plan_legacy_backup_companion_shared_memory(
     };
     notices.sort();
     notices.dedup();
+    skipped.sort();
+    skipped.dedup();
     Ok(LegacyBackupCompanionSharedMemoryPlan {
         states,
+        skipped,
         notices,
         source,
     })
@@ -172,6 +178,7 @@ pub fn plan_legacy_backup_companion_shared_memory(
 fn map_states(
     rows: Vec<StateRow>,
     source: &LegacyBackupScheduledNotePlan,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupCompanionSharedMemory>, LegacyBackupCompanionSharedMemoryError> {
     let direct = &source.source.source;
@@ -246,6 +253,8 @@ fn map_states(
             &relationship_value,
             &persona_ids,
             &format!("{path}.relationship_states"),
+            skipped,
+            notices,
         )?;
         let episodes = map_episodes(
             row.episodes,
@@ -253,6 +262,7 @@ fn map_states(
             &persona_ids,
             &direct_sessions,
             &path,
+            skipped,
             notices,
         )?;
         for relationship in &mut relationship_states {
@@ -290,10 +300,14 @@ fn map_states(
         } else {
             LegacyBackupCompanionMaterialization::RetainedEvidence
         };
-        let relationship_materialization = if relationship_states.iter().all(|relationship| {
-            relationship.materialization
-                == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
-        }) {
+        let relationship_materialization = if relationship_value
+            .as_object()
+            .is_some_and(|values| values.len() == relationship_states.len())
+            && relationship_states.iter().all(|relationship| {
+                relationship.materialization
+                    == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
+            })
+        {
             LegacyBackupCompanionMaterialization::ExactInitialSnapshot
         } else {
             LegacyBackupCompanionMaterialization::RetainedEvidence
@@ -338,6 +352,8 @@ fn map_relationships(
     value: &Value,
     persona_ids: &BTreeSet<PersonaId>,
     path: &str,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupRelationshipState>, LegacyBackupCompanionSharedMemoryError> {
     let object = value.as_object().ok_or_else(|| malformed(path))?;
     let mut relationships = Vec::with_capacity(object.len());
@@ -348,11 +364,30 @@ fn map_relationships(
         } else {
             let id = key.parse::<PersonaId>().map_err(|_| malformed(&field))?;
             if !persona_ids.contains(&id) {
-                return Err(orphan(field));
+                skip_reference(
+                    &field,
+                    crate::LegacyImportSkipKind::PersonaReference,
+                    crate::LegacyImportSkipReason::MissingPersona,
+                    skipped,
+                    notices,
+                );
+                continue;
             }
             Some(id)
         };
         let state = legacy_relationship_state(value).ok_or_else(|| malformed(&field))?;
+        for key in value.as_object().into_iter().flat_map(|object| object.keys()) {
+            if !matches!(
+                key.as_str(),
+                "closeness" | "trust" | "affection" | "tension" | "stability"
+                    | "interactionCount" | "lastInteractionAt"
+            ) {
+                notices.push(notice(
+                    LegacyBackupConversionNoticeKind::Unsupported,
+                    &format!("{field}.{key}"),
+                ));
+            }
+        }
         relationships.push(LegacyBackupRelationshipState {
             persona_id,
             state,
@@ -369,18 +404,29 @@ fn map_episodes(
     persona_ids: &BTreeSet<PersonaId>,
     sessions: &BTreeMap<&str, &str>,
     parent_path: &str,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupCompanionEpisode>, LegacyBackupCompanionSharedMemoryError> {
     let character_source_id = character_id.to_string();
     let mut identities = BTreeSet::new();
     let mut session_ids = BTreeSet::new();
     let mut episodes = Vec::with_capacity(rows.len());
-    for (index, row) in rows.into_iter().enumerate() {
+    for (index, mut row) in rows.into_iter().enumerate() {
         let path = format!("{parent_path}.episodes[{index}]");
         report_extra(&path, &row.extra, notices);
         validate_identifier(&row.session_id, &format!("{path}.session_id"))?;
         if !session_ids.insert(row.session_id.clone()) {
             return Err(malformed(format!("{path}.session_id")));
+        }
+        if !sessions.contains_key(row.session_id.as_str()) {
+            skip_reference(
+                &format!("{path}.session_id"),
+                crate::LegacyImportSkipKind::SessionLink,
+                crate::LegacyImportSkipReason::MissingSession,
+                skipped,
+                notices,
+            );
+            continue;
         }
         if sessions.get(row.session_id.as_str()).copied() != Some(character_source_id.as_str()) {
             return Err(orphan(format!("{path}.session_id")));
@@ -393,7 +439,14 @@ fn map_episodes(
                 .parse::<PersonaId>()
                 .map_err(|_| malformed(format!("{path}.persona_key")))?;
             if !persona_ids.contains(&id) {
-                return Err(orphan(format!("{path}.persona_key")));
+                skip_reference(
+                    &format!("{path}.persona_key"),
+                    crate::LegacyImportSkipKind::PersonaReference,
+                    crate::LegacyImportSkipReason::MissingPersona,
+                    skipped,
+                    notices,
+                );
+                continue;
             }
             Some(id)
         };
@@ -406,7 +459,16 @@ fn map_episodes(
         }
         if let Some(previous) = row.previous_session_id.as_deref() {
             validate_identifier(previous, &format!("{path}.previous_session_id"))?;
-            if sessions.get(previous).copied() != Some(character_source_id.as_str()) {
+            if !sessions.contains_key(previous) {
+                skip_reference(
+                    &format!("{path}.previous_session_id"),
+                    crate::LegacyImportSkipKind::SessionLink,
+                    crate::LegacyImportSkipReason::MissingSession,
+                    skipped,
+                    notices,
+                );
+                row.previous_session_id = None;
+            } else if sessions.get(previous).copied() != Some(character_source_id.as_str()) {
                 return Err(orphan(format!("{path}.previous_session_id")));
             }
         }
@@ -436,26 +498,48 @@ fn map_episodes(
     }
     let by_session = episodes
         .iter()
-        .map(|episode| (episode.conversation_source_id.as_str(), episode))
+        .map(|episode| {
+            (episode.conversation_source_id.clone(), (episode.persona_id, episode.episode_index))
+        })
         .collect::<BTreeMap<_, _>>();
-    for (index, episode) in episodes.iter().enumerate() {
+    for episode in &mut episodes {
+        let index = episode.ordinal;
         let Some(previous_id) = episode.previous_conversation_source_id.as_deref() else {
             continue;
         };
         let Some(previous) = by_session.get(previous_id) else {
-            return Err(orphan(format!(
-                "{parent_path}.episodes[{index}].previous_session_id"
-            )));
+            skip_reference(
+                &format!("{parent_path}.episodes[{index}].previous_session_id"),
+                crate::LegacyImportSkipKind::SessionLink,
+                crate::LegacyImportSkipReason::IncompatibleReference,
+                skipped,
+                notices,
+            );
+            episode.previous_conversation_source_id = None;
+            continue;
         };
-        if previous.persona_id != episode.persona_id
-            || previous.episode_index >= episode.episode_index
-        {
+        if previous.0 != episode.persona_id || previous.1 >= episode.episode_index {
             return Err(malformed(format!(
                 "{parent_path}.episodes[{index}].previous_session_id"
             )));
         }
     }
     Ok(episodes)
+}
+
+fn skip_reference(
+    field: &str,
+    kind: crate::LegacyImportSkipKind,
+    reason: crate::LegacyImportSkipReason,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) {
+    skipped.push(crate::LegacyImportSkip {
+        kind,
+        source_key: format!("companion_shared_memory:{field}"),
+        reason,
+    });
+    notices.push(notice(LegacyBackupConversionNoticeKind::Lossy, field));
 }
 
 /// One stored legacy relationship state, when it is in range.
@@ -509,16 +593,20 @@ fn validate_soul_shape(
                 return Err(malformed(format!("{field}.{key}")));
             }
         }
-        for key in [
-            "evidenceCount",
-            "validFrom",
-            "validUntil",
-            "createdAt",
-            "supersededAt",
-        ] {
+        for key in ["evidenceCount", "validFrom", "validUntil"] {
             if object
                 .get(key)
                 .is_some_and(|value| !value.is_null() && value.as_u64().is_none())
+            {
+                return Err(malformed(format!("{field}.{key}")));
+            }
+        }
+        for key in ["createdAt", "supersededAt"] {
+            if object
+                .get(key)
+                .is_some_and(|value| {
+                    !value.is_null() && value.as_i64().is_none() && value.as_u64().is_none()
+                })
             {
                 return Err(malformed(format!("{field}.{key}")));
             }
@@ -547,7 +635,6 @@ fn valid_relationship(state: &RelationshipState) -> bool {
         && [state.tension, state.stability]
             .into_iter()
             .all(|value| value.is_finite() && (0.0..=1.0).contains(&value))
-        && state.last_interaction_at.get() >= 0
 }
 
 fn validate_string_array(
@@ -798,12 +885,12 @@ mod tests {
         })
     }
 
-    fn source(
+    fn inventory(
         shared: Option<Value>,
         character_id: &str,
         session_id: &str,
         companion: bool,
-    ) -> LegacyBackupScheduledNotePlan {
+    ) -> LegacyBackupInventory {
         let mut documents = vec![
             document(
                 LegacyBackupDocumentKind::Characters,
@@ -826,7 +913,7 @@ mod tests {
                 shared,
             ));
         }
-        let inventory = LegacyBackupInventory {
+        LegacyBackupInventory {
             warnings: Vec::new(),
             version: 1,
             created_at: 1,
@@ -834,9 +921,18 @@ mod tests {
             source_hash: ContentHash::parse("aa".repeat(32)).expect("source hash"),
             documents,
             media: Vec::new(),
-        };
+        }
+    }
+
+    fn source(
+        shared: Option<Value>,
+        character_id: &str,
+        session_id: &str,
+        companion: bool,
+    ) -> LegacyBackupScheduledNotePlan {
         let configuration =
-            plan_legacy_backup_configuration(inventory).expect("configuration plan");
+            plan_legacy_backup_configuration(inventory(shared, character_id, session_id, companion))
+                .expect("configuration plan");
         let authored = plan_legacy_backup_authored(configuration).expect("authored plan");
         let media = plan_legacy_backup_authored_media(authored).expect("media plan");
         let asr = plan_legacy_backup_asr(media).expect("ASR plan");
@@ -937,5 +1033,189 @@ mod tests {
             Err(LegacyBackupCompanionSharedMemoryError::Malformed { ref field })
                 if field == "[0].relationship_states.__default__"
         ));
+    }
+
+    #[test]
+    fn shared_relationships_preserve_effective_dates_on_both_sides_of_epoch() {
+        let character_id = id(30);
+        let session_id = id(31);
+        for timestamp in [i64::MIN, -315_619_200_000, 0, 20, i64::MAX] {
+            let mut row = shared_state(&character_id, &session_id);
+            let mut relationships: Value = serde_json::from_str(
+                row["relationship_states"].as_str().expect("relationship JSON"),
+            ).expect("relationships");
+            relationships["__default__"]["lastInteractionAt"] = json!(timestamp);
+            let raw = serde_json::to_string(&relationships).expect("relationship JSON");
+            row["relationship_states"] = json!(&raw);
+            let plan = plan_legacy_backup_companion_shared_memory(source(
+                Some(json!([row])), &character_id, &session_id, true,
+            )).expect("shared-memory plan with signed effective date");
+            let shared = &plan.states[0];
+            assert_eq!(shared.relationship_states_json, raw);
+            assert_eq!(shared.relationship_states[0].state.last_interaction_at.get(), timestamp);
+            assert_eq!(shared.relationship_states[0].state.interaction_count, 7);
+            assert_eq!(shared.created_at, 1);
+            assert_eq!(shared.updated_at, 20);
+        }
+    }
+
+    #[test]
+    fn persona_relationships_accept_signed_dates_and_still_reject_invalid_state() {
+        let persona = id(32).parse::<PersonaId>().expect("persona id");
+        let key = persona.to_string();
+        let path = "[2].relationship_states";
+        let field = format!("{path}.{key}");
+        let personas = BTreeSet::from([persona]);
+        let value = json!({ (key.clone()): {
+            "closeness": -0.4, "trust": -0.5, "affection": -0.3,
+            "tension": 0.1, "stability": 0.8, "interactionCount": 7,
+            "lastInteractionAt": -315_619_200_000_i64
+        } });
+        let mapped = map_relationships(&value, &personas, path, &mut Vec::new(), &mut Vec::new()).expect("persona relationship");
+        assert_eq!(mapped[0].persona_id, Some(persona));
+        assert_eq!(mapped[0].state.last_interaction_at.get(), -315_619_200_000);
+        for (property, invalid) in [
+            ("trust", json!(-1.01)),
+            ("tension", json!(-0.1)),
+            ("interactionCount", json!(-1)),
+            ("lastInteractionAt", json!(-1.5)),
+            ("lastInteractionAt", json!("20")),
+        ] {
+            let mut invalid_state = value.clone();
+            invalid_state[&key][property] = invalid;
+            assert!(matches!(map_relationships(&invalid_state, &personas, path, &mut Vec::new(), &mut Vec::new()),
+                Err(LegacyBackupCompanionSharedMemoryError::Malformed { field: actual }) if actual == field));
+        }
+    }
+
+    #[test]
+    fn deleted_personas_are_reported_without_reassigning_their_state() {
+        let character = id(40);
+        let session = id(41);
+        let missing_persona = id(42);
+        let mut row = shared_state(&character, &session);
+        let mut relationships: Value = serde_json::from_str(row["relationship_states"].as_str().expect("JSON")).expect("relationships");
+        relationships[&missing_persona] = relationships["__default__"].clone();
+        let raw = serde_json::to_string(&relationships).expect("JSON");
+        row["relationship_states"] = json!(&raw);
+        let partial = plan_legacy_backup_companion_shared_memory(source(Some(json!([row.clone()])), &character, &session, true)).expect("stale relationship only");
+        assert_eq!(partial.states[0].relationship_materialization, LegacyBackupCompanionMaterialization::RetainedEvidence);
+        row["episodes"][0]["persona_key"] = json!(missing_persona);
+        let plan = plan_legacy_backup_companion_shared_memory(source(Some(json!([row])), &character, &session, true)).expect("stale persona links");
+        assert_eq!(plan.states[0].relationship_states_json, raw);
+        assert_eq!(plan.states[0].relationship_states.len(), 1);
+        assert_eq!(plan.states[0].relationship_states[0].persona_id, None);
+        assert!(plan.states[0].episodes.is_empty());
+        assert_eq!(plan.states[0].relationship_states[0].materialization, LegacyBackupCompanionMaterialization::RetainedEvidence);
+        assert_eq!(plan.skipped.iter().filter(|skip| skip.reason == crate::LegacyImportSkipReason::MissingPersona).count(), 2);
+    }
+
+    #[test]
+    fn deleted_episode_sessions_and_missing_predecessors_do_not_abort_the_remaining_history() {
+        let character = id(50);
+        let session = id(51);
+        let missing = id(52);
+        let mut row = shared_state(&character, &session);
+        row["episodes"][0]["previous_session_id"] = json!(&missing);
+        row["episodes"][0]["episode_index"] = json!(2);
+        let mut deleted = row["episodes"][0].clone();
+        deleted["session_id"] = json!(missing);
+        row["episodes"].as_array_mut().expect("episodes").push(deleted);
+        let plan = plan_legacy_backup_companion_shared_memory(source(Some(json!([row])), &character, &session, true)).expect("stale episode links");
+        assert_eq!(plan.states[0].episodes.len(), 1);
+        assert_eq!(plan.states[0].episodes[0].conversation_source_id, session);
+        assert_eq!(plan.states[0].episodes[0].previous_conversation_source_id, None);
+        assert_eq!(plan.skipped.iter().filter(|skip| skip.reason == crate::LegacyImportSkipReason::MissingSession).count(), 2);
+        assert!(plan.notices.iter().any(|notice| notice.field == "[0].episodes[1].session_id"));
+    }
+
+    #[test]
+    fn extra_relationship_fields_keep_the_legacy_read_behavior_and_are_reported() {
+        let character = id(60);
+        let session = id(61);
+        let mut row = shared_state(&character, &session);
+        let mut relationships: Value = serde_json::from_str(row["relationship_states"].as_str().expect("JSON")).expect("relationships");
+        relationships["__default__"]["legacyExtra"] = json!({ "kept": true });
+        let raw = serde_json::to_string(&relationships).expect("JSON");
+        row["relationship_states"] = json!(&raw);
+        let plan = plan_legacy_backup_companion_shared_memory(source(Some(json!([row])), &character, &session, true)).expect("extra relationship fields");
+        assert_eq!(plan.states[0].relationship_states_json, raw);
+        assert_eq!(plan.states[0].relationship_states[0].state.interaction_count, 7);
+        assert!(plan.notices.iter().any(|notice| notice.kind == LegacyBackupConversionNoticeKind::Unsupported && notice.field.ends_with("relationship_states.__default__.legacyExtra")));
+    }
+
+    #[test]
+    fn skipped_episode_sessions_reach_the_sealed_import_plan() {
+        let character = id(70);
+        let session = id(71);
+        let mut row = shared_state(&character, &session);
+        row["memory_embeddings"] = json!("[]");
+        let mut deleted = row["episodes"][0].clone();
+        deleted["session_id"] = json!(id(72));
+        row["episodes"].as_array_mut().expect("episodes").push(deleted);
+        let plan = crate::plan_legacy_backup_compatibility(inventory(
+            Some(json!([row])), &character, &session, true,
+        ))
+        .expect("compatibility plan with deleted episode session");
+
+        plan.verify_seal().expect("sealed compatibility plan");
+        let imported = plan.legacy_import_plan();
+        assert!(imported.later_skips.iter().any(|skip| {
+            skip.kind == crate::LegacyImportSkipKind::SessionLink
+                && skip.reason == crate::LegacyImportSkipReason::MissingSession
+                && skip.source_key == "companion_shared_memory:[0].episodes[1].session_id"
+        }));
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Lossy
+                && notice.document == LegacyBackupDocumentKind::CompanionSharedMemory
+                && notice.field == "[0].episodes[1].session_id"
+        }));
+    }
+
+    #[test]
+    fn episode_links_to_a_different_character_still_reject() {
+        let character = id(80);
+        let session = id(81);
+        let other_character = id(82);
+        let previous = id(83);
+        for wrong_previous in [false, true] {
+            let mut row = shared_state(&character, &session);
+            if wrong_previous {
+                row["episodes"][0]["previous_session_id"] = json!(&previous);
+            }
+            let sessions = BTreeMap::from([
+                (session.as_str(), if wrong_previous { character.as_str() } else { other_character.as_str() }),
+                (previous.as_str(), other_character.as_str()),
+            ]);
+            let episodes = serde_json::from_value(row["episodes"].clone()).expect("episodes");
+            let expected = if wrong_previous {
+                "[2].episodes[0].previous_session_id"
+            } else {
+                "[2].episodes[0].session_id"
+            };
+            assert!(matches!(
+                map_episodes(episodes, character.parse().expect("character"), &BTreeSet::new(),
+                    &sessions, "[2]", &mut Vec::new(), &mut Vec::new()),
+                Err(LegacyBackupCompanionSharedMemoryError::Orphan { field }) if field == expected
+            ));
+        }
+    }
+
+    #[test]
+    fn soul_growth_shape_accepts_signed_dates_without_relaxing_counters_or_validity_dates() {
+        let value = json!([{ "createdAt": -300, "supersededAt": -200 }]);
+        validate_soul_shape(&value, "soul").expect("signed legacy soul dates");
+        for field in ["evidenceCount", "validFrom", "validUntil"] {
+            let mut invalid = value.clone();
+            invalid[0][field] = json!(-1);
+            assert!(validate_soul_shape(&invalid, "soul").is_err());
+        }
+        for field in ["createdAt", "supersededAt"] {
+            for invalid_date in [json!(1.5), json!("20")] {
+                let mut invalid = value.clone();
+                invalid[0][field] = invalid_date;
+                assert!(validate_soul_shape(&invalid, "soul").is_err());
+            }
+        }
     }
 }

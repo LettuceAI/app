@@ -938,10 +938,10 @@ fn canonical_embeddings(
                 id: r.get(0)?,
                 text: r.get(3)?,
                 embedding,
-                created_at: r.get::<_, i64>(23)? as u64,
+                created_at: r.get::<_, i64>(23)?,
                 token_count: r.get::<_, i64>(4)? as u32,
                 is_cold: flag(r, 10)?,
-                last_accessed_at: r.get::<_, i64>(24)? as u64,
+                last_accessed_at: r.get::<_, i64>(24)?,
                 importance_score: r.get::<_, f64>(6)? as f32,
                 persistence_importance: r.get::<_, f64>(7)? as f32,
                 prompt_importance: r.get::<_, f64>(8)? as f32,
@@ -951,7 +951,7 @@ fn canonical_embeddings(
                 embedding_source_version: r.get(2)?,
                 embedding_dimensions,
                 category: r.get(5)?,
-                observed_at: r.get::<_, Option<i64>>(21)?.map(|value| value as u64),
+                observed_at: r.get::<_, Option<i64>>(21)?,
                 observed_time_precision: r.get(22)?,
                 canonical_entities: r
                     .get::<_, Option<String>>(20)?
@@ -962,7 +962,7 @@ fn canonical_embeddings(
                 source_role: r.get(15)?,
                 source_message_id: r.get(16)?,
                 superseded_by: r.get(17)?,
-                superseded_at: r.get::<_, Option<i64>>(18)?.map(|value| value as u64),
+                superseded_at: r.get::<_, Option<i64>>(18)?,
                 supersedes: r
                     .get::<_, Option<String>>(19)?
                     .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -984,10 +984,10 @@ struct LegacyMemoryEmbedding {
     id: String,
     text: String,
     embedding: Vec<f32>,
-    created_at: u64,
+    created_at: i64,
     token_count: u32,
     is_cold: bool,
-    last_accessed_at: u64,
+    last_accessed_at: i64,
     importance_score: f32,
     persistence_importance: f32,
     prompt_importance: f32,
@@ -1001,7 +1001,7 @@ struct LegacyMemoryEmbedding {
     #[serde(skip_serializing_if = "Option::is_none")]
     category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    observed_at: Option<u64>,
+    observed_at: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     observed_time_precision: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1017,7 +1017,7 @@ struct LegacyMemoryEmbedding {
     #[serde(skip_serializing_if = "Option::is_none")]
     superseded_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    superseded_at: Option<u64>,
+    superseded_at: Option<i64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     supersedes: Vec<String>,
 }
@@ -1934,6 +1934,37 @@ mod tests {
             plan.llm_metrics.metrics[1].message_source_id.as_deref(),
             Some("message-1")
         );
+        std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn normalized_memory_dates_keep_their_signed_sqlite_values() {
+        let path = legacy_database();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute(
+                "UPDATE memory_embeddings SET created_at = -300, last_accessed_at = -200, observed_at = -400, observed_time_precision = 'user', superseded_at = -100",
+                [],
+            )
+            .expect("signed memory dates");
+        drop(connection);
+
+        let documents = read_legacy_database_documents(&path).expect("legacy documents");
+        let owners = document_value(&documents, LegacyBackupDocumentKind::MemoryEmbeddings);
+        let sessions = document_value(&documents, LegacyBackupDocumentKind::Sessions);
+        assert_eq!(owners[0]["memory_embeddings"], sessions[0]["memory_embeddings"]);
+        let memories: Value = serde_json::from_str(
+            owners[0]["memory_embeddings"].as_str().expect("memory text"),
+        )
+        .expect("memory JSON");
+        for (field, expected) in [
+            ("createdAt", -300),
+            ("lastAccessedAt", -200),
+            ("observedAt", -400),
+            ("supersededAt", -100),
+        ] {
+            assert_eq!(memories[0][field], json!(expected));
+        }
         std::fs::remove_file(path).expect("remove fixture");
     }
 

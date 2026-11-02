@@ -79,6 +79,7 @@ impl LegacyBackupCompatibilityPlan {
         let authored = &asr.source.authored;
         let group_sessions = &self.creation_helpers.source.source.source.source;
         let direct_sessions = &group_sessions.source;
+        let companion_shared = &self.creation_helpers.source.source;
         let mut plan = crate::LegacyImportPlan {
             provider_models: authored.configuration.provider_models.clone(),
             prompts: authored.configuration.prompts.clone(),
@@ -107,6 +108,7 @@ impl LegacyBackupCompatibilityPlan {
             .chain(&authored.skipped)
             .chain(&direct_sessions.skipped)
             .chain(&group_sessions.skipped)
+            .chain(&companion_shared.skipped)
             .chain(&self.images.skipped)
             .chain(&self.llm_metrics.skipped)
             .filter(|skip| !sealed.contains(&(skip.kind, skip.source_key.clone())))

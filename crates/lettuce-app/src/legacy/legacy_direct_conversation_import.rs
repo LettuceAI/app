@@ -936,7 +936,7 @@ fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::Companion
     let millis = |key: &str| {
         time_override
             .and_then(|value| value.get(key))
-            .and_then(serde_json::Value::as_i64)
+            .and_then(lettuce_transfer::legacy_timestamp_value)
             .filter(|value| key != "setAtMs" || *value >= 0)
             .map(TimestampMillis::new)
     };
@@ -994,8 +994,8 @@ fn legacy_companion_state(
         #[serde(default)]
         active_drivers: Vec<String>,
         confidence: f64,
-        #[serde(default)]
-        updated_at: u64,
+        #[serde(default, deserialize_with = "lettuce_transfer::deserialize_legacy_timestamp")]
+        updated_at: i64,
     }
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -1007,8 +1007,8 @@ fn legacy_companion_state(
         stability: f64,
         #[serde(default)]
         interaction_count: u32,
-        #[serde(default)]
-        last_interaction_at: u64,
+        #[serde(default, deserialize_with = "lettuce_transfer::deserialize_legacy_timestamp")]
+        last_interaction_at: i64,
     }
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -1017,8 +1017,8 @@ fn legacy_companion_state(
         relationship_state: Relationship,
         #[serde(default)]
         active_signals: Vec<String>,
-        #[serde(default)]
-        updated_at: u64,
+        #[serde(default, deserialize_with = "lettuce_transfer::deserialize_legacy_timestamp")]
+        updated_at: i64,
     }
     let vector = |value: &Vector| EmotionVector {
         warmth: value.warmth,
@@ -1040,10 +1040,8 @@ fn legacy_companion_state(
         }
     };
     let legacy = serde_json::from_str::<State>(json).ok()?;
-    let updated_at = i64::try_from(legacy.updated_at).ok()?;
-    let emotional_updated_at = i64::try_from(legacy.emotional_state.updated_at)
-        .ok()?
-        .min(updated_at);
+    let updated_at = legacy.updated_at;
+    let emotional_updated_at = legacy.emotional_state.updated_at.min(updated_at);
     let text = |values: Vec<String>| {
         values
             .into_iter()
@@ -1092,9 +1090,7 @@ fn legacy_companion_state(
                 initial.relationship_state.stability,
             ),
             interaction_count: legacy.relationship_state.interaction_count,
-            last_interaction_at: TimestampMillis::new(
-                i64::try_from(legacy.relationship_state.last_interaction_at).ok()?,
-            ),
+            last_interaction_at: TimestampMillis::new(legacy.relationship_state.last_interaction_at),
         },
         active_signals: text(legacy.active_signals),
         updated_at: TimestampMillis::new(updated_at),
@@ -1340,8 +1336,8 @@ fn memory_space(
             })
             .map_err(|_| Error::InvalidInput)
         };
-        let created_at = timestamp(memory.created_at)?;
-        let last_accessed_at = timestamp(memory.last_accessed_at)?.max(created_at);
+        let created_at = TimestampMillis::new(memory.created_at);
+        let last_accessed_at = TimestampMillis::new(memory.last_accessed_at).max(created_at);
         items.push(MemoryItem {
             id,
             short_id,
@@ -1361,13 +1357,13 @@ fn memory_space(
                 Some("assistant") => Some(MessageRole::Assistant),
                 _ => None,
             },
-            observed_at: memory.observed_at.map(timestamp).transpose()?,
+            observed_at: memory.observed_at.map(TimestampMillis::new),
             observed_time_precision: memory.observed_time_precision.clone(),
             superseded_by: memory
                 .superseded_by
                 .as_deref()
                 .map(|value| memory_item_id(scope, source_id, value)),
-            superseded_at: memory.superseded_at.map(timestamp).transpose()?,
+            superseded_at: memory.superseded_at.map(TimestampMillis::new),
             supersedes: memory
                 .supersedes
                 .iter()
@@ -2527,6 +2523,44 @@ mod tests {
     use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
 
     use super::*;
+
+    #[test]
+    fn signed_companion_runtime_dates_preserve_state_instead_of_falling_back() {
+        let initial = lettuce_companions::initial_runtime_state(&Default::default(), &Default::default(), &Default::default());
+        for date in [i64::MIN, -315_619_200_000, -1, 0, i64::MAX] {
+            for encoded in [serde_json::json!(date), serde_json::json!(u64::from_le_bytes(date.to_le_bytes()))] {
+                let raw = serde_json::json!({
+                    "emotionalState": { "felt": { "warmth": 0.7 }, "confidence": 0.75, "updatedAt": encoded },
+                    "relationshipState": { "closeness": -0.4, "trust": -0.3, "affection": 0.2, "tension": 0.1, "stability": 0.6, "interactionCount": 7, "lastInteractionAt": encoded },
+                    "activeSignals": ["greeting"], "updatedAt": encoded
+                });
+                let state = legacy_companion_state(&raw.to_string(), &initial).expect("legacy runtime state");
+                assert_eq!(state.updated_at.get(), date);
+                assert_eq!(state.emotional_state.updated_at.get(), date);
+                assert_eq!(state.relationship_state.last_interaction_at.get(), date);
+                assert_eq!(state.emotional_state.felt.warmth, 0.7);
+                assert_eq!(state.relationship_state.closeness, -0.4);
+                assert_eq!(state.relationship_state.interaction_count, 7);
+                assert_eq!(state.active_signals, ["greeting"]);
+                lettuce_companions::validate_runtime_state(&state).expect("valid imported state");
+            }
+        }
+    }
+
+    #[test]
+    fn unsigned_legacy_clock_anchors_recover_the_signed_effective_time() {
+        let date = -315_619_200_000_i64;
+        for mode in ["frozen", "ticking"] {
+            let raw = serde_json::json!({ "preferences": { "timeAwarenessEnabled": true, "timeOverride": {
+                "mode": mode, "anchorMs": u64::from_le_bytes(date.to_le_bytes()), "setAtMs": 4
+            } } });
+            let clock = legacy_companion_clock(&raw.to_string()).expect("legacy clock");
+            let expected = if mode == "frozen" { CompanionTimeOverride::Frozen { anchor_at: TimestampMillis::new(date) } }
+                else { CompanionTimeOverride::Ticking { anchor_at: TimestampMillis::new(date), set_at: TimestampMillis::new(4) } };
+            assert_eq!(clock.time_override, expected);
+            clock.validate().expect("valid clock");
+        }
+    }
 
     #[test]
     fn saved_companion_clock_preserves_dates_before_epoch() {

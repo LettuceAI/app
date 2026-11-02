@@ -40,10 +40,10 @@ pub struct LegacyBackupMemoryEmbedding {
     pub id: String,
     pub text: String,
     pub embedding: Vec<f32>,
-    pub created_at: u64,
+    pub created_at: i64,
     pub token_count: u32,
     pub is_cold: bool,
-    pub last_accessed_at: u64,
+    pub last_accessed_at: i64,
     pub importance_score: f32,
     pub persistence_importance: f32,
     pub prompt_importance: f32,
@@ -54,7 +54,7 @@ pub struct LegacyBackupMemoryEmbedding {
     pub embedding_dimensions: Option<usize>,
     pub match_score: Option<f32>,
     pub category: Option<String>,
-    pub observed_at: Option<u64>,
+    pub observed_at: Option<i64>,
     pub observed_time_precision: Option<String>,
     pub canonical_entities: Vec<LegacyBackupMemoryEntityAnchor>,
     pub fact_signature: Option<String>,
@@ -62,7 +62,7 @@ pub struct LegacyBackupMemoryEmbedding {
     pub source_role: Option<String>,
     pub source_message_id: Option<String>,
     pub superseded_by: Option<String>,
-    pub superseded_at: Option<u64>,
+    pub superseded_at: Option<i64>,
     pub supersedes: Vec<String>,
     pub materialization: LegacyBackupMemoryMaterialization,
 }
@@ -110,14 +110,14 @@ struct MemoryRow {
     id: String,
     text: String,
     embedding: Vec<f32>,
-    #[serde(default)]
-    created_at: u64,
+    #[serde(default, deserialize_with = "crate::deserialize_legacy_timestamp")]
+    created_at: i64,
     #[serde(default)]
     token_count: u32,
     #[serde(default)]
     is_cold: bool,
-    #[serde(default)]
-    last_accessed_at: u64,
+    #[serde(default, deserialize_with = "crate::deserialize_legacy_timestamp")]
+    last_accessed_at: i64,
     #[serde(default = "full_score")]
     importance_score: f32,
     #[serde(default = "full_score")]
@@ -138,8 +138,8 @@ struct MemoryRow {
     match_score: Option<f32>,
     #[serde(default)]
     category: Option<String>,
-    #[serde(default)]
-    observed_at: Option<u64>,
+    #[serde(default, deserialize_with = "crate::deserialize_optional_legacy_timestamp")]
+    observed_at: Option<i64>,
     #[serde(default)]
     observed_time_precision: Option<String>,
     #[serde(default)]
@@ -154,8 +154,8 @@ struct MemoryRow {
     source_message_id: Option<String>,
     #[serde(default)]
     superseded_by: Option<String>,
-    #[serde(default)]
-    superseded_at: Option<u64>,
+    #[serde(default, deserialize_with = "crate::deserialize_optional_legacy_timestamp")]
+    superseded_at: Option<i64>,
     #[serde(default)]
     supersedes: Vec<String>,
     #[serde(flatten)]
@@ -350,15 +350,6 @@ fn map_memories(
             || row.match_score.is_some_and(|value| !value.is_finite())
         {
             return Err(malformed(format!("{path}.embedding")));
-        }
-        if row.created_at > i64::MAX as u64
-            || row.last_accessed_at > i64::MAX as u64
-            || row.observed_at.is_some_and(|value| value > i64::MAX as u64)
-            || row
-                .superseded_at
-                .is_some_and(|value| value > i64::MAX as u64)
-        {
-            return Err(malformed(format!("{path}.timestamps")));
         }
         if !created_at_values.insert(row.created_at) {
             notices.push(notice(
@@ -972,6 +963,30 @@ mod tests {
             memory.materialization,
             LegacyBackupMemoryMaterialization::InitialItemAndProjection
         );
+    }
+
+    #[test]
+    fn signed_and_wrapped_memory_dates_are_preserved_without_losing_materialization() {
+        let character = id(50);
+        let session = id(51);
+        for date in [i64::MIN, -315_619_200_000, -1, 0, i64::MAX] {
+            for encoded in [json!(date), json!(u64::from_le_bytes(date.to_le_bytes()))] {
+                let mut row = memory(&id(52), 64);
+                row["createdAt"] = encoded.clone();
+                row["lastAccessedAt"] = encoded.clone();
+                row["observedAt"] = encoded;
+                row["observedTimePrecision"] = json!("user");
+                let raw = serde_json::to_string(&json!([row])).expect("JSON");
+                let standalone = json!([{ "session_id": session, "session_kind": "session", "memory_embeddings": raw }]);
+                let plan = plan_legacy_backup_memory_embeddings(source(Some(standalone), &raw, &character, &session)).expect("signed memory dates");
+                let stored = &plan.owners[0].memories[0];
+                assert_eq!(stored.created_at, date);
+                assert_eq!(stored.last_accessed_at, date);
+                assert_eq!(stored.observed_at, Some(date));
+                assert_eq!(stored.materialization, LegacyBackupMemoryMaterialization::InitialItemAndProjection);
+                assert_eq!(plan.owners[0].memory_embeddings_json, raw);
+            }
+        }
     }
 
     #[test]
