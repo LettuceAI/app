@@ -351,6 +351,11 @@ impl ApiContext {
         microphone: Option<Arc<dyn crate::MicrophoneCapture>>,
     ) -> Result<Self, ApiError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+        std::fs::create_dir_all(app_data_dir)
+            .map_err(|error| storage_error("app data directory", lettuce_platform::PlatformError::from(error)))?;
+        let app_data_dir = std::fs::canonicalize(app_data_dir)
+            .map_err(|error| storage_error("app data directory", lettuce_platform::PlatformError::from(error)))?;
+        let app_data_dir = app_data_dir.as_path();
         let snapshot = DirectorySnapshot::with_private_persistent(
             app_data_dir,
             app_data_dir.join(PRIVATE_PERSISTENT_DIRECTORY),

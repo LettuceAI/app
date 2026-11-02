@@ -17,6 +17,107 @@ fn temp_root(label: &str) -> std::path::PathBuf {
     root
 }
 
+fn open_desktop_context(path: &std::path::Path) -> Result<super::ApiContext, dto::ApiError> {
+    super::ApiContext::open_desktop(
+        path,
+        None,
+        Arc::new(lettuce_settings::InMemorySecretStore::new()),
+        Arc::new(super::tests::RecordingEvents::default()),
+        Arc::new(super::tests::StdFiles),
+        "lettuce-asset://localhost".into(),
+        None,
+    )
+}
+
+#[tokio::test]
+async fn open_desktop_creates_missing_app_data_directory() {
+    let root = temp_root("desktop-root");
+    let app_data = root.join("missing/app-data");
+    let context = open_desktop_context(&app_data).expect("open new app data directory");
+    assert!(app_status(&context).await.expect("status").ui_state.is_empty());
+    drop(context);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn open_desktop_reopens_database_and_media_through_symlinked_app_data() {
+    let root = temp_root("desktop-symlink");
+    let target = root.join("mounted-data");
+    std::fs::create_dir(&target).expect("mounted data directory");
+    let app_data = root.join("com.lettuceai.app");
+    std::os::unix::fs::symlink(&target, &app_data).expect("app data symlink");
+    let context = open_desktop_context(&app_data).expect("open symlinked app data directory");
+    assert_eq!(
+        context.app_folder(),
+        Some(target.canonicalize().expect("target").as_path())
+    );
+    let mut patch = serde_json::Map::new();
+    patch.insert("last_route".into(), json!("/chats"));
+    let state = app_ui_state_update(&context, dto::AppUiStateUpdateRequest { patch })
+        .await
+        .expect("persist UI state");
+    let png = png_bytes();
+    let object = context
+        .media()
+        .expect("media store")
+        .ingest(
+            png.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::OtherImage,
+                lettuce_media::AssetOrigin::Upload,
+                lettuce_media::RetentionClass::Persistent,
+                lettuce_media::AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("persist image");
+    drop(context);
+    for path in [&app_data, &target] {
+        let context = open_desktop_context(path).expect("reopen existing data");
+        assert_eq!(
+            app_status(&context).await.expect("status").ui_state,
+            state.state
+        );
+        let mut image = context
+            .media()
+            .expect("media store")
+            .open_ready(object.asset.id)
+            .expect("stored image")
+            .reader;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut image, &mut bytes).expect("read stored image");
+        assert_eq!(bytes, png);
+    }
+    assert!(
+        std::fs::symlink_metadata(&app_data)
+            .expect("app data")
+            .is_symlink()
+    );
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn open_desktop_rejects_symlinks_inside_app_data() {
+    let root = temp_root("desktop-confined");
+    let outside = root.join("outside");
+    std::fs::create_dir(&outside).expect("outside directory");
+    for child in ["platform-v2", "private-persistent-v2"] {
+        let app_data = root.join(child);
+        std::fs::create_dir(&app_data).expect("app data directory");
+        std::os::unix::fs::symlink(&outside, app_data.join(child)).expect("internal symlink");
+        let error = open_desktop_context(&app_data).expect_err("internal symlink is refused");
+        assert_eq!(error.code, ApiErrorCode::Unavailable);
+        assert!(
+            std::fs::read_dir(&outside)
+                .expect("outside directory")
+                .next()
+                .is_none()
+        );
+    }
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
 fn wav_bytes() -> Vec<u8> {
     let samples = [0_u8; 8];
     let mut bytes = b"RIFF".to_vec();
