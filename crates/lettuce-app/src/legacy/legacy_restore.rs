@@ -696,6 +696,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_legacy_source_with_media_characters_and_conversations_replaces_the_database() {
+        restore_legacy_media_and_conversations("roleplay").await;
+    }
+
+    #[tokio::test]
+    async fn companion_legacy_restore_preserves_messages_and_clock_before_epoch() {
+        restore_legacy_media_and_conversations("companion").await;
+    }
+
+    async fn restore_legacy_media_and_conversations(mode: &str) {
         let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
         std::fs::create_dir_all(&root).expect("fixture root");
         let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
@@ -732,6 +741,7 @@ mod tests {
             Some(&first_message),
             "Hello there",
         );
+        reply["effective_at"] = serde_json::json!(-315_619_199_000_i64);
         reply["attachments"] = serde_json::json!([{
             "id": attachment,
             "data": "",
@@ -765,6 +775,7 @@ mod tests {
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, PNG)
         );
         let mut greeting = legacy_message(&first_message, "user", None, "Hello Mira");
+        greeting["effective_at"] = serde_json::json!(-315_619_200_000_i64);
         greeting["attachments"] = reply["attachments"].clone();
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
@@ -794,6 +805,7 @@ mod tests {
                         serde_json::json!([{
                             "id": character,
                             "name": "Mira",
+                            "mode": mode,
                             "avatar_path": "mira.png",
                             "created_at": 1,
                             "updated_at": 1
@@ -810,7 +822,7 @@ mod tests {
                             "root_session_id": session,
                             "background_image_path": background,
                             "system_prompt": null,
-                            "mode": "roleplay",
+                            "mode": mode,
                             "selected_scene_id": null,
                             "author_note": null,
                             "persona_id": persona,
@@ -825,7 +837,7 @@ mod tests {
                             "presence_penalty": null,
                             "top_k": null,
                             "advanced_model_settings": "{\"temperature\":0.55,\"llamaThreads\":8}",
-                            "companion_state": "{\"preferences\":{\"timeAwarenessEnabled\":true,\"timeOverride\":{\"mode\":\"frozen\",\"anchorMs\":5000,\"setAtMs\":1}}}",
+                            "companion_state": "{\"preferences\":{\"timeAwarenessEnabled\":true,\"timeOverride\":{\"mode\":\"frozen\",\"anchorMs\":-315619200000,\"setAtMs\":1}}}",
                             "memories": "[]",
                             "memory_embeddings": "[]",
                             "memory_summary": "They met at the lighthouse.",
@@ -899,6 +911,10 @@ mod tests {
             .expect("restored graph");
         assert_eq!(graph.authored.personas.len(), 1);
         assert_eq!(graph.authored.characters.len(), 1);
+        assert_eq!(
+            graph.companion_state.sessions.len(),
+            usize::from(mode == "companion")
+        );
         assert_eq!(graph.authored.media_assets.len(), 5);
         let playground = &graph.playground_history;
         assert_eq!(playground.entries.len(), 1);
@@ -935,6 +951,10 @@ mod tests {
             .iter()
             .find(|message| message.message.role == lettuce_conversations::MessageRole::Assistant)
             .expect("assistant reply");
+        assert_eq!(
+            reply.message.effective_time,
+            TimestampMillis::new(-315_619_199_000)
+        );
         let attached = reply.candidates[0]
             .parts
             .iter()
@@ -954,6 +974,10 @@ mod tests {
             .iter()
             .find(|message| message.message.role == lettuce_conversations::MessageRole::User)
             .expect("user greeting");
+        assert_eq!(
+            greeting.message.effective_time,
+            TimestampMillis::new(-315_619_200_000)
+        );
         assert!(greeting.revisions[0].parts.contains(
             &lettuce_conversations::MessagePart::MediaAsset {
                 asset_id: attached.0,
@@ -989,7 +1013,7 @@ mod tests {
             Some(lettuce_conversations::CompanionClockSettings {
                 time_awareness_enabled: true,
                 time_override: lettuce_conversations::CompanionTimeOverride::Frozen {
-                    anchor_at: TimestampMillis::new(5_000),
+                    anchor_at: TimestampMillis::new(-315_619_200_000),
                 },
             })
         );

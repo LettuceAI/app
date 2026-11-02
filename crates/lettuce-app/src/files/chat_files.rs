@@ -190,8 +190,7 @@ where
                         role: line.role,
                         content: &line.content,
                         created_at: line.created_at,
-                        effective_at: matches!(line.role, "user" | "assistant")
-                            .then_some(line.created_at),
+                        effective_at: None,
                         visible_in_chat: true,
                         pinned: false,
                         scene_edited: false,

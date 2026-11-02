@@ -150,7 +150,7 @@ pub(crate) struct TimelineMessage<'a> {
     pub role: &'a str,
     pub content: &'a str,
     pub created_at: u64,
-    pub effective_at: Option<u64>,
+    pub effective_at: Option<i64>,
     pub visible_in_chat: bool,
     pub pinned: bool,
     pub scene_edited: bool,
@@ -936,8 +936,8 @@ fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::Companion
     let millis = |key: &str| {
         time_override
             .and_then(|value| value.get(key))
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|value| i64::try_from(value).ok())
+            .and_then(serde_json::Value::as_i64)
+            .filter(|value| key != "setAtMs" || *value >= 0)
             .map(TimestampMillis::new)
     };
     let time_override = match time_override
@@ -1973,8 +1973,7 @@ impl SessionWriter<'_> {
         let created_at = timestamp(legacy.created_at)?;
         let effective_time = legacy
             .effective_at
-            .map(timestamp)
-            .transpose()?
+            .map(TimestampMillis::new)
             .unwrap_or(created_at);
         let (role, author, visibility) = match (legacy.role, origin.is_some()) {
             ("scene", true) => (MessageRole::Scene, None, MessageVisibility::Visible),
@@ -2530,6 +2529,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn saved_companion_clock_preserves_dates_before_epoch() {
+        for mode in ["frozen", "ticking"] {
+            let json = serde_json::json!({"preferences": {
+                "timeAwarenessEnabled": true,
+                "timeOverride": {"mode": mode, "anchorMs": -315_619_200_000_i64, "setAtMs": 4}
+            }})
+            .to_string();
+            let clock = legacy_companion_clock(&json).expect("companion clock");
+            assert!(clock.time_awareness_enabled);
+            assert_eq!(
+                clock.time_override,
+                if mode == "frozen" {
+                    CompanionTimeOverride::Frozen {
+                        anchor_at: TimestampMillis::new(-315_619_200_000),
+                    }
+                } else {
+                    CompanionTimeOverride::Ticking {
+                        anchor_at: TimestampMillis::new(-315_619_200_000),
+                        set_at: TimestampMillis::new(4),
+                    }
+                }
+            );
+            clock.validate().expect("valid companion clock");
+        }
+    }
+
+    #[test]
     fn saved_companion_state_decides_the_clock_like_legacy_temporal_reads() {
         assert_eq!(legacy_companion_clock("null"), None);
         assert_eq!(
@@ -2555,6 +2581,15 @@ mod tests {
                     anchor_at: TimestampMillis::new(10),
                     set_at: TimestampMillis::new(4),
                 },
+            })
+        );
+        assert_eq!(
+            legacy_companion_clock(
+                r#"{"preferences":{"timeAwarenessEnabled":true,"timeOverride":{"mode":"ticking","anchorMs":-10,"setAtMs":-4}}}"#
+            ),
+            Some(CompanionClockSettings {
+                time_awareness_enabled: true,
+                time_override: CompanionTimeOverride::Live,
             })
         );
     }

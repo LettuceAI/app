@@ -86,6 +86,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Conversations
 
+- Companion message `effective_at` and custom clock `anchorMs` preserve signed Unix milliseconds, including dates before 1970, as the legacy UI stored them (`old-code/src/core/storage/schemas.ts:2594,3829`). Creation timestamps and a ticking clock's `setAtMs` retain non-negative validation.
+
 - Direct sessions keep each root and derived session, archived state, character, persona, scene and prompt selections, author and generation overrides, voice policy, raw companion and dynamic-memory documents, and every message and variant in archive order. Message visibility, parent links, selected variants, usage metrics, MTP statistics, reasoning, memory and lorebook references, attachments and effective timestamps stay explicit.
 - Branch links are repaired rather than validated: legacy deleted a session row without touching its branches, and "Branch to character" linked a session to another character's root. A parent or root that is missing, belongs to another character or group, or closes a loop is cleared, a branch message missing from the session is cleared, the root becomes the topmost surviving ancestor, and each change is a `session_link` skip. The same repair runs for group sessions.
 - Equal message timestamps and unordered legacy variant queries are reported as ordering loss; archive array order stays as an ordinal.

@@ -65,7 +65,7 @@ pub struct LegacyBackupDirectMessage {
     pub role: String,
     pub content: String,
     pub created_at: u64,
-    pub effective_at: Option<u64>,
+    pub effective_at: Option<i64>,
     pub visible_in_chat: bool,
     pub scene_edited: bool,
     pub usage: LegacyBackupMessageUsage,
@@ -537,10 +537,7 @@ fn map_messages(
             role: row.role,
             content: row.content,
             created_at,
-            effective_at: row
-                .effective_at
-                .map(|value| timestamp(value, &format!("{path}.effective_at")))
-                .transpose()?,
+            effective_at: row.effective_at,
             visible_in_chat: row.visible_in_chat,
             scene_edited: row.scene_edited,
             usage: usage(
@@ -1531,6 +1528,39 @@ mod tests {
         assert!(notices.iter().any(|notice| notice.kind
             == LegacyBackupConversionNoticeKind::Lossy
             && notice.field == "[0].messages[1].parent_message_id"));
+    }
+
+    #[test]
+    fn companion_sessions_preserve_effective_times_on_both_sides_of_epoch() {
+        let character = id(1);
+        let root = id(2);
+        let first = id(3);
+        for effective_at in [
+            Some(i64::MIN),
+            Some(-315_619_200_000),
+            Some(0),
+            Some(i64::MAX),
+            None,
+        ] {
+            let mut row = session(
+                &root,
+                &character,
+                None,
+                &root,
+                None,
+                vec![message(&first, None, None)],
+            );
+            row["mode"] = json!("companion");
+            row["messages"][0]["effective_at"] = json!(effective_at);
+            let plan = plan_legacy_backup_direct_sessions(source(json!([row]), &character))
+                .expect("companion session plan");
+            let message = &plan.sessions[0].messages[0];
+            assert_eq!(
+                message.effective_at.map(i128::from),
+                effective_at.map(i128::from)
+            );
+            assert_eq!(message.created_at, 10);
+        }
     }
 
     #[test]
