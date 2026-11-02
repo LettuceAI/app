@@ -20,10 +20,6 @@ const _: () = assert!(
 );
 
 const RELEASE_BASE_URL: &str = "https://github.com/microsoft/onnxruntime/releases/download";
-const MACOS_PROVIDER_DYLIBS: [&str; 2] = [
-    "libonnxruntime_providers_shared.dylib",
-    "libonnxruntime_providers_coreml.dylib",
-];
 const WINDOWS_PROVIDERS_SHARED: &str = "onnxruntime_providers_shared.dll";
 const MAX_LINK_HOPS: usize = 8;
 
@@ -249,7 +245,6 @@ pub fn resolve_installed_onnx_runtime(
         .and_then(|resources| bundled_library(os, resources))
     {
         tracing::info!(path = %library.display(), "using bundled ONNX Runtime");
-        warn_missing_macos_providers(os, &library);
         return Some(ResolvedOnnxRuntime {
             library,
             source: OnnxRuntimeSource::Bundled,
@@ -284,7 +279,6 @@ fn usable_override(os: OnnxRuntimeHostOs, value: &OsStr) -> Option<PathBuf> {
         OnnxRuntimeHostOs::Windows => windows_providers_present(&path).then_some(path),
         OnnxRuntimeHostOs::MacOs => {
             if library_is_usable(os, &path) {
-                warn_missing_macos_providers(os, &path);
                 Some(path)
             } else {
                 tracing::warn!(
@@ -346,7 +340,6 @@ fn downloaded_library(os: OnnxRuntimeHostOs, install_dir: &Path) -> Option<PathB
         OnnxRuntimeHostOs::MacOs => {
             if library_is_usable(os, &library) {
                 sign_downloaded_macos_dylibs(install_dir);
-                warn_missing_macos_providers(os, &library);
                 Some(library)
             } else {
                 tracing::warn!(
@@ -378,25 +371,6 @@ fn library_is_usable(os: OnnxRuntimeHostOs, path: &Path) -> bool {
     is_nonempty_file(path) && (os != OnnxRuntimeHostOs::MacOs || macos::dylib_is_usable(path))
 }
 
-fn warn_missing_macos_providers(os: OnnxRuntimeHostOs, library: &Path) {
-    if os != OnnxRuntimeHostOs::MacOs {
-        return;
-    }
-    let Some(directory) = library.parent() else {
-        return;
-    };
-    for provider in MACOS_PROVIDER_DYLIBS {
-        if !is_nonempty_file(&directory.join(provider)) {
-            tracing::warn!(
-                library = %library.display(),
-                provider,
-                reason = "the provider dylib is missing or empty",
-                "ONNX Runtime provider dylib is missing; CoreML acceleration may be unavailable"
-            );
-        }
-    }
-}
-
 /// Unpacks a downloaded release archive into `install_dir`, checks the
 /// library (on Windows together with its shared provider library) and, on
 /// macOS, re-signs it; returns the runtime to load. `cancelled` is polled
@@ -419,7 +393,6 @@ pub fn install_onnx_runtime_archive(
         ));
     }
     sign_downloaded_macos_dylibs(install_dir);
-    warn_missing_macos_providers(os, &library);
     Ok(ResolvedOnnxRuntime {
         library,
         source: OnnxRuntimeSource::Downloaded,
@@ -746,12 +719,23 @@ fn sign_downloaded_macos_dylibs(install_dir: &Path) {
     macos::sign_downloaded_dylibs(install_dir);
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn macos_otool_header_is_dylib(output: &str) -> bool {
+    output.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        matches!(
+            fields.next(),
+            Some("MH_MAGIC" | "MH_MAGIC_64" | "MH_CIGAM" | "MH_CIGAM_64")
+        ) && fields.nth(3) == Some("DYLIB")
+    })
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{CodesignDisplay, macos_dylib_needs_adhoc_signature};
+    use super::{CodesignDisplay, macos_dylib_needs_adhoc_signature, macos_otool_header_is_dylib};
 
     fn current_arch() -> Option<&'static str> {
         match std::env::consts::ARCH {
@@ -780,7 +764,7 @@ mod macos {
         if !output.status.success() {
             return true;
         }
-        String::from_utf8_lossy(&output.stdout).contains("MH_DYLIB")
+        macos_otool_header_is_dylib(&String::from_utf8_lossy(&output.stdout))
     }
 
     pub(super) fn dylib_is_usable(path: &Path) -> bool {
@@ -840,15 +824,6 @@ mod macos {
             }
         }
     }
-
-    pub(super) fn preload_provider_dylibs(directory: &Path) {
-        for name in super::MACOS_PROVIDER_DYLIBS {
-            let path = directory.join(name);
-            if super::is_nonempty_file(&path) {
-                let _ = ort::util::preload_dylib(&path);
-            }
-        }
-    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -860,9 +835,6 @@ mod macos {
     }
 
     pub(super) fn sign_downloaded_dylibs(_install_dir: &Path) {}
-
-    #[cfg(not(target_os = "ios"))]
-    pub(super) fn preload_provider_dylibs(_directory: &Path) {}
 }
 
 /// How this process reaches ONNX Runtime.
@@ -1044,11 +1016,6 @@ fn commit_environment(
 
 #[cfg(not(target_os = "ios"))]
 fn preload_library(path: &Path) -> Result<(), OnnxRuntimeInitError> {
-    if cfg!(target_os = "macos")
-        && let Some(directory) = path.parent()
-    {
-        macos::preload_provider_dylibs(directory);
-    }
     ort::util::preload_dylib(path).map_err(|error| OnnxRuntimeInitError::Load(error.to_string()))
 }
 

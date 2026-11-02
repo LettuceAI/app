@@ -28,8 +28,5 @@ tokenizers.workspace = true
 tracing.workspace = true
 zip.workspace = true
 
-[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
-ort = { workspace = true, features = ["coreml"] }
-
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 ort = { workspace = true, features = ["load-dynamic"] }

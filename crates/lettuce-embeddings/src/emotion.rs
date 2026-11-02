@@ -17,9 +17,7 @@ use ort::{
 };
 use tokenizers::Tokenizer;
 
-use crate::onnx::{
-    OnnxRuntimeLink, configure_execution_provider, initialize_onnx_runtime, spawn_canceller,
-};
+use crate::onnx::{OnnxRuntimeLink, initialize_onnx_runtime, spawn_canceller};
 
 const MAX_INPUT_BYTES: usize = 1024 * 1024;
 const WINDOWS_PER_RUN: usize = 8;
@@ -62,15 +60,11 @@ impl OnnxEmotionClassifier {
                 reason: error.to_string(),
             }
         })?;
-        let builder = Session::builder()
+        let session = Session::builder()
             .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
                 reason: error.to_string(),
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
-                reason: error.to_string(),
-            })?;
-        let session = configure_execution_provider(builder, &artifacts.model_path)
             .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
                 reason: error.to_string(),
             })?

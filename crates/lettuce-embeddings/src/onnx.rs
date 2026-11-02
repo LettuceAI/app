@@ -277,15 +277,14 @@ impl OnnxEmbeddingRuntime {
         }
         let calibration = load_calibration(&artifacts)?;
         initialize_onnx_runtime(runtime)?;
-        let builder = Session::builder()
+        let session = Session::builder()
             .map_err(|error| EmbeddingError::RuntimeUnavailable {
                 reason: error.to_string(),
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|error| EmbeddingError::RuntimeUnavailable {
                 reason: error.to_string(),
-            })?;
-        let session = configure_execution_provider(builder, &artifacts.model_path)?
+            })?
             .commit_from_file(&artifacts.model_path)
             .map_err(|error| EmbeddingError::ModelLoad {
                 reason: error.to_string(),
@@ -524,52 +523,6 @@ pub(crate) fn initialize_onnx_runtime(runtime: &OnnxRuntimeLink) -> Result<(), E
         .map_err(|error| EmbeddingError::RuntimeUnavailable {
             reason: error.to_string(),
         })
-}
-
-#[cfg(any(target_os = "ios", target_os = "macos"))]
-pub(crate) fn configure_execution_provider(
-    builder: ort::session::builder::SessionBuilder,
-    model_path: &Path,
-) -> Result<ort::session::builder::SessionBuilder, EmbeddingError> {
-    use ort::execution_providers::coreml::{
-        CoreMLComputeUnits, CoreMLExecutionProvider, CoreMLModelFormat,
-        CoreMLSpecializationStrategy,
-    };
-
-    let cache = model_path
-        .parent()
-        .ok_or_else(|| EmbeddingError::ModelLoad {
-            reason: "model path has no parent directory".to_owned(),
-        })?
-        .join("coreml-cache");
-    std::fs::create_dir_all(cache).map_err(|error| EmbeddingError::ModelLoad {
-        reason: error.to_string(),
-    })?;
-    let provider = CoreMLExecutionProvider::default()
-        .with_compute_units(CoreMLComputeUnits::CPUAndNeuralEngine)
-        .with_model_format(CoreMLModelFormat::MLProgram)
-        .with_specialization_strategy(CoreMLSpecializationStrategy::FastPrediction)
-        .with_static_input_shapes(true)
-        .build();
-    match builder.with_execution_providers([provider]) {
-        Ok(builder) => Ok(builder),
-        Err(error) => {
-            tracing::warn!(error = %error, "CoreML unavailable; using ONNX CPU fallback");
-            Session::builder()
-                .and_then(|builder| builder.with_optimization_level(GraphOptimizationLevel::Level3))
-                .map_err(|error| EmbeddingError::RuntimeUnavailable {
-                    reason: error.to_string(),
-                })
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "ios", target_os = "macos")))]
-pub(crate) fn configure_execution_provider(
-    builder: ort::session::builder::SessionBuilder,
-    _model_path: &Path,
-) -> Result<ort::session::builder::SessionBuilder, EmbeddingError> {
-    Ok(builder)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -662,6 +662,35 @@ fn windows_archives_unpack_every_dll_of_the_lib_folder() {
 }
 
 #[test]
+fn macos_dylib_headers_match_apple_otool_output_for_both_architectures() {
+    let arm64 = "MH_MAGIC_64 ARM64 ALL 0x00 DYLIB 28 3440 NOUNDEFS DYLDLINK TWOLEVEL";
+    let intel = "MH_MAGIC_64 X86_64 ALL 0x00 DYLIB 20 2704 NOUNDEFS DYLDLINK TWOLEVEL";
+    for header in [arm64, intel] {
+        let output = format!(
+            "/Library/Application Support/onnxruntime/libonnxruntime.1.22.0.dylib:\nMach header\n      magic cputype cpusubtype caps filetype ncmds sizeofcmds flags\n{header}\n"
+        );
+        assert!(macos_otool_header_is_dylib(&output));
+    }
+    let universal = format!(
+        "runtime (architecture x86_64):\nMach header\n{intel}\nruntime (architecture arm64):\nMach header\n{arm64}\n"
+    );
+    assert!(macos_otool_header_is_dylib(&universal));
+}
+
+#[test]
+fn macos_header_validation_rejects_other_mach_o_file_types() {
+    for filetype in ["EXECUTE", "DYLIB_STUB", "BUNDLE", "DSYM", "OBJECT"] {
+        let output = format!(
+            "/tmp/MH_DYLIB/DYLIB:\nMach header\nMH_MAGIC_64 ARM64 ALL 0x00 {filetype} 28 3440 NOUNDEFS DYLDLINK\n"
+        );
+        assert!(!macos_otool_header_is_dylib(&output));
+    }
+    for output in ["", "DYLIB", "Mach header\n", "MH_MAGIC_64 ARM64 ALL"] {
+        assert!(!macos_otool_header_is_dylib(output));
+    }
+}
+
+#[test]
 fn adhoc_signing_is_needed_for_unsigned_and_team_signed_dylibs() {
     let display = |success: bool, stderr: &str| CodesignDisplay {
         success,
