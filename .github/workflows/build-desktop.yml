@@ -181,17 +181,32 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: bun run tauri build --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --no-bundle -- --locked
+      - name: Preserve compiled CUDA binary for repackaging
+        if: inputs.features == 'cuda'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cuda-native-${{ inputs.build_id }}
+          path: ${{ env.CARGO_TARGET_DIR }}/${{ inputs.target }}/release/lettuce-tauri${{ runner.os == 'Windows' && '.exe' || '' }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
       - name: Include Windows CUDA runtime libraries
         if: runner.os == 'Windows' && inputs.features == 'cuda'
         shell: pwsh
         run: |
           $config = Get-Content .release-config.json -Raw | ConvertFrom-Json -AsHashtable
           $runtime = @{}
+          $staging = Join-Path $env:GITHUB_WORKSPACE 'apps/tauri/.release-cuda'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
           $search = @("$env:CUDA_PATH/bin", "$env:CUDA_PATH/bin/x64")
           foreach ($pattern in @('cudart64*.dll','cublas64*.dll','cublasLt64*.dll','nvJitLink*.dll','nvrtc64*.dll','nvrtc-builtins64*.dll')) {
             $matches = @($search | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Filter $pattern -File })
             if ($matches.Count -eq 0 -and $pattern -in @('cudart64*.dll','cublas64*.dll','cublasLt64*.dll')) { throw "Missing CUDA runtime: $pattern" }
-            foreach ($file in $matches) { $runtime[$file.FullName] = $file.Name }
+            foreach ($file in $matches) {
+              Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $staging $file.Name) -Force
+              # Tauri normalizes resource paths without preserving Windows drive prefixes.
+              $runtime[".release-cuda/$($file.Name)"] = $file.Name
+            }
           }
           $config.bundle.resources = $runtime
           $config | ConvertTo-Json -Depth 30 | Set-Content .release-config.json -Encoding utf8
@@ -244,11 +259,14 @@ jobs:
       - name: Create installers
         if: runner.os != 'Windows'
         shell: bash
-        run: bun run tauri bundle --ci --config "$GITHUB_WORKSPACE/.release-config.json" --target "$RUST_TARGET" --features "$BUILD_FEATURES" --bundles "$BUILD_BUNDLES"
+        env:
+          # NVIDIA drivers belong to the host, including on GPU-less build runners.
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: ${{ runner.os == 'Linux' && inputs.features == 'cuda' && 'libcuda.so*;libnvidia-*' || '' }}
+        run: bun run tauri bundle --verbose --ci --config "$GITHUB_WORKSPACE/.release-config.json" --target "$RUST_TARGET" --features "$BUILD_FEATURES" --bundles "$BUILD_BUNDLES"
       - name: Create Windows installers
         if: runner.os == 'Windows'
         shell: pwsh
-        run: bun run tauri bundle --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --bundles "$env:BUILD_BUNDLES"
+        run: bun run tauri bundle --verbose --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --bundles "$env:BUILD_BUNDLES"
       - name: Collect installers and checksums
         shell: bash
         run: |

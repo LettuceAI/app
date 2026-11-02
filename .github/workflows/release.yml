@@ -19,6 +19,10 @@ on:
         description: Include NVIDIA CUDA builds for Windows and Linux.
         type: boolean
         default: true
+      cuda_only:
+        description: Build only Windows and Linux CUDA packages, without publishing.
+        type: boolean
+        default: false
       publish:
         description: Create a GitHub release after all builds succeed. Leave off to keep only Actions artifacts.
         type: boolean
@@ -63,6 +67,7 @@ jobs:
           CHANNEL: ${{ inputs.channel || 'stable' }}
           RELEASE_VERSION: ${{ inputs.version }}
           INCLUDE_CUDA: ${{ github.event_name == 'push' || inputs.cuda }}
+          CUDA_ONLY: ${{ inputs.cuda_only }}
           PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
           PUBLISH_AUR: ${{ github.event_name == 'push' || inputs.aur }}
           PREVIOUS_TAG: ${{ inputs.previous_tag }}
@@ -76,6 +81,7 @@ jobs:
         with:
           script: |
             const fs = require('node:fs');
+            const cudaOnly = context.eventName === 'workflow_dispatch' && process.env.CUDA_ONLY === 'true';
             const { execFileSync } = require('node:child_process');
             const git = (...args) => execFileSync('git', args, {encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).trim();
             const sourceVersion = JSON.parse(fs.readFileSync('apps/tauri/tauri.conf.json')).version;
@@ -93,8 +99,10 @@ jobs:
             }
             const rustVersion = fs.readFileSync('Cargo.toml', 'utf8').match(/\[workspace\.package\]\s*\nversion\s*=\s*"([^"]+)"/);
             if (rustVersion?.[1] !== sourceVersion) throw new Error('Cargo workspace version differs from the app version');
-            for (const name of ['ANDROID_KEY_BASE64', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']) {
-              if (!process.env[name]) throw new Error(`Missing Android signing secret: ${name}`);
+            if (!cudaOnly) {
+              for (const name of ['ANDROID_KEY_BASE64', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']) {
+                if (!process.env[name]) throw new Error(`Missing Android signing secret: ${name}`);
+              }
             }
             const sha = git('rev-parse', 'HEAD');
             const tagged = context.eventName === 'push';
@@ -108,6 +116,7 @@ jobs:
             if (tagged && context.ref !== `refs/tags/v${version}`) throw new Error('Release tags must have the form v<version>');
             const tag = dev ? `dev-${context.runNumber}-${sha.slice(0, 7)}` : `v${version}`;
             const publish = process.env.PUBLISH === 'true';
+            if (cudaOnly && publish) throw new Error('CUDA-only builds require publish=false');
             if (publish && process.env.PUBLISH_AUR === 'true' && (dev || !prerelease)) {
               for (const name of ['AUR_SSH_PRIVATE_KEY', 'AUR_PACKAGER_NAME', 'AUR_PACKAGER_EMAIL', 'AUR_SSH_KNOWN_HOSTS']) {
                 if (!process.env[name]) throw new Error(`Missing AUR setting: ${name}; configure it or turn off the aur checkbox`);
@@ -145,7 +154,7 @@ jobs:
               : 'First release in this channel; the complete commit history is included.', '',
               `${commits.length} commits, including merge commits.`, '', ...commits,
               ...(commits.length ? [] : ['No new commits since the previous release.'])].join('\n') + '\n';
-            const cuda = process.env.INCLUDE_CUDA === 'true';
+            const cuda = process.env.INCLUDE_CUDA === 'true' || cudaOnly;
             const matrix = [
               {id: 'linux-x64', runner: 'ubuntu-24.04', target: 'x86_64-unknown-linux-gnu', features: 'vulkan', bundles: 'deb,appimage'},
               {id: 'windows-x64', runner: 'windows-2022', target: 'x86_64-pc-windows-msvc', features: 'vulkan', bundles: 'nsis,msi'},
@@ -155,19 +164,21 @@ jobs:
                 {id: 'linux-x64-cuda', runner: 'ubuntu-24.04', target: 'x86_64-unknown-linux-gnu', features: 'cuda', bundles: 'deb,appimage'},
                 {id: 'windows-x64-cuda', runner: 'windows-2022', target: 'x86_64-pc-windows-msvc', features: 'cuda', bundles: 'nsis,msi'},
               ] : []),
-            ];
+            ].filter(item => !cudaOnly || item.features === 'cuda');
             const androidCode = Math.floor(Date.now() / 1000);
             if (androidCode > 2100000000) throw new Error('Android versionCode exceeds the Play Store limit');
             const meta = {sha, version, source_version: sourceVersion, tag, dev, prerelease, previous, commits: commits.length,
               identifier: dev ? 'dev.lettuceai.app' : 'com.lettuceai.app',
               title: dev ? `LettuceAI Dev ${version}` : `LettuceAI ${version}`,
-              targets: [...matrix.map(item => item.id), 'android'], android_code: androidCode,
+              targets: [...matrix.map(item => item.id), ...(cudaOnly ? [] : ['android'])], android_code: androidCode,
               run_url: `${repoUrl}/actions/runs/${context.runId}`};
             let notes = `Built from [\`${sha.slice(0, 7)}\`](${repoUrl}/commit/${sha}). [Build run](${meta.run_url}).\n\n`;
-            notes += 'Android, Windows, Linux, and macOS packages are attached. Standard desktop packages use Vulkan (Windows/Linux) or Metal (macOS).\n\n';
+            notes += cudaOnly ? 'Windows and Linux NVIDIA CUDA packages are attached.\n\n'
+              : 'Android, Windows, Linux, and macOS packages are attached. Standard desktop packages use Vulkan (Windows/Linux) or Metal (macOS).\n\n';
             notes += 'Linux `.tar.gz` archives include the unpacked AppImage contents: extract the archive and run `./AppRun`. No installation or FUSE is required; the Ubuntu 24.04 build compatibility requirements still apply.\n\n';
             if (cuda) notes += 'Files with `cuda` in the name are NVIDIA CUDA builds.\n\n';
-            notes += 'Android packages are release-signed. macOS packages are ad-hoc signed and not notarized. Windows installers are not code-signed.\n\n';
+            notes += cudaOnly ? 'Windows installers are not code-signed.\n\n'
+              : 'Android packages are release-signed. macOS packages are ad-hoc signed and not notarized. Windows installers are not code-signed.\n\n';
             if (dev) notes += 'This dev build uses `dev.lettuceai.app` and installs separately from stable LettuceAI.\n\n';
             notes += Buffer.byteLength(notes + changes, 'utf8') <= 120000 ? changes
               : `## Changes\n\nThe complete list of ${commits.length} commits exceeds GitHub’s release description limit. Every commit is listed in [CHANGES.md](${repoUrl}/releases/download/${encodeURIComponent(tag)}/CHANGES.md).\n`;
@@ -209,6 +220,7 @@ jobs:
   android:
     name: Build signed Android packages
     needs: prepare
+    if: inputs.cuda_only != true
     uses: ./.github/workflows/build-android.yml
     with:
       source_sha: ${{ needs.prepare.outputs.sha }}
