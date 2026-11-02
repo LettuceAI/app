@@ -13,6 +13,8 @@ import {
 import { useChatLook } from "@/entities/preferences";
 import { ApiFailure, type ApiClient } from "@/api/client";
 import { dictationErrorKey, useDictation } from "../data/use-dictation";
+import { useDictationLearning } from "../data/use-dictation-learning";
+import { DictationCorrections } from "./DictationCorrections";
 import type { MemoryBlockedReason, RequiredModel } from "@/api/generated/bindings";
 import { activeMention, insertMention, type ActiveMention } from "../data/mentions";
 import { MentionPicker } from "./MentionPicker";
@@ -139,6 +141,8 @@ export function ChatComposer({
   const { t: common } = useTranslation("common");
   const phone = useCompactLayout();
   const [draft, setDraft] = useState("");
+  const learning = useDictationLearning(api, conversationId, draft);
+  const clearLearning = learning.clear;
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [systemMenu, setSystemMenu] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -154,16 +158,18 @@ export function ChatComposer({
     handle,
     () => ({
       read: () => draftRef.current,
-      replace: (text) => setDraft(text),
+      replace: (text) => { clearLearning(); setDraft(text); },
       attach: (attachment) => setAttachments((current) => [...current, attachment]),
-      append: (text) =>
-        setDraft((current) => (current.trimEnd() ? `${current.trimEnd()} ${text}` : text)),
+      append: (text) => {
+        clearLearning();
+        setDraft((current) => (current.trimEnd() ? `${current.trimEnd()} ${text}` : text));
+      },
     }),
-    [],
+    [clearLearning],
   );
 
   const dictation = useDictation(api, conversationId, {
-    onText: (text) => setDraft(text.trim()),
+    onText: (text, transcription) => { setDraft(text.trim()); learning.begin(text, transcription); },
     onError: (error: ApiFailure) => {
       const key = dictationErrorKey(error);
       toast.error(key ? t(`mic.error.${key}`) : common(`errors.code.${error.code}`));
@@ -182,6 +188,7 @@ export function ChatComposer({
     if (event.target instanceof HTMLTextAreaElement) area.current = event.target;
   };
   const change = (value: string) => {
+    if (!value.trim()) learning.clear();
     setDraft(value);
     setMention(mentions ? activeMention(value, area.current?.selectionStart ?? value.length) : null);
   };
@@ -215,6 +222,7 @@ export function ChatComposer({
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
     const sent = attachments;
+    const dictated = learning.source;
     submitBusy.current = true;
     setSubmitting(submit === onSendSystem);
     setDraft("");
@@ -224,7 +232,7 @@ export function ChatComposer({
       toast.error(common(`errors.code.${ApiFailure.fromRejection(error).code}`));
       return false;
     }).then((accepted) => {
-      if (accepted) return;
+      if (accepted) { learning.clear(dictated); return; }
       setDraft((current) => (current.length === 0 ? text : current));
       setAttachments((current) => (current.length === 0 ? sent : current));
     }).finally(() => {
@@ -255,13 +263,13 @@ export function ChatComposer({
 
   return (
     <div className="relative">
-      {matches.length === 0 && above && <div className="pointer-events-none absolute inset-x-0 bottom-full z-10">{above(draft, setDraft)}</div>}
+      {matches.length === 0 && above && <div className="pointer-events-none absolute inset-x-0 bottom-full z-10">{above(draft, (text) => { learning.clear(); setDraft(text); })}</div>}
       <div className="relative" onFocusCapture={track} onInputCapture={track} onKeyDownCapture={mentionKeys} onBlurCapture={() => setMention(null)}>
         <MentionPicker matches={matches} query={mention?.query ?? ""} onPick={pickMention} />
         <Composer
           fontSize={look.composerFontSize}
           {...(look.footerInputColorHex ? { color: look.footerInputColorHex } : {})}
-          topSlot={topSlot}
+          topSlot={(topSlot || learning.suggestions.length > 0 || learning.error) ? <div className="space-y-2">{topSlot}<DictationCorrections learning={learning} /></div> : undefined}
           value={draft}
           onChange={change}
           onSend={() => send()}
@@ -279,7 +287,7 @@ export function ChatComposer({
             elapsedMs: dictation.elapsedMs,
             analyser: null,
             level: dictation.level,
-            onStart: () => void dictation.start(),
+            onStart: () => { learning.clear(); void dictation.start(); },
             onStop: () => void dictation.stop(),
             onCancel: dictation.cancel,
             disabled: sending || disabled || submitting,

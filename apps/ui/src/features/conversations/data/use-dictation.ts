@@ -3,10 +3,12 @@ import { appStatusQuery } from "@/api/app-status-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiClient } from "@/api/client";
 import { ApiFailure } from "@/api/client";
-import type { JobView, SpeechFailure } from "@/api/generated/bindings";
+import type { JobView, SpeechFailure, TranscriptionView } from "@/api/generated/bindings";
 import { watchJob } from "@/entities/job/watch";
 
 export type DictationPhase = "idle" | "recording" | "transcribing";
+
+const waveformGain = 18;
 
 export type DictationErrorKey = "noModel" | "permission" | "noMicrophone" | "noAudio" | "busy" | "unsupported" | "failed";
 
@@ -30,7 +32,7 @@ function jobErrorKey(job: JobView): DictationErrorKey {
 }
 
 export interface DictationHooks {
-  onText: (text: string) => void;
+  onText: (text: string, transcription: TranscriptionView) => void;
   onError: (error: ApiFailure) => void;
   onJobError: (key: DictationErrorKey) => void;
 }
@@ -63,7 +65,7 @@ export function useDictation(api: ApiClient, conversationId: string, hooks: Dict
     let unsubscribe: (() => void) | null = null;
     void api
       .subscribe((event) => {
-        if (event.type === "dictation_level" && event.capture_id === capture.current) setLevel(event.level / 1000);
+        if (event.type === "dictation_level" && event.capture_id === capture.current) setLevel(Math.min(1, Math.max(0, event.level / 1000) * waveformGain));
       })
       .then((off) => {
         if (live) unsubscribe = off;
@@ -138,7 +140,7 @@ export function useDictation(api: ApiClient, conversationId: string, hooks: Dict
       if (job.state === "succeeded" && job.result?.type === "transcription") {
         const { text, raw_text } = job.result.transcription;
         const spoken = text.trim() || raw_text.trim();
-        if (spoken) hooksRef.current.onText(spoken);
+        if (spoken) hooksRef.current.onText(spoken, job.result.transcription);
         else hooksRef.current.onJobError("noAudio");
       } else if (job.state === "failed") {
         hooksRef.current.onJobError(jobErrorKey(job));

@@ -413,6 +413,12 @@
     }
   },
   "mic": {
+    "learning": {
+      "question": "Learn correction?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Learn",
+      "ignore": "Ignore"
+    },
     "error": {
       "noModel": "Install a speech recognition model to dictate.",
       "permission": "Allow microphone access to record.",
