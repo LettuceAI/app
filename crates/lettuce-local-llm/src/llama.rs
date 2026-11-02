@@ -32,7 +32,7 @@ pub enum LlamaRuntimeError {
     CachePoisoned,
 }
 
-static SHARED_BACKEND: OnceLock<Arc<LlamaBackend>> = OnceLock::new();
+static SHARED_BACKEND: OnceLock<Result<Arc<LlamaBackend>, LlamaRuntimeError>> = OnceLock::new();
 
 pub fn gguf_tensor_storage(kind: u32) -> Option<(u64, u64)> {
     // GGUF stores u32, while bindgen's C enum is signed on MSVC and unsigned elsewhere.
@@ -50,17 +50,11 @@ pub fn gguf_tensor_storage(kind: u32) -> Option<(u64, u64)> {
 
 /// The process-wide llama.cpp backend; llama.cpp allows one.
 pub fn shared_backend() -> Result<Arc<LlamaBackend>, LlamaRuntimeError> {
-    if let Some(backend) = SHARED_BACKEND.get() {
-        return Ok(backend.clone());
-    }
-    let backend = Arc::new(
-        LlamaBackend::init().map_err(|error| LlamaRuntimeError::Backend(error.to_string()))?,
-    );
-    let _ = SHARED_BACKEND.set(backend);
     SHARED_BACKEND
-        .get()
-        .cloned()
-        .ok_or(LlamaRuntimeError::BackendCache)
+        .get_or_init(|| LlamaBackend::init()
+            .map(Arc::new)
+            .map_err(|error| LlamaRuntimeError::Backend(error.to_string())))
+        .clone()
 }
 
 #[must_use]
@@ -525,6 +519,21 @@ mod real_model_plan {
 #[cfg(test)]
 mod tensor_storage_tests {
     use super::gguf_tensor_storage;
+
+    #[test]
+    fn concurrent_callers_share_one_backend() {
+        use std::sync::Arc;
+        let barrier = Arc::new(std::sync::Barrier::new(8));
+        let handles: Vec<_> = (0..8).map(|_| {
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                super::shared_backend().expect("shared backend")
+            })
+        }).collect();
+        let instances: Vec<_> = handles.into_iter().map(|handle| handle.join().expect("caller")).collect();
+        assert!(instances.iter().all(|instance| Arc::ptr_eq(instance, &instances[0])));
+    }
 
     #[test]
     fn tensor_storage_reads_float_and_quantized_types() {

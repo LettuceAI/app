@@ -2172,7 +2172,7 @@ fn uec3_model_every_portable_setting_survives_native_conversion() {
             "typicalP":0.9,"minP":0.1,"mirostat":2,"mirostatTau":5.0,"mirostatEta":0.1,"seed":42,"stop":["STOP"]},
         "openrouter":{"pinnedProvider":"provider"}});
     let sampler = json!({"profile":"balanced","order":["penalties","top_k","top_p","min_p","typical","xtc","temp"],
-        "minP":0.1,"typicalP":0.9,"repeatPenalty":1.1,"nPenRange":64,"dryMultiplier":0.8,"dryBase":1.75,"dryAllowedLength":2,
+        "minP":0.1,"topNSigma":1.5,"typicalP":0.9,"repeatPenalty":1.1,"nPenRange":64,"dryMultiplier":0.8,"dryBase":1.75,"dryAllowedLength":2,
         "dryPenaltyLastN":128,"drySequenceBreakers":["\n"],"xtcProbability":0.1,"xtcThreshold":0.2,"seed":42,"adaptiveTarget":0.8,"adaptiveDecay":0.9});
     value["parameters"]["chat"] = chat.clone();
     let mut overrides = chat.as_object().expect("chat").clone();

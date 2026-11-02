@@ -4381,7 +4381,7 @@ fn override_conversation_prompt(
                 vec![draft],
             )
             .expect("prepared prompt override"),
-            TimestampMillis::new(NOW.get() + 5),
+            TimestampMillis::new(ConversationReader::get(database, conversation_id).expect("conversation").conversation.updated_at.get().max(NOW.get() + 5)),
         )
         .expect("override conversation prompt");
 }
@@ -5724,7 +5724,7 @@ fn disable_conversation_prompt(
                 Vec::new(),
             )
             .expect("prepared prompt disable"),
-            TimestampMillis::new(NOW.get() + 5),
+            TimestampMillis::new(ConversationReader::get(database, conversation_id).expect("conversation").conversation.updated_at.get().max(NOW.get() + 5)),
         )
         .expect("disable conversation prompt");
 }

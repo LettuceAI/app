@@ -3450,7 +3450,15 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         )
         .await
         .expect("dynamic rebuild after retrieval access");
-    assert_eq!(rebuilt, first_build);
+    let mut recovered_build = first_build.clone();
+    for sources in [
+        recovered_build.attributions.used_sources.as_mut(),
+        recovered_build.context.attributions.used_sources.as_mut(),
+    ].into_iter().flatten() {
+        assert!(sources.memories.iter().any(|memory| memory.match_score_basis_points.is_some()));
+        for memory in &mut sources.memories { memory.match_score_basis_points = None; }
+    }
+    assert_eq!(rebuilt, recovered_build);
     let result = runner
         .run(
             &work,

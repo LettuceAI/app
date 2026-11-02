@@ -573,9 +573,11 @@ mod tests {
             .read_provider_backup_graph()
             .expect("restored graph");
         assert_eq!(graph.accounts.len(), 1);
-        assert_eq!(graph.accounts[0].id, kept);
+        assert_eq!(graph.accounts[0].provider_kind, "openrouter");
+        assert_eq!(graph.accounts[0].label, "Router");
         assert_eq!(graph.profiles.len(), 1);
-        assert_eq!(graph.profiles[0].id, kept_model);
+        assert_eq!(graph.profiles[0].external_model_id, "gpt-4o");
+        assert_eq!(graph.profiles[0].provider_account_id, graph.accounts[0].id);
     }
 
     #[tokio::test]

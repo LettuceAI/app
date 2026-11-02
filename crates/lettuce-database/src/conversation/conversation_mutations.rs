@@ -14345,7 +14345,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_character_copy_drops_only_orphan_alternatives_after_excluding_scene() {
+    fn direct_character_copy_preserves_scene_and_its_assistant_alternatives() {
         let mut source = scene_copy_fixture();
         let continuing = source
             .database
@@ -14390,7 +14390,7 @@ mod tests {
         let copied: Vec<MessageId> = source.database.commit_api_operation("orphan-copy","orphan-copy","ab",TimestampMillis::new(170),|scope|scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(assistant),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|error| { tracing::warn!(%error, "direct character copy drops only orphan alternatives after excluding scene failed"); crate::ApiOperationError::Storage {
             reason: "injected failure",
         } })).expect("copy selected orphan");
-        assert_eq!(copied.len(), 1);
+        assert_eq!(copied.len(), 2);
         let timeline = ConversationReader::timeline_page(
             source.database.as_ref(),
             target.conversation_id,
@@ -14401,19 +14401,21 @@ mod tests {
             },
         )
         .expect("copied timeline");
-        assert_eq!(timeline.items[0].message.role, MessageRole::Assistant);
+        assert_eq!(timeline.items[0].message.role, MessageRole::Scene);
         assert_eq!(timeline.items[0].message.parent_message_id, None);
+        assert_eq!(timeline.items[1].message.role, MessageRole::Assistant);
+        assert_eq!(timeline.items[1].message.parent_message_id, Some(copied[0]));
         assert!(matches!(
-            timeline.items[0].message.active_render_source,
-            lettuce_conversations::MessageRenderSource::Revision(_)
+            timeline.items[1].message.active_render_source,
+            lettuce_conversations::MessageRenderSource::Candidate(_)
         ));
         assert_eq!(
             scalar::<i64>(
                 source.database.as_ref(),
                 "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
-                &copied[0].to_string()
+                &copied[1].to_string()
             ),
-            0
+            2
         );
         assert_eq!(
             scalar::<i64>(
@@ -14475,9 +14477,15 @@ mod tests {
         assert_eq!(copied.len(), page.items.len());
         for (original, target) in source_page.items.iter().zip(&page.items) {
             assert_ne!(original.message.id, target.message.id);
+            let mut copied_parts = crate::conversation::conversation_mutations::shown_parts(target).0;
+            if original.message.role == MessageRole::Assistant {
+                let historical: Vec<_> = copied_parts.iter().filter(|part| matches!(part, MessagePart::Annotation { annotation } if matches!(annotation.payload, lettuce_conversations::AnnotationPayload::HistoricalSpeaker { .. }))).collect();
+                assert_eq!(historical.len(), 1);
+                copied_parts.retain(|part| !matches!(part, MessagePart::Annotation { annotation } if matches!(annotation.payload, lettuce_conversations::AnnotationPayload::HistoricalSpeaker { .. })));
+            }
             assert_eq!(
                 crate::conversation::conversation_mutations::shown_parts(original).0,
-                crate::conversation::conversation_mutations::shown_parts(target).0
+                copied_parts
             );
             if original.message.role == MessageRole::Assistant {
                 assert_eq!(
@@ -14547,7 +14555,7 @@ mod tests {
                     .find(|item| item.message.id == copied[1])
                     .expect("selected edited message")
             )
-            .0,
+            .0.into_iter().filter(|part| !matches!(part, MessagePart::Annotation { annotation } if matches!(annotation.payload, lettuce_conversations::AnnotationPayload::HistoricalSpeaker { .. }))).collect::<Vec<_>>(),
             text("Edited selected variant")
         );
         store_fixture_model_snapshots(&source.database);

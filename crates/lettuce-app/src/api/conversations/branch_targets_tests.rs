@@ -33,7 +33,7 @@ async fn branch_targets_keep_memory_at_the_cutoff_and_isolate_later_changes() {
         expected_revision: 2, client_operation_id: "later-memory".into(),
     }).await.expect("later memory");
     let source = open(&harness, &chat).await;
-    for mode in [None, Some(dto::GroupChatMode::Conversation), Some(dto::GroupChatMode::Roleplay)] {
+    for (index, mode) in [None, Some(dto::GroupChatMode::Conversation), Some(dto::GroupChatMode::Roleplay)].into_iter().enumerate() {
         let copied = if let Some(mode) = mode {
             conversation_branch_direct_to_group(&harness.context, dto::ConversationGroupCopyRequest {
                 conversation_id: chat.clone(), message_id: cutoff.clone(),
@@ -59,7 +59,7 @@ async fn branch_targets_keep_memory_at_the_cutoff_and_isolate_later_changes() {
         assert_eq!(memory.status.total_conversation_messages, 2);
         memory_delete(&harness.context, dto::MemoryDeleteRequest {
             conversation_id: target.id, memory_id: memory.items[0].id.clone(),
-            expected_revision: memory.revision, client_operation_id: format!("delete-{mode:?}"),
+            expected_revision: memory.revision, client_operation_id: format!("delete-{index}"),
         }).await.expect("delete copied memory");
         assert_eq!(memories(&harness, &chat).await.items[0].text, "Changed after the branch");
     }
@@ -121,6 +121,7 @@ async fn branch_targets_preserve_historical_speakers_through_group_and_character
     assert!(speakers.contains(&(other.to_string().as_str(), "Other")));
     send(&harness, &target.id, "after-copy", "Continue our story", Arc::new(RecordingStream::default())).await.expect("send to destination");
     run_generation(&harness).await;
+    {
     let requests = harness.provider.requests.lock().expect("requests");
     let request = requests.last().expect("destination request");
     let history = request.context.messages.iter().flat_map(|message| &message.parts).filter_map(|part| match part {
@@ -129,7 +130,7 @@ async fn branch_targets_preserve_historical_speakers_through_group_and_character
     }).collect::<Vec<_>>().join("\n");
     assert!(history.contains("Ada: "));
     assert!(history.contains("Other: "));
-    drop(requests);
+    }
     let completed = open(&harness, &target.id).await;
     assert!(completed.can_send);
     assert_eq!(completed.messages.items.last().expect("new reply").parts.iter().filter(|part| matches!(part, dto::MessagePartView::HistoricalSpeaker { .. })).count(), 0);
@@ -153,18 +154,18 @@ async fn branch_targets_copy_only_local_companion_memories_into_an_independent_s
         for index in 0..count {
             let chat = conversation_launch_direct(&harness.context, dto::LaunchDirectRequest {
                 character_id: character.to_string(), title: None, scene_id: None, starter_id: None,
-                client_operation_id: format!("{name}-{index}"),
+                client_operation_id: format!("companion-{}-{index}", characters.len()),
             }).await.expect("companion chat").conversation_id;
             let current = open(&harness, &chat).await;
             conversation_add_user_message(&harness.context, dto::ConversationAddUserMessageRequest {
                 conversation_id: chat.clone(), text: "An anchor".into(), expected_revision: current.revision,
-                client_operation_id: format!("anchor-{name}-{index}"),
+                client_operation_id: format!("anchor-{}-{index}", characters.len()),
             }).await.expect("anchor");
             let current = memories(&harness, &chat).await;
             memory_add(&harness.context, dto::MemoryAddRequest {
                 conversation_id: chat.clone(), text: format!("Memory from {name} chat {index}"),
                 category: None, observed_at: None, expected_revision: current.revision,
-                client_operation_id: format!("memory-{name}-{index}"),
+                client_operation_id: format!("memory-{}-{index}", characters.len()),
             }).await.expect("shared pool memory");
             chats.push(chat);
         }

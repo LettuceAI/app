@@ -142,7 +142,7 @@ fn preserve_copy_settings(
         settings.model_settings = current.model_settings.clone();
         settings.lorebooks = current.lorebooks.clone();
         settings.lorebooks_provenance = current.lorebooks_provenance;
-        if current.background.is_some() { settings.background = current.background.clone(); }
+        if current.background.is_some() { settings.background = current.background; }
         if current.persona_provenance != SettingProvenance::LaunchInherited {
             settings.persona = current.persona.clone();
             settings.persona_provenance = current.persona_provenance;
@@ -170,7 +170,7 @@ fn preserve_copy_settings(
     }
     for reference in lettuce_conversations::conversation_launch_snapshot_references(plan) {
         if !drafts.iter().any(|draft| draft.artifact_id == reference.artifact_id) {
-            drafts.push(database.copy_snapshot_draft(&reference)
+            drafts.push(database.copy_snapshot_draft(reference)
                 .map_err(|_| api_error(ApiErrorCode::Unavailable, "a source settings snapshot is unavailable"))?);
         }
     }

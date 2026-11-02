@@ -766,11 +766,12 @@ async fn persona_only_lorebooks_reach_direct_starter_and_group_turns_live() {
             }), "{kind}: persona lore must reach the provider");
         }
 
+        let current = conversation_settings_get(&harness.context, dto::ConversationSettingsGetRequest { conversation_id: chat.clone() }).await.expect("settings before override");
         let changed = conversation_settings_update(
             &harness.context,
             dto::ConversationSettingsUpdateRequest {
                 conversation_id: chat.clone(),
-                expected_settings_revision: None,
+                expected_settings_revision: current.settings_revision,
                 patch: dto::ConversationSettingsPatch {
                     lorebooks: Some(dto::LorebooksChange::Set { ids: Vec::new() }),
                     ..dto::ConversationSettingsPatch::default()
@@ -786,7 +787,7 @@ async fn persona_only_lorebooks_reach_direct_starter_and_group_turns_live() {
             &harness.context,
             dto::ConversationSettingsUpdateRequest {
                 conversation_id: chat.clone(),
-                expected_settings_revision: None,
+                expected_settings_revision: changed.settings_revision,
                 patch: dto::ConversationSettingsPatch {
                     lorebooks: Some(dto::LorebooksChange::Reset),
                     ..dto::ConversationSettingsPatch::default()

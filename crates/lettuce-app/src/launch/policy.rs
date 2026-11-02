@@ -205,10 +205,9 @@ pub(crate) fn group_prompt_with_source<S: PromptRepository + ?Sized>(
             crate::BuiltInPromptId::GroupChatRoleplay,
         ),
     };
-    if let Some(prompt_id) = member {
-        if let PromptLookupResult::Available { document } = sources.lookup_exact(prompt_id, purpose)? {
+    if let Some(prompt_id) = member
+        && let PromptLookupResult::Available { document } = sources.lookup_exact(prompt_id, purpose)? {
             return Ok(Some((document, PromptSource::Character)));
-        }
     }
     Ok(
         crate::generation::built_in_prompts::active_built_in_prompt(sources, built_in)?

@@ -672,9 +672,12 @@ where
         );
         let mut turn = ConversationReader::get_turn(self.repository, work.turn_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        if turn.selected_speaker.is_some() || turn.forced_speaker.is_some() {
+        if turn.selected_speaker.is_some() {
             return Ok(());
         }
+        let mut explicit_speaker = if turn.forced_speaker.is_some() {
+            self.generation_speaker(&conversation, &turn)?
+        } else { None };
         if let GenerationTarget::ExistingCandidate {
             prior_candidate_id, ..
         } = turn.target
@@ -688,11 +691,11 @@ where
                 .participants
                 .iter()
                 .any(|participant| participant.id == author && participant.enabled);
-            if author_speaks {
-                return Ok(());
+            if author_speaks && explicit_speaker.is_none() {
+                explicit_speaker = self.generation_speaker(&conversation, &turn)?;
             }
         }
-        if matches!(
+        if explicit_speaker.is_none() && matches!(
             speaker_selection,
             lettuce_conversations::GroupSpeakerSelectionSnapshot::Director
                 | lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction
@@ -782,14 +785,16 @@ where
             prior_speaker,
             timeline: timeline.items,
         };
-        if mention_source.is_none()
+        if explicit_speaker.is_none() && mention_source.is_none()
             && let Some(events) = &self.live_events
         {
             events.emit(lettuce_contracts::GenerationEvent::SpeakerSelecting {
                 turn_id: work.turn_id.to_string(),
             });
         }
-        let selected_speaker = if mention_source.is_none()
+        let selected_speaker = if let Some(speaker) = explicit_speaker {
+            speaker
+        } else if mention_source.is_none()
             && speaker_selection == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
         {
             self.select_speaker_via_llm(work, &conversation, &profiles, &turn, &policy_request, now)
