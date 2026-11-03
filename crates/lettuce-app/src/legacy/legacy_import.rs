@@ -138,6 +138,12 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                     .iter()
                     .map(|prompt| prompt.source_id.clone())
                     .collect(),
+                built_in_prompt_ids: prompts
+                    .prompts
+                    .iter()
+                    .filter(|prompt| unedited_built_in(prompt))
+                    .map(|prompt| prompt.source_id.clone())
+                    .collect(),
                 provider_secrets: provider_models
                     .provider_accounts
                     .iter()
@@ -1103,6 +1109,15 @@ fn write_recommendation(hash: &mut Fingerprint, recommendation: &LegacyImageReco
     hash.f64(recommendation.strength);
 }
 
+/// A legacy copy of one of the app's own prompts that the user never
+/// edited: legacy kept `updated_at` equal to `created_at` until an edit.
+fn unedited_built_in(prompt: &lettuce_transfer::LegacyPromptCandidate) -> bool {
+    prompt.created_at == prompt.updated_at
+        && crate::BuiltInPromptId::ALL
+            .iter()
+            .any(|id| id.key() == prompt.source_id)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, str::FromStr};
@@ -1653,6 +1668,130 @@ mod tests {
                     .any(|window| window == canary.as_bytes())
             );
         }
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[tokio::test]
+    async fn unedited_legacy_built_in_prompts_become_the_current_built_ins() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-built-in-prompts-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let candidate = |source_id: &str, purpose, updated_at| LegacyPromptCandidate {
+            source_id: source_id.to_owned(),
+            name: "Legacy copy".to_owned(),
+            purpose,
+            entries: vec![LegacyPromptEntryCandidate {
+                source_id: "entry".to_owned(),
+                draft: PromptEntryDraft {
+                    built_in_entry_key: None,
+                    name: "System".to_owned(),
+                    role: PromptEntryRole::System,
+                    content: "Legacy text".to_owned(),
+                    enabled: true,
+                    injection_position: PromptEntryPosition::Relative,
+                    depth: 0,
+                    conditional_min_messages: None,
+                    interval_turns: None,
+                    system_prompt: true,
+                    conditions: None,
+                    payload: None,
+                },
+            }],
+            condense: false,
+            created_at: TimestampMillis::new(5),
+            updated_at: TimestampMillis::new(updated_at),
+        };
+        let prompt_plan = LegacyPromptPlan {
+            skipped: Vec::new(),
+            prompts: vec![
+                candidate("prompt_app_default", PromptPurpose::DirectChat, 5),
+                candidate("prompt_app_group_chat", PromptPurpose::GroupChatConversational, 9),
+            ],
+            default_prompt_source_id: Some("prompt_app_default".to_owned()),
+            deprecated_system_prompt: None,
+        };
+        let plan = LegacyImportPlan {
+            provider_models: provider_models(),
+            prompts: prompt_plan,
+            personas: personas(),
+            lorebooks: LegacyLorebookPlan {
+                skipped: Vec::new(),
+                lorebooks: Vec::new(),
+            },
+            asr: asr(),
+            media: LegacyMediaPlan {
+                skipped: Vec::new(),
+                media: Vec::new(),
+                total_bytes: 0,
+            },
+            source_fingerprint: None,
+            later_skips: Vec::new(),
+        };
+        let inventory = LegacyDatabaseInventory {
+            prompts: 2,
+            ..inventory()
+        };
+        let run_id = LegacyImportRunId::new();
+        let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
+        let admission = backend
+            .legacy_import_admission()
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(20))
+            .expect("admit import");
+        let destination = |source_id: &str| {
+            admission
+                .assignments
+                .iter()
+                .find_map(|assignment| match assignment {
+                    LegacyImportAssignment::Prompt {
+                        legacy_id,
+                        destination_id,
+                    } if legacy_id == source_id => Some(*destination_id),
+                    _ => None,
+                })
+                .expect("prompt assignment")
+        };
+        backend
+            .legacy_import_executor()
+            .execute(&admission, &plan, TimestampMillis::new(30))
+            .expect("materialize graph");
+        backend
+            .legacy_provider_model_importer(&InMemorySecretStore::new())
+            .execute(&admission, &plan, TimestampMillis::new(40))
+            .await
+            .expect("materialize prompts");
+        let lookup = |id, purpose| match PromptRepository::lookup_exact(backend.database(), id, purpose)
+            .expect("read prompt")
+        {
+            PromptLookupResult::Available { document } => document,
+            other => panic!("unexpected prompt lookup: {other:?}"),
+        };
+        let unedited = lookup(destination("prompt_app_default"), PromptPurpose::DirectChat);
+        assert!(matches!(
+            &unedited.provenance,
+            lettuce_context::PromptProvenance::BuiltIn { key, .. } if key == "prompt_app_default"
+        ));
+        assert!(unedited.entries.iter().all(|entry| entry.content != "Legacy text"));
+        let edited = lookup(
+            destination("prompt_app_group_chat"),
+            PromptPurpose::GroupChatConversational,
+        );
+        assert_eq!(edited.behavior_version, PromptBehaviorVersion::LegacyV1);
+        assert_eq!(edited.entries[0].content, "Legacy text");
+        assert_eq!(
+            GlobalSettingsStore::load(backend.database())
+                .expect("load settings")
+                .default_prompt_document_id,
+            Some(destination("prompt_app_default"))
+        );
+        drop(backend);
+
+        let reopened = AppBackend::open(&path, TimestampMillis::new(50)).expect("reopen backend");
+        let replayed = reopened
+            .legacy_import_admission()
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(60))
+            .expect("replay admission");
+        assert_eq!(replayed.assignments, admission.assignments);
         fs::remove_file(path).expect("remove database");
     }
 

@@ -928,6 +928,10 @@ pub struct LegacyImportSources {
     pub provider_account_ids: Vec<ProviderAccountId>,
     pub model_profile_ids: Vec<ModelProfileId>,
     pub prompt_ids: Vec<String>,
+    /// The prompts among `prompt_ids` that are the app's own, never edited:
+    /// they are not imported and everything that named them names the
+    /// current built-in prompt with the same key.
+    pub built_in_prompt_ids: Vec<String>,
     pub provider_secrets: Vec<LegacyImportProviderSecretSource>,
     pub persona_ids: Vec<PersonaId>,
     pub lorebook_ids: Vec<LorebookId>,

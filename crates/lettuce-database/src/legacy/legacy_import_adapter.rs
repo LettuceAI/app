@@ -1829,6 +1829,11 @@ impl LegacyImportRepository for Database {
                 .prompts
                 .get(&candidate.source_id)
                 .ok_or(LegacyImportRepositoryError::Conflict)?;
+            if destination_id
+                == crate::catalog::prompt_adapter::built_in_document_id(&candidate.source_id)
+            {
+                continue;
+            }
             let entries = candidate
                 .entries
                 .iter()
@@ -3302,15 +3307,12 @@ fn insert_assignments(
         )?;
     }
     for source_id in &sources.prompt_ids {
-        insert_assignment(
-            transaction,
-            run_id,
-            "prompt",
-            source_id,
-            "",
-            lettuce_transfer::LegacyIdScope.source("prompt", source_id).to_string(),
-            None,
-        )?;
+        let destination = if sources.built_in_prompt_ids.contains(source_id) {
+            crate::catalog::prompt_adapter::built_in_document_id(source_id).to_string()
+        } else {
+            lettuce_transfer::LegacyIdScope.source("prompt", source_id).to_string()
+        };
+        insert_assignment(transaction, run_id, "prompt", source_id, "", destination, None)?;
     }
     for source in &sources.provider_secrets {
         let (source_kind, source_detail) = match &source.secret {
@@ -3902,6 +3904,7 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
         provider_account_ids: Vec::new(),
         model_profile_ids: Vec::new(),
         prompt_ids: Vec::new(),
+        built_in_prompt_ids: Vec::new(),
         provider_secrets: Vec::new(),
         persona_ids: Vec::new(),
         lorebook_ids: Vec::new(),
@@ -3920,8 +3923,14 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
             LegacyImportAssignment::ModelProfile { legacy_id, .. } => {
                 sources.model_profile_ids.push(*legacy_id);
             }
-            LegacyImportAssignment::Prompt { legacy_id, .. } => {
+            LegacyImportAssignment::Prompt {
+                legacy_id,
+                destination_id,
+            } => {
                 sources.prompt_ids.push(legacy_id.clone());
+                if *destination_id == crate::catalog::prompt_adapter::built_in_document_id(legacy_id) {
+                    sources.built_in_prompt_ids.push(legacy_id.clone());
+                }
             }
             LegacyImportAssignment::ProviderSecret { source, .. } => {
                 sources.provider_secrets.push(source.clone());
@@ -4054,6 +4063,7 @@ mod tests {
                 provider_account_ids: vec![provider_account_id],
                 model_profile_ids: vec![ModelProfileId::new()],
                 prompt_ids: Vec::new(),
+                built_in_prompt_ids: Vec::new(),
                 provider_secrets: vec![
                     LegacyImportProviderSecretSource {
                         provider_account_id,

@@ -883,6 +883,7 @@ mod tests {
                     provider_account_ids: Vec::new(),
                     model_profile_ids: Vec::new(),
                     prompt_ids: Vec::new(),
+                    built_in_prompt_ids: Vec::new(),
                     provider_secrets: Vec::new(),
                     persona_ids: vec![persona_id],
                     lorebook_ids: Vec::new(),

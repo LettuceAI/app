@@ -33,7 +33,7 @@ const BUILT_IN_PROMPT_NAMESPACE: uuid::Uuid =
 /// Built-in prompt identities are derived from their keys, so every device
 /// seeds the same ids and cross-device references (characters, settings,
 /// derived prompts) resolve.
-fn built_in_document_id(key: &str) -> PromptDocumentId {
+pub(crate) fn built_in_document_id(key: &str) -> PromptDocumentId {
     PromptDocumentId::from_uuid(uuid::Uuid::new_v5(
         &BUILT_IN_PROMPT_NAMESPACE,
         key.as_bytes(),
