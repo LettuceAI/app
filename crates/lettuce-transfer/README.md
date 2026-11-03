@@ -51,7 +51,7 @@ Conversation usage version 4 includes each event's conversation id so usage and 
 
 Provider graph version 3 carries lorebook apply receipts with the destination's name at apply time. A receipt remains restorable when its lorebook is absent. The encrypted envelope remains version 2.
 
-The lorebook and prompt history snapshots (turn prompt and lorebook names, run prompt names, a derived prompt's source name) travel in conversation runtime version 2, dynamic memory version 7, companion state version 3 and provider graph version 3. A derived prompt's source and the books and prompts a turn used need not be in the backup.
+The lorebook and prompt history snapshots (turn prompt and lorebook names, run prompt names, a derived prompt's source name) travel in conversation runtime version 3, dynamic memory version 7, companion state version 3 and provider graph version 3. A derived prompt's source and the books and prompts a turn used need not be in the backup.
 
 A backup is complete: it holds every user-owned domain, every referenced media object and every portable secret needed to recreate the profile.
 
@@ -223,3 +223,5 @@ Companion identity includes every soul identity string, affect baseline, regulat
 Memory cards exclude conversation source attribution, summaries, relationships and runtime fields. Turn-observed dates become user-precision dates on export and import; observations without a date stay undated. Asset tables deduplicate blobs, while import creates distinct logical asset identities where the existing media owners require them. Dependencies may contain only lorebooks and prompts, and each imports once in the existing operation transaction. Learned state belongs only to character files. The unified-entity-card dependency and golden fixtures support reading v1 and v2; all UEC output uses this module.
 
 Character files contain only active scenes. A starter or character default that points to an archived scene exports a null scene reference and a named warning. Scene lifecycle status remains outside the card format.
+
+Conversation runtime version 3 additionally preserves optional used lorebook entry content, memory text, retrieval match scores and the memory summary inside frozen initial-inference context. Version 2 input remains accepted; absent metadata is not reconstructed from live sources.
