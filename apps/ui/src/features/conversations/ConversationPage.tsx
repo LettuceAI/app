@@ -824,12 +824,12 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               onBranchCharacter={() => chooseBranch(shownMenu.id, "character")}
               {...(directCharacterId ? { onBranchGroup: () => chooseBranch(shownMenu.id, "group") } : {})}
               onDelete={() => void remove(shownMenu)}
-              {...(!isGroup && shownMenu.role === "assistant" ? { onSceneImage: () => openSceneImage(shownMenu) } : {})}
+              {...(shownMenu.role === "assistant" ? { onSceneImage: () => openSceneImage(shownMenu) } : {})}
             />
           )}
         </Sheet>
 
-        {!isGroup && sceneImageMessage && <SceneImageSheet key={sceneImageMessage.id} api={api} conversationId={conversationId} message={sceneImageMessage} busy={sending} onClose={closeSceneImage} />}
+        {sceneImageMessage && <SceneImageSheet key={sceneImageMessage.id} api={api} conversationId={conversationId} message={sceneImageMessage} busy={sending} onClose={closeSceneImage} />}
 
         {shownRegeneration && <RegenerationSheet
           key={regenerationSession}

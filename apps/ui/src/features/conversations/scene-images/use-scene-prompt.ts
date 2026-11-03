@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiFailure, type ApiClient } from "@/api/client";
+import type { SceneCastSelection } from "@/api/generated/bindings";
 import { watchJob } from "@/entities/job";
 
 interface Attempt {
+  cast: string;
   operationId: string;
   jobId: string | null;
   terminal: boolean;
@@ -21,9 +23,10 @@ export function useScenePrompt(api: ApiClient, messageId: string) {
   }, [api]);
   useEffect(() => cancel, [cancel]);
 
-  const start = async () => {
+  const start = async (cast: SceneCastSelection | null) => {
     if (current.current) return null;
-    const request = attempt.current && !attempt.current.terminal ? attempt.current : { operationId: crypto.randomUUID(), jobId: null, terminal: false };
+    const key = JSON.stringify(cast);
+    const request = attempt.current && !attempt.current.terminal && attempt.current.cast === key ? attempt.current : { cast: key, operationId: crypto.randomUUID(), jobId: null, terminal: false };
     attempt.current = request;
     const run = { controller: new AbortController(), attempt: request };
     current.current = run;
@@ -31,7 +34,7 @@ export function useScenePrompt(api: ApiClient, messageId: string) {
     try {
       let jobId = request.jobId;
       if (!jobId) {
-        const accepted = await api.call("messageScenePromptGenerate", { message_id: messageId, client_operation_id: request.operationId });
+        const accepted = await api.call("messageScenePromptGenerate", { message_id: messageId, client_operation_id: request.operationId, ...(cast ? { cast } : {}) });
         jobId = accepted.job_id;
         run.attempt = { ...request, jobId };
         attempt.current = run.attempt;

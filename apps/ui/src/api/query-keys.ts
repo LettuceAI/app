@@ -13,6 +13,8 @@ export const queryKeys = {
       [...queryKeys.conversations.all, "detail", conversationId] as const,
     messages: (conversationId: string) =>
       [...queryKeys.conversations.detail(conversationId), "messages"] as const,
+    sceneCast: (conversationId: string, messageId: string) =>
+      [...queryKeys.conversations.messages(conversationId), "scene-cast", messageId] as const,
   },
   memory: {
     all: ["memory"] as const,

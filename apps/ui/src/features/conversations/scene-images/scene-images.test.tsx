@@ -48,6 +48,7 @@ async function open(options: { initial?: TimelineMessage; calls?: MockCallHandle
     conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
     conversationsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
     llmMetricsForMessage: () => ({ status: "ok", data: null }), messageUsage: () => ({ status: "ok", data: null }),
+    messageSceneCast: () => ({ status: "ok", data: { characters: [{ character_id: "ch1", name: "Cassian", avatar: null, selected: true }], persona: null } }),
     ...options.calls,
   }, ...(options.streams ? { streams: options.streams } : {}) });
   const runtime = await createAppRuntime({ transport, history: createMemoryHistory({ initialEntries: ["/chat/c1", options.path ?? "/chat/c1"] }), i18n: await createTestI18n("en") });
@@ -129,7 +130,7 @@ it("writes a manual prompt, refuses blank input and submits the trimmed prompt o
   fireEvent.click(submit);
   fireEvent.click(submit);
   await waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
-  expect(generate.mock.calls[0]?.[0]).toEqual({ message_id: "a1", prompt: "Cassian by the harbour", client_operation_id: expect.any(String) });
+  expect(generate.mock.calls[0]?.[0]).toEqual({ message_id: "a1", prompt: "Cassian by the harbour", client_operation_id: expect.any(String), cast: { character_ids: ["ch1"], include_persona: false } });
   await waitFor(() => expect(runtime.router.state.location.search.sceneImage).toBeUndefined());
 });
 
@@ -163,7 +164,7 @@ it("restores an ask-first prompt and approves edited text through the approval e
   expect(field).toHaveProperty("value", pending.prompt);
   fireEvent.change(field, { target: { value: "A storm over the harbour" } });
   fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
-  await waitFor(() => expect(approve).toHaveBeenCalledExactlyOnceWith({ message_id: "a1", prompt: "A storm over the harbour" }));
+  await waitFor(() => expect(approve).toHaveBeenCalledExactlyOnceWith({ message_id: "a1", prompt: "A storm over the harbour", cast: { character_ids: ["ch1"], include_persona: false } }));
   expect(generate).not.toHaveBeenCalled();
 });
 
@@ -236,11 +237,30 @@ it.each([{ enabled: false, models: [imageModel, writerModel], title: "Scene gene
   expect(screen.getByRole("button", { name: "Open image settings" })).toBeTruthy();
 });
 
-it("does not offer the scene flow in group chats", async () => {
-  await open({ group: true });
-  fireEvent.contextMenu(screen.getByText("The harbour falls silent."));
-  await screen.findByRole("dialog");
-  expect(screen.queryByRole("button", { name: /Generate scene image/ })).toBeNull();
+it("lets a group chat pick who appears in the scene", async () => {
+  const generate = vi.fn<NonNullable<MockCallHandlers["messageSceneImageGenerate"]>>(() => ({ status: "ok", data: { job_id: "group-job" } }));
+  const write = vi.fn<NonNullable<MockCallHandlers["messageScenePromptGenerate"]>>(() => ({ status: "ok", data: { job_id: "writer-job" } }));
+  await open({ group: true, calls: {
+    messageSceneImageGenerate: generate,
+    messageScenePromptGenerate: write,
+    messageSceneCast: () => ({ status: "ok", data: {
+      characters: [{ character_id: "ch1", name: "Cassian", avatar: null, selected: true }, { character_id: "ch2", name: "Mira", avatar: null, selected: false }],
+      persona: { name: "Sol", avatar: null, selected: true },
+    } }),
+  } });
+  const dialog = await openFlow();
+  await within(dialog).findByText("In the picture");
+  expect(within(dialog).getByRole("checkbox", { name: "Cassian" }).getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "Cassian" }));
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sol" }));
+  await within(dialog).findByText("Choose at least one person for the scene.");
+  expect(within(dialog).getByRole("button", { name: /Ask AI to write a prompt/ })).toHaveProperty("disabled", true);
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "Mira" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: /Write a prompt/ }));
+  fireEvent.change(await within(dialog).findByRole("textbox", { name: "Scene prompt" }), { target: { value: "Mira on the pier" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Generate image" }));
+  await waitFor(() => expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: "Mira on the pier", cast: { character_ids: ["ch2"], include_persona: false } })));
+  expect(write).not.toHaveBeenCalled();
 });
 
 it("retries a failed image with its retained prompt", async () => {
