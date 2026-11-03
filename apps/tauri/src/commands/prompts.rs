@@ -64,6 +64,35 @@ pub async fn prompt_builtin_reset(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn prompt_builtin_update_get(
+    context: State<'_, ApiContextSlot>,
+    request: dto::PromptBuiltinUpdateGetRequest,
+) -> Result<dto::PromptBuiltinUpdate, ApiError> {
+    let context = context.snapshot()?;
+    api::prompt_builtin_update_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn prompt_builtin_update_apply(
+    context: State<'_, ApiContextSlot>,
+    request: dto::PromptBuiltinUpdateApplyRequest,
+) -> Result<dto::PromptView, ApiError> {
+    let context = context.snapshot()?;
+    api::prompt_builtin_update_apply(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn prompts_builtin_updates_pending(
+    context: State<'_, ApiContextSlot>,
+) -> Result<dto::PromptBuiltinUpdatesPending, ApiError> {
+    let context = context.snapshot()?;
+    api::prompts_builtin_updates_pending(&context).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn prompt_app_default_set(
     context: State<'_, ApiContextSlot>,
     request: dto::PromptAppDefaultSetRequest,

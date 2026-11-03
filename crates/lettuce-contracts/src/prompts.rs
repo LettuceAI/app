@@ -206,6 +206,9 @@ pub struct PromptSummary {
     pub archived: bool,
     pub origin: PromptOrigin,
     pub app_default: bool,
+    /// The bundled built-in this prompt is based on changed entries the user
+    /// has not yet decided on.
+    pub built_in_update: bool,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -314,6 +317,76 @@ pub enum PromptBuiltinResetRequest {
 #[serde(deny_unknown_fields)]
 pub struct PromptBuiltinResetResult {
     pub prompts: Vec<PromptView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptBuiltinUpdateGetRequest {
+    pub prompt_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum PromptBuiltinChangeKind {
+    Added,
+    Updated,
+    Conflict,
+    Removed,
+}
+
+/// One entry the built-in changed. `current` is the prompt's own entry (none
+/// for an added one) and `new` the built-in's (none for a removed one).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptBuiltinChange {
+    pub entry_key: String,
+    pub kind: PromptBuiltinChangeKind,
+    pub current: Option<PromptEntryView>,
+    pub new: Option<PromptEntryView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptBuiltinUpdate {
+    pub prompt_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    pub built_in_name: String,
+    pub changes: Vec<PromptBuiltinChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptBuiltinUpdateChoice {
+    pub entry_key: String,
+    pub take_new: bool,
+}
+
+/// Applies the user's decision for every pending entry of a built-in update.
+/// Keeping an entry is a decision too: it clears the notification until the
+/// built-in changes again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptBuiltinUpdateApplyRequest {
+    pub client_operation_id: String,
+    pub prompt_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub choices: Vec<PromptBuiltinUpdateChoice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct PromptBuiltinUpdatesPending {
+    pub count: u32,
+    pub prompt_ids: Vec<String>,
 }
 
 /// Selects the app-wide default prompt; `None` returns to the built-in.

@@ -472,11 +472,11 @@ describe("character creation", () => {
 
   it("keeps prompt slots separate and only shows the companion slot in companion mode", async () => {
     const catalog: PromptSummary[] = [
-      { id: "direct-default", name: "Local RP Default", kind: "direct_chat", archived: false, origin: { type: "user" }, app_default: true, revision: 1, created_at: 1, updated_at: 1 },
-      { id: "direct-bundled", name: "Built-in RP", kind: "direct_chat", archived: false, origin: { type: "built_in", key: "prompt_app_default", protected: true, required: true, edited: false }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
-      { id: "group-rp-default", name: "Group RP", kind: "group_chat_roleplay", archived: false, origin: { type: "built_in", key: "prompt_app_group_chat_roleplay", protected: true, required: true, edited: false }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
-      { id: "group-chat-default", name: "Group Chat", kind: "group_chat_conversational", archived: false, origin: { type: "built_in", key: "prompt_app_group_chat", protected: true, required: true, edited: false }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
-      { id: "companion-default", name: "Companion Default", kind: "companion_chat", archived: false, origin: { type: "built_in", key: "prompt_app_companion", protected: true, required: true, edited: false }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
+      { id: "direct-default", name: "Local RP Default", kind: "direct_chat", archived: false, origin: { type: "user" }, app_default: true, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
+      { id: "direct-bundled", name: "Built-in RP", kind: "direct_chat", archived: false, origin: { type: "built_in", key: "prompt_app_default", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
+      { id: "group-rp-default", name: "Group RP", kind: "group_chat_roleplay", archived: false, origin: { type: "built_in", key: "prompt_app_group_chat_roleplay", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
+      { id: "group-chat-default", name: "Group Chat", kind: "group_chat_conversational", archived: false, origin: { type: "built_in", key: "prompt_app_group_chat", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
+      { id: "companion-default", name: "Companion Default", kind: "companion_chat", archived: false, origin: { type: "built_in", key: "prompt_app_companion", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
     ];
     const prompts = vi.fn(({ kind }: { kind?: PromptKind | null }) => ({ status: "ok" as const, data: { items: catalog.filter((entry) => entry.kind === kind), next_cursor: null } }));
     const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ({ status: "ok" as const, data: saved(request) }));

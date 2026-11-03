@@ -96,13 +96,53 @@ pub enum PromptProvenance {
         authored_digest: ContentHash,
         required: bool,
         protected: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seed_base: Option<PromptSeedBase>,
     },
     User,
     Derived {
         source: PromptDocumentId,
         source_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seed_base: Option<PromptSeedBase>,
     },
     Imported,
+}
+
+impl PromptProvenance {
+    #[must_use]
+    pub const fn seed_base(&self) -> Option<&PromptSeedBase> {
+        match self {
+            Self::BuiltIn { seed_base, .. } | Self::Derived { seed_base, .. } => seed_base.as_ref(),
+            Self::User | Self::Imported => None,
+        }
+    }
+
+    pub fn set_seed_base(&mut self, base: Option<PromptSeedBase>) {
+        if let Self::BuiltIn { seed_base, .. } | Self::Derived { seed_base, .. } = self {
+            *seed_base = base;
+        }
+    }
+}
+
+/// For each built-in entry key, the seed content a document last agreed
+/// with. It is never read by rendering.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptSeedBase {
+    pub built_in_key: String,
+    pub entries: Vec<PromptSeedBaseEntry>,
+}
+
+/// `entry_id` names the holder of the seed entry in a derived prompt, whose
+/// entries carry no built-in keys; built-in prompts find it by key and leave
+/// it `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptSeedBaseEntry {
+    pub entry_key: String,
+    pub entry_id: Option<PromptEntryId>,
+    pub seed_entry_digest: ContentHash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -336,6 +376,73 @@ impl PromptEntryDraft {
     }
 }
 
+#[derive(Serialize)]
+struct CanonicalAuthoredEntry<'a> {
+    name: &'a str,
+    role: PromptEntryRole,
+    content: &'a str,
+    enabled: bool,
+    injection_position: PromptEntryPosition,
+    depth: u32,
+    conditional_min_messages: Option<u32>,
+    interval_turns: Option<u32>,
+    system_prompt: bool,
+    conditions: &'a Option<PromptEntryCondition>,
+    payload: &'a Option<PromptEntryPayload>,
+}
+
+impl PromptEntryDraft {
+    /// Digest of the authored fields only: never the built-in key, identity
+    /// or position.
+    #[must_use]
+    pub fn authored_digest(&self) -> ContentHash {
+        let bytes = serde_json::to_vec(&CanonicalAuthoredEntry {
+            name: &self.name,
+            role: self.role,
+            content: &self.content,
+            enabled: self.enabled,
+            injection_position: self.injection_position,
+            depth: self.depth,
+            conditional_min_messages: self.conditional_min_messages,
+            interval_turns: self.interval_turns,
+            system_prompt: self.system_prompt,
+            conditions: &self.conditions,
+            payload: &self.payload,
+        })
+        .expect("authored entry fields always serialize");
+        ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
+            .expect("blake3 always produces a 64-character hexadecimal digest")
+    }
+}
+
+impl PromptEntryDraft {
+    #[must_use]
+    pub fn into_entry(self, id: PromptEntryId) -> PromptEntry {
+        PromptEntry {
+            id,
+            built_in_entry_key: self.built_in_entry_key,
+            name: self.name,
+            role: self.role,
+            content: self.content,
+            enabled: self.enabled,
+            injection_position: self.injection_position,
+            depth: self.depth,
+            conditional_min_messages: self.conditional_min_messages,
+            interval_turns: self.interval_turns,
+            system_prompt: self.system_prompt,
+            conditions: self.conditions,
+            payload: self.payload,
+        }
+    }
+}
+
+impl PromptEntry {
+    #[must_use]
+    pub fn authored_digest(&self) -> ContentHash {
+        PromptEntryDraft::from(self.clone()).authored_digest()
+    }
+}
+
 impl From<PromptEntry> for PromptEntryDraft {
     fn from(entry: PromptEntry) -> Self {
         Self {
@@ -537,6 +644,8 @@ pub enum PromptValidationError {
     BuiltInEntryKeyOnNonBuiltInPrompt,
     #[error("derived prompt provenance requires a source different from the document")]
     InvalidDerivedSource,
+    #[error("built-in update choice is missing for entry {0}")]
+    MissingBuiltInUpdateChoice(String),
     #[error("prompt revision must be at least one")]
     ZeroRevision,
     #[error("prompt purpose must be explicit")]
@@ -700,6 +809,7 @@ impl PromptDocument {
             PromptProvenance::Derived {
                 source,
                 source_name,
+                ..
             } if *source == self.id || source_name.trim().is_empty() => {
                 return Err(PromptValidationError::InvalidDerivedSource);
             }
@@ -714,6 +824,138 @@ impl PromptDocument {
         }
         Ok(())
     }
+}
+
+/// One entry-level difference between a prompt and the current built-in seed
+/// it was based on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptBuiltInChange {
+    /// New in the built-in, or changed in it after the user removed the entry.
+    Added {
+        entry_key: String,
+        new: PromptEntryDraft,
+    },
+    /// The built-in changed and the user did not touch the entry.
+    Updated {
+        entry_key: String,
+        current: PromptEntry,
+        new: PromptEntryDraft,
+    },
+    /// The built-in changed and the user's entry differs from what it was.
+    Conflict {
+        entry_key: String,
+        current: PromptEntry,
+        new: PromptEntryDraft,
+    },
+    /// The built-in no longer has the entry.
+    Removed {
+        entry_key: String,
+        current: PromptEntry,
+    },
+}
+
+impl PromptBuiltInChange {
+    #[must_use]
+    pub fn entry_key(&self) -> &str {
+        match self {
+            Self::Added { entry_key, .. }
+            | Self::Updated { entry_key, .. }
+            | Self::Conflict { entry_key, .. }
+            | Self::Removed { entry_key, .. } => entry_key,
+        }
+    }
+}
+
+impl PromptDocument {
+    /// The entry that holds a built-in entry key: by its built-in key in a
+    /// built-in prompt, by the id recorded in the seed base in a derived one.
+    #[must_use]
+    pub fn entry_for_seed_key(&self, key: &str) -> Option<&PromptEntry> {
+        match &self.provenance {
+            PromptProvenance::BuiltIn { .. } => self
+                .entries
+                .iter()
+                .find(|entry| entry.built_in_entry_key.as_deref() == Some(key)),
+            PromptProvenance::Derived {
+                seed_base: Some(base),
+                ..
+            } => {
+                let id = base
+                    .entries
+                    .iter()
+                    .find(|entry| entry.entry_key == key)?
+                    .entry_id?;
+                self.entries.iter().find(|entry| entry.id == id)
+            }
+            _ => None,
+        }
+    }
+}
+
+/// What the seed changed since the document last agreed with it. Empty when
+/// the document has no seed base for this seed.
+#[must_use]
+pub fn built_in_update(
+    document: &PromptDocument,
+    seed: &BuiltInPromptSeed,
+) -> Vec<PromptBuiltInChange> {
+    let Some(base) = document
+        .provenance
+        .seed_base()
+        .filter(|base| seed.is_named(&base.built_in_key))
+    else {
+        return Vec::new();
+    };
+    let find_base = |key: &str| base.entries.iter().find(|entry| entry.entry_key == key);
+    let mut changes = Vec::new();
+    for new in &seed.entries {
+        let Some(key) = new.built_in_entry_key.as_deref() else {
+            continue;
+        };
+        let new_digest = new.authored_digest();
+        let base_entry = find_base(key);
+        let current = document.entry_for_seed_key(key);
+        let current_digest = current.map(PromptEntry::authored_digest);
+        if current_digest.as_ref() == Some(&new_digest)
+            || base_entry.is_some_and(|entry| entry.seed_entry_digest == new_digest)
+        {
+            continue;
+        }
+        let entry_key = key.to_owned();
+        let new = new.clone();
+        changes.push(match current {
+            None => PromptBuiltInChange::Added { entry_key, new },
+            Some(current)
+                if base_entry.is_some_and(|entry| {
+                    Some(&entry.seed_entry_digest) == current_digest.as_ref()
+                }) =>
+            {
+                PromptBuiltInChange::Updated {
+                    entry_key,
+                    current: current.clone(),
+                    new,
+                }
+            }
+            Some(current) => PromptBuiltInChange::Conflict {
+                entry_key,
+                current: current.clone(),
+                new,
+            },
+        });
+    }
+    for entry in &base.entries {
+        let in_seed = seed
+            .entries
+            .iter()
+            .any(|new| new.built_in_entry_key.as_deref() == Some(entry.entry_key.as_str()));
+        if !in_seed && let Some(current) = document.entry_for_seed_key(&entry.entry_key) {
+            changes.push(PromptBuiltInChange::Removed {
+                entry_key: entry.entry_key.clone(),
+                current: current.clone(),
+            });
+        }
+    }
+    changes
 }
 
 /// Immutable facts used to evaluate all condition variants, including the
@@ -2150,7 +2392,32 @@ impl BuiltInPromptSeed {
             authored_digest: digest,
             required: self.required,
             protected: self.protected,
+            seed_base: Some(self.seed_base()),
         })
+    }
+
+    #[must_use]
+    pub fn seed_base(&self) -> PromptSeedBase {
+        PromptSeedBase {
+            built_in_key: self.key.trim().to_owned(),
+            entries: self
+                .entries
+                .iter()
+                .filter_map(|entry| {
+                    Some(PromptSeedBaseEntry {
+                        entry_key: entry.built_in_entry_key.clone()?,
+                        entry_id: None,
+                        seed_entry_digest: entry.authored_digest(),
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_named(&self, key: &str) -> bool {
+        let key = key.trim();
+        self.key.trim() == key || self.aliases.iter().any(|alias| alias.trim() == key)
     }
 }
 
@@ -3164,6 +3431,7 @@ mod tests {
             authored_digest: ContentHash::parse("a".repeat(64)).expect("hash"),
             required: false,
             protected: false,
+            seed_base: None,
         };
         user.entries.push(PromptEntry {
             name: "legacy".into(),
@@ -3217,5 +3485,239 @@ mod tests {
         // The adapter contract deliberately documents updated_at DESC, id ASC;
         // no created-order or unbounded list field exists on this DTO.
         assert!(!encoded.contains("createdOrder"));
+    }
+
+    fn update_entry(key: &str, content: &str) -> PromptEntryDraft {
+        PromptEntryDraft {
+            built_in_entry_key: Some(key.into()),
+            name: key.into(),
+            role: PromptEntryRole::System,
+            content: content.into(),
+            enabled: true,
+            injection_position: PromptEntryPosition::Relative,
+            depth: 0,
+            conditional_min_messages: None,
+            interval_turns: None,
+            system_prompt: false,
+            conditions: None,
+            payload: None,
+        }
+    }
+
+    fn update_seed(entries: &[(&str, &str)]) -> BuiltInPromptSeed {
+        BuiltInPromptSeed {
+            key: "core".into(),
+            aliases: vec!["legacy-core".into()],
+            seed_version: 1,
+            metadata: PromptMetadataDraft {
+                name: "Core".into(),
+                purpose: PromptPurpose::DirectChat,
+                condense: false,
+                behavior_version: PromptBehaviorVersion::LegacyV1,
+            },
+            entries: entries
+                .iter()
+                .map(|(key, content)| update_entry(key, content))
+                .collect(),
+            required: false,
+            protected: false,
+        }
+    }
+
+    fn held(key: &str, content: &str) -> PromptEntry {
+        update_entry(key, content).into_entry(PromptEntryId::new())
+    }
+
+    fn update_document(provenance: PromptProvenance, entries: Vec<PromptEntry>) -> PromptDocument {
+        PromptDocument {
+            id: PromptDocumentId::new(),
+            status: LifecycleStatus::Active,
+            name: "Core".into(),
+            purpose: PromptPurpose::DirectChat,
+            entries,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+            provenance,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        }
+    }
+
+    fn built_in_document(base: &BuiltInPromptSeed, entries: Vec<PromptEntry>) -> PromptDocument {
+        update_document(base.provenance().expect("provenance"), entries)
+    }
+
+    fn derived_document(
+        base: &BuiltInPromptSeed,
+        entries: Vec<PromptEntry>,
+        holders: &[(&str, PromptEntryId)],
+    ) -> PromptDocument {
+        let mut seed_base = base.seed_base();
+        for entry in &mut seed_base.entries {
+            entry.entry_id = holders
+                .iter()
+                .find(|(key, _)| *key == entry.entry_key)
+                .map(|(_, id)| *id);
+        }
+        update_document(
+            PromptProvenance::Derived {
+                source: PromptDocumentId::new(),
+                source_name: "Core".into(),
+                seed_base: Some(seed_base),
+            },
+            entries,
+        )
+    }
+
+    fn kinds(changes: &[PromptBuiltInChange]) -> Vec<(&str, &'static str)> {
+        changes
+            .iter()
+            .map(|change| {
+                let kind = match change {
+                    PromptBuiltInChange::Added { .. } => "added",
+                    PromptBuiltInChange::Updated { .. } => "updated",
+                    PromptBuiltInChange::Conflict { .. } => "conflict",
+                    PromptBuiltInChange::Removed { .. } => "removed",
+                };
+                (change.entry_key(), kind)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn built_in_update_reports_added_updated_conflict_and_removed() {
+        let base = update_seed(&[("a", "a1"), ("b", "b1"), ("c", "c1"), ("d", "d1")]);
+        let document = built_in_document(
+            &base,
+            vec![
+                held("a", "a1"),
+                held("b", "mine b"),
+                held("c", "c1"),
+                held("d", "d1"),
+            ],
+        );
+        let next = update_seed(&[("a", "a2"), ("b", "b2"), ("c", "c1"), ("e", "e1")]);
+        let changes = built_in_update(&document, &next);
+        assert_eq!(
+            kinds(&changes),
+            vec![
+                ("a", "updated"),
+                ("b", "conflict"),
+                ("e", "added"),
+                ("d", "removed")
+            ]
+        );
+        let PromptBuiltInChange::Updated { current, new, .. } = &changes[0] else {
+            panic!("updated");
+        };
+        assert_eq!(current.content, "a1");
+        assert_eq!(new.content, "a2");
+        let PromptBuiltInChange::Conflict { current, new, .. } = &changes[1] else {
+            panic!("conflict");
+        };
+        assert_eq!(
+            (current.content.as_str(), new.content.as_str()),
+            ("mine b", "b2")
+        );
+    }
+
+    #[test]
+    fn built_in_update_is_empty_when_the_current_entry_already_equals_the_new_seed() {
+        let base = update_seed(&[("a", "a1")]);
+        let document = built_in_document(&base, vec![held("a", "a2")]);
+        assert!(built_in_update(&document, &update_seed(&[("a", "a2")])).is_empty());
+    }
+
+    #[test]
+    fn built_in_update_is_empty_when_the_seed_did_not_move() {
+        let base = update_seed(&[("a", "a1"), ("b", "b1")]);
+        let document = built_in_document(&base, vec![held("a", "mine a")]);
+        assert!(built_in_update(&document, &base).is_empty());
+    }
+
+    #[test]
+    fn built_in_update_without_a_matching_base_is_empty() {
+        let base = update_seed(&[("a", "a1")]);
+        let next = update_seed(&[("a", "a2")]);
+        let mut document = built_in_document(&base, vec![held("a", "a1")]);
+        assert_eq!(built_in_update(&document, &next).len(), 1);
+        document.provenance.set_seed_base(None);
+        assert!(built_in_update(&document, &next).is_empty());
+        let mut other = base.seed_base();
+        other.built_in_key = "other".into();
+        document.provenance.set_seed_base(Some(other));
+        assert!(built_in_update(&document, &next).is_empty());
+        let mut aliased = base.seed_base();
+        aliased.built_in_key = "legacy-core".into();
+        document.provenance.set_seed_base(Some(aliased));
+        assert_eq!(built_in_update(&document, &next).len(), 1);
+    }
+
+    #[test]
+    fn built_in_update_finds_derived_entries_by_recorded_id() {
+        let base = update_seed(&[("a", "a1"), ("b", "b1")]);
+        let mut first = held("a", "a1");
+        first.built_in_entry_key = None;
+        let mut second = held("b", "mine b");
+        second.built_in_entry_key = None;
+        let document = derived_document(
+            &base,
+            vec![second.clone(), first.clone()],
+            &[("a", first.id), ("b", second.id)],
+        );
+        let next = update_seed(&[("a", "a2"), ("b", "b2"), ("c", "c1")]);
+        let changes = built_in_update(&document, &next);
+        assert_eq!(
+            kinds(&changes),
+            vec![("a", "updated"), ("b", "conflict"), ("c", "added")]
+        );
+        let PromptBuiltInChange::Updated { current, .. } = &changes[0] else {
+            panic!("updated");
+        };
+        assert_eq!(current.id, first.id);
+        let PromptBuiltInChange::Conflict { current, .. } = &changes[1] else {
+            panic!("conflict");
+        };
+        assert_eq!(current.id, second.id);
+    }
+
+    #[test]
+    fn a_deleted_entry_stays_deleted_until_the_seed_changes_it() {
+        let base = update_seed(&[("a", "a1"), ("b", "b1")]);
+        let document = built_in_document(&base, vec![held("b", "b1")]);
+        assert!(built_in_update(&document, &base).is_empty());
+        let changes = built_in_update(&document, &update_seed(&[("a", "a2"), ("b", "b1")]));
+        assert_eq!(kinds(&changes), vec![("a", "added")]);
+    }
+
+    #[test]
+    fn authored_digest_covers_authored_fields_and_not_identity() {
+        let plain = update_entry("a", "text");
+        let mut keyless = plain.clone();
+        keyless.built_in_entry_key = None;
+        assert_eq!(plain.authored_digest(), keyless.authored_digest());
+        assert_eq!(
+            plain.authored_digest(),
+            plain
+                .clone()
+                .into_entry(PromptEntryId::new())
+                .authored_digest()
+        );
+        let mut changed = plain.clone();
+        changed.depth = 1;
+        assert_ne!(plain.authored_digest(), changed.authored_digest());
+        changed = plain.clone();
+        changed.enabled = false;
+        assert_ne!(plain.authored_digest(), changed.authored_digest());
+    }
+
+    #[test]
+    fn old_provenance_rows_decode_without_a_seed_base() {
+        let json = r#"{"type":"derived","source":"00000000-0000-0000-0000-000000000001","source_name":"Core"}"#;
+        let decoded: PromptProvenance = serde_json::from_str(json).expect("decodes");
+        assert_eq!(decoded.seed_base(), None);
+        let encoded = serde_json::to_string(&decoded).expect("encodes");
+        assert!(!encoded.contains("seed_base"));
     }
 }

@@ -682,6 +682,24 @@ impl ApiOperationTransaction<'_, '_> {
         crate::catalog::prompt_adapter::reconcile_built_ins_in(self.transaction, request, now)
             .map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))
     }
+    pub fn apply_built_in_prompt_update(
+        &self,
+        id: lettuce_types::PromptDocumentId,
+        expected: lettuce_types::Revision,
+        seed: &lettuce_context::BuiltInPromptSeed,
+        choices: &[(String, bool)],
+        now: TimestampMillis,
+    ) -> Result<lettuce_context::PromptDocument, lettuce_context::PromptRepositoryError> {
+        crate::catalog::prompt_adapter::apply_built_in_update_in(
+            self.transaction,
+            id,
+            expected,
+            seed,
+            choices,
+            now,
+        )
+    }
+
     pub fn set_default_prompt(
         &self,
         id: Option<lettuce_types::PromptDocumentId>,

@@ -10,12 +10,13 @@ use std::collections::{HashMap, HashSet};
 use lettuce_context::{
     BuiltInPromptSeed, BuiltInReconcileAction, BuiltInReconcileMode, BuiltInReconcileOutcome,
     BuiltInReconcileRequest, LifecycleFilter, LifecycleStatus, PromptBehaviorVersion,
-    PromptBootstrapError, PromptBootstrapPort, PromptDependencyError, PromptDependencyReader,
-    PromptDocument, PromptEntry, PromptEntryDraft, PromptEntryEdit, PromptEntryInsertionTarget,
-    PromptEntryMutation, PromptEntryPosition, PromptEntryRole, PromptLibraryQuery,
-    PromptLookupResult, PromptMetadataDraft, PromptMutationResult, PromptProvenance, PromptPurpose,
-    PromptReference, PromptReferenceOwner, PromptRepository, PromptRepositoryError,
-    PromptValidationError, classify_prompt_lookup,
+    PromptBootstrapError, PromptBootstrapPort, PromptBuiltInChange, PromptDependencyError,
+    PromptDependencyReader, PromptDocument, PromptEntry, PromptEntryDraft, PromptEntryEdit,
+    PromptEntryInsertionTarget, PromptEntryMutation, PromptEntryPosition, PromptEntryRole,
+    PromptLibraryQuery, PromptLookupResult, PromptMetadataDraft, PromptMutationResult,
+    PromptProvenance, PromptPurpose, PromptReference, PromptReferenceOwner, PromptRepository,
+    PromptRepositoryError, PromptSeedBase, PromptSeedBaseEntry, PromptValidationError,
+    built_in_update, classify_prompt_lookup,
 };
 use lettuce_types::{
     CharacterId, GroupId, Page, PromptDocumentId, PromptEntryId, Revision, TimestampMillis,
@@ -502,21 +503,7 @@ fn metadata_document(
 }
 
 fn entry_from_draft(draft: PromptEntryDraft, id: PromptEntryId) -> PromptEntry {
-    PromptEntry {
-        id,
-        built_in_entry_key: draft.built_in_entry_key,
-        name: draft.name,
-        role: draft.role,
-        content: draft.content,
-        enabled: draft.enabled,
-        injection_position: draft.injection_position,
-        depth: draft.depth,
-        conditional_min_messages: draft.conditional_min_messages,
-        interval_turns: draft.interval_turns,
-        system_prompt: draft.system_prompt,
-        conditions: draft.conditions,
-        payload: draft.payload,
-    }
+    draft.into_entry(id)
 }
 
 fn authored_entry_equal(entry: &PromptEntry, draft: &PromptEntryDraft) -> bool {
@@ -784,6 +771,7 @@ fn refresh_provenance(document: &mut PromptDocument) -> Result<(), PromptReposit
         seed_digest,
         required,
         protected,
+        seed_base,
         ..
     } = current
     {
@@ -794,6 +782,7 @@ fn refresh_provenance(document: &mut PromptDocument) -> Result<(), PromptReposit
             seed_digest,
             required,
             protected,
+            seed_base,
         };
     }
     Ok(())
@@ -930,6 +919,41 @@ fn load_page(
     Ok(Page { items, next_cursor })
 }
 
+/// The seed base of a copy: every base key of the source carries over with
+/// its base digest. A source entry that reappears unchanged in the copy is
+/// held by that copy entry; a key without one is held by no entry, so it
+/// only reports a change when the seed moves.
+fn copied_seed_base(source: &PromptDocument, copy: &[PromptEntry]) -> Option<PromptSeedBase> {
+    let base = source.provenance.seed_base()?;
+    let mut claimed = HashSet::new();
+    let entries = base
+        .entries
+        .iter()
+        .map(|base_entry| {
+            let held = source
+                .entry_for_seed_key(&base_entry.entry_key)
+                .map(PromptEntry::authored_digest)
+                .and_then(|digest| {
+                    copy.iter().find(|entry| {
+                        !claimed.contains(&entry.id) && entry.authored_digest() == digest
+                    })
+                });
+            if let Some(held) = held {
+                claimed.insert(held.id);
+            }
+            PromptSeedBaseEntry {
+                entry_key: base_entry.entry_key.clone(),
+                entry_id: held.map(|held| held.id),
+                seed_entry_digest: base_entry.seed_entry_digest.clone(),
+            }
+        })
+        .collect();
+    Some(PromptSeedBase {
+        built_in_key: base.built_in_key.clone(),
+        entries,
+    })
+}
+
 /// Creates a user prompt inside `tx`.
 pub(crate) fn create_user_draft_in(
     tx: &Transaction<'_>,
@@ -940,18 +964,22 @@ pub(crate) fn create_user_draft_in(
 ) -> Result<PromptDocument, PromptRepositoryError> {
     validate_metadata(&metadata)?;
     validate_entries(&entries)?;
-    let entries = entries
+    let entries: Vec<PromptEntry> = entries
         .into_iter()
         .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
         .collect();
-    let provenance = source.map(|id| load_required(tx, id)).transpose()?.map_or(PromptProvenance::User, |document| PromptProvenance::Derived { source: document.id, source_name: document.name });
-    let document = metadata_document(
-        PromptDocumentId::new(),
-        metadata,
-        entries,
-        provenance,
-        now,
-    )?;
+    let provenance = match source {
+        Some(id) => {
+            let source = load_required(tx, id)?;
+            PromptProvenance::Derived {
+                seed_base: copied_seed_base(&source, &entries),
+                source: source.id,
+                source_name: source.name,
+            }
+        }
+        None => PromptProvenance::User,
+    };
+    let document = metadata_document(PromptDocumentId::new(), metadata, entries, provenance, now)?;
     insert_root(tx, &document)?;
     load_required(tx, document.id)
 }
@@ -1502,7 +1530,7 @@ pub(crate) fn reconcile_built_ins_in(
     let mut seeds = request.seeds;
     seeds.sort_by_key(|seed| seed.key.trim().to_owned());
     let mut outcomes = Vec::with_capacity(seeds.len());
-    for seed in seeds {
+    for seed in &seeds {
         let key = seed.key.trim().to_owned();
         let seed_digest = seed.computed_seed_digest()?;
         let candidate_keys = std::iter::once(key.clone())
@@ -1596,10 +1624,15 @@ pub(crate) fn reconcile_built_ins_in(
         };
         if (alias_only || current_authored != current_seed)
             && let PromptProvenance::BuiltIn {
-                authored_digest, ..
+                authored_digest,
+                seed_base,
+                ..
             } = &mut canonical_provenance
         {
             *authored_digest = current_authored.clone();
+            if let Some(stored) = current.provenance.seed_base() {
+                *seed_base = Some(stored.clone());
+            }
         }
         if current.provenance != canonical_provenance {
             let (kind, canonical_key, source) = provenance_kind(&canonical_provenance);
@@ -1687,7 +1720,198 @@ pub(crate) fn reconcile_built_ins_in(
                 .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?,
         });
     }
+    backfill_derived_seed_bases(tx, &seeds)?;
     Ok(outcomes)
+}
+
+/// Gives a copy of a built-in that predates seed bases its base once: every
+/// seed key is recorded, held by the copy entry equal to its current seed
+/// entry when there is one. The write touches the provenance column only, so
+/// the revision and `updated_at` stay.
+fn backfill_derived_seed_bases(
+    tx: &Transaction<'_>,
+    seeds: &[BuiltInPromptSeed],
+) -> Result<(), PromptBootstrapError> {
+    let failure = |error: PromptRepositoryError| PromptBootstrapError::Failure(error.to_string());
+    let mut statement = tx
+        .prepare(
+            "SELECT derived.id,source.built_in_key FROM prompt_documents derived JOIN prompt_documents source ON source.id=derived.derived_source_id WHERE derived.provenance_kind='derived' AND source.provenance_kind='built_in' AND instr(derived.provenance_json,'\"seed_base\"')=0",
+        )
+        .map_err(bootstrap_storage)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(bootstrap_storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(bootstrap_storage)?;
+    for (id, source_key) in rows {
+        let Some(seed) = seeds.iter().find(|seed| seed.is_named(&source_key)) else {
+            continue;
+        };
+        let id: PromptDocumentId = id
+            .parse()
+            .map_err(|_| PromptBootstrapError::Failure("invalid derived id".into()))?;
+        let mut document = load_required(tx, id).map_err(failure)?;
+        let mut claimed = HashSet::new();
+        let mut base = seed.seed_base();
+        for entry in &mut base.entries {
+            let held = document.entries.iter().find(|candidate| {
+                !claimed.contains(&candidate.id)
+                    && candidate.authored_digest() == entry.seed_entry_digest
+            });
+            entry.entry_id = held.map(|held| held.id);
+            if let Some(held) = held {
+                claimed.insert(held.id);
+            }
+        }
+        document.provenance.set_seed_base(Some(base));
+        tx.execute(
+            "UPDATE prompt_documents SET provenance_json=?2 WHERE id=?1",
+            params![
+                id.to_string(),
+                encode(&document.provenance).map_err(failure)?
+            ],
+        )
+        .map_err(bootstrap_storage)?;
+    }
+    Ok(())
+}
+
+/// Applies the user's per-entry decisions on a built-in update. Every pending
+/// entry key needs a choice; a choice for a key that is no longer pending
+/// reports `Conflict`. Both decisions advance the seed base to the seed, so
+/// the update stops being pending.
+pub(crate) fn apply_built_in_update_in(
+    tx: &Transaction<'_>,
+    id: PromptDocumentId,
+    expected_revision: Revision,
+    seed: &BuiltInPromptSeed,
+    choices: &[(String, bool)],
+    now: TimestampMillis,
+) -> Result<PromptDocument, PromptRepositoryError> {
+    let current = load_required(tx, id)?;
+    check_expected(&current, expected_revision)?;
+    let changes = built_in_update(&current, seed);
+    if changes.is_empty() {
+        return Err(PromptRepositoryError::Conflict);
+    }
+    let take: HashMap<&str, bool> = choices
+        .iter()
+        .map(|(key, take)| (key.as_str(), *take))
+        .collect();
+    if take
+        .keys()
+        .any(|key| !changes.iter().any(|change| change.entry_key() == *key))
+    {
+        return Err(PromptRepositoryError::Conflict);
+    }
+    if let Some(change) = changes
+        .iter()
+        .find(|change| !take.contains_key(change.entry_key()))
+    {
+        return Err(PromptRepositoryError::Invalid(
+            PromptValidationError::MissingBuiltInUpdateChoice(change.entry_key().to_owned()),
+        ));
+    }
+    let derived = matches!(current.provenance, PromptProvenance::Derived { .. });
+    let seed_key = |entry: &PromptEntryDraft| {
+        entry
+            .built_in_entry_key
+            .as_deref()
+            .expect("validated seed")
+            .to_owned()
+    };
+    let mut held: HashMap<String, PromptEntryId> = seed
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            let key = seed_key(entry);
+            let id = current.entry_for_seed_key(&key)?.id;
+            Some((key, id))
+        })
+        .collect();
+    let mut entries = current.entries.clone();
+    let mut touched = HashSet::new();
+    for change in &changes {
+        if !take[change.entry_key()] {
+            continue;
+        }
+        match change {
+            PromptBuiltInChange::Updated {
+                current: old, new, ..
+            }
+            | PromptBuiltInChange::Conflict {
+                current: old, new, ..
+            } => {
+                let position = entries
+                    .iter()
+                    .position(|entry| entry.id == old.id)
+                    .ok_or(PromptRepositoryError::EntryNotFound)?;
+                let mut entry = entry_from_draft(new.clone(), old.id);
+                entry.built_in_entry_key = old.built_in_entry_key.clone();
+                entries[position] = entry;
+                touched.insert(old.id);
+            }
+            PromptBuiltInChange::Removed { current: old, .. } => {
+                entries.retain(|entry| entry.id != old.id);
+            }
+            PromptBuiltInChange::Added { .. } => {}
+        }
+    }
+    for (index, new) in seed.entries.iter().enumerate() {
+        let key = seed_key(new);
+        if !matches!(
+            changes.iter().find(|change| change.entry_key() == key),
+            Some(PromptBuiltInChange::Added { .. })
+        ) || !take[key.as_str()]
+        {
+            continue;
+        }
+        let position = seed.entries[..index]
+            .iter()
+            .rev()
+            .find_map(|earlier| held.get(&seed_key(earlier)))
+            .and_then(|earlier| entries.iter().position(|entry| entry.id == *earlier))
+            .map_or(0, |position| position + 1);
+        let entry_id = if derived {
+            PromptEntryId::new()
+        } else {
+            built_in_entry_id(current.id, &key)
+        };
+        let mut entry = entry_from_draft(new.clone(), entry_id);
+        if derived {
+            entry.built_in_entry_key = None;
+        }
+        entries.insert(position, entry);
+        held.insert(key, entry_id);
+    }
+    let mut proposed = current.clone();
+    proposed.entries = entries;
+    proposed.revision = next_revision(expected_revision)?;
+    proposed.updated_at = now;
+    proposed.provenance.set_seed_base(Some(PromptSeedBase {
+        built_in_key: seed.key.trim().to_owned(),
+        entries: seed
+            .entries
+            .iter()
+            .map(|entry| {
+                let key = seed_key(entry);
+                PromptSeedBaseEntry {
+                    entry_id: held.get(&key).copied().filter(|_| derived),
+                    entry_key: key,
+                    seed_entry_digest: entry.authored_digest(),
+                }
+            })
+            .collect(),
+    }));
+    refresh_provenance(&mut proposed)?;
+    proposed
+        .validate()
+        .map_err(PromptRepositoryError::Invalid)?;
+    update_root(tx, &proposed, expected_revision)?;
+    replace_entries(tx, &proposed, now, &touched)?;
+    load_required(tx, id)
 }
 
 #[cfg(test)]
@@ -2545,6 +2769,7 @@ mod tests {
         let derived = PromptProvenance::Derived {
             source: source.id,
             source_name: "source".into(),
+            seed_base: None,
         };
         let imported = PromptProvenance::Imported;
         let connection = database.connection().expect("lock");
@@ -2711,5 +2936,494 @@ mod tests {
         drop(second);
         drop(first);
         std::fs::remove_file(path).expect("remove database");
+    }
+
+    fn core_seed(version: u32, entries: &[(&str, &str)]) -> BuiltInPromptSeed {
+        BuiltInPromptSeed {
+            key: "core".into(),
+            aliases: Vec::new(),
+            seed_version: version,
+            metadata: metadata("Core"),
+            entries: entries
+                .iter()
+                .map(|(key, content)| {
+                    let mut entry = draft(key);
+                    entry.built_in_entry_key = Some((*key).into());
+                    entry.content = (*content).into();
+                    entry
+                })
+                .collect(),
+            required: false,
+            protected: false,
+        }
+    }
+
+    fn reconcile(
+        database: &Database,
+        seed: BuiltInPromptSeed,
+        now: i64,
+    ) -> BuiltInReconcileOutcome {
+        database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![seed],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(now),
+            )
+            .expect("reconcile")
+            .remove(0)
+    }
+
+    fn edit_content(
+        database: &Database,
+        id: PromptDocumentId,
+        key: &str,
+        content: &str,
+        now: i64,
+    ) -> PromptDocument {
+        let document = database.get(id).expect("get").expect("exists");
+        let edits = document
+            .entries
+            .iter()
+            .map(|entry| {
+                let mut draft = PromptEntryDraft::from(entry.clone());
+                if entry.built_in_entry_key.as_deref() == Some(key) {
+                    draft.content = content.into();
+                }
+                draft.built_in_entry_key = None;
+                PromptEntryEdit {
+                    entry_id: Some(entry.id),
+                    draft,
+                }
+            })
+            .collect();
+        database
+            .revise_prompt_document(
+                id,
+                document.revision,
+                metadata(&document.name),
+                edits,
+                TimestampMillis::new(now),
+            )
+            .expect("edit")
+    }
+
+    fn stored_row(database: &Database, id: PromptDocumentId) -> (String, i64, i64) {
+        database
+            .connection()
+            .expect("lock")
+            .query_row(
+                "SELECT provenance_json,revision,updated_at FROM prompt_documents WHERE id=?1",
+                [id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("row")
+    }
+
+    fn strip_seed_base(database: &Database, id: PromptDocumentId) {
+        let mut document = database.get(id).expect("get").expect("exists");
+        document.provenance.set_seed_base(None);
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "UPDATE prompt_documents SET provenance_json=?2 WHERE id=?1",
+                params![
+                    id.to_string(),
+                    encode(&document.provenance).expect("encode")
+                ],
+            )
+            .expect("strip");
+    }
+
+    fn copy_of(
+        database: &Database,
+        source: PromptDocumentId,
+        drafts: Vec<PromptEntryDraft>,
+        now: i64,
+    ) -> PromptDocument {
+        let mut connection = database.connection().expect("lock");
+        let tx = connection.transaction().expect("transaction");
+        let copy = create_user_draft_in(
+            &tx,
+            metadata("Copy"),
+            drafts,
+            TimestampMillis::new(now),
+            Some(source),
+        )
+        .expect("copy");
+        tx.commit().expect("commit");
+        copy
+    }
+
+    fn drafts_of(document: &PromptDocument) -> Vec<PromptEntryDraft> {
+        document
+            .entries
+            .iter()
+            .map(|entry| {
+                let mut draft = PromptEntryDraft::from(entry.clone());
+                draft.built_in_entry_key = None;
+                draft
+            })
+            .collect()
+    }
+
+    fn apply(
+        database: &Database,
+        id: PromptDocumentId,
+        seed: &BuiltInPromptSeed,
+        choices: &[(&str, bool)],
+        now: i64,
+    ) -> Result<PromptDocument, PromptRepositoryError> {
+        let revision = database.get(id).expect("get").expect("exists").revision;
+        let choices: Vec<(String, bool)> = choices
+            .iter()
+            .map(|(key, take)| ((*key).to_owned(), *take))
+            .collect();
+        let mut connection = database.connection().expect("lock");
+        let tx = connection.transaction().expect("transaction");
+        let document =
+            apply_built_in_update_in(&tx, id, revision, seed, &choices, TimestampMillis::new(now))?;
+        tx.commit().expect("commit");
+        Ok(document)
+    }
+
+    fn contents(document: &PromptDocument) -> Vec<(&str, &str)> {
+        document
+            .entries
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.content.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn reconcile_keeps_the_seed_base_of_an_edited_built_in_and_leaves_the_row_alone() {
+        let database = Database::open_in_memory().expect("database");
+        let first = core_seed(1, &[("a", "a1"), ("b", "b1")]);
+        let created = reconcile(&database, first.clone(), 1);
+        assert_eq!(created.action, BuiltInReconcileAction::Created);
+        assert_eq!(
+            created.document.provenance.seed_base(),
+            Some(&first.seed_base())
+        );
+        let id = created.document.id;
+        edit_content(&database, id, "a", "mine", 2);
+        let second = core_seed(2, &[("a", "a2"), ("b", "b1")]);
+        let kept = reconcile(&database, second.clone(), 3);
+        assert_eq!(kept.action, BuiltInReconcileAction::PreservedEdited);
+        assert_eq!(
+            kept.document.provenance.seed_base(),
+            Some(&first.seed_base())
+        );
+        assert_eq!(kept.document.entries[0].content, "mine");
+        let row = stored_row(&database, id);
+        let again = reconcile(&database, second, 4);
+        assert_eq!(again.action, BuiltInReconcileAction::PreservedEdited);
+        assert_eq!(stored_row(&database, id), row);
+    }
+
+    #[test]
+    fn reconcile_backfills_a_missing_seed_base_with_the_current_seed() {
+        let database = Database::open_in_memory().expect("database");
+        let first = core_seed(1, &[("a", "a1")]);
+        let id = reconcile(&database, first, 1).document.id;
+        edit_content(&database, id, "a", "mine", 2);
+        strip_seed_base(&database, id);
+        assert_eq!(
+            database
+                .get(id)
+                .expect("get")
+                .expect("exists")
+                .provenance
+                .seed_base(),
+            None
+        );
+        let second = core_seed(2, &[("a", "a2")]);
+        let outcome = reconcile(&database, second.clone(), 3);
+        assert_eq!(outcome.action, BuiltInReconcileAction::PreservedEdited);
+        assert_eq!(
+            outcome.document.provenance.seed_base(),
+            Some(&second.seed_base())
+        );
+        let row = stored_row(&database, id);
+        reconcile(&database, second, 4);
+        assert_eq!(stored_row(&database, id), row);
+    }
+
+    #[test]
+    fn a_copy_builds_its_seed_base_from_the_entries_it_kept() {
+        let database = Database::open_in_memory().expect("database");
+        let seed = core_seed(1, &[("a", "a1"), ("b", "b1"), ("c", "c1")]);
+        let source = reconcile(&database, seed.clone(), 1).document;
+        let source = edit_content(&database, source.id, "a", "mine a", 2);
+        let mut drafts = drafts_of(&source);
+        drafts[1].content = "tweaked b".into();
+        drafts.push(draft("own"));
+        let copy = copy_of(&database, source.id, drafts, 3);
+        let base = copy.provenance.seed_base().expect("base");
+        assert_eq!(base.built_in_key, "core");
+        let seed_base = seed.seed_base();
+        assert_eq!(
+            base.entries,
+            vec![
+                PromptSeedBaseEntry {
+                    entry_key: "a".into(),
+                    entry_id: Some(copy.entries[0].id),
+                    seed_entry_digest: seed_base.entries[0].seed_entry_digest.clone(),
+                },
+                PromptSeedBaseEntry {
+                    entry_key: "b".into(),
+                    entry_id: None,
+                    seed_entry_digest: seed_base.entries[1].seed_entry_digest.clone(),
+                },
+                PromptSeedBaseEntry {
+                    entry_key: "c".into(),
+                    entry_id: Some(copy.entries[2].id),
+                    seed_entry_digest: seed_base.entries[2].seed_entry_digest.clone(),
+                },
+            ]
+        );
+        assert!(built_in_update(&copy, &seed).is_empty());
+        let grandchild = copy_of(&database, copy.id, drafts_of(&copy), 4);
+        let inherited = grandchild.provenance.seed_base().expect("inherited");
+        assert_eq!(
+            inherited
+                .entries
+                .iter()
+                .map(|entry| entry.entry_id)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(grandchild.entries[0].id),
+                None,
+                Some(grandchild.entries[2].id)
+            ]
+        );
+        assert!(built_in_update(&grandchild, &seed).is_empty());
+        let user = database
+            .create_user_draft(metadata("Own"), vec![draft("x")], TimestampMillis::new(5))
+            .expect("user");
+        let from_user = copy_of(&database, user.id, vec![draft("x")], 6);
+        assert_eq!(from_user.provenance.seed_base(), None);
+    }
+
+    #[test]
+    fn an_existing_copy_gets_its_seed_base_once_without_a_revision_bump() {
+        let database = Database::open_in_memory().expect("database");
+        let seed = core_seed(1, &[("a", "a1"), ("b", "b1")]);
+        let source = reconcile(&database, seed.clone(), 1).document;
+        let mut drafts = drafts_of(&source);
+        drafts[1].content = "tweaked b".into();
+        let copy = copy_of(&database, source.id, drafts, 2);
+        strip_seed_base(&database, copy.id);
+        let before = stored_row(&database, copy.id);
+        reconcile(&database, seed.clone(), 3);
+        let filled = database.get(copy.id).expect("get").expect("exists");
+        let base = filled.provenance.seed_base().expect("base");
+        assert_eq!(base.entries.len(), 2);
+        assert_eq!(base.entries[0].entry_key, "a");
+        assert_eq!(base.entries[0].entry_id, Some(copy.entries[0].id));
+        assert_eq!(base.entries[1].entry_key, "b");
+        assert_eq!(base.entries[1].entry_id, None);
+        assert!(built_in_update(&filled, &seed).is_empty());
+        assert_eq!(
+            base.entries[0].seed_entry_digest,
+            seed.seed_base().entries[0].seed_entry_digest
+        );
+        let after = stored_row(&database, copy.id);
+        assert_eq!((after.1, after.2), (before.1, before.2));
+        assert_ne!(after.0, before.0);
+        reconcile(&database, seed, 4);
+        assert_eq!(stored_row(&database, copy.id), after);
+    }
+
+    #[test]
+    fn applying_a_built_in_update_takes_or_keeps_every_kind_of_change() {
+        let build = || {
+            let database = Database::open_in_memory().expect("database");
+            let first = core_seed(1, &[("a", "a1"), ("b", "b1"), ("d", "d1")]);
+            let id = reconcile(&database, first, 1).document.id;
+            edit_content(&database, id, "b", "mine b", 2);
+            let second = core_seed(2, &[("a", "a2"), ("e", "e1"), ("b", "b2")]);
+            let outcome = reconcile(&database, second.clone(), 3);
+            assert_eq!(outcome.action, BuiltInReconcileAction::PreservedEdited);
+            (database, id, second)
+        };
+        let all = [("a", true), ("e", true), ("b", true), ("d", true)];
+
+        let (database, id, second) = build();
+        let before = database.get(id).expect("get").expect("exists");
+        let taken = apply(&database, id, &second, &all, 4).expect("apply");
+        assert_eq!(
+            contents(&taken),
+            vec![("a", "a2"), ("e", "e1"), ("b", "b2")]
+        );
+        assert_eq!(taken.entries[0].id, before.entries[0].id);
+        assert_eq!(taken.entries[2].id, before.entries[1].id);
+        assert_eq!(taken.entries[1].id, built_in_entry_id(id, "e"));
+        assert_eq!(taken.entries[1].built_in_entry_key.as_deref(), Some("e"));
+        assert_eq!(taken.revision, Revision::new(before.revision.get() + 1));
+        assert_eq!(taken.updated_at, TimestampMillis::new(4));
+        assert_eq!(taken.provenance.seed_base(), Some(&second.seed_base()));
+        assert!(built_in_update(&taken, &second).is_empty());
+        let PromptProvenance::BuiltIn {
+            seed_digest,
+            authored_digest,
+            ..
+        } = &taken.provenance
+        else {
+            panic!("built in");
+        };
+        assert_eq!(seed_digest, authored_digest);
+
+        let (database, id, second) = build();
+        let before = database.get(id).expect("get").expect("exists");
+        let none = [("a", false), ("e", false), ("b", false), ("d", false)];
+        let kept = apply(&database, id, &second, &none, 4).expect("apply");
+        assert_eq!(contents(&kept), contents(&before));
+        assert_eq!(kept.provenance.seed_base(), Some(&second.seed_base()));
+        assert!(built_in_update(&kept, &second).is_empty());
+        assert_eq!(kept.revision, Revision::new(before.revision.get() + 1));
+
+        let (database, id, second) = build();
+        let mixed = [("a", true), ("e", false), ("b", false), ("d", true)];
+        let document = apply(&database, id, &second, &mixed, 4).expect("apply");
+        assert_eq!(contents(&document), vec![("a", "a2"), ("b", "mine b")]);
+        assert!(built_in_update(&document, &second).is_empty());
+    }
+
+    #[test]
+    fn an_added_entry_goes_after_the_nearest_preceding_seed_entry_that_exists() {
+        let database = Database::open_in_memory().expect("database");
+        let first = core_seed(1, &[("a", "a1"), ("c", "c1")]);
+        let id = reconcile(&database, first, 1).document.id;
+        edit_content(&database, id, "c", "mine c", 2);
+        let second = core_seed(
+            2,
+            &[
+                ("x", "x1"),
+                ("a", "a1"),
+                ("b", "b1"),
+                ("y", "y1"),
+                ("c", "c1"),
+            ],
+        );
+        reconcile(&database, second.clone(), 3);
+        let choices = [("x", true), ("b", true), ("y", true)];
+        let document = apply(&database, id, &second, &choices, 4).expect("apply");
+        assert_eq!(
+            contents(&document),
+            vec![
+                ("x", "x1"),
+                ("a", "a1"),
+                ("b", "b1"),
+                ("y", "y1"),
+                ("c", "mine c")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_stale_or_incomplete_set_of_choices_is_refused() {
+        let database = Database::open_in_memory().expect("database");
+        let first = core_seed(1, &[("a", "a1"), ("b", "b1")]);
+        let id = reconcile(&database, first, 1).document.id;
+        edit_content(&database, id, "a", "mine a", 2);
+        let second = core_seed(2, &[("a", "a2"), ("b", "b2")]);
+        reconcile(&database, second.clone(), 3);
+        assert!(matches!(
+            apply(&database, id, &second, &[("a", true), ("zzz", true)], 4),
+            Err(PromptRepositoryError::Conflict)
+        ));
+        assert!(matches!(
+            apply(&database, id, &second, &[("a", true)], 4),
+            Err(PromptRepositoryError::Invalid(
+                PromptValidationError::MissingBuiltInUpdateChoice(key)
+            )) if key == "b"
+        ));
+        let revision = database.get(id).expect("get").expect("exists").revision;
+        apply(&database, id, &second, &[("a", true), ("b", true)], 5).expect("apply");
+        assert!(matches!(
+            apply(&database, id, &second, &[("a", true), ("b", true)], 6),
+            Err(PromptRepositoryError::Conflict)
+        ));
+        let mut connection = database.connection().expect("lock");
+        let tx = connection.transaction().expect("transaction");
+        assert!(matches!(
+            apply_built_in_update_in(&tx, id, revision, &second, &[], TimestampMillis::new(7)),
+            Err(PromptRepositoryError::Conflict)
+        ));
+        let current = load_required(&tx, id).expect("current").revision;
+        assert!(matches!(
+            apply_built_in_update_in(&tx, id, current, &second, &[], TimestampMillis::new(8)),
+            Err(PromptRepositoryError::Conflict)
+        ));
+    }
+
+    #[test]
+    fn a_copy_applies_an_update_through_its_recorded_entry_ids() {
+        let database = Database::open_in_memory().expect("database");
+        let first = core_seed(1, &[("a", "a1"), ("b", "b1")]);
+        let source = reconcile(&database, first, 1).document;
+        let copy = copy_of(&database, source.id, drafts_of(&source), 2);
+        let other = copy_of(&database, source.id, drafts_of(&source), 5);
+        let second = core_seed(2, &[("a", "a2"), ("c", "c1"), ("b", "b1")]);
+        reconcile(&database, second.clone(), 3);
+        let pending = built_in_update(
+            &database.get(copy.id).expect("get").expect("exists"),
+            &second,
+        );
+        assert_eq!(
+            pending
+                .iter()
+                .map(PromptBuiltInChange::entry_key)
+                .collect::<Vec<_>>(),
+            vec!["a", "c"]
+        );
+        let taken =
+            apply(&database, copy.id, &second, &[("a", true), ("c", true)], 4).expect("apply");
+        assert_eq!(
+            contents(&taken),
+            vec![("a", "a2"), ("c", "c1"), ("b", "b1")]
+        );
+        assert_eq!(taken.entries[0].id, copy.entries[0].id);
+        assert!(
+            taken
+                .entries
+                .iter()
+                .all(|entry| entry.built_in_entry_key.is_none())
+        );
+        let base = taken.provenance.seed_base().expect("base");
+        assert_eq!(
+            base.entries
+                .iter()
+                .map(|entry| entry.entry_id)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(taken.entries[0].id),
+                Some(taken.entries[1].id),
+                Some(taken.entries[2].id)
+            ]
+        );
+        assert!(built_in_update(&taken, &second).is_empty());
+
+        let kept = apply(
+            &database,
+            other.id,
+            &second,
+            &[("a", false), ("c", false)],
+            6,
+        )
+        .expect("apply");
+        assert_eq!(contents(&kept), vec![("a", "a1"), ("b", "b1")]);
+        let base = kept.provenance.seed_base().expect("base");
+        assert_eq!(
+            base.entries
+                .iter()
+                .map(|entry| entry.entry_id)
+                .collect::<Vec<_>>(),
+            vec![Some(kept.entries[0].id), None, Some(kept.entries[1].id)]
+        );
+        assert!(built_in_update(&kept, &second).is_empty());
     }
 }

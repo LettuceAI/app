@@ -90,6 +90,7 @@ async function mount(tab = "lorebook", gate?: Promise<void>, promptCount = 0) {
                 kind,
                 archived: false,
                 app_default: false,
+                built_in_update: false,
                 origin: { type: "user" as const },
                 revision: 1,
                 created_at: 1,

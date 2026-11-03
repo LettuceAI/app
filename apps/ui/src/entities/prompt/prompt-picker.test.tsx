@@ -19,6 +19,7 @@ const prompt = (id: string, patch: Partial<PromptSummary> = {}): PromptSummary =
   kind,
   archived: false,
   app_default: false,
+  built_in_update: false,
   origin: { type: "user" },
   revision: 1,
   created_at: 1,

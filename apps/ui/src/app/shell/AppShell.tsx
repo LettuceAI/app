@@ -18,7 +18,7 @@ import type { WindowEdge } from "@/api/window-controls";
 import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages";
 import { useChatNavigation } from "@/features/conversations";
 import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
-import { isSettingsSection, SidebarSettings, WhatsNewSheet } from "@/features/settings";
+import { BuiltInUpdateNotice, isSettingsSection, SidebarSettings, WhatsNewSheet } from "@/features/settings";
 import { LibraryCreateSheet } from "@/features/library";
 import { OpenedFiles, RestoredModelsSheet } from "@/features/opened-files";
 import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
@@ -226,6 +226,7 @@ export function AppShell() {
           <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
           <OpenedFiles api={api} held={welcome} />
           <WhatsNewSheet />
+          {!welcome && <BuiltInUpdateNotice api={api} />}
           <RestoredModelsSheet api={api} />
           {controller &&
             desktop &&

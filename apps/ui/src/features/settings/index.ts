@@ -9,6 +9,7 @@ export {
 } from "./sections";
 export { SidebarSettings } from "./SidebarSettings";
 export { WhatsNewSheet } from "./WhatsNewSheet";
+export { BuiltInUpdateNotice } from "./prompts/BuiltInUpdateNotice";
 export { ModelEditorPage } from "./ModelEditorPage";
 
 export { ModelBrowserPage, type BrowserSearch } from "./model-browser/ModelBrowserPage";

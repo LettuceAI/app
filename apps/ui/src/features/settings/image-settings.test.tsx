@@ -101,7 +101,7 @@ describe("image settings", () => {
     ["Scene writer system prompt", "scene_prompt_writer", "scene_writer_prompt_id"],
     ["Design reference system prompt", "design_reference_writer", "design_reference_prompt_id"],
   ] as const)("selects and resets %s without changing the other image settings", async (title, kind, field) => {
-    const custom: PromptSummary = { id: "custom", name: "My image instructions", kind, origin: { type: "user" }, archived: false, app_default: false, revision: 1, created_at: 1, updated_at: 1 };
+    const custom: PromptSummary = { id: "custom", name: "My image instructions", kind, origin: { type: "user" }, archived: false, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 };
     const list = vi.fn<NonNullable<MockCallHandlers["promptsList"]>>((request) => ok({ items: request.kind === kind ? [custom, { ...custom, id: "wrong", kind: "direct_chat", name: "Wrong prompt kind" }, { ...custom, id: "archived", archived: true, name: "Archived prompt" }] : [], next_cursor: null }));
     const { current, history } = await mount({ settings: { scene_enabled: true }, calls: { promptsList: list } });
     await clickRow(title);
@@ -122,7 +122,7 @@ describe("image settings", () => {
 
   it("keeps a failed prompt choice open and reaches the existing prompt library", async () => {
     const kind: PromptKind = "scene_prompt_writer";
-    const custom: PromptSummary = { id: "custom", name: "My writer", kind, origin: { type: "user" }, archived: false, app_default: false, revision: 1, created_at: 1, updated_at: 1 };
+    const custom: PromptSummary = { id: "custom", name: "My writer", kind, origin: { type: "user" }, archived: false, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 };
     const { runtime, current } = await mount({ calls: {
       promptsList: () => ok({ items: [custom], next_cursor: null }),
       settingsUpdate: () => ({ status: "error", error: { code: "unavailable", message: "storage unavailable", details: null } }),
@@ -140,7 +140,7 @@ describe("image settings", () => {
   it("does not navigate back again when a prompt save finishes after closing its picker", async () => {
     let release!: () => void;
     const saveGate = new Promise<void>((resolve) => { release = resolve; });
-    const custom: PromptSummary = { id: "custom", name: "My writer", kind: "scene_prompt_writer", origin: { type: "user" }, archived: false, app_default: false, revision: 1, created_at: 1, updated_at: 1 };
+    const custom: PromptSummary = { id: "custom", name: "My writer", kind: "scene_prompt_writer", origin: { type: "user" }, archived: false, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 };
     const { runtime, history, current } = await mount({ saveGate, calls: { promptsList: () => ok({ items: [custom], next_cursor: null }) } });
     await clickRow("Scene writer system prompt");
     const picker = await screen.findByRole("dialog", { name: "Scene writer system prompt" });

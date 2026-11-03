@@ -110,8 +110,9 @@ pub use jobs::{
 pub use library::character_list::characters_list;
 pub use library::counts::library_counts;
 pub use library::prompts::{
-    prompt_app_default_set, prompt_builtin_reset, prompt_create, prompt_delete, prompt_get,
-    prompt_placeholders, prompt_preview, prompt_update, prompt_validate, prompts_list,
+    prompt_app_default_set, prompt_builtin_reset, prompt_builtin_update_apply,
+    prompt_builtin_update_get, prompt_create, prompt_delete, prompt_get, prompt_placeholders,
+    prompt_preview, prompt_update, prompt_validate, prompts_builtin_updates_pending, prompts_list,
 };
 pub use lorebooks::{
     lorebook_archive, lorebook_create, lorebook_delete, lorebook_entries_mutate, lorebook_get,

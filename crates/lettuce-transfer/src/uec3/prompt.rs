@@ -233,6 +233,7 @@ impl Prompt {
                 lettuce_context::PromptProvenance::Derived {
                     source: source.id,
                     source_name: source.name.clone(),
+                    seed_base: None,
                 }
             }),
             entries: self

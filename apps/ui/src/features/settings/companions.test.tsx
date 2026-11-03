@@ -90,6 +90,7 @@ const prompt = (id: string, builtin = false): PromptSummary => ({
   kind: "companion_soul_writer",
   archived: false,
   app_default: false,
+  built_in_update: false,
   origin: builtin
     ? { type: "built_in", key: id, protected: true, required: true, edited: false }
     : { type: "user" },

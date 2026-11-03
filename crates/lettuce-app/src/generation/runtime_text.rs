@@ -5,7 +5,7 @@ use lettuce_context::{
 
 use crate::BuiltInPromptId;
 
-fn bundled_catalog() -> Option<&'static crate::BuiltInPromptCatalog> {
+pub(crate) fn bundled_catalog() -> Option<&'static crate::BuiltInPromptCatalog> {
     static CATALOG: std::sync::OnceLock<Option<crate::BuiltInPromptCatalog>> =
         std::sync::OnceLock::new();
     CATALOG

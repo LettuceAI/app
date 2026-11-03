@@ -148,6 +148,9 @@ export const commands = {
 	promptUpdate: (request: PromptUpdateRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_update", { request })),
 	promptDelete: (request: PromptDeleteRequest) => typedError<SourceDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_delete", { request })),
 	promptBuiltinReset: (request: PromptBuiltinResetRequest) => typedError<PromptBuiltinResetResult, ApiError_Serialize>(__TAURI_INVOKE("prompt_builtin_reset", { request })),
+	promptBuiltinUpdateGet: (request: PromptBuiltinUpdateGetRequest) => typedError<PromptBuiltinUpdate, ApiError_Serialize>(__TAURI_INVOKE("prompt_builtin_update_get", { request })),
+	promptBuiltinUpdateApply: (request: PromptBuiltinUpdateApplyRequest) => typedError<PromptView, ApiError_Serialize>(__TAURI_INVOKE("prompt_builtin_update_apply", { request })),
+	promptsBuiltinUpdatesPending: () => typedError<PromptBuiltinUpdatesPending, ApiError_Serialize>(__TAURI_INVOKE("prompts_builtin_updates_pending")),
 	promptAppDefaultSet: (request: PromptAppDefaultSetRequest) => typedError<PromptAppDefault, ApiError_Serialize>(__TAURI_INVOKE("prompt_app_default_set", { request })),
 	promptPreview: (request: PromptPreviewRequest_Deserialize) => typedError<PromptPreview, ApiError_Serialize>(__TAURI_INVOKE("prompt_preview", { request })),
 	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebooks_list", { request })),
@@ -7223,6 +7226,19 @@ export type PromptBudget = {
 };
 
 /**
+ *  One entry the built-in changed. `current` is the prompt's own entry (none
+ *  for an added one) and `new` the built-in's (none for a removed one).
+ */
+export type PromptBuiltinChange = {
+	entry_key: string,
+	kind: PromptBuiltinChangeKind,
+	current: PromptEntryView | null,
+	new: PromptEntryView | null,
+};
+
+export type PromptBuiltinChangeKind = "added" | "updated" | "conflict" | "removed";
+
+/**
  *  Resets one built-in prompt or every built-in to its catalog content and
  *  entries; the user's name for it stays.
  */
@@ -7230,6 +7246,39 @@ export type PromptBuiltinResetRequest = { type: "one"; client_operation_id: stri
 
 export type PromptBuiltinResetResult = {
 	prompts: PromptView[],
+};
+
+export type PromptBuiltinUpdate = {
+	prompt_id: string,
+	revision: number,
+	built_in_name: string,
+	changes: PromptBuiltinChange[],
+};
+
+/**
+ *  Applies the user's decision for every pending entry of a built-in update.
+ *  Keeping an entry is a decision too: it clears the notification until the
+ *  built-in changes again.
+ */
+export type PromptBuiltinUpdateApplyRequest = {
+	client_operation_id: string,
+	prompt_id: string,
+	expected_revision: number,
+	choices: PromptBuiltinUpdateChoice[],
+};
+
+export type PromptBuiltinUpdateChoice = {
+	entry_key: string,
+	take_new: boolean,
+};
+
+export type PromptBuiltinUpdateGetRequest = {
+	prompt_id: string,
+};
+
+export type PromptBuiltinUpdatesPending = {
+	count: number,
+	prompt_ids: string[],
 };
 
 export type PromptCacheRetentionContract = "in_memory" | "five_minutes" | "one_hour" | "twenty_four_hours";
@@ -7524,6 +7573,11 @@ export type PromptSummary = {
 	archived: boolean,
 	origin: PromptOrigin,
 	app_default: boolean,
+	/**
+	 *  The bundled built-in this prompt is based on changed entries the user
+	 *  has not yet decided on.
+	 */
+	built_in_update: boolean,
 	revision: number,
 	created_at: number,
 	updated_at: number,

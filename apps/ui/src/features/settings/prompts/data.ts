@@ -1,7 +1,7 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ApiClient } from "@/api/client";
-import type { PromptInput, PromptPage, PromptSummary, PromptView } from "@/api/generated/bindings";
+import type { PromptBuiltinChange, PromptInput, PromptPage, PromptSummary, PromptView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { rulesFromCondition, conditionFromRules } from "./rules";
 import type { Entry, Kind, Prompt } from "./types";
@@ -17,6 +17,10 @@ export const promptListQuery = (api: ApiClient) => queryOptions({ queryKey: [...
   return items;
 } });
 export const promptQuery = (api: ApiClient, id: string) => queryOptions({ queryKey: [...queryKeys.prompts.all, "detail", id], queryFn: () => api.call("promptGet", { prompt_id: id }), enabled: id !== "new" });
+export const builtInUpdateQuery = (api: ApiClient, id: string) => queryOptions({ queryKey: [...queryKeys.prompts.all, "builtin-update", id], queryFn: () => api.call("promptBuiltinUpdateGet", { prompt_id: id }), gcTime: 0 });
+export type UpdateChoices = Record<string, boolean>;
+export const defaultChoices = (changes: PromptBuiltinChange[]): UpdateChoices => Object.fromEntries(changes.map((change) => [change.entry_key, change.kind === "added" || change.kind === "updated"]));
+export const choicePayload = (changes: PromptBuiltinChange[], choices: UpdateChoices) => changes.map((change) => ({ entry_key: change.entry_key, take_new: choices[change.entry_key] ?? false }));
 export const placeholdersQuery = (api: ApiClient, kind: Kind) => queryOptions({ queryKey: [...queryKeys.prompts.all, "placeholders", kind], queryFn: () => api.call("promptPlaceholders", { kind }), staleTime: Infinity });
 
 export function blankEntry(position: Entry["position"] = "in_chat"): Entry {

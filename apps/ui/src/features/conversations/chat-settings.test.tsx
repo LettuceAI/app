@@ -126,8 +126,8 @@ describe("chat settings panel", () => {
       modelsList: () => ({ status: "ok", data: { models: [{ id: "m1", provider_account_id: "a", external_model_id: "x", display_name: "Vision", kind: "chat", config: {}, input_scopes: ["text", "image"], output_scopes: ["text"], revision: 1, created_at: 1, updated_at: 1 }], default_model_id: "m1", revision: 1 } }),
       conversationParticipantUpdate: participant, conversationSettingsUpdate: update,
       promptsList: () => ({ status: "ok", data: { items: [
-        { id: "p1", name: "Group dialogue", kind: "group_chat_conversational", archived: false, origin: { type: "user" }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
-        { id: "p2", name: "Group story", kind: "group_chat_roleplay", archived: false, origin: { type: "user" }, app_default: false, revision: 1, created_at: 1, updated_at: 1 },
+        { id: "p1", name: "Group dialogue", kind: "group_chat_conversational", archived: false, origin: { type: "user" }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
+        { id: "p2", name: "Group story", kind: "group_chat_roleplay", archived: false, origin: { type: "user" }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
       ], next_cursor: null } }),
     } });
     fireEvent.click(await screen.findByRole("button", { name: /^Cassian.*Vision/ }));

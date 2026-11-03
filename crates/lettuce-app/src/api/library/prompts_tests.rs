@@ -792,3 +792,234 @@ async fn runtime_rules_stay_loadable_because_the_runtime_text_is_protected() {
         Err(lettuce_context::PromptRepositoryError::Protected)
     );
 }
+
+async fn listed(harness: &Harness, id: &str) -> dto::PromptSummary {
+    let mut cursor = None;
+    loop {
+        let page = prompts_list(
+            &harness.context,
+            dto::PromptsListRequest {
+                kind: None,
+                lifecycle: None,
+                cursor,
+                limit: None,
+            },
+        )
+        .await
+        .expect("list");
+        if let Some(found) = page.items.into_iter().find(|item| item.id == id) {
+            return found;
+        }
+        cursor = Some(page.next_cursor.expect("prompt is listed"));
+    }
+}
+
+fn outdated_copy(harness: &Harness) -> lettuce_context::PromptDocument {
+    use lettuce_context::{LifecycleStatus, PromptDocument, PromptEntry, PromptProvenance};
+    let database = harness.context.backend().database();
+    let source = PromptRepository::get(
+        database,
+        harness.context.backend().built_in_prompt_ids().reply_helper,
+    )
+    .expect("get")
+    .expect("source");
+    let catalog = crate::BuiltInPromptCatalog::bundled().expect("catalog");
+    let seed = catalog.seed(crate::BuiltInPromptId::ReplyHelper);
+    let mut entries: Vec<PromptEntry> = source
+        .entries
+        .iter()
+        .map(|entry| PromptEntry {
+            id: lettuce_types::PromptEntryId::new(),
+            built_in_entry_key: None,
+            ..entry.clone()
+        })
+        .collect();
+    entries[0].content.push_str(" Mine.");
+    let mut base = seed.seed_base();
+    for (entry, held) in base.entries.iter_mut().zip(&entries) {
+        entry.entry_id = Some(held.id);
+    }
+    base.entries[0].seed_entry_digest =
+        lettuce_types::ContentHash::parse("b".repeat(64)).expect("hash");
+    let now = harness.context.now();
+    PromptDocument {
+        id: PromptDocumentId::new(),
+        status: LifecycleStatus::Active,
+        name: "My helper copy".into(),
+        purpose: source.purpose,
+        entries,
+        condense: source.condense,
+        behavior_version: source.behavior_version,
+        provenance: PromptProvenance::Derived {
+            source: source.id,
+            source_name: source.name.clone(),
+            seed_base: Some(base),
+        },
+        revision: lettuce_types::Revision::INITIAL,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+fn store(harness: &Harness, document: &lettuce_context::PromptDocument, key: &str) {
+    harness
+        .context
+        .backend()
+        .database()
+        .commit_api_operation("fixture", key, "digest", harness.context.now(), |scope| {
+            scope.import_prompt_file(document).expect("write");
+            Ok::<_, lettuce_database::ApiOperationError>(())
+        })
+        .expect("fixture");
+}
+
+#[tokio::test]
+async fn built_in_updates_are_flagged_reviewed_applied_and_replayed() {
+    let harness = harness(Reply::Text("unused"));
+    let pending = prompts_builtin_updates_pending(&harness.context)
+        .await
+        .expect("pending");
+    assert_eq!(pending.count, 0);
+    let copy = outdated_copy(&harness);
+    store(&harness, &copy, "outdated-copy");
+    let id = copy.id.to_string();
+    assert!(listed(&harness, &id).await.built_in_update);
+    let helper = harness
+        .context
+        .backend()
+        .built_in_prompt_ids()
+        .reply_helper
+        .to_string();
+    assert!(!listed(&harness, &helper).await.built_in_update);
+    let pending = prompts_builtin_updates_pending(&harness.context)
+        .await
+        .expect("pending");
+    assert_eq!((pending.count, pending.prompt_ids), (1, vec![id.clone()]));
+
+    let catalog = crate::BuiltInPromptCatalog::bundled().expect("catalog");
+    let seed = catalog.seed(crate::BuiltInPromptId::ReplyHelper);
+    let review = prompt_builtin_update_get(
+        &harness.context,
+        dto::PromptBuiltinUpdateGetRequest {
+            prompt_id: id.clone(),
+        },
+    )
+    .await
+    .expect("review");
+    assert_eq!(review.revision, 1);
+    assert_eq!(review.built_in_name, seed.metadata.name);
+    assert_eq!(review.changes.len(), 1);
+    let change = &review.changes[0];
+    assert_eq!(change.kind, dto::PromptBuiltinChangeKind::Conflict);
+    assert_eq!(
+        Some(change.entry_key.as_str()),
+        seed.entries[0].built_in_entry_key.as_deref()
+    );
+    assert_eq!(
+        change.new.as_ref().map(|entry| entry.content.as_str()),
+        Some(seed.entries[0].content.as_str())
+    );
+    assert!(
+        change
+            .current
+            .as_ref()
+            .is_some_and(|entry| entry.content.ends_with(" Mine."))
+    );
+
+    let request = dto::PromptBuiltinUpdateApplyRequest {
+        client_operation_id: "apply-update".into(),
+        prompt_id: id.clone(),
+        expected_revision: review.revision,
+        choices: vec![dto::PromptBuiltinUpdateChoice {
+            entry_key: change.entry_key.clone(),
+            take_new: true,
+        }],
+    };
+    let applied = prompt_builtin_update_apply(&harness.context, request.clone())
+        .await
+        .expect("apply");
+    assert_eq!(applied.entries[0].content, seed.entries[0].content);
+    assert_eq!(applied.entries[0].id, copy.entries[0].id.to_string());
+    assert!(!applied.prompt.built_in_update);
+    assert_eq!(applied.prompt.revision, 2);
+    assert_eq!(
+        prompt_builtin_update_apply(&harness.context, request)
+            .await
+            .expect("replay"),
+        applied
+    );
+    assert!(!listed(&harness, &id).await.built_in_update);
+    let pending = prompts_builtin_updates_pending(&harness.context)
+        .await
+        .expect("pending");
+    assert_eq!(pending.count, 0);
+}
+
+#[tokio::test]
+async fn keeping_mine_clears_the_update_and_bad_requests_are_typed() {
+    let harness = harness(Reply::Text("unused"));
+    let copy = outdated_copy(&harness);
+    store(&harness, &copy, "outdated-copy");
+    let id = copy.id.to_string();
+    let review = prompt_builtin_update_get(
+        &harness.context,
+        dto::PromptBuiltinUpdateGetRequest {
+            prompt_id: id.clone(),
+        },
+    )
+    .await
+    .expect("review");
+    let key = review.changes[0].entry_key.clone();
+    let request = |name: &str, choices: Vec<(&str, bool)>| dto::PromptBuiltinUpdateApplyRequest {
+        client_operation_id: name.into(),
+        prompt_id: id.clone(),
+        expected_revision: review.revision,
+        choices: choices
+            .into_iter()
+            .map(|(entry_key, take_new)| dto::PromptBuiltinUpdateChoice {
+                entry_key: entry_key.into(),
+                take_new,
+            })
+            .collect(),
+    };
+    let missing = prompt_builtin_update_apply(&harness.context, request("missing", vec![]))
+        .await
+        .expect_err("a pending entry needs a choice");
+    assert_eq!(missing.code, ApiErrorCode::InvalidInput);
+    let stale = prompt_builtin_update_apply(
+        &harness.context,
+        request("stale", vec![(key.as_str(), false), ("not-pending", true)]),
+    )
+    .await
+    .expect_err("stale choice");
+    assert_eq!(stale.code, ApiErrorCode::Conflict);
+    let kept = prompt_builtin_update_apply(
+        &harness.context,
+        request("keep", vec![(key.as_str(), false)]),
+    )
+    .await
+    .expect("keep");
+    assert!(kept.entries[0].content.ends_with(" Mine."));
+    assert!(!kept.prompt.built_in_update);
+    let repeated = prompt_builtin_update_apply(
+        &harness.context,
+        dto::PromptBuiltinUpdateApplyRequest {
+            expected_revision: kept.prompt.revision,
+            ..request("again", vec![(key.as_str(), false)])
+        },
+    )
+    .await
+    .expect_err("nothing is pending any more");
+    assert_eq!(repeated.code, ApiErrorCode::Conflict);
+
+    let user = create(&harness, "plain", "Plain").await;
+    let refused = prompt_builtin_update_get(
+        &harness.context,
+        dto::PromptBuiltinUpdateGetRequest {
+            prompt_id: user.prompt.id,
+        },
+    )
+    .await
+    .expect_err("not based on a built-in");
+    assert_eq!(refused.code, ApiErrorCode::InvalidInput);
+}

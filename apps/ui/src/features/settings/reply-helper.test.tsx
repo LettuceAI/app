@@ -88,6 +88,7 @@ const prompt = (id: string, kind: PromptSummary["kind"], builtin = false): Promp
   kind,
   archived: false,
   app_default: false,
+  built_in_update: false,
   origin: builtin
     ? { type: "built_in", key: id, protected: true, required: true, edited: false }
     : { type: "user" },

@@ -32,7 +32,7 @@ function PromptRow({ prompt, flat, onOpen, onMenu }: { prompt: PromptSummary; fl
   const press = useLongPress(onMenu);
   const kind = prompt.kind as Kind;
   const description = prompt.origin.type !== "built_in" || flat ? `${t(KIND_LABEL[kind])} · ${originLine(prompt, t)}` : `${t(KIND_PURPOSE[kind])}${prompt.origin.edited ? ` · ${t("Edited")}` : ""}`;
-  return <ListRowButton icon={GROUP_ICON[groupOf(kind)]} title={prompt.name} description={description} trailing={prompt.app_default ? <Badge tone="accent" dot>{t("Default")}</Badge> : undefined} {...press.handlers} onClick={press.guardClick(onOpen)} onContextMenu={(event) => { event.preventDefault(); onMenu(); }} />;
+  return <ListRowButton icon={GROUP_ICON[groupOf(kind)]} title={prompt.name} description={description} trailing={prompt.app_default || prompt.built_in_update ? <span className="flex items-center gap-1.5">{prompt.built_in_update && <Badge tone="warning">{t("Update available")}</Badge>}{prompt.app_default && <Badge tone="accent" dot>{t("Default")}</Badge>}</span> : undefined} {...press.handlers} onClick={press.guardClick(onOpen)} onContextMenu={(event) => { event.preventDefault(); onMenu(); }} />;
 }
 
 export function PromptsPage() {

@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createBrowserHistory, createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PromptCondition, PromptCreateRequest, PromptView } from "@/api/generated/bindings";
+import type { PromptBuiltinChange, PromptBuiltinUpdateApplyRequest, PromptCondition, PromptCreateRequest, PromptView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -18,7 +18,7 @@ const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 const condition: PromptCondition = { type: "all", conditions: [{ type: "message_count_at_least", value: 6 }, { type: "message_count_at_least", value: 12 }, { type: "any", conditions: [{ type: "has_persona", value: true }, { type: "has_scene", value: true }] }, { type: "not", condition: { type: "reasoning_enabled", value: true } }] };
 function document(patch: Partial<PromptView["prompt"]> = {}): PromptView {
   return {
-    prompt: { id: "p1", name: "Story", kind: "direct_chat", origin: { type: "user" }, app_default: false, archived: false, revision: 7, created_at: 1, updated_at: 1, ...patch }, condense: false, behavior: "legacy_v1",
+    prompt: { id: "p1", name: "Story", kind: "direct_chat", origin: { type: "user" }, app_default: false, built_in_update: false, archived: false, revision: 7, created_at: 1, updated_at: 1, ...patch }, condense: false, behavior: "legacy_v1",
     entries: [{ id: "e1", built_in_key: null, name: "Direction", content: "Continue {{character}}", role: "system", enabled: true, position: "relative", depth: 0, conditional_min_messages: 8, interval_turns: 4, system_prompt: false, condition, image_slot: null }, { id: "e2", built_in_key: null, name: "Reminder", content: "Keep the scene moving", role: "user", enabled: true, position: "in_chat", depth: 2, conditional_min_messages: null, interval_turns: null, system_prompt: false, condition: null, image_slot: null }],
   };
 }
@@ -165,5 +165,58 @@ describe("system prompt management", () => {
     await waitFor(() => expect(screen.getByRole("textbox", { name: /Search/ })).toBeTruthy());
     expect((screen.getByRole("textbox", { name: /Search/ }) as HTMLInputElement).value).toBe("Story");
     history.destroy();
+  });
+});
+
+describe("built-in updates", () => {
+  const entry = (id: string, name: string, content: string) => ({ ...document().entries[0]!, id, built_in_key: id, name, content });
+  const changes: PromptBuiltinChange[] = [
+    { entry_key: "added", kind: "added", current: null, new: entry("a", "Added entry", "Added text") },
+    { entry_key: "updated", kind: "updated", current: entry("u", "Updated entry", "Old wording"), new: entry("u", "Updated entry", "New wording") },
+    { entry_key: "conflict", kind: "conflict", current: entry("c", "Conflict entry", "My wording"), new: entry("c", "Conflict entry", "Their wording") },
+    { entry_key: "removed", kind: "removed", current: entry("r", "Removed entry", "Gone text"), new: null },
+  ];
+  const outdated = () => document({ origin: { type: "built_in", key: "chat", protected: false, required: false, edited: true }, built_in_update: true });
+  async function review(apply = vi.fn((_request: PromptBuiltinUpdateApplyRequest) => ok(document({ revision: 8 })))) {
+    const view = outdated();
+    await openPage({
+      promptsList: () => ok({ items: [view.prompt], next_cursor: null }), promptGet: () => ok(view),
+      promptBuiltinUpdateGet: () => ok({ prompt_id: "p1", revision: 7, built_in_name: "Story", changes }),
+      promptBuiltinUpdateApply: apply,
+    }, "/settings/prompts?prompt=p1");
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    await sheet().findByRole("radiogroup", { name: "Choice for Conflict entry" });
+    return apply;
+  }
+  it("marks the prompt in the list", async () => {
+    const view = outdated();
+    await openPage({ promptsList: () => ok({ items: [view.prompt], next_cursor: null }) });
+    expect(await screen.findByText("Update available")).toBeTruthy();
+  });
+  it("defaults new and untouched entries to the built-in and everything else to mine, then sends every decision", async () => {
+    const apply = await review();
+    const useNew = sheet().getAllByRole("radio", { name: "Use new" });
+    expect(useNew.map((radio) => radio.getAttribute("aria-checked"))).toEqual(["true", "true", "false", "false"]);
+    fireEvent.click(useNew[2]!);
+    fireEvent.click(sheet().getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    expect(apply.mock.calls[0]![0]).toMatchObject({
+      prompt_id: "p1", expected_revision: 7,
+      choices: [{ entry_key: "added", take_new: true }, { entry_key: "updated", take_new: true }, { entry_key: "conflict", take_new: true }, { entry_key: "removed", take_new: false }],
+    });
+  });
+  it("keeps everything of mine in one step", async () => {
+    const apply = await review();
+    fireEvent.click(sheet().getByRole("button", { name: "Keep all mine" }));
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    expect(apply.mock.calls[0]![0].choices).toEqual(changes.map((change) => ({ entry_key: change.entry_key, take_new: false })));
+  });
+  it("announces pending updates once and opens the prompts", async () => {
+    const pending = vi.fn(() => ok({ count: 2, prompt_ids: ["p1", "p2"] }));
+    const { runtime } = await openPage({ promptsBuiltinUpdatesPending: pending }, "/library");
+    expect(await screen.findByText("2 edited prompts have built-in updates")).toBeTruthy();
+    expect(pending).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Open prompts" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/settings/prompts"));
   });
 });

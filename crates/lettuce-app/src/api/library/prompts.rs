@@ -4,14 +4,17 @@
 //! rules.
 
 use lettuce_context::{
-    LifecycleStatus, PromptBehaviorVersion, PromptDocument, PromptEntry, PromptEntryChatMode,
-    PromptEntryCondition, PromptEntryDraft, PromptEntryEdit, PromptEntryImageSlot,
-    PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition, PromptEntryRole,
-    PromptLibraryQuery, PromptMetadataDraft, PromptProvenance, PromptPurpose, PromptRepository,
-    SceneImageProtocolKind,
+    BuiltInPromptSeed, LifecycleFilter, LifecycleStatus, PromptBehaviorVersion,
+    PromptBuiltInChange, PromptDocument, PromptEntry, PromptEntryChatMode, PromptEntryCondition,
+    PromptEntryDraft, PromptEntryEdit, PromptEntryImageSlot, PromptEntryInfoSource,
+    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptLibraryQuery,
+    PromptMetadataDraft, PromptProvenance, PromptPurpose, PromptRepository, SceneImageProtocolKind,
+    built_in_update,
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, ApiErrorDetails};
-use lettuce_types::{CharacterId, PageRequest, PersonaId, PromptDocumentId, PromptEntryId};
+use lettuce_types::{
+    CharacterId, PageLimit, PageRequest, PersonaId, PromptDocumentId, PromptEntryId,
+};
 
 use crate::api::ApiContext;
 use crate::api::conversations::messages::operation;
@@ -316,6 +319,19 @@ fn summary(
     Ok(summary_with_source(document, default, deleted))
 }
 
+fn built_in_seed(document: &PromptDocument) -> Option<&'static BuiltInPromptSeed> {
+    let id =
+        crate::BuiltInPromptId::from_key_or_alias(&document.provenance.seed_base()?.built_in_key)?;
+    Some(crate::generation::runtime_text::bundled_catalog()?.seed(id))
+}
+
+fn built_in_changes(document: &PromptDocument) -> Vec<PromptBuiltInChange> {
+    if document.status == LifecycleStatus::Archived {
+        return Vec::new();
+    }
+    built_in_seed(document).map_or_else(Vec::new, |seed| built_in_update(document, seed))
+}
+
 fn summary_with_source(
     document: &PromptDocument,
     default: PromptDocumentId,
@@ -339,6 +355,7 @@ fn summary_with_source(
         PromptProvenance::Derived {
             source,
             source_name,
+            ..
         } => dto::PromptOrigin::Derived {
             source_id: source.to_string(),
             source_name: source_name.clone(),
@@ -353,6 +370,7 @@ fn summary_with_source(
         archived: document.status == LifecycleStatus::Archived,
         origin,
         app_default: document.id == default,
+        built_in_update: !built_in_changes(document).is_empty(),
         revision: document.revision.get(),
         created_at: document.created_at.get(),
         updated_at: document.updated_at.get(),
@@ -725,6 +743,151 @@ pub async fn prompt_builtin_reset(
                 )
                 .map_err(|error| error.0)?;
             Ok(documents)
+        })
+        .await
+}
+
+fn change_view(change: &PromptBuiltInChange) -> dto::PromptBuiltinChange {
+    let new_view =
+        |draft: &PromptEntryDraft| entry_view(&draft.clone().into_entry(PromptEntryId::new()));
+    let (kind, current, new) = match change {
+        PromptBuiltInChange::Added { new, .. } => (
+            dto::PromptBuiltinChangeKind::Added,
+            None,
+            Some(new_view(new)),
+        ),
+        PromptBuiltInChange::Updated { current, new, .. } => (
+            dto::PromptBuiltinChangeKind::Updated,
+            Some(entry_view(current)),
+            Some(new_view(new)),
+        ),
+        PromptBuiltInChange::Conflict { current, new, .. } => (
+            dto::PromptBuiltinChangeKind::Conflict,
+            Some(entry_view(current)),
+            Some(new_view(new)),
+        ),
+        PromptBuiltInChange::Removed { current, .. } => (
+            dto::PromptBuiltinChangeKind::Removed,
+            Some(entry_view(current)),
+            None,
+        ),
+    };
+    dto::PromptBuiltinChange {
+        entry_key: change.entry_key().to_owned(),
+        kind,
+        current,
+        new,
+    }
+}
+
+fn updatable_seed(document: &PromptDocument) -> Result<&'static BuiltInPromptSeed, ApiError> {
+    built_in_seed(document)
+        .ok_or_else(|| invalid_field("prompt_id", "the prompt is not based on a built-in"))
+}
+
+/// The entries the built-in changed since this prompt last agreed with it.
+pub async fn prompt_builtin_update_get(
+    context: &ApiContext,
+    request: dto::PromptBuiltinUpdateGetRequest,
+) -> Result<dto::PromptBuiltinUpdate, ApiError> {
+    let id = parse_id(&request.prompt_id, "prompt_id")?;
+    context
+        .blocking(move |context| {
+            let document = load(context, id)?;
+            let seed = updatable_seed(&document)?;
+            Ok(dto::PromptBuiltinUpdate {
+                prompt_id: document.id.to_string(),
+                revision: document.revision.get(),
+                built_in_name: seed.metadata.name.clone(),
+                changes: built_in_changes(&document)
+                    .iter()
+                    .map(change_view)
+                    .collect(),
+            })
+        })
+        .await
+}
+
+/// Applies the user's decision for every pending entry. A choice for an
+/// entry that is no longer pending is a `Conflict`; the operation key replays
+/// the first result.
+pub async fn prompt_builtin_update_apply(
+    context: &ApiContext,
+    request: dto::PromptBuiltinUpdateApplyRequest,
+) -> Result<dto::PromptView, ApiError> {
+    let digest = crate::api::jobs::local::digest(&request)?;
+    let id = parse_id(&request.prompt_id, "prompt_id")?;
+    let expected = revision(request.expected_revision, "expected_revision")?;
+    context
+        .blocking(move |context| {
+            let seed = updatable_seed(&load(context, id)?)?;
+            let choices = request
+                .choices
+                .into_iter()
+                .map(|choice| (choice.entry_key, choice.take_new))
+                .collect::<Vec<_>>();
+            context
+                .backend()
+                .database()
+                .commit_api_operation(
+                    "prompt_builtin_update_apply",
+                    &request.client_operation_id,
+                    &digest,
+                    context.now(),
+                    |scope| {
+                        scope
+                            .apply_built_in_prompt_update(
+                                id,
+                                expected,
+                                seed,
+                                &choices,
+                                context.now(),
+                            )
+                            .map_err(|error| Failure(error.into_api_error()))
+                            .and_then(|document| transaction_view(context, scope, &document))
+                    },
+                )
+                .map_err(|error| error.0)
+        })
+        .await
+}
+
+/// The active prompts with built-in changes waiting for a decision.
+pub async fn prompts_builtin_updates_pending(
+    context: &ApiContext,
+) -> Result<dto::PromptBuiltinUpdatesPending, ApiError> {
+    context
+        .blocking(|context| {
+            let mut prompt_ids = Vec::new();
+            let mut cursor = None;
+            loop {
+                let page = PromptRepository::page(
+                    context.backend().database(),
+                    PromptLibraryQuery {
+                        page: PageRequest {
+                            cursor,
+                            limit: PageLimit::default(),
+                        },
+                        status: LifecycleFilter::Active,
+                        purpose: None,
+                    },
+                )
+                .map_err(IntoApiError::into_api_error)?;
+                prompt_ids.extend(
+                    page.items
+                        .iter()
+                        .filter(|document| !built_in_changes(document).is_empty())
+                        .map(|document| document.id.to_string()),
+                );
+                match page.next_cursor {
+                    Some(next) => cursor = Some(next),
+                    None => break,
+                }
+            }
+            Ok(dto::PromptBuiltinUpdatesPending {
+                count: u32::try_from(prompt_ids.len()).unwrap_or(u32::MAX),
+                prompt_ids,
+            })
         })
         .await
 }

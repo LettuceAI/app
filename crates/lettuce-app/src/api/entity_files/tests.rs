@@ -2390,7 +2390,8 @@ async fn uec3_prompt_preserves_entries_and_resolves_known_and_unknown_built_in_s
                 stored.provenance,
                 PromptProvenance::Derived {
                     source: built_in.id,
-                    source_name: built_in.name.clone()
+                    source_name: built_in.name.clone(),
+                    seed_base: None
                 }
             );
         } else {
