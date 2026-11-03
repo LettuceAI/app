@@ -46,6 +46,21 @@ afterEach(() => {
 });
 
 describe("home characters", () => {
+  it("shows the banner asset on a banner card while keeping the avatar as its fallback", async () => {
+    await renderHome([character("banner-character", "Banner character", {
+      card_style: "banner",
+      avatar: { asset_id: "avatar", url: "asset://avatar" },
+      banner: { asset_id: "banner", url: "asset://banner" },
+    }), character("fallback-character", "Avatar fallback", {
+      card_style: "banner", avatar: { asset_id: "fallback-avatar", url: "asset://fallback-avatar" },
+    })], [], "list");
+    const card = (await screen.findByText("Banner character")).closest("button")!;
+    expect(card.querySelector('img[src="asset://banner"]')).not.toBeNull();
+    expect(card.querySelector('img[src="asset://avatar"]')).toBeNull();
+    const fallback = screen.getByText("Avatar fallback").closest("button")!;
+    expect(fallback.querySelector('img[src="asset://fallback-avatar"]')).not.toBeNull();
+  });
+
   it.each(["uec", "v3", "v2"] as const)("exports %s character cards to Android Downloads without a save picker", async (format) => {
     const pick = vi.fn(() => ({ status: "ok" as const, data: { target: null } }));
     const write = vi.fn(() => ({ status: "ok" as const, data: { uri: "content://downloads/character", suggested_name: "character.uec", warnings: [] } }));

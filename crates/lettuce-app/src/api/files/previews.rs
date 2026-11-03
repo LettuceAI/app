@@ -11,6 +11,7 @@ use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, parse_id};
 
 const PREVIEW_EDGE: u32 = 512;
+const AVATAR_EDGE: u32 = 1024;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
 const CACHE_ENTRIES: usize = 256;
 
@@ -111,6 +112,61 @@ pub async fn read_asset_preview(context: &ApiContext, asset_id: &str) -> Result<
         state.cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(opened.blob.content_hash, preview.clone());
         Ok(AssetRead::Bytes(preview))
+    }).await
+}
+
+pub async fn assets_crop_avatar(
+    context: &ApiContext,
+    request: lettuce_contracts::AssetsCropAvatarRequest,
+) -> Result<lettuce_contracts::AssetRef, ApiError> {
+    let asset_id: AssetId = parse_id(&request.asset_id, "asset_id")?;
+    let height = request.height.unwrap_or(request.size);
+    if request.size == 0 || height == 0 {
+        return Err(crate::api::error::invalid_field("size", "avatar crop must not be empty"));
+    }
+    let _permit = context.image_previews().permits.acquire().await.map_err(|_| {
+        api_error(ApiErrorCode::Unavailable, "image processing is unavailable")
+    })?;
+    context.blocking(move |context| {
+        let store = context.media().ok_or_else(|| {
+            api_error(ApiErrorCode::Unavailable, "the media store is not open")
+        })?;
+        let opened = store.open_ready(asset_id).map_err(IntoApiError::into_api_error)?;
+        if opened.blob.kind != lettuce_media::MediaKind::Image {
+            return Err(api_error(ApiErrorCode::InvalidInput, "only images can be cropped"));
+        }
+        let invalid_image = |error: image::ImageError| {
+            api_error(ApiErrorCode::InvalidInput, format!("avatar could not be decoded or encoded: {error}"))
+        };
+        let mut reader = ImageReader::new(BufReader::new(opened.reader))
+            .with_guessed_format()
+            .map_err(|error| api_error(ApiErrorCode::Internal, format!("image could not be read: {error}")))?;
+        let mut limits = Limits::default();
+        limits.max_alloc = Some(128 * 1024 * 1024);
+        reader.limits(limits);
+        let mut decoder = reader.into_decoder().map_err(invalid_image)?;
+        let orientation = decoder.orientation().map_err(invalid_image)?;
+        let mut image = image::DynamicImage::from_decoder(decoder).map_err(invalid_image)?;
+        image.apply_orientation(orientation);
+        if request.x.checked_add(request.size).is_none_or(|right| right > image.width())
+            || request.y.checked_add(height).is_none_or(|bottom| bottom > image.height())
+        {
+            return Err(crate::api::error::invalid_field("crop", "avatar crop is outside the image"));
+        }
+        let image = image.crop_imm(request.x, request.y, request.size, height)
+            .resize(AVATAR_EDGE, AVATAR_EDGE, image::imageops::FilterType::Lanczos3);
+        let mut bytes = Cursor::new(Vec::new());
+        image.write_to(&mut bytes, ImageFormat::Png).map_err(invalid_image)?;
+        let ingested = store.ingest(
+            bytes.into_inner().as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::AvatarOriginal,
+                opened.asset.origin,
+                lettuce_media::RetentionClass::Persistent,
+                opened.asset.provenance,
+            ),
+        ).map_err(IntoApiError::into_api_error)?;
+        Ok(context.image_asset_ref(ingested.asset.id))
     }).await
 }
 

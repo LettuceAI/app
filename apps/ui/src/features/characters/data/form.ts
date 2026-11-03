@@ -1,4 +1,4 @@
-import type { AssetRef, CharacterDraft_Serialize, LibraryCharacterMediaSlot, LibrarySceneDraft_Serialize } from "@/api/generated/bindings";
+import type { AssetRef, CharacterDraft_Serialize, LibraryCharacterMediaSlot, LibraryCrop, LibrarySceneDraft_Serialize } from "@/api/generated/bindings";
 
 export type CharacterDraft = CharacterDraft_Serialize;
 export type SceneDraft = LibrarySceneDraft_Serialize;
@@ -13,6 +13,7 @@ export interface CharacterForm {
   images: Partial<Record<LibraryCharacterMediaSlot, AssetRef>>;
   references: AssetRef[];
   lorebookIds: string[];
+  bannerSource?: AssetRef | null;
 }
 
 export function newForm(draft: CharacterDraft): CharacterForm {
@@ -29,7 +30,18 @@ export function withImage(form: CharacterForm, slot: LibraryCharacterMediaSlot, 
   } else {
     delete images[slot];
   }
-  return { ...form, draft: { ...form.draft, media }, images };
+  const presentation = slot === "avatar_original" ? { ...form.draft.presentation, avatar_crop: null }
+    : slot === "banner" ? { ...form.draft.presentation, banner_crop: null, banner_source_asset_id: null } : form.draft.presentation;
+  return { ...form, ...(slot === "banner" ? { bannerSource: null } : {}), draft: { ...form.draft, media, presentation }, images };
+}
+
+export function withBanner(form: CharacterForm, selection: { asset: AssetRef; source: AssetRef; crop: LibraryCrop }): CharacterForm {
+  const updated = withImage(form, "banner", selection.asset);
+  return { ...updated, bannerSource: selection.source, draft: { ...updated.draft, presentation: {
+    ...updated.draft.presentation,
+    banner_source_asset_id: selection.source.asset_id,
+    banner_crop: selection.crop,
+  } } };
 }
 
 export function withReferences(form: CharacterForm, references: AssetRef[]): CharacterForm {

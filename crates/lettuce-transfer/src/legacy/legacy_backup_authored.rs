@@ -2073,6 +2073,7 @@ fn validate_presentation(
         card_style: value.card_style,
         avatar_crop: value.avatar_crop,
         banner_crop: value.banner_crop,
+        banner_source_asset_id: None,
         disable_gradient: value.disable_gradient,
         gradient_source: value.gradient_source,
         custom_gradient_enabled: value.custom_gradient_enabled,

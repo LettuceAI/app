@@ -3,7 +3,7 @@ import { Camera } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, Field, icon, IconButton, Input, toast } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
-import { AvatarGeneration, pickImage } from "@/entities/image-input";
+import { AvatarGeneration, pickImage, useAvatarCrop } from "@/entities/image-input";
 import { withAvatar } from "../data/form";
 import { PersonaDescription } from "./PersonaDescription";
 import type { StepProps } from "./step-props";
@@ -12,6 +12,7 @@ export function IdentityFields({ api, form, update, disabled = false, autoFocus 
   const { t } = useTranslation("personas");
   const { t: common } = useTranslation("common");
   const [picking, setPicking] = useState(false);
+  const crop = useAvatarCrop(api);
   const { draft } = form;
   const busy = picking || disabled;
   const chooseAvatar = async () => {
@@ -19,7 +20,8 @@ export function IdentityFields({ api, form, update, disabled = false, autoFocus 
     setPicking(true);
     onBusyChange?.(true);
     try {
-      const asset = await pickImage(api, "avatar");
+      const picked = await pickImage(api, "avatar");
+      const asset = picked ? await crop.choose(picked) : null;
       if (asset) update((current) => withAvatar(current, asset));
     } catch (error) {
       toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));
@@ -31,6 +33,7 @@ export function IdentityFields({ api, form, update, disabled = false, autoFocus 
   const setDraft = (patch: Partial<typeof draft>) => update((current) => ({ ...current, draft: { ...current.draft, ...patch } }));
 
   return <>
+    {crop.editor}
     <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
       <div className="flex shrink-0 flex-col items-center gap-2">
         <IconButton label={t("identity.chooseAvatar")} variant="ghost" disabled={busy} className="relative h-28 w-28 overflow-visible rounded-full p-0" onClick={() => void chooseAvatar()}>

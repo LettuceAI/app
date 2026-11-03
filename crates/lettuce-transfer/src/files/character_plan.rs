@@ -160,6 +160,7 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
             card_style: presentation.card_style,
             avatar_crop: presentation.avatar_crop,
             banner_crop: presentation.banner_crop,
+            banner_source_asset_id: None,
             disable_gradient: presentation.disable_gradient,
             gradient_source: presentation.gradient_source,
             custom_gradient_enabled: presentation.custom_gradient_enabled,

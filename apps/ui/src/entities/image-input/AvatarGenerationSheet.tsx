@@ -15,7 +15,7 @@ export interface AvatarGenerationSheetProps {
   open: boolean;
   onClose: () => void;
   readContext: () => AvatarContext;
-  onUse: (asset: AssetRef) => void;
+  onUse: (asset: AssetRef) => Promise<boolean>;
   onConfigure: () => void;
 }
 
@@ -167,14 +167,13 @@ export function AvatarGenerationSheet({ api, open, onClose, readContext, onUse, 
   useEffect(() => {
     if (noticeKind) body.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [noticeKind]);
-  const use = () => {
+  const use = async () => {
     const asset = session?.selectedAsset();
     if (!asset) return;
-    onUse(asset);
-    onClose();
+    if (await onUse(asset)) onClose();
   };
   return <Sheet open={open} onClose={onClose} placement="auto" size="md" scrollRef={body} title={t("title")}
-    rightAction={<Button size="sm" variant="primary" disabled={!usable} onClick={use}>{t("actions.use")}</Button>}
+    rightAction={<Button size="sm" variant="primary" disabled={!usable} onClick={() => void use()}>{t("actions.use")}</Button>}
     footer={<Composer session={session} state={state} numbers={numbers} usable={usable} />}>
     <div className="@container space-y-4 pb-1">
       {notice && session && <NoticeAlert notice={notice} session={session} state={state} onConfigure={onConfigure} />}

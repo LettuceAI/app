@@ -6,6 +6,7 @@ import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStr
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
+import { confirmAvatarCrop, mockAvatarCrop, mockAvatarCropImages } from "@/shared/testing/avatar-crop";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
@@ -19,13 +20,15 @@ const job = (id: string): JobView => ({
   result: { type: "image_generation", images: [{ asset: asset(id), mime_type: "image/png", width: 512, height: 512, text: null }], rejected_outputs: 0 },
 });
 
-async function renderCreate(calls: MockCallHandlers = {}, streams: MockStreamHandlers = {}, options: AvatarGenerationOptions = usable) {
+async function renderCreate(calls: MockCallHandlers = {}, streams: MockStreamHandlers = {}, options: AvatarGenerationOptions = usable, imageFailures = 0) {
+  mockAvatarCropImages(imageFailures);
   const history = createMemoryHistory({ initialEntries: ["/", "/personas/new"], initialIndex: 1 });
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       calls: {
         appStatus: () => ok({ ...mockAppStatus, ui_state: { onboarding: { completed: true } } }),
         personasList: () => ok({ items: [], next_cursor: null, default_persona: { persona_id: null, revision: 1, created_at: 1, updated_at: 1 } }),
+        assetsCropAvatar: mockAvatarCrop,
         avatarGenerationOptions: () => ok(options),
         avatarGenerate: (request: AvatarGenerateRequest) => ok({ job_id: request.request_id, model, prompt: "rendered" }),
         jobCancel: () => ok(null),
@@ -48,6 +51,93 @@ const open = async () => {
 afterEach(() => cleanup());
 
 describe("avatar generation panel", () => {
+  it("positions and zooms an uploaded avatar before applying the cropped asset", async () => {
+    const crop = vi.fn(mockAvatarCrop);
+    const save = vi.fn();
+    await renderCreate({
+      filesPickOpen: () => ok({ sources: [{ uri: "avatar.png" }] }),
+      assetsIngest: () => ok(asset("upload")),
+      assetsCropAvatar: crop,
+      personaSave: save,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Choose image" }));
+    const dialog = await screen.findByRole("dialog", { name: "Position avatar" });
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    await waitFor(() => expect((within(dialog).getByRole("slider", { name: "Zoom" }) as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(within(dialog).getByRole("slider", { name: "Zoom" }), { target: { value: "2" } });
+    fireEvent.keyDown(within(dialog).getByRole("group", { name: "Position avatar" }), { key: "ArrowLeft" });
+    await confirmAvatarCrop();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(crop).toHaveBeenCalledExactlyOnceWith({ asset_id: "upload", x: 256, y: 150, size: 300 });
+    expect(document.querySelector('img[src="asset://upload-cropped"]')).not.toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("zooms with the buttons and recentres the picture with the centre guide", async () => {
+    const crop = vi.fn(mockAvatarCrop);
+    await renderCreate({ filesPickOpen: () => ok({ sources: [{ uri: "avatar.png" }] }), assetsIngest: () => ok(asset("upload")), assetsCropAvatar: crop });
+    fireEvent.click(await screen.findByRole("button", { name: "Choose image" }));
+    const dialog = await screen.findByRole("dialog", { name: "Position avatar" });
+    const center = within(dialog).getByRole("button", { name: "Center" }) as HTMLButtonElement;
+    await waitFor(() => expect((within(dialog).getByRole("button", { name: "Zoom in" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(center.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zoom in" }));
+    expect(within(dialog).getByText("163%")).toBeTruthy();
+    fireEvent.keyDown(within(dialog).getByRole("group", { name: "Position avatar" }), { key: "ArrowRight", shiftKey: true });
+    expect(center.disabled).toBe(false);
+    fireEvent.click(center);
+    expect(center.disabled).toBe(true);
+    await confirmAvatarCrop();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(crop).toHaveBeenCalledExactlyOnceWith({ asset_id: "upload", x: 215, y: 115, size: 369 });
+  });
+
+  it("offers a retry when the picture cannot be loaded", async () => {
+    const crop = vi.fn(mockAvatarCrop);
+    await renderCreate({ filesPickOpen: () => ok({ sources: [{ uri: "avatar.png" }] }), assetsIngest: () => ok(asset("upload")), assetsCropAvatar: crop }, {}, usable, 1);
+    fireEvent.click(await screen.findByRole("button", { name: "Choose image" }));
+    const dialog = await screen.findByRole("dialog", { name: "Position avatar" });
+    await within(dialog).findByText("Could not load the image");
+    expect(within(dialog).queryByRole("slider", { name: "Zoom" })).toBeNull();
+    expect((within(dialog).getByRole("button", { name: "Use this position" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+    await confirmAvatarCrop();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(crop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the crop and lets the user retry when saving its asset fails", async () => {
+    let attempts = 0;
+    const crop = vi.fn<NonNullable<MockCallHandlers["assetsCropAvatar"]>>((request) => {
+      if (++attempts === 1) return { status: "error", error: { code: "unavailable", message: "media store unavailable", details: null } };
+      return mockAvatarCrop(request);
+    });
+    await renderCreate({ filesPickOpen: () => ok({ sources: [{ uri: "avatar.png" }] }), assetsIngest: () => ok(asset("upload")), assetsCropAvatar: crop });
+    fireEvent.click(await screen.findByRole("button", { name: "Choose image" }));
+    await confirmAvatarCrop();
+    const dialog = await screen.findByRole("dialog", { name: "Position avatar" });
+    await within(dialog).findByText("Could not save the avatar");
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    await confirmAvatarCrop();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(crop).toHaveBeenCalledTimes(2);
+    expect(crop.mock.calls[1]).toEqual(crop.mock.calls[0]);
+  });
+
+  it("backs out of an uploaded crop without changing the form or saving an asset", async () => {
+    const crop = vi.fn(mockAvatarCrop);
+    const runtime = await renderCreate({ filesPickOpen: () => ok({ sources: [{ uri: "avatar.png" }] }), assetsIngest: () => ok(asset("upload")), assetsCropAvatar: crop });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "Wren" } });
+    fireEvent.click(screen.getByRole("button", { name: "Choose image" }));
+    await screen.findByRole("dialog", { name: "Position avatar" });
+    await act(async () => { runtime.router.history.back(); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveProperty("value", "Wren");
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(crop).not.toHaveBeenCalled();
+    expect(runtime.router.state.location.pathname).toBe("/personas/new");
+  });
+
   it("generates a preview and applies it to the draft only when Use is chosen", async () => {
     const save = vi.fn();
     const runtime = await renderCreate({ personaSave: save });
@@ -63,6 +153,7 @@ describe("avatar generation panel", () => {
     expect(within(dialog).getByRole("textbox", { name: "Describe the avatar" })).toHaveProperty("value", "a fox");
     expect(within(dialog).getAllByRole("img").some((image) => image.getAttribute("src")?.startsWith("asset://"))).toBe(true);
     fireEvent.click(within(dialog).getByRole("button", { name: "Use this avatar" }));
+    await confirmAvatarCrop();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(runtime.router.state.location.pathname).toBe("/personas/new");
     expect(runtime.router.state.location.search).not.toHaveProperty("avatarPanel");

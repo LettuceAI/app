@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Camera, Image as ImageIcon, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Avatar, Button, CharacterCard, Field, icon, IconButton } from "@lettuceai/crisp";
+import { Avatar, BANNER_ASPECT_RATIO, Button, CharacterCard, Field, icon, IconButton } from "@lettuceai/crisp";
 import type { AssetRef, CharacterSummary } from "@/api/generated/bindings";
 import { useCardColors } from "@/features/home";
 import type { StepProps } from "./step-props";
@@ -18,13 +18,14 @@ export function AvatarPicker({ name, image, busy, onChoose, onRemove, actions }:
   </div>;
 }
 
-export function ImageField({ title, hint, image, busy, onChoose, onRemove }: { title: string; hint: string; image: AssetRef | undefined; busy: boolean; onChoose: () => void; onRemove: () => void }) {
+export function ImageField({ title, hint, image, busy, onChoose, onRemove, onReposition }: { title: string; hint: string; image: AssetRef | undefined; busy: boolean; onChoose: () => void; onRemove: () => void; onReposition?: () => void }) {
   const { t } = useTranslation("characters");
   return <Field label={title} hint={hint}>
     {image ? <div className="relative overflow-hidden rounded-xl ring-1 ring-inset ring-line-2">
-      <img src={image.url} alt={title} className="h-36 w-full object-cover @2xl:h-52" />
+      <img src={image.url} alt={title} className={onReposition ? "w-full object-cover" : "h-36 w-full object-cover @2xl:h-52"} {...(onReposition ? { style: { aspectRatio: BANNER_ASPECT_RATIO } } : {})} />
       <div className="absolute right-2 top-2 flex gap-1.5">
         <Button size="sm" variant="overlay" disabled={busy} onClick={onChoose}>{t("identity.changeAvatar")}</Button>
+        {onReposition && <Button size="sm" variant="overlay" disabled={busy} onClick={onReposition}>{t("identity.positionBanner")}</Button>}
         <IconButton label={t("identity.remove")} size="sm" variant="overlay" disabled={busy} onClick={onRemove}><Trash2 size={icon.sm} /></IconButton>
       </div>
     </div> : <Button variant="secondary" block disabled={busy} className="h-36 whitespace-normal border-dashed bg-surface-1 @2xl:h-52" leading={<ImageIcon size={icon.xl} />} onClick={onChoose}>{t("identity.chooseImage")}</Button>}
@@ -42,6 +43,6 @@ export function CardPreview({ api, form }: Pick<StepProps, "api" | "form">) {
   };
   const colors = useCardColors(api, summary);
   return <div inert>
-    <CharacterCard name={unnamed ? t("identity.previewName") : name.trim()} {...(unnamed ? { initials: "?" } : {})} description={draft.profile.definition?.trim().split(".")[0] || t("identity.previewDescription")} avatar={images.avatar_original?.url ?? null} variant={draft.presentation.card_style === "banner" ? "banner" : "row"} gradient={colors?.css ?? (unnamed ? "var(--color-surface-1)" : null)} fg={colors?.fg ?? null} fgMuted={colors?.fgMuted ?? null} tabIndex={-1} />
+    <CharacterCard name={unnamed ? t("identity.previewName") : name.trim()} {...(unnamed ? { initials: "?" } : {})} description={draft.profile.definition?.trim().split(".")[0] || t("identity.previewDescription")} avatar={images.avatar_original?.url ?? null} banner={images.banner?.url ?? null} variant={draft.presentation.card_style === "banner" ? "banner" : "row"} gradient={colors?.css ?? (unnamed ? "var(--color-surface-1)" : null)} fg={colors?.fg ?? null} fgMuted={colors?.fgMuted ?? null} tabIndex={-1} />
   </div>;
 }

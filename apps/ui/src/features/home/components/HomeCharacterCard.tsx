@@ -21,6 +21,7 @@ export function HomeCharacterCard({ api, character, onOpen, onMenu, held }: Home
       name={character.name}
       description={character.description ? <InlineMarkdown>{character.description}</InlineMarkdown> : t("noDescription")}
       avatar={character.avatar?.url ?? null}
+      banner={character.banner?.url ?? null}
       gradient={colors?.css ?? null}
       fg={colors?.fg ?? null}
       fgMuted={colors?.fgMuted ?? null}

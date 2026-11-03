@@ -642,6 +642,9 @@ pub struct LibraryCharacterPresentationV1 {
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<LibraryCrop>))]
     pub banner_crop: Option<LibraryCrop>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub banner_source_asset_id: Option<String>,
     pub disable_gradient: bool,
     pub gradient_source: LibraryGradientSource,
     pub custom_gradient_enabled: bool,

@@ -7,6 +7,7 @@ import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStr
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
+import { confirmAvatarCrop, mockAvatarCrop, mockAvatarCropImages } from "@/shared/testing/avatar-crop";
 import { newPersonaDraft } from "@/features/library";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
@@ -103,6 +104,7 @@ function saved(request: PersonaSaveRequest_Deserialize, revision = 6): PersonaVi
 
 const avatarModel = { id: "image-model", name: "Image model", provider_kind: "openai", supports_editing: true };
 const avatarCalls: MockCallHandlers = {
+  assetsCropAvatar: mockAvatarCrop,
   avatarGenerationOptions: () => ok({ enabled: true, model: avatarModel }),
   avatarGenerate: (request) => ok({ job_id: request.request_id, model: avatarModel, prompt: "rendered" }),
 };
@@ -115,6 +117,7 @@ const avatarStreams: MockStreamHandlers = {
 };
 
 async function generateAvatarFromPanel() {
+  mockAvatarCropImages();
   fireEvent.click(await screen.findByRole("button", { name: "Generate avatar" }));
   const dialog = await screen.findByRole("dialog");
   await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "Describe the avatar" })).toBeTruthy());
@@ -123,6 +126,7 @@ async function generateAvatarFromPanel() {
   fireEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
   await waitFor(() => expect((within(dialog).getByRole("button", { name: "Use this avatar" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(within(dialog).getByRole("button", { name: "Use this avatar" }));
+  await confirmAvatarCrop();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
 

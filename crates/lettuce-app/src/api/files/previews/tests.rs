@@ -119,3 +119,119 @@ fn cache_evicts_old_previews_at_its_byte_budget() {
     assert!(cache.get(&hash(2)).is_none());
     assert!(cache.entries.len() <= CACHE_ENTRIES);
 }
+
+#[tokio::test]
+async fn avatar_crops_keep_the_selected_pixels_and_leave_the_original_unchanged() {
+    let (root, context) = context();
+    let image = image::RgbaImage::from_fn(8, 4, |x, _| {
+        if x < 4 { image::Rgba([0, 0, 255, 255]) } else { image::Rgba([255, 0, 0, 128]) }
+    });
+    let mut original = Cursor::new(Vec::new());
+    image.write_to(&mut original, ImageFormat::Png).expect("source image");
+    let id = ingest(&context, original.get_ref(), AssetKind::GeneratedImage);
+    let cropped = assets_crop_avatar(&context, lettuce_contracts::AssetsCropAvatarRequest {
+        asset_id: id.to_string(), x: 4, y: 0, size: 4, height: None,
+    }).await.expect("crop");
+    let cropped_id = cropped.asset_id.parse().expect("cropped id");
+    assert_ne!(id, cropped_id);
+    let AssetRead::Bytes(bytes) = read_asset(&context, &cropped.asset_id, AssetRange::Whole).await.expect("crop bytes") else {
+        panic!("complete cropped asset");
+    };
+    let decoded = image::load_from_memory(&bytes.bytes).expect("decode crop").into_rgba8();
+    assert_eq!(decoded.dimensions(), (AVATAR_EDGE, AVATAR_EDGE));
+    assert_eq!(decoded.get_pixel(512, 512).0, [255, 0, 0, 128]);
+    let AssetRead::Bytes(unchanged) = read_asset(&context, &id.to_string(), AssetRange::Whole).await.expect("original") else {
+        panic!("complete original asset");
+    };
+    assert_eq!(unchanged.bytes, *original.get_ref());
+    let opened = context.media().expect("media").open_ready(cropped_id).expect("cropped asset");
+    assert_eq!(opened.asset.kind, AssetKind::AvatarOriginal);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn avatar_crops_reject_empty_overflowing_and_outside_regions_and_non_images() {
+    let (root, context) = context();
+    let mut bytes = Cursor::new(Vec::new());
+    image::RgbImage::new(8, 4).write_to(&mut bytes, ImageFormat::Png).expect("png");
+    let id = ingest(&context, bytes.get_ref(), AssetKind::OtherImage);
+    for (x, y, size) in [(0, 0, 0), (0, 0, 5), (5, 0, 4), (0, 1, 4), (u32::MAX, 0, 1)] {
+        let error = assets_crop_avatar(&context, lettuce_contracts::AssetsCropAvatarRequest {
+            asset_id: id.to_string(), x, y, size, height: None,
+        }).await.expect_err("invalid crop");
+        assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    }
+    let document = ingest(&context, b"A plain text document", AssetKind::SourceDocument);
+    let error = assets_crop_avatar(&context, lettuce_contracts::AssetsCropAvatarRequest {
+        asset_id: document.to_string(), x: 0, y: 0, size: 1, height: None,
+    }).await.expect_err("not an image");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn banner_crops_preserve_the_rectangular_frame_and_reject_invalid_height() {
+    let (root, context) = context();
+    let mut original = Cursor::new(Vec::new());
+    image::RgbImage::from_pixel(16, 12, image::Rgb([40, 80, 160]))
+        .write_to(&mut original, ImageFormat::Png).expect("source");
+    let id = ingest(&context, original.get_ref(), AssetKind::OtherImage);
+    let cropped = assets_crop_avatar(&context, lettuce_contracts::AssetsCropAvatarRequest {
+        asset_id: id.to_string(), x: 0, y: 2, size: 16, height: Some(8),
+    }).await.expect("banner crop");
+    let AssetRead::Bytes(bytes) = read_asset(&context, &cropped.asset_id, AssetRange::Whole).await.expect("banner bytes") else {
+        panic!("complete banner asset");
+    };
+    let image = image::load_from_memory(&bytes.bytes).expect("decoded");
+    assert_eq!((image.width(), image.height()), (1024, 512));
+    for height in [0, 13, u32::MAX] {
+        assert_eq!(assets_crop_avatar(&context, lettuce_contracts::AssetsCropAvatarRequest {
+            asset_id: id.to_string(), x: 0, y: 2, size: 16, height: Some(height),
+        }).await.expect_err("invalid height").code, ApiErrorCode::InvalidInput);
+    }
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn saved_banner_framing_retains_the_source_asset_after_reload_and_can_be_removed() {
+    use crate::api::{character_draft_default, character_get, character_save};
+    use lettuce_contracts as dto;
+    let root = std::env::temp_dir().join(format!("lettuce-banner-framing-{}", AssetId::new()));
+    std::fs::create_dir_all(&root).expect("root");
+    let context = ApiContext::open_desktop(
+        &root, None,
+        Arc::new(lettuce_settings::InMemorySecretStore::new()),
+        Arc::new(crate::api::tests::RecordingEvents::default()),
+        Arc::new(crate::api::tests::StdFiles),
+        "lettuce-asset://localhost".into(), None,
+    ).expect("persistent context");
+    let mut original = Cursor::new(Vec::new());
+    image::RgbImage::new(16, 12).write_to(&mut original, ImageFormat::Png).expect("png");
+    let id = ingest(&context, original.get_ref(), AssetKind::OtherImage);
+    let cropped = assets_crop_avatar(&context, dto::AssetsCropAvatarRequest {
+        asset_id: id.to_string(), x: 0, y: 2, size: 16, height: Some(8),
+    }).await.expect("banner crop");
+    let mut draft = character_draft_default(None).await.expect("draft");
+    draft.profile.name = "Banner character".into();
+    draft.presentation.banner_source_asset_id = Some(id.to_string());
+    draft.presentation.banner_crop = Some(dto::LibraryCrop { x: 0.0, y: 0.05, scale: 1.0 });
+    draft.media.push(dto::LibraryCharacterMediaLink {
+        asset_id: cropped.asset_id.clone(), slot: dto::LibraryCharacterMediaSlot::Banner, ordinal: 0,
+    });
+    let saved = character_save(&context, dto::CharacterSaveRequest {
+        character_id: None, draft, expected_revision: None, client_operation_id: "save-banner-frame".into(),
+    }).await.expect("save");
+    let mut reloaded = character_get(&context, dto::CharacterGetRequest { character_id: saved.id.clone() })
+        .await.expect("reload");
+    assert_eq!(reloaded.draft.presentation.banner_source_asset_id, Some(id.to_string()));
+    assert!(reloaded.assets.iter().any(|asset| asset.asset_id == id.to_string()));
+    reloaded.draft.presentation.banner_source_asset_id = None;
+    reloaded.draft.presentation.banner_crop = None;
+    reloaded.draft.media.clear();
+    let removed = character_save(&context, dto::CharacterSaveRequest {
+        character_id: Some(saved.id), draft: reloaded.draft, expected_revision: Some(saved.revision),
+        client_operation_id: "remove-banner-frame".into(),
+    }).await.expect("remove banner");
+    assert!(removed.assets.is_empty());
+    let _ = std::fs::remove_dir_all(root);
+}

@@ -7,6 +7,7 @@ import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStr
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
+import { confirmAvatarCrop, mockAvatarCrop, mockAvatarCropImages } from "@/shared/testing/avatar-crop";
 import defaultDraft from "./fixtures/default-draft.json";
 import companionDraft from "./fixtures/default-companion-draft.json";
 import type { CharacterDraft } from "./data/form";
@@ -70,6 +71,7 @@ function lorebookBackend(initial: string[]) {
 
 const avatarModel = { id: "image-model", name: "Image model", provider_kind: "openai", supports_editing: true };
 const avatarCalls: MockCallHandlers = {
+  assetsCropAvatar: mockAvatarCrop,
   avatarGenerationOptions: () => ok({ enabled: true, model: avatarModel }),
   avatarGenerate: (request) => ok({ job_id: request.request_id, model: avatarModel, prompt: "rendered" }),
 };
@@ -82,6 +84,7 @@ const avatarStreams: MockStreamHandlers = {
 };
 
 async function generateAvatarFromPanel() {
+  mockAvatarCropImages();
   fireEvent.click(await screen.findByRole("button", { name: "Generate avatar" }));
   const dialog = await screen.findByRole("dialog");
   await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "Describe the avatar" })).toBeTruthy());
@@ -90,6 +93,7 @@ async function generateAvatarFromPanel() {
   fireEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
   await waitFor(() => expect((within(dialog).getByRole("button", { name: "Use this avatar" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(within(dialog).getByRole("button", { name: "Use this avatar" }));
+  await confirmAvatarCrop();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
 
@@ -139,6 +143,41 @@ function saved(request: CharacterSaveRequest_Deserialize, revision = 6): Charact
 }
 
 describe("character edit page", () => {
+  it("repositions a banner from its saved original and restores the framing after reopening", async () => {
+    mockAvatarCropImages();
+    const view = roleplay();
+    view.draft.presentation.card_style = "banner";
+    view.draft.presentation.banner_source_asset_id = "banner-source";
+    view.draft.presentation.banner_crop = { x: 0.1, y: -0.05, scale: 2 };
+    view.draft.media = [{ asset_id: "banner-current", slot: "banner", ordinal: 0 }];
+    view.assets = ["banner-source", "banner-current"].map((asset_id) => ({ asset_id, url: `asset://${asset_id}` }));
+    const crop = vi.fn(mockAvatarCrop);
+    const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ok({ ...saved(request), assets: view.assets }));
+    await renderEdit(view, { assetsCropAvatar: crop, characterSave: save });
+    fireEvent.click(tab("Look"));
+    fireEvent.click(await screen.findByRole("button", { name: "Position" }));
+    const dialog = await screen.findByRole("dialog", { name: "Position banner" });
+    await waitFor(() => expect(within(dialog).getByRole("slider", { name: "Zoom" })).toHaveProperty("value", "2"));
+    expect(within(dialog).queryByRole("img", { name: "Position avatar" })).toBeNull();
+    expect(dialog.querySelector('img[src="asset://banner-source"]')).not.toBeNull();
+    await confirmAvatarCrop("Position banner");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(crop).toHaveBeenCalledExactlyOnceWith({ asset_id: "banner-source", x: 160, y: 220, size: 400, height: 200 });
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Position" }));
+    const reopened = await screen.findByRole("dialog", { name: "Position banner" });
+    await waitFor(() => expect(within(reopened).getByRole("slider", { name: "Zoom" })).toHaveProperty("value", "2"));
+    fireEvent.change(within(reopened).getByRole("slider", { name: "Zoom" }), { target: { value: "1" } });
+    fireEvent.click(within(reopened).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const savedDraft = save.mock.calls[0]![0].draft;
+    expect(savedDraft.presentation).toMatchObject({ banner_source_asset_id: "banner-source", banner_crop: { x: 0.1, y: -0.05, scale: 2 } });
+    expect(savedDraft.media).toContainEqual({ asset_id: "banner-source-cropped", slot: "banner", ordinal: 0 });
+    expect(crop).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the stored values, offers saving only after a change and discards back to them", async () => {
     await renderEdit(roleplay());
     expect(nameInput().value).toBe("Cassian");

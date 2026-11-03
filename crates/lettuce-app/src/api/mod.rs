@@ -77,7 +77,7 @@ pub use conversations::{
 };
 pub use events::{ApiEventSink, GenerationEventSink, JobEventSink};
 pub use files::assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
-pub use files::previews::read_asset_preview;
+pub use files::previews::{assets_crop_avatar, read_asset_preview};
 pub use files::{
     ExportProtection, FileAccess, FileAccessError, FileDescription, FileReader, PickFilter,
     assets_ingest, files_inspect, files_pick_directory, files_pick_open, files_pick_save,

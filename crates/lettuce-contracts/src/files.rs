@@ -77,6 +77,19 @@ pub struct AssetsIngestRequest {
     pub role: AssetIngestRole,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AssetsCropAvatarRequest {
+    pub asset_id: String,
+    pub x: u32,
+    pub y: u32,
+    pub size: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub height: Option<u32>,
+}
+
 /// What a file picker offers, which sets its extension and type filters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

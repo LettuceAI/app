@@ -22,7 +22,7 @@ export function newPersonaForm(draft: PersonaDraft): PersonaForm {
 export function withAvatar(form: PersonaForm, asset: AssetRef | null): PersonaForm {
   const media = form.draft.media.filter((link) => link.slot !== "avatar");
   if (asset) media.push({ asset_id: asset.asset_id, slot: "avatar", ordinal: 0 });
-  return { ...form, avatar: asset, draft: { ...form.draft, media } };
+  return { ...form, avatar: asset, draft: { ...form.draft, media, avatar_crop: null } };
 }
 
 export function withReferences(form: PersonaForm, references: AssetRef[]): PersonaForm {

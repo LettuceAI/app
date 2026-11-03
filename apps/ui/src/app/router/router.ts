@@ -178,7 +178,10 @@ const lorebookProjectRoute = createRoute({
     ...(typeof search.entry === "string" ? { entry: search.entry } : {}),
   }),
 });
-const validateAvatarPanel = (search: Record<string, unknown>): { avatarPanel?: true } => (search.avatarPanel === true || search.avatarPanel === "true" ? { avatarPanel: true } : {});
+const validateAvatarPanel = (search: Record<string, unknown>): { avatarPanel?: true; avatarCrop?: true } => ({
+  ...(search.avatarPanel === true || search.avatarPanel === "true" ? { avatarPanel: true as const } : {}),
+  ...(search.avatarCrop === true || search.avatarCrop === "true" ? { avatarCrop: true as const } : {}),
+});
 const newCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/characters/new",
@@ -189,7 +192,7 @@ const editCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/characters/$characterId/edit",
   component: EditCharacterPage,
-  validateSearch: (search: Record<string, unknown>): { tab?: "soul"; avatarPanel?: true } => ({ ...(search.tab === "soul" ? { tab: "soul" as const } : {}), ...validateAvatarPanel(search) }),
+  validateSearch: (search: Record<string, unknown>): { tab?: "soul"; avatarPanel?: true; avatarCrop?: true } => ({ ...(search.tab === "soul" ? { tab: "soul" as const } : {}), ...validateAvatarPanel(search) }),
 });
 const characterHistoryRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -515,6 +518,7 @@ declare module "@tanstack/history" {
     libraryOverlayPushed?: boolean;
     imagePickerPushed?: boolean;
     avatarPanelPushed?: boolean;
+    avatarCropPushed?: boolean;
     localImagesPushed?: boolean;
     engineInstallPushed?: boolean;
     loraDetailPushed?: boolean;

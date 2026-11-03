@@ -1,6 +1,25 @@
 {
   "generate": "Generate avatar",
   "title": "Generate avatar",
+  "bannerCrop": {
+    "title": "Position banner",
+    "description": "Frame the cover. Drag to move, pinch or scroll to zoom.",
+    "saveFailed": "Could not save the banner"
+  },
+  "crop": {
+    "title": "Position avatar",
+    "description": "Drag to move. Pinch or scroll to zoom.",
+    "zoom": "Zoom",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "center": "Center",
+    "area": "Framing area",
+    "keyboard": "Arrow keys move the picture. Plus and minus zoom, C centers, 0 resets.",
+    "reset": "Reset",
+    "apply": "Use this position",
+    "loadFailed": "Could not load the image",
+    "saveFailed": "Could not save the avatar"
+  },
   "preview": {
     "empty": "No image yet",
     "emptyBody": "Describe an avatar below, or start from your own image.",

@@ -6,6 +6,7 @@ import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStr
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
+import { confirmAvatarCrop, mockAvatarCrop, mockAvatarCropImages } from "@/shared/testing/avatar-crop";
 import defaultDraft from "./fixtures/default-draft.json";
 import companionDraft from "./fixtures/default-companion-draft.json";
 import { newForm, withAddedScene, withoutScene, draftToSave, isTouched, withDefaultScene, type CharacterDraft } from "./data/form";
@@ -22,6 +23,7 @@ function saved(request: CharacterSaveRequest_Deserialize): CharacterView_Seriali
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 const avatarModel = { id: "image-model", name: "Image model", provider_kind: "openai", supports_editing: true };
 const avatarCalls: MockCallHandlers = {
+  assetsCropAvatar: mockAvatarCrop,
   avatarGenerationOptions: () => ok({ enabled: true, model: avatarModel }),
   avatarGenerate: (request) => ok({ job_id: request.request_id, model: avatarModel, prompt: "rendered" }),
 };
@@ -34,6 +36,7 @@ const avatarStreams: MockStreamHandlers = {
 };
 
 async function generateAvatarFromPanel() {
+  mockAvatarCropImages();
   fireEvent.click(await screen.findByRole("button", { name: "Generate avatar" }));
   const dialog = await screen.findByRole("dialog");
   await waitFor(() => expect(within(dialog).getByRole("textbox", { name: "Describe the avatar" })).toBeTruthy());
@@ -42,6 +45,7 @@ async function generateAvatarFromPanel() {
   fireEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
   await waitFor(() => expect((within(dialog).getByRole("button", { name: "Use this avatar" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(within(dialog).getByRole("button", { name: "Use this avatar" }));
+  await confirmAvatarCrop();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 }
 
@@ -213,11 +217,13 @@ describe("character creation", () => {
   });
 
   it("keeps the native avatar selection and appearance when returning from scenes", async () => {
+    mockAvatarCropImages();
     const source = { uri: "/tmp/avatar.png" };
     const ingest = vi.fn(() => ({ status: "ok" as const, data: { asset_id: "avatar", url: "https://example.test/avatar.png" } }));
-    await renderCreate({ filesPickOpen: () => ({ status: "ok", data: { sources: [source] } }), assetsIngest: ingest });
+    await renderCreate({ filesPickOpen: () => ({ status: "ok", data: { sources: [source] } }), assetsIngest: ingest, assetsCropAvatar: mockAvatarCrop });
     fireEvent.click(await screen.findByRole("radio", { name: "Off" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose image" }));
+    await confirmAvatarCrop();
     await screen.findByRole("button", { name: "Remove" });
     expect(ingest).toHaveBeenCalledWith({ source, role: "avatar" });
     fireEvent.change(screen.getByPlaceholderText("Character name"), { target: { value: "Aria" } });
@@ -273,6 +279,7 @@ describe("character creation", () => {
   });
 
   it("starts a custom palette with the avatar's detected colors when available", async () => {
+    mockAvatarCropImages();
     const gradient = vi.fn(() => ({ status: "ok" as const, data: {
       colors: [{ r: 17, g: 34, b: 51, hex: "#112233" }, { r: 68, g: 85, b: 102, hex: "#445566" }, { r: 119, g: 136, b: 153, hex: "#778899" }],
       gradient_css: "linear-gradient(135deg, #112233, #778899, #445566)", dominant_hue: null, text_color: "#ffffff", text_secondary: "#cccccc",
@@ -281,8 +288,10 @@ describe("character creation", () => {
       filesPickOpen: () => ({ status: "ok", data: { sources: [{ uri: "/tmp/avatar.png" }] } }),
       assetsIngest: () => ({ status: "ok", data: { asset_id: "avatar", url: "https://example.test/avatar.png" } }),
       avatarGradient: gradient,
+      assetsCropAvatar: mockAvatarCrop,
     });
     fireEvent.click(await screen.findByRole("button", { name: "Choose image" }));
+    await confirmAvatarCrop();
     await waitFor(() => expect(gradient).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
     expect(screen.getByLabelText("Start color").textContent).toBe("#112233");
@@ -577,6 +586,24 @@ describe("character creation", () => {
 });
 
 describe("character avatar generation", () => {
+  it("uses a wide banner crop and retains its source and position on the creation draft", async () => {
+    mockAvatarCropImages();
+    const crop = vi.fn(mockAvatarCrop);
+    await renderCreate({
+      filesPickOpen: () => ok({ sources: [{ uri: "banner.png" }] }),
+      assetsIngest: () => ok({ asset_id: "banner-source", url: "asset://banner-source" }),
+      assetsCropAvatar: crop,
+    });
+    fireEvent.click(await screen.findByRole("radio", { name: "Banner" }));
+    const field = screen.getByText("Banner image").parentElement!;
+    fireEvent.click(within(field).getByRole("button", { name: "Choose an image" }));
+    await confirmAvatarCrop("Position banner");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(crop).toHaveBeenCalledExactlyOnceWith({ asset_id: "banner-source", x: 0, y: 100, size: 800, height: 400 });
+    expect(screen.getByRole("button", { name: "Position" })).toBeTruthy();
+    expect(document.querySelector('img[src="asset://banner-source-cropped"]')).not.toBeNull();
+  });
+
   it("applies a generated avatar to the creation draft without saving it", async () => {
     const save = vi.fn();
     await renderCreate({ ...avatarCalls, characterSave: save }, "en", false, avatarStreams);

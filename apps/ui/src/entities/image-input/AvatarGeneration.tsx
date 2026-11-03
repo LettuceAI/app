@@ -9,6 +9,7 @@ import type { AvatarContext } from "./avatar-session";
 import { AvatarGenerationSheet } from "./AvatarGenerationSheet";
 import { useAvatarOwner } from "./avatar-owner-context";
 import { useAvatarPanelRoute } from "./use-avatar-panel-route";
+import { useAvatarCrop } from "./use-avatar-crop";
 
 export interface AvatarGenerationProps {
   api: ApiClient;
@@ -23,6 +24,7 @@ export function AvatarGeneration({ api, disabled = false, readContext, onUse }: 
   const navigate = useNavigate();
   const owner = useAvatarOwner();
   const panel = useAvatarPanelRoute();
+  const crop = useAvatarCrop(api);
   const trigger = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(panel.open);
   useEffect(() => {
@@ -35,6 +37,12 @@ export function AvatarGeneration({ api, disabled = false, readContext, onUse }: 
   };
   return <>
     <Button ref={trigger} size="sm" variant="ghost" disabled={disabled} leading={<Sparkles size={icon.sm} />} onClick={panel.show}>{t("generate")}</Button>
-    <AvatarGenerationSheet api={api} open={panel.open} onClose={panel.hide} readContext={readContext} onUse={onUse} onConfigure={configure} />
+    <AvatarGenerationSheet api={api} open={panel.open} onClose={panel.hide} readContext={readContext} onUse={async (asset) => {
+      const cropped = await crop.choose(asset);
+      if (!cropped) return false;
+      onUse(cropped);
+      return true;
+    }} onConfigure={configure} />
+    {crop.editor}
   </>;
 }

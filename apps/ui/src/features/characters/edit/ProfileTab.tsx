@@ -7,8 +7,9 @@ import { CreatorField, CreatorNotesField, DefinitionField, DescriptionField, Nam
 import type { StepProps } from "../components/step-props";
 
 export function ProfileTab({ api, form, update, characterId, onModeLoadingChange }: StepProps & { characterId: string; onModeLoadingChange: (loading: boolean) => void }) {
-  const { picking, choose } = useImagePicker(api, update);
+  const { picking, choose, cropEditor } = useImagePicker(api, update, form);
   return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
+    {cropEditor}
     <div className="min-w-0 space-y-6">
       <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
         <AvatarPicker name={form.draft.profile.name.trim()} image={form.images.avatar_original} busy={picking} onChoose={() => void choose("avatar_original")} onRemove={() => update((current) => withImage(current, "avatar_original", null))} actions={<AvatarGenerate api={api} form={form} update={update} characterId={characterId} disabled={picking} />} />

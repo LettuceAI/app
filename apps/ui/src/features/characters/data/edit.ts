@@ -19,7 +19,8 @@ export function formFromView(view: CharacterView_Serialize, lorebooks: string[])
     if (link.slot === "design_reference") references.push(asset);
     else images[link.slot] = asset;
   }
-  return { draft: view.draft, images, references, lorebookIds: lorebooks };
+  const sourceId = view.draft.presentation.banner_source_asset_id;
+  return { draft: view.draft, images, references, lorebookIds: lorebooks, bannerSource: sourceId ? assets.get(sourceId) ?? null : null };
 }
 
 function characterPart(form: CharacterForm): string {

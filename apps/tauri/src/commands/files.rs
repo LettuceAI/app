@@ -28,6 +28,16 @@ pub async fn assets_ingest(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn assets_crop_avatar(
+    context: State<'_, ApiContextSlot>,
+    request: dto::AssetsCropAvatarRequest,
+) -> Result<AssetRef, ApiError> {
+    let context = context.snapshot()?;
+    api::assets_crop_avatar(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn files_pick_open(
     context: State<'_, ApiContextSlot>,
     request: FilesPickOpenRequest,

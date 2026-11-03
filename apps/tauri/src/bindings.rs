@@ -216,6 +216,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::files::legacy_backup_restore,
             commands::files::legacy_database_import,
             commands::files::assets_ingest,
+            commands::files::assets_crop_avatar,
             commands::files::files_pick_open,
             commands::files::files_pick_directory,
             commands::files::files_pick_save,

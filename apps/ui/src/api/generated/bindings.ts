@@ -201,6 +201,7 @@ export const commands = {
 	legacyBackupRestore: (request: BackupRestoreRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("legacy_backup_restore", { request })),
 	legacyDatabaseImport: (request: LegacyDatabaseImportRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("legacy_database_import", { request })),
 	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef_Serialize, ApiError_Serialize>(__TAURI_INVOKE("assets_ingest", { request })),
+	assetsCropAvatar: (request: AssetsCropAvatarRequest_Deserialize) => typedError<AssetRef_Serialize, ApiError_Serialize>(__TAURI_INVOKE("assets_crop_avatar", { request })),
 	filesPickOpen: (request: FilesPickOpenRequest) => typedError<FilesPicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_open", { request })),
 	filesPickDirectory: () => typedError<DirectoryPicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_directory")),
 	filesPickSave: (request: FilesPickSaveRequest) => typedError<FileSavePicked, ApiError_Serialize>(__TAURI_INVOKE("files_pick_save", { request })),
@@ -834,6 +835,24 @@ export type AssetRef_Serialize = {
 	asset_id: string,
 	url: string,
 	preview_url?: string | null,
+};
+
+export type AssetsCropAvatarRequest = AssetsCropAvatarRequest_Serialize | AssetsCropAvatarRequest_Deserialize;
+
+export type AssetsCropAvatarRequest_Deserialize = {
+	asset_id: string,
+	x: number,
+	y: number,
+	size: number,
+	height?: number | null,
+};
+
+export type AssetsCropAvatarRequest_Serialize = {
+	asset_id: string,
+	x: number,
+	y: number,
+	size: number,
+	height?: number,
 };
 
 export type AssetsIngestRequest = {
@@ -4619,6 +4638,7 @@ export type LibraryCharacterPresentationV1_Deserialize = {
 	card_style: LibraryCardStyle,
 	avatar_crop: LibraryCrop | null,
 	banner_crop: LibraryCrop | null,
+	banner_source_asset_id?: string | null,
 	disable_gradient: boolean,
 	gradient_source: LibraryGradientSource,
 	custom_gradient_enabled: boolean,
@@ -4634,6 +4654,7 @@ export type LibraryCharacterPresentationV1_Serialize = {
 	card_style: LibraryCardStyle,
 	avatar_crop: LibraryCrop | null,
 	banner_crop: LibraryCrop | null,
+	banner_source_asset_id?: string | null,
 	disable_gradient: boolean,
 	gradient_source: LibraryGradientSource,
 	custom_gradient_enabled: boolean,

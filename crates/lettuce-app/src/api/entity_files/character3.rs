@@ -255,6 +255,7 @@ pub(in crate::api) fn prepare(
         card_style: card.appearance.card_style,
         avatar_crop: card.media.avatar_crop.map(Into::into),
         banner_crop: card.media.banner_crop.map(Into::into),
+        banner_source_asset_id: None,
         disable_gradient: card.appearance.disable_gradient,
         gradient_source: card.appearance.gradient_source,
         custom_gradient_enabled: card.appearance.custom_gradient.enabled,

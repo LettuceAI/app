@@ -823,6 +823,8 @@ pub struct CharacterPresentationV1 {
     pub card_style: CardStyle,
     pub avatar_crop: Option<Crop>,
     pub banner_crop: Option<Crop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub banner_source_asset_id: Option<AssetId>,
     pub disable_gradient: bool,
     pub gradient_source: GradientSource,
     pub custom_gradient_enabled: bool,
@@ -841,6 +843,7 @@ impl Default for CharacterPresentationV1 {
             card_style: CardStyle::Circle,
             avatar_crop: None,
             banner_crop: None,
+            banner_source_asset_id: None,
             disable_gradient: false,
             gradient_source: GradientSource::Base,
             custom_gradient_enabled: false,
@@ -858,7 +861,9 @@ impl CharacterPresentationV1 {
     /// legacy widget tokens.
     #[must_use]
     pub fn referenced_asset_ids(&self) -> BTreeSet<AssetId> {
-        self.chat_appearance.referenced_asset_ids()
+        let mut assets = self.chat_appearance.referenced_asset_ids();
+        assets.extend(self.banner_source_asset_id);
+        assets
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
@@ -873,6 +878,9 @@ impl CharacterPresentationV1 {
         }
         if let Some(crop) = self.banner_crop {
             crop.validate()?;
+        }
+        if self.banner_source_asset_id.is_some() && self.banner_crop.is_none() {
+            return Err(ValidationError::InvalidValue { field: "banner_crop" });
         }
         for color in &self.custom_gradient_colors {
             validate_color("custom_gradient_color", color)?;
