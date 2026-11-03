@@ -47,7 +47,7 @@ Loading checks that `probabilities` is a float output with as many columns as `l
 
 ## Running inference
 
-Embedding and classification are CPU work behind a job: callers declare model-load, disk-read and CPU resources, and the runtime checks cancellation before tokenizing, before execution, during ONNX graph execution and before returning output. Apple targets try the CoreML execution provider and fall back to CPU with a log line; other targets use the CPU.
+Embedding and classification are CPU work behind a job: callers declare model-load, disk-read and CPU resources, and the runtime checks cancellation before tokenizing, before execution, during ONNX graph execution and before returning output. Every target uses ONNX Runtime's default CPU execution provider, including macOS and iOS.
 
 ## Memory projections
 
@@ -74,8 +74,10 @@ Every ONNX consumer (embeddings, the emotion classifier, Kokoro in `lettuce-spee
 - Files are written under a temporary name first and the library is written last, so an interrupted unpack never leaves a zero-byte library or a usable library without its siblings. A failed write removes its temporary file, and a cancellation check runs between entries.
 - Downloaded macOS dylibs, old and new, are re-signed ad hoc (quarantine attribute removed, `codesign --force --sign -`) when `codesign -d` shows them unsigned or signed with a real team identifier. Failures are only logged.
 
+The official macOS 1.22.0 runtime links CoreML into the main dylib, but the app uses its CPU provider. The runtime does not ship separate shared or CoreML provider dylibs, so their absence is expected. The `otool` header check reads the `DYLIB` file type that Apple's tool prints for an `MH_DYLIB` binary.
+
 ### Initializing it
 
-`initialize_process_onnx_runtime` is the only initializer, and the composition root calls it before anything else uses ONNX. It preloads the library before `ort` sees its path (on macOS also the shared and CoreML provider dylibs; on Android the bundled `libonnxruntime.so`, which Gradle merges into the APK from the `com.microsoft.onnxruntime:onnxruntime-android` AAR at the version `ONNX_RUNTIME_VERSION` names; the two must stay equal), so a missing or broken file fails with a retryable error. The `ort` environment is then committed inside `catch_unwind`, because `ort` panics when loading fails.
+`initialize_process_onnx_runtime` is the only initializer, and the composition root calls it before anything else uses ONNX. It preloads the library before `ort` sees its path (on Android the bundled `libonnxruntime.so`, which Gradle merges into the APK from the `com.microsoft.onnxruntime:onnxruntime-android` AAR at the version `ONNX_RUNTIME_VERSION` names; the two must stay equal), so a missing or broken file fails with a retryable error. The `ort` environment is then committed inside `catch_unwind`, because `ort` panics when loading fails.
 
 From that point a failure is permanent for the process and returned to every later call: `init_from` has pinned the path, and `ort`'s `OnceLock` marks a failed setup as done, so a retry could report success over an uninitialized environment. After the first success every call reuses the environment, and `committed_onnx_runtime` reports it. Kokoro never initializes the runtime itself; it requires the `OnnxRuntimeCommitted` evidence the composition root hands out after this initializer succeeded.
