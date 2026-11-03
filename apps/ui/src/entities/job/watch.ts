@@ -1,5 +1,5 @@
 import type { ApiClient } from "@/api/client";
-import type { JobView } from "@/api/generated/bindings";
+import type { ImageProgress, JobView } from "@/api/generated/bindings";
 
 export const terminalJobStates: ReadonlySet<JobView["state"]> = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
 
@@ -31,6 +31,7 @@ export function watchJob(
   onJob: (job: JobView) => void,
   signal: AbortSignal,
   onText?: (text: string | null, reasoning: string | null) => void,
+  onImageProgress?: (progress: ImageProgress) => void,
 ): Promise<JobView> {
   return new Promise((resolve, reject) => {
     const stream = new AbortController();
@@ -66,6 +67,7 @@ export function watchJob(
         (event) => {
           if ("job" in event) apply(event.job);
           else if (event.type === "text_delta" && !settled) onText?.(event.text, event.reasoning);
+          else if (event.type === "image_progress" && !settled) onImageProgress?.(event.progress);
         },
         { signal: stream.signal },
       )

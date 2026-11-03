@@ -220,6 +220,7 @@ export const commands = {
 	localModelsDirGet: () => typedError<LocalModelsDir, ApiError_Serialize>(__TAURI_INVOKE("local_models_dir_get")),
 	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("local_models_dir_set", { request })),
 	imageGenerate: (request: ImageGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_generate", { request })),
+	imageAssetPrompt: (request: ImageAssetPromptRequest) => typedError<string | null, ApiError_Serialize>(__TAURI_INVOKE("image_asset_prompt", { request })),
 	imageUpscale: (request: ImageUpscaleRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("image_upscale", { request })),
 	imageCapabilities: (request: ImageCapabilitiesRequest) => typedError<ImageCapabilities, ApiError_Serialize>(__TAURI_INVOKE("image_capabilities", { request })),
 	playgroundHistoryList: (request: PlaygroundHistoryListRequest) => typedError<PlaygroundHistoryPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("playground_history_list", { request })),
@@ -3369,6 +3370,10 @@ export type HistoricalSourceView = {
 };
 
 export type IdChange = { type: "set"; id: string } | { type: "reset" };
+
+export type ImageAssetPromptRequest = {
+	asset_id: string,
+};
 
 /**  Where the image belongs for usage reporting. */
 export type ImageAttribution = {

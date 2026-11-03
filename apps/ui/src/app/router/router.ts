@@ -382,8 +382,9 @@ const settingsSectionRoute = createRoute({
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat/$conversationId",
-  validateSearch: (search: Record<string, unknown>): { panel?: "settings"; message?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { panel?: "settings"; message?: string; sceneImage?: string } => ({
     ...(search.panel === "settings" ? { panel: "settings" as const } : {}),
+    ...(typeof search.sceneImage === "string" && search.sceneImage !== "" ? { sceneImage: search.sceneImage } : {}),
     ...(typeof search.message === "string" && search.message !== ""
       ? { message: search.message }
       : {}),
@@ -515,6 +516,7 @@ declare module "@tanstack/history" {
     companionPickerPushed?: boolean;
     promptPushed?: boolean;
     panelPushed?: boolean;
+    sceneImagePushed?: boolean;
     libraryOverlayPushed?: boolean;
     imagePickerPushed?: boolean;
     avatarPanelPushed?: boolean;

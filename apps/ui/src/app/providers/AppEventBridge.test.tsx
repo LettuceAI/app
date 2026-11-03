@@ -111,6 +111,12 @@ describe("AppEventBridge", () => {
     expect(invalidated()).toEqual([]);
   });
 
+  it("refreshes only the affected timeline when a scene image changes", async () => {
+    const { transport, invalidated } = await setup();
+    await act(async () => transport.emitAppEvent({ type: "message_scene_image_changed", conversation_id: "c1", message_id: "m1" }));
+    expect(invalidated()).toEqual(["conversations/detail/c1/messages"]);
+  });
+
   it("refreshes memory permissions after a character change", async () => {
     const { transport, queryClient } = await setup();
     const key = queryKeys.memory.detail("c1");

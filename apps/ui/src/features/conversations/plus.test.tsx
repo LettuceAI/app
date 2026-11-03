@@ -413,7 +413,7 @@ describe("chat plus menu and microphone", () => {
     });
     expect(await screen.findByText("Audio clip")).toBeTruthy();
     expect(screen.getByText("Document")).toBeTruthy();
-    expect(screen.getAllByAltText("Attached image")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Attached image" })).toHaveLength(2);
   });
 
   it("shows the attachment in the pending bubble until the stored message arrives", async () => {
@@ -424,6 +424,6 @@ describe("chat plus menu and microphone", () => {
     await attachImage();
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Remove cat.png" })).toBeNull());
-    expect(await screen.findByAltText("cat.png")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "cat.png" })).toBeTruthy();
   });
 });

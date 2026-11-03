@@ -22,6 +22,16 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn image_asset_prompt(
+    context: State<'_, ApiContextSlot>,
+    request: lettuce_contracts::ImageAssetPromptRequest,
+) -> Result<Option<String>, ApiError> {
+    let context = context.snapshot()?;
+    api::image_asset_prompt(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn avatar_generation_options(context: State<'_, ApiContextSlot>) -> Result<lettuce_contracts::AvatarGenerationOptions, ApiError> {
     let context = context.snapshot()?;
     api::avatar_generation_options(&context).await

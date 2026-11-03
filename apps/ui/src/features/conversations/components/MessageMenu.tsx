@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Copy, GitBranch, History, Pencil, Pin, PinOff, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Copy, GitBranch, History, Image, Pencil, Pin, PinOff, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Skeleton } from "@lettuceai/crisp";
 import { object } from "@/entities/preferences";
 import type { ApiClient } from "@/api/client";
 import type { TimelineMessage } from "@/api/generated/bindings";
-import { statsOf } from "../data/messages";
+import { mediaOf, statsOf } from "../data/messages";
 import { metricsQuery, usageQuery } from "../data/queries";
 import { MessagePromptDetails, SpeakerSelectionReason } from "./MessagePromptDetails";
 import { MessageSources } from "./MessageSources";
@@ -32,6 +32,7 @@ export interface MessageMenuProps {
   onBranchGroup?: () => void;
   groupBranch?: boolean;
   onDelete: () => void;
+  onSceneImage?: () => void;
 }
 
 export function MessageStats({ api, conversationId, message }: { api: ApiClient; conversationId: string; message: TimelineMessage }) {
@@ -92,7 +93,7 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, onCompanionEffect }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, onCompanionEffect, onSceneImage }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
@@ -103,6 +104,7 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
       {message.role === "assistant" && <MessageSources key={message.id} api={api} conversationId={conversationId} messageId={message.id} />}
       <ListGroup>
         {!scene && <ListRowButton icon={<Copy size={icon.lg} />} title={t("menu.copy")} chevron={false} onClick={onCopy} />}
+        {onSceneImage && <ListRowButton icon={<Image size={icon.lg} />} title={t(mediaOf(message).some((item) => item.kind === "image") ? "sceneImage.regenerate" : "sceneImage.title")} description={busy ? t("menu.regenerateBusy") : t("sceneImage.hint")} disabled={busy} onClick={onSceneImage} />}
         {canEdit && <ListRowButton icon={<Pencil size={icon.lg} />} title={t("menu.edit")} onClick={onEdit} />}
         {canRegenerate && (
           <>

@@ -45,6 +45,7 @@ import { ParticipantsBar } from "./components/ParticipantsBar";
 import { type Speaker } from "./components/SpeakerSheet";
 import { BranchSheet, type BranchTarget } from "./components/BranchSheet";
 import { EffectSheet } from "./companion/EffectSheet";
+import { SceneImageSheet } from "./scene-images/SceneImageSheet";
 import { Timeline } from "./components/Timeline";
 import {
   addUserMessage,
@@ -126,7 +127,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     strict: false,
     select: (search) => (search as { message?: string }).message ?? null,
   });
-  const [landing, setLanding] = useState<string | null>(requestedMessage);
+  const sceneImageId = useRouteSearch({ strict: false, select: (search) => (search as { sceneImage?: string }).sceneImage ?? null });
+  const [landing, setLanding] = useState<string | null>(requestedMessage ?? sceneImageId);
   const homing = useRef(false);
   const stuck = useRef(true);
   const [followRequest, setFollowRequest] = useState(0);
@@ -241,6 +243,25 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   );
 
   const menuMessage = menuId ? (messages.find((message) => message.id === menuId) ?? null) : null;
+  const sceneImageMessage = messages.find((message) => message.id === sceneImageId && message.role === "assistant");
+  const sceneImageClosing = useRef(false);
+  useEffect(() => { sceneImageClosing.current = false; }, [sceneImageId]);
+  const openSceneImage = useCallback((message: TimelineMessage) => {
+    setMenuId(null);
+    void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: { sceneImage: message.id }, state: { sceneImagePushed: true }, resetScroll: false });
+  }, [navigate, conversationId]);
+  const closeSceneImage = useCallback(() => {
+    if (sceneImageClosing.current || !router.state.location.search.sceneImage) return;
+    sceneImageClosing.current = true;
+    if (router.state.location.state.sceneImagePushed) router.history.back();
+    else void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: {}, replace: true, resetScroll: false });
+  }, [router, navigate, conversationId]);
+  const seenSceneImage = useRef<string | null>(null);
+  useEffect(() => {
+    if (sceneImageMessage) seenSceneImage.current = sceneImageMessage.id;
+    else if (sceneImageId && seenSceneImage.current === sceneImageId) closeSceneImage();
+    if (!sceneImageId) seenSceneImage.current = null;
+  }, [sceneImageId, sceneImageMessage, closeSceneImage]);
   const { shown: shownMenu } = useClosingValue(menuMessage);
 
   const isGroup = view?.kind === "group";
@@ -618,6 +639,9 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     body = (
       <>
         <Timeline
+          conversationId={conversationId}
+          onSceneImage={openSceneImage}
+          preserveScroll={sceneImageId !== null}
           columnStyle={columnStyle}
           timeline={timeline}
           store={store}
@@ -800,9 +824,12 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               onBranchCharacter={() => chooseBranch(shownMenu.id, "character")}
               {...(directCharacterId ? { onBranchGroup: () => chooseBranch(shownMenu.id, "group") } : {})}
               onDelete={() => void remove(shownMenu)}
+              {...(!isGroup && shownMenu.role === "assistant" ? { onSceneImage: () => openSceneImage(shownMenu) } : {})}
             />
           )}
         </Sheet>
+
+        {!isGroup && sceneImageMessage && <SceneImageSheet key={sceneImageMessage.id} api={api} conversationId={conversationId} message={sceneImageMessage} busy={sending} onClose={closeSceneImage} />}
 
         {shownRegeneration && <RegenerationSheet
           key={regenerationSession}

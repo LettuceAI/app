@@ -43,6 +43,8 @@ import { PendingReply, StreamingReply } from "./StreamingReply";
 import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 
 export interface TimelineProps {
+  conversationId: string;
+  onSceneImage: (message: TimelineMessage) => void;
   columnStyle?: CSSProperties;
   timeline: TimelineData;
   store: GenerationStore;
@@ -63,11 +65,14 @@ export interface TimelineProps {
   onScene: (message: TimelineMessage, delta: -1 | 1) => void;
   onRetry: () => void;
   bottomInset?: boolean;
+  preserveScroll?: boolean;
 }
 
 const nearBottom = 80;
 
 export function Timeline({
+  conversationId,
+  onSceneImage,
   timeline,
   store,
   onStick,
@@ -87,6 +92,7 @@ export function Timeline({
   onScene,
   onRetry,
   bottomInset = false,
+  preserveScroll = false,
   columnStyle,
 }: TimelineProps) {
   const { t } = useTranslation("conversations");
@@ -114,6 +120,7 @@ export function Timeline({
   );
   const prepend = useRef<{ height: number; top: number } | null>(null);
   const lastTop = useRef(0);
+  const heldScroll = useRef<{ top: number; pinned: boolean } | null>(null);
   const dragging = useRef(false);
   const touchY = useRef<number | null>(null);
   const touching = useRef(false);
@@ -176,6 +183,25 @@ export function Timeline({
     const el = scroller.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages, meta.active, meta.userText, meta.failure, pendingTurn, followRequest]);
+
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    if (preserveScroll) {
+      heldScroll.current = { top: el.scrollTop, pinned: stick.current };
+      return;
+    }
+    const saved = heldScroll.current;
+    heldScroll.current = null;
+    if (!saved) return;
+    const restore = () => {
+      el.scrollTop = saved.pinned ? el.scrollHeight : saved.top;
+      lastTop.current = el.scrollTop;
+    };
+    restore();
+    const frame = requestAnimationFrame(restore);
+    return () => cancelAnimationFrame(frame);
+  }, [preserveScroll]);
 
   useEffect(() => {
     const body = content.current;
@@ -365,6 +391,8 @@ export function Timeline({
                   />
                 ) : (
                   <MessageRow
+                    conversationId={conversationId}
+                    onSceneImage={onSceneImage}
                     message={message}
                     group={group}
                     participants={participants}

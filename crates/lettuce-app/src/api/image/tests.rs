@@ -198,6 +198,27 @@ fn remote_model(context: &ApiContext) -> ModelProfileId {
     image_model(context, ProviderProtocol::OpenAiCompatible, "openai")
 }
 
+#[tokio::test]
+async fn image_asset_prompt_is_absent_for_uploads_and_rejects_missing_assets() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    ::image::RgbImage::new(2, 2).write_to(&mut bytes, ::image::ImageFormat::Png).expect("png");
+    let uploaded = context.media().expect("media").ingest(bytes.get_ref().as_slice(), lettuce_media::IngestRequest::new(
+        lettuce_media::AssetKind::MessageImage, lettuce_media::AssetOrigin::Upload,
+        lettuce_media::RetentionClass::Persistent, lettuce_media::AssetProvenanceV1::default(),
+    )).expect("upload");
+    assert_eq!(image_asset_prompt(context, dto::ImageAssetPromptRequest {
+        asset_id: uploaded.asset.id.to_string(),
+    }).await.expect("upload prompt"), None);
+    assert_eq!(image_asset_prompt(context, dto::ImageAssetPromptRequest {
+        asset_id: AssetId::new().to_string(),
+    }).await.expect_err("missing image").code, ApiErrorCode::NotFound);
+    assert_eq!(image_asset_prompt(context, dto::ImageAssetPromptRequest {
+        asset_id: "invalid".into(),
+    }).await.expect_err("invalid image id").code, ApiErrorCode::InvalidInput);
+}
+
 fn avatar_request(model: ModelProfileId) -> dto::AvatarGenerateRequest {
     dto::AvatarGenerateRequest {
         request_id: RequestId::new().to_string(),

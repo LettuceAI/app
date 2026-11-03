@@ -1,7 +1,7 @@
 import { AssetAudio } from "@/shared/ui/AssetAudio";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Badge, cn, Highlight, InlineMarkdown, Message, relativeTime, type MessageVariants } from "@lettuceai/crisp";
+import { Badge, cn, Highlight, InlineMarkdown, MediaTile, Message, relativeTime, type MessageVariants } from "@lettuceai/crisp";
 import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings";
 import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 import {
@@ -14,11 +14,13 @@ import {
   type Group,
 } from "../data/messages";
 import { ReplyDetails } from "./ReplyDetails";
+import { SceneImageStatus } from "../scene-images/SceneImageStatus";
+import { MessageImageViewer } from "./MessageImageViewer";
 
 export function MessageBody({ text, query }: { text: string; query: string }) {
   const needle = query.toLowerCase();
   return (
-    <div className="space-y-2">
+    <div className="select-text space-y-2">
       {paragraphsOf(text).map((paragraph, index) => (
         <p key={index} className="whitespace-pre-line break-words">
           {needle && paragraph.toLowerCase().includes(needle) ? (
@@ -34,23 +36,25 @@ export function MessageBody({ text, query }: { text: string; query: string }) {
 
 export function Attached({ media }: { media: readonly MediaItem[] }) {
   const { t } = useTranslation("conversations");
-  const pictures = media.filter((item) => item.kind === "image" || item.kind === null);
+  const pictures = media.filter((item) => item.url && (item.kind === "image" || item.kind === null));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIndex = pictures.findIndex((picture) => picture.id === selectedId);
   return (
     <div className="space-y-1.5">
       {pictures.length > 0 && (
         <div className={cn("grid gap-1.5", pictures.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
-          {pictures.map((item) =>
-            item.url ? (
-              <img
+          {pictures.map((item) => (
+              <MediaTile
                 key={item.id}
-                src={item.url}
+                src={item.url!}
                 alt={item.name ?? t("message.image")}
-                className="max-h-56 w-full rounded-lg object-cover"
+                className="max-h-56"
+                onClick={() => setSelectedId(item.id)}
               />
-            ) : null,
-          )}
+          ))}
         </div>
       )}
+      {selectedIndex >= 0 && <MessageImageViewer images={pictures} index={selectedIndex} onIndexChange={(index) => setSelectedId(index === null ? null : pictures[index]?.id ?? null)} />}
       {media.map((item) =>
         item.kind === "audio" ? (
           <AssetAudio key={item.id} title={item.name ?? t("message.audio")} src={item.url} />
@@ -76,6 +80,8 @@ export interface MessageRowProps {
   onMenu: (message: TimelineMessage) => void;
   onVariant: (message: TimelineMessage, delta: -1 | 1) => void;
   scene?: MessageVariants;
+  conversationId: string;
+  onSceneImage: (message: TimelineMessage) => void;
 }
 
 function Row({
@@ -90,11 +96,15 @@ function Row({
   onMenu,
   onVariant,
   scene,
+  conversationId,
+  onSceneImage,
 }: MessageRowProps) {
   const look = useChatLook();
   const appearance = useMessageAppearance();
   const author = authorOf(participants, message);
   const media = mediaOf(message);
+  const picturesBelow = message.role === "assistant" ? media.filter((item) => item.kind === "image" || item.kind === null) : [];
+  const attachments = message.role === "assistant" ? media.filter((item) => item.kind !== "image" && item.kind !== null) : media;
   const index = message.candidate_index;
   return (
     <div id={`m-${message.id}`} className={spacing(group, look.messageGap)}>
@@ -131,12 +141,14 @@ function Row({
               },
             }
           : {})}
-        {...(media.length > 0 ? { attachments: <Attached media={media} /> } : {})}
+        {...(attachments.length > 0 ? { attachments: <Attached media={attachments} /> } : {})}
         onMenu={() => onMenu(message)}
         held={held}
         className={cn("mt-0! transition-opacity", dimmed && "opacity-25")}
       >
         <MessageBody text={textOf(message)} query={query} />
+        {picturesBelow.length > 0 && <div className="mt-2"><Attached media={picturesBelow} /></div>}
+        {message.scene_image && <SceneImageStatus conversationId={conversationId} message={message} onReview={onSceneImage} />}
       </Message>
     </div>
   );

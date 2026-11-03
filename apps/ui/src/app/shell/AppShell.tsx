@@ -3,6 +3,7 @@ import {
   cn,
   CrispStringsProvider,
   icon,
+  IconButton,
   TitleBar,
   useCompactLayout,
   type NavDestination,
@@ -10,7 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Compass, House, Library, MessageSquare, Settings, Users } from "lucide-react";
+import { ArrowLeft, Compass, House, Library, MessageSquare, PanelLeft, Settings, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appStatusQuery } from "@/api/app-status-query";
 import type { WindowEdge } from "@/api/window-controls";
@@ -103,6 +104,18 @@ export function AppShell() {
           }
         : {})}
     >
+      {!tabs && !navigationHidden && !welcome && (
+        <IconButton
+          label={t(sidebarOpen ? "navigation.collapseSidebar" : "navigation.expandSidebar")}
+          size="sm"
+          aria-expanded={sidebarOpen}
+          data-tauri-drag-region="false"
+          className={cn("pointer-events-auto", windowPlatform !== "macos" && "ml-2")}
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+        >
+          <PanelLeft size={icon.lg} />
+        </IconButton>
+      )}
       <DownloadsMenu />
     </TitleBar>
   ) : null;
@@ -161,7 +174,6 @@ export function AppShell() {
               {...(tabs
                 ? {}
                 : {
-                    onNavToggle: () => setSidebarOpen(!sidebarOpen),
                     ...(settingsMode
                       ? {
                           navSection: (

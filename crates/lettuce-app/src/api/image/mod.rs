@@ -34,7 +34,7 @@ pub use engine::{
 pub(crate) use generate::settings as settings_for_test;
 pub(crate) use generate::{generation_view, record_upscale};
 pub use generate::{
-    image_capabilities, image_generate, image_upscale, playground_history_delete,
+    image_asset_prompt, image_capabilities, image_generate, image_upscale, playground_history_delete,
     playground_history_list,
 };
 pub use helpers::{avatar_gradient, avatar_prompt, image_design_reference};

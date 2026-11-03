@@ -620,6 +620,16 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
             .await
             .expect("settled replay");
         assert_eq!(image_job.job_id, replayed.job_id);
+        let record = lettuce_image_generation::ImageGenerationRepository::get(
+            context.backend().database(), image_job.job_id.parse().expect("job id"),
+        ).expect("generation record");
+        let lettuce_image_generation::ImageGenerationState::Succeeded { result } = &record.state else {
+            panic!("generated image");
+        };
+        let saved_prompt = crate::api::image_asset_prompt(context, dto::ImageAssetPromptRequest {
+            asset_id: result.images[0].asset_id.to_string(),
+        }).await.expect("image prompt");
+        assert_eq!(saved_prompt, Some(record.request.prompt));
     }
     assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 2);
     let prompts = scene.images.prompts.lock().expect("prompts").clone();

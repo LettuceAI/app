@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::AssetRef;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ImageAssetPromptRequest {
+    pub asset_id: String,
+}
+
 /// Why an image operation failed, for the UI to act on. The engine's own
 /// words travel next to it as a diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

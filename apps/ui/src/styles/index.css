@@ -13,6 +13,16 @@ body,
 body {
   overflow: hidden;
   background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable]:not([contenteditable="false"]),
+pre {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 @theme {

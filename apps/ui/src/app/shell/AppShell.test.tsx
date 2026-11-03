@@ -137,11 +137,27 @@ describe("primary navigation", () => {
 });
 
 describe("desktop sidebar", () => {
-  it("names the first destination Home and starts expanded", async () => {
+  it("starts expanded with its toggle in the title bar outside navigation", async () => {
     await renderShell();
     expect(await screen.findByRole("button", { name: "Home" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Chats" })).toBeNull();
-    expect(await screen.findByRole("button", { name: "Collapse sidebar" })).toBeTruthy();
+    const toggle = await screen.findByRole("button", { name: "Collapse sidebar" });
+    expect(toggle.closest("nav")).toBeNull();
+    expect(toggle.parentElement?.parentElement?.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(toggle.getAttribute("data-tauri-drag-region")).toBe("false");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).queryByRole("button", { name: /sidebar/ })).toBeNull();
+  });
+
+  it("keeps the macOS traffic light area before the title bar toggle", async () => {
+    await renderShell({ calls: {
+      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "macos", ui_state } }),
+    } });
+    const toggle = await screen.findByRole("button", { name: "Collapse sidebar" });
+    const titleBar = toggle.parentElement?.parentElement;
+    expect(titleBar?.classList.contains("pl-20")).toBe(true);
+    expect(toggle.parentElement?.firstElementChild).toBe(toggle);
+    expect(toggle.closest("nav")).toBeNull();
   });
 
   it("saves the folded state in the device UI state", async () => {

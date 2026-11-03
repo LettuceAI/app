@@ -87,7 +87,7 @@ pub use image::{
     civitai_lora_download, civitai_model, civitai_search, hf_image_bundle_files,
     hf_image_bundle_install, hf_image_bundle_profiles, hf_image_bundle_retry,
     hf_image_bundle_retry_registration, hf_image_bundle_search, image_capabilities,
-    image_design_reference, image_generate, image_models_downloaded, image_upscale,
+    image_asset_prompt, image_design_reference, image_generate, image_models_downloaded, image_upscale,
     lora_keywords_discover, loras_delete, loras_import, loras_list, loras_update_keywords,
     playground_history_delete, playground_history_list, sd_bundle_runnability, sd_catalog,
     sd_component_library, sd_compute_policy_get, sd_compute_policy_save, sd_detect_model_file,

@@ -117,6 +117,7 @@ type AppEventInvalidations = {
 
 /** Which cached queries an application event makes stale; each key invalidates everything under it. */
 export const appEventInvalidations: AppEventInvalidations = {
+  message_scene_image_changed: (event) => [queryKeys.conversations.messages(event.conversation_id)],
   generation_settled: (event) => [
     queryKeys.usage.all,
     queryKeys.conversations.lists(),

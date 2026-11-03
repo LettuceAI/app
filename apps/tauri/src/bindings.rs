@@ -235,6 +235,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::local_models::local_models_dir_get,
             commands::local_models::local_models_dir_set,
             commands::image::image_generate,
+            commands::image::image_asset_prompt,
             commands::image::image_upscale,
             commands::image::image_capabilities,
             commands::image::playground_history_list,

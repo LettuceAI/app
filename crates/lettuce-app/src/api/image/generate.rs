@@ -29,6 +29,29 @@ pub(crate) fn settings(value: &dto::ImageSettings) -> Result<StableDiffusionSett
     serde_json::from_value(json).map_err(|error| invalid_field("settings", error.to_string()))
 }
 
+pub async fn image_asset_prompt(
+    context: &ApiContext,
+    request: dto::ImageAssetPromptRequest,
+) -> Result<Option<String>, ApiError> {
+    let asset_id: AssetId = parse_id(&request.asset_id, "asset_id")?;
+    context.blocking(move |context| {
+        let database = context.backend().database();
+        let asset = MediaAssetRepository::get(database, asset_id)
+            .map_err(internal)?
+            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the image asset was not found"))?;
+        let Some(job_id) = asset.provenance.producing_job_id else { return Ok(None); };
+        let record = match ImageGenerationRepository::get(database, job_id) {
+            Ok(record) => record,
+            Err(ImageGenerationRepositoryError::NotFound) => return Ok(None),
+            Err(error) => return Err(internal(error)),
+        };
+        match record.state {
+            ImageGenerationState::Succeeded { result } if result.images.iter().any(|image| image.asset_id == asset_id) => Ok(Some(record.request.prompt)),
+            _ => Ok(None),
+        }
+    }).await
+}
+
 pub(super) fn lora(value: &dto::ImageLora) -> StableDiffusionLora {
     StableDiffusionLora {
         path: value.path.clone(),
