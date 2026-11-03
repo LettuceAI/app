@@ -365,7 +365,7 @@ async fn an_automatic_scene_image_starts_with_the_reply_and_lands_on_the_message
     );
     let prompts = scene.images.prompts.lock().expect("prompts").clone();
     assert_eq!(prompts.len(), 1);
-    assert!(prompts[0].ends_with("a harbor"), "{}", prompts[0]);
+    assert_eq!(prompts[0].matches("# Scene Request\na harbor").count(), 1, "{}", prompts[0]);
     feed.publish(context).await.expect("publish");
     assert!(api_events(&scene.harness).iter().any(|event| matches!(
         event,
@@ -410,7 +410,7 @@ async fn an_ask_first_follow_up_survives_a_restart_and_its_approval_runs_the_job
     assert_eq!(media_count(&shown), 1);
     let prompts = scene.images.prompts.lock().expect("prompts").clone();
     assert_eq!(prompts.len(), 1);
-    assert!(prompts[0].ends_with("a red harbor"), "{}", prompts[0]);
+    assert_eq!(prompts[0].matches("# Scene Request\na red harbor").count(), 1, "{}", prompts[0]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -640,8 +640,8 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
     }
     assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 2);
     let prompts = scene.images.prompts.lock().expect("prompts").clone();
-    assert!(prompts[0].ends_with("manual harbor"), "{}", prompts[0]);
-    assert!(prompts[1].ends_with("second harbor"), "{}", prompts[1]);
+    assert_eq!(prompts[0].matches("manual harbor").count(), 1, "{}", prompts[0]);
+    assert_eq!(prompts[1].matches("second harbor").count(), 1, "{}", prompts[1]);
 }
 
 #[derive(Default)]
@@ -873,6 +873,11 @@ async fn group_scene_prompts_use_the_message_author_even_when_the_cast_changes()
     let scene = scene_harness(Reply::Text("Hello Cleo."), Vec::new(), SceneGenerationMode::Manual);
     let cast = super::turns_tests::group_cast(&scene.harness, "group-scene-writer").await;
     let context = &scene.harness.context;
+    let writer = crate::image::prompt_selection::custom_prompt(context.backend().database(), crate::BuiltInPromptId::ScenePromptWriter, "Custom scene writer instructions");
+    let stored = GlobalSettingsStore::load(context.backend().database()).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.scene_writer_prompt_id = Some(writer.id);
+    GlobalSettingsStore::save(context.backend().database(), settings, stored.default_model_profile_id, stored.revision).expect("save");
     send(
         &scene.harness,
         &cast.chat,
@@ -902,6 +907,30 @@ async fn group_scene_prompts_use_the_message_author_even_when_the_cast_changes()
     }
     assert_eq!(scene.images.calls(), 0);
     assert_eq!(scene.harness.provider.requests.lock().expect("requests").len(), 3);
+    for request in scene.harness.provider.requests.lock().expect("requests").iter().skip(1) {
+        assert!(request.context.messages.iter().flat_map(|message| &message.parts).any(|part| matches!(part, lettuce_conversations::ProviderContextPart::Text { text } if text.contains("Custom scene writer instructions"))));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scene_images_use_the_selected_generation_prompt() {
+    let scene = scene_harness(Reply::Text(TAGGED), vec![Outcome::Image], SceneGenerationMode::Manual);
+    let context = &scene.harness.context;
+    let document = crate::image::prompt_selection::custom_prompt(context.backend().database(), crate::BuiltInPromptId::SceneGeneration, "Custom scene generation instructions");
+    let stored = GlobalSettingsStore::load(context.backend().database()).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.scene_prompt_id = Some(document.id);
+    GlobalSettingsStore::save(context.backend().database(), settings, stored.default_model_profile_id, stored.revision).expect("save");
+    let (_, reply) = reply_with_scene(&scene.harness, "custom-scene-prompt").await;
+    message_scene_image_generate(context, dto::MessageSceneImageGenerateRequest {
+        client_operation_id: uuid::Uuid::new_v4().to_string(), message_id: reply,
+        prompt: "A painted harbor at sunset".into(), cast: None,
+    }).await.expect("image job");
+    run_jobs(context).await;
+    let prompts = scene.images.prompts.lock().expect("prompts");
+    assert_eq!(prompts.len(), 1);
+    assert!(prompts[0].contains("Custom scene generation instructions"));
+    assert_eq!(prompts[0].matches("A painted harbor at sunset").count(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

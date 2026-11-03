@@ -3,6 +3,16 @@
   "back": "Back",
   "notYet": "Not available yet",
   "image": {
+    "prompts": {
+      "avatar_generation": "Avatar system prompt",
+      "avatar_edit_request": "Avatar edit system prompt",
+      "scene_generation": "Scene system prompt",
+      "scene_prompt_writer": "Scene writer system prompt",
+      "design_reference_writer": "Design reference system prompt",
+      "builtIn": "Built in",
+      "localDirect": "Local diffusion models use your image prompt directly",
+      "unavailable": "Prompt unavailable"
+    },
     "loading": "Loading image settings",
     "search": "Search models",
     "addModel": "Add a model",

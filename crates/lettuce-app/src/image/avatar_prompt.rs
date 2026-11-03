@@ -70,7 +70,19 @@ impl crate::AppBackend {
         provider_kind: &str,
         request: &AvatarPromptRequest,
     ) -> Result<String, AvatarPromptError> {
-        avatar_image_prompt(self.database(), provider_kind, request)
+        if provider_kind.eq_ignore_ascii_case(lettuce_image_generation::LOCAL_DIFFUSION_PROVIDER_KIND) {
+            return Ok(request.raw_request().to_owned());
+        }
+        let settings = lettuce_settings::GlobalSettingsStore::load(self.database())
+            .map_err(|_| AvatarPromptError::Unavailable)?.settings.image_generation;
+        let selected = match request {
+            AvatarPromptRequest::Generation { .. } => settings.avatar_prompt_id,
+            AvatarPromptRequest::Edit { .. } => settings.avatar_edit_prompt_id,
+        };
+        let document = crate::image::prompt_selection::selected_prompt(self.database(), selected, request.built_in())
+            .map_err(|_| AvatarPromptError::Unavailable)?
+            .ok_or(AvatarPromptError::Unavailable)?;
+        render_avatar_prompt(&document, request)
     }
 }
 
@@ -348,6 +360,28 @@ mod tests {
             )
             .expect("seed prompt")
         );
+    }
+
+    #[test]
+    fn remote_avatar_generation_uses_the_selected_custom_prompt() {
+        let backend = crate::AppBackend::open_in_memory(lettuce_types::TimestampMillis::new(1)).expect("backend");
+        let document = crate::image::prompt_selection::custom_prompt(backend.database(), BuiltInPromptId::AvatarGeneration, "Custom avatar instructions");
+        let edit = crate::image::prompt_selection::custom_prompt(backend.database(), BuiltInPromptId::AvatarEdit, "Custom avatar edit instructions");
+        let stored = lettuce_settings::GlobalSettingsStore::load(backend.database()).expect("settings");
+        let mut settings = stored.settings;
+        settings.image_generation.avatar_prompt_id = Some(document.id);
+        settings.image_generation.avatar_edit_prompt_id = Some(edit.id);
+        lettuce_settings::GlobalSettingsStore::save(backend.database(), settings, stored.default_model_profile_id, stored.revision).expect("save");
+        let prompt = backend.avatar_image_prompt("openai", &generation("A navigator.")).expect("prompt");
+        assert!(prompt.starts_with("Custom avatar instructions"));
+        assert!(prompt.contains("silver hair, rainy harbor"));
+        let prompt = backend.avatar_image_prompt("openai", &AvatarPromptRequest::Edit {
+            subject_name: "Mira".into(), subject_description: String::new(),
+            current_avatar_prompt: "Silver hair".into(), edit_request: "Add a blue scarf".into(),
+        }).expect("edit prompt");
+        assert!(prompt.starts_with("Custom avatar edit instructions"));
+        assert!(prompt.contains("Add a blue scarf"));
+        assert_eq!(backend.avatar_image_prompt("sdcpp", &generation("")).expect("local"), "silver hair, rainy harbor");
     }
 
     #[test]

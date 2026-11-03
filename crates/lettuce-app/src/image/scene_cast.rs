@@ -247,7 +247,7 @@ fn names(text: &str, name: &str) -> bool {
     })
 }
 
-fn item_text(item: &TimelineItem) -> String {
+pub(crate) fn item_text(item: &TimelineItem) -> String {
     let parts = item
         .active_candidate
         .as_ref()

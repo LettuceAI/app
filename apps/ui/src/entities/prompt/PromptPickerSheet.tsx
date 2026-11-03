@@ -26,6 +26,7 @@ export function PromptPickerSheet({
   onManage,
   defaultChoice,
   manageDescription,
+  busy = false,
 }: {
   open: boolean;
   title: string;
@@ -37,6 +38,7 @@ export function PromptPickerSheet({
   onManage: () => void;
   defaultChoice?: { title: string; description?: string };
   manageDescription?: string;
+  busy?: boolean;
 }) {
   const { t, i18n } = useTranslation("common");
   const [query, setQuery] = useState("");
@@ -96,6 +98,7 @@ export function PromptPickerSheet({
                   chevron={false}
                   aria-pressed={defaultSelected}
                   trailing={defaultSelected ? mark : undefined}
+                  disabled={busy}
                   onClick={() => onChoose(null)}
                 />
                 {found.map((prompt) => (
@@ -106,6 +109,7 @@ export function PromptPickerSheet({
                     chevron={false}
                     aria-pressed={prompt.id === value}
                     trailing={prompt.id === value ? mark : undefined}
+                    disabled={busy}
                     onClick={() => onChoose(prompt.id)}
                   />
                 ))}
@@ -120,6 +124,7 @@ export function PromptPickerSheet({
               icon={<FileText size={icon.lg} />}
               title={t("promptPicker.manage")}
               description={manageDescription ?? t("promptPicker.manageBody")}
+              disabled={busy}
               onClick={onManage}
             />
           </ListGroup>

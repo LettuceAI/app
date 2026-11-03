@@ -223,6 +223,7 @@ const settingsSectionRoute = createRoute({
     search: Record<string, unknown>,
   ): {
     imagePicker?: "avatar" | "scene" | "writer";
+    imagePrompt?: "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer";
     localImageView?: "engine" | "models" | "bundle" | "loras";
     engineInstall?: boolean;
     civitaiModel?: number;
@@ -355,6 +356,9 @@ const settingsSectionRoute = createRoute({
     search.imagePicker === "scene" ||
     search.imagePicker === "writer"
       ? { imagePicker: search.imagePicker }
+      : {}),
+    ...(typeof search.imagePrompt === "string" && ["avatar_generation", "avatar_edit_request", "scene_generation", "scene_prompt_writer", "design_reference_writer"].includes(search.imagePrompt)
+      ? { imagePrompt: search.imagePrompt as "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" }
       : {}),
     ...(search.localImageView === "engine" ||
     search.localImageView === "models" ||

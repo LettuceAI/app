@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { JobEvent, JobView, ModelView, ProviderAccountView, SdCatalogProfile, SettingsImageGenerationSettings, SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
+import type { JobEvent, JobView, ModelView, PromptKind, PromptSummary, ProviderAccountView, SdCatalogProfile, SettingsImageGenerationSettings, SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -15,6 +15,7 @@ afterEach(() => { toast.dismiss(); cleanup(); });
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 const initial: SettingsImageGenerationSettings = {
   avatar_enabled: true, avatar_model_profile_id: null,
+  avatar_prompt_id: null, avatar_edit_prompt_id: null, scene_prompt_id: null, scene_writer_prompt_id: null, design_reference_prompt_id: null,
   scene_enabled: false, scene_automatic_enabled: true, scene_mode: "auto", scene_model_profile_id: null,
   scene_writer_model_profile_id: null, creation_helper_model_profile_id: "keep-helper", scene_default_size: "768x768",
 };
@@ -61,6 +62,7 @@ async function mount(options: { settings?: Partial<SettingsImageGenerationSettin
   const transport = createMockTransport({ calls: {
     appStatus: () => ok({ ...mockAppStatus, platform: options.platform ?? "android", ui_state: { onboarding: { completed: true } } }),
     settingsGet: () => ok(view), settingsUpdate: update,
+    promptsList: () => ok({ items: [], next_cursor: null }),
     modelsList: () => ok({ models, default_model_id: null, revision: 1 }), providerAccountsList: () => ok(accounts),
     sdRuntimeInventory: () => ok({ installed: [runtimeBuild], active: runtimeRef }), sdModelsInstalled: () => ok({ models: [] }),
     sdDiskUsage: () => ok({ components_bytes: 1024, runtimes_bytes: 1024, loras_bytes: 0, total_bytes: 2048, has_engine: true, engine_release: runtimeRef.release, engine_backend: "Vulkan" }),
@@ -80,6 +82,78 @@ const clickRow = async (name: string) => fireEvent.click(await screen.findByRole
 const openEngineInstall = async () => { await clickRow("Install a build"); return screen.findByRole("dialog", { name: "Install a build" }); };
 
 describe("image settings", () => {
+  it.each(["Local image", null])("explains why local diffusion skips system prompts with model selection %s", async (selection) => {
+    await mount({ platform: "other", settings: { avatar_model_profile_id: selection, scene_enabled: true, scene_model_profile_id: selection }, calls: {
+      modelsList: () => ok({ models: [...models.filter((model) => model.id === "Local image"), ...models.filter((model) => model.id !== "Local image")], default_model_id: null, revision: 1 }),
+    } });
+    for (const title of ["Avatar system prompt", "Avatar edit system prompt", "Scene system prompt"]) {
+      const row = await screen.findByRole("button", { name: new RegExp(`^${title}`) });
+      expect(row.hasAttribute("disabled")).toBe(true);
+      expect(row.textContent).toContain("Local diffusion models use your image prompt directly");
+    }
+    expect(screen.getByRole("button", { name: /^Scene writer system prompt/ }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it.each([
+    ["Avatar system prompt", "avatar_generation", "avatar_prompt_id"],
+    ["Avatar edit system prompt", "avatar_edit_request", "avatar_edit_prompt_id"],
+    ["Scene system prompt", "scene_generation", "scene_prompt_id"],
+    ["Scene writer system prompt", "scene_prompt_writer", "scene_writer_prompt_id"],
+    ["Design reference system prompt", "design_reference_writer", "design_reference_prompt_id"],
+  ] as const)("selects and resets %s without changing the other image settings", async (title, kind, field) => {
+    const custom: PromptSummary = { id: "custom", name: "My image instructions", kind, origin: { type: "user" }, archived: false, app_default: false, revision: 1, created_at: 1, updated_at: 1 };
+    const list = vi.fn<NonNullable<MockCallHandlers["promptsList"]>>((request) => ok({ items: request.kind === kind ? [custom, { ...custom, id: "wrong", kind: "direct_chat", name: "Wrong prompt kind" }, { ...custom, id: "archived", archived: true, name: "Archived prompt" }] : [], next_cursor: null }));
+    const { current, history } = await mount({ settings: { scene_enabled: true }, calls: { promptsList: list } });
+    await clickRow(title);
+    const picker = await screen.findByRole("dialog", { name: title });
+    fireEvent.click(await within(picker).findByRole("button", { name: "My image instructions" }));
+    await waitFor(() => expect(current().global.image_generation[field]).toBe("custom"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(history.location.search).toBe("");
+    expect(current().global.image_generation).toMatchObject({ creation_helper_model_profile_id: "keep-helper", scene_default_size: "768x768" });
+    expect(list).toHaveBeenCalledWith({ kind, lifecycle: "active", cursor: null, limit: null });
+    await clickRow(title);
+    const reopened = await screen.findByRole("dialog", { name: title });
+    expect(within(reopened).queryByRole("button", { name: "Wrong prompt kind" })).toBeNull();
+    expect(within(reopened).queryByRole("button", { name: "Archived prompt" })).toBeNull();
+    fireEvent.click(within(reopened).getByRole("button", { name: /^Built-in/ }));
+    await waitFor(() => expect(current().global.image_generation[field]).toBeNull());
+  });
+
+  it("keeps a failed prompt choice open and reaches the existing prompt library", async () => {
+    const kind: PromptKind = "scene_prompt_writer";
+    const custom: PromptSummary = { id: "custom", name: "My writer", kind, origin: { type: "user" }, archived: false, app_default: false, revision: 1, created_at: 1, updated_at: 1 };
+    const { runtime, current } = await mount({ calls: {
+      promptsList: () => ok({ items: [custom], next_cursor: null }),
+      settingsUpdate: () => ({ status: "error", error: { code: "unavailable", message: "storage unavailable", details: null } }),
+    } });
+    await clickRow("Scene writer system prompt");
+    const picker = await screen.findByRole("dialog", { name: "Scene writer system prompt" });
+    fireEvent.click(await within(picker).findByRole("button", { name: "My writer" }));
+    await screen.findByText("It isn't available right now.");
+    expect(current().global.image_generation.scene_writer_prompt_id).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Scene writer system prompt" })).toBeTruthy();
+    fireEvent.click(within(picker).getByRole("button", { name: /System prompts/ }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/settings/prompts"));
+  });
+
+  it("does not navigate back again when a prompt save finishes after closing its picker", async () => {
+    let release!: () => void;
+    const saveGate = new Promise<void>((resolve) => { release = resolve; });
+    const custom: PromptSummary = { id: "custom", name: "My writer", kind: "scene_prompt_writer", origin: { type: "user" }, archived: false, app_default: false, revision: 1, created_at: 1, updated_at: 1 };
+    const { runtime, history, current } = await mount({ saveGate, calls: { promptsList: () => ok({ items: [custom], next_cursor: null }) } });
+    await clickRow("Scene writer system prompt");
+    const picker = await screen.findByRole("dialog", { name: "Scene writer system prompt" });
+    fireEvent.click(await within(picker).findByRole("button", { name: "My writer" }));
+    await waitFor(() => expect(within(picker).getByRole("button", { name: "My writer" }).hasAttribute("disabled")).toBe(true));
+    await act(async () => { history.back(); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => { await runtime.router.navigate({ to: "/settings/$section", params: { section: "prompts" } }); });
+    await act(async () => { release(); });
+    await waitFor(() => expect(current().global.image_generation.scene_writer_prompt_id).toBe("custom"));
+    expect(runtime.router.state.location.pathname).toBe("/settings/prompts");
+  });
+
   it("opens the page and preserves selections and hidden fields when toggling and changing mode", async () => {
     const { update, current } = await mount({ settings: { scene_enabled: true, scene_model_profile_id: "Cloud image" } });
     await clickRow("Ask first");

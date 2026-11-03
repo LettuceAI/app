@@ -14,6 +14,7 @@ import { useSettingsApi, useSettingsLayout } from "../data";
 import { useSettingsWrite } from "../use-settings-write";
 import { ImageModelSheet, type ImageModelChoice, type ImagePicker } from "./ImageModelSheet";
 import { LocalImagePage, LocalImageSettings } from "./LocalImageSettings";
+import { ImagePromptSetting, type ImagePromptKind } from "./ImagePromptSetting";
 
 const modelFields = { avatar: "avatar_model_profile_id", scene: "scene_model_profile_id", writer: "scene_writer_model_profile_id" } as const;
 const sceneModes = ["auto", "ask_first", "manual"] as const;
@@ -30,6 +31,7 @@ export function ImageSettingsPage() {
   const router = useRouter();
   const navigate = useNavigate();
   const picker = useSearch({ from: "/settings/$section", select: (search) => search.imagePicker ?? null });
+  const prompt = useSearch({ from: "/settings/$section", select: (search) => search.imagePrompt ?? null });
   const localView = useSearch({ from: "/settings/$section", select: (search) => search.localImageView ?? null });
   const pushed = useLocation({ select: (location) => location.state.imagePickerPushed });
   const [subscriptionError, setSubscriptionError] = useState<{ error: unknown } | null>(null);
@@ -61,6 +63,10 @@ export function ImageSettingsPage() {
     if (busy || !value) return;
     return write((latest) => ({ section: "image_generation", value: { ...latest.global.image_generation, ...patch } }));
   };
+  const openPrompt = (imagePrompt: ImagePromptKind) => {
+    if (busy) return;
+    void navigate({ to: "/settings/$section", params: { section: "imageGeneration" }, search: { imagePrompt }, state: { imagePickerPushed: true }, resetScroll: false });
+  };
   const addModel = () => { void navigate({ to: "/settings/models/new", replace: picker !== null }); };
   const byAccount = new Map((accounts.data ?? []).map((account) => [account.id, account]));
   const candidates: ImageModelChoice[] = (models.data?.models ?? []).flatMap((model) => {
@@ -71,6 +77,16 @@ export function ImageSettingsPage() {
   const images = candidates.filter(({ model, account }) => model.output_scopes.includes("image") && !(mobile && account.provider_kind.toLowerCase() === "sdcpp"));
   const avatars = images.filter(({ model }) => model.input_scopes.includes("image"));
   const writers = candidates.filter(({ model }) => model.input_scopes.includes("text") && model.input_scopes.includes("image") && model.output_scopes.includes("text"));
+  const promptRow = (kind: ImagePromptKind, disabled = false) => {
+    if (!value) return null;
+    const model = kind === "avatar_generation" || kind === "avatar_edit_request"
+      ? avatars.find(({ model }) => model.id === value.avatar_model_profile_id) ?? avatars[0]
+      : kind === "scene_generation" ? images.find(({ model }) => model.id === value.scene_model_profile_id) ?? images[0] : undefined;
+    const local = model?.account.provider_kind.toLowerCase() === "sdcpp";
+    return <ImagePromptSetting key={kind} kind={kind} value={value} disabled={busy || disabled || local}
+      {...(local ? { disabledReason: t("image.prompts.localDirect") } : {})}
+      open={prompt === kind} onOpen={openPrompt} onClose={close} onChange={change} />;
+  };
   const describe = (kind: ImagePicker) => {
     if (!value) return undefined;
     const id = value[modelFields[kind]];
@@ -102,15 +118,20 @@ export function ImageSettingsPage() {
                 <ListGroup label={t("image.avatar.group")}>
                   <ListRow icon={<UserRound size={icon.lg} />} title={t("image.avatar.title")} description={t("image.avatar.body")} trailing={<Switch checked={value.avatar_enabled} onChange={(enabled) => { void change({ avatar_enabled: enabled }); }} disabled={busy} aria-label={t("image.avatar.title")} />} />
                   <ListRowButton icon={<Image size={icon.lg} />} title={t("image.avatar.model")} description={value.avatar_enabled ? describe("avatar") : t("image.avatar.disabled")} disabled={busy || !value.avatar_enabled} onClick={() => open("avatar")} />
+                  {promptRow("avatar_generation", !value.avatar_enabled)}
+                  {promptRow("avatar_edit_request", !value.avatar_enabled)}
                 </ListGroup>
                 <ListGroup label={t("image.writer.group")}>
                   <ListRowButton icon={<PenLine size={icon.lg} />} title={t("image.writer.model")} description={describe("writer")} disabled={busy} onClick={() => open("writer")} />
+                  {promptRow("scene_prompt_writer")}
+                  {promptRow("design_reference_writer")}
                 </ListGroup>
               </div>
               <div className="min-w-0 space-y-7">
                 <ListGroup label={t("image.scene.group")}>
                   <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.title")} description={t("image.scene.body")} trailing={<Switch checked={value.scene_enabled} onChange={(enabled) => { void change({ scene_enabled: enabled }); }} disabled={busy} aria-label={t("image.scene.title")} />} />
                   <ListRowButton icon={<Image size={icon.lg} />} title={t("image.scene.model")} description={value.scene_enabled ? describe("scene") : t("image.scene.disabled")} disabled={busy || !value.scene_enabled} onClick={() => open("scene")} />
+                  {promptRow("scene_generation", !value.scene_enabled)}
                   <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.automatic.title")} description={t(value.scene_enabled ? "image.scene.automatic.body" : "image.scene.automatic.disabled")} trailing={<Switch checked={value.scene_automatic_enabled} onChange={(enabled) => { void change({ scene_automatic_enabled: enabled }); }} disabled={busy || !value.scene_enabled} aria-label={t("image.scene.automatic.title")} />} />
                 </ListGroup>
                 {value.scene_enabled && value.scene_automatic_enabled && <ListGroup label={t("image.modes.group")}>

@@ -3,6 +3,42 @@ use crate::api::{settings_get, settings_update};
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiEvent};
 
 #[tokio::test]
+async fn image_prompt_selections_require_the_matching_kind_and_reset_after_delete() {
+    let h = harness(Reply::Text("Hello."));
+    let database = h.context.backend().database();
+    for (field, kind) in [
+        ("avatar_prompt_id", crate::BuiltInPromptId::AvatarGeneration),
+        ("avatar_edit_prompt_id", crate::BuiltInPromptId::AvatarEdit),
+        ("scene_prompt_id", crate::BuiltInPromptId::SceneGeneration),
+        ("scene_writer_prompt_id", crate::BuiltInPromptId::ScenePromptWriter),
+        ("design_reference_prompt_id", crate::BuiltInPromptId::DesignReference),
+    ] {
+        let document = crate::image::prompt_selection::custom_prompt(database, kind, field);
+        let before = settings_get(&h.context).await.expect("settings");
+        let mut value = serde_json::to_value(&before.global.image_generation).expect("value");
+        value[field] = serde_json::json!(document.id.to_string());
+        let saved = settings_update(&h.context, dto::SettingsUpdateRequest {
+            expected_revision: before.revision,
+            patch: dto::SettingsPatch::ImageGeneration { value: serde_json::from_value(value).expect("settings") },
+        }).await.expect("save prompt");
+        let wrong = crate::generation::built_in_prompts::active_built_in_prompt(database, crate::BuiltInPromptId::AppDefault).expect("prompt").expect("stored");
+        let mut value = serde_json::to_value(&saved.global.image_generation).expect("value");
+        value[field] = serde_json::json!(wrong.id.to_string());
+        let error = settings_update(&h.context, dto::SettingsUpdateRequest {
+            expected_revision: saved.revision,
+            patch: dto::SettingsPatch::ImageGeneration { value: serde_json::from_value(value).expect("settings") },
+        }).await.expect_err("wrong prompt kind");
+        assert_eq!(error.code, ApiErrorCode::InvalidInput);
+        assert_eq!(settings_get(&h.context).await.expect("unchanged").revision, saved.revision);
+        crate::api::prompt_delete(&h.context, dto::PromptDeleteRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(), prompt_id: document.id.to_string(), expected_revision: document.revision.get(),
+        }).await.expect("delete selected prompt");
+        let after = settings_get(&h.context).await.expect("settings");
+        assert!(serde_json::to_value(after.global.image_generation).expect("value")[field].is_null());
+    }
+}
+
+#[tokio::test]
 async fn settings_update_cas_invalid_and_single_section_event() {
     let h = harness(Reply::Text("Hello."));
     let before = settings_get(&h.context).await.expect("settings");

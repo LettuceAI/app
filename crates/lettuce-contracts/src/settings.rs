@@ -86,11 +86,16 @@ pub enum SettingsSceneGenerationMode {
 pub struct SettingsImageGenerationSettings {
     pub avatar_enabled: bool,
     pub avatar_model_profile_id: Option<String>,
+    pub avatar_prompt_id: Option<String>,
+    pub avatar_edit_prompt_id: Option<String>,
     pub scene_enabled: bool,
     pub scene_automatic_enabled: bool,
     pub scene_mode: SettingsSceneGenerationMode,
     pub scene_model_profile_id: Option<String>,
     pub scene_writer_model_profile_id: Option<String>,
+    pub scene_prompt_id: Option<String>,
+    pub scene_writer_prompt_id: Option<String>,
+    pub design_reference_prompt_id: Option<String>,
     pub creation_helper_model_profile_id: Option<String>,
 
     pub scene_default_size: Option<String>,

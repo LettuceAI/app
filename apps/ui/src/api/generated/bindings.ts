@@ -8431,11 +8431,16 @@ export type SettingsHelpMeReplyStyle = "roleplay" | "conversational";
 export type SettingsImageGenerationSettings = {
 	avatar_enabled: boolean,
 	avatar_model_profile_id: string | null,
+	avatar_prompt_id: string | null,
+	avatar_edit_prompt_id: string | null,
 	scene_enabled: boolean,
 	scene_automatic_enabled: boolean,
 	scene_mode: SettingsSceneGenerationMode,
 	scene_model_profile_id: string | null,
 	scene_writer_model_profile_id: string | null,
+	scene_prompt_id: string | null,
+	scene_writer_prompt_id: string | null,
+	design_reference_prompt_id: string | null,
 	creation_helper_model_profile_id: string | null,
 	scene_default_size: string | null,
 };

@@ -3,7 +3,7 @@
 //! added to the message. The follow-up (`scene_follow_up.rs`) runs them as
 //! image jobs.
 
-use lettuce_context::PromptVariable;
+use lettuce_context::{PromptConditionContext, PromptEntryChatMode, PromptRenderContext, PromptVariable, SceneImageProtocolKind};
 use lettuce_conversations::{
     ConversationReader, ConversationRepository, EditMessageResult, MediaAssetRole, OperationToken,
 };
@@ -459,12 +459,61 @@ where
         let fallback_name = text
             .render_with("scene_image_persona_fallback_name", [])
             .unwrap_or_default();
-        let (prompt, inputs) = remote_scene_prompt(
+        let (legend, inputs) = remote_scene_prompt(
             &text,
-            scene_prompt,
+            "",
             &references,
             (!cast.group).then_some(fallback_name.as_str()),
         );
+        let document = crate::image::prompt_selection::selected_prompt(
+            repository, settings.image_generation.scene_prompt_id, BuiltInPromptId::SceneGeneration,
+        ).map_err(|error| SceneImageError::Generation(error.to_string()))?
+            .ok_or_else(|| SceneImageError::Generation("the scene generation prompt is unavailable".into()))?;
+        let moment = crate::image::scene_cast::scene_moment(repository, conversation, request.message_id)?;
+        let recent = moment.iter().map(crate::image::scene_cast::item_text).collect::<Vec<_>>().join("\n\n");
+        let selected_speaker = moment.last().filter(|_| cast.group).and_then(|item| item.message.author_participant_id);
+        let effective = lettuce_conversations::resolve_effective_settings(conversation, selected_speaker)
+            .map_err(|error| SceneImageError::Generation(error.to_string()))?;
+        let mut values = crate::image::scene_prompt_writer::render_values(&text,
+            crate::image::scene_prompt_writer::WriterInputs {
+                cast: &cast, references: &references, loras: &[],
+                recent: recent.clone(),
+                image_model_instructions: model.profile.config.stable_diffusion.prompt_writer_instructions.clone().unwrap_or_default(),
+            },
+        ).map_err(|error| SceneImageError::Generation(error.to_string()))?;
+        values.purpose_values.insert(PromptVariable::SceneRequest, scene_prompt.to_owned());
+        let capabilities = &model.profile.config.capabilities;
+        let conditions = PromptConditionContext {
+            chat_mode: if cast.group { PromptEntryChatMode::Group } else { PromptEntryChatMode::Direct },
+            scene_generation_enabled: true,
+            avatar_generation_enabled: settings.image_generation.avatar_enabled,
+            scene_image_protocol: Some(SceneImageProtocolKind::Remote),
+            message_count: moment.len(), participant_count: cast.subjects.len(),
+            recent_text: recent,
+            has_scene: effective.scene.is_some(),
+            does_author_note_exists: effective.author_note.as_deref().is_some_and(|note| !note.trim().is_empty()),
+            has_persona: cast.persona().is_some(),
+            has_character_reference_images: references.primary(&cast).is_some_and(|subject| !subject.references.is_empty()),
+            has_persona_reference_images: references.persona().is_some_and(|subject| !subject.references.is_empty()),
+            has_character_reference_text: references.primary(&cast).is_some_and(|subject| subject.design_notes.is_some() || subject.source.is_some()),
+            has_persona_reference_text: references.persona().is_some_and(|subject| subject.design_notes.is_some() || subject.source.is_some()),
+            has_chat_background: references.background.is_some(),
+            provider_id: Some(model.account.provider_kind.clone()),
+            input_scopes: crate::generation::conversation_generation_input::modality_scopes(capabilities.input_modalities),
+            output_scopes: crate::generation::conversation_generation_input::modality_scopes(capabilities.output_modalities),
+            vision_enabled: capabilities.input_modalities.image == lettuce_models::CapabilityStatus::Supported,
+            ..Default::default()
+        };
+        let entries = crate::generation::feature_prompt_entries::render_feature_entries(
+            &document, &PromptRenderContext { conditions, values }, &crate::image::scene_prompt_writer::SCENE_TOKENS,
+        ).map_err(|error| SceneImageError::Generation(error.to_string()))?;
+        let template = entries.into_iter().map(|entry| {
+            crate::generation::feature_prompt_entries::strip_tokens(&entry.content, &crate::image::scene_prompt_writer::SCENE_TOKENS)
+        }).filter(|entry| !entry.trim().is_empty()).collect::<Vec<_>>().join("\n\n");
+        let request_text = crate::generation::feature_prompt_entries::condense(scene_prompt);
+        let include_request = !template.contains(&request_text);
+        let prompt = [legend, template, if include_request { request_text } else { String::new() }]
+            .into_iter().filter(|section| !section.is_empty()).collect::<Vec<_>>().join("\n\n");
         (prompt, inputs, Vec::new())
     };
     let size = model

@@ -202,6 +202,11 @@ impl GlobalSettings {
             &mut self.lorebook_entry_generator.entry_prompt_id,
             &mut self.lorebook_entry_generator.keyword_prompt_id,
             &mut self.companion_soul_writer.prompt_id,
+            &mut self.image_generation.avatar_prompt_id,
+            &mut self.image_generation.avatar_edit_prompt_id,
+            &mut self.image_generation.scene_prompt_id,
+            &mut self.image_generation.scene_writer_prompt_id,
+            &mut self.image_generation.design_reference_prompt_id,
         ] {
             if selection.is_some_and(&removed) {
                 *selection = None;
@@ -228,11 +233,16 @@ pub enum SceneGenerationMode {
 pub struct ImageGenerationSettings {
     pub avatar_enabled: bool,
     pub avatar_model_profile_id: Option<ModelProfileId>,
+    pub avatar_prompt_id: Option<PromptDocumentId>,
+    pub avatar_edit_prompt_id: Option<PromptDocumentId>,
     pub scene_enabled: bool,
     pub scene_automatic_enabled: bool,
     pub scene_mode: SceneGenerationMode,
     pub scene_model_profile_id: Option<ModelProfileId>,
     pub scene_writer_model_profile_id: Option<ModelProfileId>,
+    pub scene_prompt_id: Option<PromptDocumentId>,
+    pub scene_writer_prompt_id: Option<PromptDocumentId>,
+    pub design_reference_prompt_id: Option<PromptDocumentId>,
     pub creation_helper_model_profile_id: Option<ModelProfileId>,
     /// The scene image size when the scene model sets none; unset means
     /// 1024x1024.
@@ -244,11 +254,16 @@ impl Default for ImageGenerationSettings {
         Self {
             avatar_enabled: true,
             avatar_model_profile_id: None,
+            avatar_prompt_id: None,
+            avatar_edit_prompt_id: None,
             scene_enabled: false,
             scene_automatic_enabled: true,
             scene_mode: SceneGenerationMode::Auto,
             scene_model_profile_id: None,
             scene_writer_model_profile_id: None,
+            scene_prompt_id: None,
+            scene_writer_prompt_id: None,
+            design_reference_prompt_id: None,
             creation_helper_model_profile_id: None,
             scene_default_size: None,
         }

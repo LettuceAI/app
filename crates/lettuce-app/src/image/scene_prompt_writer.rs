@@ -51,7 +51,7 @@ const PERSONA_TOKEN: &str = "{{image[persona]}}";
 const BACKGROUND_TOKEN: &str = "{{image[chatBackground]}}";
 const BACKGROUND_ALIAS_TOKEN: &str = "{{image[chat_background]}}";
 const CAST_TOKEN: &str = "{{image[cast]}}";
-const SCENE_TOKENS: [&str; 5] = [
+pub(crate) const SCENE_TOKENS: [&str; 5] = [
     CAST_TOKEN,
     CHARACTER_TOKEN,
     PERSONA_TOKEN,
@@ -630,8 +630,9 @@ where
             vision_enabled: capabilities.input_modalities.image == CapabilityStatus::Supported,
             ..Default::default()
         };
-        let document = crate::generation::built_in_prompts::active_built_in_prompt(
+        let document = crate::image::prompt_selection::selected_prompt(
             self.repository,
+            settings.image_generation.scene_writer_prompt_id,
             BuiltInPromptId::ScenePromptWriter,
         )
         .map_err(|error| ScenePromptError::MissingPrompt {
@@ -758,13 +759,13 @@ where
     }
 }
 
-struct WriterInputs<'a> {
-    cast: &'a SceneCast,
-    references: &'a SceneReferences,
+pub(crate) struct WriterInputs<'a> {
+    pub(crate) cast: &'a SceneCast,
+    pub(crate) references: &'a SceneReferences,
     /// Each subject's LoRA binding, in cast order; blank for a remote model.
-    loras: &'a [String],
-    recent: String,
-    image_model_instructions: String,
+    pub(crate) loras: &'a [String],
+    pub(crate) recent: String,
+    pub(crate) image_model_instructions: String,
 }
 
 /// A subject's description followed by its design notes.
@@ -853,7 +854,7 @@ fn cast_lora_text(text: &RuntimeText, cast: &SceneCast, loras: &[String]) -> Str
 /// The placeholder values of the scene generation prompt. The single
 /// character placeholders older prompts use name the cast's primary
 /// character and its persona.
-fn render_values(
+pub(crate) fn render_values(
     text: &RuntimeText,
     inputs: WriterInputs<'_>,
 ) -> Result<PromptRenderValues, ScenePromptError> {

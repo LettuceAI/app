@@ -435,8 +435,9 @@ where
             ]),
             ..Default::default()
         };
-        let document = crate::generation::built_in_prompts::active_built_in_prompt(
+        let document = crate::image::prompt_selection::selected_prompt(
             self.repository,
+            settings.image_generation.design_reference_prompt_id,
             BuiltInPromptId::DesignReference,
         )
         .map_err(|error| DesignReferenceError::MissingPrompt {

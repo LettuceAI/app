@@ -270,7 +270,23 @@ fn apply(
             "companion_soul_writer"
         }
         dto::SettingsPatch::ImageGeneration { value } => {
-            settings.image_generation = convert(value, "image_generation")?;
+            let value: lettuce_settings::ImageGenerationSettings = convert(value, "image_generation")?;
+            for (id, purpose, field) in [
+                (value.avatar_prompt_id, crate::BuiltInPromptId::AvatarGeneration, "image_generation.avatar_prompt_id"),
+                (value.avatar_edit_prompt_id, crate::BuiltInPromptId::AvatarEdit, "image_generation.avatar_edit_prompt_id"),
+                (value.scene_prompt_id, crate::BuiltInPromptId::SceneGeneration, "image_generation.scene_prompt_id"),
+                (value.scene_writer_prompt_id, crate::BuiltInPromptId::ScenePromptWriter, "image_generation.scene_writer_prompt_id"),
+                (value.design_reference_prompt_id, crate::BuiltInPromptId::DesignReference, "image_generation.design_reference_prompt_id"),
+            ] {
+                if let Some(id) = id {
+                    match lettuce_context::PromptRepository::lookup_exact(context.backend().database(), id, purpose.purpose())
+                        .map_err(|_| api_error(ApiErrorCode::Internal, "prompt lookup failed"))? {
+                        lettuce_context::PromptLookupResult::Available { .. } => {},
+                        _ => return Err(invalid_field(field, "choose an active prompt of the matching kind")),
+                    }
+                }
+            }
+            settings.image_generation = value;
             "image_generation"
         }
         dto::SettingsPatch::Embedding { value } => {

@@ -10,6 +10,7 @@ pub(crate) mod local_diffusion;
 pub(crate) mod local_diffusion_install;
 pub(crate) mod playground;
 pub(crate) mod provider_media;
+pub(crate) mod prompt_selection;
 pub(crate) mod reply_images;
 pub(crate) mod scene_cast;
 pub(crate) mod scene_follow_up;
