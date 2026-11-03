@@ -44,10 +44,6 @@ export function mediaOf(message: TimelineMessage): MediaItem[] {
   );
 }
 
-export function paragraphsOf(text: string): string[] {
-  return text.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0);
-}
-
 export function characterParticipant(
   view: Pick<ConversationView, "participants"> | undefined,
 ): ParticipantView | null {

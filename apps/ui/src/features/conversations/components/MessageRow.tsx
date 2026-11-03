@@ -1,14 +1,13 @@
 import { AssetAudio } from "@/shared/ui/AssetAudio";
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Badge, cn, Highlight, InlineMarkdown, MediaTile, Message, relativeTime, type MessageVariants } from "@lettuceai/crisp";
+import { Badge, cn, ImageViewer, MediaTile, Message, Prose, relativeTime, type MessageVariants } from "@lettuceai/crisp";
 import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings";
 import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 import {
   authorOf,
   mediaOf,
   type MediaItem,
-  paragraphsOf,
   spacing,
   textOf,
   type Group,
@@ -16,21 +15,21 @@ import {
 import { ReplyDetails } from "./ReplyDetails";
 import { SceneImageStatus } from "../scene-images/SceneImageStatus";
 import { MessageImageViewer } from "./MessageImageViewer";
+import { useOverlayBack } from "../companion/use-overlay-back";
+
+function EmbeddedImageViewer({ image, onClose }: { image: { src: string; alt: string }; onClose: () => void }) {
+  useOverlayBack(true, onClose);
+  return <ImageViewer images={[image]} index={0} onIndexChange={onClose} />;
+}
 
 export function MessageBody({ text, query }: { text: string; query: string }) {
-  const needle = query.toLowerCase();
+  const [image, setImage] = useState<{ src: string; alt: string } | null>(null);
+  const closeImage = useCallback(() => setImage(null), []);
   return (
-    <div className="select-text space-y-2">
-      {paragraphsOf(text).map((paragraph, index) => (
-        <p key={index} className="whitespace-pre-line break-words">
-          {needle && paragraph.toLowerCase().includes(needle) ? (
-            <Highlight query={query}>{paragraph}</Highlight>
-          ) : (
-            <InlineMarkdown quotes>{paragraph}</InlineMarkdown>
-          )}
-        </p>
-      ))}
-    </div>
+    <>
+      <Prose size="inherit" quotes query={query} onImageClick={setImage} className="select-text">{text}</Prose>
+      {image && <EmbeddedImageViewer image={image} onClose={closeImage} />}
+    </>
   );
 }
 

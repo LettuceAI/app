@@ -869,6 +869,42 @@ async fn a_group_reply_names_its_cast_in_the_scene_tag() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn group_scene_prompts_use_the_message_author_even_when_the_cast_changes() {
+    let scene = scene_harness(Reply::Text("Hello Cleo."), Vec::new(), SceneGenerationMode::Manual);
+    let cast = super::turns_tests::group_cast(&scene.harness, "group-scene-writer").await;
+    let context = &scene.harness.context;
+    send(
+        &scene.harness,
+        &cast.chat,
+        "group-scene-writer-send",
+        "Show me",
+        Arc::new(RecordingStream::default()),
+    ).await.expect("send");
+    super::turns_tests::run_generation(&scene.harness).await;
+    let chat = open_chat(context, &cast.chat).await;
+    let reply = chat.messages.items.iter()
+        .find(|message| message.role == dto::MessageRole::Assistant)
+        .expect("reply");
+    for selected in [None, Some(dto::SceneCastSelection {
+        character_ids: vec![cast.cleo_character.to_string()],
+        include_persona: false,
+    })] {
+        let accepted = message_scene_prompt_generate(context, dto::MessageScenePromptGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
+            message_id: reply.id.clone(),
+            cast: selected,
+        }).await.expect("prompt job");
+        run_jobs(context).await;
+        let job = job_get(context, dto::JobGetRequest { job_id: accepted.job_id })
+            .await.expect("job");
+        assert_eq!(job.state, dto::JobStateDto::Succeeded, "{job:?}");
+        assert!(matches!(job.result, Some(dto::JobResultDto::GeneratedText { .. })));
+    }
+    assert_eq!(scene.images.calls(), 0);
+    assert_eq!(scene.harness.provider.requests.lock().expect("requests").len(), 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn deleting_a_chat_removes_what_its_feature_jobs_stored() {
     let scene = scene_harness(
         Reply::Text(TAGGED),

@@ -553,7 +553,12 @@ where
                     .to_owned(),
             },
         )?;
-        let effective = lettuce_conversations::resolve_effective_settings(conversation, None)
+        let selected_speaker = window
+            .iter()
+            .find(|item| item.message.id == request.message_id)
+            .filter(|_| cast.group)
+            .and_then(|item| item.message.author_participant_id);
+        let effective = lettuce_conversations::resolve_effective_settings(conversation, selected_speaker)
             .map_err(|error| ScenePromptError::Storage {
                 reason: error.to_string(),
             })?;

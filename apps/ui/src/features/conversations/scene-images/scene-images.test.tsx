@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { toast } from "@lettuceai/crisp";
+import { dismissTopLayer, toast } from "@lettuceai/crisp";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConversationSettingsView, ConversationView, JobEvent, JobView, ModelView, ProviderAccountView, SceneImageView, SettingsView, TimelineMessage } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
@@ -66,6 +66,21 @@ async function openFlow() {
 }
 
 afterEach(() => { cleanup(); toast.dismiss(); });
+
+it("opens Markdown images without asset lookups and supports dismissing the viewer", async () => {
+  const prompt = vi.fn<NonNullable<MockCallHandlers["imageAssetPrompt"]>>(() => ({ status: "ok", data: null }));
+  await open({ initial: { ...reply(), parts: [{ type: "text", text: "The harbour falls silent.\n\n![Harbor view](https://example.com/harbor.png)" }] }, calls: { imageAssetPrompt: prompt } });
+  fireEvent.click(screen.getByRole("button", { name: "Harbor view" }));
+  const viewer = await screen.findByRole("dialog", { name: "Harbor view" });
+  expect(within(viewer).getByAltText("Harbor view").getAttribute("src")).toBe("https://example.com/harbor.png");
+  expect(prompt).not.toHaveBeenCalled();
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Harbor view" })).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Harbor view" }));
+  await screen.findByRole("dialog", { name: "Harbor view" });
+  await act(async () => { expect(dismissTopLayer()).toBe(true); });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Harbor view" })).toBeNull());
+});
 
 it("opens a message image in the shared viewer and shows its recorded generation prompt", async () => {
   const prompt = vi.fn<NonNullable<MockCallHandlers["imageAssetPrompt"]>>(() => ({ status: "ok", data: "Cassian at the harbour\nSoft evening light" }));
